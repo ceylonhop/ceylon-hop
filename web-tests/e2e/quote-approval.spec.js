@@ -32,6 +32,9 @@ function summary(over) {
     // Carried so the GET /:id stub can reflect it into the reopened quote's request.tool
     // (quote intent, spec 2026-07-17). Not part of the real summary shape — test plumbing only.
     ...('requestedService' in over ? { requestedService: over.requestedService } : {}),
+    // Same plumbing for the per-quote approve flag: not part of the real summary shape (the queue
+    // renders no approve affordance), carried here only so the GET /:id stub can reflect it.
+    ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
     ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
@@ -70,6 +73,10 @@ function fullQuote(over) {
       },
     },
     result: { totalCents: over.totalCents || 12100 },
+    // Ops self-approval (plan 2026-08-11): the server's per-quote answer to "may THIS viewer
+    // approve THIS quote". Absent on most fixtures, which is the honest default — the client must
+    // treat a missing flag as "no", never fall back to the capability.
+    ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
     // Phase 3b: the real GET /:id ships the quote priced against its locked card. Mirror that so
     // reopening a ready/sent quote renders this frozen estimate instead of the live /estimate.
     estimate: over.estimate || {
@@ -104,7 +111,10 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
   const CAPS = {
     founder: ['quote:manage', 'quote:approve', 'margin:view', 'bookings:read', 'bookings:operate', 'payments:act'],
     finance: ['quote:manage', 'bookings:read', 'payments:act'],
-    ops: ['quote:manage', 'bookings:operate', 'bookings:read'],
+    // quote:approve_simple is held by every ops session, which is exactly why the UI must not
+    // gate on it — it is true on chauffeur and multi-leg quotes too. The per-quote mayApprove
+    // flag is the gate; this cap being present here is what makes that distinction testable.
+    ops: ['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read'],
   };
   const store = { patches: [], saves: [], list: quotes.slice() };
 
@@ -156,7 +166,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}) })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}), ...('mayApprove' in existing ? { mayApprove: existing.mayApprove } : {}) })));
     }
     return r.fulfill(json({}));
   });
@@ -281,6 +291,39 @@ test('founder on a pending_review quote gets Approve + Send back + the reopen do
   await expect(page.locator('.ch-review-banner')).toContainText(/locked/i);
   await expect(page.locator('#quoteRoot .ch-app')).toHaveClass(/ch-locked/);
   await expect(page.locator('#f-firstName')).toBeDisabled();
+});
+
+// ── Ops self-approval (plan 2026-08-11) ──────────────────────────────────────
+// Ops may approve its OWN simple work: a single-leg, standard-priced, undiscounted private
+// transfer. The server decides which quotes those are and says so per quote via `mayApprove`;
+// these specs pin that the client obeys that flag and nothing else, and that being trusted with
+// Approve does not quietly hand ops the rest of the founder's bar.
+test('ops on a pending_review quote the server blesses gets Approve — and only Approve', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'pending_review', mayApprove: true });
+  await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
+  // The founder's other review powers stay founder-only. This is the whole reason the button
+  // lives in the non-approver branch instead of flipping the viewer to approver.
+  await expect(actions(page).locator('[data-action="sendBack"]')).toHaveCount(0);
+});
+
+test('ops gets no Approve on a quote the server refuses, despite holding the capability', async ({ page }) => {
+  // e.g. a chauffeur or multi-leg quote: quote:approve_simple is in caps either way, so a UI
+  // gating on the capability would show the button here and 403 on the press.
+  await openDetail(page, 'ops', { id: 'q1', status: 'pending_review', mayApprove: false });
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
+});
+
+test('a missing mayApprove reads as no — the client never falls back to caps', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' }); // flag absent entirely
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
+});
+
+test('ops approving a blessed quote PATCHes it to ready', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review', mayApprove: true });
+  await actions(page).locator('[data-action="approveReady"]').click();
+  await expect.poll(() => store.patches.some((p) => p.id === 'q1' && p.status === 'ready')).toBe(true);
 });
 
 test('founder on a draft must Submit for review first — no self-approve (lifecycle enforced)', async ({ page }) => {

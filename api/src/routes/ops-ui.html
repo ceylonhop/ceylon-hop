@@ -5296,6 +5296,11 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
+    // founder always may; ops may only on a single-leg standard transfer. Never derive it from
+    // caps: the capability alone is true on every quote, including the ones the server refuses.
+    // Defaults false so a quote that has not been loaded yet can never offer the button.
+    mayApprove: false,
   };
   lastEstimate = null;
   lastEstimateError = null;
@@ -6036,6 +6041,7 @@ async function reopenQuote(id) {
     state.savedId = q.id;
     state.reference = q.reference || q.id;
     state.status = q.status || 'draft';
+    state.mayApprove = !!q.mayApprove; // shells never qualify, but read it rather than assume
     state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
     state.customerTotalVia = q.customerTotalVia || null;
     state.assignedTo = q.assignedTo || null;
@@ -6114,6 +6120,7 @@ async function reopenQuote(id) {
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
   state.legs = legs;
   state.status = q.status || 'draft';
+  state.mayApprove = !!q.mayApprove; // server's per-quote answer; see the state defaults
   state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
   state.customerTotalVia = q.customerTotalVia || null;
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
@@ -8049,7 +8056,15 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
-    else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
+    /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
+       says this particular quote qualifies — a single-leg, standard-priced, undiscounted private
+       transfer. Keyed on state.mayApprove, never on the capability: quote:approve_simple is true
+       for every ops session, so gating on it would offer the button on chauffeur and multi-leg
+       quotes too and 403 on the press.
+       Note what is NOT added: no Send back, no zone or delete controls. Those stay founder-only,
+       which is why this lives in the else branch rather than flipping `approver` — the approver
+       branch above hands out Send back and Reopen alongside Approve as one bundle. */
+    else if (s === 'pending_review') { if (state.mayApprove) out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal')); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // reopen = pull it back from review to fix something. One line on purpose: the review-lock test scans this bar line-by-line for the reopen door.
   }
   // Delete (spec 2026-07-22): soft delete, only for a SAVED quote, gated by state + role to mirror
   // the server. draft/changes_requested → anyone here (ops); pending_review/ready → approver
