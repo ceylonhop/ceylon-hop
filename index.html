@@ -266,8 +266,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      Trimmed on three axes — 28px icons, 18px gaps, .82rem type — which brings it to
      ~1135px. justify-content:center is the safety net: if a translation or a longer
      label ever pushes it over again, the wrapped row centres and reads as deliberate
-     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
-  .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
+     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js.
+
+     gap is 12px, not 16px, because the row must also survive being measured BEFORE Poppins
+     arrives. Until it does, each platform substitutes its own sans: Apple's is narrower than
+     Poppins, but Linux's and many Androids' are ~3.7% WIDER — 1136px against the 1152px box,
+     i.e. 16px from wrapping. Four gaps × 4px buys that margin back, and it costs nothing once
+     the webfont lands. The real cure is metrics-matched fallback @font-face for Poppins, the
+     way 'CH Bodoni' does it in site.css; this is the cheap half. */
+  .trust-row{display:flex;align-items:center;justify-content:center;gap:12px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
   .trust-row .item{display:flex;align-items:center;gap:.55rem}
   .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:var(--teal);background:rgba(var(--accent-rgb),.13);border-radius:50%}
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
