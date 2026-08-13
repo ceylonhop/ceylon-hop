@@ -247,7 +247,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .book-go:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 20px 40px -14px rgba(236,58,36,.65), inset 0 1px 0 rgba(255,255,255,.28)}
   .book-go:active{transform:translateY(1px)}
   .book-go:focus-visible{outline:3px solid rgba(236,58,36,.4);outline-offset:2px}
-  .book-go[disabled]{opacity:.55;cursor:not-allowed;transform:none;filter:none}
   /* Not-ready-yet, but still pressable. Reads as "there's a step left" rather than "this control
      is dead": softer than the live button, but it keeps its pointer and its hover, and pressing
      it runs goBook()'s validation, which names the missing field and focuses it. */

@@ -3,7 +3,7 @@
    ============================================================ */
 mountWA();
 document.getElementById('bk-brand').innerHTML = cmark(30,'var(--accent)') + '<span>Ceylon Hop</span>';
-document.getElementById('conf-wa').innerHTML = ICON.wa + ' Message us on WhatsApp';
+document.getElementById('conf-wa').innerHTML = ICON.wa + ' Chat on WhatsApp';
 
 // Pre-warm the API. The free hosting tier spins the service down when idle and a
 // cold boot can take ~30s — firing a health ping on page load means it's usually
@@ -980,9 +980,7 @@ window.dismissReprice=function(){
     '.reprice-note .rn-change{background:none;border:0;color:#8a5a12;text-decoration:underline;cursor:pointer;font:inherit;padding:0}'+
     '.reprice-note.reprice-block{border-color:#e0a091;background:#fcece7;color:#7a3320}'+
     '.reprice-note.reprice-block b{color:#b23214}'+
-    '.reprice-note.reprice-block .rn-change{color:#b23214}'+
-    // a blocked Continue must LOOK blocked, not just be inert
-    '#n1:disabled,#mbar-cta:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}';
+    '.reprice-note.reprice-block .rn-change{color:#b23214}';
   document.head.appendChild(s);
 })();
 function checkWhere(){
@@ -1000,8 +998,6 @@ function checkWhen(){
     // else the backend (which requires `time`) 400s at the moment of payment.
     const ok = !!(state.date && !state.flexDate && state.dep);
     n2.disabled = !ok;
-    n2.style.opacity = ok ? '' : '.45';
-    n2.style.cursor = ok ? '' : 'not-allowed';
     // Never leave a greyed-out button with no reason next to it.
     var why=document.getElementById('when-blocked');
     if(!why){
@@ -1012,8 +1008,6 @@ function checkWhen(){
     why.style.display = ok ? 'none' : '';
   } else {
     n2.disabled = false;
-    n2.style.opacity = '';
-    n2.style.cursor = '';
   }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
@@ -1332,9 +1326,8 @@ function render(){
   // block progressing past Travellers while over the vehicle's seat OR luggage limit —
   // we can't accommodate it, so the traveller must upgrade or message us first
   const overCap = perVehicle && (paxOver || bagsOver);
-  // over-capacity blocks Continue — dim it so the disabled state is visible (mirrors n2)
   const n4=document.getElementById('n4');
-  if(n4){ n4.disabled = overCap; n4.style.opacity = overCap ? '.45' : ''; n4.style.cursor = overCap ? 'not-allowed' : ''; }
+  if(n4){ n4.disabled = overCap; }
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
@@ -1517,7 +1510,25 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
 // (working / failed / cancelled) is surfaced INSIDE the PayHere overlay so the
 // customer always sees what happened where they expect it — never a stray note on
 // the form. The overlay opens immediately so clicking Pay always shows feedback.
+//
+// One checkout per press. The overlay is not enough on its own: a double-tap on
+// mobile lands two clicks before the first repaint paints the scrim, and the retry
+// button re-enters this function with no scrim in the way at all. Two runs mean two
+// draft bookings and two PayHere hand-offs for one trip (pay.html has carried the
+// same latch since #357). Released only at a terminal state: phShowEnd (every
+// failure/cancel path) or finalizeBooking (success).
+let paySubmitting = false;
+function payRelease(){
+  paySubmitting = false;
+  const b = document.getElementById('pay-btn');
+  if(b) b.disabled = false;
+}
 async function runPayment(){
+  if(paySubmitting) return;
+  paySubmitting = true;
+  // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
+  const _payBtn = document.getElementById('pay-btn');
+  if(_payBtn) _payBtn.disabled = true;
   if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
@@ -1623,6 +1634,10 @@ function phShowLoading(msg){
 //              gateway; a booking that never reached a card gets no bank advice.
 // opts.retry — false when trying again cannot possibly work (an already-paid booking).
 function phShowEnd(kind, msg, opts){
+  // Terminal state: re-arm the latch here, where the retry button appears. Without this a
+  // refused card would leave Pay locked with no way to try again — strictly worse than the
+  // double-click the latch guards against.
+  payRelease();
   document.getElementById('ph-spin').style.display='none';
   const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
@@ -1905,6 +1920,7 @@ function renderPassRoute(stops, trip){
 // Render the confirmation / boarding pass. Takes the created booking (or null in demo
 // mode). Booking creation + payment happen in the pay-btn handler before this runs.
 function finalizeBooking(apiBooking){
+  payRelease(); // terminal state — the flow moves past payment, so the latch re-arms
   const ref = apiBooking ? apiBooking.reference
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';

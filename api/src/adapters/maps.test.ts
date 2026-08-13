@@ -567,6 +567,9 @@ describe('server place vocabulary covers the front-end catalogue', () => {
     'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
     'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
     'Nilaveli', 'Ahangama', 'Hiriketiya', 'Horton Plains',
+    // Catalogue reconciliation (2026-08-13): server via-stops now mirrored into the front-end
+    // EXTRA list; the reverse direction is web-tests/unit/server-town-parity.test.js.
+    'Nilaveli Beach', 'Nanu Oya', 'Thanthirimale',
   ];
 
   for (const town of FRONT_END_TOWNS) {

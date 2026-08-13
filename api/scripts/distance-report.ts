@@ -4,14 +4,17 @@
 //   npx tsx scripts/distance-report.ts --seed      # also upsert into distance_cache (needs DATABASE_URL)
 //   npx tsx scripts/distance-report.ts --seed --refresh   # re-fetch pairs that already have rows
 //
-// Bills one Distance Matrix element per uncached pair (~38 towns → ≤ ~1,400 elements worst
-// case). NEVER run in CI. The report is the owner's review artifact: prices move where these
+// Bills one Distance Matrix element per uncached PHYSICAL pair (~38 towns → ≤ ~1,400 elements
+// worst case): display names sharing one coordinate ('Nilaveli Beach' / 'Nilaveli') are billed
+// once, with the cache seeded under every canon key so live quoting hits for either spelling.
+// NEVER run in CI. The report is the owner's review artifact: prices move where these
 // deltas are non-zero, and that movement should be a decision, not a discovery.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
-import { GoogleMapsAdapter, KNOWN_PLACES, canonPlace } from '../src/adapters/maps';
+import { GoogleMapsAdapter, KNOWN_PLACES, canonPlace, knownCoords } from '../src/adapters/maps';
+import { groupTownsByCoords, type TownGroup } from './lib/coordGroups';
 import { legPriceCents, billableKm } from '../src/quote/private';
 import { finishPrice } from '../src/quote/priceFinish';
 import { RATE_CARD } from '../src/quote/rateCard';
@@ -34,6 +37,22 @@ function loadFrontEnd(): { kmBetween: (a: string, b: string) => number | null } 
   return sandbox.window.TRANSFERS;
 }
 
+// The front-end matrix doesn't know every alias spelling (kmBetween('Nilaveli Beach', …) is
+// null; only 'Nilaveli' resolves), so try each name in the group and take the first answer.
+function bakedKm(
+  T: { kmBetween: (a: string, b: string) => number | null },
+  gFrom: TownGroup,
+  gTo: TownGroup,
+): number | null {
+  for (const f of gFrom.names) {
+    for (const t of gTo.names) {
+      const v = T.kmBetween(f, t);
+      if (v != null) return v;
+    }
+  }
+  return null;
+}
+
 function priceUsd(rawKm: number): number {
   const cents = legPriceCents(billableKm(rawKm), 'car');
   return finishPrice(cents, 0, RATE_CARD.priceFinishing).finalCents / 100;
@@ -49,16 +68,19 @@ async function main(): Promise<void> {
     ? new PostgresDistanceCacheRepo(createDb(requireEnv('DATABASE_URL')).db)
     : null;
 
-  const towns = KNOWN_PLACES;
+  // One group per physical point: same-coordinate display names bill one element between them.
+  const groups = groupTownsByCoords(KNOWN_PLACES, knownCoords, canonPlace);
   const rows: Array<{ pair: string; baked: number | null; live: number; dKm: number | null; dUsd: number | null; estimated: boolean }> = [];
   let billed = 0;
   let skipped = 0;
 
-  for (const from of towns) {
-    for (const to of towns) {
-      if (from === to) continue;
-      const fromKey = canonPlace(from);
-      const toKey = canonPlace(to);
+  for (const gFrom of groups) {
+    for (const gTo of groups) {
+      if (gFrom === gTo) continue;
+      const from = gFrom.names[0];
+      const to = gTo.names[0];
+      const fromKey = gFrom.keys[0];
+      const toKey = gTo.keys[0];
 
       let km: number;
       let durationMin: number;
@@ -74,10 +96,21 @@ async function main(): Promise<void> {
         km = live.km;
         durationMin = live.durationMin;
         estimated = live.estimated === true;
-        if (repo && !estimated) await repo.upsert({ fromKey, toKey, km, durationMin });
+      }
+      // Seed EVERY canon-key combination: live quoting looks the cache up by canonPlace
+      // (cachedMaps.ts), so 'nilaveli' and 'nilaveli beach' each need their own rows even
+      // though they were billed as one point. The already-hit pair is skipped, keeping the
+      // cached path write-free when a group has no aliases.
+      if (repo && !estimated) {
+        for (const fk of gFrom.keys) {
+          for (const tk of gTo.keys) {
+            if (cached && fk === fromKey && tk === toKey) continue;
+            await repo.upsert({ fromKey: fk, toKey: tk, km, durationMin });
+          }
+        }
       }
 
-      const baked = T.kmBetween(from, to);
+      const baked = bakedKm(T, gFrom, gTo);
       rows.push({
         pair: `${from} → ${to}`,
         baked,
@@ -92,6 +125,9 @@ async function main(): Promise<void> {
   rows.sort((a, b) => Math.abs(b.dUsd ?? 0) - Math.abs(a.dUsd ?? 0));
   console.log(`# Baked vs live distances — ${new Date().toISOString().slice(0, 10)}\n`);
   console.log(`${rows.length} pairs · ${billed} billed lookups · ${skipped} served from cache${SEED ? ' · seeded' : ''}\n`);
+  for (const g of groups.filter((x) => x.names.length > 1)) {
+    console.log(`Same point, billed once: ${g.names.join(' = ')}${SEED ? ' (cache seeded under every key)' : ''}\n`);
+  }
   console.log('| Pair | Baked km | Live km | Δ km | Δ price (car) | |');
   console.log('|---|---|---|---|---|---|');
   for (const r of rows) {

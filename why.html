@@ -170,7 +170,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p style="color:rgba(255,255,255,.9);max-width:46ch;margin:0 auto 1.5rem">Get a fixed price for any route in seconds &mdash; or message us and we&rsquo;ll plan it together.</p>
       <div class="flex gap" style="justify-content:center;flex-wrap:wrap">
         <a href="index.html#book" class="btn btn-cta btn-lg">Get a fixed price</a>
-        <a href="https://wa.me/94779669662" class="btn btn-wa btn-lg" id="cta-wa"></a>
+        <a href="https://wa.me/94779669662" class="btn btn-wa btn-lg" id="cta-wa" target="_blank" rel="noopener"></a>
       </div>
     </div>
   </div>
@@ -184,7 +184,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>
   initChrome({active:'why.html', footerCta:false, onDark:true});
   document.getElementById('cta-c').innerHTML=cmark(56,'#fff');
-  document.getElementById('cta-wa').innerHTML=ICON.wa+' Chat with us';
+  document.getElementById('cta-wa').innerHTML=ICON.wa+' Chat on WhatsApp';
   document.querySelectorAll('.btn').forEach(b=>{if(/Get a fixed price$|Plan a multi-stop trip$/.test(b.textContent.trim()))b.insertAdjacentHTML('beforeend',' '+ICON.arrow);});
   // live numbers from the same quote engine the booking flow uses
   (function(){
