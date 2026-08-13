@@ -865,7 +865,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
       <h2 id="pay-title">Payment</h2>
       <p class="sub" id="pay-sub">Pay securely to confirm. Free cancellation up to 24 hours before.</p>
-      <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from 30 travellers on Tripadvisor</p>
+      <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from <span data-ta-count>31</span> travellers on Tripadvisor</p>
       <div class="pay-summary-row" id="pay-due"></div>
       <div class="pay-methods">
         <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card &middot; via PayHere secure checkout</div>
@@ -1009,6 +1009,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </div>
 
 <script src="site.js"></script>
+<script src="ta-data.js"></script>
 <script src="routes-data.js"></script>
 <script src="transfers-data.js"></script>
 <!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
