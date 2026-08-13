@@ -88,41 +88,35 @@ jobs:
           fi
 
   web-e2e:
-    name: web-tests e2e (offline)
+    name: web-tests e2e (offline Playwright)
     runs-on: ubuntu-latest
-    # ADVISORY on arrival (2026-08-11): deliberately NOT added to branch protection's required
-    # checks yet. It fails honestly and shows red on the PR — note there is no continue-on-error
-    # here, because a job that reports green on failure would recreate the exact blind spot it
-    # exists to close. It just cannot block a merge until it has proven itself over real PRs on a
-    # GitHub runner, which is slower than any machine its worker cap was measured on. Promoting it
-    # is a branch-protection edit; this file does not change.
-    #
-    # Why it exists: until now NO workflow ran Playwright — the web-tests job above is vitest only
-    # — so a stale e2e spec merged green and sat red on main. That happened four times between
-    # 2026-07-21 and 2026-08-10 (PRs #92, #357/#360, #430), each found by a human running the suite
-    # by hand, twice re-diagnosed from scratch because nothing recorded that it was already broken.
+    # The suite is ~460 specs and runs in about 4 minutes locally; give it room on a cold runner
+    # without letting a hung browser burn the hour.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # Offline by construction: CH_E2E_API is unset, so the DB-gated specs (quote-tool, ops-ui)
-      # self-skip and this job never boots the API. It therefore has no DATABASE_URL of any kind —
-      # which is the point, given the 2026-07-17 incident where an e2e run wrote 45 rows to prod.
+      # The DEFAULT (offline) suite only. Google Maps, PayHere and the API are all stubbed
+      # per-test, so this needs no database and no secrets. The CH_E2E_API=1 specs — which drive
+      # the real ops dashboard against a live DB — stay out of CI for now: they need Postgres
+      # stood up and they carry their own known failures (docs/known-bugs.md, 2026-07-30).
+      - name: install web-tests deps
+        run: cd web-tests && npm ci
+      - name: install chromium
+        run: cd web-tests && npx playwright install --with-deps chromium
       - name: run the offline e2e suite
-        run: |
-          if [ -f web-tests/package.json ]; then
-            cd web-tests
-            npm ci
-            npx playwright install --with-deps chromium
-            # --workers=2, not the default: the heavy ops/mobile SPA specs fail intermittently
-            # under CPU contention at 4+ workers (a 600ms per-attempt toPass beat in the trip
-            # calendar is the usual victim, but the victim moves between runs). At 2 the full
-            # suite ran 421 passed / 0 flaky; playwright.config.js's retries: 1 absorbs the rest.
-            npx playwright test --workers=2
-          else
-            echo "No web-tests/ — skipping."
-          fi
+        run: cd web-tests && npx playwright test
+      # A failed run's traces are worth more than the log line that sent you looking for them.
+      - name: upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: web-tests/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   codegen-fresh:
     name: generated files in sync with the backend rate card
