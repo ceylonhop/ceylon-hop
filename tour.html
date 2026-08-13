@@ -55,7 +55,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .gtile:hover::after,.gtile:focus-visible::after{opacity:1}
   .gtile:focus-visible{outline:3px solid var(--teal,#0AB9B6);outline-offset:2px}
   .gcue{position:absolute;right:10px;bottom:10px;z-index:2;display:inline-flex;align-items:center;gap:6px;
-    padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.94);color:#0a7d6f;font-weight:700;
+    padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.94);color:var(--accent-deep,#24758A);font-weight:700;
     font-size:.74rem;box-shadow:0 2px 8px rgba(0,0,0,.18);opacity:0;transform:translateY(7px);
     transition:opacity .4s var(--ease,cubic-bezier(.22,.75,.3,1)),transform .4s var(--ease,cubic-bezier(.22,.75,.3,1))}
   .gtile:hover .gcue,.gtile:focus-visible .gcue{opacity:1;transform:none}
@@ -87,7 +87,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Stroked SVG chevrons, not text ‹ › — the glyphs render thin and sit off-centre in the
      circle, and every other icon on this page is an SVG of the same weight. */
   .ch-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:44px;border:0;
-    border-radius:50%;background:rgba(255,255,255,.94);color:#12312e;display:grid;place-items:center;padding:0;
+    border-radius:50%;background:rgba(255,255,255,.94);color:var(--ink,#3A3739);display:grid;place-items:center;padding:0;
     cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.28);
     transition:background .3s,transform .3s,opacity .3s}
   .ch-lb-nav svg{width:19px;height:19px;display:block}
