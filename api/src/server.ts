@@ -12,6 +12,8 @@ import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
+import { CachedMapsAdapter } from './adapters/cachedMaps';
+import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
@@ -58,7 +60,7 @@ const adapter =
         : undefined)
     : new FakePaymentAdapter();
 
-const maps = config.GOOGLE_MAPS_API_KEY
+const rawMaps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
   : new FakeMapsAdapter();
 
@@ -70,6 +72,12 @@ const email = config.RESEND_API_KEY
   : new FakeEmailAdapter();
 
 const { db, sql } = createDb(config.DATABASE_URL);
+
+// Distance cache (spec 2026-08-12): only wrap the REAL adapter. Keyless dev keeps the bare
+// fake — wrapping it would write synthetic distances into whatever database the env points at.
+const maps = config.GOOGLE_MAPS_API_KEY
+  ? new CachedMapsAdapter(rawMaps, new PostgresDistanceCacheRepo(db))
+  : rawMaps;
 
 // Apply pending DB migrations before serving, so deployed code never ships ahead of the
 // schema (the quote 500s of 2026-07-12, when 0014's columns were missing). Runs
