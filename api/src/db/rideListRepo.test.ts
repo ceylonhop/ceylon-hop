@@ -136,6 +136,25 @@ describe('InMemoryRideListRepo — filters & dedupe', () => {
     expect(ella[0].list.fromPlace).toBe('Ella');
   });
 
+  it('lists only gathering lists, filtered by to-city', async () => {
+    const repo = new InMemoryRideListRepo();
+    await repo.createList(baseList({ fromPlace: 'Ella', toPlace: 'Mirissa' }));
+    await repo.createList(baseList({ fromPlace: 'Kandy', toPlace: 'Ella', corridorId: 'hill-line' }));
+    const toElla = await repo.listOpen({ to: 'ella' });
+    expect(toElla).toHaveLength(1);
+    expect(toElla[0].list.toPlace).toBe('Ella');
+  });
+
+  it('combines from and to — the pair narrows to one corridor', async () => {
+    const repo = new InMemoryRideListRepo();
+    await repo.createList(baseList({ fromPlace: 'Ella', toPlace: 'Mirissa' }));
+    await repo.createList(baseList({ fromPlace: 'Ella', toPlace: 'Arugam Bay', corridorId: 'east-run' }));
+    expect(await repo.listOpen({ from: 'Ella' })).toHaveLength(2);
+    const pair = await repo.listOpen({ from: 'Ella', to: 'Arugam Bay' });
+    expect(pair).toHaveLength(1);
+    expect(pair[0].list.toPlace).toBe('Arugam Bay');
+  });
+
   it('filters by date window (this week)', async () => {
     const repo = new InMemoryRideListRepo();
     const now = new Date('2026-08-01T00:00:00Z');

@@ -450,9 +450,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="hero-scrim"></div>
   <div class="wrap hero-inner">
     <div class="hero-copy">
-    <!-- Review count appears here AND in the reviews section below (and in board.js TA_REVIEWS).
-         Keep all three in step; the figure must match the live Tripadvisor listing. -->
-    <a class="hero-badge" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 30 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· 30 reviews</span></a>
+    <!-- Review count comes from ta-data.js — change it there, not here. These stay as
+         static text so crawlers still read the figure; ta-data.js only refreshes them. -->
+    <a class="hero-badge" data-ta-count-label href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 31 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· <span data-ta-count>31</span> reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
       <p class="hero-note">Fixed prices · Free cancellation up to 24h before · No change fees</p>
@@ -593,7 +593,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
       <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
-      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ 30 reviews on Tripadvisor ↗</a>
+      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ <span data-ta-count>31</span> reviews on Tripadvisor ↗</a>
     </div>
     <div class="grid cols-3" id="reviews"></div>
   </div>
@@ -613,6 +613,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div data-footer></div>
 
 <script src="site.js"></script>
+<script src="ta-data.js"></script>
 <script src="tours-data.js"></script>
 <script src="transfers-data.js"></script>
 <script src="ch-map.js"></script>
