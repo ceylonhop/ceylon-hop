@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
-import { quoteRoutes } from './quote';
+import { quoteRoutes, engineRequestFor } from './quote';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
@@ -478,5 +478,55 @@ describe('public quote responses never leak the founder-only hot-zone annotation
     expect(updateRes.status).toBe(200);
     expect(JSON.stringify(updated)).not.toContain('hotZone');
     expect(updated.totalCents).toBeGreaterThan(plain.totalCents);
+  });
+});
+
+describe('engineRequestFor', () => {
+  it('flags a request built on an estimated distance instead of refusing it', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => ({ km: 100, durationMin: 140, estimated: true }),
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out).not.toBeNull();
+    expect(out!.estimated).toBe(true);
+    const { request } = out!;
+    if (request.product !== 'private') throw new Error('expected a private request');
+    const [firstLeg] = request.legs;
+    if (!('distanceKm' in firstLeg)) throw new Error('expected a PrivateLeg');
+    expect(firstLeg.distanceKm).toBe(100);
+  });
+
+  it('reports estimated=false when every leg resolved for real', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => ({ km: 100, durationMin: 140 }),
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out!.estimated).toBe(false);
+  });
+
+  it('returns null when a leg cannot be resolved at all', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => null,
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out).toBeNull();
   });
 });

@@ -49,43 +49,67 @@ const V2UpdateSchema = z.object({
   intent: WebQuoteIntentSchema,
 }).strict();
 
-async function engineRequestFor(intent: WebQuoteIntent, maps: MapsAdapter): Promise<QuoteRequest | null> {
+export interface ResolvedLeg { from: string; to: string; distanceKm: number; durationMin: number }
+export interface ResolvedIntent { request: QuoteRequest; estimated: boolean; legs: ResolvedLeg[] }
+
+export async function engineRequestFor(
+  intent: WebQuoteIntent,
+  maps: MapsAdapter,
+): Promise<ResolvedIntent | null> {
   if (intent.product === 'private') {
     const resolved = await Promise.all(
       intent.legs.map(async (leg) => ({ leg, distance: await maps.distance(leg.from, leg.to) })),
     );
-    if (resolved.some(({ distance }) => !distance || distance.estimated)) return null;
+    if (resolved.some(({ distance }) => !distance)) return null;
+    const estimated = resolved.some(({ distance }) => distance!.estimated === true);
+    const legs: ResolvedLeg[] = resolved.map(({ leg, distance }) => ({
+      from: leg.from,
+      to: leg.to,
+      distanceKm: distance!.km,
+      durationMin: distance!.durationMin,
+    }));
     return {
-      product: 'private',
-      vehicle: intent.vehicle,
-      pax: intent.pax,
-      bags: intent.bags,
-      legs: resolved.map(({ leg, distance }) => ({
-        from: leg.from,
-        to: leg.to,
-        distanceKm: distance!.km,
-      })),
-      extras: intent.extras,
+      estimated,
+      legs,
+      request: {
+        product: 'private',
+        vehicle: intent.vehicle,
+        pax: intent.pax,
+        bags: intent.bags,
+        legs: legs.map(({ from, to, distanceKm }) => ({ from, to, distanceKm })),
+        extras: intent.extras,
+      },
     };
   }
   const resolved = await Promise.all(
     intent.travelDays.map(async (day) => ({ day, distance: await maps.distance(day.from, day.to) })),
   );
-  if (resolved.some(({ distance }) => !distance || distance.estimated)) return null;
+  if (resolved.some(({ distance }) => !distance)) return null;
+  const estimated = resolved.some(({ distance }) => distance!.estimated === true);
+  const legs: ResolvedLeg[] = resolved.map(({ day, distance }) => ({
+    from: day.from,
+    to: day.to,
+    distanceKm: distance!.km,
+    durationMin: distance!.durationMin,
+  }));
   return {
-    product: 'chauffeur',
-    vehicle: intent.vehicle,
-    pax: intent.pax,
-    bags: intent.bags,
-    firstDate: intent.firstDate,
-    lastDate: intent.lastDate,
-    travelDays: resolved.map(({ day, distance }) => ({
-      date: day.date,
-      from: day.from,
-      to: day.to,
-      distanceKm: distance!.km,
-    })),
-    extras: intent.extras,
+    estimated,
+    legs,
+    request: {
+      product: 'chauffeur',
+      vehicle: intent.vehicle,
+      pax: intent.pax,
+      bags: intent.bags,
+      firstDate: intent.firstDate,
+      lastDate: intent.lastDate,
+      travelDays: resolved.map(({ day, distance }) => ({
+        date: day.date,
+        from: day.from,
+        to: day.to,
+        distanceKm: distance!.km,
+      })),
+      extras: intent.extras,
+    },
   };
 }
 
@@ -183,8 +207,10 @@ export function quoteRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
-    const engineRequest = await engineRequestFor(parsed.data, deps.maps);
-    if (!engineRequest) return c.json({ error: 'quote_unpriced' }, 422);
+    const resolved = await engineRequestFor(parsed.data, deps.maps);
+    // A LOCK is a commitment, so it still refuses an estimated distance — only /estimate may show one.
+    if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
+    const engineRequest = resolved.request;
     try {
       const card = await liveCard();
       const result = quote(engineRequest, card);
@@ -245,8 +271,10 @@ export function quoteRoutes(deps: {
     if (existing.revision !== parsed.data.revision) {
       return c.json({ error: 'stale_revision' }, 409);
     }
-    const engineRequest = await engineRequestFor(parsed.data.intent, deps.maps);
-    if (!engineRequest) return c.json({ error: 'quote_unpriced' }, 422);
+    const resolved = await engineRequestFor(parsed.data.intent, deps.maps);
+    // An UPDATE re-prices a locked quote, so it stays a commitment too — refuse an estimated distance.
+    if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
+    const engineRequest = resolved.request;
     try {
       const lockedRateCard = existing.rateCardJson as RateCard;
       const result = quote(engineRequest, lockedRateCard);
