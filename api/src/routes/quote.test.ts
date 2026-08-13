@@ -296,6 +296,17 @@ describe('public quote v2 estimate', () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     expect((await send(app as never, V2_PRIVATE)).status).toBe(404);
   });
+
+  it('rejects an intent with more legs than the billed-work cap', async () => {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true }));
+    const legs = Array.from({ length: 9 }, () => ({ from: 'Kandy', to: 'Ella' }));
+    const res = await app.request('/quote/v2/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...V2_PRIVATE, legs }),
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('POST /quote/lock', () => {
