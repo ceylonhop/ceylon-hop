@@ -6,6 +6,10 @@ import { test, expect } from '@playwright/test';
 // (mirroring the ops quote tool's "Dates out of order" flag). plan.js:outOfOrderFlags.
 
 import { futureIsoDate } from '../dates.js';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 /* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the suite go
    red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). Only the ORDERING

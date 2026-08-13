@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // Regression: arriving on the WHEN step via the ?step=dates deep-link (e.g. "Back from the
 // booking page") for a Google-only leg used to kill the date picker.

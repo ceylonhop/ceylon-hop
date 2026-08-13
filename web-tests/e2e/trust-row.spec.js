@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// index.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 /*
   The homepage trust strip carries five items and has almost no slack.

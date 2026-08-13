@@ -32,6 +32,11 @@ function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
+<script>
+/* Wake a cold API instance while the visitor reads — prices come from it. Fire-and-forget:
+   a failure here must never surface, and never blocks rendering. */
+(function(){try{fetch((window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com')+'/health',{method:'GET',cache:'no-store'}).catch(function(){})}catch(e){}})();
+</script>
 <script src="tweaks.js"></script>
 <style>
   /* themed, postcard hero rather than the flat teal page-head */
