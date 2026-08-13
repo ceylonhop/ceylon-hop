@@ -102,6 +102,22 @@ const COORDS: Record<string, [number, number]> = {
   'nilaveli beach': [8.7, 81.19],
   'nanu oya': [6.94, 80.77],
   thanthirimale: [8.42, 80.22],
+  dambulla: [7.86, 80.65],
+  udawalawe: [6.44, 80.89],
+  tissamaharama: [6.28, 81.29],
+  tangalle: [6.02, 80.79],
+  unawatuna: [6.01, 80.25],
+  pasikudah: [7.92, 81.56],
+  hatton: [6.89, 80.6],
+  'adam\'s peak': [6.81, 80.5],
+  wilpattu: [8.45, 80.05],
+  kalpitiya: [8.23, 79.77],
+  jaffna: [9.66, 80.02],
+  haputale: [6.77, 80.96],
+  kitulgala: [6.99, 80.41],
+  nilaveli: [8.7, 81.19],
+  ahangama: [5.97, 80.36],
+  hiriketiya: [5.96, 80.69],
 };
 
 // Display names for the known places (each normalizes to a COORDS key above). The internal quoting
@@ -112,6 +128,10 @@ export const KNOWN_PLACES: string[] = [
   'Arugam Bay', 'Trincomalee',
   // Multi-stop via-stops (Phase 2 §5 catalog pre-check).
   'Polonnaruwa', 'Habarana', 'Nilaveli Beach', 'Nanu Oya', 'Thanthirimale',
+  // Front-end catalogue parity (2026-08-12): every town transfers-data.js resolves.
+  'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
+  'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
+  'Nilaveli', 'Ahangama', 'Hiriketiya',
 ];
 
 const norm = (s: string): string => s.trim().toLowerCase();
