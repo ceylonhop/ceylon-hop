@@ -316,7 +316,8 @@
     mineCodes: new Set(), // lists the signed-in user is on
     manageTokens: {},     // code → manageToken (from create/join)
     fromOptions: [],      // union of from-names seen (filter select, never shrinks)
-    filter: { from: 'all', when: 'all', mine: false },
+    toOptions: [],        // ditto for drop-offs — the two selects narrow to one corridor
+    filter: { from: 'all', to: 'all', mine: false },
     detailId: null,
     pendingCredential: null,
     gisReady: false
@@ -649,11 +650,17 @@
     if (mc) mc.textContent = n;
   }
 
-  function rememberFromOptions(lists) {
-    var seen = {};
-    state.fromOptions.forEach(function (n) { seen[n] = true; });
-    lists.forEach(function (L) { if (L.from) seen[L.from] = true; });
-    state.fromOptions = Object.keys(seen).sort(function (a, b) { return a.localeCompare(b); });
+  function rememberPlaceOptions(lists) {
+    var seenFrom = {}, seenTo = {};
+    state.fromOptions.forEach(function (n) { seenFrom[n] = true; });
+    state.toOptions.forEach(function (n) { seenTo[n] = true; });
+    lists.forEach(function (L) {
+      if (L.from) seenFrom[L.from] = true;
+      if (L.to) seenTo[L.to] = true;
+    });
+    var abc = function (a, b) { return a.localeCompare(b); };
+    state.fromOptions = Object.keys(seenFrom).sort(abc);
+    state.toOptions = Object.keys(seenTo).sort(abc);
   }
 
   function renderFilters() {
@@ -672,19 +679,21 @@
       '<select id="f-from"><option value="all">Anywhere</option>' +
       state.fromOptions.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
       '</select></label>' +
-      '<label class="fsel"><span>When</span>' +
-      '<select id="f-when"><option value="all">Any time</option><option value="week">This week</option><option value="fortnight">Next 2 weeks</option></select></label>' +
+      '<label class="fsel"><span>Going to</span>' +
+      '<select id="f-to"><option value="all">Anywhere</option>' +
+      state.toOptions.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      '</select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
-      ((f.from !== 'all' || f.when !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
+      ((f.from !== 'all' || f.to !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
       countHtml;
-    var ff = document.getElementById('f-from'), fw = document.getElementById('f-when');
-    ff.value = f.from; fw.value = f.when;
+    var ff = document.getElementById('f-from'), ft = document.getElementById('f-to');
+    ff.value = f.from; ft.value = f.to;
     ff.addEventListener('change', function () { f.from = ff.value; f.mine = false; loadBoard(); });
-    fw.addEventListener('change', function () { f.when = fw.value; f.mine = false; loadBoard(); });
+    ft.addEventListener('change', function () { f.to = ft.value; f.mine = false; loadBoard(); });
     var fm = document.getElementById('f-mine');
     if (fm) fm.addEventListener('click', function () { if (f.mine) { f.mine = false; loadBoard(); } else showMine(); });
     var fc = document.getElementById('f-clear');
-    if (fc) fc.addEventListener('click', function () { f.from = 'all'; f.when = 'all'; f.mine = false; loadBoard(); });
+    if (fc) fc.addEventListener('click', function () { f.from = 'all'; f.to = 'all'; f.mine = false; loadBoard(); });
   }
 
   /* ---------------- board loads ---------------- */
@@ -709,12 +718,12 @@
     state.filter.mine = false;
     var qs = [];
     if (state.filter.from !== 'all') qs.push('from=' + encodeURIComponent(state.filter.from));
-    if (state.filter.when !== 'all') qs.push('when=' + encodeURIComponent(state.filter.when));
+    if (state.filter.to !== 'all') qs.push('to=' + encodeURIComponent(state.filter.to));
     var path = '/board' + (qs.length ? '?' + qs.join('&') : '');
     return apiGet(path).then(function (data) {
       var lists = ((data && data.lists) || []).map(normalizeList);
       lists.forEach(function (L) { state.byCode[L.code] = L; });
-      rememberFromOptions(lists);
+      rememberPlaceOptions(lists);
       state.lists = lists;
       state.loadFailed = false; // a good response clears a previous failure
       renderFilters();
@@ -724,13 +733,14 @@
       ev('view_item_list', {
         item_list_id: LIST_ID, item_list_name: 'Ride board',
         board_count: lists.length,
-        filter_from: state.filter.from, filter_when: state.filter.when
+        filter_from: state.filter.from, filter_to: state.filter.to
       });
     }).catch(function (e) {
       state.lists = [];
-      // state.fromOptions is deliberately NOT cleared: it accumulates across loads, and wiping
-      // it here collapsed the "Leaving from" dropdown back to "Anywhere" on a failed refresh —
-      // so a traveller who had filtered to their town silently lost the option to filter at all.
+      // state.fromOptions / state.toOptions are deliberately NOT cleared: they accumulate across
+      // loads, and wiping them here collapsed the place dropdowns back to "Anywhere" on a failed
+      // refresh — so a traveller who had filtered to their town silently lost the option to
+      // filter at all.
       state.loadFailed = true;
       renderFilters();
       grid.removeAttribute('aria-busy');
@@ -746,7 +756,7 @@
 
   function showMine() {
     if (!state.me) { toast('Sign in to see your rides', 'Join a ride first and it shows up here.'); return; }
-    state.filter.mine = true; state.filter.from = 'all'; state.filter.when = 'all';
+    state.filter.mine = true; state.filter.from = 'all'; state.filter.to = 'all';
     if (document.body.classList.contains('detail-open')) closeDetail();
     return apiGet('/board/mine').then(function (data) {
       var lists = ((data && data.lists) || []).map(normalizeList);

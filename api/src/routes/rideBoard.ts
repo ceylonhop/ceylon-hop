@@ -177,12 +177,13 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
   // ---- reads (public) ------------------------------------------------------
 
-  // GET /board?from=<place>&when=week|fortnight — open lists gathering names.
+  // GET /board?from=<place>&to=<place>&when=week|fortnight — open lists gathering names.
   r.get('/', async (c) => {
     const from = c.req.query('from')?.trim() || undefined;
+    const to = c.req.query('to')?.trim() || undefined;
     const whenRaw = c.req.query('when');
     const when: ListFilter['when'] = whenRaw === 'week' || whenRaw === 'fortnight' ? whenRaw : 'all';
-    const lists = await deps.rideLists.listOpen({ from, when });
+    const lists = await deps.rideLists.listOpen({ from, to, when });
     const viewer = c.get('customer')?.sub;
     return c.json({ lists: lists.map((l) => projectList(l, viewer)) });
   });
