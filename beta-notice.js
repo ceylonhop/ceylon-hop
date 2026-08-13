@@ -8,7 +8,12 @@
    cannot get rid of is worse than no modal at all, so it fails towards showing once and
    closing cleanly rather than towards being sticky. */
 (function (window, document, localStorage) {
-  var KEY = 'ceylonhop_beta_notice';
+  // Versioned so a redesigned notice can actually reach people who dismissed an
+  // earlier one — the unversioned key made the first dismissal permanent, and the
+  // postcard redesign (#440) never rendered for anyone who had clicked through the
+  // original. Bump the suffix when the notice changes enough to be worth re-showing.
+  var KEY = 'ceylonhop_beta_notice_v2';
+  try { localStorage.removeItem('ceylonhop_beta_notice'); } catch (e) {}
 
   function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function remember() { try { localStorage.setItem(KEY, 'dismissed'); } catch (e) {} }
