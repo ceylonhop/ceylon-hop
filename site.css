@@ -240,20 +240,26 @@ p{margin:0 0 1rem}
 .btn svg{width:18px;height:18px}
 .btn:active{transform:translateY(1px)}
 .btn-primary{background:var(--btn-accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
-.btn-primary:hover{background:var(--btn-accent-hover);transform:translateY(-2px)}
+.btn-primary:hover:not(:disabled){background:var(--btn-accent-hover);transform:translateY(-2px)}
 .btn-cta{background:var(--btn-cta);color:#fff;box-shadow:0 12px 26px -10px var(--cta)}
-.btn-cta:hover{background:var(--btn-cta-hover);transform:translateY(-2px)}
+.btn-cta:hover:not(:disabled){background:var(--btn-cta-hover);transform:translateY(-2px)}
 .btn-ghost{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-s);border:1px solid var(--line)}
-.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.btn-ghost:hover:not(:disabled){transform:translateY(-2px);box-shadow:var(--shadow)}
 .btn-light{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
-.btn-light:hover{transform:translateY(-2px)}
+.btn-light:hover:not(:disabled){transform:translateY(-2px)}
 .btn-wa{background:#0B7A44;color:#fff} /* was #25D366 — white on it was 1.98:1 */
 /* hover lifts the green a little without undoing the fix above: #1ebe5a was
    2.45:1, so hovering used to drop it straight back below the bar. */
-.btn-wa:hover{background:#15853F;transform:translateY(-2px)} /* 4.71:1 */
+.btn-wa:hover:not(:disabled){background:#15853F;transform:translateY(-2px)} /* 4.71:1 */
 .btn-lg{padding:1.05rem 2rem;font-size:1.02rem}
 .btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
 .btn-block{width:100%}
+/* One disabled look for every .btn. Until this existed each page invented its
+   own — five workarounds at five opacities (.45/.45/.5/.55/.6) — and any button
+   outside that list rendered fully live while inert. Attribute-driven only:
+   flows that keep an inert button CLICKABLE so a tap can explain itself
+   (plan's .cta-disabled, pay's .is-off) opt out by not setting disabled. */
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none;box-shadow:none}
 
 /* ---------- Pills / chips / badges ---------- */
 .pill{
