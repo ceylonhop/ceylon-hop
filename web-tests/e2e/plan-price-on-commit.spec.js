@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // A leg must be priced only once the traveller COMMITS a location (picks a suggestion or
 // blurs onto a real place) — never from half-typed text. Previously the recompute ran on

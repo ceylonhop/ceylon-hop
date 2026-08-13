@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // Trip-basics ribbon: the traveller pills replaced the old #pax select. These pin the
 // behaviours that used to flow through the select — the pax gate, the >3-travellers

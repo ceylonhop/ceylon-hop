@@ -7,6 +7,9 @@ import { rateLockUntil } from '../quote/rateLock';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { MapsAdapter } from '../adapters/maps';
 import type { RateCard } from '../quote/rateCard';
+import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { liveRateCard } from '../quote/liveCard';
+import { stripZoneMeta } from '../quote/stripZoneMeta';
 import {
   WebQuoteIntentSchema,
   digestAccessToken,
@@ -46,44 +49,76 @@ const V2UpdateSchema = z.object({
   intent: WebQuoteIntentSchema,
 }).strict();
 
-async function engineRequestFor(intent: WebQuoteIntent, maps: MapsAdapter): Promise<QuoteRequest | null> {
+export interface ResolvedLeg { from: string; to: string; distanceKm: number; durationMin: number }
+export interface ResolvedIntent { request: QuoteRequest; estimated: boolean; legs: ResolvedLeg[] }
+
+export async function engineRequestFor(
+  intent: WebQuoteIntent,
+  maps: MapsAdapter,
+): Promise<ResolvedIntent | null> {
   if (intent.product === 'private') {
     const resolved = await Promise.all(
       intent.legs.map(async (leg) => ({ leg, distance: await maps.distance(leg.from, leg.to) })),
     );
-    if (resolved.some(({ distance }) => !distance || distance.estimated)) return null;
+    if (resolved.some(({ distance }) => !distance)) return null;
+    const estimated = resolved.some(({ distance }) => distance!.estimated === true);
+    const legs: ResolvedLeg[] = resolved.map(({ leg, distance }) => ({
+      from: leg.from,
+      to: leg.to,
+      distanceKm: distance!.km,
+      durationMin: distance!.durationMin,
+    }));
     return {
-      product: 'private',
-      vehicle: intent.vehicle,
-      pax: intent.pax,
-      bags: intent.bags,
-      legs: resolved.map(({ leg, distance }) => ({
-        from: leg.from,
-        to: leg.to,
-        distanceKm: distance!.km,
-      })),
-      extras: intent.extras,
+      estimated,
+      legs,
+      request: {
+        product: 'private',
+        vehicle: intent.vehicle,
+        pax: intent.pax,
+        bags: intent.bags,
+        legs: legs.map(({ from, to, distanceKm }) => ({ from, to, distanceKm })),
+        extras: intent.extras,
+      },
     };
   }
   const resolved = await Promise.all(
     intent.travelDays.map(async (day) => ({ day, distance: await maps.distance(day.from, day.to) })),
   );
-  if (resolved.some(({ distance }) => !distance || distance.estimated)) return null;
+  if (resolved.some(({ distance }) => !distance)) return null;
+  const estimated = resolved.some(({ distance }) => distance!.estimated === true);
+  const legs: ResolvedLeg[] = resolved.map(({ day, distance }) => ({
+    from: day.from,
+    to: day.to,
+    distanceKm: distance!.km,
+    durationMin: distance!.durationMin,
+  }));
   return {
-    product: 'chauffeur',
-    vehicle: intent.vehicle,
-    pax: intent.pax,
-    bags: intent.bags,
-    firstDate: intent.firstDate,
-    lastDate: intent.lastDate,
-    travelDays: resolved.map(({ day, distance }) => ({
-      date: day.date,
-      from: day.from,
-      to: day.to,
-      distanceKm: distance!.km,
-    })),
-    extras: intent.extras,
+    estimated,
+    legs,
+    request: {
+      product: 'chauffeur',
+      vehicle: intent.vehicle,
+      pax: intent.pax,
+      bags: intent.bags,
+      firstDate: intent.firstDate,
+      lastDate: intent.lastDate,
+      travelDays: resolved.map(({ day, distance }) => ({
+        date: day.date,
+        from: day.from,
+        to: day.to,
+        distanceKm: distance!.km,
+      })),
+      extras: intent.extras,
+    },
   };
+}
+
+// D9: the founder-only "Ella premium +15%" zone annotation (meta.hotZone) is a margin-class
+// disclosure, same as marginEstimateCents above — strip it from every line item before a result
+// reaches an unauthenticated customer. internalQuote.ts strips the same field for non-margin:view
+// ops roles via the same stripZoneMeta().
+function publicLineItems(lineItems: ReturnType<typeof quote>['lineItems']) {
+  return lineItems.map((li) => ({ ...li, meta: stripZoneMeta(li.meta) }));
 }
 
 function publicV2(saved: Awaited<ReturnType<QuoteRepo['get']>>, result: ReturnType<typeof quote>) {
@@ -96,6 +131,7 @@ function publicV2(saved: Awaited<ReturnType<QuoteRepo['get']>>, result: ReturnTy
     revision: saved.revision,
     expiresAt: saved.rateLockedUntil,
     ...pub,
+    lineItems: publicLineItems(pub.lineItems),
   };
 }
 
@@ -105,18 +141,23 @@ export function quoteRoutes(deps: {
   maps?: MapsAdapter;
   v2Enabled?: boolean;
   now?: () => Date;
+  zones?: ZonesRepo;
 } = {}) {
+  // No repo injected => an empty in-memory one => zero active zones => pricing identical to today.
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+
   const r = new Hono();
   r.post('/', async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = QuoteSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     try {
-      const result = quote(parsed.data as QuoteRequest);
+      const result = quote(parsed.data as QuoteRequest, await liveCard());
       const isInternal = !!deps.internalKey && c.req.header('x-internal-key') === deps.internalKey;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
-      return c.json(isInternal ? result : pub, 200);
+      return c.json(isInternal ? result : { ...pub, lineItems: publicLineItems(pub.lineItems) }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
@@ -135,23 +176,48 @@ export function quoteRoutes(deps: {
     if (!parsed.success) return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     try {
       const req = parsed.data as QuoteRequest;
-      const result = quote(req);
+      const card = await liveCard();
+      const result = quote(req, card);
       const saved = await deps.quotes.save({
         channel: 'web',
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
-        rateCardVersion: RATE_CARD.version,
+        rateCardVersion: card.version,
         marginCents: result.marginEstimateCents ?? null,
         request: { engine: req },
         result,
-        rateCardJson: RATE_CARD,
+        rateCardJson: card,
         rateLockedUntil: rateLockUntil(new Date()),
       });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
-      return c.json({ quoteId: saved.id, reference: saved.reference, rateLockedUntil: saved.rateLockedUntil, ...pub }, 201);
+      return c.json({ quoteId: saved.id, reference: saved.reference, rateLockedUntil: saved.rateLockedUntil, ...pub, lineItems: publicLineItems(pub.lineItems) }, 201);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
+      return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
+    }
+  });
+
+  // Price an intent WITHOUT persisting anything — the customer-side twin of the ops tool's
+  // /estimate (vs /save). Rendering a price must never write a quotes row. Unlike /v2/lock this
+  // will return a price built on an estimated distance, flagged so the page can label it and
+  // checkout can refuse it.
+  r.post('/v2/estimate', async (c) => {
+    if (!deps.v2Enabled) return c.notFound();
+    if (!deps.maps) return c.json({ error: 'not_available' }, 501);
+    const parsed = WebQuoteIntentSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+    }
+    const resolved = await engineRequestFor(parsed.data, deps.maps);
+    if (!resolved) return c.json({ error: 'quote_unpriced' }, 422);
+    try {
+      const result = quote(resolved.request, await liveCard());
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { marginEstimateCents, ...pub } = result;
+      return c.json({ ...pub, lineItems: publicLineItems(pub.lineItems), estimated: resolved.estimated, legs: resolved.legs }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
@@ -165,10 +231,13 @@ export function quoteRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
-    const engineRequest = await engineRequestFor(parsed.data, deps.maps);
-    if (!engineRequest) return c.json({ error: 'quote_unpriced' }, 422);
+    const resolved = await engineRequestFor(parsed.data, deps.maps);
+    // A LOCK is a commitment, so it still refuses an estimated distance — only /estimate may show one.
+    if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
+    const engineRequest = resolved.request;
     try {
-      const result = quote(engineRequest);
+      const card = await liveCard();
+      const result = quote(engineRequest, card);
       const now = deps.now?.() ?? new Date();
       const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const accessToken = randomBytes(32).toString('base64url');
@@ -178,11 +247,11 @@ export function quoteRoutes(deps: {
         vehicle: 'vehicle' in engineRequest ? engineRequest.vehicle : null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
-        rateCardVersion: RATE_CARD.version,
+        rateCardVersion: card.version,
         marginCents: result.marginEstimateCents ?? null,
         request: { v: 2, intent: parsed.data, engine: engineRequest },
         result,
-        rateCardJson: RATE_CARD,
+        rateCardJson: card,
         rateLockedUntil: expiresAt,
         intent: parsed.data,
         intentFingerprint: fingerprintIntent(parsed.data),
@@ -226,8 +295,10 @@ export function quoteRoutes(deps: {
     if (existing.revision !== parsed.data.revision) {
       return c.json({ error: 'stale_revision' }, 409);
     }
-    const engineRequest = await engineRequestFor(parsed.data.intent, deps.maps);
-    if (!engineRequest) return c.json({ error: 'quote_unpriced' }, 422);
+    const resolved = await engineRequestFor(parsed.data.intent, deps.maps);
+    // An UPDATE re-prices a locked quote, so it stays a commitment too — refuse an estimated distance.
+    if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
+    const engineRequest = resolved.request;
     try {
       const lockedRateCard = existing.rateCardJson as RateCard;
       const result = quote(engineRequest, lockedRateCard);

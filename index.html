@@ -33,6 +33,11 @@ function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
+<script>
+/* Wake a cold API instance while the visitor reads — prices come from it. Fire-and-forget:
+   a failure here must never surface, and never blocks rendering. */
+(function(){try{fetch((window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com')+'/health',{method:'GET',cache:'no-store'}).catch(function(){})}catch(e){}})();
+</script>
 <script src="tweaks.js"></script>
 <script src="datepicker.js"></script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94779669662","priceRange":"$$","sameAs":["https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html"]}</script>

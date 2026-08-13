@@ -31,7 +31,7 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
             .strict(),
         )
         .min(1)
-        .max(16),
+        .max(8), // Each leg is a billed distance lookup, and the per-IP limiter counts REQUESTS, not lookups. Capping legs is what bounds the money one allowed request can spend (2026-08-12).
       extras: Extras,
     })
     .strict(),
@@ -55,7 +55,7 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
             .strict(),
         )
         .min(1)
-        .max(31),
+        .max(14), // Each day is a billed distance lookup, and the per-IP limiter counts REQUESTS, not lookups. Capping travelDays is what bounds the money one allowed request can spend (2026-08-12).
       extras: Extras,
     })
     .strict(),
