@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // A discontinuous itinerary (a leg's drop-off ≠ the next leg's pick-up) is the traveller's
 // choice — they'll arrange that stretch themselves (a train, their own transport). The planner
