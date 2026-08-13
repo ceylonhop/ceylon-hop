@@ -764,9 +764,9 @@ function shortPlaceLabel(place){
 
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
-  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
+  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0;
   state.legs.forEach(l=>{
-    if(l.type==='stay'){ stayNights+=(l.nights||0); return; }
+    if(l.type==='stay'){ return; }
     transferLegs++;
     const km=legKm(l.from,l.to);
     if(km!=null){ totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
@@ -785,9 +785,9 @@ function updateSummary(opts={}){
   // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
-  // "None" read as "this trip has no nights", when it only means no overnight stop has been ADDED
-  // yet. A bare 0 matches its sibling stats (Places 9, Transfer legs 8) and fits the narrow cell.
-  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : '0');
+  // No Nights stat: it counted only nights on explicit stay-put cards, so a pure transfer plan
+  // showed a permanent 0 beside "Hotels are your own" and read as "this trip has no nights".
+  // Nights still live on the stay cards and as the `3n` badges in the route strip.
   setStat('st-legs', String(transferLegs));
   setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
