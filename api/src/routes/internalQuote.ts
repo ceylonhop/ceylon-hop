@@ -1628,11 +1628,17 @@ export function internalQuoteRoutes(deps: {
       }
     }
     // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
-    // NOTE (plan 2026-08-11): this mail is deliberately NOT yet suppressed for a quote its
-    // submitter could self-approve. Suppressing it before the ops UI offers the Approve button
-    // would strand qualifying quotes in pending_review with nobody told — silently. It ships with
-    // Task 4, the UI, and not a step earlier.
-    if (body.status === 'pending_review' && deps.email) {
+    // Silent when the submitter can approve this quote themselves (plan 2026-08-11): `ready` is
+    // reachable only from `pending_review`, so an ops self-approval MUST pass through here, and
+    // mailing it asks the founder to action something ops resolves seconds later. Every quote ops
+    // CANNOT self-approve still mails — that is the case the notification exists for.
+    //
+    // Deliberately shipped WITH the UI (Task 4) and not with the gate (Task 2): silencing it while
+    // ops still had no Approve button would have left qualifying quotes sitting in pending_review
+    // with nobody told at all. Noise is recoverable; silence is not.
+    const submitterCanApproveItself =
+      can(c.get('identity').role, 'quote:approve_simple') && canOpsSelfApprove(updated);
+    if (body.status === 'pending_review' && deps.email && !submitterCanApproveItself) {
       for (const u of approverOpsUsers(deps.auth.opsUsers)) {
         if (u.email === actor.toLowerCase()) continue;
         try {
