@@ -3,7 +3,7 @@
    ============================================================ */
 mountWA();
 document.getElementById('bk-brand').innerHTML = cmark(30,'var(--accent)') + '<span>Ceylon Hop</span>';
-document.getElementById('conf-wa').innerHTML = ICON.wa + ' Message us on WhatsApp';
+document.getElementById('conf-wa').innerHTML = ICON.wa + ' Chat on WhatsApp';
 
 // Pre-warm the API. The free hosting tier spins the service down when idle and a
 // cold boot can take ~30s — firing a health ping on page load means it's usually
