@@ -166,8 +166,8 @@ test('leg cards stay readable in the mid-width pane band (the "Colo…" bug)', a
 // leaves the row at height 0, and it fails 4/4 at --retries=0 solo, at --workers=1, both before
 // and after the estimate-stub fix. It is a real defect (possibly the app's hover, not the test),
 // not the flake that fix addressed. Marked fixme rather than deleted or left red: the offline
-// suite now gates CI, and one known-red test would either block every PR or teach everyone to
-// ignore a red gate. Un-fixme it with the fix.
+// suite now runs on every PR (#438), and one permanently-red test in an advisory job is how a
+// team learns to ignore the job. Un-fixme it with the fix.
 test.fixme('the actions-only toolbelt collapses at rest and expands on hover', async ({ page }) => {
   // Owner call 2026-08-08: at rest the tools row's reserved blank band read as
   // wasted space at the foot of every card — so an ACTIONS-ONLY row now gives
