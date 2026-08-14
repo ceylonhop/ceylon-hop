@@ -3,8 +3,8 @@
 // template engine. Nothing here carries cost/margin; callers pass sell figures only.
 
 export const TEAL_DEEP = '#24758A'; // the rebrand's text-safe deep accent (--blue-deep); old #0a7d6f is retired
-export const INK = '#1b1b1b';
-export const MUTED = '#6b7280';
+export const INK = '#3A3739'; // Bristol Black (--ink) — was a one-off #1b1b1b
+export const MUTED = '#6c6a6b'; // --ink-soft — was Tailwind gray-500
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
 
 export function esc(s: string): string {
@@ -34,7 +34,7 @@ export function detailTable(rows: [string, string][]): string {
 export function ctaBlock(label: string, href: string, fallback: string): string {
   return href
     ? `<p style="margin:0"><a href="${esc(href)}" style="background:${TEAL_DEEP};color:#fff;` +
-        `text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block;font-weight:500">${esc(label)}</a></p>`
+        `text-decoration:none;padding:10px 20px;border-radius:999px;display:inline-block;font-weight:700">${esc(label)}</a></p>`
     : `<p style="margin:0;color:${MUTED};font-size:14px">${esc(fallback)}</p>`;
 }
 
