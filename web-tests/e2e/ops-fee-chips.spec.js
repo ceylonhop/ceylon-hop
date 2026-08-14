@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Fees as inline toggle chips (2026-08-01): the sightseeing/waiting/safari-wait fees are
 // toggle chips ON the leg tools row — one click, price visible at the point of decision.
@@ -30,6 +31,7 @@ async function stubOps(page) {
   });
   const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   // Rate card WITH extras — the chips read their display prices from here.

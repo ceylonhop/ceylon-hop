@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Drives the REAL ops quote view (api/src/routes/ops-ui.html) with a fully stubbed API and
 // Google, so it runs on the default offline webServer (serve-booking.js) with NO database —
@@ -41,6 +42,7 @@ async function stubOps(page) {
 
   // Catch-all FIRST (Playwright uses the last-registered matching route), then specifics.
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) =>
     r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));

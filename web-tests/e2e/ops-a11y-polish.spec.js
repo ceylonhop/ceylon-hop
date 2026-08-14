@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 import { futureIsoDate } from '../dates.js';
 
@@ -37,6 +38,7 @@ async function stubShell(page) {
   });
   const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) =>
     r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([BOOKING])));
