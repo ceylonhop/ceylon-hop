@@ -514,8 +514,17 @@ function renderRouteMap(){
       onRoute: ({km, durationMin}) => {
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
-        // summary total always matches the route actually shown on the map.
-        if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice && !state.locTooFar){
+        // summary total always matches the route actually shown on the map. Once the engine has
+        // actually DELIVERED an estimate this session, its own figure already prices the real
+        // route server-side (its intent carries place names, never a client-measured distance —
+        // Global Constraints), so this local heads-up would just double the engine-raise notice
+        // for the same drift. CH_PRICING.available() alone is the wrong gate here: it stays true
+        // on a network error or timeout (only a 404 — flag off — latches it false), so gating on
+        // it would silently drop the local notice in exactly the world where the local formula is
+        // still the one setting the price. engineEst is only ever set by a successful adopt
+        // (adoptEngineEstimate), so "has it ever been set" is "has the engine ever answered".
+        const engineHandlesReprice = window.CH_PRICING && engineEst != null;
+        if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice && !state.locTooFar && !engineHandlesReprice){
           const dec = T.repriceDecision(state.anchorKm, km, unit, vehicleKey);
           state.routeKm = km;
           if(dec.action==='confirm'){
@@ -926,6 +935,21 @@ function ensureRepriceEl(){
   }
   return el;
 }
+// The engine-raise notice (Task 3) can be triggered from any step — a traveller count change on
+// the Travellers step, a re-picked spot on Where — unlike the local repriceDecision notice above,
+// which only ever fires from the Where step's own map. It needs a home that's visible no matter
+// which step is open, so it lives beside the running total in the persistent summary sidebar
+// rather than beside loc-wrap.
+function ensureEngineRepriceEl(){
+  let el=document.getElementById('engine-reprice-note');
+  if(!el){
+    el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note';
+    const total=document.querySelector('#summary .s-total');
+    if(total && total.parentNode) total.parentNode.insertBefore(el, total.nextSibling);
+    else { const summary=document.getElementById('summary'); if(summary) summary.appendChild(el); }
+  }
+  return el;
+}
 function renderRepriceNote(){
   const far=state.locTooFar;
   // A spot outside its area is a hard stop — it takes over the notice and blocks Continue.
@@ -942,13 +966,30 @@ function renderRepriceNote(){
       '</div>';
     return;
   }
-  let el=document.getElementById('reprice-note');
   const p=state.pendingReprice;
-  if(!p){ if(el) el.remove(); return; }
+  // Only one of the two notices is ever relevant at a time (the onRoute handler that sets the
+  // local shape is itself gated off once CH_PRICING is available — see renderRouteMap), but
+  // clean up whichever one is stale so an old notice can never linger under the other's id.
+  const localEl=document.getElementById('reprice-note');
+  const engineEl=document.getElementById('engine-reprice-note');
+  if(!p || p.engineRaise){ if(localEl) localEl.remove(); }
+  if(!p || !p.engineRaise){ if(engineEl) engineEl.remove(); }
+  if(!p) return;
+  if(p.engineRaise){
+    const eEl=ensureEngineRepriceEl();
+    const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
+    eEl.innerHTML =
+      '<b>Your price has been updated.</b> '+
+      'Based on your latest details, your total is now '+toAmt+' (it was '+fromAmt+').'+
+      '<div class="rn-actions">'+
+        '<button type="button" class="btn btn-primary btn-sm" onclick="acceptReprice()">Got it — use '+toAmt+'</button>'+
+      '</div>';
+    return;
+  }
   const newPrice = p.prices[vehicleKey];
   const shownCurrentPrice = window.TRANSFERS.finishPrice(unit);
   const shownNewPrice = window.TRANSFERS.finishPrice(newPrice);
-  el=ensureRepriceEl(); el.className='reprice-note';
+  const el=ensureRepriceEl(); el.className='reprice-note';
   el.innerHTML =
     '<b>Heads up — this trip is longer than the standard route.</b> '+
     'Your exact stops add about '+p.extraKm+' km, so the fixed price updates from '+
@@ -960,6 +1001,13 @@ function renderRepriceNote(){
 }
 window.acceptReprice=function(){
   const p=state.pendingReprice; if(!p) return;
+  if(p.engineRaise){
+    adoptEngineEstimate(p.est, p.sig);
+    state.pendingReprice=null;
+    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:calcTotal()});
+    render(); checkWhere();
+    return;
+  }
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
   if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
@@ -1153,9 +1201,162 @@ function isDeposit(){
   return false;
 }
 
+// Estimate-adoption slot (Phase 3 — mirrors adoptServerQuote just above): the local formula
+// stays the instant first paint and the no-backend fallback, but once a live estimate from
+// POST /quote/v2/estimate lands for the CURRENT itinerary, calcTotal() prefers it. Unlike
+// serverQuote (set once, after the booking exists, and never re-computed), engineEst tracks the
+// intent it was priced against — a figure for an itinerary the customer has since changed must
+// never win, so calcTotal() only trusts it while the signature still matches. No fetch wiring
+// yet (Task 3): this task only builds the intent and the adoption slot calcTotal() reads from.
+let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
+let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
+
+// The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
+// distance (Global Constraints: the intent carries names, distances come back on the response) —
+// so a routing change on the API side is never shadowed by a stale km the browser had on hand.
+// null means "nothing to price": shared seats run their own fixed-schedule local formula
+// (Global Constraints) and never call the estimate endpoint.
+function buildEstimateIntent(){
+  if(isShared) return null;
+  const vehicle = (vehicleKey==='van') ? 'van' : 'car';
+  const pax = state.ad + state.ch;
+  const bags = state.bags;
+  const extras = Array.from(state.addons);
+  if(isTrip){
+    if(state.svc==='chauffeur'){
+      // Chauffeur trips are billed by the calendar span the car is kept, not per leg (see
+      // chauffeurFee/chauffeurDistanceCharge below) — so the intent carries the span
+      // (firstDate/lastDate) plus the dated travel days, the same tripDates array the trip
+      // payload derives its own day count from (createApiBooking, :1765-1777). A gap wire is
+      // the traveller's own arrangement and never enters a priced itinerary (tripQuoteWithKms, :110).
+      const dated = tripDates.filter(d=>(d||'').trim());
+      const firstDate = dated.length ? dated[0] : undefined;
+      const lastDate = dated.length ? dated[dated.length-1] : undefined;
+      const travelDays = [];
+      for(let i=0;i<tripStops.length-1;i++){
+        if(tripGaps.has(i)) continue;
+        const date = (tripDates[i]||'').trim();
+        if(!date) continue; // an undated wire has no day to attach to the estimate
+        travelDays.push({ date, from: tripStops[i], to: tripStops[i+1] });
+      }
+      return { product:'chauffeur', vehicle, pax, bags, firstDate, lastDate, travelDays, extras };
+    }
+    // Trip + private: one leg per non-gap wire (mirrors tripQuoteWithKms, :110).
+    const legs = [];
+    for(let i=0;i<tripStops.length-1;i++){
+      if(tripGaps.has(i)) continue;
+      legs.push({ from: tripStops[i], to: tripStops[i+1] });
+    }
+    return { product:'private', vehicle, pax, bags, legs, extras };
+  }
+  // Single transfer: the same place strings the booking payload sends (createApiBooking,
+  // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
+  const legs = [{ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] }];
+  const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
+  const time = (state.flexTime || !state.dep) ? undefined : state.dep;
+  return { product:'private', vehicle, pax, bags, legs, extras, date, time };
+}
+// A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
+// handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
+// called fresh rather than cached across state mutations — that keeps calcTotal() honest the
+// instant a pax/vehicle/route change lands, ahead of the next re-estimate.
+function intentSig(intent){ return JSON.stringify(intent); }
+function currentIntentSig(){ return intentSig(buildEstimateIntent()); }
+// Called once a live estimate settles (Task 3 wires the fetch); sig is the intent signature it
+// was requested for, so an out-of-order or now-stale response can never silently override the total.
+function adoptEngineEstimate(est, sig){
+  if(!est) return;
+  engineEst = {
+    totalCents: est.totalCents,
+    amountDueNowCents: est.amountDueNowCents,
+    estimated: est.estimated,
+    legs: est.legs,
+    intentSig: sig
+  };
+}
+
+// engineEst that is actually priced against the itinerary as it stands RIGHT NOW — the same
+// guard calcTotal() applies, exposed so render()/the pay gate don't each re-derive it.
+function currentEngineEst(){
+  return (engineEst && engineEst.intentSig===currentIntentSig()) ? engineEst : null;
+}
+
+// Task 5: the rate-lock request (createApiBooking's `lockReq`, sent to POST /quote/lock) used to
+// seed every leg's distanceKm from TRANSFERS.kmBetween, a static client-side table. A live engine
+// estimate already carries a real measured distanceKm per leg (Global Constraints: the estimate
+// RESPONSE, never a client distance, is what feeds the lock) — prefer that when there is a fresh
+// one for THIS leg, matched by from/to. A stale or absent estimate (flag off, or the estimate
+// hasn't caught up with the current itinerary) falls back to kmBetween exactly as before the
+// engine existed, so the flag-off world stays byte-identical to today.
+function lockLegKm(from, to){
+  const est = currentEngineEst();
+  if(est && Array.isArray(est.legs)){
+    const match = est.legs.find(function(l){ return l && l.from===from && l.to===to; });
+    if(match && typeof match.distanceKm === 'number') return match.distanceKm;
+  }
+  return (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(from, to) || 0) : 0;
+}
+
+// ---- fetch wiring (Task 3) ----
+// The sig we last ASKED CH_PRICING about. render() runs on nearly every mutation in this file
+// (every stepper click, every keystroke that touches state), so without this guard we'd fire a
+// fresh CH_PRICING.estimate() call every single repaint even when nothing pricing-relevant
+// changed — ch-pricing.js's own 400ms debounce absorbs bursts of calls for the SAME intent, but
+// it can't know two calls in a row are for the same intent unless we only call it when the
+// intent actually moved.
+let lastRequestedSig = null;
+function requestEstimate(){
+  if(!window.CH_PRICING || isShared) return; // shared seats price locally only (Global Constraints)
+  const intent = buildEstimateIntent();
+  if(!intent) return; // null = nothing priceable yet
+  const sig = intentSig(intent);
+  if(sig === lastRequestedSig) return;
+  lastRequestedSig = sig;
+  estimatePending = true;
+  window.CH_PRICING.estimate(intent, {
+    onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
+    // Flag off, a network hiccup, or a timeout — the local formula is already what's on
+    // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
+    // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
+    onUnavailable: function(){ estimatePending = false; render(); }
+  });
+}
+
+// Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
+// must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
+// renderRepriceNote already runs for the local repriceDecision path; a same-or-lower figure is
+// exactly what the customer would expect a live quote to look like, so it lands immediately.
+function handleEngineEstimate(est, sig){
+  // The customer may have moved on to a different itinerary while this was in flight (their next
+  // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
+  // sig that's no longer current is stale and must not touch what's on screen.
+  if(sig !== currentIntentSig()){ render(); return; }
+  const priorCents = engineEst ? engineEst.totalCents : null;
+  if(priorCents!=null && est.totalCents > priorCents){
+    state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+    render();
+    checkWhere();
+    return;
+  }
+  adoptEngineEstimate(est, sig);
+  state.pendingReprice = null; // a fresh figure supersedes any stale reprice notice too
+  render();
+  checkWhere();
+}
+
 // ---- totals + render ----
 function calcTotal(){
   if(serverQuote) return serverQuote.total;
+  // An engine raise awaiting acknowledgement HOLDS at the figure the customer was last shown —
+  // the same "never move the number until they say so" rule the local repriceDecision notice
+  // enforces. Without this, the moment the intent sig moves past what engineEst was adopted for
+  // (which is exactly what triggers a raise in the first place — see handleEngineEstimate), the
+  // very next check below would fall straight past the stale engineEst to the LOCAL FORMULA —
+  // an unrelated third figure the customer was never shown at all.
+  if(state.pendingReprice && state.pendingReprice.engineRaise) return state.pendingReprice.fromCents/100;
+  // A live engine estimate outranks the local formula, but only while it was priced against
+  // the itinerary as it stands right now — a stale figure for a changed trip must never show.
+  if(engineEst && engineEst.intentSig===currentIntentSig()) return engineEst.totalCents/100;
   // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
   // charge across the whole trip — not the per-leg fares (which carry minimum floors)
   let t = (isTrip && state.svc==='chauffeur')
@@ -1225,6 +1426,7 @@ function setNum(el, next){
   else el.textContent = next;
 }
 function render(){
+  requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   // live route from the actual entered locations
   const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = state.locFrom || r.stops[0];
@@ -1289,6 +1491,11 @@ function render(){
       // an AC van (6 seats · 6 bags) clears most overflows from a car — offer the upgrade
       const vanFixes = vehicleKey==='car' && pax<=VEH_CAP.van.pax && state.bags<=VEH_CAP.van.bags;
       if(vanFixes){
+        // vanPrice() is the local formula, not the adopted engine total — this note has to render
+        // instantly as the traveller/bag steppers are clicked, and a round trip to /quote/v2/estimate
+        // for every click would make the capacity warning lag behind the input. It's a comparison
+        // figure only ("about this much more"), so it's marked ~ rather than presented as the price
+        // the switch will actually charge — switchToVan() itself re-estimates through the engine.
         const vanP = vanPrice();
         const reason = (paxOver && bagsOver)
           ? `${pax} travellers and ${state.bags} bags won’t fit an AC car`
@@ -1296,19 +1503,21 @@ function render(){
               ? `${pax} travellers won’t fit an AC car (up to ${VEH_CAP.car.pax})`
               : `${state.bags} large bags won’t fit an AC car (up to ${VEH_CAP.car.bags})`);
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
-          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${money(vanP)}`:''}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ~${money(vanP)}`:''}</button>`;
       } else {
         const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
         note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;
       }
     } else if(perVehicle && vehicleKey==='van' && pax<=VEH_CAP.car.pax && state.bags<=VEH_CAP.car.bags){
-      // party now fits an AC car again — recommend the cheaper vehicle to save money
+      // party now fits an AC car again — recommend the cheaper vehicle to save money.
+      // Same reasoning as the van-upsell note above: carPrice()/vehPrices.van are the local
+      // formula's instant figures, kept only for this comparison (not the total) — hence the ~.
       const carP=carPrice(), vanP=(vehPrices?vehPrices.van:unit);
       const save=(carP!=null && vanP!=null)?vanP-carP:null;
       if(carP!=null && save!=null && save>0){
         note.className='cap-note show ok';
         note.innerHTML=`<b>An AC car fits your group</b> — ${pax} traveller${pax>1?'s':''}${state.bags>0?` · ${state.bags} bag${state.bags>1?'s':''}`:''}. Downgrade and save.`+
-          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ${money(save)}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ~${money(save)}</button>`;
       } else { note.className='cap-note'; note.textContent=''; }
     } else if(isShared && state.bags>freeBags){
       const extra=state.bags-freeBags;
@@ -1365,7 +1574,12 @@ function render(){
     if(window.CH && CH.motion) CH.motion.resize(addonsEl, ()=>{ addonsEl.innerHTML=addonHtml; }, { duration:260 });
     else addonsEl.innerHTML=addonHtml;
   }
-  setNum(document.getElementById('sum-total'), money(calcTotal()));
+  // A response the engine itself flags `estimated` (a route it can't fully price yet) gets the
+  // same "~" approx treatment the trip itinerary already uses for a leg with no resolvable
+  // distance (:557-570's "Distance on request" pattern) — the figure on screen is a heads-up,
+  // not the final number, and the Pay gate below refuses until checkout can confirm it for real.
+  const curEst = currentEngineEst();
+  setNum(document.getElementById('sum-total'), (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
 
   // Deposit messaging is disabled for now: every customer booking pays in full.
   let depEl=document.getElementById('s-deposit');
@@ -1399,6 +1613,30 @@ function render(){
   let choice=document.getElementById('pay-choice');
   if(choice){
     choice.style.display = 'none';
+  }
+
+  // Pay gate (Task 3): the established disabled treatment (same idiom as #n1/#n4 above) for the
+  // three states a charge must never start from — a fresh price still in flight, a raise
+  // awaiting acknowledgement, or a figure the engine itself flags as not-yet-final. A disabled
+  // control never leaves the customer guessing why (the #when-blocked paragraph next to #n2 set
+  // this precedent), so the reason is shown proactively here — not only surfaced reactively if a
+  // stale enabled button gets clicked anyway (the click handler carries that belt-and-braces
+  // copy of the same checks). #details-error lives inside the payment panel, so it's invisible
+  // whenever that panel isn't the active step regardless of its own `hidden` — safe to set on
+  // every render() without tracking which step is open.
+  const payBtn=document.getElementById('pay-btn');
+  const payGateReason = estimatePending
+    ? 'Still getting your latest price — one moment…'
+    : state.pendingReprice
+      ? 'Please review the updated price above before continuing.'
+      : (curEst && curEst.estimated)
+        ? 'This trip’s exact price will be confirmed at checkout — nothing is charged until then.'
+        : null;
+  if(payBtn) payBtn.disabled = !!payGateReason;
+  const gateNote=document.getElementById('details-error');
+  if(gateNote){
+    if(payGateReason){ gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1'; }
+    else if(gateNote.dataset.gate){ gateNote.hidden=true; gateNote.textContent=''; delete gateNote.dataset.gate; }
   }
 }
 
@@ -1463,10 +1701,26 @@ function backToSearchUrl(){
 
 // ---- payment ----
 document.getElementById('pay-btn').addEventListener('click',async ()=>{
+  const derr=document.getElementById('details-error');
+  // Pay gate (Task 3) — the button is already disabled for these in render(); this is the
+  // belt-and-braces check for the moment a stale enabled button gets clicked anyway (e.g. a
+  // click queued a frame before a re-render lands).
+  if(estimatePending){
+    if(derr){ derr.textContent='Still getting your latest price — please wait a moment and try again.'; derr.hidden=false; }
+    return;
+  }
+  if(state.pendingReprice){
+    if(derr){ derr.textContent='Please review the updated price above before continuing.'; derr.hidden=false; }
+    return;
+  }
+  const activeEst=currentEngineEst();
+  if(activeEst && activeEst.estimated){
+    if(derr){ derr.textContent='This trip’s exact price will be confirmed at checkout — nothing is charged until then.'; derr.hidden=false; }
+    return;
+  }
   // validate the lead traveller's contact details before payment
   const first=document.getElementById('f-first'), last=document.getElementById('f-last'),
         email=document.getElementById('f-email'), phone=document.getElementById('f-phone');
-  const derr=document.getElementById('details-error');
   [first,last,email,phone].forEach(el=>el.classList.remove('inp-bad'));
   if(derr) derr.hidden=true;
   const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} el.focus(); };
@@ -1548,8 +1802,29 @@ async function runPayment(){
   if(!booking){ return simulatePayThenConfirm(null); }
 
   // Adopt the server's authoritative price so the overlay, PayHere and confirmation all show
-  // exactly what is charged — not the wizard's browser-distance estimate.
+  // exactly what is charged — not the wizard's browser-distance estimate. The LOCAL formula is
+  // already understood to be a rough guide the server can legitimately reprice from (a few
+  // percent of routing drift) and has always adopted silently — that pre-existing behaviour is
+  // untouched. A live ENGINE estimate is a different promise: it's the server's own pricing
+  // engine, shown moments ago, so a booking-create total landing more than $1 away from IT is
+  // the LAST hop where the "never charge a figure not shown immediately beforehand" rule
+  // (renderRepriceNote, applied mid-wizard) can still be broken, and gets the same gate here.
+  const shownEngineEst = currentEngineEst();
+  const shownBeforeAdopt = calcTotal();
   adoptServerQuote(booking);
+  if(shownEngineEst && Math.abs(calcTotal()-shownBeforeAdopt) > 1){
+    return phShowFinalRepriceGate(booking, shownBeforeAdopt, calcTotal());
+  }
+  return continueToCheckout(booking);
+}
+
+// The rest of a payment attempt once the draft booking exists and its total has been accepted
+// (either silently, within $1, or explicitly via the final-reprice gate above). Split out so
+// that gate can pause here and resume on the customer's own click, rather than duplicating the
+// checkout-params fetch and gateway hand-off.
+async function continueToCheckout(booking){
+  const API = window.CEYLON_HOP_API;
+  phShowLoading('Setting up your secure payment…');
   const _amt=document.getElementById('ph-amt'); if(_amt) _amt.textContent=money(amountDueNow());
 
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
@@ -1590,6 +1865,55 @@ async function runPayment(){
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
   // (no real money gateway). Simulated interstitial with the real reference.
   return simulatePayThenConfirm(booking);
+}
+
+// The overlay's own amber gate for the booking-create total drifting from what was shown (see
+// runPayment above). Reuses the overlay's warn styling (phShowEnd's 'warn' icon) rather than the
+// summary panel's reprice-note: at this point the wizard panels are behind the overlay's scrim,
+// so the note has to live where the customer is actually looking.
+function ensurePhAcceptBtn(){
+  let el=document.getElementById('ph-accept-reprice');
+  if(!el){
+    el=document.createElement('button');
+    el.type='button'; el.id='ph-accept-reprice'; el.className='ph-btn ph-btn-primary';
+    const actions=document.getElementById('ph-actions');
+    if(actions) actions.insertBefore(el, actions.firstChild);
+  }
+  return el;
+}
+function phShowFinalRepriceGate(booking, fromAmt, toAmt){
+  // The overlay fully covers the page (it's the same modal Pay opened into), so releasing the
+  // submit latch here is safe — nothing beneath it is reachable until this gate is resolved one
+  // way or the other, and a stuck latch would otherwise leave Pay permanently disabled if the
+  // customer backs out via Close.
+  payRelease();
+  document.getElementById('ph-spin').style.display='none';
+  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  const ico=document.getElementById('ph-ico');
+  if(ico){
+    ico.hidden=false; ico.className='ph-ico warn';
+    ico.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
+  }
+  const m=document.getElementById('ph-msg');
+  m.className='ph-msg ph-msg-big';
+  m.textContent=`Your confirmed total is ${money(toAmt)} (you were shown ${money(fromAmt)}) — accept to continue to payment.`;
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=true;
+  const close=document.getElementById('ph-close');
+  const onClose=()=>{ if(close) close.removeEventListener('click', onClose); };
+  if(close){ close.hidden=false; close.addEventListener('click', onClose, { once:true }); }
+  const acc=ensurePhAcceptBtn();
+  acc.textContent='Accept '+money(toAmt)+' & continue';
+  acc.hidden=false;
+  acc.onclick=()=>{
+    acc.hidden=true; acc.onclick=null;
+    if(close) close.removeEventListener('click', onClose);
+    continueToCheckout(booking);
+  };
+  document.getElementById('ph-actions').hidden=false;
+  document.getElementById('ph-overlay').classList.add('show');
 }
 
 /* Turn a refused POST /bookings/:id/checkout into words + an honest retry button.
@@ -1642,6 +1966,9 @@ function phShowEnd(kind, msg, opts){
   const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
   const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  // Leftover from the final-reprice gate (phShowFinalRepriceGate), if this attempt passed
+  // through it — every OTHER overlay state uses the two static buttons only.
+  const acc=document.getElementById('ph-accept-reprice'); if(acc){ acc.hidden=true; acc.onclick=null; }
   const ico=document.getElementById('ph-ico');
   if(ico){
     ico.hidden=false; ico.className='ph-ico '+(kind==='error'?'err':'warn');
@@ -1738,6 +2065,15 @@ async function ensureLockedQuoteId(apiBase, lockReq){
   finally { clearTimeout(timer); }
 }
 
+// Task 5: the idempotency key createApiBooking sends with its POST — split out so the
+// duplicate-draft-race fix (excluding quotedTotal, see the call site) is unit-testable on its
+// own, without exercising the whole booking-creation flow (DOM reads, fetch, PayHere).
+function idempotencyKeyFor(payload){
+  const source = JSON.stringify(Object.assign({}, payload, { quotedTotal: undefined }));
+  let h = 0; for (let i = 0; i < source.length; i++) h = ((h << 5) - h + source.charCodeAt(i)) | 0;
+  return 'ch-' + (h >>> 0).toString(36);
+}
+
 // M7 — when a backend is configured, create a real booking and use its reference.
 // Handles all three flows: single transfer, multi-stop trip, and shared seat.
 // Returns null only when no backend is configured (demo mode, default site behaviour);
@@ -1771,8 +2107,7 @@ async function createApiBooking(){
     for(let i=0; i<tripStops.length-1; i++){
       if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
       const tf = tripStops[i], tt = tripStops[i+1];
-      const tkm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(tf, tt) || 0) : 0;
-      tripLegs.push({ from: tf, to: tt, distanceKm: tkm });
+      tripLegs.push({ from: tf, to: tt, distanceKm: lockLegKm(tf, tt) });
     }
     const tQuoteId = tripLegs.length
       ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
@@ -1809,12 +2144,13 @@ async function createApiBooking(){
     const sTo = state.locTo || r.stops[r.stops.length-1];
     const sVeh = (vehicleKey==='van') ? 'van' : 'car';
     // Lock the rate card for this transfer (best-effort; undefined → prices live). distanceKm is
-    // only the client's estimate — the booking re-resolves it server-side, and the lock captures
-    // the CARD regardless, so a rough/zero km here never affects what the customer is charged.
-    const sKm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(sFrom, sTo) || 0) : 0;
+    // the engine's own measured figure when a fresh estimate covers this leg (lockLegKm), else
+    // the client's kmBetween estimate — either way the booking re-resolves it server-side, and
+    // the lock captures the CARD regardless, so a rough/zero km here never affects what the
+    // customer is charged.
     const sQuoteId = await ensureLockedQuoteId(API, {
       product:'private', vehicle:sVeh, pax: state.ad + state.ch, bags: state.bags,
-      legs: [{ from: sFrom, to: sTo, distanceKm: sKm }]
+      legs: [{ from: sFrom, to: sTo, distanceKm: lockLegKm(sFrom, sTo) }]
     });
     payload = {
       from: sFrom,
@@ -1856,11 +2192,14 @@ async function createApiBooking(){
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);
-  // Idempotency: a stable key derived from the exact request. A retried or duplicated POST
-  // (free-tier cold-start timeout, the ph-retry button) returns the SAME booking instead of
-  // creating a second draft; any change to the request produces a new key.
-  let h = 0; for (let i = 0; i < body.length; i++) h = ((h << 5) - h + body.charCodeAt(i)) | 0;
-  const idemKey = 'ch-' + (h >>> 0).toString(36);
+  // Idempotency: a stable key derived from the request, but WITHOUT quotedTotal (Task 5 — kills
+  // a duplicate-draft race). A retried or duplicated POST (free-tier cold-start timeout, the
+  // ph-retry button) must return the SAME booking instead of creating a second draft — but if a
+  // re-estimate lands between the original attempt and its retry, quotedTotal alone would change
+  // and mint a fresh key, defeating that. The server prices engine-first (bookings.ts GL-3), so
+  // quotedTotal is advisory only — dropping it from the key is safe. Any OTHER change to the
+  // request (different trip, pax, dates, …) still produces a new key exactly as before.
+  const idemKey = idempotencyKeyFor(payload);
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), 45000); // allow for a free-tier cold start
   let res;
