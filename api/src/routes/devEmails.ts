@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 import { sampleBooking, sampleVariants, sampleQuote, type SampleMode } from '../services/__fixtures__/sampleBookings';
+import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from '../services/rideBoardEmails';
+import type { RideList } from '../domain/rideList';
 import {
   sendBookingConfirmation,
   sendDetailsNeeded,
@@ -20,6 +22,26 @@ import {
 // Dev-only preview harness for the customer emails. Renders the ACTUAL sender output
 // (via a FakeEmailAdapter) so what you see is exactly what ships — no template
 // duplication. Mounted only when nodeEnv !== 'production' (see app.ts).
+
+const SAMPLE_RIDE: RideList = {
+  id: '11111111-1111-4111-8111-111111111111',
+  code: 'EM-4821',
+  corridorId: 'ella-mirissa',
+  fromPlace: 'Ella',
+  toPlace: 'Mirissa',
+  date: '2026-09-04',
+  slot: 'morning',
+  lockedTime: '08:00',
+  minSeats: 3,
+  capacity: 6,
+  seatPrice: 2400,
+  status: 'confirmed',
+  note: 'Happy to share bags',
+  cutoffAt: new Date('2026-09-02T01:30:00.000Z'),
+  createdBy: 'sub-1',
+  createdAt: new Date('2026-08-20T00:00:00.000Z'),
+  updatedAt: new Date('2026-08-20T00:00:00.000Z'),
+};
 
 const LINKS = {
   manage: 'https://ceylonhop.com/manage.html?t=preview-token',
@@ -48,6 +70,11 @@ const EMAILS: EmailDef[] = [
   { name: 'payment-failed', label: 'Payment failed (immediate)', run: (b, e) => sendPaymentFailed(b, e, { resume: LINKS.resume }) },
   { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
   { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
+  // Ride Board (self-contained templates in rideBoardEmails.ts). Previously not previewable —
+  // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
+  { name: 'ride-confirmed', label: 'Ride Board: ride confirmed', run: (_b, e) => sendRideConfirmed(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE, lockedTime: '08:00' }) },
+  { name: 'ride-cancelled', label: 'Ride Board: called off', run: (_b, e) => sendRideCancelled(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
+  { name: 'ride-at-risk', label: 'Ride Board: charge failed', run: (_b, e) => sendRideAtRisk(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
 ];
 
 const MODES = ['single', 'trip', 'trip-private', 'roundtrip', 'shared', 'flexible', 'deposit'] as const;
@@ -88,8 +115,8 @@ export function devEmailRoutes(): Hono {
         table{border-collapse:collapse;width:100%;margin-top:16px}
         td{border-top:1px solid #eee;padding:12px 8px;vertical-align:top}
         .lbl{width:230px}.sub{color:#6b7280;font-size:13px;margin-top:2px}
-        code{background:#f1faf8;color:#0a7d6f;padding:2px 6px;border-radius:5px;font-size:13px}
-        a{display:inline-block;margin:2px 8px 2px 0;color:#0a7d6f;text-decoration:none;border:1px solid #d7ece7;border-radius:6px;padding:3px 9px;font-size:13px}
+        code{background:#f1faf8;color:#24758A;padding:2px 6px;border-radius:5px;font-size:13px}
+        a{display:inline-block;margin:2px 8px 2px 0;color:#24758A;text-decoration:none;border:1px solid #d7ece7;border-radius:6px;padding:3px 9px;font-size:13px}
         a:hover{background:#f1faf8}.txt a{color:#9ca3af;border-color:#eee}.txt{display:block;margin-top:4px}
       </style>
       <h1>Ceylon Hop — email preview</h1>

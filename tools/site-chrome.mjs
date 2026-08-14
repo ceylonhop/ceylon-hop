@@ -14,6 +14,7 @@ const YEAR = 2026;
 
 const NAVLINKS = [
   ['Plan a trip', 'plan.html'],
+  ['Ride board', 'board.html'],
   ['Tours', 'tours.html'],
   ['Travel Guide', 'blog.html'],
   ['Why us', 'why.html'],

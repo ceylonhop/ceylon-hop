@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Adding a leg must NOT auto-fill its date. Auto-incrementing the previous leg's date
 // (+1 day) invented dates the customer never gave — a 4-leg itinerary looked fully
@@ -32,6 +33,7 @@ async function stubOps(page) {
     chauffeurDayRateCents: 3500, fxUsdToLkr: 330, bufferPct: 10,
   })));
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 152, durationMin: 190 })));
+  await routeOpsEstimate(page); // see _ops-estimate.js — without it the builder throws mid-addLeg
 }
 
 // Multi-stop rides (Task 8): pickup/dropoff are stop 0 / the last stop of a 2-stop leg,

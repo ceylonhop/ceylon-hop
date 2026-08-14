@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Ops quote tool must not let an operator add a leg date in the past: native min=today blocks
 // the calendar, and the change handler rejects a typed/pasted past value. Offline webServer, no DB.
@@ -9,6 +10,7 @@ async function openQuote(page) {
   const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
   await page.addInitScript(() => { window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } }; });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'f@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.goto(OPS_FILE + '#quote');
