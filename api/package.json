@@ -12,6 +12,7 @@
     "demo": "tsx scripts/demo.ts",
     "dump:pricing": "tsx scripts/dump-pricing.ts",
     "report:distances": "tsx scripts/distance-report.ts",
+    "report:pricing-health": "tsx scripts/pricing-health.ts",
     "test": "vitest run",
     "smoke": "vitest run smoke",
     "typecheck": "tsc --noEmit",
