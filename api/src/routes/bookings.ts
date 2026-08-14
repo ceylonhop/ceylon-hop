@@ -22,6 +22,8 @@ import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
+import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { liveRateCard } from '../quote/liveCard';
 import {
   signCheckoutToken,
   signPayReturnToken,
@@ -57,8 +59,9 @@ function memoizeDistance(maps: MapsAdapter): MapsAdapter {
 }
 
 // What the booking stores, resolved engine-first (GL-3): the engine price wins whenever it
-// can price; otherwise the customer's quotedTotal, and as a last resort the placeholder
-// quote (API-only callers). Customer bookings currently collect the full amount now.
+// can price; otherwise the server's own placeholder quote — the customer's quotedTotal is
+// never adopted as the charge when the engine can't price it (see resolveTotals below).
+// Customer bookings currently collect the full amount now.
 function resolveTotals(
   outcome: PriceOutcome,
   quotedTotal: number | undefined,
@@ -69,10 +72,11 @@ function resolveTotals(
       quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
     return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
   }
-  // Engine couldn't price (e.g. custom places the maps adapter can't resolve). Fall back to the
-  // customer's quotedTotal, but FLOOR it at the server's placeholder quote so a tampered/undercut
-  // quotedTotal can never be charged below what the server itself would estimate.
-  const total = Math.max(quotedTotal ?? 0, placeholderTotal);
+  // The client's figure is a display value, not an authority. When the engine cannot price, the
+  // server's own placeholder stands and the booking is flagged unpriced — ops sets the real price
+  // before it can be paid. Adopting quotedTotal here would let a tampered or merely stale page
+  // dictate the charge.
+  const total = placeholderTotal;
   return { total, amountDueNow: total, mismatch: false, unpriced: true, reason: outcome.reason };
 }
 
@@ -181,6 +185,7 @@ export function bookingRoutes(deps: {
   maps: MapsAdapter;
   conciergeTasks: ConciergeTaskRepo;
   quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
+  zones?: ZonesRepo;
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
@@ -191,6 +196,7 @@ export function bookingRoutes(deps: {
   payBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
 
@@ -209,19 +215,31 @@ export function bookingRoutes(deps: {
 
   // Rate-lock (spec 2026-07-11 §4): the card a booking should be priced against. A quoteId from a
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
-  // an unknown/expired id, or no quotes repo wired → the live RATE_CARD. Never throws (a bad id
-  // must not fail the booking — it just falls back to the current card).
+  // an unknown/expired id, or no quotes repo wired → the live card (base rate card composed with
+  // currently-active hot zones, hot-zones spec D5). Never throws (a bad id must not fail the
+  // booking — it just falls back to the current card). A pricing_zones lookup failure is part of
+  // that contract too: it prices unboosted off the plain compiled RATE_CARD rather than failing
+  // the booking — any resulting drift from the zone-boosted price is caught by the mismatch flag.
   async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
-    if (!quoteId || !quotes) return RATE_CARD;
+    let current: RateCard;
+    try {
+      current = await liveRateCard(zonesRepo);
+    } catch {
+      current = RATE_CARD;
+    }
+    // Short-circuit before the try: an unwired `quotes` repo or a missing quoteId both mean
+    // "just use the live card" — no need to let `.get()` throw to get there.
+    if (!quoteId || !quotes) return current;
     try {
       const q = await quotes.get(quoteId);
-      if (!q || q.channel !== 'web') return RATE_CARD;
+      if (!q || q.channel !== 'web') return current;
       return rateCardFor(
         { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
         new Date(),
+        current,
       ).rateCard;
     } catch {
-      return RATE_CARD;
+      return current;
     }
   }
 
@@ -303,7 +321,8 @@ function billingFrom(body: unknown): BillingParse {
       if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
-    // The engine is the pricing truth; the client's quotedTotal is only a fallback.
+    // The engine is the pricing truth; a client quotedTotal is never adopted — an unpriced
+    // booking takes the server placeholder and is flagged for ops.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
     let outcome;

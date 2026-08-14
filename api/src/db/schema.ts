@@ -668,3 +668,20 @@ export const pricingZones = pgTable('pricing_zones', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Cached road distances for catalogue-town pairs (spec 2026-08-12 §Distance cache). Rows are
+// DIRECTIONAL (A→B and B→A are separate rows) and keyed on canonPlace() output, the same
+// normalisation place_resolutions uses. See src/db/distanceCacheRepo.ts.
+export const distanceCache = pgTable(
+  'distance_cache',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fromKey: text('from_key').notNull(),
+    toKey: text('to_key').notNull(),
+    km: doublePrecision('km').notNull(),
+    durationMin: integer('duration_min').notNull(),
+    source: text('source').notNull().default('google'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [unique('distance_cache_pair').on(t.fromKey, t.toKey)],
+);

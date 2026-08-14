@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
-import { quoteRoutes } from './quote';
+import { quoteRoutes, engineRequestFor } from './quote';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeMapsAdapter } from '../adapters/maps';
+import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
+import type { RateCard } from '../quote/rateCard';
 
+async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
+  const repo = new InMemoryZonesRepo();
+  for (const z of seed) await repo.create(z);
+  return repo;
+}
 
 function post(app: ReturnType<typeof createApp>, body: unknown, headers: Record<string, string> = {}) {
   return app.request('/quote', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -250,6 +257,58 @@ describe('public quote v2 lock', () => {
   });
 });
 
+describe('public quote v2 estimate', () => {
+  function estimateApp(quotes = new InMemoryQuoteRepo()) {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ quotes, maps: new FakeMapsAdapter(), v2Enabled: true }));
+    return { app, quotes };
+  }
+  const send = (app: Hono, body: unknown) =>
+    app.request('/quote/v2/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+  it('prices an intent without persisting a quote', async () => {
+    const { app, quotes } = estimateApp();
+    const res = await send(app, V2_PRIVATE);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.totalCents).toBeGreaterThan(0);
+    expect(body.estimated).toBe(false);
+    expect(await quotes.list()).toHaveLength(0);
+  });
+
+  it('returns per-leg distance and duration', async () => {
+    const { app } = estimateApp();
+    const body = await (await send(app, V2_PRIVATE)).json();
+    expect(body.legs).toHaveLength(1);
+    expect(body.legs[0].distanceKm).toBeGreaterThan(0);
+    expect(body.legs[0].durationMin).toBeGreaterThan(0);
+  });
+
+  it('never leaks margin', async () => {
+    const { app } = estimateApp();
+    const body = await (await send(app, V2_PRIVATE)).json();
+    expect(body.marginEstimateCents).toBeUndefined();
+  });
+
+  it('is 404 when v2 is disabled', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    expect((await send(app as never, V2_PRIVATE)).status).toBe(404);
+  });
+
+  it('rejects an intent with more legs than the billed-work cap', async () => {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true }));
+    const legs = Array.from({ length: 9 }, () => ({ from: 'Kandy', to: 'Ella' }));
+    const res = await app.request('/quote/v2/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...V2_PRIVATE, legs }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('POST /quote/lock', () => {
   it('persists a channel=web quote with a 7-day rate lock and returns a bookable quote id', async () => {
     const quotes = new InMemoryQuoteRepo();
@@ -356,5 +415,197 @@ describe('POST /quote — validation & security gaps', () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid_request');
+  });
+});
+
+describe('public quotes apply active hot zones', () => {
+  const ZONE_LEG = {
+    product: 'private', vehicle: 'car', pax: 2, bags: 2,
+    legs: [{ from: 'Ella', to: 'Yala', distanceKm: 126 }],
+  };
+
+  it('prices an Ella leg higher when an Ella zone is active', async () => {
+    const plain = createApp({ quotes: new InMemoryQuoteRepo() });
+    const boosted = createApp({
+      quotes: new InMemoryQuoteRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const a = await (await post(plain, ZONE_LEG)).json();
+    const b = await (await post(boosted, ZONE_LEG)).json();
+    expect(b.totalCents).toBeGreaterThan(a.totalCents);
+  });
+
+  it('leaves a non-zone leg untouched', async () => {
+    const plain = createApp({ quotes: new InMemoryQuoteRepo() });
+    const boosted = createApp({
+      quotes: new InMemoryQuoteRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const a = await (await post(plain, PRIVATE_LEG)).json();
+    const b = await (await post(boosted, PRIVATE_LEG)).json();
+    expect(b.totalCents).toBe(a.totalCents);
+  });
+
+  it('freezes the zone into a locked quote snapshot', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({
+      quotes,
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const res = await postLock(app, ZONE_LEG);
+    expect(res.status).toBe(201);
+    const saved = await quotes.get((await res.json()).quoteId);
+    expect((saved!.rateCardJson as RateCard).hotZones).toEqual([{ placeName: 'Ella', boostPct: 15, active: true }]);
+  });
+});
+
+// D9: the founder-only "Ella premium +15%" annotation (result.lineItems[].meta.hotZone) must
+// never reach an unauthenticated customer, whichever public route composed the boosted price.
+// Asserting `not.toContain('hotZone')` over the whole serialized body catches it wherever it
+// rides — not just the top-level lineItems the route happens to shape today.
+describe('public quote responses never leak the founder-only hot-zone annotation', () => {
+  const ZONE_LEG = {
+    product: 'private', vehicle: 'car', pax: 2, bags: 2,
+    legs: [{ from: 'Ella', to: 'Yala', distanceKm: 126 }],
+  };
+
+  it('strips hotZone from POST /quote while still pricing the boost', async () => {
+    const plain = createApp({ quotes: new InMemoryQuoteRepo() });
+    const boosted = createApp({
+      quotes: new InMemoryQuoteRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const a = await (await post(plain, ZONE_LEG)).json();
+    const bRes = await post(boosted, ZONE_LEG);
+    const b = await bRes.json();
+    expect(bRes.status).toBe(200);
+    expect(JSON.stringify(b)).not.toContain('hotZone');
+    expect(b.totalCents).toBeGreaterThan(a.totalCents);
+  });
+
+  it('strips hotZone from POST /quote/lock while still pricing the boost', async () => {
+    const plain = await (await postLock(createApp({ quotes: new InMemoryQuoteRepo() }), ZONE_LEG)).json();
+    const boostedRes = await postLock(
+      createApp({ quotes: new InMemoryQuoteRepo(), zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }) }),
+      ZONE_LEG,
+    );
+    const boosted = await boostedRes.json();
+    expect(boostedRes.status).toBe(201);
+    expect(JSON.stringify(boosted)).not.toContain('hotZone');
+    expect(boosted.totalCents).toBeGreaterThan(plain.totalCents);
+  });
+
+  it('strips hotZone from POST /quote/v2/lock and PUT /quote/v2/:id while still pricing the boost', async () => {
+    const intent = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Ella', to: 'Yala' }], extras: [] };
+
+    const plainApp = new Hono();
+    plainApp.route('/quote', quoteRoutes({
+      quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true,
+    }));
+    const plain = await (
+      await plainApp.request('/quote/v2/lock', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(intent),
+      })
+    ).json();
+
+    const boostedApp = new Hono();
+    boostedApp.route('/quote', quoteRoutes({
+      quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true,
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    }));
+    const lockRes = await boostedApp.request('/quote/v2/lock', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(intent),
+    });
+    const locked = await lockRes.json();
+    expect(lockRes.status).toBe(201);
+    expect(JSON.stringify(locked)).not.toContain('hotZone');
+    expect(locked.totalCents).toBeGreaterThan(plain.totalCents);
+
+    const updateRes = await boostedApp.request(`/quote/v2/${locked.quoteId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${locked.accessToken}` },
+      body: JSON.stringify({ revision: 1, intent }),
+    });
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(JSON.stringify(updated)).not.toContain('hotZone');
+    expect(updated.totalCents).toBeGreaterThan(plain.totalCents);
+  });
+
+  it('strips hotZone from POST /quote/v2/estimate while still pricing the boost', async () => {
+    const intent = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Ella', to: 'Yala' }], extras: [] };
+
+    const plainApp = new Hono();
+    plainApp.route('/quote', quoteRoutes({
+      quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true,
+    }));
+    const plain = await (
+      await plainApp.request('/quote/v2/estimate', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(intent),
+      })
+    ).json();
+
+    const boostedApp = new Hono();
+    boostedApp.route('/quote', quoteRoutes({
+      quotes: new InMemoryQuoteRepo(), maps: new FakeMapsAdapter(), v2Enabled: true,
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    }));
+    const estimateRes = await boostedApp.request('/quote/v2/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(intent),
+    });
+    const estimated = await estimateRes.json();
+    expect(estimateRes.status).toBe(200);
+    expect(JSON.stringify(estimated)).not.toContain('hotZone');
+    expect(estimated.totalCents).toBeGreaterThan(plain.totalCents);
+  });
+});
+
+describe('engineRequestFor', () => {
+  it('flags a request built on an estimated distance instead of refusing it', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => ({ km: 100, durationMin: 140, estimated: true }),
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out).not.toBeNull();
+    expect(out!.estimated).toBe(true);
+    const { request } = out!;
+    if (request.product !== 'private') throw new Error('expected a private request');
+    const [firstLeg] = request.legs;
+    if (!('distanceKm' in firstLeg)) throw new Error('expected a PrivateLeg');
+    expect(firstLeg.distanceKm).toBe(100);
+  });
+
+  it('reports estimated=false when every leg resolved for real', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => ({ km: 100, durationMin: 140 }),
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out!.estimated).toBe(false);
+  });
+
+  it('returns null when a leg cannot be resolved at all', async () => {
+    const maps = {
+      provider: 'fake',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => null,
+    };
+    const out = await engineRequestFor(
+      { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B' }], extras: [] } as never,
+      maps as never,
+    );
+    expect(out).toBeNull();
   });
 });

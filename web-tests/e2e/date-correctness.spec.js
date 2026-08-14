@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { fillContact } from './_stubs.js';
+import { fillContact, blockLiveApi } from './_stubs.js';
 import { futureIsoDate, isoParts, isoToSummary } from '../dates.js';
 
 /* Anchored to "now": a hard-coded trip date makes this spec go red on its own once the clock
@@ -11,6 +11,10 @@ const BOOK_DATE = futureIsoDate(30);
 const PLAN_DATE = futureIsoDate(30);
 
 test.use({ timezoneId: 'Asia/Colombo' });
+
+// search.html/plan.html ping the live API on load (0e0f077) — keep the suite offline. (The
+// bootBooking() tests already stub 'https://api.test/health' explicitly and are unaffected.)
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 async function bootBooking(page) {
   let capturedSingle = null;

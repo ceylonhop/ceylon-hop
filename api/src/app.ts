@@ -333,6 +333,7 @@ export function createApp(deps: AppDeps = {}) {
       maps,
       conciergeTasks,
       quotes,
+      zones,
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       checkoutNow: deps.checkoutNow,
@@ -379,6 +380,7 @@ export function createApp(deps: AppDeps = {}) {
     quotes,
     maps,
     v2Enabled: quoteV2Enabled,
+    zones,
   }));
   app.route(
     '/webhooks',

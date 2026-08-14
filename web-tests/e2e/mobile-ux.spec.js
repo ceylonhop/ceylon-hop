@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, fillContact } from './_stubs.js';
+import { blockLiveApi, gotoBooking, fillContact } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 test('mobile booking shows a compact context strip, not the full summary wall', async ({ page }) => {
   // Sticky-bar layout (spec 2026-07-09-mobile-booking-sticky-bar-design.md): the old

@@ -61,13 +61,15 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(0);
   });
 
-  it('falls back to the quotedTotal when the distance is unresolvable, flagged for ops', async () => {
+  it('falls back to the server placeholder (not quotedTotal) when the distance is unresolvable, flagged for ops', async () => {
     const { app, conciergeTasks } = appWithTasks();
     const r = await post(app, '/bookings/single', { ...single, quotedTotal: 7000 });
     expect(r.status).toBe(201);
     const b = await r.json();
-    expect(b.total).toBe(7000);
-    expect(b.amountDueNow).toBe(7000);
+    // The client's quotedTotal (7000) is a display value, not an authority — the server's own
+    // placeholder (4000: 1 adult, car) is what gets charged. Ops still flags + prices it by hand.
+    expect(b.total).toBe(4000);
+    expect(b.amountDueNow).toBe(4000);
     const tasks = await conciergeTasks.listByBooking(b.id);
     expect(tasks).toHaveLength(1);
     // The note now names the reason, so ops can tell an unroutable place from a Maps outage.
@@ -85,10 +87,10 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(r.status).toBe(400);
   });
 
-  it('a chauffeur trip falling back to quotedTotal still collects the full amount now', async () => {
+  it('an unresolvable chauffeur trip falls back to the server placeholder, ignoring quotedTotal, and still collects the full amount now', async () => {
     const { app } = appWithTasks();
     const r = await post(app, '/bookings/trip', {
-      stops: ['Nowhere', 'Elsewhere'], // unresolvable → quotedTotal fallback
+      stops: ['Nowhere', 'Elsewhere'], // unresolvable → server placeholder (quotedTotal ignored)
       nights: [0, 0],
       pax: 2,
       vehicleType: 'car',
@@ -98,8 +100,10 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     });
     expect(r.status).toBe(201);
     const b = await r.json();
-    expect(b.total).toBe(40000);
-    expect(b.amountDueNow).toBe(40000);
+    // The client's quotedTotal (40000) is never adopted — the server's own placeholder stands,
+    // and amountDueNow still equals total (unpriced bookings collect the full amount now).
+    expect(b.total).toBe(5500);
+    expect(b.amountDueNow).toBe(5500);
   });
 
   it('shared seats always store the server corridor price; a divergent quotedTotal is flagged', async () => {
