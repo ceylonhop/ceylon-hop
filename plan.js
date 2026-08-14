@@ -230,7 +230,6 @@ function mergePlaceSuggestions(localItems, googleItems){
   return out.slice(0,8);
 }
 let placeMenuSeq=0;
-let placeMenuOpenedAt=0;
 function renderPlaceMenu(input){
   const q=input.value.trim();
   const seq=++placeMenuSeq;
@@ -262,7 +261,6 @@ function renderPlaceMenu(input){
       input.dispatchEvent(new Event('change',{bubbles:true}));
     });
     input.parentNode.appendChild(menu);
-    placeMenuOpenedAt=Date.now();
   };
   const text=q.trim();
   const localStrong = baseItems.some(p=>p.source==='known' && norm(p.label)===norm(text));
@@ -301,7 +299,13 @@ function wirePlaceSearch(input){
     }
   });
 }
-window.addEventListener('scroll',()=>{ if(Date.now()-placeMenuOpenedAt>250) closePlaceMenus(); },true);
+/* No blanket close-on-scroll here. site.js's menu is position:fixed, so a scroll DOES strand it
+   and it closes on any scroll past a 250ms grace window; this one is position:absolute inside
+   the field's wrapper (plan.html) and rides along with it, so there is nothing to strand. The
+   copied rule actively hurt: site.css sets html{scroll-behavior:smooth}, so a single
+   programmatic scroll animates for several hundred ms and fires scroll events the whole way —
+   well past the grace window — and the menu disappeared mid-selection. The deliberate
+   "I'm moving on" gestures below still dismiss it. */
 window.addEventListener('wheel',()=>closePlaceMenus(),{passive:true});
 window.addEventListener('touchmove',()=>closePlaceMenus(),{passive:true});
 
