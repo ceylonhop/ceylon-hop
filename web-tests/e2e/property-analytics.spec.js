@@ -463,7 +463,9 @@ test('the manage and quote greetings are masked too', async ({ page }) => {
 // Reads the real module off the static server and flips the owner switch, so the strip's
 // tests exercise the SHIPPED file rather than a second copy that could drift from it.
 async function forceAsk(page) {
-  await page.route('**/consent-transactional.js', async (route) => {
+  // RegExp, not a glob: the script is referenced with a cache-busting ?v=<hash> (#464),
+  // and '**/consent-transactional.js' does not match the query-stringed URL.
+  await page.route(/\/consent-transactional\.js(\?|$)/, async (route) => {
     const res = await route.fetch();
     const body = (await res.text()).replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
     if (!body.includes('var ASK_FIRST = true;')) throw new Error('ASK_FIRST switch not found');
