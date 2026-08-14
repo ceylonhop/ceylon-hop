@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Founder analytics (spec 2026-07-23): the Analytics surface is analytics:view-gated.
 // Founder sees the nav item and both tabs render from the API payloads; an ops session has
@@ -52,6 +53,7 @@ const DEMAND = {
 async function bootAs(page, caps) {
   await page.addInitScript(() => { window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } }; });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'x@e2e.test', role: 'x', caps })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/ops/users', (r) => r.fulfill(json([])));

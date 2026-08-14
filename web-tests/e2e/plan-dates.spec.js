@@ -265,8 +265,11 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
 
   // Let the rail finish its first pricing pass before typing. Until it settles the cards
   // above are still growing, which slides the suggestion menu down the page — Playwright
-  // then refuses to click a target that will not hold still. (The separate bug where a
-  // background render destroyed the open menu is covered by plan-place-menu-stability.spec.js.)
+  // then refuses to click a target that will not hold still. (#175 pointed here at a
+  // plan-place-menu-stability.spec.js covering "a background render destroys the open menu";
+  // that file was never written, and #175's own message records that theory as disproven.
+  // The way the open menu really did get destroyed — a scroll closing it mid-selection — is
+  // guarded in plan-addleg-focus.spec.js.)
   await expect(page.locator('#rail [data-dist]').first()).toContainText('km');
 
   const from = page.locator('#rail .leg-card').first().locator('.leg-from');
