@@ -498,6 +498,20 @@ describe('partial-booking coverage (spec 2026-08-04)', () => {
     expect(email.sent[0].text).toContain('covers 2 of the 4 legs');
   });
 
+  // The layout table may only contain <tr> children. A bare <p> dropped straight into
+  // <table> gets foster-parented by every HTML parser: the sentence renders OUTSIDE and
+  // ABOVE the letter card, unstyled on the page background — which is exactly where the
+  // coverage line ended up. Structural, not cosmetic: assert the sentence lives inside
+  // a cell and no <p> is a direct child of a <table>.
+  it('renders the coverage sentence inside the letter, not foster-parented above it', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(trip, email, { coverage: { soldLegs: 2, totalLegs: 4 } });
+    const html = email.sent[0].html;
+    expect(html).not.toMatch(/<table[^>]*>\s*<p[\s>]/);
+    const cell = html.match(/<td[^>]*>(?:(?!<\/td>)[\s\S])*covers 2 of the 4 legs/);
+    expect(cell, 'coverage sentence must sit inside a <td>').not.toBeNull();
+  });
+
   it('says nothing extra for a whole-trip booking', async () => {
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(trip, email);
