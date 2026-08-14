@@ -18,11 +18,11 @@ const TEAL_DEEP = '#24758A'; // text-safe Bachelor Button, 5.27:1 — the site's
 const TOMATO = '#EC3A24'; // Cherry Tomato — route end marker (graphic only)
 const TOMATO_TEXT = '#D52812'; // text-safe Cherry Tomato, 5.07:1 — cancel/no-show eyebrows
 const INK = '#3A3739'; // Bristol Black
-const MUTED = '#8d8272';
-const FAINT = '#a99b86';
-const PAPER = '#F0EEE5'; // Marshmallow — outer page tone
-const CARD = '#fffefb'; // letter surface
-const HAIR = '#efe6d6'; // hairline dividers
+const MUTED = '#6c6a6b'; // --ink-soft — body-safe secondary (the old #8d8272 was a one-off and under 4.5:1 at body sizes)
+const FAINT = '#8a8272'; // --ink-faint, the travel-document family's tertiary (quote.css); was a near-miss #a99b86
+const PAPER = '#F0EEE5'; // Marshmallow — outer page tone (--cream)
+const CARD = '#fffdf8'; // letter surface (--paper; was one digit off at #fffefb)
+const HAIR = '#e7e3d6'; // hairline dividers (--line; was a near-miss #efe6d6)
 const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
 const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
 const SANS = "'Poppins', Helvetica, Arial, sans-serif";
@@ -168,14 +168,16 @@ function cancellationPolicy(booking: Booking): string {
 // eyebrow/heading/lede, status badge and message block.
 
 interface Badge { label: string; bg: string; color: string }
+// Badge pairs ride the site's state trios (--ok/--warn + their -bg values) and the
+// postcard sky wash for informational blue — no more hand-mixed one-offs.
 const BADGE_PAID: Badge = { label: 'Paid', bg: '#e7f6ec', color: '#0c6b39' };
-const BADGE_CANCELLED: Badge = { label: 'Cancelled', bg: '#f1efe9', color: '#6b645f' };
-const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e6f0fc', color: '#1f5fb0' };
-const BADGE_CONFIRMED: Badge = { label: 'Confirmed', bg: '#e0f3f0', color: TEAL_DEEP };
-const BADGE_ACTION: Badge = { label: 'Action needed', bg: '#fdf1dc', color: '#8a5a12' };
-const BADGE_NO_SHOW: Badge = { label: 'No-show', bg: '#f1efe9', color: '#6b645f' };
+const BADGE_CANCELLED: Badge = { label: 'Cancelled', bg: '#F0EEE5', color: '#6c6a6b' };
+const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e4f2f7', color: TEAL_DEEP };
+const BADGE_CONFIRMED: Badge = { label: 'Confirmed', bg: '#e4f2f7', color: TEAL_DEEP };
+const BADGE_ACTION: Badge = { label: 'Action needed', bg: '#fff6e8', color: '#8a5a12' };
+const BADGE_NO_SHOW: Badge = { label: 'No-show', bg: '#F0EEE5', color: '#6c6a6b' };
 const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c6b39' };
-const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fdf1dc', color: '#8a5a12' };
+const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fff6e8', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
 // True when a paid booking still has an open detail we must confirm (a flexible/"to
@@ -322,10 +324,11 @@ export function manageUrl(booking: Booking, baseUrl: string, secret: string): st
 }
 
 // Primary CTA (returns a table row for page()). WhatsApp lives in the info box below,
-// so it isn't repeated here.
+// so it isn't repeated here. One button treatment across the letter family: the site's
+// pill (999px), 700 weight, 15px — ctaRow and infoBox use the same numbers.
 function manageButton(url: string): string {
   return `<tr><td style="padding:24px 34px 4px">
-    <a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px">View your booking</a>
+    <a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:700;font-size:15px">View your booking</a>
   </td></tr>`;
 }
 
@@ -351,8 +354,8 @@ function infoBox(title: string, body: string, note?: string, cta: Cta = CTA_WHAT
       <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">${title}</div>
       <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.6">${body}</p>
       <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="${cta.bg}" style="border-radius:9px">
-          <a href="${cta.href}" style="display:inline-block;padding:12px 20px;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px">${cta.label}</a>
+        <tr><td bgcolor="${cta.bg}" style="border-radius:999px">
+          <a href="${cta.href}" style="display:inline-block;padding:12px 24px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">${cta.label}</a>
         </td></tr>
       </table>
     </div>
@@ -371,11 +374,12 @@ function footer(): string {
 
 function page(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
   <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${CARD};border:1px solid #ece2d0;border-radius:18px;overflow:hidden">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${CARD};border:1px solid ${HAIR};border-radius:18px;overflow:hidden">
         ${inner}
       </table>
     </td></tr>
@@ -429,8 +433,10 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
         `You&rsquo;re all set, ${first}!`,
         'Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.',
       ) +
+      // A row, not a bare <p>: page()'s wrapper is a <table>, and a <p> dropped straight
+      // into it gets foster-parented ABOVE the letter card by every HTML parser.
       (coverage
-        ? `<p style="margin:0 0 14px;font-size:13px;color:#6b6353;">${esc(coverageLine(coverage))}</p>`
+        ? `<tr><td style="padding:0 34px 14px"><p style="margin:0;font-size:13px;color:${MUTED}">${esc(coverageLine(coverage))}</p></td></tr>`
         : '') +
       ticketCard(booking, BADGE_PAID) +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
@@ -590,7 +596,7 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
         `Thanks for travelling with us, ${first}!`,
         'We hope your journey was smooth and the views were worth it.',
       ) +
-      ticketCard(booking, { label: 'Completed', bg: '#e6f4ec', color: '#0c6b39' }, { facts: false }) +
+      ticketCard(booking, { ...BADGE_PAID, label: 'Completed' }, { facts: false }) +
       infoBox(
         'How did we do?',
         'A quick Google review would mean the world to our small team &mdash; it helps other travellers find us. Thank you! 🌴',
@@ -611,11 +617,12 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
   });
 }
 
-// A pill CTA row consistent with manageButton, but with a custom label.
+// A pill CTA row consistent with manageButton, but with a custom label. px, not rem —
+// rem is unreliable in Outlook and inconsistently rooted in webmail.
 function ctaRow(url: string, label: string): string {
   return `<tr><td style="padding:4px 32px 26px">`
     + `<a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;`
-    + `padding:12px 24px;border-radius:999px;font-weight:700;font-size:.95rem">${esc(label)}</a></td></tr>`;
+    + `padding:12px 24px;border-radius:999px;font-weight:700;font-size:15px">${esc(label)}</a></td></tr>`;
 }
 
 // ── Payment didn't complete (abandoned checkout recovery) ──────────────────
