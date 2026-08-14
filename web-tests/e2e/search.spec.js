@@ -188,7 +188,7 @@ for (const spot of [
   });
 }
 
-test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
+test('home search uses popular route autocomplete and keeps unknown places on the search page', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 
   await page.locator('#q-from').fill('CMB');
@@ -201,13 +201,21 @@ test('home search uses popular route autocomplete and sends unknown places to pl
   await page.locator('#go-btn').click();
   await page.waitForURL('**/search.html?**from=cmb-airport**to=ella**');
 
+  // A place that isn't in the baked catalogue used to divert the WHOLE search to the itinerary
+  // planner — so the same two points behaved differently depending on which places they were,
+  // and someone who typed a real destination we don't have baked got a trip builder instead of
+  // a price. A single leg is a single leg: it stays here, and search.js prices the unknown end
+  // through the engine (web-tests/e2e/search-engine-price.spec.js covers the pricing itself).
   await page.goto('/index.html');
   await page.locator('#q-from').fill('Hilton Colombo');
   await expect(page.locator('.place-option', { hasText: 'Use exact place' })).toHaveCount(0);
   await page.locator('#q-to').fill('Ella');
   await page.locator('.place-option', { hasText: 'Ella' }).first().click();
   await page.locator('#go-btn').click();
-  await page.waitForURL('**/plan.html?**stops=Hilton+Colombo%7CElla**');
+  await page.waitForURL('**/search.html?**');
+  const q = new URL(page.url()).searchParams;
+  expect(q.get('from')).toBe('Hilton Colombo'); // unknown end travels as its name...
+  expect(q.get('to')).toBe('ella');             // ...the known one still as its id
 });
 
 test('home autocomplete ignores delayed Google results after a local place is selected', async ({ page }) => {
