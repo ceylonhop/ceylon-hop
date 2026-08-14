@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // Trip calendar (2026-07-30): the date span is the chauffeur price, so the builder now
 // (a) renders the span as a strip of day tiles with an explicit all-clear / warning, and
@@ -41,6 +42,7 @@ async function stubOps(page) {
   });
   const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json({

@@ -17,25 +17,30 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css?v=b3b9aecc47">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js"></script>
-<script src="consent.js" defer></script>
-<script src="beta-notice.js" defer></script>
+<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="consent.js?v=db789988e1" defer></script>
+<script src="beta-notice.js?v=8d367ffcc8" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
+<script>
+/* Wake a cold API instance while the visitor reads — prices come from it. Fire-and-forget:
+   a failure here must never surface, and never blocks rendering. */
+(function(){try{fetch((window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com')+'/health',{method:'GET',cache:'no-store'}).catch(function(){})}catch(e){}})();
+</script>
 <!-- Maps Embed API key (public, referrer-restricted). Empty = SVG placeholder fallback. -->
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
-<script src="tweaks.js"></script>
-<script src="datepicker.js"></script>
+<script src="tweaks.js?v=26d58fe065"></script>
+<script src="datepicker.js?v=9c0f3578dc"></script>
 <style>
   /* ---- plan hero ---- */
   /* The tint has to reach the very top of the page. `margin-top:-74px` slides this section up
@@ -178,7 +183,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   .loc-row{display:grid;grid-template-columns:16px 1fr;gap:11px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:9px 13px;background:var(--white);transition:border .15s,box-shadow .15s}
   .loc-row + .loc-row{margin-top:8px}
-  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
   .loc-row .pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .loc-row .pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
   .loc-row label{display:block;font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
@@ -187,7 +192,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* connected route block: pins + dotted rail link pick-up (top) → drop-off (bottom) */
   .route-block{display:grid;grid-template-columns:16px 1fr;gap:13px;border:1.5px solid var(--line);border-radius:13px;padding:6px 16px;background:var(--white);transition:border .15s,box-shadow .15s}
-  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
   .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
   .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
@@ -368,7 +373,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .route-incomplete-hint[hidden]{display:none}
   .route-incomplete-hint svg{width:15px;height:15px;flex:none;margin-top:2px}
   .sum-wa{display:flex;align-items:center;gap:.7rem;margin-top:12px;padding:12px 14px;border:1.5px solid #25d36633;background:#25d3660d;border-radius:12px;text-decoration:none;color:var(--ink)}
-  .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;flex:none}
+  .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#0B7A44;color:#fff;display:grid;place-items:center;flex:none}
   .sum-wa .ic svg{width:18px;height:18px}
   .sum-wa b{display:block;font-size:.85rem}
   .sum-wa span{font-size:.76rem;color:var(--ink-soft)}
@@ -593,12 +598,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <div data-footer></div>
 
-<script src="site.js"></script>
-<script src="transfers-data.js"></script>
-<script src="tours-data.js"></script>
-<script src="ch-map.js"></script>
+<script src="site.js?v=c736419c0c"></script>
+<script src="transfers-data.js?v=a7eaed83fa"></script>
+<script src="tours-data.js?v=953bf693f8"></script>
+<script src="ch-map.js?v=5963785709"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
-<script src="ch-shortplace.js"></script>
-<script src="plan.js"></script>
+<script src="ch-shortplace.js?v=1eb1db0211"></script>
+<script src="plan.js?v=8329adee81"></script>
 </body>
 </html>

@@ -5,6 +5,8 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
+import { liveRateCard } from '../quote/liveCard';
+import { stripZoneMeta } from '../quote/stripZoneMeta';
 import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
 import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -419,19 +421,6 @@ function summary(result: QuoteResult): ServiceSummary {
   return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
 }
 
-// D-A / spec §3.1: margin is stripped from the wire response unless the caller has
-// margin:view (founder only) — finance/ops price customers without ever seeing cost.
-// Hot zones (D9): the founder-only "Ella premium +15%" annotation rides in a line item's
-// meta.hotZone. It's a margin-class disclosure — WHY a price is elevated — so it must be stripped
-// for any role without margin:view, exactly like marginCents. Returns meta with hotZone removed
-// (undefined when there was no other meta), leaving every other meta field intact.
-function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!meta || !('hotZone' in meta)) return meta;
-  const rest = { ...meta };
-  delete rest.hotZone;
-  return Object.keys(rest).length ? rest : undefined;
-}
-
 // Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
 //
 // The ops builder composes the customer message from its own UNSAVED state, so a few rows (a
@@ -669,7 +658,7 @@ export function internalQuoteRoutes(deps: {
   // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const discountsEnabled = deps.discountsEnabled ?? false;
-  const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.

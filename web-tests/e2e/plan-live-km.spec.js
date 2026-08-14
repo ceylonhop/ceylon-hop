@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // A Google-only planner leg gets its distance from CH_MAP.routeStats. ch-map.js collapses
 // transient routing failures (over-quota / rejected computeRoutes) into a resolved `null`,

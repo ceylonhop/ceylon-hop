@@ -15,14 +15,14 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="../favicon.svg">
 <link rel="apple-touch-icon" href="../img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../site.css?v=b3b9aecc47">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="../analytics.js"></script>
-<script src="../consent.js" defer></script>
+<script src="../analytics.js?v=a1d10c14f3"></script>
+<script src="../consent.js?v=db789988e1" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -40,7 +40,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .post-embed{margin:2rem 0;max-width:360px}
   .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0d3340}
   .post-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
+  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#6c6a6b)}
   .post-hero .breadcrumbs{padding-top:0;margin-bottom:18px}
   .post-kicker{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:.32rem .7rem;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3)}
   .post-hero h1{color:#fff;font-weight:700;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
@@ -48,16 +48,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .post-body{padding:clamp(40px,5vw,68px) 0 clamp(32px,4vw,52px)}
   .post-body .wrap{max-width:900px}
   .article{max-width:68ch;font-size:1.06rem;line-height:1.78}
-  .article > p:first-child{font-size:1.14rem;color:var(--ink,#2C2A2B)}
-  .article p{margin:0 0 1.15rem;color:var(--ink-soft,#4a5a57)}
-  .article h2{font-family:var(--display,Georgia,serif);font-size:clamp(1.35rem,2.6vw,1.72rem);line-height:1.2;margin:2.4rem 0 .7rem;color:var(--ink,#2C2A2B)}
-  .article h3{font-size:1.08rem;margin:1.7rem 0 .45rem;color:var(--ink,#2C2A2B)}
+  .article > p:first-child{font-size:1.14rem;color:var(--ink,#3A3739)}
+  .article p{margin:0 0 1.15rem;color:var(--ink-soft,#6c6a6b)}
+  .article h2{font-family:var(--display,Georgia,serif);font-size:clamp(1.35rem,2.6vw,1.72rem);line-height:1.2;margin:2.4rem 0 .7rem;color:var(--ink,#3A3739)}
+  .article h3{font-size:1.08rem;margin:1.7rem 0 .45rem;color:var(--ink,#3A3739)}
   .article ul,.article ol{margin:0 0 1.2rem;padding-left:1.25rem}
-  .article li{margin:.42rem 0;color:var(--ink-soft,#4a5a57)}
+  .article li{margin:.42rem 0;color:var(--ink-soft,#6c6a6b)}
   .article a{color:var(--accent-deep,#08938f);text-underline-offset:2px}
   .article blockquote{margin:1.3rem 0;padding:.85rem 1.15rem;border-left:3px solid var(--accent,#0AB9B6);background:var(--pc-teal,#e3f4ef);border-radius:0 var(--r-sm,10px) var(--r-sm,10px) 0}
-  .article blockquote p{margin:0;color:var(--ink,#2C2A2B)}
-  .article strong{color:var(--ink,#2C2A2B)}
+  .article blockquote p{margin:0;color:var(--ink,#3A3739)}
+  .article strong{color:var(--ink,#3A3739)}
   .post-next{margin:44px 0 0;padding:24px 26px;background:var(--paper,#fffdf8);border:1px solid var(--line,#e7e3d6);border-radius:var(--r,16px);max-width:68ch}
   .post-next h2{font-size:1.05rem;margin:.35rem 0 .7rem}
   .post-next ul{margin:0;padding-left:1.1rem}
@@ -69,13 +69,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <header class="nav" data-nav>
   <div class="wrap nav-inner">
     <a href="../index.html" class="brand"><img class="cmark" src="../img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
-    <nav class="nav-links"><a href="../plan.html">Plan a trip</a><a href="../tours.html">Tours</a><a href="../blog.html" class="active">Travel Guide</a><a href="../why.html">Why us</a><a href="../about.html">About</a></nav>
+    <nav class="nav-links"><a href="../plan.html">Plan a trip</a><a href="../board.html">Ride board</a><a href="../tours.html">Tours</a><a href="../blog.html" class="active">Travel Guide</a><a href="../why.html">Why us</a><a href="../about.html">About</a></nav>
     <div class="nav-cta">
       <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
     </div>
   </div>
 </header>
-<div class="mobile-menu" data-mobile><a href="../plan.html">Plan a trip</a><a href="../tours.html">Tours</a><a href="../blog.html">Travel Guide</a><a href="../why.html">Why us</a><a href="../about.html">About</a></div>
+<div class="mobile-menu" data-mobile><a href="../plan.html">Plan a trip</a><a href="../board.html">Ride board</a><a href="../tours.html">Tours</a><a href="../blog.html">Travel Guide</a><a href="../why.html">Why us</a><a href="../about.html">About</a></div>
 <main>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"Why We Started Ceylon Hop","description":"Hi, we’re Roshen and Dasis — Co-founders of Ceylon Hop. We’ve been friends for over 20 years, ever since middle school. Our shared love for travel has been…","datePublished":"2025-05-06","dateModified":"2025-05-12","author":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"publisher":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://ceylonhop.com/why-we-started-ceylon-hop/"},"image":"https://ceylonhop.com/og-cover.jpg","inLanguage":"en","wordCount":611}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Travel Guide","item":"https://ceylonhop.com/blog.html"},{"@type":"ListItem","position":3,"name":"Why We Started Ceylon Hop","item":"https://ceylonhop.com/why-we-started-ceylon-hop/"}]}</script>

@@ -3,10 +3,14 @@
 // thing a visitor actually meets — that it covers the page, that one click clears it for good,
 // and that it is nowhere near anyone trying to pay.
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
 
 // Opt out of the suite-wide "returning visitor" storage (see playwright.config.js) — these are
 // the only specs that want a first visit.
 test.use({ storageState: { cookies: [], origins: [] } });
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 const notice = (page) => page.locator('.ch-beta');
 

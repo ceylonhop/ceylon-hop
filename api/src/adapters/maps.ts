@@ -102,6 +102,23 @@ const COORDS: Record<string, [number, number]> = {
   'nilaveli beach': [8.7, 81.19],
   'nanu oya': [6.94, 80.77],
   thanthirimale: [8.42, 80.22],
+  dambulla: [7.86, 80.65],
+  udawalawe: [6.44, 80.89],
+  tissamaharama: [6.28, 81.29],
+  tangalle: [6.02, 80.79],
+  unawatuna: [6.01, 80.25],
+  pasikudah: [7.92, 81.56],
+  hatton: [6.89, 80.6],
+  'adam\'s peak': [6.81, 80.5],
+  wilpattu: [8.45, 80.05],
+  kalpitiya: [8.23, 79.77],
+  jaffna: [9.66, 80.02],
+  haputale: [6.77, 80.96],
+  kitulgala: [6.99, 80.41],
+  nilaveli: [8.7, 81.19],
+  ahangama: [5.97, 80.36],
+  hiriketiya: [5.96, 80.69],
+  'horton plains': [6.8, 80.8],
 };
 
 // Display names for the known places (each normalizes to a COORDS key above). The internal quoting
@@ -112,6 +129,10 @@ export const KNOWN_PLACES: string[] = [
   'Arugam Bay', 'Trincomalee',
   // Multi-stop via-stops (Phase 2 §5 catalog pre-check).
   'Polonnaruwa', 'Habarana', 'Nilaveli Beach', 'Nanu Oya', 'Thanthirimale',
+  // Front-end catalogue parity (2026-08-12): every town transfers-data.js resolves.
+  'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
+  'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
+  'Nilaveli', 'Ahangama', 'Hiriketiya', 'Horton Plains',
 ];
 
 const norm = (s: string): string => s.trim().toLowerCase();
@@ -152,9 +173,18 @@ export function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-// A place name → its exact SL coordinates, when it's one of our known places.
-function knownCoords(name: string): [number, number] | null {
+// A place name → its exact SL coordinates, when it's one of our known places. Exported for
+// scripts/distance-report.ts, which needs coordinate identity to avoid billing the same
+// physical pair twice when two display names pin one point.
+export function knownCoords(name: string): [number, number] | null {
   return parseLatLng(name) ?? COORDS[canonPlace(name)] ?? null;
+}
+
+// A name the coordinate catalogue recognises — the ONLY endpoints allowed to mint distance-cache
+// rows. Excludes raw "lat,lng" strings deliberately: coordinates have unbounded cardinality and a
+// cache keyed on them would grow per-customer, not per-town.
+export function isCatalogTown(name: string): boolean {
+  return COORDS[canonPlace(name)] !== undefined;
 }
 
 // A literal "lat,lng" is already a positively-identified point — that is how the place resolver

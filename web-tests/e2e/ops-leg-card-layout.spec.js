@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { routeOpsEstimate } from './_ops-estimate.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 //  Leg-card layout: content must never overflow the card (2026-08-08).
@@ -42,6 +43,7 @@ async function stubOps(page) {
   });
   const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page); // see _ops-estimate.js — an empty estimate throws inside render()
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json({
@@ -160,6 +162,16 @@ test('leg cards stay readable in the mid-width pane band (the "Colo…" bug)', a
   for (const w of widths) expect(w, 'route input crushed unreadably narrow').toBeGreaterThan(120);
 });
 
+// Two of this test's three phases were fixed by other work (see docs/known-bugs.md, 2026-08-12):
+// `reducedMotion: 'reduce'` above stops a starved animation frame reading as height 0, and the
+// estimate stub stops render() throwing before the card ever reaches its hover state. Together
+// those took it from 4/4 failing to 16/16 under --repeat-each=4 --workers=6.
+//
+// STILL FLAKY IN A FULL RUN, at the third phase below (the classList.remove line): the class is
+// derived from state and a morphdom re-render restores it inside the 350ms + 3s poll window, so
+// the row collapses and the poll reads 0. Toggling the class was chosen to dodge the re-render
+// race on a real fee click — it inherited a different one. Left as-is here rather than rewritten:
+// it is this spec's own bug, not the estimate flake this branch fixes.
 test('the actions-only toolbelt collapses at rest and expands on hover', async ({ page }) => {
   // Owner call 2026-08-08: at rest the tools row's reserved blank band read as
   // wasted space at the foot of every card — so an ACTIONS-ONLY row now gives
@@ -189,10 +201,16 @@ test('the actions-only toolbelt collapses at rest and expands on hover', async (
   // ops-fee-chips.spec.js) — must stay expanded at rest: money and state are
   // never hidden. Asserted by toggling the class directly rather than racing
   // the builder's ~350ms morphdom re-render on a real fee click.
-  await row.evaluate((el) => el.classList.remove('is-actions-only'));
+  // Re-strip the class on EVERY poll attempt, not once up front. is-actions-only is derived
+  // from state, so the builder's ~350ms morphdom re-render puts it straight back — a single
+  // removal followed by a wait is a race the app wins, and it won it more often once the
+  // estimate stub landed and refreshEstimate() started succeeding (i.e. once the app re-rendered
+  // as much as it does in production). Measuring inside the same evaluate as the removal is safe
+  // because this spec runs with reducedMotion, so the row has no transition to wait out.
   await atRest();
-  await page.waitForTimeout(350);
-  await expect.poll(rowHeight, { timeout: 3000 }).toBeGreaterThan(20);
+  await expect
+    .poll(() => row.evaluate((el) => { el.classList.remove('is-actions-only'); return el.getBoundingClientRect().height; }), { timeout: 3000 })
+    .toBeGreaterThan(20);
 
   // Class restored (fee back off), the row collapses again at rest.
   await row.evaluate((el) => el.classList.add('is-actions-only'));

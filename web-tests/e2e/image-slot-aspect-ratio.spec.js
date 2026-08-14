@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// index.html/why.html/tours.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // <image-slot>'s :host used to hard-set `height:160px`. Call sites size their slots with
 // `width:100%;aspect-ratio:4/3` and never override height — and an explicit height BEATS
