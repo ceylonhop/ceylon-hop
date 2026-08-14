@@ -35,6 +35,25 @@ const list: RideList = {
   updatedAt: new Date('2026-08-01T00:00:00.000Z'),
 };
 
+// The other two email systems escape every interpolation (notifications.ts and
+// opsEmail.ts both carry an esc()); these templates interpolate the traveller's
+// first name and the place names raw. Both are user-influenced — a first name is
+// whatever was typed at signup — and an email body is exactly where a stray
+// <script> or <img onerror> must become inert text.
+describe('escaping', () => {
+  it('renders a hostile first name and place name as text, not markup', async () => {
+    const email = new FakeEmailAdapter();
+    const hostile: RideList = { ...list, fromPlace: 'Ella<script>alert(1)</script>', toPlace: 'Mirissa "&" more' };
+    await sendRideConfirmed(email, {
+      to: 'maya@example.com', firstName: '<img src=x onerror=alert(1)>Maya', list: hostile, lockedTime: '08:00',
+    });
+    const html = email.sent[0].html;
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
 describe('sendRideConfirmed', () => {
   it('emails the traveller the route, date, locked time and seat price — once', async () => {
     const email = new FakeEmailAdapter();
