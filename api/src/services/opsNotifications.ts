@@ -106,7 +106,7 @@ export async function sendQuoteSentBack(
 ): Promise<void> {
   const link = quoteDeepLink(q.id, opsBaseUrl);
   const lead = `<strong>${esc(sentBackBy)}</strong> sent your quote back for changes.`;
-  const noteHtml = note ? `<p style="margin:0 0 20px;padding:12px 14px;background:#f3f4f6;border-radius:6px;font-size:14px">${esc(note)}</p>` : '';
+  const noteHtml = note ? `<p style="margin:0 0 20px;padding:12px 14px;background:#F0EEE5;border-radius:6px;font-size:14px">${esc(note)}</p>` : '';
   const html = [`<p style="font-size:16px;margin:0 0 4px">${lead}</p>`, heroRef(q.reference), noteHtml, ctaBlock('Open the quote', link, 'Open it from the Quotes tab in the ops dashboard.')].join('');
   const text = [lead.replace(/<[^>]+>/g, ''), '', `Reference: ${q.reference}`, note ? `\nNote: ${note}` : '', '', link ? `Open the quote: ${link}` : 'Open it from the Quotes tab.'].join('\n');
   const wrapped = opsEmailShell(html, text);
