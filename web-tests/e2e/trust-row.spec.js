@@ -13,10 +13,21 @@ test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
   desktop width — four items on one line and the fifth orphaned underneath, still
   justified apart because justify-content was space-between.
 
-  Two things are asserted here, because fixing only one lets the bug back in:
-    1. at desktop it genuinely fits on ONE line, with measurable headroom; and
-    2. at every narrower width it degrades into an even grid, with no label wrapping
-       to two lines inside its cell.
+  It used to answer that by degrading into a 3-column and then a 2-column grid — but a grid
+  of five items IS the two-row stack, just tidied up, and that stack is what the strip is
+  meant to avoid. The row now stays ONE line at every width: it scales type, icons and gaps
+  together from 1159px down to 1041px, and below that hands over to the horizontal scroll
+  strip (still one line, just swipeable).
+
+  1040 is where the shrinking stops being honest. Measured against this copy, five items need
+  ~926px at .70rem with 20px icons; the pre-webfont fallback sets ~3.7% wider on Linux and
+  Android (~960px) against a 992px content box at 1040. Below that the type would have to go
+  under 11px — smaller than anything else on the site — so the strip takes over instead.
+
+  Three things are asserted, because fixing only one lets the bug back in:
+    1. at desktop it genuinely fits on ONE line, with measurable headroom;
+    2. through the scaling band it stays one line, unwrapped and un-overflowing; and
+    3. at NO width does it become a grid or gain a second visual row.
 
   A future copy change ("Free cancellation 24h before" is the tightest label) or another
   type change should fail here rather than in a screenshot.
@@ -79,19 +90,38 @@ test('the trust strip keeps the page gutter', async ({ page }) => {
   expect(g.paddingLeft, 'the strip must line up with the rest of the page').toBeGreaterThan(0);
 });
 
-for (const width of [1159, 1100, 1000, 951, 950, 900, 800, 761]) {
-  test(`the trust strip degrades to an even grid at ${width}px`, async ({ page }) => {
+// The scaling band: still a real one-line row, so it must fit its box, not merely avoid
+// wrapping by overflowing out of it.
+for (const width of [1159, 1140, 1120, 1080, 1060, 1041]) {
+  test(`the trust strip shrinks to stay on one line at ${width}px`, async ({ page }) => {
     await open(page, width);
     const g = await geometry(page);
-    expect(g.display, 'an even grid, not a ragged wrapped flex row').toBe('grid');
-    expect(g.wrappedLabels, 'no label may wrap to two lines inside its cell').toBe(0);
-    expect(g.overflows, 'must not scroll horizontally above the mobile breakpoint').toBe(false);
+    expect(g.display, 'one flex line — the grids that split five items 3+2 are gone').toBe('flex');
+    expect(g.visualRows, 'one line, never a second row').toBe(1);
+    expect(g.wrappedLabels, 'no label may wrap to two lines').toBe(0);
+    expect(g.overflows, 'shrinking must fit the box, not spill out of it').toBe(false);
+    expect(g.headroom, `${g.headroom}px of slack (needs ${g.needed} of ${g.contentBox})`)
+      .toBeGreaterThanOrEqual(0);
   });
 }
 
-test('the trust strip becomes a scroll strip on mobile', async ({ page }) => {
-  await open(page, 375);
-  const g = await geometry(page);
-  expect(g.visualRows, 'one scrollable line, not a stack').toBe(1);
-  expect(g.overflows, 'scrolls horizontally by design below 760px').toBe(true);
+// Below the band the strip swipes. Still one line — the point of the whole exercise.
+for (const width of [1040, 1000, 900, 800, 600, 375]) {
+  test(`the trust strip is a one-line scroll strip at ${width}px`, async ({ page }) => {
+    await open(page, width);
+    const g = await geometry(page);
+    expect(g.visualRows, 'one scrollable line, not a stack').toBe(1);
+    expect(g.wrappedLabels, 'no label may wrap to two lines').toBe(0);
+    expect(g.overflows, 'scrolls horizontally by design below the scaling band').toBe(true);
+  });
+}
+
+// The regression this file exists for, stated directly: no width may produce the 3+2 stack.
+test('no width turns the strip into a grid or a second row', async ({ page }) => {
+  for (const width of [1440, 1300, 1200, 1160, 1159, 1100, 1041, 1040, 950, 800, 700, 500, 375]) {
+    await open(page, width);
+    const g = await geometry(page);
+    expect(g.display, `grid at ${width}px`).not.toBe('grid');
+    expect(g.visualRows, `${g.visualRows} visual rows at ${width}px`).toBe(1);
+  }
 });
