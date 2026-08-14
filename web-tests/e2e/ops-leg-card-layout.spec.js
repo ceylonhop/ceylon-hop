@@ -201,10 +201,16 @@ test('the actions-only toolbelt collapses at rest and expands on hover', async (
   // ops-fee-chips.spec.js) — must stay expanded at rest: money and state are
   // never hidden. Asserted by toggling the class directly rather than racing
   // the builder's ~350ms morphdom re-render on a real fee click.
-  await row.evaluate((el) => el.classList.remove('is-actions-only'));
+  // Re-strip the class on EVERY poll attempt, not once up front. is-actions-only is derived
+  // from state, so the builder's ~350ms morphdom re-render puts it straight back — a single
+  // removal followed by a wait is a race the app wins, and it won it more often once the
+  // estimate stub landed and refreshEstimate() started succeeding (i.e. once the app re-rendered
+  // as much as it does in production). Measuring inside the same evaluate as the removal is safe
+  // because this spec runs with reducedMotion, so the row has no transition to wait out.
   await atRest();
-  await page.waitForTimeout(350);
-  await expect.poll(rowHeight, { timeout: 3000 }).toBeGreaterThan(20);
+  await expect
+    .poll(() => row.evaluate((el) => { el.classList.remove('is-actions-only'); return el.getBoundingClientRect().height; }), { timeout: 3000 })
+    .toBeGreaterThan(20);
 
   // Class restored (fee back off), the row collapses again at rest.
   await row.evaluate((el) => el.classList.add('is-actions-only'));
