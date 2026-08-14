@@ -185,3 +185,69 @@ describe('adoptEngineEstimate + calcTotal', () => {
     expect(w.eval('calcTotal()')).toBe(999);
   });
 });
+
+// Task 5: the rate-lock request booking.js sends to POST /quote/lock (ensureLockedQuoteId's
+// `lockReq`) prefers the engine's own measured distanceKm for a leg over the client-side
+// TRANSFERS.kmBetween lookup table, but only while that estimate is still priced against the
+// itinerary as it stands — a stale or absent estimate (flag off) must fall back exactly as
+// before the engine existed, so the flag-off world stays byte-identical.
+describe('lockLegKm — rate-lock leg distance, engine vs local fallback', () => {
+  it('prefers the engine-measured distanceKm once engineEst is adopted for the current intent', () => {
+    const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90&ad=1');
+    const from = ev(w, 'state.locFrom || r.stops[0]');
+    const to = ev(w, 'state.locTo || r.stops[r.stops.length-1]');
+    const sig = w.eval('currentIntentSig()');
+    w.eval(
+      `adoptEngineEstimate({ totalCents: 12345, amountDueNowCents: 12345, estimated: false, ` +
+      `legs: [{ from: ${JSON.stringify(from)}, to: ${JSON.stringify(to)}, distanceKm: 77, durationMin: 90 }] }, ${JSON.stringify(sig)})`,
+    );
+    expect(ev(w, `lockLegKm(${JSON.stringify(from)}, ${JSON.stringify(to)})`)).toBe(77);
+  });
+
+  it('falls back to TRANSFERS.kmBetween with no fresh engine estimate — the flag-off path', () => {
+    const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90&ad=1');
+    const from = ev(w, 'state.locFrom || r.stops[0]');
+    const to = ev(w, 'state.locTo || r.stops[r.stops.length-1]');
+    const expectedKm = ev(w, `(window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(${JSON.stringify(from)}, ${JSON.stringify(to)}) || 0) : 0`);
+    expect(ev(w, `lockLegKm(${JSON.stringify(from)}, ${JSON.stringify(to)})`)).toBe(expectedKm);
+  });
+
+  it('falls back once the engine estimate goes stale — a pax change moves the sig past what it was adopted for', () => {
+    const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90&ad=1');
+    const from = ev(w, 'state.locFrom || r.stops[0]');
+    const to = ev(w, 'state.locTo || r.stops[r.stops.length-1]');
+    const sig = w.eval('currentIntentSig()');
+    w.eval(
+      `adoptEngineEstimate({ totalCents: 12345, amountDueNowCents: 12345, estimated: false, ` +
+      `legs: [{ from: ${JSON.stringify(from)}, to: ${JSON.stringify(to)}, distanceKm: 77, durationMin: 90 }] }, ${JSON.stringify(sig)})`,
+    );
+    w.eval('state.ad = state.ad + 1');
+    const expectedKm = ev(w, `(window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(${JSON.stringify(from)}, ${JSON.stringify(to)}) || 0) : 0`);
+    expect(ev(w, `lockLegKm(${JSON.stringify(from)}, ${JSON.stringify(to)})`)).toBe(expectedKm);
+  });
+});
+
+// Task 5: the idempotency-key race. A retried/duplicated POST to createApiBooking's endpoint
+// must reuse the SAME key even when a re-estimate landed a different quotedTotal between
+// attempts — otherwise the retry mints a fresh draft instead of returning the one already
+// created. quotedTotal is advisory (the server prices engine-first, bookings.ts GL-3), so
+// dropping it from the key is safe; any OTHER change to the request still produces a new key.
+describe('idempotencyKeyFor — payload without quotedTotal', () => {
+  it('produces the same key for the same trip even when quotedTotal differs', () => {
+    const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90&ad=1');
+    const payloadA = { from: 'cmb-airport', to: 'kandy', adults: 1, children: 0, quotedTotal: 9000 };
+    const payloadB = { from: 'cmb-airport', to: 'kandy', adults: 1, children: 0, quotedTotal: 12345 };
+    const keyA = ev(w, `idempotencyKeyFor(${JSON.stringify(payloadA)})`);
+    const keyB = ev(w, `idempotencyKeyFor(${JSON.stringify(payloadB)})`);
+    expect(keyA).toBe(keyB);
+  });
+
+  it('produces a different key for a different trip', () => {
+    const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90&ad=1');
+    const payloadA = { from: 'cmb-airport', to: 'kandy', adults: 1, children: 0, quotedTotal: 9000 };
+    const payloadB = { from: 'cmb-airport', to: 'galle', adults: 1, children: 0, quotedTotal: 9000 };
+    const keyA = ev(w, `idempotencyKeyFor(${JSON.stringify(payloadA)})`);
+    const keyB = ev(w, `idempotencyKeyFor(${JSON.stringify(payloadB)})`);
+    expect(keyA).not.toBe(keyB);
+  });
+});

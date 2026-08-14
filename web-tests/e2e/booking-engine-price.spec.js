@@ -201,6 +201,20 @@ test('switching to the van re-estimates through the engine; the upsell CTA keeps
   expect(hits.length).toBeGreaterThan(0);
 });
 
+// Phase 3, Task 5: quotedTotal (createApiBooking's price-shown-to-price-charged evidence field)
+// must be the exact figure the engine quoted, in minor units — not a re-derived or rounded one.
+test('quotedTotal sent to POST /bookings/single equals the stubbed engine cents exactly', async ({ page }) => {
+  let postedBody = null;
+  page.on('request', (r) => {
+    if (r.url().includes('/bookings/single')) postedBody = JSON.parse(r.postData() || '{}');
+  });
+  await gotoBooking(page, { estimate: {} }); // default stub body: totalCents 12345
+  await expect(page.locator('#sum-total')).toHaveText('$123.45');
+  await fillContact(page);
+  await page.click('#pay-btn');
+  await expect.poll(() => postedBody && postedBody.quotedTotal, { timeout: 8000 }).toBe(12345);
+});
+
 test('choosing chauffeur on a trip re-estimates through the engine with a distinct total', async ({ page }) => {
   const query = [
     'mode=trip',

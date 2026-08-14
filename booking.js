@@ -1277,6 +1277,22 @@ function currentEngineEst(){
   return (engineEst && engineEst.intentSig===currentIntentSig()) ? engineEst : null;
 }
 
+// Task 5: the rate-lock request (createApiBooking's `lockReq`, sent to POST /quote/lock) used to
+// seed every leg's distanceKm from TRANSFERS.kmBetween, a static client-side table. A live engine
+// estimate already carries a real measured distanceKm per leg (Global Constraints: the estimate
+// RESPONSE, never a client distance, is what feeds the lock) — prefer that when there is a fresh
+// one for THIS leg, matched by from/to. A stale or absent estimate (flag off, or the estimate
+// hasn't caught up with the current itinerary) falls back to kmBetween exactly as before the
+// engine existed, so the flag-off world stays byte-identical to today.
+function lockLegKm(from, to){
+  const est = currentEngineEst();
+  if(est && Array.isArray(est.legs)){
+    const match = est.legs.find(function(l){ return l && l.from===from && l.to===to; });
+    if(match && typeof match.distanceKm === 'number') return match.distanceKm;
+  }
+  return (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(from, to) || 0) : 0;
+}
+
 // ---- fetch wiring (Task 3) ----
 // The sig we last ASKED CH_PRICING about. render() runs on nearly every mutation in this file
 // (every stepper click, every keystroke that touches state), so without this guard we'd fire a
@@ -2045,6 +2061,15 @@ async function ensureLockedQuoteId(apiBase, lockReq){
   finally { clearTimeout(timer); }
 }
 
+// Task 5: the idempotency key createApiBooking sends with its POST — split out so the
+// duplicate-draft-race fix (excluding quotedTotal, see the call site) is unit-testable on its
+// own, without exercising the whole booking-creation flow (DOM reads, fetch, PayHere).
+function idempotencyKeyFor(payload){
+  const source = JSON.stringify(Object.assign({}, payload, { quotedTotal: undefined }));
+  let h = 0; for (let i = 0; i < source.length; i++) h = ((h << 5) - h + source.charCodeAt(i)) | 0;
+  return 'ch-' + (h >>> 0).toString(36);
+}
+
 // M7 — when a backend is configured, create a real booking and use its reference.
 // Handles all three flows: single transfer, multi-stop trip, and shared seat.
 // Returns null only when no backend is configured (demo mode, default site behaviour);
@@ -2078,8 +2103,7 @@ async function createApiBooking(){
     for(let i=0; i<tripStops.length-1; i++){
       if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
       const tf = tripStops[i], tt = tripStops[i+1];
-      const tkm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(tf, tt) || 0) : 0;
-      tripLegs.push({ from: tf, to: tt, distanceKm: tkm });
+      tripLegs.push({ from: tf, to: tt, distanceKm: lockLegKm(tf, tt) });
     }
     const tQuoteId = tripLegs.length
       ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
@@ -2116,12 +2140,13 @@ async function createApiBooking(){
     const sTo = state.locTo || r.stops[r.stops.length-1];
     const sVeh = (vehicleKey==='van') ? 'van' : 'car';
     // Lock the rate card for this transfer (best-effort; undefined → prices live). distanceKm is
-    // only the client's estimate — the booking re-resolves it server-side, and the lock captures
-    // the CARD regardless, so a rough/zero km here never affects what the customer is charged.
-    const sKm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(sFrom, sTo) || 0) : 0;
+    // the engine's own measured figure when a fresh estimate covers this leg (lockLegKm), else
+    // the client's kmBetween estimate — either way the booking re-resolves it server-side, and
+    // the lock captures the CARD regardless, so a rough/zero km here never affects what the
+    // customer is charged.
     const sQuoteId = await ensureLockedQuoteId(API, {
       product:'private', vehicle:sVeh, pax: state.ad + state.ch, bags: state.bags,
-      legs: [{ from: sFrom, to: sTo, distanceKm: sKm }]
+      legs: [{ from: sFrom, to: sTo, distanceKm: lockLegKm(sFrom, sTo) }]
     });
     payload = {
       from: sFrom,
@@ -2163,11 +2188,14 @@ async function createApiBooking(){
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);
-  // Idempotency: a stable key derived from the exact request. A retried or duplicated POST
-  // (free-tier cold-start timeout, the ph-retry button) returns the SAME booking instead of
-  // creating a second draft; any change to the request produces a new key.
-  let h = 0; for (let i = 0; i < body.length; i++) h = ((h << 5) - h + body.charCodeAt(i)) | 0;
-  const idemKey = 'ch-' + (h >>> 0).toString(36);
+  // Idempotency: a stable key derived from the request, but WITHOUT quotedTotal (Task 5 — kills
+  // a duplicate-draft race). A retried or duplicated POST (free-tier cold-start timeout, the
+  // ph-retry button) must return the SAME booking instead of creating a second draft — but if a
+  // re-estimate lands between the original attempt and its retry, quotedTotal alone would change
+  // and mint a fresh key, defeating that. The server prices engine-first (bookings.ts GL-3), so
+  // quotedTotal is advisory only — dropping it from the key is safe. Any OTHER change to the
+  // request (different trip, pax, dates, …) still produces a new key exactly as before.
+  const idemKey = idempotencyKeyFor(payload);
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), 45000); // allow for a free-tier cold start
   let res;
