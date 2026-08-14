@@ -9146,6 +9146,10 @@ function attachEventListeners() {
     var isText = (id === 'f-firstName' || id === 'f-lastName' || id === 'f-contact');
     el.addEventListener('input', function() {
       fieldMap[id](el.value);
+      // These fields are quote content like any other mutator: without markDirty() a rename
+      // armed no autosave and the chip kept saying "Saved" over an unsaved edit — the change
+      // was silently lost on navigate-away (found 2026-08-13).
+      markDirty();
       // Text basics: live-update the contact validity + itinerary gate (renders only on a
       // flip, so the operator's typing/focus is never disrupted mid-keystroke).
       if (isText) syncBasics();
