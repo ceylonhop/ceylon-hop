@@ -7,13 +7,16 @@ import type { RideList } from '../domain/rideList';
 // job when a list confirms / expires / a charge fails.
 // ============================================================================
 
-const TEAL = '#0AB9B6';
-const INK = '#2C2A2B';
+// The band carries white 800-weight type, so it takes the text-safe deep accent
+// (#0AB9B6 under white was 2.43:1 — the exact pattern #441 retired on the site).
+// Ink is the current Bristol Black, not the pre-rebrand #2C2A2B.
+const BAND = '#24758A';
+const INK = '#3A3739';
 
 function shell(heading: string, bodyHtml: string): string {
   return `<!doctype html><html><body style="margin:0;background:#F4F2EA;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:${INK}">
   <div style="max-width:520px;margin:0 auto;padding:24px">
-    <div style="background:${TEAL};color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;font-weight:800;font-size:18px">Ceylon Hop · Ride Board</div>
+    <div style="background:${BAND};color:#fff;padding:16px 20px;border-radius:14px 14px 0 0;font-weight:800;font-size:18px">Ceylon Hop · Ride Board</div>
     <div style="background:#fffdf8;border:1px solid #e7e3d6;border-top:none;border-radius:0 0 14px 14px;padding:22px 20px">
       <h1 style="font-size:20px;margin:0 0 12px">${heading}</h1>
       ${bodyHtml}

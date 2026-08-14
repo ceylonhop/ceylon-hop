@@ -14,7 +14,7 @@ import { signBookingToken } from '../lib/bookingToken';
 // Use the _TEXT variants for anything that carries type, the plain ones for graphics.
 const BLUE = '#63BFD6'; // Bachelor Button — the book's primary; brand band + rules
 const TEAL = '#0AB9B6'; // Tiffany — route markers (graphic only, never type)
-const TEAL_DEEP = '#0a7d6f'; // text-safe Tiffany, 5.03:1
+const TEAL_DEEP = '#24758A'; // text-safe Bachelor Button, 5.27:1 — the site's --blue-deep/--btn-accent. (Name kept: it is "the deep accent that carries type"; the hue moved with the rebrand — the old #0a7d6f is retired, see emailBrand.test.ts.)
 const TOMATO = '#EC3A24'; // Cherry Tomato — route end marker (graphic only)
 const TOMATO_TEXT = '#D52812'; // text-safe Cherry Tomato, 5.07:1 — cancel/no-show eyebrows
 const INK = '#3A3739'; // Bristol Black
@@ -341,7 +341,9 @@ function totalBlock(label: string, amount: string): string {
 }
 
 interface Cta { href: string; label: string; bg: string }
-const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Message us on WhatsApp', bg: '#25D366' };
+// #0B7A44, not WhatsApp's own #25D366 — white text on the raw green is 1.98:1. Same
+// decision as site.css's .btn-wa, and the same label the site settled on in #462.
+const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Chat on WhatsApp', bg: '#0B7A44' };
 
 function infoBox(title: string, body: string, note?: string, cta: Cta = CTA_WHATSAPP): string {
   return `<tr><td style="padding:26px 34px 0">
