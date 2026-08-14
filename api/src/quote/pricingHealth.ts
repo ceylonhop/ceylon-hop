@@ -10,6 +10,8 @@
 import { winningZoneForStops, type HotZone } from './hotZones';
 import type { RateCard, Vehicle } from './rateCard';
 import { quote } from './engine';
+import { canonPlace } from '../adapters/maps';
+import type { DistanceCacheRepo, DistanceCacheRow } from '../db/distanceCacheRepo';
 
 export interface ZoneCoverageRow {
   placeName: string;
@@ -83,4 +85,61 @@ export function routeHealthRow(
     zoneName: zone ? zone.placeName : null,
     source,
   };
+}
+
+// Defect fix (2026-08-14): the script used to call distanceRepo.get() once per route pair — 1,406
+// calls against a remote Supabase pooler, which never finished inside 3 minutes. Load the WHOLE
+// cache with a single repo.all(), index it in memory, and look up locally instead. Keyed on
+// canonPlace() output, same as the underlying table, so lookups match however the row was stored.
+export async function buildDistanceIndex(repo: DistanceCacheRepo): Promise<Map<string, DistanceCacheRow>> {
+  const rows = await repo.all();
+  const index = new Map<string, DistanceCacheRow>();
+  for (const row of rows) {
+    index.set(`${row.fromKey}|${row.toKey}`, row);
+  }
+  return index;
+}
+
+export function lookupDistance(index: Map<string, DistanceCacheRow>, from: string, to: string): DistanceCacheRow | null {
+  return index.get(`${canonPlace(from)}|${canonPlace(to)}`) ?? null;
+}
+
+export interface FloorBoundSummary {
+  count: number;
+  // The floor-bound route with the smallest distanceKm — the "most extreme" example, per the
+  // report's one-line summary ("shortest: Nuwara Eliya → Nanu Oya at 3km").
+  shortest: RouteHealthRow | null;
+}
+
+export interface RankedRouteHealth {
+  // Non-floor-bound routes, sorted by |ratePerKm − expectedPerKm| descending — the routes whose
+  // effective rate deviates most from the rate card's plain per-km, largest deviation first. A
+  // zone-boosted route surfaces here (with its zone named), which is the point of the report.
+  ranked: RouteHealthRow[];
+  floorBound: FloorBoundSummary;
+}
+
+// Defect fix (2026-08-14): sorting by raw $/km descending put every short floor-bound route at
+// the top — correct prices (the vehicle minimum applies), not anomalies, burying any real signal.
+// Floor-bound routes are expected, so they're pulled out into a count + one example instead of
+// polluting the ranked table; everything else is ranked by deviation from the card's expected
+// per-km, not by the raw rate itself.
+export function rankRouteHealth(rows: RouteHealthRow[], expectedPerKm: number): RankedRouteHealth {
+  const floorRows: RouteHealthRow[] = [];
+  const ranked: RouteHealthRow[] = [];
+  for (const row of rows) {
+    if (row.floorBound) {
+      floorRows.push(row);
+    } else {
+      ranked.push(row);
+    }
+  }
+  ranked.sort(
+    (a, b) => Math.abs(b.ratePerKm - expectedPerKm) - Math.abs(a.ratePerKm - expectedPerKm),
+  );
+  let shortest: RouteHealthRow | null = null;
+  for (const row of floorRows) {
+    if (!shortest || row.distanceKm < shortest.distanceKm) shortest = row;
+  }
+  return { ranked, floorBound: { count: floorRows.length, shortest } };
 }

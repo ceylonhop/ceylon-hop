@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { zoneCoverage, routeHealthRow } from './pricingHealth';
+import { zoneCoverage, routeHealthRow, buildDistanceIndex, lookupDistance, rankRouteHealth } from './pricingHealth';
 import { RATE_CARD } from './rateCard';
 import { quote } from './engine';
 import type { HotZone } from './hotZones';
-import { KNOWN_PLACES } from '../adapters/maps';
+import { KNOWN_PLACES, canonPlace } from '../adapters/maps';
+import type { DistanceCacheRepo, DistanceCacheRow } from '../db/distanceCacheRepo';
 
 // Fixtures: the five REAL prod hot-zone names that went silently dark (incident 2026-08-14) —
 // each saved from a raw Google prediction whose display string never equals a KNOWN_PLACES
@@ -75,5 +76,99 @@ describe('routeHealthRow', () => {
   it('has no zone fired when nothing matches', () => {
     const row = routeHealthRow('Colombo City', 'Kandy', 200, RATE_CARD, 'estimate');
     expect(row.zoneName).toBeNull();
+  });
+});
+
+// Fake repo whose all()/get() call counts we can inspect — pins that the report loads the cache
+// ONCE (defect: it was calling repo.get() once per route pair — 1,406 calls against a remote
+// Supabase pooler, which hangs past 3 minutes).
+function countingFakeRepo(rows: DistanceCacheRow[]): DistanceCacheRepo & { allCalls: number; getCalls: number } {
+  return {
+    allCalls: 0,
+    getCalls: 0,
+    async all(): Promise<DistanceCacheRow[]> {
+      this.allCalls++;
+      return rows;
+    },
+    async get(): Promise<DistanceCacheRow | null> {
+      this.getCalls++;
+      return null;
+    },
+    async upsert(): Promise<DistanceCacheRow> {
+      throw new Error('upsert not used by pricing-health');
+    },
+  };
+}
+
+describe('buildDistanceIndex / lookupDistance', () => {
+  it('loads the whole cache via a single all() call, then every lookup is local (get() never called)', async () => {
+    const cached: DistanceCacheRow = {
+      fromKey: canonPlace('Colombo City'),
+      toKey: canonPlace('Kandy'),
+      km: 115,
+      durationMin: 180,
+      source: 'google',
+      fetchedAt: new Date(),
+    };
+    const repo = countingFakeRepo([cached]);
+    const index = await buildDistanceIndex(repo);
+    // simulate looking up many route pairs, as the script does across the whole catalogue
+    for (let i = 0; i < 50; i++) {
+      lookupDistance(index, 'Colombo City', 'Kandy');
+      lookupDistance(index, 'Colombo City', 'Galle');
+    }
+    expect(repo.allCalls).toBe(1);
+    expect(repo.getCalls).toBe(0);
+  });
+
+  it('finds a cached row by canonicalised from/to, and misses a pair not in the cache', async () => {
+    const cached: DistanceCacheRow = {
+      fromKey: canonPlace('Colombo City'),
+      toKey: canonPlace('Kandy'),
+      km: 115,
+      durationMin: 180,
+      source: 'google',
+      fetchedAt: new Date(),
+    };
+    const index = await buildDistanceIndex(countingFakeRepo([cached]));
+    expect(lookupDistance(index, 'Colombo City', 'Kandy')?.km).toBe(115);
+    expect(lookupDistance(index, 'Kandy', 'Colombo City')).toBeNull(); // directional, per distanceCacheRepo
+    expect(lookupDistance(index, 'Colombo City', 'Galle')).toBeNull();
+  });
+});
+
+describe('rankRouteHealth', () => {
+  const expectedPerKm = RATE_CARD.perKmCents.car / 100;
+
+  it('excludes floor-bound routes from the ranked list and reports them as a separate count with the shortest example', () => {
+    const rows = [
+      routeHealthRow('Colombo City', 'Negombo', 5, RATE_CARD, 'estimate'), // floor-bound, 5km
+      routeHealthRow('Galle', 'Unawatuna', 3, RATE_CARD, 'estimate'), // floor-bound, shorter
+      routeHealthRow('Colombo City', 'Kandy', 250, RATE_CARD, 'estimate'), // not floor-bound
+    ];
+    const { ranked, floorBound } = rankRouteHealth(rows, expectedPerKm);
+
+    expect(ranked).toHaveLength(1);
+    expect(ranked.every((r) => !r.floorBound)).toBe(true);
+    expect(ranked[0].route).toBe('Colombo City → Kandy');
+
+    expect(floorBound.count).toBe(2);
+    expect(floorBound.shortest?.route).toBe('Galle → Unawatuna');
+    expect(floorBound.shortest?.distanceKm).toBe(3);
+  });
+
+  it('ranks a zone-boosted route above an ordinary route of the same distance (the point of the report)', () => {
+    const zones: HotZone[] = [{ placeName: 'Ella', boostPct: 25, active: true }];
+    const boostedCard = { ...RATE_CARD, hotZones: zones };
+    const boosted = routeHealthRow('Colombo City', 'Ella', 200, boostedCard, 'estimate');
+    const ordinary = routeHealthRow('Colombo City', 'Kandy', 200, RATE_CARD, 'estimate');
+
+    // sanity: the ordinary route prices at (roughly) the card's expected $/km, the boosted one well above
+    expect(ordinary.ratePerKm).toBeCloseTo(expectedPerKm, 1);
+    expect(boosted.ratePerKm).toBeGreaterThan(ordinary.ratePerKm);
+
+    const { ranked } = rankRouteHealth([ordinary, boosted], expectedPerKm);
+    expect(ranked[0].route).toBe(boosted.route);
+    expect(ranked[0].zoneName).toBe('Ella');
   });
 });

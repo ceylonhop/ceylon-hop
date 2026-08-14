@@ -17,15 +17,22 @@
 // DELIBERATELY does NOT load api/.env — see scripts/promote-audit.ts for why: that file holds the
 // PRODUCTION DATABASE_URL, and a script that picks it up implicitly is one typo away from pointing
 // at prod when you meant staging. Pass the URL explicitly, as above.
-import { KNOWN_PLACES, FakeMapsAdapter, canonPlace } from '../src/adapters/maps';
+import { KNOWN_PLACES, FakeMapsAdapter } from '../src/adapters/maps';
 import { createDb } from '../src/db/client';
 import { InMemoryZonesRepo, type ZonesRepo } from '../src/db/zonesRepo';
 import { PostgresZonesRepo } from '../src/db/postgresZonesRepo';
 import { PostgresDistanceCacheRepo } from '../src/db/postgresDistanceCacheRepo';
-import type { DistanceCacheRepo } from '../src/db/distanceCacheRepo';
+import type { DistanceCacheRepo, DistanceCacheRow } from '../src/db/distanceCacheRepo';
 import { liveRateCard } from '../src/quote/liveCard';
 import { RATE_CARD } from '../src/quote/rateCard';
-import { zoneCoverage, routeHealthRow, type RouteHealthRow } from '../src/quote/pricingHealth';
+import {
+  zoneCoverage,
+  routeHealthRow,
+  buildDistanceIndex,
+  lookupDistance,
+  rankRouteHealth,
+  type RouteHealthRow,
+} from '../src/quote/pricingHealth';
 
 const TOP_N = 40;
 
@@ -62,12 +69,15 @@ async function main(): Promise<void> {
     console.log('');
   }
 
-  // ── Section 2: route table, anomalies (highest effective $/km) first ─────────────────────
+  // ── Section 2: route table, real anomalies first ──────────────────────────────────────────
+  // Load the WHOLE distance cache ONCE (a per-route repo.get() over 1,406 pairs hung past 3
+  // minutes against a remote Supabase pooler) and look every pair up locally.
+  const distanceIndex: Map<string, DistanceCacheRow> = distanceRepo ? await buildDistanceIndex(distanceRepo) : new Map();
   const rows: RouteHealthRow[] = [];
   for (const from of KNOWN_PLACES) {
     for (const to of KNOWN_PLACES) {
       if (from === to) continue;
-      const cached = distanceRepo ? await distanceRepo.get(canonPlace(from), canonPlace(to)) : null;
+      const cached = lookupDistance(distanceIndex, from, to);
       if (cached) {
         rows.push(routeHealthRow(from, to, cached.km, rateCard, 'cache'));
         continue;
@@ -77,19 +87,33 @@ async function main(): Promise<void> {
       rows.push(routeHealthRow(from, to, est.km, rateCard, 'estimate'));
     }
   }
-  rows.sort((a, b) => b.ratePerKm - a.ratePerKm);
-  const shown = rows.slice(0, TOP_N);
 
-  console.log(`## Route table (top ${shown.length} of ${rows.length} routes, by effective $/km)\n`);
-  console.log('| Route | $/km | Floor-bound? | Zone fired | Source |');
-  console.log('|---|---|---|---|---|');
-  for (const r of shown) {
+  // Floor-bound routes (the vehicle minimum applies) are expected, not anomalous — a short-leg
+  // false alarm that used to fill the top of this table. They're reported as a count + the most
+  // extreme (shortest) example instead of ranked alongside real signal.
+  // routeHealthRow always prices with the 'car' vehicle (its fixed sampling point).
+  const expectedPerKm = RATE_CARD.perKmCents.car / 100;
+  const { ranked, floorBound } = rankRouteHealth(rows, expectedPerKm);
+  const shown = ranked.slice(0, TOP_N);
+
+  console.log('## Route table — anomalies (ranked by deviation from the rate card\'s expected $/km)\n');
+  if (floorBound.count > 0 && floorBound.shortest) {
     console.log(
-      `| ${r.route} | $${r.ratePerKm.toFixed(2)} | ${r.floorBound ? '⚠ floor' : ''} | ${r.zoneName ?? ''} | ${r.source} |`,
+      `${floorBound.count} routes are floor-bound (minimum fare applies) — shortest: ` +
+        `${floorBound.shortest.route} at ${floorBound.shortest.distanceKm}km\n`,
     );
   }
-  if (rows.length > shown.length) {
-    console.log(`\n…and ${rows.length - shown.length} more routes not shown.`);
+  console.log(`Top ${shown.length} of ${ranked.length} non-floor-bound routes, expected $/km = $${expectedPerKm.toFixed(2)}\n`);
+  console.log('| Route | $/km | Deviation | Floor-bound? | Zone fired | Source |');
+  console.log('|---|---|---|---|---|---|');
+  for (const r of shown) {
+    const deviation = r.ratePerKm - expectedPerKm;
+    console.log(
+      `| ${r.route} | $${r.ratePerKm.toFixed(2)} | ${deviation >= 0 ? '+' : ''}$${deviation.toFixed(2)} | ${r.floorBound ? '⚠ floor' : ''} | ${r.zoneName ?? ''} | ${r.source} |`,
+    );
+  }
+  if (ranked.length > shown.length) {
+    console.log(`\n…and ${ranked.length - shown.length} more routes not shown.`);
   }
 }
 
