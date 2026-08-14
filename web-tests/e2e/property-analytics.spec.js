@@ -462,8 +462,11 @@ test('the manage and quote greetings are masked too', async ({ page }) => {
 
 // Reads the real module off the static server and flips the owner switch, so the strip's
 // tests exercise the SHIPPED file rather than a second copy that could drift from it.
+// Match on the PATH, not the whole URL: the pages load this with a content-hash cache-buster
+// (`?v=<hash>`, #464), so a plain '**/consent-transactional.js' glob silently stops matching
+// the moment that hash appears — the route never fires and the switch is never flipped.
 async function forceAsk(page) {
-  await page.route('**/consent-transactional.js', async (route) => {
+  await page.route((url) => url.pathname.endsWith('/consent-transactional.js'), async (route) => {
     const res = await route.fetch();
     const body = (await res.text()).replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
     if (!body.includes('var ASK_FIRST = true;')) throw new Error('ASK_FIRST switch not found');
