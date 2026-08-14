@@ -171,13 +171,13 @@ ${headAssets}
   .faq{padding:8px 0 52px}
   .faq-q{max-width:70ch;margin:0 0 18px}
   .faq-q h3{margin:0 0 .3rem;font-size:1.05rem}
-  .faq-q p{margin:0;color:var(--ink-soft,#5a6b68)}
+  .faq-q p{margin:0;color:var(--ink-soft,#6c6a6b)}
   .route-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
   .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e2d8);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
+  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
   .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
   .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#5a6b68)}
+  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
   .route-crumbs{padding:16px 0 0;font-size:.85rem}
   .route-crumbs a{color:inherit}
 </style>
@@ -204,7 +204,7 @@ ${header}
       <ul class="route-hl">${highlightLis}</ul>
     </div>
   </section>
-  <section class="section faq" style="background:var(--cream-deep,#f6f3ec)">
+  <section class="section faq" style="background:var(--cream-deep,#E4E0D2)">
     <div class="wrap">
       <span class="eyebrow">Good to know</span>
       <h2>${esc(fromName)} to ${esc(toName)} — questions</h2>
@@ -269,10 +269,10 @@ ${headAssets}
   .trip-hero h1{color:#fff;font-weight:700;max-width:20ch}
   .trip-hero p{color:rgba(255,255,255,.9);max-width:54ch}
   .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e2d8);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
+  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
   .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
   .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#5a6b68)}
+  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
 </style>
 </head>
 <body>
