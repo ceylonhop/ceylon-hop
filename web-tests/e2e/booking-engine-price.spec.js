@@ -158,3 +158,67 @@ test('a booking-create total within $1 of the shown engine total adopts silently
   ).toMatch(/CH-/);
   await expect(page.locator('#pass-paid')).toHaveText('$123.95');
 });
+
+// Phase 3, Task 4: the vehicle switch (switchToVan/switchToCar) and the trip private/chauffeur
+// toggle both mutate the estimate intent (vehicle, product), so Task 3's sig-driven
+// requestEstimate() already re-quotes them — these specs pin that it actually happens, that
+// Pay stays gated while the new estimate is in flight, and that the local vanPrice()/carPrice()
+// figures the capacity-note upsell CTAs show stay ~ (comparison-only, not the engine total).
+test('switching to the van re-estimates through the engine; the upsell CTA keeps its ~ local figure', async ({ page }) => {
+  // Keyed off the posted vehicle, not request order: car → $200, van → $100 (delayed, so the
+  // in-flight window is observable). A LOWER total for the van keeps this test about the switch
+  // firing a fresh estimate and Pay staying gated while it's in flight — a HIGHER total on
+  // switch would hit the raise-acknowledge gate (Task 3's own spec), which is not this test's job.
+  await gotoBooking(page, {
+    estimate: { respond: (intent) => ({ totalCents: intent.vehicle === 'van' ? 10000 : 20000, delayMs: intent.vehicle === 'van' ? 500 : 0 }) },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$200');
+
+  await page.evaluate(() => window.goStep(3));
+  await page.evaluate(() => { window.step('ad', 1); window.step('ad', 1); window.step('ad', 1); }); // 1 -> 4, over an AC car
+
+  const note = page.locator('#cap-note');
+  await expect(note).toContainText('Switch to AC van');
+  // Display-only comparison figure (the local formula, not an engine total) — must read ~$…
+  await expect(note).toContainText('~$');
+
+  const hits = [];
+  page.on('request', (r) => { if (r.url().includes('/quote/v2/estimate')) hits.push(r.url()); });
+
+  await page.evaluate(() => window.switchToVan());
+
+  // Van estimate is still in flight (500ms delay): Pay stays refused, and the total has not yet
+  // dropped to the van's engine figure.
+  await expect(page.locator('#pay-btn')).toBeDisabled();
+  await expect(page.locator('#details-error')).toContainText('latest price');
+  await expect(page.locator('#sum-total')).not.toHaveText('$100');
+
+  // Settles: the van's distinct (lower) engine total lands and applies immediately — same rule
+  // as any other lower re-quote — Pay releases, and a fresh request was fired for the switch
+  // (not just reusing the car figure already on screen).
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+  await expect(page.locator('#pay-btn')).toBeEnabled();
+  expect(hits.length).toBeGreaterThan(0);
+});
+
+test('choosing chauffeur on a trip re-estimates through the engine with a distinct total', async ({ page }) => {
+  const query = [
+    'mode=trip',
+    'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
+    'nights=0,1,0',
+    'dates=2026-08-08,2026-08-10',
+    'pax=2',
+    'vehicle=car',
+  ].join('&');
+  // Chauffeur below private, again to keep this test about the switch firing a fresh estimate
+  // rather than about the raise-acknowledge gate a higher figure would trigger.
+  await gotoBooking(page, {
+    query,
+    estimate: { respond: (intent) => ({ totalCents: intent.product === 'chauffeur' ? 10000 : 30000 }) },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$300');
+
+  await page.locator('[data-svc="chauffeur"]').click();
+
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+});

@@ -1471,6 +1471,11 @@ function render(){
       // an AC van (6 seats · 6 bags) clears most overflows from a car — offer the upgrade
       const vanFixes = vehicleKey==='car' && pax<=VEH_CAP.van.pax && state.bags<=VEH_CAP.van.bags;
       if(vanFixes){
+        // vanPrice() is the local formula, not the adopted engine total — this note has to render
+        // instantly as the traveller/bag steppers are clicked, and a round trip to /quote/v2/estimate
+        // for every click would make the capacity warning lag behind the input. It's a comparison
+        // figure only ("about this much more"), so it's marked ~ rather than presented as the price
+        // the switch will actually charge — switchToVan() itself re-estimates through the engine.
         const vanP = vanPrice();
         const reason = (paxOver && bagsOver)
           ? `${pax} travellers and ${state.bags} bags won’t fit an AC car`
@@ -1478,19 +1483,21 @@ function render(){
               ? `${pax} travellers won’t fit an AC car (up to ${VEH_CAP.car.pax})`
               : `${state.bags} large bags won’t fit an AC car (up to ${VEH_CAP.car.bags})`);
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
-          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${money(vanP)}`:''}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ~${money(vanP)}`:''}</button>`;
       } else {
         const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
         note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;
       }
     } else if(perVehicle && vehicleKey==='van' && pax<=VEH_CAP.car.pax && state.bags<=VEH_CAP.car.bags){
-      // party now fits an AC car again — recommend the cheaper vehicle to save money
+      // party now fits an AC car again — recommend the cheaper vehicle to save money.
+      // Same reasoning as the van-upsell note above: carPrice()/vehPrices.van are the local
+      // formula's instant figures, kept only for this comparison (not the total) — hence the ~.
       const carP=carPrice(), vanP=(vehPrices?vehPrices.van:unit);
       const save=(carP!=null && vanP!=null)?vanP-carP:null;
       if(carP!=null && save!=null && save>0){
         note.className='cap-note show ok';
         note.innerHTML=`<b>An AC car fits your group</b> — ${pax} traveller${pax>1?'s':''}${state.bags>0?` · ${state.bags} bag${state.bags>1?'s':''}`:''}. Downgrade and save.`+
-          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ${money(save)}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ~${money(save)}</button>`;
       } else { note.className='cap-note'; note.textContent=''; }
     } else if(isShared && state.bags>freeBags){
       const extra=state.bags-freeBags;
