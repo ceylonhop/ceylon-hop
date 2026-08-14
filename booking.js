@@ -1153,9 +1153,86 @@ function isDeposit(){
   return false;
 }
 
+// Estimate-adoption slot (Phase 3 — mirrors adoptServerQuote just above): the local formula
+// stays the instant first paint and the no-backend fallback, but once a live estimate from
+// POST /quote/v2/estimate lands for the CURRENT itinerary, calcTotal() prefers it. Unlike
+// serverQuote (set once, after the booking exists, and never re-computed), engineEst tracks the
+// intent it was priced against — a figure for an itinerary the customer has since changed must
+// never win, so calcTotal() only trusts it while the signature still matches. No fetch wiring
+// yet (Task 3): this task only builds the intent and the adoption slot calcTotal() reads from.
+let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
+let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
+
+// The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
+// distance (Global Constraints: the intent carries names, distances come back on the response) —
+// so a routing change on the API side is never shadowed by a stale km the browser had on hand.
+// null means "nothing to price": shared seats run their own fixed-schedule local formula
+// (Global Constraints) and never call the estimate endpoint.
+function buildEstimateIntent(){
+  if(isShared) return null;
+  const vehicle = (vehicleKey==='van') ? 'van' : 'car';
+  const pax = state.ad + state.ch;
+  const bags = state.bags;
+  const extras = Array.from(state.addons);
+  if(isTrip){
+    if(state.svc==='chauffeur'){
+      // Chauffeur trips are billed by the calendar span the car is kept, not per leg (see
+      // chauffeurFee/chauffeurDistanceCharge below) — so the intent carries the span
+      // (firstDate/lastDate) plus the dated travel days, the same tripDates array the trip
+      // payload derives its own day count from (createApiBooking, :1765-1777). A gap wire is
+      // the traveller's own arrangement and never enters a priced itinerary (tripQuoteWithKms, :110).
+      const dated = tripDates.filter(d=>(d||'').trim());
+      const firstDate = dated.length ? dated[0] : undefined;
+      const lastDate = dated.length ? dated[dated.length-1] : undefined;
+      const travelDays = [];
+      for(let i=0;i<tripStops.length-1;i++){
+        if(tripGaps.has(i)) continue;
+        const date = (tripDates[i]||'').trim();
+        if(!date) continue; // an undated wire has no day to attach to the estimate
+        travelDays.push({ date, from: tripStops[i], to: tripStops[i+1] });
+      }
+      return { product:'chauffeur', vehicle, pax, bags, firstDate, lastDate, travelDays, extras };
+    }
+    // Trip + private: one leg per non-gap wire (mirrors tripQuoteWithKms, :110).
+    const legs = [];
+    for(let i=0;i<tripStops.length-1;i++){
+      if(tripGaps.has(i)) continue;
+      legs.push({ from: tripStops[i], to: tripStops[i+1] });
+    }
+    return { product:'private', vehicle, pax, bags, legs, extras };
+  }
+  // Single transfer: the same place strings the booking payload sends (createApiBooking,
+  // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
+  const legs = [{ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] }];
+  const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
+  const time = (state.flexTime || !state.dep) ? undefined : state.dep;
+  return { product:'private', vehicle, pax, bags, legs, extras, date, time };
+}
+// A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
+// handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
+// called fresh rather than cached across state mutations — that keeps calcTotal() honest the
+// instant a pax/vehicle/route change lands, ahead of the next re-estimate.
+function intentSig(intent){ return JSON.stringify(intent); }
+function currentIntentSig(){ return intentSig(buildEstimateIntent()); }
+// Called once a live estimate settles (Task 3 wires the fetch); sig is the intent signature it
+// was requested for, so an out-of-order or now-stale response can never silently override the total.
+function adoptEngineEstimate(est, sig){
+  if(!est) return;
+  engineEst = {
+    totalCents: est.totalCents,
+    amountDueNowCents: est.amountDueNowCents,
+    estimated: est.estimated,
+    legs: est.legs,
+    intentSig: sig
+  };
+}
+
 // ---- totals + render ----
 function calcTotal(){
   if(serverQuote) return serverQuote.total;
+  // A live engine estimate outranks the local formula, but only while it was priced against
+  // the itinerary as it stands right now — a stale figure for a changed trip must never show.
+  if(engineEst && engineEst.intentSig===currentIntentSig()) return engineEst.totalCents/100;
   // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
   // charge across the whole trip — not the per-leg fares (which carry minimum floors)
   let t = (isTrip && state.svc==='chauffeur')
