@@ -236,3 +236,23 @@ test('choosing chauffeur on a trip re-estimates through the engine with a distin
 
   await expect(page.locator('#sum-total')).toHaveText('$100');
 });
+
+test('the engine timing out never suppresses the local reprice notice (engine must have actually answered, not merely "not yet 404")', async ({ page }) => {
+  // The estimate endpoint never settles within ch-pricing.js's own 3s abort — a timeout, not a
+  // flag-off 404. window.CH_PRICING.available() stays true the whole time (only a 404 latches it
+  // false), so gating the local reprice heads-up on available() alone would wrongly treat this as
+  // "the engine owns repricing" even though it never delivered a single estimate this session.
+  await gotoBooking(page, { routeKm: 400, pickGeo: { lat: 6.15, lng: 80.11 }, estimate: { delayMs: 4000 } });
+  await expect(page.locator('#sum-total')).toHaveText('$119');
+
+  // Let the in-flight estimate actually time out before pinning, so this proves the engine truly
+  // never answered this session — not just "hasn't answered yet".
+  await page.waitForTimeout(3500);
+
+  await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
+
+  // The engine never delivered an estimate this session — the pre-existing LOCAL reprice notice
+  // (repriceDecision) must still fire; the local formula is still the one in charge of the total.
+  await expect(page.locator('#reprice-note')).toBeVisible();
+  await expect(page.locator('#sum-total')).toHaveText('$119');
+});

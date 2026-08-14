@@ -514,12 +514,16 @@ function renderRouteMap(){
       onRoute: ({km, durationMin}) => {
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
-        // summary total always matches the route actually shown on the map. Once CH_PRICING is
-        // available the engine's own estimate already prices the real route server-side (its
-        // intent carries place names, never a client-measured distance — Global Constraints), so
-        // this local heads-up would just double the engine-raise notice for the same drift; it
-        // stays only for the flag-off world (see handleEngineEstimate for the engine's version).
-        const engineHandlesReprice = window.CH_PRICING && CH_PRICING.available();
+        // summary total always matches the route actually shown on the map. Once the engine has
+        // actually DELIVERED an estimate this session, its own figure already prices the real
+        // route server-side (its intent carries place names, never a client-measured distance —
+        // Global Constraints), so this local heads-up would just double the engine-raise notice
+        // for the same drift. CH_PRICING.available() alone is the wrong gate here: it stays true
+        // on a network error or timeout (only a 404 — flag off — latches it false), so gating on
+        // it would silently drop the local notice in exactly the world where the local formula is
+        // still the one setting the price. engineEst is only ever set by a successful adopt
+        // (adoptEngineEstimate), so "has it ever been set" is "has the engine ever answered".
+        const engineHandlesReprice = window.CH_PRICING && engineEst != null;
         if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice && !state.locTooFar && !engineHandlesReprice){
           const dec = T.repriceDecision(state.anchorKm, km, unit, vehicleKey);
           state.routeKm = km;

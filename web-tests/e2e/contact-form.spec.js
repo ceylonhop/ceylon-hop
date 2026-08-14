@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { fillBilling } from './_stubs.js';
+import { fillBilling, blockLiveApi } from './_stubs.js';
 
 test('contact form submits split phone fields while preserving WhatsApp', async ({ page }) => {
   let captured = null;
@@ -61,6 +61,7 @@ test('contact form submits split phone fields while preserving WhatsApp', async 
 });
 
 test('contact form uses one full country list and derives the phone code', async ({ page }) => {
+  await blockLiveApi(page); // no gotoBooking() here — this loads booking.html directly, keep it offline
   await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car');
   await page.evaluate(() => window.goStep && window.goStep(4));
 
@@ -73,6 +74,7 @@ test('contact form uses one full country list and derives the phone code', async
 });
 
 test('contact validation rejects a missing phone number', async ({ page }) => {
+  await blockLiveApi(page); // no gotoBooking() here — this loads booking.html directly, keep it offline
   await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car');
   await page.evaluate(() => window.goStep && window.goStep(4));
   await page.fill('#f-first', 'Maya');

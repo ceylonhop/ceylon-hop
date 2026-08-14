@@ -103,8 +103,14 @@ const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSO
 // (see 0e0f077). gotoBooking() below already stubs '**/health' for the booking journey; specs
 // that navigate to those six pages directly must call this first, or the "offline by default"
 // suite (playwright.config.js) fires a real request at the production API on every local run.
+// booking.html ALSO loads ch-pricing.js unconditionally (Phase 3), which fires its own POST
+// /quote/v2/estimate on load regardless of whether the spec knows about engine pricing — a
+// spec that reaches booking.html by any route other than gotoBooking() (which stubs this
+// itself) must call blockLiveApi() too, or that POST goes to the real prod API. 404 is the
+// flag-off shape the real API answers with today, matching gotoBooking's own default.
 export async function blockLiveApi(page) {
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
+  await page.route('**/quote/v2/estimate', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }));
 }
 
 // Engine price estimate (Phase 3, POST /quote/v2/estimate). Pass this via gotoBooking's own
