@@ -2,7 +2,7 @@
 // helpers so the quote emails and the digest are one visual family — deliberately not a
 // template engine. Nothing here carries cost/margin; callers pass sell figures only.
 
-export const TEAL_DEEP = '#0a7d6f';
+export const TEAL_DEEP = '#24758A'; // the rebrand's text-safe deep accent (--blue-deep); old #0a7d6f is retired
 export const INK = '#1b1b1b';
 export const MUTED = '#6b7280';
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";

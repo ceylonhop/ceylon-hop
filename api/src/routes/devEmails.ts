@@ -88,8 +88,8 @@ export function devEmailRoutes(): Hono {
         table{border-collapse:collapse;width:100%;margin-top:16px}
         td{border-top:1px solid #eee;padding:12px 8px;vertical-align:top}
         .lbl{width:230px}.sub{color:#6b7280;font-size:13px;margin-top:2px}
-        code{background:#f1faf8;color:#0a7d6f;padding:2px 6px;border-radius:5px;font-size:13px}
-        a{display:inline-block;margin:2px 8px 2px 0;color:#0a7d6f;text-decoration:none;border:1px solid #d7ece7;border-radius:6px;padding:3px 9px;font-size:13px}
+        code{background:#f1faf8;color:#24758A;padding:2px 6px;border-radius:5px;font-size:13px}
+        a{display:inline-block;margin:2px 8px 2px 0;color:#24758A;text-decoration:none;border:1px solid #d7ece7;border-radius:6px;padding:3px 9px;font-size:13px}
         a:hover{background:#f1faf8}.txt a{color:#9ca3af;border-color:#eee}.txt{display:block;margin-top:4px}
       </style>
       <h1>Ceylon Hop — email preview</h1>
