@@ -162,13 +162,17 @@ test('leg cards stay readable in the mid-width pane band (the "Colo…" bug)', a
   for (const w of widths) expect(w, 'route input crushed unreadably narrow').toBeGreaterThan(120);
 });
 
-// QUARANTINED 2026-08-12 — see docs/known-bugs.md. The collapse half passes; the hover half
-// leaves the row at height 0, and it fails 4/4 at --retries=0 solo, at --workers=1, both before
-// and after the estimate-stub fix. It is a real defect (possibly the app's hover, not the test),
-// not the flake that fix addressed. Marked fixme rather than deleted or left red: the offline
-// suite now runs on every PR (#438), and one permanently-red test in an advisory job is how a
-// team learns to ignore the job. Un-fixme it with the fix.
-test.fixme('the actions-only toolbelt collapses at rest and expands on hover', async ({ page }) => {
+// Two of this test's three phases were fixed by other work (see docs/known-bugs.md, 2026-08-12):
+// `reducedMotion: 'reduce'` above stops a starved animation frame reading as height 0, and the
+// estimate stub stops render() throwing before the card ever reaches its hover state. Together
+// those took it from 4/4 failing to 16/16 under --repeat-each=4 --workers=6.
+//
+// STILL FLAKY IN A FULL RUN, at the third phase below (the classList.remove line): the class is
+// derived from state and a morphdom re-render restores it inside the 350ms + 3s poll window, so
+// the row collapses and the poll reads 0. Toggling the class was chosen to dodge the re-render
+// race on a real fee click — it inherited a different one. Left as-is here rather than rewritten:
+// it is this spec's own bug, not the estimate flake this branch fixes.
+test('the actions-only toolbelt collapses at rest and expands on hover', async ({ page }) => {
   // Owner call 2026-08-08: at rest the tools row's reserved blank band read as
   // wasted space at the foot of every card — so an ACTIONS-ONLY row now gives
   // its height back and expands on hover/focus. A row holding an applied fee is
