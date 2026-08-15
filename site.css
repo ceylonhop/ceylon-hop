@@ -185,7 +185,13 @@ body::before{
 }
 img{max-width:100%;display:block}
 a{color:inherit;text-decoration:none}
-button{font-family:inherit;cursor:pointer}
+/* `color:inherit` matters as much as the font here. A button whose colour is left
+   unspecified falls through to the UA stylesheet's `buttontext` — near-black on
+   Chrome/Firefox, but the SYSTEM BLUE on iOS Safari. That is why the burger bars
+   (background:currentColor), the booking route strip and the sticky Total all read
+   off-brand blue on a phone while reviewing fine on a desktop. Anything that wants a
+   different colour still says so by class; this only stops the platform deciding. */
+button{font-family:inherit;color:inherit;cursor:pointer}
 ::selection{background:var(--saffron);color:var(--ink)}
 
 /* ---------- Typography ----------
