@@ -38,6 +38,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="tweaks.js?v=26d58fe065"></script>
 <style>
   body{background:transparent}
+
+  /* The line-icon family mark (img/icons/line/) — every icon in the set carries exactly one
+     filled waypoint dot, `class="wp"`. Saffron against the teal/grey strokes; currentColor
+     where the slot's own colour is already warm and saffron would disappear into it. */
+  .svc-ico svg .wp,.loc-input-ic .wp,.flex-banner svg .wp,.pay-methods .pm svg .wp,
+  .ac-item .ac-ic svg .wp{fill:var(--saffron);stroke:none}
+  .concierge svg .wp,.trip-route .tr-chip svg .wp{fill:currentColor;stroke:none}
+
   .bk-head{background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
   .bk-head .wrap{display:flex;align-items:center;justify-content:space-between;height:66px;gap:18px}
   .bk-head .brand{font-size:1.3rem}
@@ -707,13 +715,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <!-- service chooser (multi-day trips only) -->
       <div class="svc-chooser" id="svc-chooser" style="display:none">
         <button type="button" class="svc on" data-svc="private" onclick="pickSvc('private')">
-          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg></span>
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg></span>
           <b>I just want pick-up &amp; drop-off</b>
           <small>A private car &amp; driver moves you from each stop to the next, door to door. You don&rsquo;t keep the car in between — it&rsquo;s a fresh transfer each leg.</small>
           <span class="svc-tag" id="svc-private-tag"></span>
         </button>
         <button type="button" class="svc" data-svc="chauffeur" onclick="pickSvc('chauffeur')">
-          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg></span>
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.6 12h6.2M14.2 12h6.2M12 14.2v6.2"/><circle class="wp" cx="12" cy="12" r="2.2"/></svg></span>
           <b>Keep the car &amp; driver the whole trip</b>
           <small>Your own car &amp; driver-guide stays with you start to finish — same friendly face every day, flexible stops and local tips along the way.</small>
           <span class="svc-tag" id="svc-chauffeur-tag"></span>
@@ -734,7 +742,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
                 <span class="loc-area" id="loc-area-from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
               </div>
               <div class="loc-input">
-                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>
                 <input id="loc-from" autocomplete="off" aria-label="Exact pick-up spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-from"></div>
               </div>
@@ -750,7 +758,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
                 <span class="loc-area" id="loc-area-to"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
               </div>
               <div class="loc-input">
-                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>
                 <input id="loc-to" autocomplete="off" aria-label="Exact drop-off spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-to"></div>
               </div>
@@ -781,7 +789,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="sub" id="s2-sub">Pick your date and pick-up time — or leave either flexible and confirm with us later. You can change this any time before you travel.</p>
       <div class="when-inner">
         <div class="flex-banner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>
           <span id="flex-banner-tx"><b>Not sure of your timings yet?</b> No problem — book now and tell us your exact date &amp; time any time up to <b>12 hours before</b> departure.</span>
         </div>
         <div class="when-grid">
@@ -868,7 +876,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from <span data-ta-count>31</span> travellers on Tripadvisor</p>
       <div class="pay-summary-row" id="pay-due"></div>
       <div class="pay-methods">
-        <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card &middot; via PayHere secure checkout</div>
+        <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12.5" rx="2.5"/><path d="M3 10.5h18"/><path d="M6.5 15h4" stroke-dasharray="2.2 2.6"/><circle class="wp" cx="17.2" cy="14.9" r="1.5"/></svg> Card &middot; via PayHere secure checkout</div>
       </div>
       <div class="pay-cards">
         <span class="pc-label">We accept all major cards</span>
@@ -883,7 +891,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
       <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a> and confirm my travel details are correct.</span></label>
       <div class="concierge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5a2 2 0 0 1-2 2H7.5l-4 3.5V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><circle cx="8.5" cy="10" r=".4"/><circle cx="15.5" cy="10" r=".4"/><circle class="wp" cx="12" cy="10" r="1.3"/></svg>
         <div><b>A real person will reach out — fast</b><p>As soon as you book, our Ceylon Hop concierge team confirms your pickup details personally on WhatsApp. We&rsquo;re on during Sri&nbsp;Lanka hours (GMT+5:30, ~8am&ndash;9pm) — if you book overnight, you&rsquo;ll hear from us first thing.</p></div>
       </div>
       <div class="nav-btns"><button class="back-link" onclick="goStep(3)">← Back</button><button class="btn btn-cta btn-lg" id="pay-btn">Continue to secure payment →</button></div>
@@ -1016,8 +1024,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
-<script src="ch-map.js?v=ddde78533b"></script>
+<script src="ch-map.js?v=53c1b7c8b7"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
-<script src="booking.js?v=211077a7e9"></script>
+<script src="booking.js?v=e9c1f95cc7"></script>
 </body>
 </html>

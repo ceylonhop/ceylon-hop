@@ -116,12 +116,18 @@ describe('renderRoute framing', () => {
     expect(stub.mapOpts.map((o) => !!o.zoomControl)).toEqual([false, true]);
   });
 
-  it('styles both maps to the brand palette rather than default Google', async () => {
+  // Owner's call, 2026-08-15: the brand tint shipped in #482 (cream land, pale blue water)
+  // was compared against Google's default palette and the default won. The style array
+  // declutters — it does not recolour. Don't reintroduce a `color` styler here.
+  it('declutters the basemap without repainting it', async () => {
     sized(272, 137);
     await CH_MAP.renderRoute(host(), ['Colombo', 'Ella']);
     const styles = stub.mapOpts[0].styles;
     expect(Array.isArray(styles)).toBe(true);
     expect(JSON.stringify(styles)).toContain('poi');
+    const stylers = styles.flatMap((s) => s.stylers || []);
+    expect(stylers.filter((st) => 'color' in st)).toEqual([]);
+    expect(stylers.every((st) => 'visibility' in st)).toBe(true);
   });
 
   // The inline card is a picture of the route; the modal is a map you read. Place and road
