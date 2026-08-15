@@ -1469,16 +1469,29 @@ function setNum(el, next){
   if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
   else el.textContent = next;
 }
+// A Google-picked place arrives as its full formatted address ("… (CMB), Airport and Aviation
+// Services (Sri Lanka) (Private) Limited, Canada Friendship Rd, Katunayake, Sri Lanka"), and the
+// summary panel printed every segment of it — five wrapped lines in the teal route box, five more
+// in the serif <h3>. CH.shortPlace is the SAME shortener ops, the pay page, the emails and plan.js
+// use (ch-shortplace.js is compiled from api/src/quote/shortPlace.ts), so the customer sees the
+// label everyone else already sees for that place.
+//
+// DISPLAY ONLY. state.locFrom/locTo keep the full string, so re-pricing, the routed-distance
+// lookup, the out-of-area guard and what we submit in the booking are all unchanged.
+function shortPlaceLabel(place){
+  return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
+}
 function render(){
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   // live route from the actual entered locations
-  const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = state.locFrom || r.stops[0];
-  const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = state.locTo || r.stops[r.stops.length-1];
+  const _from = state.locFrom || r.stops[0], _to = state.locTo || r.stops[r.stops.length-1];
+  const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = shortPlaceLabel(_from);
+  const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = shortPlaceLabel(_to);
   // keep the summary title in sync with the entered route (single transfers)
   const _sn=document.getElementById('sum-name');
   if(_sn && routeNamePrefix && !isTrip){
-    _sn.textContent = `${routeNamePrefix} · ${state.locFrom||r.stops[0]} → ${state.locTo||r.stops[r.stops.length-1]}`;
+    _sn.textContent = `${routeNamePrefix} · ${shortPlaceLabel(_from)} → ${shortPlaceLabel(_to)}`;
   }
   document.getElementById('sum-date').textContent = state.flexDate ? 'To confirm (12h before)' : (state.date ? state.date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—');
   document.getElementById('sum-time').textContent = state.flexTime ? 'To confirm (12h before)' : (state.dep ? fmtTime(state.dep) : '—');
