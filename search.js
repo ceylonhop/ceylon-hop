@@ -13,11 +13,15 @@ const T = window.TRANSFERS;
    search.html fills it; every slot below has a matching `.wp{fill:…}` rule there, and
    web-tests/unit/line-icon-family.test.js pins the pair together.
 
-   `car`, `van`, `route` and `ck` are deliberately NOT from the set: it has no private-car or
-   private-van mark (`shared-van` means shared), no plain connector arrow, and no tick. */
+   `route` and `ck` are deliberately NOT from the set: it has no plain connector arrow and no
+   tick. */
 const ICONS = {
-  car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m0 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m10 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m0 0v-4M7 17h.01M17 17h.01"/></svg>',
-  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14V7a2 2 0 0 1 2-2h9l5 5v4M3 14h18M3 14v3h2m14-3v3h-2M9 5v5h9M7 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm10 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>',
+  /* img/icons/line/{private-car,private-van}.svg — the same body as `shared-van` with the
+     waypoint dot moved INSIDE the cabin. That swap is the whole meaning: a dot out on a dashed
+     arc is a stop on a line others ride, a dot in the cabin is your own seat. Never use
+     `shared-van` on these rows. */
+  car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 16.5v-2.6a1 1 0 0 1 .7-1l2-.6 2.1-3a2 2 0 0 1 1.6-.8h4.8a2 2 0 0 1 1.6.8l2.1 3 2 .6a1 1 0 0 1 .7 1v2.6"/><path d="M3.9 16.5H5m4.4 0h5.4m4.4 0h1.1"/><circle cx="7.2" cy="16.8" r="1.8"/><circle cx="16.8" cy="16.8" r="1.8"/><circle class="wp" cx="12" cy="11.4" r="1.7"/></svg>',
+  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v-6a1 1 0 0 1 1-1h9l3.5 3.5H19a1 1 0 0 1 1 1v2.5"/><path d="M4.5 16.5H5m9.6 0H9.4m9.2 0h.9"/><circle cx="7.2" cy="16.8" r="1.8"/><circle cx="16.8" cy="16.8" r="1.8"/><circle class="wp" cx="8.2" cy="12.2" r="1.7"/></svg>',
   // img/icons/line/door-to-door.svg — a single point-to-point transfer. The set's README is
   // explicit that this, not `chauffeur`, is the point-to-point mark.
   d2d:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg>',

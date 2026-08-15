@@ -75,6 +75,7 @@ describe('inlined marks are filled by their host page', () => {
         // so each needs its own fill, and the shared one cannot be saffron-on-saffron.
         ['.opt-private .o-ico svg .wp', 'o-ico'],
         ['.opt-shared .o-ico svg .wp', 'o-ico'],
+        ['.veh-row .v-ico svg .wp', 'v-ico'],
         ['.incl .chip svg .wp', 'chip'],
         ['.noshare .ns-ico svg .wp', 'ns-ico'],
         ['.shared-meta .sm svg .wp', 'sm'],

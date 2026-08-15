@@ -140,6 +140,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .veh-row:hover{border-color:var(--accent)}
   .veh-row .v-ico{width:42px;height:42px;border-radius:10px;background:var(--cream-deep);display:grid;place-items:center;flex:none;color:var(--ink)}
   .veh-row .v-ico svg{width:24px;height:24px}
+  /* The dot rides inside the cabin on these two — it is what separates a private vehicle from
+     the shared van, so it has to carry the brand colour rather than the body's ink. */
+  .veh-row .v-ico svg .wp{fill:var(--saffron);stroke:none}
   .veh-row .v-info b{display:block;font-size:1rem}
   .veh-row .v-info small{color:var(--ink-soft);font-size:.82rem}
   .veh-row .v-price{margin-left:auto;text-align:right}
@@ -254,6 +257,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="ch-pricing.js?v=a2511d67e7"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="search.js?v=2c2be9c9dd"></script>
+<script src="search.js?v=983fa74658"></script>
 </body>
 </html>
