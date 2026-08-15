@@ -21,12 +21,15 @@ const createApp = (deps: AppDeps = {}): App =>
 
 const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
 
-async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number; contact?: string } = {}) {
+async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number; contact?: string; totalCents?: number; resultExtra?: Record<string, unknown> } = {}) {
   const product = opts.product ?? 'private';
+  // Written at SAVE, not patched on afterwards: `patch` deliberately exposes neither totalCents
+  // nor result — a stored price is not something a status update may quietly move.
+  const totalCents = opts.totalCents ?? 21900;
   const legs = opts.legs ?? [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 120, date: '2026-09-01', category: 'transfer' }];
   const q = await quotes.save({
     channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: opts.contact ?? '+94 77 000 1111',
-    totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
+    totalCents, currency: 'USD', rateCardVersion: 'v1',
     marginCents: opts.marginCents ?? 4300,
     request: {
       tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs },
@@ -34,7 +37,7 @@ async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private'
         ? { product, vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-09-01', lastDate: '2026-09-06', travelDays: [{ date: '2026-09-01', from: 'CMB', to: 'Galle', distanceKm: 120 }] }
         : { product, vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] },
     },
-    result: { totalCents: 21900, marginEstimateCents: 4300, lineItems: [{ label: 'x', amountCents: 21900, meta: { hotZone: 'Ella +15%' } }] },
+    result: { totalCents, marginEstimateCents: 4300, lineItems: [{ label: 'x', amountCents: totalCents, meta: { hotZone: 'Ella +15%' } }], ...opts.resultExtra },
     rateCardJson: { version: 'LOCKED', chauffeur: { dayRateCostCents: 2700 } },
   });
   await quotes.patch(q.id, { status: 'pending_review' });
@@ -347,6 +350,67 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
   });
 });
 
+// The founder's negotiation, carried onto the pay page (owner, 2026-08-10): "show the discount
+// amount, we are not going to pass any of that to PayHere — this is just to keep reminding
+// customers they are getting a discount". So it is presentation ONLY: `totals` stays the single
+// post-discount figure the gateway is handed, and these two extra strings sit above it.
+describe('GET /quotes/pay/view — the discount a customer was given', () => {
+  /**
+   * A $208 trip discounted by $30. The stored total is 17800 because the engine prices WITH the
+   * discount applied (#422) — that ordering is the whole reason these three numbers reconcile.
+   */
+  const discountedQuote = (quotes: InMemoryQuoteRepo, resultExtra: Record<string, unknown>) =>
+    readyQuote(quotes, { totalCents: 17800, resultExtra });
+
+  it('shows what the trip was, what came off, and what is actually paid', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await discountedQuote(quotes, { totalBeforeDiscountCents: 20800, discountCents: 3000 });
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.state).toBe('payable');
+    expect(body.discount).toEqual({ totalBeforeUsd: '$208.00', discountUsd: '$30.00' });
+    // The charge is untouched: the engine already priced with the discount applied, so the
+    // number PayHere is handed is the same one it was handed before this block existed.
+    expect(body.totals).toEqual({ cents: 17800, usd: '$178.00' });
+  });
+
+  it('derives the pre-discount total when the stored result predates the finishing reorder', async () => {
+    // #422 renamed discountedSubtotalCents → totalBeforeDiscountCents. A quote discounted before
+    // that deploy carries neither, and requiring the new field is exactly what made the breakdown
+    // vanish on the customer quote page (#424) — the same trap, one page over.
+    const quotes = new InMemoryQuoteRepo();
+    const q = await discountedQuote(quotes, { discountCents: 3000 });
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.discount).toEqual({ totalBeforeUsd: '$208.00', discountUsd: '$30.00' });
+  });
+
+  it('says nothing at all when no discount was given', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.discount).toBeUndefined();
+  });
+
+  it('a zero discount is not a discount', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await discountedQuote(quotes, { totalBeforeDiscountCents: 17800, discountCents: 0 });
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.discount).toBeUndefined();
+  });
+
+  it('stays off a SUBSET link, whose lines could not be reconciled with it', async () => {
+    // The per-leg lines sum to the subtotal while the discount sits between subtotal and total,
+    // so printing one over a subset would imply an allocation across the ticked legs that nobody
+    // authorised — the same reasoning that keeps a subset link from being minted at all (#428).
+    const quotes = new InMemoryQuoteRepo();
+    const { token } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1, {
+      totalBeforeDiscountCents: 20800, discountCents: 3000,
+    });
+    const body = await (await view(createApp({ quotes }), token)).json();
+    expect(body.state).toBe('payable');
+    expect(body.discount).toBeUndefined();
+  });
+});
+
 describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
   it('creates one booking at the frozen total; the quote stays sent', async () => {
     const quotes = new InMemoryQuoteRepo();
@@ -465,8 +529,11 @@ async function partialQuote(
   quotes: InMemoryQuoteRepo,
   sel: { legIndexes: number[]; extraIndexes: number[] },
   seq = 1,
+  // Merged into the stored result. The one caller that uses it needs a subset link over a
+  // DISCOUNTED quote, which cannot be built by patching — see readyQuote.
+  resultExtra: Record<string, unknown> = {},
 ) {
-  const result = priceQuote(ENGINE3, RATE_CARD);
+  const result = { ...priceQuote(ENGINE3, RATE_CARD), ...resultExtra };
   const q = await quotes.save({
     channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
     customerContact: 'nimal@x.com', totalCents: result.totalCents, currency: 'USD',

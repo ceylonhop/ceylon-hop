@@ -1048,13 +1048,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       btn.disabled=true; btn.innerHTML='<span class="spin"></span> Opening your trip…';
       window.location.href='plan.html?'+p.toString();
     } else {
-      if(!fromR.known || !toR.known){
-        const p=new URLSearchParams({stops:[fromR.name,toR.name].join('|')});
-        btn.disabled=true; btn.innerHTML='<span class="spin"></span> Opening your trip…';
-        window.location.href='plan.html?'+p.toString();
-        return false;
-      }
-      const p=new URLSearchParams({from:fromR.id,to:toR.id});
+      /* A single leg ALWAYS goes to the search page now. A place we don't have baked used to
+         divert the whole search to the itinerary planner — so someone who typed a real
+         destination that simply isn't in the catalogue got a trip builder instead of the price
+         they asked for, and the same two points behaved differently depending on which places
+         they happened to be. Unknown places travel as their NAME; search.html prices them
+         through the engine. */
+      const p=new URLSearchParams({from:fromR.known?fromR.id:fromR.name,to:toR.known?toR.id:toR.name});
       btn.disabled=true; btn.innerHTML='<span class="spin"></span> Finding your prices…';
       window.location.href='search.html?'+p.toString();
     }

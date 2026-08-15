@@ -58,6 +58,36 @@ function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; e
   };
 }
 
+/**
+ * The founder's negotiation, as two strings for the pay page (owner, 2026-08-10): "show the
+ * discount amount … this is just to keep reminding customers they are getting a discount".
+ *
+ * PRESENTATION ONLY. `totals` still carries the single post-discount figure, and that is the
+ * number the gateway is handed — the engine prices WITH the discount applied (#422), so nothing
+ * about the charge changes. These two strings only let the page say what the trip was and what
+ * came off it, instead of showing a number that has quietly moved with no explanation.
+ *
+ * FULL LINKS ONLY; the caller gates on that. On a subset link the per-leg lines sum to the
+ * subtotal while the discount sits between subtotal and total, so printing one over ticked lines
+ * would imply an allocation nobody authorised — the same reasoning that stops a subset link from
+ * being minted on a discounted quote at all (#428).
+ *
+ * Both figures come straight off the STORED result: no recompute, no extra query, and they
+ * reconcile exactly (totalBefore − discount === total).
+ */
+function discountView(quote: SavedQuote): { totalBeforeUsd: string; discountUsd: string } | undefined {
+  const stored = (quote.result ?? {}) as { totalBeforeDiscountCents?: number; discountCents?: number };
+  const off = stored.discountCents && stored.discountCents > 0 ? stored.discountCents : null;
+  if (off == null) return undefined;
+  /* DERIVED when the stored result predates the finishing reorder (#422), which renamed
+     discountedSubtotalCents → totalBeforeDiscountCents. Requiring the new field is precisely what
+     made this breakdown vanish on the customer quote page for a genuinely discounted quote (#424,
+     Q-ZKPZY $259 → $229). total + discount is exact under the current order — total IS
+     totalBefore − discount — so this is the same arithmetic read the other way, not a fallback. */
+  const before = stored.totalBeforeDiscountCents ?? quote.totalCents + off;
+  return { totalBeforeUsd: usd(before), discountUsd: usd(off) };
+}
+
 // The customer-facing half of a partial link: the ticked lines, and how much of the itinerary
 // they cover. HAND-PICKED on purpose — PayLine's kind/index/legIndex are internal, and `result`
 // itself carries margin and hot-zone annotations that must never reach the wire (invariant 1).
@@ -183,6 +213,8 @@ export function quotePayRoutes(deps: {
       // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
       copy: payPageCopy(quote, sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
+      // Full links only — see discountView. `sel` is the whole test: a subset link always has one.
+      ...(sel ? {} : { discount: discountView(quote) }),
       prefill: prefillFor(quote),
       ...(partial ?? {}),
     });

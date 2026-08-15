@@ -19,6 +19,10 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
 <link rel="stylesheet" href="site.css?v=13492eca8a">
+<!-- Engine prices for routes that aren't in the baked catalogue come from here (search.js).
+     `?api=off` disables it, and `?api=<origin>` points it elsewhere — same contract as
+     booking.html, so a local API can be driven from either page the same way. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -157,6 +161,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .opt .o-cta{margin-top:18px}
 
   /* no-shared note */
+  /* Waiting on an engine price. Only the two numbers are missing, so the card keeps its real
+     shape and shows a shimmer where each fare will land — swapping the whole card in when the
+     estimate arrives would move the page under the traveller's cursor. */
+  .sk-amt{width:74px;height:1.6rem;border-radius:7px;background:linear-gradient(90deg,var(--cream-deep) 25%,var(--paper) 50%,var(--cream-deep) 75%);
+    background-size:240% 100%;animation:sk-shimmer 1.3s ease-in-out infinite}
+  @keyframes sk-shimmer{0%{background-position:120% 0}100%{background-position:-120% 0}}
+  @media(prefers-reduced-motion:reduce){.sk-amt{animation:none}}
+  .opt.is-pending .v-price small{color:var(--ink-soft)}
+  /* No live price and nothing honest to invent — hand the route to a human instead. */
+  .opt-unpriced .o-cta{margin-top:auto}
+
   .noshare{background:var(--paper);border:1.5px dashed var(--line);border-radius:var(--r-lg);padding:24px;display:flex;gap:16px;align-items:flex-start}
   .noshare .ns-ico{width:42px;height:42px;border-radius:50%;background:var(--cream-deep);display:grid;place-items:center;flex:none;color:var(--ink-soft)}
   .noshare .ns-ico svg{width:22px;height:22px}
@@ -223,6 +238,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="routes-data.js?v=83197e77d0"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
 <script src="ch-map.js?v=53c1b7c8b7"></script>
-<script src="search.js?v=d3b53f0923"></script>
+<!-- engine prices for routes that aren't in the baked table (see search.js) -->
+<script src="ch-pricing.js?v=a2511d67e7"></script>
+<script src="search.js?v=1ed0b22798"></script>
 </body>
 </html>

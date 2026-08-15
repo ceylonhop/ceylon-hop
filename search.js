@@ -36,23 +36,35 @@ let date = params.get('date') || '';
 const paxParam = parseInt(params.get('pax'), 10);
 let pax = (paxParam >= 1 && paxParam <= 6) ? paxParam : null;
 const paxText = pax == null ? '' : `${pax} traveller${pax > 1 ? 's' : ''}`;
-// fall back to a sensible demo route when NO destination was given (a bare landing on the
-// page). But if a `to` WAS provided and we can't honour it (unknown place, or same as the
-// pick-up), that's a stale/broken route link — send them to the 404 rather than silently
-// swapping in a different destination and quoting a trip they never asked for.
-if (!T.place(fromId)) fromId = 'cmb-airport';
-let unknownDestination = false;
-if (!T.place(toId) || toId === fromId) {
-  // Was location.replace('404.html') — a hard dead end for a bookmarked or mistyped link.
-  if (params.get('to')) unknownDestination = true;
-  toId = 'ella'; // safe default while the picker is shown
-}
+/* `from`/`to` carry a catalogue id when the traveller picked a known place, and the raw place
+   NAME when they picked a Google suggestion. Both are honoured: a known pair prices instantly
+   from the baked table, an unknown one is priced by the engine over the API (see below).
+   An unknown place used to be diverted to the planner from the homepage and, if it got here
+   anyway, treated as a broken link — so a traveller who typed a real destination we simply
+   don't have baked was shown an itinerary builder instead of the price they asked for.
+   booking.js already reads these params exactly this way (T.place(id) || {name:param}), which
+   is what lets an engine-priced route carry straight through to booking. */
+const hasFrom = !!params.get('from'), hasTo = !!params.get('to');
+// A bare landing (no params at all) still gets a sensible demo route.
+if (!hasFrom) fromId = 'cmb-airport';
+if (!hasTo) toId = 'ella';
+const fromPlace = T.place(fromId), toPlace = T.place(toId);
+const fromP = fromPlace || { id: null, name: fromId };
+const toP = toPlace || { id: null, name: toId };
+// Only an unknown END needs the engine. A known pair must never pay for a network round trip.
+const engineRoute = !fromPlace || !toPlace;
+// The same place at both ends is a broken link however it was spelled — open the picker.
+const sameEnds = fromP.name === toP.name;
 
 // ---- populate the edit bar ----
 (function () {
   const ef = document.getElementById('e-from'), et = document.getElementById('e-to');
-  ef.value = T.place(fromId).name; et.value = T.place(toId).name;
-  ef.dataset.placeId = fromId; et.dataset.placeId = toId;
+  ef.value = fromP.name; et.value = toP.name;
+  // Only a catalogue place has an id to carry; a Google-picked place is its name and nothing
+  // else. Stamping the raw name in as a placeId would make resolvePlaceInput() treat it as a
+  // known id on Update and quietly reprice a different route.
+  if (fromP.id) ef.dataset.placeId = fromP.id; else delete ef.dataset.placeId;
+  if (toP.id) et.dataset.placeId = toP.id; else delete et.dataset.placeId;
   attachLocalPlaceAutocomplete(ef);
   attachLocalPlaceAutocomplete(et);
   document.getElementById('e-date').value = date;
@@ -95,32 +107,40 @@ window.updateSearch = function (e) {
     location.href = 'https://wa.me/94779669662?text=' + encodeURIComponent(msg);
     return false;
   }
-  if(!f.known || !t.known){
-    const p = new URLSearchParams({ stops: [f.name, t.name].join('|') });
-    location.href = 'plan.html?' + p.toString();
-    return false;
-  }
-  const p = new URLSearchParams({ from: f.id, to: t.id, date: selectedDate });
+  // A place we don't have baked is no longer a reason to abandon the search: it travels as its
+  // NAME and gets priced by the engine on the way back in. Only a single leg is ever offered
+  // here, so this page can always answer it.
+  const p = new URLSearchParams({ from: f.known ? f.id : f.name, to: t.known ? t.id : t.name, date: selectedDate });
   if (selectedPax) p.set('pax', selectedPax);  // left on "How many?" stays unset, not `pax=`
   location.href = 'search.html?' + p.toString();
   return false;
 };
 
 // ---- header / title ----
-const fromP = T.place(fromId), toP = T.place(toId);
-const quote = T.privateQuote(fromId, toId);
-const shared = T.sharedOption(fromId, toId);
+/* A baked pair is priced synchronously, exactly as before — no network, no skeleton, nothing
+   to wait for. An engine route starts with no numbers at all and fills them in when the
+   estimate lands, so `quote` is a variable rather than a constant and everything that reads
+   it renders through a function. `shared` stays null for an engine route: a shared seat is a
+   scheduled corridor in the baked table, and no such service exists for an arbitrary place. */
+let quote = engineRoute ? null : T.privateQuote(fromId, toId);
+const shared = engineRoute ? null : T.sharedOption(fromId, toId);
 const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
 document.title = `${fromP.name} → ${toP.name} — Ceylon Hop`;
 
 document.getElementById('route-title').innerHTML =
   `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
 const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Flexible date';
-document.getElementById('route-meta').innerHTML =
-  `<span>${ICONS.pin} ~${quote.km} km</span>` +
-  `<span>${ICONS.clock} approx ${quote.duration} drive</span>` +
-  `<span>${ICONS.cal} ${dateText}</span>` +
-  (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
+// 'measuring' only while an estimate is genuinely in flight — once it has failed there is
+// nothing being measured, and leaving the line up reads as a page still working on it.
+function renderMeta(measuring) {
+  document.getElementById('route-meta').innerHTML =
+    (quote
+      ? `<span>${ICONS.pin} ~${quote.km} km</span><span>${ICONS.clock} approx ${quote.duration} drive</span>`
+      : measuring ? `<span>${ICONS.pin} Measuring your route…</span>` : '') +
+    `<span>${ICONS.cal} ${dateText}</span>` +
+    (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
+}
+renderMeta(engineRoute);
 
 // ---- collapsed search editor (Kayak/Expedia pattern) ----
 // The chosen search stays put; the edit fields stay collapsed behind "Edit search", so
@@ -142,9 +162,10 @@ window.cancelEdit = function () {
   document.getElementById('sl-edit').hidden = false;
 };
 
-// An unrecognised destination (stale bookmark, mistyped link) used to hard-redirect to 404.
-// Open the picker with an explanation instead, so warm traffic can recover in place.
-if (unknownDestination) {
+// Pick-up and drop-off the same (stale bookmark, mistyped link) used to hard-redirect to 404.
+// Open the picker with an explanation instead, so warm traffic can recover in place. An
+// unrecognised place is no longer part of this condition — it gets priced, not questioned.
+if (sameEnds) {
   const editBtn = document.getElementById('sl-edit');
   const bar = document.getElementById('srch-bar');
   const err = document.getElementById('srch-err');
@@ -155,7 +176,7 @@ if (unknownDestination) {
     if (cancel) cancel.hidden = true; // nothing valid to cancel back to
   }
   if (err) {
-    err.textContent = "We couldn't find that destination — choose your pick-up and drop-off below.";
+    err.textContent = 'Pick-up and drop-off are the same place — choose where you want to go.';
     err.hidden = false;
   }
 }
@@ -178,10 +199,15 @@ function bookUrl(extra) {
   // whereas a guessed one arrives pre-filled and looks like their answer.
   const base = { from: fromId, to: toId, date };
   if (pax != null) base.pax = String(pax);
-  return 'booking.html?' + new URLSearchParams(Object.assign(base, extra)).toString();
+  const all = Object.assign(base, extra);
+  // An engine-priced route has no separate unfinished fare, so rawPrice comes through null —
+  // drop it rather than sending the literal string "null", which parseFloat would turn into 0
+  // and booking would read as a free transfer.
+  Object.keys(all).forEach(function (k) { if (all[k] == null) delete all[k]; });
+  return 'booking.html?' + new URLSearchParams(all).toString();
 }
 
-const privateCard = `
+function privateCardHtml() { return `
   <article class="opt opt-private">
     <span class="tag-top">Most flexible · recommended</span>
     <div class="o-head">
@@ -209,7 +235,45 @@ const privateCard = `
       <span class="chip">${ICONS.ck} Stops on request</span>
       <span class="chip">${ICONS.ck} Fixed price, no meter</span>
     </div>
-  </article>`;
+  </article>`; }
+
+/* Engine-priced routes show the card with its prices still arriving. A skeleton rather than a
+   spinner because the card's shape is already known and only two numbers are missing —
+   swapping the whole card in later would move everything under the traveller's cursor. */
+function privateSkeletonHtml() { return `
+  <article class="opt opt-private is-pending" aria-busy="true">
+    <span class="tag-top">Most flexible · recommended</span>
+    <div class="o-head">
+      <div class="o-ico">${ICONS.car}</div>
+      <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
+    </div>
+    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${fromP.name} straight to ${toP.name}.</p>
+    <div class="veh">
+      <div class="veh-row">
+        <div class="v-ico">${ICONS.car}</div>
+        <div class="v-info"><b>AC car</b><small>Up to 3 travellers + bags</small></div>
+        <div class="v-price"><div class="amt sk-amt">&nbsp;</div><small>working out your price…</small></div>
+      </div>
+      <div class="veh-row">
+        <div class="v-ico">${ICONS.van}</div>
+        <div class="v-info"><b>AC van</b><small>Up to 6 travellers + bags</small></div>
+        <div class="v-price"><div class="amt sk-amt">&nbsp;</div><small>working out your price…</small></div>
+      </div>
+    </div>
+  </article>`; }
+
+/* No price, and no way to get one — the API is unreachable or can't route these two points.
+   There is no local formula to fall back on for a place that isn't in the baked table, so the
+   honest answer is a human one rather than an invented number. */
+function unpricedHtml() { return `
+  <article class="opt opt-private opt-unpriced">
+    <div class="o-head">
+      <div class="o-ico">${ICONS.car}</div>
+      <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
+    </div>
+    <p class="o-desc">We couldn't work out a live price for ${fromP.name} → ${toP.name} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
+    <a class="btn btn-wa o-cta" target="_blank" rel="noopener" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! Could I get a price for ' + fromP.name + ' → ' + toP.name + '?')}">${ICON.wa} Get a price on WhatsApp</a>
+  </article>`; }
 
 let sharedCard = '';
 let noShare = '';
@@ -256,11 +320,20 @@ if (shared) {
 // When there's no shared service, the "no shared seats" panel takes the shared card's
 // slot in the right column (instead of spanning full-width below) so the two-up layout
 // reads the same whether or not a shared option exists.
-document.getElementById('results').innerHTML =
-  `<div class="opt-grid">${privateCard}${shared ? sharedCard : noShare}</div>`;
+// `state` is 'priced' | 'pending' | 'unpriced'; a baked route is only ever 'priced'.
+function renderResults(state) {
+  const left = state === 'priced' ? privateCardHtml()
+    : state === 'pending' ? privateSkeletonHtml()
+    : unpricedHtml();
+  document.getElementById('results').innerHTML =
+    `<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
+}
+renderResults(engineRoute ? 'pending' : 'priced');
 
 // ---- funnel: search + results view (Phase 0 analytics) ----
-(function () {
+// Called once prices exist. An engine route reports after its estimate lands, so view_item_list
+// never carries a placeholder price — and a route we never managed to price reports no items.
+function trackResults() {
   if (typeof window.chTrack !== 'function') return;
   var listId = fromId + '_' + toId;
   // GA4 wants an integer quantity on every item, so an unknown count reports as 1 rather
@@ -288,6 +361,76 @@ document.getElementById('results').innerHTML =
     var q = new URLSearchParams(a.getAttribute('href').split('?')[1] || '');
     window.chTrack('select_item', { item_list_id: listId, mode: q.get('mode') || '', item_variant: q.get('vehicle') || 'seat' });
   }, true); // capture: fires before navigation starts
+}
+if (!engineRoute) trackResults();
+
+/* ---- engine prices for a route that isn't in the baked table ----
+   The catalogue can't price an arbitrary place, so the engine does it: POST /quote/v2/estimate
+   resolves the distance server-side and prices it against the live card without persisting
+   anything. ch-pricing.js owns the fetch (debounce, dedupe, timeout, and latching off when the
+   endpoint 404s because QUOTE_V2_ENABLED is off for the deploy).
+
+   Two calls, one per vehicle, because the card offers both and an intent names exactly one.
+   `pax:1, bags:0` is not a guess about the party: the engine reads pax/bags only to UPGRADE a
+   vehicle that would be too small (selectVehicle), so the smallest party is the only value
+   that returns the fare for the vehicle actually asked for. The real traveller count is
+   collected on the booking step, exactly as it is for a baked route.
+
+   If either call fails there is no fallback price to show — no local formula can price a place
+   with no baked distance — so the card becomes an honest "we'll price it by hand" instead. */
+if (engineRoute) (function () {
+  // "3h 21m" / "45 min" — the same shape the baked table's durationText produces.
+  function minutesText(min) {
+    const h = Math.floor(min / 60), m = Math.round(min % 60);
+    if (h <= 0) return `${Math.max(20, m)} min`;
+    return m >= 8 ? `${h}h ${m}m` : `${h}h`;
+  }
+  const legs = [{ from: fromP.name, to: toP.name }];
+  const base = { product: 'private', pax: 1, bags: 0, legs, extras: [] };
+  if (date) base.date = date;
+
+  function ask(vehicle) {
+    return new Promise(function (resolve) {
+      if (!window.CH_PRICING) return resolve(null);
+      window.CH_PRICING.estimate(Object.assign({ vehicle }, base), {
+        onResult: function (est) { resolve(est); },
+        onUnavailable: function () { resolve(null); }
+      });
+    });
+  }
+
+  /* Sequential, NOT Promise.all. ch-pricing.js tracks exactly one intent at a time by design —
+     a call for a different intent supersedes whatever is pending and orphans its callbacks, so
+     firing car and van together means the car's onResult never runs and the card waits forever.
+     Asking in turn costs a second round trip on a cold route; both are then in ch-pricing's
+     sessionStorage, so a re-render or a return visit is instant. */
+  ask('car').then(function (car) {
+    return ask('van').then(function (van) { return [car, van]; });
+  }).then(function (res) {
+    const car = res[0], van = res[1];
+    if (!car || !van || typeof car.totalCents !== 'number' || typeof van.totalCents !== 'number') {
+      renderMeta(false);
+      renderResults('unpriced');
+      return;
+    }
+    const leg = (car.legs && car.legs[0]) || {};
+    const km = leg.distanceKm != null ? Math.round(leg.distanceKm) : null;
+    quote = {
+      km: km,
+      // Prefer the routed duration that came back with the distance; fall back to the local
+      // km→time curve so the meta line never sits empty next to a real price.
+      duration: leg.durationMin != null ? minutesText(leg.durationMin) : (km != null ? T.durationText(km) : '—'),
+      car: car.totalCents / 100,
+      van: van.totalCents / 100,
+      // The engine total IS the final fare — there is no separate unfinished figure to hand on,
+      // so booking receives `price` alone and re-prices through the same endpoint on arrival.
+      rawCar: null, rawVan: null
+    };
+    if (quote.km == null) { quote = null; renderMeta(false); renderResults('unpriced'); return; }
+    renderMeta(false);
+    renderResults('priced');
+    trackResults();
+  });
 })();
 
 // breadcrumbs — no route crumb. It restated "A → B" in full a few hundred pixels above an
