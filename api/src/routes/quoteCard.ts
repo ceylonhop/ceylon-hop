@@ -1,4 +1,4 @@
-import { wrap, DISPLAY, BODY, deArrow } from './shareCardImage';
+import { wrap, DISPLAY, BODY, deArrow, brandMark, markWidth } from './shareCardImage';
 import { payPageCopy } from '../quote/payPageCopy';
 import type { SavedQuote } from '../db/quoteRepo';
 
@@ -85,8 +85,17 @@ export function quoteCardSvg(m: QuoteCardModel): string {
   const text = (t: string, y: number, size: number, family: typeof DISPLAY | typeof BODY, weight: number, fill: string) =>
     `<text x="100" y="${y}" font-family="${family}" font-size="${size}" font-weight="${weight}" fill="${fill}">${xml(t)}</text>`;
 
+  // Same placement as the pay card, computed the same way — the two cards are siblings, and the
+  // only thing that should separate them is the wash (see payCard.ts's WASH).
+  const MARK_X = 102;
+  const MARK_H = 74;
+  const wordX = Math.round(MARK_X + markWidth(MARK_H) + 22);
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
 <defs>
+  <!-- The COOL wash: this card keeps the green-cream both cards started with, and the pay card
+       goes amber, so a customer holding both links can tell them apart at thumbnail size
+       (owner, 2026-08-10). Changing this one is what would break that pairing. -->
   <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
     <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
   </linearGradient>
@@ -97,9 +106,8 @@ export function quoteCardSvg(m: QuoteCardModel): string {
 <rect width="1200" height="630" fill="url(#bg)"/>
 <rect width="1200" height="630" fill="url(#glow)"/>
 
-<circle cx="128" cy="118" r="30" fill="${C.saffron}"/>
-<text x="128" y="131" font-family="${DISPLAY}" font-size="34" font-weight="800" fill="${C.paper}" text-anchor="middle">C</text>
-<text x="176" y="131" font-family="${DISPLAY}" font-size="30" font-weight="800" fill="${C.tealDeep}" letter-spacing="1.5">CEYLON HOP</text>
+${brandMark(MARK_X, 80, MARK_H, C.saffron)}
+<text x="${wordX}" y="131" font-family="${DISPLAY}" font-size="30" font-weight="800" fill="${C.tealDeep}" letter-spacing="1.5">CEYLON HOP</text>
 
 ${text(m.lead, 216, 40, BODY, 700, C.inkSoft)}
 ${routeLines.map((l, i) => text(l, routeY + i * 62, 56, DISPLAY, 800, C.ink)).join('\n')}
