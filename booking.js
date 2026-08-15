@@ -945,13 +945,38 @@ function ensureRepriceEl(){
 // which only ever fires from the Where step's own map. It needs a home that's visible no matter
 // which step is open, so it lives beside the running total in the persistent summary sidebar
 // rather than beside loc-wrap.
+// …which is true of the sidebar on a DESKTOP. On a phone that same sidebar is the collapsed
+// bottom sheet (body.js-mbar, booking.html:594), so a notice parked in it renders ~500px below
+// the fold behind visibility:hidden — and it holds the only control that releases the Continue
+// gate. Owner-reported (2026-08-15): correct an out-of-area pick-up and Continue never comes
+// back. So on a phone the notice lives with the step the customer is actually looking at, and
+// because a raise can fire from ANY step it has to travel with the active panel (see goStep).
+const phoneLayout = () => document.body.classList.contains('js-mbar')
+  && window.matchMedia('(max-width:880px)').matches;
+function engineNoteHome(){
+  if(phoneLayout()){
+    const panel=document.querySelector('.panel.active');
+    // Above the step's own nav row, so it reads as the reason the CTA below it is waiting.
+    if(panel) return { parent:panel, before:panel.querySelector('.nav-btns') };
+  }
+  const total=document.querySelector('#summary .s-total');
+  if(total && total.parentNode) return { parent:total.parentNode, before:total.nextSibling };
+  const summary=document.getElementById('summary');
+  return summary ? { parent:summary, before:null } : null;
+}
 function ensureEngineRepriceEl(){
   let el=document.getElementById('engine-reprice-note');
-  if(!el){
-    el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note';
-    const total=document.querySelector('#summary .s-total');
-    if(total && total.parentNode) total.parentNode.insertBefore(el, total.nextSibling);
-    else { const summary=document.getElementById('summary'); if(summary) summary.appendChild(el); }
+  if(!el){ el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note'; }
+  const home=engineNoteHome();
+  // Re-homed on every pass, not just on create: the step (and the viewport) can move under it.
+  // Everything below is gated on the parent actually CHANGING, so an unchanged gate re-rendering
+  // (which happens on nearly every keystroke) never yanks the page around.
+  if(home && el.parentNode!==home.parent){
+    home.parent.insertBefore(el, home.before||null);
+    // In the phone layout the CTA this blocks is the sticky bar — always in view — while the
+    // notice sits at the end of a long panel. Landing it in the flow isn't enough on its own:
+    // bring it to them, or the dead button still has no visible reason beside it.
+    if(phoneLayout()) el.scrollIntoView({ block:'center' });
   }
   return el;
 }
@@ -1730,6 +1755,11 @@ window.goStep=function(n){
   });
   document.querySelectorAll('.pline').forEach((l,i)=>l.classList.toggle('done',i<n-1));
   window.scrollTo({top:0,behavior:'smooth'});
+  // An unacknowledged raise blocks EVERY step's CTA, so its notice follows the customer here
+  // rather than staying on the step it fired from (phone layout — see engineNoteHome). It runs
+  // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
+  // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
+  renderRepriceNote();
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
