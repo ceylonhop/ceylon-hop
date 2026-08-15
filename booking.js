@@ -1593,7 +1593,9 @@ function render(){
 
   // cancellation language adapts to the service (24h transfers · 10 days chauffeur-guide)
   const perk=document.getElementById('perk-cancel');
-  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> ${cancelText()}`;
+  // Keep this mark in step with the one in booking.html's .s-perks — this line replaces the
+  // whole row, so a stale tick here silently undoes the markup a moment after it renders.
+  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg> ${cancelText()}`;
   const paySub=document.getElementById('pay-sub');
   if(paySub) paySub.textContent=`Pay securely to confirm. ${cancelText()}.`;
 
