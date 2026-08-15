@@ -237,6 +237,74 @@ test('choosing chauffeur on a trip re-estimates through the engine with a distin
   await expect(page.locator('#sum-total')).toHaveText('$100');
 });
 
+// The direction the two switch tests above deliberately skip — and the only one real pricing
+// ever takes, since both a chauffeur-guide and a van cost MORE than what they replace. A raise
+// the customer drove by picking a different product or vehicle needs no acknowledgement: the
+// click is the acknowledgement, and both the service chooser and the van CTA name their price
+// before it. Gating them announced "your price has been updated" about the very change just
+// asked for, and — because private and chauffeur trips carry identically labelled summary rows
+// (#490) — held the card showing the chauffeur trip at the private figure with nothing on screen
+// saying which one you'd get.
+test('choosing chauffeur adopts the dearer chauffeur total immediately — no acknowledge gate', async ({ page }) => {
+  // Dates anchored to now, not written down: a fixed date silently becomes a PAST date and
+  // takes tripDatesComplete() (which gates the chauffeur chooser) with it. Two days apart, as
+  // a chauffeur trip's legs must be.
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const query = [
+    'mode=trip',
+    'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
+    'nights=0,1,0',
+    `dates=${day(14)},${day(16)}`,
+    'pax=2',
+    'vehicle=car',
+  ].join('&');
+  await gotoBooking(page, {
+    query,
+    estimate: { respond: (intent) => ({ totalCents: intent.product === 'chauffeur' ? 50000 : 30000 }) },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$300');
+
+  await page.locator('[data-svc="chauffeur"]').click();
+
+  // Headroom over the default 5s: setNum tweens the figure, so the assertion has to outlast the
+  // debounce + fetch + the count-up itself, which is tighter than it looks on a loaded CI box.
+  await expect(page.locator('#sum-total')).toHaveText('$500', { timeout: 10000 });
+  await expect(page.locator('#engine-reprice-note')).toHaveCount(0);
+  await expect(page.locator('#n1')).toBeEnabled();
+});
+
+test('the van upsell adopts its dearer engine total immediately — no acknowledge gate', async ({ page }) => {
+  await gotoBooking(page, {
+    estimate: { respond: (intent) => ({ totalCents: intent.vehicle === 'van' ? 20000 : 10000 }) },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+
+  await page.evaluate(() => window.goStep(3));
+  await page.evaluate(() => { window.step('ad', 1); window.step('ad', 1); window.step('ad', 1); }); // 1 -> 4, over an AC car
+  await expect(page.locator('#cap-note')).toContainText('Switch to AC van');
+
+  await page.evaluate(() => window.switchToVan());
+
+  await expect(page.locator('#sum-total')).toHaveText('$200', { timeout: 10000 });
+  await expect(page.locator('#engine-reprice-note')).toHaveCount(0);
+  await expect(page.locator('#n1')).toBeEnabled();
+});
+
+// A raise the customer did NOT choose keeps its gate — this is the line the exemption must not
+// cross. Same trip, same vehicle, same product: only the itinerary moved.
+test('a raise with no product or vehicle change is still gated', async ({ page }) => {
+  await gotoBooking(page, {
+    pickGeo: { lat: 6.15, lng: 80.11 },
+    estimate: { respond: (intent) => ({ totalCents: /Result/.test(intent.legs[0].to) ? 20000 : 10000 }) },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+
+  await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
+
+  await expect(page.locator('#engine-reprice-note')).toBeVisible();
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+});
+
 test('the engine timing out never suppresses the local reprice notice (engine must have actually answered, not merely "not yet 404")', async ({ page }) => {
   // The estimate endpoint never settles within ch-pricing.js's own 3s abort — a timeout, not a
   // flag-off 404. window.CH_PRICING.available() stays true the whole time (only a 404 latches it
