@@ -125,10 +125,17 @@ window.updateSearch = function (e) {
 let quote = engineRoute ? null : T.privateQuote(fromId, toId);
 const shared = engineRoute ? null : T.sharedOption(fromId, toId);
 const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
-document.title = `${fromP.name} → ${toP.name} — Ceylon Hop`;
+/* Display label ONLY. A Google place arrives as its full formatted address ("Ratmalana
+   Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka") and, set in the h1's
+   display face on a phone, that is a four-line wall of serif. URLs, pricing calls, the
+   edit-search inputs, WhatsApp prefills and analytics all keep the full stored name —
+   place identity must never change shape on the way to the API (see ch-shortplace.js). */
+const dispFrom = (window.CH && CH.shortPlace) ? CH.shortPlace(fromP.name) : fromP.name;
+const dispTo = (window.CH && CH.shortPlace) ? CH.shortPlace(toP.name) : toP.name;
+document.title = `${dispFrom} → ${dispTo} — Ceylon Hop`;
 
 document.getElementById('route-title').innerHTML =
-  `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
+  `${dispFrom} <span class="arr">${ICONS.route}</span> ${dispTo}`;
 const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Flexible date';
 // 'measuring' only while an estimate is genuinely in flight — once it has failed there is
 // nothing being measured, and leaving the line up reads as a page still working on it.
@@ -214,7 +221,7 @@ function privateCardHtml() { return `
       <div class="o-ico">${ICONS.car}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
-    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${fromP.name} straight to ${toP.name}.</p>
+    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
     <div class="veh">
       <div class="veh-row">
         <div class="v-ico">${ICONS.car}</div>
@@ -247,7 +254,7 @@ function privateSkeletonHtml() { return `
       <div class="o-ico">${ICONS.car}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
-    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${fromP.name} straight to ${toP.name}.</p>
+    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
     <div class="veh">
       <div class="veh-row">
         <div class="v-ico">${ICONS.car}</div>
@@ -271,7 +278,7 @@ function unpricedHtml() { return `
       <div class="o-ico">${ICONS.car}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
-    <p class="o-desc">We couldn't work out a live price for ${fromP.name} → ${toP.name} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
+    <p class="o-desc">We couldn't work out a live price for ${dispFrom} → ${dispTo} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
     <a class="btn btn-wa o-cta" target="_blank" rel="noopener" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! Could I get a price for ' + fromP.name + ' → ' + toP.name + '?')}">${ICON.wa} Get a price on WhatsApp</a>
   </article>`; }
 
@@ -312,7 +319,7 @@ if (shared) {
     <div class="ns-ico">${ICONS.share}</div>
     <div>
       <b>No shared seats on this route — yet</b>
-      <p>We don't run a scheduled shared service between ${fromP.name} and ${toP.name} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
+      <p>We don't run a scheduled shared service between ${dispFrom} and ${dispTo} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
     </div>
   </div>`;
 }
