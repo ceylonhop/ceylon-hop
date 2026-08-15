@@ -8,7 +8,9 @@
 (function(){
   const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const DOW=['Su','Mo','Tu','We','Th','Fr','Sa'];
-  const CAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/></svg>';
+  // img/icons/line/trip-date.svg — the family mark, so the date button reads the same as the
+  // per-leg date chips it feeds. The filled dot is the chosen day; site.css colours it.
+  const CAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>';
 
   const fmt=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
   const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;

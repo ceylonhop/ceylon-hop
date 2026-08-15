@@ -78,13 +78,41 @@ test('search states the route once — no locked summary bar, no route breadcrum
   await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
   await expect(page.locator('.breadcrumbs')).not.toContainText('Sigiriya');
 
-  // Edit search opens the form in place, directly under the button that opened it. The old
-  // layout put the button below a form that lived up in .srch-top, a screen away.
+  // Edit search opens the form inside the same route hero the button sits in. The button now
+  // rides the h1 line (hard right) rather than a row of its own under the meta, so the form
+  // lands a little further below it than it used to — but still within the hero, never the
+  // screen-away placement of the old .srch-top strip.
   const btnBox = await page.locator('#sl-edit').boundingBox();
   await page.locator('#sl-edit').click();
   const formBox = await page.locator('#srch-bar').boundingBox();
   expect(formBox.y).toBeGreaterThan(btnBox.y - 8);
-  expect(formBox.y - btnBox.y).toBeLessThan(120);
+  expect(formBox.y - btnBox.y).toBeLessThan(260);
+});
+
+test('the search page has no "start a new search" strip above the route', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=1' });
+
+  // The strip was a full-width white band holding one back link. The nav logo already goes
+  // home, so it bought nothing and pushed the route — the reason the page exists — down.
+  await expect(page.locator('.srch-top')).toHaveCount(0);
+  await expect(page.getByText('Start a new search')).toHaveCount(0);
+});
+
+test('Edit search sits on the route title line, at the right edge', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=1' });
+
+  const title = await page.locator('#route-title').boundingBox();
+  const edit = await page.locator('#sl-edit').boundingBox();
+  const meta = await page.locator('#route-meta').boundingBox();
+
+  // same line as the title: their vertical spans overlap...
+  expect(edit.y).toBeLessThan(title.y + title.height);
+  expect(edit.y + edit.height).toBeGreaterThan(title.y);
+  // ...and above the meta row it used to sit under
+  expect(edit.y).toBeLessThan(meta.y);
+  // hard right: past the horizontal midpoint of the title's own row
+  expect(edit.x).toBeGreaterThan(title.x + title.width / 2);
 });
 
 test('search edit bar shows Google suggestions for non-local places without covering Cancel', async ({ page }) => {

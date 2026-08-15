@@ -153,6 +153,51 @@
     });
   }
 
+  /* DECLUTTER ONLY — no recolouring. Google's own land/water palette stays: the owner
+     compared it against a cream-and-pale-blue brand tint (shipped in #482) and preferred the
+     default, 2026-08-15. Don't repaint the basemap; the route line and pins are where the
+     brand belongs. What stays off is noise, not colour: POI pins, transit, state borders,
+     sea labels. Classic `styles` works because these maps set no mapId — adding one would
+     silently disable all of this.
+
+     `detailed` (the expanded modal) keeps road labels: at street zoom a map with no road
+     names reads as broken. The inline card drops them — at country zoom they are noise over
+     a route line that is the whole point of the picture. */
+  function mapStyle(detailed) {
+    const s = [
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+      { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
+      { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    ];
+    if (!detailed) {
+      s.push({ featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] });
+      // A landscape card framing a north–south island always catches some of the mainland, and
+      // the styler can't scope labels by country — so at this size "Thiruvananthapuram" was the
+      // biggest word on a Sri Lanka trip map, and the "Sri Lanka" label itself lands across the
+      // route line. Inline the map is a PICTURE of the route: shape, line, pins, no type. The
+      // expanded map (detailed) keeps every label.
+      s.push({ featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'off' }] });
+    }
+    return s;
+  }
+
+  /* fitBounds padding has to SCALE to the box it is padding. The old flat 36px was written
+     for the 760px-tall expand modal; the inline callers force a far shorter card (plan.html
+     pins the summary map to `--map-h: clamp(104px,17vh,180px)`, and 76–110px on a short
+     laptop), where 36px top + bottom eats more than half the height. Google then zooms out
+     until the route clears the sliver that remains — the frame swells past the island to
+     southern India and the route shrinks into a corner (owner-reported, 2026-08-14).
+
+     6% of the smaller dimension, floored at 6px so a pin never sits flush against an edge and
+     capped at the old 36 so the modal is unchanged. A container with no size yet (created
+     inside a collapsed step panel) keeps 36; the ResizeObserver re-fits once it has one. */
+  function fitPadding(w, h) {
+    const min = Math.min(w || 0, h || 0);
+    if (!min) return 36;
+    return Math.max(6, Math.min(36, Math.round(min * 0.06)));
+  }
+
   function pinLabelsVisible(zoom) {
     // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
     // the story anyway — the expanded map's legend still carries the full numbered order.
@@ -304,8 +349,12 @@
         center: { lat: 7.87, lng: 80.77 },
         zoom: 7,
         disableDefaultUI: true,
-        zoomControl: true,
+        // Only the expanded map gets a +/- stack. On the inline card it covers a third of a
+        // ~137px-tall box to duplicate an affordance the Expand pill already offers — and
+        // every inline caller (plan, booking, quote) passes expandable:true.
+        zoomControl: !!opts.greedy,
         clickableIcons: false,
+        styles: mapStyle(!!opts.greedy),
         // The inline card stays 'cooperative' so it never hijacks page scroll. The expand
         // modal passes greedy:true, which is the whole point of expanding — one-finger drag
         // and plain wheel zoom.
@@ -362,7 +411,10 @@
         const pin = (fill) => ({
           path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
           fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
-          scale: 1.5, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
+          // 1.5 is a modal-sized pin; on the short inline card three of them swamp the island
+          // they are supposed to sit on. (anchor/labelOrigin are path units — scale-invariant.)
+          scale: opts.greedy ? 1.5 : 1.1,
+          anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
         const stopLocs = [];
@@ -421,7 +473,11 @@
         } catch (e) { return vps[0]; }
       };
       const fitTo = viewport();
-      const fit = () => { if (fitTo) map.fitBounds(fitTo, 36); };
+      // Measured at fit time, not once: the ResizeObserver below re-fits when the container
+      // finally gains its size, and the padding must be re-derived from the new box.
+      const fit = () => {
+        if (fitTo) map.fitBounds(fitTo, fitPadding(mapDiv.offsetWidth, mapDiv.offsetHeight));
+      };
       fit();
       if (window.ResizeObserver) {
         let lastW = mapDiv.offsetWidth;

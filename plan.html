@@ -17,7 +17,7 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=b3b9aecc47">
+<link rel="stylesheet" href="site.css?v=13492eca8a">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -40,7 +40,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- Maps Embed API key (public, referrer-restricted). Empty = SVG placeholder fallback. -->
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script src="tweaks.js?v=26d58fe065"></script>
-<script src="datepicker.js?v=9c0f3578dc"></script>
+<script src="datepicker.js?v=02190792a9"></script>
 <style>
   /* ---- plan hero ---- */
   /* The tint has to reach the very top of the page. `margin-top:-74px` slides this section up
@@ -121,6 +121,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     color:var(--ink-soft);font-size:.92rem;line-height:1.5}
   .rail-empty[hidden]{display:none}
   .rail-empty svg{width:22px;height:22px;color:var(--accent);flex:none;margin-top:1px}
+  /* the line-icon family mark (img/icons/line/): one filled waypoint dot per icon */
+  .rail-empty svg .wp{fill:var(--saffron);stroke:none}
   .rail-empty b{color:var(--ink)}
   .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
   .drag:active{cursor:grabbing}
@@ -393,7 +395,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
      stopping mid-panel. Let it span the pair instead. */
   .sum-stats .sum-stat:last-child{grid-column:1/-1}
-  .summary{--map-h:clamp(104px,17vh,180px)}
+  /* The map is a landscape box framing a north-south island, so a short card spends most of
+     itself on sea. Measured budget (1280x720, the tightest window that still gets this branch,
+     7-stop trip): the card sticks at top:86 and its non-map parts total 439px, so the map can
+     reach ~195px before the CTA drops under the fold — 22vh leaves 37px of that spare. The
+     cap keeps a tall monitor from turning the summary into a map with captions.
+     Guarded by web-tests/e2e/plan-summary-fold.spec.js. */
+  .summary{--map-h:clamp(104px,22vh,200px)}
   /* short laptop windows: shave the map and the pin offset so the whole card — CTA included —
      still clears the fold rather than hanging 20-odd px under it */
   @media(min-width:981px) and (max-height:700px){
@@ -509,7 +517,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="rail" id="rail"></div>
 
       <p class="rail-empty" id="rail-empty" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v4.2a3.4 3.4 0 0 0 3.4 3.4h5.2"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg>
         <span><b>No transfers yet.</b> Add your first one below — tell us where you’re picked up and dropped off, and we’ll work out the distance and price.</span>
       </p>
 
@@ -601,9 +609,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=c736419c0c"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
-<script src="ch-map.js?v=5963785709"></script>
+<script src="ch-map.js?v=53c1b7c8b7"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=0b1298fa7d"></script>
+<script src="plan.js?v=a5847f81be"></script>
 </body>
 </html>

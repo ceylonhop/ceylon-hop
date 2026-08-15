@@ -511,6 +511,8 @@ select:not([multiple]){padding-right:2.4rem!important}
 .dp{position:relative}
 .dp-btn{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:1.5px solid var(--line);background:var(--white);color:var(--ink);border-radius:10px;padding:.72rem .8rem;font-family:inherit;font-size:.95rem;line-height:1.2;transition:border .15s,box-shadow .15s}
 .dp-btn svg{width:17px;height:17px;color:var(--accent-deep);flex:none}
+/* the line-icon family mark (img/icons/line/): one filled waypoint dot per icon */
+.dp-btn svg .wp{fill:var(--saffron);stroke:none}
 .dp-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dp-btn.empty span{color:var(--ink-soft)}
 .dp-btn:hover{border-color:var(--accent)}
