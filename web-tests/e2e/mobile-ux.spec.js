@@ -4,6 +4,30 @@ import { blockLiveApi, gotoBooking, fillContact } from './_stubs.js';
 // index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
 test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
+// Read several element boxes in ONE layout pass, in DOCUMENT coordinates (top/bottom are
+// offset by the scroll position, so they don't depend on where the page happens to be).
+//
+// site.css sets html{scroll-behavior:smooth}, so anything that scrolls — goStep()'s
+// scrollTo({top:0}), or Playwright's own scroll-into-view during fill()/check() — leaves an
+// animation in flight. Two separate boundingBox() round trips are then sampled at two
+// DIFFERENT scroll offsets, and any y-vs-y comparison between them is meaningless: seen as a
+// 2.8px strip/panel inversion ~1540px up the page, failing ~1/100 under --workers=4. Waiting
+// for the scroll to settle is not enough on its own — an "instant" scrollTo(0) was still
+// observed landing at scrollY 2 — so measure in a frame the scroll can't move instead.
+async function docBoxes(page, selectors) {
+  return page.evaluate((sel) => {
+    const out = {};
+    for (const [name, selector] of Object.entries(sel)) {
+      const el = document.querySelector(selector);
+      if (!el) { out[name] = null; continue; }
+      const r = el.getBoundingClientRect();
+      // window.scrollX/Y are read in the same layout as every rect above.
+      out[name] = { top: r.top + window.scrollY, left: r.left + window.scrollX, width: r.width, height: r.height };
+    }
+    return out;
+  }, selectors);
+}
+
 test('mobile booking shows a compact context strip, not the full summary wall', async ({ page }) => {
   // Sticky-bar layout (spec 2026-07-09-mobile-booking-sticky-bar-design.md): the old
   // full summary card above every step is replaced by a slim strip + sticky total bar,
@@ -12,13 +36,15 @@ test('mobile booking shows a compact context strip, not the full summary wall', 
   await gotoBooking(page);
   await fillContact(page);
 
-  const strip = await page.locator('#mstrip').boundingBox();
-  const panel = await page.locator('.panel[data-panel="4"]').boundingBox();
+  const { strip, panel } = await docBoxes(page, {
+    strip: '#mstrip',
+    panel: '.panel[data-panel="4"]',
+  });
   expect(strip).toBeTruthy();
   expect(panel).toBeTruthy();
-  expect(strip.y).toBeLessThan(panel.y);
+  expect(strip.top).toBeLessThan(panel.top);
   expect(strip.height).toBeLessThanOrEqual(90);
-  expect(panel.y).toBeLessThan(480); // step content reachable on the first screen
+  expect(panel.top).toBeLessThan(480); // step content reachable on the first screen
   await expect(page.locator('#mbar-amt')).not.toHaveText('—'); // sticky bar carries the total
   await expect(page.locator('#pay-due')).toBeVisible();
 });
@@ -125,18 +151,22 @@ test('mobile exact location map stays compact and readable', async ({ page }) =>
   await page.evaluate(() => window.goStep && window.goStep(2));
   await expect(page.locator('#route-map')).toBeVisible();
 
-  const mapBox = await page.locator('#route-map .ch-map-wrap, #route-map .rm-canvas svg').first().boundingBox();
-  const barBox = await page.locator('#rm-bar').boundingBox();
-  const noteBox = await page.locator('#pvt-note').boundingBox();
-  const navBox = await page.locator('#nav1').boundingBox();
+  // goStep(2) ends with a smooth scrollTo({top:0}), so these four boxes must come from one
+  // layout read in document coordinates — see docBoxes above.
+  const { mapBox, barBox, noteBox, navBox } = await docBoxes(page, {
+    mapBox: '#route-map .ch-map-wrap, #route-map .rm-canvas svg',
+    barBox: '#rm-bar',
+    noteBox: '#pvt-note',
+    navBox: '#nav1',
+  });
   expect(mapBox).toBeTruthy();
   expect(barBox).toBeTruthy();
   expect(noteBox).toBeTruthy();
   expect(navBox).toBeTruthy();
   expect(mapBox.height).toBeLessThanOrEqual(190);
   expect(barBox.height).toBeGreaterThanOrEqual(48);
-  expect(noteBox.y).toBeGreaterThan(barBox.y);
-  expect(navBox.y).toBeGreaterThan(noteBox.y);
+  expect(noteBox.top).toBeGreaterThan(barBox.top);
+  expect(navBox.top).toBeGreaterThan(noteBox.top);
   await expect(page.locator('#rm-bar')).toContainText('145 km');
 });
 
