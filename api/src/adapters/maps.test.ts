@@ -559,3 +559,25 @@ describe('implausibly short distance between two known places', () => {
     expect(r).toEqual({ km: 3, durationMin: 7 });
   });
 });
+
+describe('server place vocabulary covers the front-end catalogue', () => {
+  // Every town transfers-data.js can resolve must resolve here too, or migrating the site to
+  // server-side pricing silently loses coverage the planner has today.
+  const FRONT_END_TOWNS = [
+    'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
+    'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
+    'Nilaveli', 'Ahangama', 'Hiriketiya', 'Horton Plains',
+    // Catalogue reconciliation (2026-08-13): server via-stops now mirrored into the front-end
+    // EXTRA list; the reverse direction is web-tests/unit/server-town-parity.test.js.
+    'Nilaveli Beach', 'Nanu Oya', 'Thanthirimale',
+  ];
+
+  for (const town of FRONT_END_TOWNS) {
+    it(`resolves ${town}`, async () => {
+      const maps = new FakeMapsAdapter();
+      const d = await maps.distance(town, 'Colombo City');
+      expect(d, `${town} did not resolve`).not.toBeNull();
+      expect(d!.km).toBeGreaterThan(0);
+    });
+  }
+});

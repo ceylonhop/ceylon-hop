@@ -5,6 +5,8 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
+import { liveRateCard } from '../quote/liveCard';
+import { stripZoneMeta } from '../quote/stripZoneMeta';
 import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
 import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -18,6 +20,7 @@ import type { QuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import type { DiscountIntent } from '../db/quoteRepo';
 import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
+import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
@@ -418,19 +421,6 @@ function summary(result: QuoteResult): ServiceSummary {
   return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
 }
 
-// D-A / spec §3.1: margin is stripped from the wire response unless the caller has
-// margin:view (founder only) — finance/ops price customers without ever seeing cost.
-// Hot zones (D9): the founder-only "Ella premium +15%" annotation rides in a line item's
-// meta.hotZone. It's a margin-class disclosure — WHY a price is elevated — so it must be stripped
-// for any role without margin:view, exactly like marginCents. Returns meta with hotZone removed
-// (undefined when there was no other meta), leaving every other meta field intact.
-function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!meta || !('hotZone' in meta)) return meta;
-  const rest = { ...meta };
-  delete rest.hotZone;
-  return Object.keys(rest).length ? rest : undefined;
-}
-
 // Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
 //
 // The ops builder composes the customer message from its own UNSAVED state, so a few rows (a
@@ -668,7 +658,7 @@ export function internalQuoteRoutes(deps: {
   // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const discountsEnabled = deps.discountsEnabled ?? false;
-  const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
@@ -1447,12 +1437,20 @@ export function internalQuoteRoutes(deps: {
   r.get('/:id', async (c) => {
     const q = await deps.quotes.get(c.req.param('id'));
     if (!q) return c.json({ error: 'not_found' }, 404);
-    const canMargin = can(c.get('identity').role, 'margin:view');
+    const role = c.get('identity').role;
+    const canMargin = can(role, 'margin:view');
     // Ship the quote priced against its locked card so the tool renders the frozen (approved)
     // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
     const estimate = lockedEstimate(q, canMargin, new Date());
     const view = canMargin ? q : stripQuoteMargin(q);
-    return c.json({ ...view, estimate });
+    // May THIS viewer approve THIS quote (plan 2026-08-11)? The page knows the viewer's role but
+    // not whether a given quote qualifies, so the answer has to travel with the quote — a UI
+    // gating on `caps.includes('quote:approve_simple')` alone would offer Approve on every quote
+    // and 403 on most. Read from `q`, never the margin-stripped `view`: the predicate inspects the
+    // priced result for a discount, and stripping is about exposure, not about what is true.
+    const mayApprove = can(role, 'quote:approve')
+      || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q));
+    return c.json({ ...view, estimate, mayApprove });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
@@ -1529,7 +1527,17 @@ export function internalQuoteRoutes(deps: {
       // undoing the system's action, not overriding a person's. It also re-prices at the live
       // card (rateLock above), so a revived quote can never carry a stale price to a customer.
       const reopeningSent = current.status === 'sent' && EDITABLE.includes(to);
-      if ((to === 'ready' || to === 'changes_requested' || reopeningSent) && !can(c.get('identity').role, 'quote:approve')) {
+      // Ops self-approval (plan 2026-08-11). An ops agent may approve its OWN simple work: a
+      // single-leg, standard-priced, undiscounted private transfer. Deliberately keyed on
+      // `to === 'ready'` alone, so send-back and reopening a sent quote stay founder-only — and
+      // those two can never leak through here, because reopeningSent requires `to` to be in
+      // EDITABLE and 'ready' is not in EDITABLE. Evaluated on the STORED row: content freezes at
+      // submission, so what the predicate reads is what the approver saw.
+      const selfApproving = to === 'ready'
+        && can(c.get('identity').role, 'quote:approve_simple')
+        && canOpsSelfApprove(current);
+      if ((to === 'ready' || to === 'changes_requested' || reopeningSent)
+        && !can(c.get('identity').role, 'quote:approve') && !selfApproving) {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
       if (to === 'ready') {
@@ -1609,7 +1617,17 @@ export function internalQuoteRoutes(deps: {
       }
     }
     // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
-    if (body.status === 'pending_review' && deps.email) {
+    // Silent when the submitter can approve this quote themselves (plan 2026-08-11): `ready` is
+    // reachable only from `pending_review`, so an ops self-approval MUST pass through here, and
+    // mailing it asks the founder to action something ops resolves seconds later. Every quote ops
+    // CANNOT self-approve still mails — that is the case the notification exists for.
+    //
+    // Deliberately shipped WITH the UI (Task 4) and not with the gate (Task 2): silencing it while
+    // ops still had no Approve button would have left qualifying quotes sitting in pending_review
+    // with nobody told at all. Noise is recoverable; silence is not.
+    const submitterCanApproveItself =
+      can(c.get('identity').role, 'quote:approve_simple') && canOpsSelfApprove(updated);
+    if (body.status === 'pending_review' && deps.email && !submitterCanApproveItself) {
       for (const u of approverOpsUsers(deps.auth.opsUsers)) {
         if (u.email === actor.toLowerCase()) continue;
         try {

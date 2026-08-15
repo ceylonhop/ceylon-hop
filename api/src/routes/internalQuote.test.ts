@@ -395,7 +395,15 @@ describe('internal quoting tool route', () => {
 
   it('ops can submit a draft for review but cannot approve or self-approve', async () => {
     const app = createApp();
-    const id = (await draft(app, 'op@x.com')).id;
+    // A TWO-LEG quote: since 2026-08-11 ops may approve a SINGLE-leg standard transfer of its own
+    // (quote:approve_simple), so the general "ops holds no approval power" rule now has to be
+    // asserted on a quote the predicate refuses. The single-leg case — both the approval and every
+    // shape that must still be refused — lives in internalQuoteSelfApprove.test.ts.
+    const twoLegs = {
+      vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private',
+      legs: [leg({ distanceKm: 80 }), leg({ from: 'B', to: 'C', distanceKm: 60 })],
+    };
+    const id = (await (await postAs('op@x.com', app, '/admin/quote/save', twoLegs)).json()).id;
     expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
     const forbid = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
     expect(forbid.status).toBe(403); // pending_review → ready is a legal move, but ops lacks quote:approve
@@ -1504,11 +1512,19 @@ describe('quote review notifications (awaiting-approval + sent-back)', () => {
   const postAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
 
+  // TWO legs on purpose. Since 2026-08-11 ops holds quote:approve_simple, and submitting a quote
+  // it can approve itself deliberately sends NO awaiting-approval mail — so a one-leg fixture here
+  // would be asserting the suppressed case and this suite would be testing the opposite of what it
+  // says. The suppression itself is covered in internalQuoteSelfApprove.test.ts; this seed is for
+  // quotes that genuinely need the founder.
   async function seedReviewableQuote(mail: FakeEmailAdapter) {
     const app = createApp({ quotes: new InMemoryQuoteRepo(), email: mail, opsBaseUrl: OPS_BASE });
     const save = await postAs('op@x.com', app, '/admin/quote/save', {
       vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
-      legs: [leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 })],
+      legs: [
+        leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 }),
+        leg({ from: 'Kandy', to: 'Ella', distanceKm: 140 }),
+      ],
     });
     const id = (await save.json()).id as string;
     return { app, id };

@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { blockLiveApi } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────
 //  Analytics on the properties that shipped after Phase 0 — pay, quote, manage (2026-08-07).
@@ -458,13 +465,30 @@ test('the manage and quote greetings are masked too', async ({ page }) => {
 
 // Reads the real module off the static server and flips the owner switch, so the strip's
 // tests exercise the SHIPPED file rather than a second copy that could drift from it.
+// Read the real file once, at module load, and assert the switch is there. Doing it here rather
+// than inside the route handler means a missing switch fails loudly at collection time instead of
+// as a mystery "element(s) not found" for the strip — a throw inside a route handler aborts the
+// request, so the script simply never loads and the symptom points at the wrong thing entirely.
+const CONSENT_SRC = readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../consent-transactional.js'),
+  'utf8',
+);
+const CONSENT_ASKING = CONSENT_SRC.replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
+if (!CONSENT_ASKING.includes('var ASK_FIRST = true;')) {
+  throw new Error('consent-transactional.js: ASK_FIRST switch not found — update forceAsk()');
+}
+
 async function forceAsk(page) {
-  await page.route('**/consent-transactional.js', async (route) => {
-    const res = await route.fetch();
-    const body = (await res.text()).replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
-    if (!body.includes('var ASK_FIRST = true;')) throw new Error('ASK_FIRST switch not found');
-    await route.fulfill({ status: 200, contentType: 'text/javascript', body });
-  });
+  // RegExp, not a glob: the script is referenced with a cache-busting ?v=<hash> (#464),
+  // and '**/consent-transactional.js' does not match the query-stringed URL.
+  //
+  // Served from the string above rather than route.fetch(): that fetch went back over HTTP to
+  // the same static server every other worker is loading, and when it lost that race the handler
+  // threw, the script never arrived, and the strip these tests look for was never rendered. It
+  // passed 100/100 stressed in isolation and failed in the full suite, which is exactly the
+  // shape of a contended round-trip. The file is on disk; there is nothing to fetch.
+  await page.route(/\/consent-transactional\.js(\?|$)/, (route) =>
+    route.fulfill({ status: 200, contentType: 'text/javascript', body: CONSENT_ASKING }));
 }
 
 async function payablePage(page) {

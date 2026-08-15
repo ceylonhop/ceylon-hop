@@ -154,8 +154,8 @@ function routePage(T, content, from, to, forward) {
 <meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
 <style>
-  .route-hero{position:relative;color:#fff;padding:104px 0 44px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
-  .route-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 80% 10%,rgba(99,191,214,.5),transparent 70%),radial-gradient(50% 50% at 10% 90%,rgba(8,120,118,.6),transparent 70%)}
+  .route-hero{position:relative;color:#fff;padding:104px 0 44px;margin-top:-74px;background:linear-gradient(160deg,#1E6273 0%,#24758A 55%,#277F97 100%);overflow:hidden}
+  .route-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 80% 10%,rgba(99,191,214,.5),transparent 70%),radial-gradient(50% 50% at 10% 90%,rgba(30,98,115,.6),transparent 70%)}
   .route-hero .wrap{position:relative}
   .route-hero h1{color:#fff;font-weight:700;max-width:16ch;margin:0 0 .5rem}
   .route-hero .sub{color:rgba(255,255,255,.92);max-width:52ch;margin:0 0 1.4rem}
@@ -171,8 +171,13 @@ ${headAssets}
   .faq{padding:8px 0 52px}
   .faq-q{max-width:70ch;margin:0 0 18px}
   .faq-q h3{margin:0 0 .3rem;font-size:1.05rem}
-  .faq-q p{margin:0;color:var(--ink-soft,#5a6b68)}
+  .faq-q p{margin:0;color:var(--ink-soft,#6c6a6b)}
   .route-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+  .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
+  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
+  .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
+  .rt-name{font-weight:700}
+  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
   .route-crumbs{padding:16px 0 0;font-size:.85rem}
   .route-crumbs a{color:inherit}
 </style>
@@ -189,7 +194,7 @@ ${header}
       <div class="price-chips">${priceChips(q, shared)}</div>
       <div class="route-cta">
         <a class="btn btn-cta" href="${p}search.html?from=${from}&to=${to}">See prices &amp; book</a>
-        <a class="btn btn-wa" href="https://wa.me/94779669662">Chat on WhatsApp</a>
+        <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
       </div>
     </div>
   </section>
@@ -199,7 +204,7 @@ ${header}
       <ul class="route-hl">${highlightLis}</ul>
     </div>
   </section>
-  <section class="section faq" style="background:var(--cream-deep,#f6f3ec)">
+  <section class="section faq" style="background:var(--cream-deep,#E4E0D2)">
     <div class="wrap">
       <span class="eyebrow">Good to know</span>
       <h2>${esc(fromName)} to ${esc(toName)} — questions</h2>
@@ -260,14 +265,14 @@ function tripIndex(T, content) {
 <meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
 <style>
-  .trip-hero{background:linear-gradient(160deg,#0d8f8c,#0AB9B6 60%,#2aa9bf);color:#fff;padding:104px 0 40px;margin-top:-74px}
+  .trip-hero{background:linear-gradient(160deg,#1E6273,#24758A 60%,#277F97);color:#fff;padding:104px 0 40px;margin-top:-74px}
   .trip-hero h1{color:#fff;font-weight:700;max-width:20ch}
   .trip-hero p{color:rgba(255,255,255,.9);max-width:54ch}
   .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e2d8);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
+  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
   .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
   .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#5a6b68)}
+  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
 </style>
 </head>
 <body>

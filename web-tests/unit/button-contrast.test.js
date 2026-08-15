@@ -31,10 +31,12 @@ function token(name) {
   return m[1];
 }
 
-/** Pull the `background:#rrggbb` out of a rule like `.btn-wa:hover{...}`. */
+/** Pull the `background:#rrggbb` out of a rule like `.btn-wa:hover{...}`.
+    Hover rules carry a `:not(:disabled)` guard (a disabled button must not
+    light up), so the selector may continue past the name we look up. */
 function ruleBackground(selector) {
   const m = CSS.match(
-    new RegExp(`${selector.replace(/[.:]/g, '\\$&')}\\s*\\{[^}]*background:\\s*(#[0-9a-fA-F]{6})`),
+    new RegExp(`${selector.replace(/[.:]/g, '\\$&')}(?::not\\(:disabled\\))?\\s*\\{[^}]*background:\\s*(#[0-9a-fA-F]{6})`),
   );
   if (!m) throw new Error(`background for ${selector} not found in site.css`);
   return m[1];
@@ -64,6 +66,45 @@ describe('button fills meet WCAG AA against white text', () => {
     expect(CSS).toMatch(/\.btn-primary\{background:var\(--btn-accent\)/);
     expect(CSS).toMatch(/\.btn-cta\{background:var\(--btn-cta\)/);
   });
+});
+
+// Two more buttons live outside site.css entirely and have already drifted back to
+// bright fills once: the PayHere handoff overlay's retry button (booking.html's inline
+// <style>) and the transactional-consent accept button (consent-transactional.js's
+// injected CSS). Same rule as above: white text, so the fill needs 4.5:1.
+describe('buttons styled outside site.css meet WCAG AA against white text', () => {
+  const BOOKING = readFileSync(path.join(root, 'booking.html'), 'utf8');
+  const CONSENT = readFileSync(path.join(root, 'consent-transactional.js'), 'utf8');
+
+  /** Resolve `#hex` or `var(--x,fallback)` against site.css, following var chains. */
+  function resolve(value) {
+    let v = value.trim();
+    for (let hops = 0; v.startsWith('var(') && hops < 5; hops++) {
+      const name = v.match(/var\(--([\w-]+)/)[1];
+      const decl = CSS.match(new RegExp(`--${name}\\s*:\\s*([^;}]+)`));
+      if (!decl) throw new Error(`--${name} not found in site.css`);
+      v = decl[1].trim();
+    }
+    const hex = v.match(/#[0-9a-fA-F]{6}/);
+    if (!hex) throw new Error(`${value} did not resolve to a hex colour (got "${v}")`);
+    return hex[0];
+  }
+
+  const cases = [
+    ['.ph-btn-primary', BOOKING, /\.ph-btn-primary\{[^}]*background:\s*([^;}]+)/],
+    ['.ph-btn-primary:hover', BOOKING, /\.ph-btn-primary:hover\{[^}]*background:\s*([^;}]+)/],
+    ['consent accept button', CONSENT, /data-consent="granted"[^{]*\{[^}]*background:\s*([^;}]+)/],
+  ];
+
+  for (const [label, src, re] of cases) {
+    it(`${label} is at least 4.5:1`, () => {
+      const m = src.match(re);
+      if (!m) throw new Error(`background for ${label} not found`);
+      const fill = resolve(m[1]);
+      const ratio = contrastOnWhite(fill);
+      expect(ratio, `${label} = ${fill} is only ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });
 
 // The homepage hero booker opts out of .btn-cta's fill with its own gradient, defined

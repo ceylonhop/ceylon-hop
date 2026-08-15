@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css">
-<link rel="stylesheet" href="ticket.css">
+<link rel="stylesheet" href="site.css?v=13492eca8a">
+<link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -19,14 +19,14 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
      the error beacon, and it is what lets one GTM container tell the pay page apart from a
      blog post. See docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='pay';</script>
-<script src="analytics.js"></script>
+<script src="analytics.js?v=a1d10c14f3"></script>
 <!-- Still no consent.js (owner, 2026-08-01): a customer mid-payment is not the audience for a
      floating cookie card, and it overlaid the CTA. But "no banner" had become "no consent" —
      nothing here ever granted, so Clarity never recorded a single payment and GA4 saw only
      cookieless pings. consent-transactional.js keeps the owner's rule (it reserves its own
      height instead of covering anything) and asks for analytics ONLY; ads stay denied here
      permanently. -->
-<script src="consent-transactional.js" defer></script>
+<script src="consent-transactional.js?v=9e74d1f96a" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -38,8 +38,8 @@ window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<script src="phone-countries.js"></script>
-<script src="decline-help.js"></script>
+<script src="phone-countries.js?v=0b8dd7a9f6"></script>
+<script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-08-05, docs/checkout-redirect-spec.md).
      It rendered the card form and the 3-D Secure challenge inside a cross-origin iframe, where a
      failure reaches none of its callbacks — our page could not even tell it had happened, which is
@@ -76,7 +76,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .fld{margin-bottom:10px}
   .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
   .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
-  .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
+  .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12)}
   /* billing block (2026-08-01) */
   .dt-kick{font-size:.66rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-deep);margin:2px 0 8px}
   .dt-kick:not(:first-child){margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
@@ -187,7 +187,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .de-title{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:0;color:var(--ink);margin:.3rem 0 .5rem}
   .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
   .de-cta{margin-top:20px}
-  .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
   @keyframes de-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
   @keyframes de-spin{to{transform:rotate(360deg)}}
   @keyframes de-dash{to{stroke-dashoffset:-30}}
@@ -417,7 +416,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="de-eyebrow">quote &middot; no longer active</p>'
       + '<h1 class="de-title">This quote has sailed off somewhere sunny</h1>'
       + '<p class="de-lead"><strong>Nothing has been charged.</strong> Message us on <strong>WhatsApp</strong> and we&rsquo;ll get you moving again.</p>'
-      + '<div class="de-cta"><a class="btn-wa" href="https://wa.me/94779669662">WhatsApp us</a></div>'
+      + '<div class="de-cta"><a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a></div>'
       + '</div>' + waLine();
   }
   function renderUnavailable(){ renderSailedOff(); }

@@ -33,7 +33,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css?v=13492eca8a">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -41,8 +41,9 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='board';</script>
-<script src="analytics.js"></script>
-<script src="consent.js" defer></script>
+<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="consent.js?v=db789988e1" defer></script>
+<script src="beta-notice.js?v=8d367ffcc8" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:P,message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -51,7 +52,7 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <!-- transfers-data.js: PLACES + CORRIDORS for the create-a-list dropdowns -->
-<script src="transfers-data.js"></script>
+<script src="transfers-data.js?v=a7eaed83fa"></script>
 <!-- Google Identity Services (renders the real sign-in button) -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -835,6 +836,7 @@ body.detail-open .detail{display:block}
 <!-- ================= TOAST ================= -->
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="board.js" defer></script>
+<script src="ta-data.js?v=8b2b56a308" defer></script>
+<script src="board.js?v=39b44938a8" defer></script>
 </body>
 </html>

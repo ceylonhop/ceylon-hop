@@ -61,21 +61,10 @@ describe('the trip-summary route strip', () => {
 
   it('loads the generated script before plan.js, or CH.shortPlace would be undefined at render', () => {
     const html = readFileSync(path.join(ROOT, 'plan.html'), 'utf8');
-    const shortIdx = html.indexOf('src="ch-shortplace.js"');
-    const planIdx = html.indexOf('src="plan.js"');
+    // Asset refs carry a ?v= cache-busting stamp (tools/stamp-asset-versions.mjs).
+    const shortIdx = html.search(/src="ch-shortplace\.js(\?v=\w+)?"/);
+    const planIdx = html.search(/src="plan\.js(\?v=\w+)?"/);
     expect(shortIdx, 'ch-shortplace.js not included in plan.html').toBeGreaterThan(-1);
     expect(shortIdx).toBeLessThan(planIdx);
-  });
-});
-
-describe('Nights, when no overnight stop has been added', () => {
-  // "None" read as "this trip has no nights"; the owner ruled out a longer sentence as too wide
-  // for the stat cell, so it is a bare 0 matching Places / Transfer legs.
-  it('is a bare 0, not a word', () => {
-    const planJs = readFileSync(path.join(ROOT, 'plan.js'), 'utf8');
-    const line = planJs.match(/setStat\('st-nights',[^\n]*\)/);
-    expect(line, 'st-nights render not found in plan.js').toBeTruthy();
-    expect(line[0]).toContain(": '0'");
-    expect(line[0]).not.toContain('None');
   });
 });

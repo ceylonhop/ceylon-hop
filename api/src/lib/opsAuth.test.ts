@@ -39,6 +39,20 @@ describe('can() capability matrix', () => {
     }
     expect(can('finance', 'payments:act')).toBe(true); // unchanged — mark-paid still works
   });
+
+  // quote:approve_simple — ops approving its own simple work (owner, 2026-08-11). The pairing is
+  // the point, in both directions: ops gains the narrow capability and must still NOT hold
+  // quote:approve (which would carry hot zones, locked-quote deletion, send-back and reopening a
+  // sent quote with it), and finance gains nothing at all. Holding this capability is necessary
+  // but never sufficient — canOpsSelfApprove() decides which quotes it reaches.
+  it('ops may approve simple quotes, and only ops, and never as a general approval', () => {
+    expect(can('ops', 'quote:approve_simple')).toBe(true);
+    expect(can('ops', 'quote:approve')).toBe(false);
+    for (const r of ['finance', 'system'] as const) expect(can(r, 'quote:approve_simple')).toBe(false);
+    // Not the founder either: this is a GRANT, and the founder needs no narrow one — quote:approve
+    // already admits every quote. Adding it there would be a second way to say the same thing.
+    expect(can('founder', 'quote:approve_simple')).toBe(false);
+  });
 });
 
 // The assign picker and the queue's assignee chip both label staff by person, not by inbox.

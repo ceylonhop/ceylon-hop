@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
-  | 'quote:manage' | 'quote:approve' | 'margin:view' | 'bookings:operate'
+  | 'quote:manage' | 'quote:approve' | 'quote:approve_simple' | 'margin:view' | 'bookings:operate'
   | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view'
   | 'discount:apply_manual';
 
@@ -15,10 +15,17 @@ export type OpsAction =
 // (owner, 2026-08-02). Split out of payments:act deliberately: finance still needs to RECORD
 // money (mark-paid) and read refund history, but calling a customer's trip off and giving
 // their money back are the two actions that cannot be undone by anyone else.
+// quote:approve_simple — ops approving its OWN simple work (owner, 2026-08-11). NEVER SUFFICIENT
+// ON ITS OWN: it admits `→ ready` only for a quote canOpsSelfApprove() accepts (private, one leg,
+// standard vehicle, no hand-set $/km, no discount). Deliberately NOT quote:approve, which stays
+// the founder marker for hot zones, locked-quote deletion, send-back and reopening a sent quote.
+// Because it is derived into ALL_OPS_ACTIONS it appears in ops's whoami caps — so gate any UI on
+// the per-quote flag, never on `caps.includes('quote:approve_simple')`, which would offer the
+// button on every quote including the ones the predicate refuses.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
   founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
-  ops: new Set(['quote:manage', 'bookings:operate', 'bookings:read']),
+  ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read']),
   system: new Set(['admin:jobs']),
 };
 

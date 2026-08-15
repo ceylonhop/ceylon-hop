@@ -163,8 +163,6 @@ function buildLegs(stops, nights, gaps){
   }
   return legs;
 }
-// per-day rate when a chauffeur-guide stays with the guest (no intercity travel)
-const DAY_FEE = (window.TRANSFERS && window.TRANSFERS.CHAUFFEUR_DAY_FEE) || 55;
 const state = {
   // Traveller count starts UNPICKED unless the URL already carries a valid one — the
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
@@ -194,9 +192,12 @@ function closePlaceMenus(except, invalidate=true){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
   if(!except && invalidate) placeMenuSeq++;
 }
+/* Follows site.js's badge wording. plan.html overrides .place-option to a flex row, so it
+   never had the truncation that shortened this — but the badge is the same badge, and two
+   words for one concept on one site is its own bug. */
 function placeSourceLabel(source){
   if(source==='google') return 'Google';
-  return source==='known' ? 'Popular Route' : 'Popular place';
+  return 'Popular';
 }
 function googlePlaceSuggestions(q, localItems){
   const text=q.trim();
@@ -227,7 +228,6 @@ function mergePlaceSuggestions(localItems, googleItems){
   return out.slice(0,8);
 }
 let placeMenuSeq=0;
-let placeMenuOpenedAt=0;
 function renderPlaceMenu(input){
   const q=input.value.trim();
   const seq=++placeMenuSeq;
@@ -259,7 +259,6 @@ function renderPlaceMenu(input){
       input.dispatchEvent(new Event('change',{bubbles:true}));
     });
     input.parentNode.appendChild(menu);
-    placeMenuOpenedAt=Date.now();
   };
   const text=q.trim();
   const localStrong = baseItems.some(p=>p.source==='known' && norm(p.label)===norm(text));
@@ -298,7 +297,13 @@ function wirePlaceSearch(input){
     }
   });
 }
-window.addEventListener('scroll',()=>{ if(Date.now()-placeMenuOpenedAt>250) closePlaceMenus(); },true);
+/* No blanket close-on-scroll here. site.js's menu is position:fixed, so a scroll DOES strand it
+   and it closes on any scroll past a 250ms grace window; this one is position:absolute inside
+   the field's wrapper (plan.html) and rides along with it, so there is nothing to strand. The
+   copied rule actively hurt: site.css sets html{scroll-behavior:smooth}, so a single
+   programmatic scroll animates for several hundred ms and fires scroll events the whole way —
+   well past the grace window — and the menu disappeared mid-selection. The deliberate
+   "I'm moving on" gestures below still dismiss it. */
 window.addEventListener('wheel',()=>closePlaceMenus(),{passive:true});
 window.addEventListener('touchmove',()=>closePlaceMenus(),{passive:true});
 
@@ -556,7 +561,7 @@ function render(){
         </div>
         <div class="stay-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          <span><b>No intercity travel.</b> With a <b>chauffeur-guide</b>, your car &amp; driver stay with you — at your disposal for local trips (about ${money(DAY_FEE)}/day). With <b>point-to-point transfers</b>, there’s no car needed on these days.</span>
+          <span><b>No intercity travel.</b> With a <b>chauffeur-guide</b>, your car &amp; driver stay with you — at your disposal for local trips, included in your trip price. With <b>point-to-point transfers</b>, there’s no car needed on these days.</span>
         </div>`;
 
     const wrap=document.createElement('div');
@@ -764,9 +769,9 @@ function shortPlaceLabel(place){
 
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
-  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
+  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0;
   state.legs.forEach(l=>{
-    if(l.type==='stay'){ stayNights+=(l.nights||0); return; }
+    if(l.type==='stay'){ return; }
     transferLegs++;
     const km=legKm(l.from,l.to);
     if(km!=null){ totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
@@ -785,9 +790,9 @@ function updateSummary(opts={}){
   // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
-  // "None" read as "this trip has no nights", when it only means no overnight stop has been ADDED
-  // yet. A bare 0 matches its sibling stats (Places 9, Transfer legs 8) and fits the narrow cell.
-  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : '0');
+  // No Nights stat: it counted only nights on explicit stay-put cards, so a pure transfer plan
+  // showed a permanent 0 beside "Hotels are your own" and read as "this trip has no nights".
+  // Nights still live on the stay cards and as the `3n` badges in the route strip.
   setStat('st-legs', String(transferLegs));
   setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
@@ -842,7 +847,7 @@ function renderMap(){
   }
   const pins=pts.map((p,idx)=>{
     const first=idx===0, last=idx===pts.length-1;
-    const fill=first?'#0a7d6f':(last?'#e8623a':'#0AB9B6');
+    const fill=first?'#24758A':(last?'#EC3A24':'#0AB9B6');
     const labelLeft = p.x>W*0.6;
     const lx = labelLeft ? p.x-9 : p.x+9;
     const anchor = labelLeft ? 'end' : 'start';

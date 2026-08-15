@@ -6,6 +6,10 @@ import { test, expect } from '@playwright/test';
 // (mirroring the ops quote tool's "Dates out of order" flag). plan.js:outOfOrderFlags.
 
 import { futureIsoDate } from '../dates.js';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 /* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the suite go
    red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). Only the ORDERING
@@ -261,8 +265,11 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
 
   // Let the rail finish its first pricing pass before typing. Until it settles the cards
   // above are still growing, which slides the suggestion menu down the page — Playwright
-  // then refuses to click a target that will not hold still. (The separate bug where a
-  // background render destroyed the open menu is covered by plan-place-menu-stability.spec.js.)
+  // then refuses to click a target that will not hold still. (#175 pointed here at a
+  // plan-place-menu-stability.spec.js covering "a background render destroys the open menu";
+  // that file was never written, and #175's own message records that theory as disproven.
+  // The way the open menu really did get destroyed — a scroll closing it mid-selection — is
+  // guarded in plan-addleg-focus.spec.js.)
   await expect(page.locator('#rail [data-dist]').first()).toContainText('km');
 
   const from = page.locator('#rail .leg-card').first().locator('.leg-from');
@@ -298,7 +305,7 @@ test('planner place search layers popular route then Google results for hotel te
 
   const options = page.locator('.place-option');
   await expect(options.first()).toContainText('Colombo city');
-  await expect(options.first()).toContainText('Popular Route');
+  await expect(options.first()).toContainText('Popular');
   await expect(options.nth(1)).toContainText('hilton colombo Hotel');
   await expect(page.locator('.place-option', { hasText: 'Use exact place' })).toHaveCount(0);
   await expect(page.locator('.place-option', { hasText: 'Exact place' })).toHaveCount(0);
