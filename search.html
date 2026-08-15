@@ -18,7 +18,7 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=e9f300352d">
+<link rel="stylesheet" href="site.css?v=613012fae4">
 <!-- Engine prices for routes that aren't in the baked catalogue come from here (search.js).
      `?api=off` disables it, and `?api=<origin>` points it elsewhere — same contract as
      booking.html, so a local API can be driven from either page the same way. -->
@@ -64,6 +64,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-actions{display:flex;align-items:center;gap:10px}
   .srch-bar .go{height:42px;white-space:nowrap}
   @media(max-width:860px){.srch-bar{grid-template-columns:1fr 1fr;gap:10px}.srch-bar .swap2{display:none}.srch-actions{grid-column:1/-1}.srch-bar .go{flex:1}}
+  @media(max-width:400px){.srch-bar{grid-template-columns:1fr}.srch-actions{grid-column:1}}
   .sl-edit{background:var(--paper);border:1.5px solid var(--line);color:var(--ink);border-radius:10px;padding:.55rem 1rem;font:inherit;font-weight:600;font-size:.9rem;cursor:pointer;display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap}
   .sl-edit:hover{border-color:var(--accent-deep);color:var(--accent-deep)}
   .sl-edit svg{width:15px;height:15px}
