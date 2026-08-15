@@ -395,7 +395,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
      stopping mid-panel. Let it span the pair instead. */
   .sum-stats .sum-stat:last-child{grid-column:1/-1}
-  .summary{--map-h:clamp(104px,17vh,180px)}
+  /* The map is a landscape box framing a north-south island, so a short card spends most of
+     itself on sea. Measured budget (1280x720, the tightest window that still gets this branch,
+     7-stop trip): the card sticks at top:86 and its non-map parts total 439px, so the map can
+     reach ~195px before the CTA drops under the fold — 22vh leaves 37px of that spare. The
+     cap keeps a tall monitor from turning the summary into a map with captions.
+     Guarded by web-tests/e2e/plan-summary-fold.spec.js. */
+  .summary{--map-h:clamp(104px,22vh,200px)}
   /* short laptop windows: shave the map and the pin offset so the whole card — CTA included —
      still clears the fold rather than hanging 20-odd px under it */
   @media(min-width:981px) and (max-height:700px){
@@ -603,7 +609,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=c736419c0c"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
-<script src="ch-map.js?v=ddde78533b"></script>
+<script src="ch-map.js?v=53c1b7c8b7"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
 <script src="plan.js?v=a5847f81be"></script>

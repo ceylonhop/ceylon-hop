@@ -153,27 +153,21 @@
     });
   }
 
-  /* Muted brand styling, so the card reads as part of the page rather than an embedded
-     Google widget: cream land and soft blue water from the site palette (site.css --cream /
-     --blue), POI and transit off. Classic `styles` works because these maps set no mapId —
-     adding one would silently disable all of this.
+  /* DECLUTTER ONLY — no recolouring. Google's own land/water palette stays: the owner
+     compared it against a cream-and-pale-blue brand tint (shipped in #482) and preferred the
+     default, 2026-08-15. Don't repaint the basemap; the route line and pins are where the
+     brand belongs. What stays off is noise, not colour: POI pins, transit, state borders,
+     sea labels. Classic `styles` works because these maps set no mapId — adding one would
+     silently disable all of this.
 
      `detailed` (the expanded modal) keeps road labels: at street zoom a map with no road
      names reads as broken. The inline card drops them — at country zoom they are noise over
      a route line that is the whole point of the picture. */
   function mapStyle(detailed) {
     const s = [
-      { elementType: 'geometry', stylers: [{ color: '#f2efe6' }] },
-      { elementType: 'labels.text.fill', stylers: [{ color: '#6c6a6b' }] },
-      { elementType: 'labels.text.stroke', stylers: [{ color: '#fffdf8' }, { weight: 3 }] },
       { featureType: 'poi', stylers: [{ visibility: 'off' }] },
       { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-      { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#eae7db' }] },
       { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-      { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#8a8785' }] },
-      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
-      { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#f3e3c8' }] },
-      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#cfe6ee' }] },
       { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
     ];
     if (!detailed) {
