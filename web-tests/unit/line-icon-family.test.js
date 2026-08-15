@@ -48,12 +48,25 @@ describe('inlined marks are filled by their host page', () => {
         ['.ac-item .ac-ic svg .wp', 'ac-ic'],                 // autocomplete suggestions
         ['.concierge svg .wp', 'concierge'],                  // both concierge notes
         ['.trip-route .tr-chip svg .wp', 'tr-chip'],          // per-leg date chip
+        ['.s-perks svg .wp', 's-perks'],                      // the three summary perks
       ],
     },
     {
       page: 'plan.html',
       inlinedBy: ['plan.html'],
       selectors: [['.rail-empty svg .wp', 'rail-empty']],
+    },
+    // datepicker.js injects its button into every page that loads it, and the fill rule for
+    // it lives in the shared site.css rather than any one page.
+    {
+      page: 'site.css',
+      inlinedBy: ['datepicker.js'],
+      selectors: [['.dp-btn svg .wp', 'dp-btn']],
+    },
+    {
+      page: 'search.html',
+      inlinedBy: ['search.js'],
+      selectors: [['.route-meta svg .wp', 'route-meta']],
     },
   ];
 
@@ -86,5 +99,26 @@ describe('inlined marks are filled by their host page', () => {
         expect(inlineSvgs(read(f)).filter(svg => wpCount(svg) > 1)).toEqual([]);
       });
     }
+  }
+});
+
+// The quiet way one of these regresses: the markup is correct in the HTML, and a script
+// replaces the whole row a moment later with an older mark. Changing the page without
+// changing the rewrite looks right in the diff and wrong in the browser.
+describe('runtime rewrites keep the mark they replace', () => {
+  const REWRITES = [
+    { file: 'booking.js', target: 'perk-cancel', why: 'rewritten with the live cancellation text' },
+  ];
+
+  for (const { file, target, why } of REWRITES) {
+    it(`${file}: the ${target} rewrite (${why}) still carries a waypoint dot`, () => {
+      const src = read(file);
+      // the innerHTML assignment for this element, up to the closing </svg>
+      const assign = src.match(
+        new RegExp(`${target}[\\s\\S]{0,400}?innerHTML\\s*=\\s*\`[\\s\\S]*?<\\/svg>`)
+      );
+      expect(assign, `no innerHTML rewrite found for ${target}`).not.toBeNull();
+      expect(assign[0]).toContain('class="wp"');
+    });
   }
 });
