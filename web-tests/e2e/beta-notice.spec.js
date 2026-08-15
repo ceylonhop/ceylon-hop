@@ -19,7 +19,10 @@ test('greets a first-time visitor and stays gone once dismissed', async ({ page 
   await expect(notice(page)).toBeVisible();
   await expect(page.locator('#ch-beta-title')).toContainText('Ceylon Hop');
 
-  // Focus starts on the button, so a keyboard visitor is not left behind the scrim.
+  // Focus starts on the panel, so a keyboard visitor is not left behind the scrim — and the
+  // button is not ringed on arrival, which made it read as a different shape to every other CTA.
+  await expect(page.locator('.ch-beta-panel')).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.locator('.ch-beta button')).toBeFocused();
 
   await page.locator('.ch-beta button').click();

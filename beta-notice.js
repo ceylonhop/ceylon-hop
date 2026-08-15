@@ -76,7 +76,7 @@
     lastFocus = document.activeElement;
     document.body.insertAdjacentHTML('beforeend',
       '<div class="ch-beta" role="dialog" aria-modal="true" aria-labelledby="ch-beta-title">' +
-        '<div class="ch-beta-panel">' +
+        '<div class="ch-beta-panel" tabindex="-1">' +
           // The postcard's top half — pure decoration (route line, handwriting, stamp,
           // postmark), so it is aria-hidden; the eyebrow below carries "beta" for AT.
           '<div class="ch-beta-post" aria-hidden="true">' +
@@ -125,8 +125,12 @@
     box.querySelector('button').addEventListener('click', dismiss);
     document.addEventListener('keydown', onKey, true);
 
-    var btn = box.querySelector('button');
-    if (btn && btn.focus) { try { btn.focus(); } catch (e) {} }
+    /* Focus lands on the panel, not the button. Focusing the button made mobile WebKit paint its
+       focus ring the moment the card appeared, which read as a button shaped unlike every other
+       CTA on the site. The panel still puts the keyboard inside the dialog, and the first Tab
+       moves to the button (see onKey) with the normal .btn ring. */
+    var panel = box.querySelector('.ch-beta-panel');
+    if (panel && panel.focus) { try { panel.focus(); } catch (e) {} }
   }
 
   window.chBetaNotice = { dismiss: dismiss };
