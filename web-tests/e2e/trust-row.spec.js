@@ -102,7 +102,7 @@ test('the trust strip keeps the page gutter', async ({ page }) => {
 
 // The scaling band: still a real one-line row, so it must fit its box, not merely avoid
 // wrapping by overflowing out of it.
-for (const width of [1159, 1140, 1120, 1080, 1060, 1041]) {
+for (const width of [1200, 1180, 1159, 1140, 1120, 1080, 1060, 1041]) {
   test(`the trust strip shrinks to stay on one line at ${width}px`, async ({ page }) => {
     await open(page, width);
     const g = await geometry(page);

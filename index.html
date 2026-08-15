@@ -284,21 +284,30 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
      Set this lower and you get the worst case: a wrapped row still justified apart, so
      the orphan hangs at the left edge — which is exactly how this bug looked. */
-  @media(min-width:1160px){ .trust-row{justify-content:space-between} }
+  @media(min-width:1201px){ .trust-row{justify-content:space-between} }
   /* Between the one-line width and the scroll strip the row used to become a 3-column and
      then a 2-column grid — which IS the "five items, two rows" stack this strip is meant to
      avoid; it just made the stack tidy. It scales instead: one line, with type, icons and
      gaps shrinking together, so the row never gains a second row on the way down.
-     The band stops at 1040 because that is where the shrinking stops being honest. Measured
-     against this copy, five items need ~926px at .70rem/20px icons — and the pre-webfont
-     fallback sets ~3.7% wider on Linux and Android (~960px), against a 992px content box at
-     1040. Any narrower and the type has to go under 11px, smaller than anything else on the
-     site, so the horizontal strip below takes over rather than shrinking into unreadability. */
-  @media(min-width:1041px) and (max-width:1159px){
+     Every number here is sized against the WIDER of the two fonts this row is ever set in.
+     The pre-webfont fallback sets ~3.7% wider on Linux and Android than Poppins, and CI runs
+     in it, so a band tuned on Poppins alone breaks there — as it did: `flex-wrap:nowrap` kept
+     the ROW on one line and pushed every label into two lines inside it instead. Measured
+     widths (Poppins → fallback ×1.037): .82rem/26px icons = 1079 → 1119; .76/22 = 1006 →
+     1043; .70/20 = 926 → 960. Against a content box of viewport−48 that means .82rem stops
+     fitting at 1200, not 1160, which is where the band now starts.
+     It stops at 1040 because that is where the shrinking stops being honest: 960 against a
+     992px box leaves nothing, and any narrower the type has to go under 11px — smaller than
+     anything else on the site — so the horizontal strip below takes over instead.
+     Labels are nowrap: a shrinking row must never buy its single line by double-decking the
+     text. If the sizing above is ever wrong the row overflows, which the spec catches
+     loudly, rather than quietly restacking. */
+  @media(min-width:1041px) and (max-width:1200px){
     .trust-row{flex-wrap:nowrap;
-      font-size:clamp(.7rem, 1.6vw - .34rem, .82rem);
-      gap:clamp(8px, 3.34vw - 26.7px, 12px)}
-    .trust-row svg{width:clamp(20px, 5vw - 32px, 26px);height:clamp(20px, 5vw - 32px, 26px);padding:5px}
+      font-size:clamp(.7rem, 1.21vw - .086rem, .82rem);
+      gap:clamp(8px, 2.52vw - 18.19px, 12px)}
+    .trust-row .item{white-space:nowrap}
+    .trust-row svg{width:clamp(20px, 3.77vw - 19.29px, 26px);height:clamp(20px, 3.77vw - 19.29px, 26px);padding:5px}
   }
   @media(max-width:1040px){
     .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding-block:15px 17px;
