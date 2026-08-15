@@ -68,3 +68,36 @@ describe('the trip-summary route strip', () => {
     expect(shortIdx).toBeLessThan(planIdx);
   });
 });
+
+describe('the payment step’s "Due now" label', () => {
+  // booking.js builds a private-transfer route name as "Private transfer · <from> → <to>", and a
+  // Google-picked drop-off arrives as its full formatted address. In the narrow half of the Due
+  // now row (the money takes the other half) that wrapped to six lines at 375px.
+  it('shortens the drop-off but keeps the prefix and the arrow', () => {
+    expect(shortenRouteLabel(
+      'Private transfer · Colombo Airport (CMB) → Ratmalana Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka',
+    )).toBe('Private transfer · Colombo Airport (CMB) → Ratmalana Airport · Dehiwala-Mount Lavinia');
+  });
+
+  it('leaves a catalogue route title alone — it is a name, not a pair of addresses', () => {
+    expect(shortenRouteLabel('Negombo to Sigiriya — Shared Ride')).toBe('Negombo to Sigiriya — Shared Ride');
+  });
+
+  it('is wired through the shortener rather than printing the raw r.name', () => {
+    const bookingJs = readFileSync(path.join(ROOT, 'booking.js'), 'utf8');
+    // from the element lookup through the innerHTML statement — the shortening happens just
+    // above the template literal, so anchoring on the assignment alone would miss it.
+    const due = bookingJs.match(/const payDue\s*=[\s\S]*?payDue\.innerHTML\s*=[\s\S]{0,400}?;\n/);
+    expect(due, 'Due now render not found in booking.js').toBeTruthy();
+    expect(due[0]).toContain('shortenRouteLabel');
+    expect(due[0]).not.toMatch(/:\s*r\.name\s*\)/);
+  });
+
+  it('loads the generated script before booking.js, or CH.shortenRouteLabel would be undefined', () => {
+    const html = readFileSync(path.join(ROOT, 'booking.html'), 'utf8');
+    const shortIdx = html.search(/src="ch-shortplace\.js(\?v=\w+)?"/);
+    const bookingIdx = html.search(/src="booking\.js(\?v=\w+)?"/);
+    expect(shortIdx, 'ch-shortplace.js not included in booking.html').toBeGreaterThan(-1);
+    expect(shortIdx).toBeLessThan(bookingIdx);
+  });
+});
