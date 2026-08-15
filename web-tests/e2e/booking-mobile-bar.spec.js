@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, fillContact } from './_stubs.js';
+import { gotoBooking, fillContact, pickPlace } from './_stubs.js';
 
 // Mobile sticky-bar contract (spec: docs/superpowers/specs/2026-07-09-mobile-booking-sticky-bar-design.md).
 // ≤880px: slim context strip on top, sticky total+CTA bar at bottom, summary card = bottom sheet.
@@ -76,6 +76,50 @@ test.describe('mobile sticky bar', () => {
     await expect(aside).toHaveClass(/open/);
     await page.keyboard.press('Escape');
     await expect(aside).not.toHaveClass(/open/);
+  });
+
+  test('long repriced summary cannot slide sideways and crop its content', async ({ page }) => {
+    await gotoMobile(page, {
+      // Keep the query's local fallback distinct from the first engine response, so the
+      // $102 assertion proves the engine baseline settled before we trigger the reprice.
+      query: 'mode=private&from=cmb-airport&to=pasikudah&price=99&vehicle=car&pax=1',
+      pickGeo: { lat: 7.92, lng: 81.56 },
+      estimate: {
+        respond: (intent) => ({
+          totalCents: /Result/.test(intent.legs[0].to) ? 11500 : 10200,
+        }),
+      },
+    });
+    await expect(page.locator('#sum-total')).toHaveText('$102');
+    await page.evaluate(() => window.goStep(2));
+    await pickPlace(page, '#loc-to', 'ac-to', 'Pasikudah hotel', 1);
+    await expect(page.locator('#engine-reprice-note')).toContainText('Your price has been updated', { timeout: 10_000 });
+
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.locator('#mbar-total').click();
+    const summary = page.locator('#summary');
+    await expect(summary).toBeVisible();
+    await expect(page.locator('#engine-reprice-note')).toBeVisible();
+    const metrics = await summary.evaluate((el) => ({
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+      scrollLeft: el.scrollLeft,
+      overflowX: getComputedStyle(el).overflowX,
+    }));
+    expect(metrics.scrollWidth).toBe(metrics.clientWidth);
+    expect(metrics.scrollLeft).toBe(0);
+    expect(metrics.overflowX).toBe('hidden');
+
+    const content = await page.locator('#summary .s-route, #summary .s-body, #engine-reprice-note').evaluateAll(
+      (els) => els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      }),
+    );
+    for (const box of content) {
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(MOBILE.width);
+    }
   });
 
   test('focusing a details input hides the bar; blur restores it', async ({ page }) => {

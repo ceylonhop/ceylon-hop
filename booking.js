@@ -2532,7 +2532,7 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
     {subtree:true,attributes:true,attributeFilter:['class']});
 
   // ── bottom sheet open/close
-  function openSheet(){ aside.classList.add('open'); scrim.hidden=false; bar.classList.add('sheet-open');
+  function openSheet(){ summary.scrollLeft=0; aside.classList.add('open'); scrim.hidden=false; bar.classList.add('sheet-open');
     totBtn.setAttribute('aria-expanded','true'); document.body.classList.add('mbar-lock'); }
   function closeSheet(){ aside.classList.remove('open'); scrim.hidden=true; bar.classList.remove('sheet-open');
     totBtn.setAttribute('aria-expanded','false'); document.body.classList.remove('mbar-lock'); }
