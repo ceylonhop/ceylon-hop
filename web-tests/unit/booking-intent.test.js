@@ -166,8 +166,19 @@ describe('adoptEngineEstimate + calcTotal', () => {
     const localAfterChange = w.eval(
       '(function(){ const saved=engineEst; engineEst=null; const t=calcTotal(); engineEst=saved; return t; })()',
     );
+    // With no estimate on its way, the engine is simply gone for this itinerary and the local
+    // formula — the offline fallback — is the honest number.
+    w.eval('estimatePending = false');
     expect(w.eval('calcTotal()')).toBe(localAfterChange);
     expect(w.eval('calcTotal()')).not.toBe(123.45);
+
+    // But while a replacement estimate IS in flight, the last figure the customer was quoted
+    // holds instead. Dropping to the local formula for that ~1.2s put a number nobody was ever
+    // shown in front of them — and on a trip it visibly counted DOWN to it and back up.
+    w.eval('estimatePending = true');
+    expect(w.eval('calcTotal()')).toBe(123.45);
+    expect(w.eval('calcTotal()')).not.toBe(localAfterChange);
+    w.eval('estimatePending = false');
 
     // A fresh adoption against the NEW signature takes over again.
     const newSig = w.eval('currentIntentSig()');
