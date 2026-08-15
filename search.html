@@ -150,6 +150,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .veh-row .v-price .amt{font-family:var(--display);font-size:1.5rem;font-weight:700;line-height:1}
   .veh-row .v-price small{display:block;color:var(--ink-soft);font-size:.72rem}
   .veh-row .btn{flex:none}
+  /* Mobile hands the right-hand strip to the price AND the button at once, so a wide fare
+     ($154.50) grew into the button and clipped it. Give them a column each of their own: the
+     price sits top-right, Select drops underneath it, and the name column gets its width back. */
+  @media(max-width:640px){
+    .veh-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;column-gap:10px;row-gap:10px;padding:12px}
+    .veh-row .v-ico{width:36px;height:36px}
+    /* The body's 1.7 line-height spreads a wrapped "Up to 3 travellers + bags" over 66px of
+       row. It is one label, not prose — tighten it so the name block reads as a single unit. */
+    .veh-row .v-info small{line-height:1.35}
+    .veh-row .v-price{grid-column:3;grid-row:1;margin-left:0}
+    .veh-row .btn{grid-column:3;grid-row:2;justify-self:end}
+  }
 
   /* shared block */
   .shared-price{display:flex;align-items:baseline;gap:.5rem;margin:.2rem 0 .2rem}
