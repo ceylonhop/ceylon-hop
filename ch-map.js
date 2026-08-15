@@ -171,13 +171,11 @@
       { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
     ];
     if (!detailed) {
+      // Road NAMES only. Place names stay: the customer reads the route by the towns it passes,
+      // and stripping them left a green shape with a line on it (owner, 2026-08-15). They were
+      // hidden when the card was 122px and a stray "Thiruvananthapuram" outsized the island;
+      // at 22vh (#492) there is room for the towns that make the route legible.
       s.push({ featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] });
-      // A landscape card framing a north–south island always catches some of the mainland, and
-      // the styler can't scope labels by country — so at this size "Thiruvananthapuram" was the
-      // biggest word on a Sri Lanka trip map, and the "Sri Lanka" label itself lands across the
-      // route line. Inline the map is a PICTURE of the route: shape, line, pins, no type. The
-      // expanded map (detailed) keeps every label.
-      s.push({ featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'off' }] });
     }
     return s;
   }
