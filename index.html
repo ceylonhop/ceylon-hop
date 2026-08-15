@@ -859,6 +859,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       }
     }
     update();
+    /* goBook() disables this button and fills it with a spinner in the instant before it
+       assigns location.href. A browser that then stores the page in its back/forward cache
+       replays that DOM verbatim on Back — no script re-runs on a restore, so nothing ever
+       puts the button back, and the traveller returns to a homepage whose only search CTA is
+       greyed out and spinning "Opening your trip…" for good. (A Back that re-executes the
+       document instead is already fine: update() runs on load.)
+       Repairing via update() rather than a hardcoded label is what keeps the modes honest —
+       it derives the text from the CURRENT mode, so a restored multi-stop form comes back as
+       "Plan this trip" and not "See prices & book". */
+    window.addEventListener('pageshow', function(e){ if(e.persisted) update(); });
     window.__heroMidValues = midValues;
     window.__heroMode = ()=>bookMode;
   })();

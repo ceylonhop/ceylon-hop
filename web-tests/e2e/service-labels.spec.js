@@ -15,8 +15,11 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
 
   await expect(page.locator('#svc-chooser')).toBeVisible();
   await expect(page.locator('#svc-private-tag')).toHaveText('Priced per leg · pay in full');
-  await expect(page.locator('#svc-chauffeur-tag')).toContainText('Day rate + trip distance');
+  // No surface prices the driver by the day any more (owner decision 2026-08-14) — the chip sells
+  // the shape of the service, not its rate card.
+  await expect(page.locator('#svc-chauffeur-tag')).toContainText('Priced for the whole trip');
   await expect(page.locator('#svc-chauffeur-tag')).toContainText('pay in full');
+  await expect(page.locator('#svc-chauffeur-tag')).not.toContainText('Day rate');
 
   await expect(page.locator('#trip-route .tr-leg')).toHaveCount(2);
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Leg 1');
@@ -28,9 +31,13 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#pvt-note-tx')).toContainText('Each leg is priced as its own private transfer');
 
   await page.locator('[data-svc="chauffeur"]').click();
-  await expect(page.locator('#pvt-note-tx')).toContainText('Priced as a retained driver-guide: daily rate plus total trip distance.');
-  await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
+  await expect(page.locator('#pvt-note-tx')).toContainText('One price covers the car, your driver-guide and every kilometre.');
+  await expect(page.locator('#pvt-note-tx')).not.toContainText('daily rate');
+  // Car + driver-guide bill as one whole-trip line — no separate day-rate row to price the driver
+  // out in the open (owner decision 2026-08-14). The service chooser stays the visible difference.
+  await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
   await expect(page.locator('#sum-adamt')).not.toHaveText('$0');
+  await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });
 
 test('chauffeur service is unavailable until every trip leg has a date', async ({ page }) => {
@@ -56,7 +63,7 @@ test('chauffeur service is unavailable until every trip leg has a date', async (
   await expect(chauffeur).not.toHaveClass(/on/);
   await expect(page.locator('[data-svc="private"]')).toHaveClass(/on/);
   await expect(page.locator('#sum-adlabel')).toHaveText(/Private AC van · whole trip/);
-  await expect(page.locator('#sum-adlabel')).not.toHaveText(/Chauffeur distance/);
+  await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });
 
 test('trip booking review shows planner-provided Google distances for exact-place legs', async ({ page }) => {
@@ -79,12 +86,11 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#sum-total')).toHaveText('$129');
 
   await page.locator('[data-svc="chauffeur"]').click();
-  await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
+  await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
   // Chauffeur = day rate + one trip-distance charge. Raw distance is (57 km + 251 km) × $0.4025 =
-  // $123.97 (buffers clamped, no private-transfer minimum fares). The distance row now shows the
-  // finished Total minus the day rate so the rows sum to Total: it absorbs the −$0.07 finishing
-  // and displays $123.90 (day-rate $62.10 + distance $123.90 = $186).
-  await expect(page.locator('#sum-adamt')).toHaveText('$123.90');
+  // $123.97 (buffers clamped, no private-transfer minimum fares), plus day-rate $62.10 → $186.07
+  // raw. Both ride on the one whole-trip row, which absorbs the −$0.07 finishing → $186 = Total.
+  await expect(page.locator('#sum-adamt')).toHaveText('$186');
   await expect(page.locator('#sum-total')).toHaveText('$186'); // $186.07 raw → finished $186
 });
 
@@ -104,9 +110,9 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#trip-route')).toContainText('Distance on request');
-  await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  // Distance row absorbs the finishing adjustment so the rows sum to Total: raw distance $110 +
-  // day-rate $62.10 = $172.10 raw, finished to $169, so distance displays $106.90 ($62.10 + $106.90 = $169).
-  await expect(page.locator('#sum-adamt')).toHaveText('$106.90');
+  await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
+  // The whole-trip row absorbs the finishing adjustment so it equals Total: raw distance $110 +
+  // day-rate $62.10 = $172.10 raw, finished to $169.
+  await expect(page.locator('#sum-adamt')).toHaveText('$169');
   await expect(page.locator('#sum-total')).toHaveText('$169'); // raw $172.10 → eligible $169 charm price
 });
