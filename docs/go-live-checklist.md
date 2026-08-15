@@ -35,7 +35,7 @@ comes up, so launch is a clean, mechanical switch-over.
 | `RESEND_WEBHOOK_SECRET` | unset → `/webhooks/resend` disabled | signing secret from the Resend dashboard webhook (M17, bounce/complaint alerts) |
 
 - [ ] `APP_BASE_URL` → apex
-- [ ] PayHere → live mode + live credentials
+- [x] PayHere → live mode + live credentials ✅ **Done 2026-08-02** — prod runs `PAYHERE_MODE=live` on `ceylon-hop-api`.
 - [x] `EMAIL_FROM` → verified domain sender — confirmed 2026-08-02 from a received email
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
@@ -51,7 +51,7 @@ comes up, so launch is a clean, mechanical switch-over.
 
 - [ ] **Resend:** verify a sending domain — recommend **`send.ceylonhop.com`** (subdomain keeps existing `@ceylonhop.com` mail/SPF untouched). Add the SPF/DKIM/return-path records. Until done, email only delivers to the account owner.
 - [ ] **Google Cloud console:** add `ceylonhop.com` (+ `www`) to the **front-end Maps/Places key** *Website restrictions* (today: `ceylonhop.github.io` + localhost). Key powers Maps JS + Places Autocomplete + Directions on `booking.html` / `plan.html`.
-- [ ] **PayHere dashboard:** approved/live domain = the `ceylonhop.com` apex (PayHere is **apex-only** — no subdomains, no `github.io`).
+- [x] **PayHere dashboard:** approved/live domain ✅ **Done 2026-08-02.** ⚠️ **The apex-only rule recorded here was wrong** — it held on 2026-08-01 (every live payment died at `PH-0013`) and PayHere then approved the **subdomain**. Real money now settles on `pay.ceylonhop.com`: booking `CH-RKWNW`, payment `320048261124`. Do not re-derive the apex-only wall.
 - [ ] **Keep the API warm:** `keepalive.yml` (GHA, 13-min `/health` ping) exists but GitHub Actions cron is throttled and not reliable enough alone — still set up an external pinger (e.g. cron-job.org → `https://ceylon-hop-api.onrender.com/health` every ~10 min) **or** upgrade Render off the free tier.
   - **Measured 2026-07-25 — this is live, not theoretical.** Over a 62 h window the workflow's
     actual gap between runs was a **median of 84 min** (min 52, max 208) against the 13 min it
@@ -66,7 +66,7 @@ comes up, so launch is a clean, mechanical switch-over.
 
 ## 3. Hosting / code / data
 
-- [ ] **Serve the new site on the `ceylonhop.com` apex** (currently the live business site). Required because PayHere only works on the apex.
+- [ ] **Serve the new site on the `ceylonhop.com` apex** (currently the live business site). ⚠️ **No longer required by PayHere** — the apex-only rule above was lifted 2026-08-02 and payments settle on `pay.ceylonhop.com`. Still wanted for SEO and the redirect map (see `seo-migration-plan.md`), but that is the reason now — not payments.
   - ✅ **M16 SEO migration MERGED to main** (PR #7, 2026-07-03; adversarially reviewed + fixed): 44 static route pages (`/trip/<from>-to-<to>/`) generated from the rate card, a `/trip/` index, `sitemap.xml`, `robots.txt`, branded `404.html`, ported `terms.html`/`privacy.html`, sitewide canonical/OG, `noindex` on param pages, corrected Tripadvisor rating (5.0/30, no self-serving `aggregateRating`), and a full old→new **redirect map** (stubs + `docs/cloudflare-redirects.csv`). Plan: [`seo-migration-plan.md`](./seo-migration-plan.md), spec: [`superpowers/specs/2026-07-02-m16-seo-migration-design.md`](./superpowers/specs/2026-07-02-m16-seo-migration-design.md).
   - **At cutover (M16 tail — NOT yet done):** (1) commit a `CNAME` file = `ceylonhop.com` (deliberately omitted until now so it doesn't re-point Pages while apex DNS still serves WordPress); (2) point the founder's **existing Cloudflare** account's DNS → GitHub Pages and **import `docs/cloudflare-redirects.csv` as Bulk Redirects** (301) for true server-side redirects; (3) Search Console: submit `sitemap.xml`, request indexing of the top route pages, monitor Coverage/404 for 4–6 weeks.
   - ⚠️ **Owner decision — refund ladder is self-contradictory (surfaced by the M16 review, before real payments).** `terms.html` §6 (ported verbatim from the live WordPress site) reads "Within 10 days: 80% · Within 7 days: 40% · Within 2 days: 60%" — **non-monotonic** (cancelling 1–2 days out refunds *more* than a week out; the 40/60 look transposed). The port is faithful, but this is the binding refund contract. Fix the source figures (likely 7 days → 60%, 2 days → 40%, or restate as explicit day-ranges) — **not** to be changed silently since it alters refund entitlements.
@@ -97,7 +97,7 @@ comes up, so launch is a clean, mechanical switch-over.
 
 ## 4. Verify after switching (smoke test on production)
 
-- [ ] A real (small) booking on `ceylonhop.com` completes a **live** PayHere payment → booking goes `paid`.
+- [x] A real (small) booking completes a **live** PayHere payment → booking goes `paid` ✅ **Done 2026-08-02** — a $39 card payment settled end to end on `pay.ceylonhop.com` (`CH-RKWNW`, payment `320048261124`, via the webhook). Note it completed on the pay subdomain, not the apex.
 - [ ] The confirmation email actually arrives at a **non-owner** address (proves the domain is verified).
 - [ ] Maps + Places autocomplete work on the apex (no referrer/console errors).
 - [ ] WhatsApp CTA opens the correct number (`+94779669662`).
