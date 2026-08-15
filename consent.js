@@ -1,6 +1,10 @@
 /* Ceylon Hop — Consent Mode v2 banner. Defaults are 'denied' (set in the head snippet);
    this grants on Accept and remembers the choice. No third-party CMP. */
 (function (window, document, localStorage) {
+  // Owner call 2026-08-15: no cookie banner on the site just yet — it stacked on top of the
+  // beta notice on a first mobile visit. Consent defaults stay denied and a previously stored
+  // choice is still honoured; flipping this to true brings the banner straight back.
+  var SHOW_BANNER = false;
   var KEY = 'ceylonhop_consent';
   var GRANT = { ad_storage: 'granted', analytics_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' };
   function gtag(){
@@ -18,6 +22,7 @@
   try { prior = localStorage.getItem(KEY); } catch (e) {}
   if (prior === 'granted') { gtag('consent', 'update', GRANT); return; }
   if (prior === 'denied') return; // respect a prior reject, no banner
+  if (!SHOW_BANNER) return;       // owner switch above — nothing to ask right now
 
   function render() {
     document.body.insertAdjacentHTML('beforeend',

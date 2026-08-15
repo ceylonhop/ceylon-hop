@@ -619,6 +619,9 @@ img,svg,video,iframe{max-width:100%}
   /* footer: tighten the 2-col grid on phones */
   .foot-grid{gap:26px 24px;padding-top:48px;padding-bottom:32px}
   .foot-bottom{flex-direction:column;align-items:flex-start;gap:10px}
+  /* The Tripadvisor pill is wider than a half-width footer column at phone sizes, and
+     .pill's nowrap made it shoot past the screen edge — let it wrap inside instead. */
+  .foot-grid .pill{white-space:normal;max-width:100%;text-align:left}
 }
 @media(max-width:430px){
   .foot-grid{grid-template-columns:1fr 1fr}

@@ -1286,6 +1286,19 @@ function currentEngineEst(){
   return (engineEst && engineEst.intentSig===currentIntentSig()) ? engineEst : null;
 }
 
+// True while a fresh estimate is on its way for an itinerary the figure we hold no longer
+// prices — a service switch, a vehicle switch, a pax change, a re-pinned exact spot.
+//
+// NOT estimatePending on its own. On a COLD start there is no engine figure yet, and the local
+// formula is the deliberate instant first paint as well as the entire flag-off/offline world
+// (:1209-1215) — there is nothing being *re*-priced and nothing to withhold. This is only ever
+// about the window between "the price you can see is out of date" and "the new one has landed".
+function repricing(){ return estimatePending && !!engineEst && !currentEngineEst(); }
+// What the total reads while that window is open. Deliberately carries no digits: setNum's
+// tween declines on a shape change (site.js's tweenNumber bails when one side has no number),
+// so the figure swaps out and back cleanly instead of counting through values on the way.
+const PRICING_LABEL = 'Calculating…';
+
 // Task 5: the rate-lock request (createApiBooking's `lockReq`, sent to POST /quote/lock) used to
 // seed every leg's distanceKm from TRANSFERS.kmBetween, a static client-side table. A live engine
 // estimate already carries a real measured distanceKm per leg (Global Constraints: the estimate
@@ -1377,6 +1390,17 @@ function calcTotal(){
   // A live engine estimate outranks the local formula, but only while it was priced against
   // the itinerary as it stands right now — a stale figure for a changed trip must never show.
   if(engineEst && engineEst.intentSig===currentIntentSig()) return engineEst.totalCents/100;
+  // Mid-re-estimate, everything DERIVED from the total (Due now, the deposit) stands at the
+  // figure the customer was last quoted rather than dropping to the local formula. That formula
+  // is the offline fallback for when the engine is gone — not a price anyone was shown — and on
+  // a trip it prices the browser's static km table instead of the engine's measured distances,
+  // so falling to it made the summary count DOWN to a number we would not honour and back up
+  // ~1.2s later. The summary total itself prints PRICING_LABEL rather than this held figure
+  // (render(), :1610) — it is the one number the customer is actually watching. Once the
+  // estimate fails outright, repricing() goes false and the fallback correctly takes over: at
+  // that point the engine really is gone, and holding would strand a price for an itinerary
+  // they no longer have.
+  if(repricing()) return engineEst.totalCents/100;
   // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
   // charge across the whole trip — not the per-leg fares (which carry minimum floors)
   let t = (isTrip && state.svc==='chauffeur')
@@ -1601,7 +1625,17 @@ function render(){
   // distance (:557-570's "Distance on request" pattern) — the figure on screen is a heads-up,
   // not the final number, and the Pay gate below refuses until checkout can confirm it for real.
   const curEst = currentEngineEst();
-  setNum(document.getElementById('sum-total'), (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  // While a fresh estimate is in flight for a changed itinerary, the total says what is
+  // happening instead of printing a figure. The class carries the styling AND is what the
+  // sticky mobile bar reads to match (:2470) — the bar mirrors this element's text, and
+  // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
+  const busy = repricing();
+  const totalEl = document.getElementById('sum-total');
+  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  if(totalEl){
+    totalEl.classList.toggle('is-pricing', busy);
+    if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
+  }
 
   // Deposit messaging is disabled for now: every customer booking pays in full.
   let depEl=document.getElementById('s-deposit');
@@ -1631,8 +1665,11 @@ function render(){
   // payment step: all customer bookings pay in full for now
   const payDue=document.getElementById('pay-due');
   if(payDue){
+    // Due now sits beside the summary total on this step, so it takes the same treatment — one
+    // of the two reading "Calculating…" while the other showed a figure would be its own
+    // small lie about which number is current.
     payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
-      `<span class="amt">${money(amountDueNow())}</span>`;
+      `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
   if(choice){
@@ -2466,6 +2503,11 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
     // The sticky mobile bar mirrors the summary total, so it needs the same count — otherwise
     // on a phone (where the bar is the ONLY total in view) the figure still snaps.
     setNum(amt, txt('sum-total')||'—');
+    // …and the same in-flight treatment, read off the source element rather than matched
+    // against its words. This observer doesn't watch attributes, but it doesn't need to: the
+    // class only ever flips together with the text it mirrors, which is a childList mutation.
+    const sumTot=document.getElementById('sum-total');
+    amt.classList.toggle('is-pricing', !!sumTot && sumTot.classList.contains('is-pricing'));
     const from=txt('sum-from'), to=txt('sum-to');
     msRoute.textContent=(from&&to&&from!=='—')?from+' → '+to:(txt('sum-name')||'Your trip');
     const d=txt('sum-date');

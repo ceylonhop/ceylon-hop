@@ -21,14 +21,14 @@
 <meta property="og:url" content="https://ceylonhop.com/booking.html">
 <meta property="og:title" content="Book your hop — Ceylon Hop">
 <meta property="og:description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, instant WhatsApp confirmation and a Pro Hopper driver.">
-<link rel="stylesheet" href="site.css?v=13492eca8a">
+<link rel="stylesheet" href="site.css?v=4232cd1632">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<script src="consent.js?v=db789988e1" defer></script>
+<script src="consent.js?v=355294e1eb" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -531,6 +531,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-div{height:1px;background:var(--line);margin:8px 0}
   .s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
   .s-total b{font-family:var(--display);font-size:1.7rem}
+  /* While a fresh engine estimate is in flight the total is a STATUS, not a price, so it drops
+     the display face and the price weight — at 1.7rem "Calculating…" would also wrap the row.
+     Same rule serves #pay-due's amount and the sticky bar's mirror of this figure. The pulse is
+     decoration only: anyone who asked for less motion still gets the words. */
+  .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
+    font-family:inherit;font-size:.92rem;font-weight:600;color:var(--ink-soft)}
+  @media (prefers-reduced-motion:no-preference){
+    .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
+      animation:chPricing 1.15s ease-in-out infinite}
+  }
+  @keyframes chPricing{0%,100%{opacity:.5}50%{opacity:1}}
   .s-perks{margin-top:14px;display:grid;gap:6px;font-size:.78rem;color:var(--ink-soft)}
   .s-perks div{display:flex;gap:.4rem;align-items:center}.s-perks svg{width:13px;height:13px;color:var(--teal-deep);flex:none}
 
@@ -1016,7 +1027,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
 </div>
 
-<script src="site.js?v=c736419c0c"></script>
+<script src="site.js?v=c684c8b62f"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=83197e77d0"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
@@ -1026,6 +1037,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
-<script src="booking.js?v=4f7409ab1d"></script>
+<script src="booking.js?v=20f3cc434e"></script>
 </body>
 </html>
