@@ -182,7 +182,9 @@ test.describe('320px customer-page layouts', () => {
     expect(email.x + email.width).toBeLessThanOrEqual(302);
 
     await page.goto('/board.html');
-    const filters = await page.locator('.fsel select').evaluateAll((els) => els.map((el) => {
+    const filterSelects = page.locator('.fsel select');
+    await expect(filterSelects).toHaveCount(2);
+    const filters = await filterSelects.evaluateAll((els) => els.map((el) => {
       const r = el.getBoundingClientRect();
       return { left: r.left, right: r.right };
     }));
