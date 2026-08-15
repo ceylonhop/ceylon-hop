@@ -508,7 +508,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <input id="q-to" required placeholder="Where to?"></div>
           <div id="mid-stops"></div>
         </div>
-        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
+        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> <span id="add-stop-label">Add a stop</span></button>
         <p class="bk-error full" id="bk-error" role="alert" hidden></p>
         <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
       </form>
@@ -801,6 +801,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         const input=row.querySelector('input');
         if(input) input.placeholder = last ? 'Where to?' : 'Add a place along the way…';
       });
+      syncAddStop();
+    }
+    /* The hero card is a good place to SKETCH a trip and a bad place to build an itinerary:
+       past five places the rows crowd the card, and the planner — which has room, dates and
+       per-leg pricing — is the tool that does this well. So at three mid-stops the button
+       stops growing the card and hands the trip over instead, carrying everything typed so
+       far. The internal cap of 8 in addMid() stays as a guard; it's simply unreachable from
+       here now. */
+    const INLINE_MID_MAX=3;
+    const addStopLabel=document.getElementById('add-stop-label');
+    function handsOffToPlanner(){ return midCount()>=INLINE_MID_MAX; }
+    function syncAddStop(){
+      const over=handsOffToPlanner();
+      if(addStopLabel) addStopLabel.textContent = over ? 'Add more stops in the planner' : 'Add a stop';
+      addStop.classList.toggle('to-planner', over);
     }
     function addMid(val='', opts={}){
       if(midCount()>=8) return;
@@ -824,7 +839,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if(!opts.silent && window.CH && CH.motion) CH.motion.enter(row);
       sel.focus({ preventScroll:true });
     }
-    addStop.addEventListener('click',()=>addMid());
+    addStop.addEventListener('click',()=>{
+      /* At the cap this button IS the multi-stop submit — same validation, same destination.
+         goBook() already sends a multi-stop trip to plan.html with every place in `stops`, so
+         routing through it (rather than building a second URL here) means the hand-off can
+         never drift from what "Plan this trip" does. The form is novalidate, so goBook's own
+         per-field messages still do the checking. */
+      if(handsOffToPlanner()){ form.requestSubmit(); return; }
+      addMid();
+    });
 
     document.getElementById('swap').addEventListener('click',()=>{
       const a=from.value, aid=from.dataset.placeId||'', asrc=from.dataset.placeSource||'';
