@@ -1865,7 +1865,13 @@ function render(){
     // Due now sits beside the summary total on this step, so it takes the same treatment — one
     // of the two reading "Calculating…" while the other showed a figure would be its own
     // small lie about which number is current.
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
+    // Display label ONLY, same treatment search.html's h1 got: a Google-picked endpoint lands in
+    // r.name as its full formatted address ("Ratmalana Airport, New Airport Road, Dehiwala-Mount
+    // Lavinia, Sri Lanka"), and this row gives the label only the half the money does not take —
+    // six wrapped lines at 375px. r.name itself is untouched, so the name that reaches the API,
+    // the booking payload and the confirmation email is still the full stored one.
+    const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(r.name) : r.name;
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
