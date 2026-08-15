@@ -42,7 +42,11 @@ describe('existing-page head metadata (M16 PR3)', () => {
     for (const f of ['index.html', 'booking.html']) {
       const h = read(f);
       expect(h, `${f} aggregateRating`).not.toContain('aggregateRating');
-      expect(h, `${f} 4.9`).not.toContain('4.9');
+      // catches "4.9/5", "4.9 out of 5", "4.9 stars", ratingValue:"4.9" — but not an SVG
+      // coordinate that happens to read 14.9, which a bare substring check also flagged
+      expect(h, `${f} 4.9 rating claim`).not.toMatch(
+        /\b4\.9\s*(\/\s*5|out of 5|stars?|★)|ratingValue["'\s:]+4\.9/i
+      );
       // catches "600+ happy hoppers", "600+ reviews", "600 travellers" — but not font-weight:600
       expect(h, `${f} 600 claim`).not.toMatch(/600\+|600\s*(reviews|travellers|happy)/i);
     }

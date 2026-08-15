@@ -339,7 +339,7 @@ wireDecideLater('from'); wireDecideLater('to');
 // built-in list of known places so the field still works offline.
 function attachAC(input, menu, which){
   let active=-1, els=[], data=[], seq=0, committed=false, openedAt=0;
-  const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>';
   function close(invalidate=true){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; if(invalidate) seq++; }
   function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
 
@@ -574,7 +574,7 @@ if(isTrip){
     html+=`<div class="tr-leg">`+
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
-        (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
+        (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted">${drive}</span>`+
       `</div></div>`;
   });
@@ -748,6 +748,11 @@ if(!isTrip && r.type==='shared'){
   // visible next to a banner inviting it, then silently disabled Continue with no explanation.
   const fdChk=document.getElementById('flex-date'); if(fdChk){ fdChk.checked=false; var fdl=fdChk.closest('.flex-chk'); if(fdl) fdl.style.display='none'; }
   state.flexDate=false;
+  // The banner's default mark is flexi-time — a dashed rim, which in the line-icon family
+  // means "not fixed yet". That is the opposite of what this copy says, so the shared-ride
+  // branch swaps it for closes-soon: a solid-rimmed stopwatch, i.e. a scheduled departure.
+  const fbIco=document.querySelector('.flex-banner svg');
+  if(fbIco) fbIco.innerHTML='<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.6 1.8"/><path d="M9.5 3h5"/><path d="M17.5 5.5l1.5 1.5" stroke-dasharray="2 2.6"/><circle class="wp" cx="12" cy="13" r="1.3"/>';
   const fb=document.getElementById('flex-banner-tx'); if(fb) fb.innerHTML='<b>Shared seats run to a fixed timetable.</b> Pick the day you want and we\u2019ll reserve your seat on that van \u2014 if your dates are still open, a private transfer runs any day you like.';
 
   // STEP 3 — seats, not vehicle/luggage upgrades
@@ -1590,7 +1595,9 @@ function render(){
 
   // cancellation language adapts to the service (24h transfers · 10 days chauffeur-guide)
   const perk=document.getElementById('perk-cancel');
-  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> ${cancelText()}`;
+  // Keep this mark in step with the one in booking.html's .s-perks — this line replaces the
+  // whole row, so a stale tick here silently undoes the markup a moment after it renders.
+  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg> ${cancelText()}`;
   const paySub=document.getElementById('pay-sub');
   if(paySub) paySub.textContent=`Pay securely to confirm. ${cancelText()}.`;
 

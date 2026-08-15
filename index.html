@@ -17,7 +17,7 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=b3b9aecc47">
+<link rel="stylesheet" href="site.css?v=13492eca8a">
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -39,7 +39,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 (function(){try{fetch((window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com')+'/health',{method:'GET',cache:'no-store'}).catch(function(){})}catch(e){}})();
 </script>
 <script src="tweaks.js?v=26d58fe065"></script>
-<script src="datepicker.js?v=9c0f3578dc"></script>
+<script src="datepicker.js?v=02190792a9"></script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94779669662","priceRange":"$$","sameAs":["https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html"]}</script>
 <style>
   /* ---- Hero ---- */
@@ -149,7 +149,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-pc .pc-frame{position:absolute;inset:0;padding:0;background:none;border-radius:0;box-shadow:none}
   .hero-pc .pc-img{position:absolute;inset:0;aspect-ratio:auto;border-radius:0;overflow:hidden;
      background:radial-gradient(120% 100% at 82% 0%, #124440, transparent 62%), linear-gradient(160deg,#0f3d39 0%,#092523 72%)}
-  .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
+  /* All hero photos live in one layer so the full-bleed variant and the parallax have a
+     single thing to move — they used to address #hero-photo directly, which would have left
+     slides 2 and 3 behind in the postcard. */
+  .pc-photos{position:absolute;inset:0;will-change:transform}
+  .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+  /* The extra slots are empty until someone drops a photo in. A visitor has no editing
+     runtime and must never see an empty slot's placeholder ring stacked over the real hero
+     photo; the author must, because that IS how a slot gets filled. */
+  .pc-photos image-slot:not([data-filled]):not([data-editable]){display:none}
+  /* Cross-fade, armed only once there are at least two photos to fade BETWEEN. Until then no
+     opacity is set at all, so a one-photo hero — and a hero whose JS never ran — is simply
+     the opaque slot it has always been. */
+  .pc-photos.hs-live image-slot{opacity:0;transition:opacity .9s ease}
+  .pc-photos.hs-live image-slot.hs-on{opacity:1}
+  @media(prefers-reduced-motion:reduce){.pc-photos.hs-live image-slot{transition:none}}
+  .hero-dots{display:flex;gap:9px;align-items:center}
+  .hero-dots[hidden]{display:none}
+  .hero-dots button{width:10px;height:10px;padding:0;border-radius:50%;cursor:pointer;
+    border:1.5px solid rgba(255,255,255,.9);background:transparent;transition:background .3s ease}
+  .hero-dots button[aria-current="true"]{background:#fff}
+  .hero-dots button:focus-visible{outline:2px solid #fff;outline-offset:3px}
   /* postcard chrome retired in the immersive presentation — elements stay in the DOM */
   .hero-pc .pc-cap,.hero-pc .pc-stamp,.hero-pc .postmark,.hero-pc .route-doodle,.hero-pc .pc-pin{display:none}
   .pc-pin[hidden]{display:none}
@@ -483,6 +503,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
       <p class="hero-note">Fixed prices · Free cancellation up to 24h before · No change fees</p>
+      <!-- Carousel controls live in the copy column, not on the photo: the photo layer sits in
+           the postcard figure at z-index 0, underneath the hero scrim, so anything placed there
+           is unclickable no matter its own z-index. Here they are always reachable, and they
+           never collide with the booking card at any width. Hidden until a 2nd photo exists. -->
+      <div class="hero-dots" id="hero-dots" role="group" aria-label="Choose a hero photo" hidden></div>
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
@@ -508,7 +533,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <input id="q-to" required placeholder="Where to?"></div>
           <div id="mid-stops"></div>
         </div>
-        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
+        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> <span id="add-stop-label">Add a stop</span></button>
         <p class="bk-error full" id="bk-error" role="alert" hidden></p>
         <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
       </form>
@@ -517,7 +542,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <figure class="hero-postcard" id="hero-postcard">
       <div class="pc-frame">
         <div class="pc-img" id="pc-img">
-          <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+          <div class="pc-photos" id="pc-photos">
+            <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+            <image-slot id="hero-photo-2" shape="rect" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
+            <image-slot id="hero-photo-3" shape="rect" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+          </div>
           <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
         </div>
         <figcaption class="pc-cap">wish you were here? you can be&hellip;</figcaption>
@@ -643,7 +672,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
-<script src="ch-map.js?v=ddde78533b"></script>
+<script src="ch-map.js?v=53c1b7c8b7"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   const __heroV=(window.__tweaks&&window.__tweaks.read().hero)||'postcard';
@@ -801,6 +830,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         const input=row.querySelector('input');
         if(input) input.placeholder = last ? 'Where to?' : 'Add a place along the way…';
       });
+      syncAddStop();
+    }
+    /* The hero card is a good place to SKETCH a trip and a bad place to build an itinerary:
+       past five places the rows crowd the card, and the planner — which has room, dates and
+       per-leg pricing — is the tool that does this well. So at three mid-stops the button
+       stops growing the card and hands the trip over instead, carrying everything typed so
+       far. The internal cap of 8 in addMid() stays as a guard; it's simply unreachable from
+       here now. */
+    const INLINE_MID_MAX=3;
+    const addStopLabel=document.getElementById('add-stop-label');
+    function handsOffToPlanner(){ return midCount()>=INLINE_MID_MAX; }
+    function syncAddStop(){
+      const over=handsOffToPlanner();
+      if(addStopLabel) addStopLabel.textContent = over ? 'Add more stops in the planner' : 'Add a stop';
+      addStop.classList.toggle('to-planner', over);
     }
     function addMid(val='', opts={}){
       if(midCount()>=8) return;
@@ -824,7 +868,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if(!opts.silent && window.CH && CH.motion) CH.motion.enter(row);
       sel.focus({ preventScroll:true });
     }
-    addStop.addEventListener('click',()=>addMid());
+    addStop.addEventListener('click',()=>{
+      /* At the cap this button IS the multi-stop submit — same validation, same destination.
+         goBook() already sends a multi-stop trip to plan.html with every place in `stops`, so
+         routing through it (rather than building a second URL here) means the hand-off can
+         never drift from what "Plan this trip" does. The form is novalidate, so goBook's own
+         per-field messages still do the checking. */
+      if(handsOffToPlanner()){ form.requestSubmit(); return; }
+      addMid();
+    });
 
     document.getElementById('swap').addEventListener('click',()=>{
       const a=from.value, aid=from.dataset.placeId||'', asrc=from.dataset.placeSource||'';
@@ -876,7 +928,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // ---- hero variant (postcard | full-bleed) — tweakable, same photo slot in both ----
   window.__heroVariant=function(v){
     const sec=document.getElementById('hero-sec'); if(!sec) return;
-    const slot=document.getElementById('hero-photo'), pcImg=document.getElementById('pc-img'), nav=document.querySelector('.nav');
+    // the whole photo layer moves, not just the first slide — see .pc-photos in the CSS above
+    const slot=document.getElementById('pc-photos'), pcImg=document.getElementById('pc-img'), nav=document.querySelector('.nav');
     const full = v==='full-bleed';
     sec.classList.toggle('hero-immersive', full);
     sec.classList.toggle('hero-pc', !full);
@@ -887,6 +940,68 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     slot.style.transform='';
   };
   window.__heroVariant((window.__tweaks&&window.__tweaks.read().hero)||'postcard');
+
+  /* ---- hero carousel ----
+     Cross-fades the hero photo slots. A slot with NO image is not a slide, which is what lets
+     this ship with only the first photo filled: one photo means no dots, no rotation and no
+     opacity handling at all, i.e. exactly the hero that was here before. Drop a second photo
+     in and it becomes a carousel by itself.
+     Slots fill asynchronously (the sidecar arrives over fetch) and the author can drop a photo
+     in at any moment, so the rotation is rebuilt whenever a slot's filled state changes rather
+     than read once at load. */
+  (function(){
+    const wrap=document.getElementById('pc-photos'), dotsEl=document.getElementById('hero-dots');
+    if(!wrap || !dotsEl) return;
+    const slots=[...wrap.querySelectorAll('image-slot')];
+    const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
+    const INTERVAL=6000;
+    let slides=[], at=0, timer=null, paused=false;
+
+    function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+    function start(){
+      stop();
+      // One slide has nothing to rotate to; reduced motion means the traveller has asked for
+      // no unprompted movement, so the dots become the only way through.
+      if(slides.length<2 || paused || reduce.matches) return;
+      timer=setInterval(function(){ show(at+1); }, INTERVAL);
+    }
+    function show(n){
+      if(!slides.length) return;
+      at=(n%slides.length+slides.length)%slides.length;
+      slides.forEach(function(s,k){ s.classList.toggle('hs-on', k===at); });
+      [...dotsEl.children].forEach(function(d,k){ d.setAttribute('aria-current', String(k===at)); });
+    }
+    function build(){
+      slides=slots.filter(function(s){ return s.hasAttribute('data-filled'); });
+      const live=slides.length>1;
+      wrap.classList.toggle('hs-live', live);
+      dotsEl.hidden=!live;
+      dotsEl.innerHTML='';
+      slots.forEach(function(s){ s.classList.remove('hs-on'); });
+      if(live) slides.forEach(function(s,k){
+        const b=document.createElement('button');
+        b.type='button';
+        b.setAttribute('aria-label','Show hero photo '+(k+1));
+        b.addEventListener('click',function(){ show(k); start(); });
+        dotsEl.appendChild(b);
+      });
+      show(0);
+      start();
+    }
+
+    const mo=new MutationObserver(build);
+    slots.forEach(function(s){ mo.observe(s,{attributes:true,attributeFilter:['data-filled']}); });
+    // Hovering or tabbing into the hero means the traveller is looking at or using it — don't
+    // move the picture under them. The card sits over this photo, so the listener goes on the
+    // whole hero section, not the photo layer.
+    const hero=document.getElementById('hero-sec')||wrap;
+    ['mouseenter','focusin'].forEach(function(e){ hero.addEventListener(e,function(){ paused=true; stop(); }); });
+    ['mouseleave','focusout'].forEach(function(e){ hero.addEventListener(e,function(){ paused=false; start(); }); });
+    // A background tab throttles timers into a burst on return — stop rather than pile up.
+    document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
+    if(reduce.addEventListener) reduce.addEventListener('change',function(){ start(); });
+    build();
+  })();
 
   // hero entrance is pure CSS now (auto-playing keyframes with fill:both) — no JS
   // reveal needed, so content is never dependent on a class toggle or a transition
@@ -901,7 +1016,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if(tick) return; tick=true;
       requestAnimationFrame(function(){
         tick=false;
-        const y=window.scrollY, slot=document.getElementById('hero-photo');
+        const y=window.scrollY, slot=document.getElementById('pc-photos');
         if(!slot || y>820) return;
         if(sec.classList.contains('hero-immersive')) slot.style.transform='translateY('+(y*.14)+'px) scale(1.07)';
         else slot.style.transform='translateY('+(y*.05)+'px) scale(1.07)';
