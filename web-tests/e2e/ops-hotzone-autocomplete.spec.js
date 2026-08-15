@@ -109,9 +109,14 @@ test('hot-zone town and boost fields look like fields (visible input box)', asyn
   await page.keyboard.type('Ell', { delay: 40 });
   const menu = page.locator('.ch-ac-menu').first();
   await expect(menu).toBeVisible({ timeout: 5000 });
-  const anchored = await menu.evaluate((m) => {
-    const p = m.parentElement;
+  // The menu is REBUILT as each keystroke's suggestions land, so a locator resolved a moment
+  // ago can already point at a detached node by the time it is evaluated — its parentElement
+  // is then null and the read throws ("Cannot read properties of null"). Re-query the menu
+  // fresh inside the poll so a rebuild costs a retry instead of failing the test.
+  await expect.poll(() => page.evaluate(() => {
+    const m = document.querySelector('.ch-ac-menu');
+    const p = m && m.parentElement;
+    if (!p) return null; // menu replaced mid-read — poll again
     return !!p.querySelector('#hz-place') && getComputedStyle(p).position === 'relative';
-  });
-  expect(anchored, 'menu anchored to a positioned ancestor of the town field').toBe(true);
+  }), { message: 'menu anchored to a positioned ancestor of the town field' }).toBe(true);
 });
