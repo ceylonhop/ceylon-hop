@@ -1327,17 +1327,32 @@ function requestEstimate(){
   });
 }
 
+// True when the only thing that moved between two priced intents is the product or the vehicle —
+// i.e. the customer pressed "Chauffeur-guide" or "Switch to AC van". A raise they DROVE that way
+// is not a surprise to acknowledge: the press is the acknowledgement, and both the service
+// chooser and the upsell CTA name their price before it happens. Gating these announced "your
+// price has been updated" about the very change just asked for, and held the summary at the
+// figure for the service they'd just left — invisible on a trip, where private and chauffeur
+// carry identically labelled rows (:1546-1551), so the card read as the old price for the new
+// service with nothing on screen to tell them apart.
+function switchedProductOrVehicle(sig, priorSig){
+  let now, prior;
+  try { now = JSON.parse(sig); prior = JSON.parse(priorSig); } catch(e){ return false; }
+  if(!now || !prior) return false;
+  return now.product !== prior.product || now.vehicle !== prior.vehicle;
+}
 // Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
 // must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
 // renderRepriceNote already runs for the local repriceDecision path; a same-or-lower figure is
 // exactly what the customer would expect a live quote to look like, so it lands immediately.
+// The one raise that skips the gate is the one the customer chose outright — see above.
 function handleEngineEstimate(est, sig){
   // The customer may have moved on to a different itinerary while this was in flight (their next
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents){
+  if(priorCents!=null && est.totalCents > priorCents && !switchedProductOrVehicle(sig, engineEst.intentSig)){
     state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
     render();
     checkWhere();
