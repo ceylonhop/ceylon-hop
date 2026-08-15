@@ -1673,7 +1673,17 @@ function render(){
     // Lavinia, Sri Lanka"), and this row gives the label only the half the money does not take —
     // six wrapped lines at 375px. r.name itself is untouched, so the name that reaches the API,
     // the booking payload and the confirmation email is still the full stored one.
-    const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(r.name) : r.name;
+    //
+    // The service prefix r.name carries ("Private transfer · ") is dropped with it. It is the
+    // customer's own pick from step 3, and the summary panel beside this row already names it
+    // twice on desktop — while on mobile that panel is visibility:hidden, so the word was buying
+    // a wrapped line in the money row and telling nobody anything new. The endpoints come from
+    // r.stops rather than by trimming r.name: they are the very strings r.name was built from, so
+    // this is that name minus its prefix, with no string surgery to drift out of step.
+    const dueRoute = (routeNamePrefix && !isTrip)
+      ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
+      : r.name;
+    const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
     payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
