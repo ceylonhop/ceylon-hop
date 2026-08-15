@@ -2278,10 +2278,14 @@ function ticketRow(t,i){
 function flipRows(sel,mutate){
   let reduce=false;
   try{reduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(e){}
-  if(reduce||typeof Element.prototype.animate!=='function'){mutate();return;}
+  /* FLIP is a readability aid for a short working set, not a licence to animate the whole
+     archive. At queue scale each surviving row gets its own compositor animation; hundreds of
+     those can keep the row under the pointer "moving" long enough that a click never lands. */
+  const currentRows=document.querySelectorAll(sel);
+  if(reduce||currentRows.length>100||typeof Element.prototype.animate!=='function'){mutate();return;}
   const key=el=>el.getAttribute('data-qopen')||el.getAttribute('data-id');
   const first={};
-  document.querySelectorAll(sel).forEach(el=>{const k=key(el);if(k)first[k]=el.getBoundingClientRect();});
+  currentRows.forEach(el=>{const k=key(el);if(k)first[k]=el.getBoundingClientRect();});
   mutate();
   document.querySelectorAll(sel).forEach(el=>{
     const k=key(el),from=k&&first[k];
@@ -2359,7 +2363,7 @@ function viewTickets(){
    support agent leads with approved quotes ready to send + any sent back to them.
    Status changes are deliberate actions in the detail view (maker-checker), never a
    casual per-row dropdown — so rows show a read-only status pill. */
-let opsQuotes=[],opsQuotesLoaded=false;
+let opsQuotes=[],opsQuotesLoaded=false,opsQuotesLoadSeq=0;
 // Status → { label, tone } for the read-only pill. Tone drives the CSS colour class.
 const QSTATUS={
   draft:{label:'Draft',tone:'slate'},
@@ -2513,14 +2517,33 @@ function quoteTripOver(q,todayIso){
   return qDaysBetween(q.travelDate,todayIso)>QTRIP_GRACE_DAYS;
 }
 async function loadOpsQuotes(){
+  const seq=++opsQuotesLoadSeq;
   try{
     const r=await fetch('/admin/quote/list',{credentials:'same-origin'});
     if(r.status===401){showLogin();throw new Error('auth');}
     if(!r.ok)throw new Error('quotes '+r.status);
     const body=await r.json();
+    /* A save/transition can request a refresh while an older list fetch is still in flight.
+       Only the newest request may paint: otherwise the late OLD response puts the row back in
+       its previous status (or loses its newly-saved name), leaving a visible queue row that
+       morphdom immediately replaces while the operator is trying to open it. */
+    if(seq!==opsQuotesLoadSeq)return;
     opsQuotes=(body&&body.quotes)||[];opsQuotesLoaded=true;
     if(state.route==='quotes')viewQuotes();
   }catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadOpsQuotes',e);toast('Could not load quotes','error');}}
+}
+/* A successful save/transition already knows the row's new truth. Reflect that result in the
+   local queue before navigating back instead of showing the last list snapshot while another
+   full /list round trip catches up. The background load still reconciles every server field. */
+function upsertOpsQuote(patch){
+  if(!patch||!patch.id)return;
+  const i=opsQuotes.findIndex(q=>q.id===patch.id);
+  if(i>=0)opsQuotes[i]=Object.assign({},opsQuotes[i],patch);
+  else opsQuotes.unshift(Object.assign({
+    reference:patch.id,status:'draft',product:'private',vehicle:null,customerName:null,
+    customerContact:null,totalCents:0,currency:'USD',assignedTo:null,routeText:null,
+    unpriced:true,travelDate:null,createdAt:new Date().toISOString(),
+  },patch));
 }
 function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
@@ -3912,6 +3935,7 @@ function bootApp(identity){
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
+  window.opsUpsertQuote=upsertOpsQuote; /* server-confirmed current row paints immediately on hand-off */
   /* The builder just claimed a real row for the quote on screen — bind the URL to it so a reload
      (or a bookmark/share) reopens THAT row instead of a bare #quote that would claim a second
      shell and orphan the first. replace, not push: claiming isn't a navigation the operator
@@ -5383,6 +5407,35 @@ function savePayload() {
   }, buildToolRequest());
 }
 
+/* Queue projection for the quote currently on screen. This is optimistic only in timing: every
+   value is published after /save succeeds, using its server-priced total. /list remains the
+   canonical reconciliation and replaces this projection as soon as it lands. */
+function currentQuoteQueuePatch(saved) {
+  var places = [];
+  (state.legs || []).forEach(function (leg) {
+    (leg.stops || []).forEach(function (name) {
+      name = String(name || '').trim();
+      if (name && places[places.length - 1] !== name) places.push(name);
+    });
+  });
+  var dates = (state.legs || []).map(function (leg) { return leg.date || ''; }).filter(Boolean).sort();
+  return {
+    id: state.savedId,
+    reference: state.reference || state.savedId,
+    status: (saved && saved.status) || state.status || 'draft',
+    product: state.service === 'chauffeur' ? 'chauffeur' : 'private',
+    vehicle: state.vehicleType === 'car' ? 'car' : (state.vehicleType ? 'van' : null),
+    customerName: (state.firstName + ' ' + state.lastName).trim() || null,
+    customerContact: state.contact || null,
+    totalCents: Number(saved && saved.totalCents) || 0,
+    currency: 'USD',
+    assignedTo: state.assignedTo || null,
+    routeText: places.length > 1 ? places.join(' · ') : null,
+    unpriced: false,
+    travelDate: dates.length ? dates[dates.length - 1] : null,
+  };
+}
+
 /* Set only by the founder acting on the control. Reset once a save has carried the intent, so a
    later autosave falls back to "preserve" rather than re-sending it. */
 let _discountTouched = false;
@@ -5485,7 +5538,8 @@ async function saveQuote(opts) {
     // the only thing that ever writes those; renderSaveState falls through to the plain _lastSavedAt/
     // state.savedId "Saved" branches on its own.
     _autoState = 'idle';
-    if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
+    if (window.opsUpsertQuote) window.opsUpsertQuote(currentQuoteQueuePatch(res));
+    if (!opts.deferQueueRefresh && window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
     return true;
   }
@@ -5513,7 +5567,10 @@ async function transition(toStatus, opts) {
   // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
   // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
   var editable = isEditableNow(); // review lock: pending_review no longer flushes a save (it would 409)
-  if (editable && !(await saveQuote({ silent: true }))) return; // saveQuote already surfaced the reason
+  /* The transition owns the queue refresh. Letting saveQuote refresh too starts a list request
+     before the status PATCH, then another after it, then a third on queue entry. Those responses
+     can land out of order and repeatedly move/replace the row under the operator's pointer. */
+  if (editable && !(await saveQuote({ silent: true, deferQueueRefresh: true }))) return; // saveQuote already surfaced the reason
   var patchBody = { status: toStatus };
   if (opts.note != null) patchBody.notes = opts.note;
   var res = await apiPatch(state.savedId, patchBody);
@@ -5536,10 +5593,11 @@ async function transition(toStatus, opts) {
     state.customerTotalVia = res.customerTotalVia || null;
   }
   _dirty = false;
-  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  if (window.opsUpsertQuote) window.opsUpsertQuote({ id: state.savedId, status: toStatus });
   if (opts.toast) showToast(opts.toast);
   if (opts.goQueue && window.opsGoQuotes) window.opsGoQuotes();
   else {
+    if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     render();
     // Reopen-to-edit drops the rate lock server-side (spec 2026-07-11 §3); re-price live so the
     // operator builds on the current card again instead of the just-shown frozen price.
