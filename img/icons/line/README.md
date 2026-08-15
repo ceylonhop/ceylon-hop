@@ -71,9 +71,14 @@ Built for 16–24px and tested down to 16. Above about 40px prefer a badge from
 
 `booking.html` / `booking.js` and `plan.html` inline eight of these marks — the service
 chooser, the location fields, the flexible-timing banner, the leg date chip, the payment
-method, both concierge notes and the planner's empty state. Each host page styles the
-waypoint dot itself; grep for `.wp{` to find the rules.
+method, both concierge notes and the planner's empty state. `search.html` / `search.js` inline
+a further eleven across the option cards, the route meta row and the reassurance strip. Each
+host page styles the waypoint dot itself; grep for `.wp{` to find the rules.
 
 Everywhere else still carries its own one-off stroke icons. The remaining slots are listed in
 [`docs/superpowers/plans/2026-07-29-icon-rollout.md`](../../../docs/superpowers/plans/2026-07-29-icon-rollout.md)
 (Tasks 6–8: the homepage trust row, `board.js`, the route pages).
+
+Two slots on the results page keep generic strokes on purpose: the `→` connector between the
+place names, and the shared card's inclusion chips. Neither has an honest mark in the set —
+"AC car or van" would have to borrow the mark that card's own header is already using.
