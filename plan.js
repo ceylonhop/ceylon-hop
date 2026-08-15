@@ -163,8 +163,6 @@ function buildLegs(stops, nights, gaps){
   }
   return legs;
 }
-// per-day rate when a chauffeur-guide stays with the guest (no intercity travel)
-const DAY_FEE = (window.TRANSFERS && window.TRANSFERS.CHAUFFEUR_DAY_FEE) || 55;
 const state = {
   // Traveller count starts UNPICKED unless the URL already carries a valid one — the
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
@@ -563,7 +561,7 @@ function render(){
         </div>
         <div class="stay-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          <span><b>No intercity travel.</b> With a <b>chauffeur-guide</b>, your car &amp; driver stay with you — at your disposal for local trips (about ${money(DAY_FEE)}/day). With <b>point-to-point transfers</b>, there’s no car needed on these days.</span>
+          <span><b>No intercity travel.</b> With a <b>chauffeur-guide</b>, your car &amp; driver stay with you — at your disposal for local trips, included in your trip price. With <b>point-to-point transfers</b>, there’s no car needed on these days.</span>
         </div>`;
 
     const wrap=document.createElement('div');

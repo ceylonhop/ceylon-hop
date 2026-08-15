@@ -1449,7 +1449,7 @@ function render(){
     const cx=document.getElementById('chauffeur-extra');
     const datesOK=tripDatesComplete();
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
-    if(chf) chf.textContent=datesOK ? 'Day rate + trip distance · pay in full' : 'Add all dates to quote';
+    if(chf) chf.textContent=datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote';
     if(chBtn && chBtn.style.display!=='none'){
       chBtn.disabled=!datesOK;
       chBtn.setAttribute('aria-disabled', datesOK?'false':'true');
@@ -1463,13 +1463,13 @@ function render(){
       if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
-          '<p>A driver-guide is charged by calendar days, so we can only quote it once every transfer leg has a date.</p>'+
+          '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
           '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg><b>Your car &amp; driver-guide stays with you all '+days.length+' day'+(days.length>1?'s':'')+'</b></div>'+
-          '<p>Same friendly face the whole trip — your driver-guide&rsquo;s daily rate is included in your trip total.</p>';
+          '<p>Same friendly face the whole trip — your driver-guide is included in your trip total.</p>';
       } else { cx.style.display='none'; cx.innerHTML=''; }
     }
     // can't proceed on a chauffeur trip until it's fully dated (no per-day rate without the days)
@@ -1542,14 +1542,17 @@ function render(){
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
-    document.getElementById('sum-adlabel').textContent = (isTrip && state.svc==='chauffeur')
-      ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
-      : (isTrip ? (vehicleKey==='van'?'Private AC van · whole trip':'Private AC car · whole trip') : vehicleLabel);
-    // The base line absorbs the one finishing adjustment: it equals the finished Total minus every
-    // OTHER visible row — the extras, plus (on a chauffeur-guide trip) the day-rate row. So the rows
-    // on screen always sum exactly to Total, and no raw pre-finishing number is ever shown here.
+    // A chauffeur-guide trip used to split this into "Chauffeur distance" + a "Chauffeur-guide · N days"
+    // row. Pricing the driver out in the open invited "why am I paying that much for a driver?", so
+    // (owner decision 2026-08-14) car and driver-guide bill as ONE whole-trip line — same label as a
+    // private-transfer trip. The service chooser is what tells the two apart, not the summary rows.
+    document.getElementById('sum-adlabel').textContent = isTrip
+      ? (vehicleKey==='van'?'Private AC van · whole trip':'Private AC car · whole trip')
+      : vehicleLabel;
+    // The base line absorbs the one finishing adjustment AND the chauffeur day rate: it equals the
+    // finished Total minus every OTHER visible row — the extras. So the rows on screen always sum
+    // exactly to Total, and no raw pre-finishing number is ever shown here.
     let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
-    if (isTrip && state.svc==='chauffeur') otherRows += chauffeurFee();
     const baseAmt = calcTotal() - otherRows;
     setNum(document.getElementById('sum-adamt'), money(baseAmt));
     chrow.style.display='flex';
@@ -1562,7 +1565,6 @@ function render(){
     else chrow.style.display='none';
   }
   let addonHtml='';
-  if(chauffeurFee()>0){ addonHtml+=`<div class="s-row"><span>Chauffeur-guide · ${tripDays} days</span><b>${money(chauffeurFee())}</b></div>`; }
   if(isShared){ const free=Math.max(1,state.ad+state.ch); const xb=Math.max(0,state.bags-free); if(xb>0){ addonHtml+=`<div class="s-row"><span>Extra bag${xb>1?'s':''} × ${xb}</span><b>${money(xb*10)}</b></div>`; } }
   state.addons.forEach(a=>{addonHtml+=`<div class="s-row"><span>${addonNames[a]}</span><b>${money(addonPrices[a])}</b></div>`;});
   // Ticking an extra used to make a summary row and a new total appear in the same frame, which
@@ -1596,7 +1598,7 @@ function render(){
   const pvtNote=document.getElementById('pvt-note'), pvtTx=document.getElementById('pvt-note-tx');
   if(pvtNote && pvtTx){
     if(isTrip && state.svc==='chauffeur'){
-      pvtTx.innerHTML='<b>One car &amp; driver-guide for the whole trip.</b> Priced as a retained driver-guide: daily rate plus total trip distance. Your chauffeur-guide stays with you from start to finish — same friendly face every day, flexible stops along the way.';
+      pvtTx.innerHTML='<b>One car &amp; driver-guide for the whole trip.</b> One price covers the car, your driver-guide and every kilometre. Your chauffeur-guide stays with you from start to finish — same friendly face every day, flexible stops along the way.';
     } else if(isTrip){
       pvtTx.innerHTML='<b>Door-to-door pick-ups &amp; drop-offs, every leg.</b> Each leg is priced as its own private transfer and booked fresh, so you may not have the exact same car or driver every day.';
     } else {
