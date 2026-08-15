@@ -129,3 +129,34 @@ describe('the hero booker gradient meets WCAG AA', () => {
     }
   });
 });
+
+/* A <button> does not inherit colour the way ordinary text does — without an explicit
+   declaration its text falls through to the UA stylesheet's `buttontext`. That renders
+   near-black on Chrome/Firefox, so it looks correct on a desktop review, but iOS Safari
+   fills that same slot with the system BLUE. Owner-reported three times, on two different
+   phones: the burger bars, the booking route strip and the sticky Total all came out in an
+   off-brand blue that appears nowhere in site.css, while "Details" — the one element in
+   the same button with an explicit colour — stayed on-brand.
+
+   site.css already does this for links (`a{color:inherit}`) one line above; buttons were
+   simply missed. This test pins the fix so a future edit to the base rule cannot quietly
+   hand the platform control of our text colour again. */
+describe('buttons take their colour from us, not from the platform', () => {
+  const baseRule = () => {
+    // Comments are stripped first so documenting the rule can never break the test that
+    // guards it; the anchor then keeps this to the bare `button{…}` element rule rather
+    // than any descendant selector that merely ends in the word.
+    const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const m = bare.match(/(?:^|[};])\s*button\s*\{([^}]*)\}/);
+    if (!m) throw new Error('the base `button{…}` rule is gone from site.css');
+    return m[1];
+  };
+
+  it('the base button rule inherits colour, so iOS cannot paint it system blue', () => {
+    expect(baseRule()).toMatch(/(^|;)\s*color\s*:\s*inherit\s*(;|$)/);
+  });
+
+  it('still inherits the font too — the same rule, both properties', () => {
+    expect(baseRule()).toMatch(/font-family\s*:\s*inherit/);
+  });
+});
