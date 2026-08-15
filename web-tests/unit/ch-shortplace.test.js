@@ -73,23 +73,38 @@ describe('the payment step’s "Due now" label', () => {
   // booking.js builds a private-transfer route name as "Private transfer · <from> → <to>", and a
   // Google-picked drop-off arrives as its full formatted address. In the narrow half of the Due
   // now row (the money takes the other half) that wrapped to six lines at 375px.
-  it('shortens the drop-off but keeps the prefix and the arrow', () => {
+  it('shortens the drop-off and keeps the arrow', () => {
     expect(shortenRouteLabel(
-      'Private transfer · Colombo Airport (CMB) → Ratmalana Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka',
-    )).toBe('Private transfer · Colombo Airport (CMB) → Ratmalana Airport · Dehiwala-Mount Lavinia');
+      'Colombo Airport (CMB) → Ratmalana Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka',
+    )).toBe('Colombo Airport (CMB) → Ratmalana Airport · Dehiwala-Mount Lavinia');
   });
 
   it('leaves a catalogue route title alone — it is a name, not a pair of addresses', () => {
     expect(shortenRouteLabel('Negombo to Sigiriya — Shared Ride')).toBe('Negombo to Sigiriya — Shared Ride');
   });
 
-  it('is wired through the shortener rather than printing the raw r.name', () => {
+  it('is wired through the shortener rather than printing the raw place', () => {
     const bookingJs = readFileSync(path.join(ROOT, 'booking.js'), 'utf8');
     // from the element lookup through the innerHTML statement — the shortening happens just
     // above the template literal, so anchoring on the assignment alone would miss it.
     const due = bookingJs.match(/const payDue\s*=[\s\S]*?payDue\.innerHTML\s*=[\s\S]{0,400}?;\n/);
     expect(due, 'Due now render not found in booking.js').toBeTruthy();
     expect(due[0]).toContain('shortenRouteLabel');
+  });
+
+  // The service is the customer's own pick from step 3. On desktop the summary panel beside this
+  // row names it twice more (the type pill and the route heading); on mobile that whole panel is
+  // visibility:hidden, so the word was buying a wrapped line in the money row and telling nobody
+  // anything new. The route is what identifies the charge — the trip branch of this same label
+  // already prints only the service and no route, so the two are complementary rather than
+  // each carrying both.
+  it('drops the "Private transfer ·" / "Shared ride ·" prefix, which r.name carries', () => {
+    const bookingJs = readFileSync(path.join(ROOT, 'booking.js'), 'utf8');
+    const due = bookingJs.match(/const payDue\s*=[\s\S]*?payDue\.innerHTML\s*=[\s\S]{0,400}?;\n/);
+    // built from the endpoints rather than from the prefixed r.name…
+    expect(due[0]).toMatch(/routeNamePrefix/);
+    expect(due[0]).toMatch(/r\.stops/);
+    // …and r.name is no longer what the single-leg branch prints
     expect(due[0]).not.toMatch(/:\s*r\.name\s*\)/);
   });
 
