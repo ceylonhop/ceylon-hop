@@ -133,7 +133,10 @@ describe('renderRoute framing', () => {
   // The inline card is a picture of the route; the modal is a map you read. Place and road
   // labels belong to the second — inline they are mostly the mainland the frame catches, and
   // the "Sri Lanka" label lands across the route line.
-  it('drops place + road labels on the card but keeps them when expanded', async () => {
+  // Road NAMES are clutter on a card this size; PLACE names are how a customer reads the
+  // route — "does it go through Kandy?" is the question the picture has to answer. Both were
+  // dropped when the card was 122px tall; the owner asked for the towns back (2026-08-15).
+  it('drops road names on the card but never the town names', async () => {
     sized(272, 137);
     await CH_MAP.renderRoute(host(), ['Colombo', 'Ella']);
     sized(1040, 700);
@@ -141,10 +144,11 @@ describe('renderRoute framing', () => {
     const hidden = (styles, feature) => styles.some((s) =>
       s.featureType === feature && s.elementType === 'labels'
       && s.stylers.some((st) => st.visibility === 'off'));
-    for (const feature of ['road', 'administrative']) {
-      expect(hidden(stub.mapOpts[0].styles, feature)).toBe(true);
-      expect(hidden(stub.mapOpts[1].styles, feature)).toBe(false);
-    }
+    // road labels: off inline, on when expanded
+    expect(hidden(stub.mapOpts[0].styles, 'road')).toBe(true);
+    expect(hidden(stub.mapOpts[1].styles, 'road')).toBe(false);
+    // place labels: on everywhere
+    for (const opts of stub.mapOpts) expect(hidden(opts.styles, 'administrative')).toBe(false);
   });
 
   it('draws smaller pins on the inline card than in the modal', async () => {
