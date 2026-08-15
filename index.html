@@ -284,20 +284,32 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
      Set this lower and you get the worst case: a wrapped row still justified apart, so
      the orphan hangs at the left edge — which is exactly how this bug looked. */
-  @media(min-width:1160px){ .trust-row{justify-content:space-between} }
-  /* Between the one-line width and the mobile scroll strip, free wrapping puts four
-     items up and one alone underneath. Three columns splits five as 3 + 2 instead, and
-     the aligned columns read as a deliberate grid rather than a broken row. */
-  @media(min-width:951px) and (max-width:1159px){
-    .trust-row{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 18px;padding-block:16px}
+  @media(min-width:1201px){ .trust-row{justify-content:space-between} }
+  /* Between the one-line width and the scroll strip the row used to become a 3-column and
+     then a 2-column grid — which IS the "five items, two rows" stack this strip is meant to
+     avoid; it just made the stack tidy. It scales instead: one line, with type, icons and
+     gaps shrinking together, so the row never gains a second row on the way down.
+     Every number here is sized against the WIDER of the two fonts this row is ever set in.
+     The pre-webfont fallback sets ~3.7% wider on Linux and Android than Poppins, and CI runs
+     in it, so a band tuned on Poppins alone breaks there — as it did: `flex-wrap:nowrap` kept
+     the ROW on one line and pushed every label into two lines inside it instead. Measured
+     widths (Poppins → fallback ×1.037): .82rem/26px icons = 1079 → 1119; .76/22 = 1006 →
+     1043; .70/20 = 926 → 960. Against a content box of viewport−48 that means .82rem stops
+     fitting at 1200, not 1160, which is where the band now starts.
+     It stops at 1040 because that is where the shrinking stops being honest: 960 against a
+     992px box leaves nothing, and any narrower the type has to go under 11px — smaller than
+     anything else on the site — so the horizontal strip below takes over instead.
+     Labels are nowrap: a shrinking row must never buy its single line by double-decking the
+     text. If the sizing above is ever wrong the row overflows, which the spec catches
+     loudly, rather than quietly restacking. */
+  @media(min-width:1041px) and (max-width:1200px){
+    .trust-row{flex-wrap:nowrap;
+      font-size:clamp(.7rem, 1.21vw - .086rem, .82rem);
+      gap:clamp(8px, 2.52vw - 18.19px, 12px)}
+    .trust-row .item{white-space:nowrap}
+    .trust-row svg{width:clamp(20px, 3.77vw - 19.29px, 26px);height:clamp(20px, 3.77vw - 19.29px, 26px);padding:5px}
   }
-  /* Below ~950 a third column squeezes cells under 280px and the longest label
-     ("Free cancellation up to 24h before") wraps to two lines inside its cell. Two
-     columns keeps every label on one line. */
-  @media(min-width:761px) and (max-width:950px){
-    .trust-row{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 18px;padding-block:16px}
-  }
-  @media(max-width:760px){
+  @media(max-width:1040px){
     .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding-block:15px 17px;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .trust-row::-webkit-scrollbar{display:none}
@@ -870,6 +882,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       }
     }
     update();
+    /* goBook() disables this button and fills it with a spinner in the instant before it
+       assigns location.href. A browser that then stores the page in its back/forward cache
+       replays that DOM verbatim on Back — no script re-runs on a restore, so nothing ever
+       puts the button back, and the traveller returns to a homepage whose only search CTA is
+       greyed out and spinning "Opening your trip…" for good. (A Back that re-executes the
+       document instead is already fine: update() runs on load.)
+       Repairing via update() rather than a hardcoded label is what keeps the modes honest —
+       it derives the text from the CURRENT mode, so a restored multi-stop form comes back as
+       "Plan this trip" and not "See prices & book". */
+    window.addEventListener('pageshow', function(e){ if(e.persisted) update(); });
     window.__heroMidValues = midValues;
     window.__heroMode = ()=>bookMode;
   })();
