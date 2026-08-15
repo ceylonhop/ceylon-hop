@@ -21,7 +21,7 @@
 <meta property="og:url" content="https://ceylonhop.com/booking.html">
 <meta property="og:title" content="Book your hop — Ceylon Hop">
 <meta property="og:description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, instant WhatsApp confirmation and a Pro Hopper driver.">
-<link rel="stylesheet" href="site.css?v=e9f300352d">
+<link rel="stylesheet" href="site.css?v=613012fae4">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -433,9 +433,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ph-secure svg{width:13px;height:13px}
 
   .pay-summary-row{display:flex;justify-content:space-between;align-items:baseline;background:var(--cream-deep);border-radius:12px;padding:14px 16px;margin-bottom:18px}
-  .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft)}
-  .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem}
-  .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem}
+  /* Money wins the width fight, and the label gives way. Both were shrinkable flex items, so
+     a long route name ("… → Ratmalana Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri
+     Lanka") squeezed the amount's box under its own text and the figure spilled out over the
+     panel's rounded edge — measured at 375px: a 34px box holding 67px of "$87.50", and 16px
+     holding 61px with a full Google address. `min-width:0` lets the label wrap instead (it
+     already has room to, its route name is display:block); `flex:none` + `nowrap` mean the
+     price can neither shrink nor break across two lines. */
+  .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft);min-width:0}
+  .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem;overflow-wrap:anywhere}
+  .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem;flex:none;white-space:nowrap}
   .pay-summary-row .amt small{display:block;font-family:var(--body);font-weight:500;font-size:.72rem;color:var(--ink-soft);text-align:right}
   .pay-choice{display:grid;gap:8px;margin-bottom:18px}
   .pay-choice .pc-opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s}
@@ -504,6 +511,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .summary{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;max-height:calc(100vh - 110px);overflow-y:auto}
   .summary .s-route{background:var(--pc-teal);padding:16px 20px}
   .summary .s-route .pt{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.92rem;color:var(--ink)}
+  /* Safety net for a name the shortener cannot split — one long comma-less place has no segments
+     to drop, so cap the rows instead of letting them push the price out of the panel. */
+  .summary .s-route .pt > span:not(.pin){min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
   .summary .s-route .pin{width:11px;height:11px;border-radius:50%;border:2.5px solid var(--teal-deep);background:#fff;flex:none}
   .summary .s-route .pt.to .pin{background:var(--saffron);border-color:var(--saffron)}
   .summary .s-route .seg{height:16px;margin-left:4px;border-left:2px dashed var(--teal-deep);opacity:.45}
@@ -525,7 +535,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-wa .tx{font-size:.78rem;line-height:1.3}
   .s-wa .tx b{display:block;font-size:.85rem;color:#0c6b39}
   .summary .s-body{padding:20px}
-  .summary h3{font-size:1.1rem;line-height:1.2;margin-bottom:.3rem}
+  .summary h3{font-size:1.1rem;line-height:1.2;margin-bottom:.3rem;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3}
   .s-row{display:flex;justify-content:space-between;font-size:.88rem;padding:.45rem 0;color:var(--ink-soft)}
   .s-row b{color:var(--ink);font-weight:600}
   .s-div{height:1px;background:var(--line);margin:8px 0}
@@ -585,11 +595,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     body.js-mbar{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))} /* room for the bar */
     /* the summary aside becomes a bottom sheet */
     body.js-mbar .layout > aside{order:0;position:fixed;left:0;right:0;bottom:0;top:auto;z-index:120;margin:0;
+      width:100%;max-width:100vw;overflow:hidden;
       transform:translateY(102%);visibility:hidden;transition:transform .28s ease,visibility 0s .28s}
     body.js-mbar .layout > aside.open{transform:translateY(0);visibility:visible;transition:transform .28s ease}
-    body.js-mbar .summary{max-height:78dvh;overflow:auto;border-radius:18px 18px 0 0;
+    body.js-mbar .summary{width:100%;max-width:100%;max-height:78dvh;overflow-y:auto;overflow-x:hidden;
+      overscroll-behavior-x:none;touch-action:pan-y;border-radius:18px 18px 0 0;
       box-shadow:0 -18px 44px -12px rgba(20,40,38,.35)}
-    body.js-mbar .summary .s-close{display:grid;place-items:center;position:absolute;top:10px;right:12px;width:34px;height:34px;border:none;
+    body.js-mbar .summary .s-route,body.js-mbar .summary .s-body,body.js-mbar .summary .reprice-note{max-width:100%}
+    body.js-mbar .summary .s-row>*{min-width:0}
+    body.js-mbar .summary h3,body.js-mbar .summary .reprice-note{overflow-wrap:anywhere}
+    body.js-mbar .summary .s-close{display:grid;place-items:center;position:absolute;top:10px;right:12px;width:44px;height:44px;border:none;
       border-radius:50%;background:rgba(20,40,38,.08);color:var(--ink);font-size:1.25rem;line-height:1;cursor:pointer;z-index:2}
     /* in-page primary buttons are proxied by the bar (back links stay in the card) */
     body.js-mbar .panel .nav-btns .btn{display:none}
@@ -1037,6 +1052,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
-<script src="booking.js?v=20f3cc434e"></script>
+<script src="ch-shortplace.js?v=1eb1db0211"></script>
+<script src="booking.js?v=6905f4e205"></script>
 </body>
 </html>

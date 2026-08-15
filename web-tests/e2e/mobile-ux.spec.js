@@ -139,3 +139,73 @@ test('mobile exact location map stays compact and readable', async ({ page }) =>
   expect(navBox.y).toBeGreaterThan(noteBox.y);
   await expect(page.locator('#rm-bar')).toContainText('145 km');
 });
+
+test.describe('320px customer-page layouts', () => {
+  test.use({ viewport: { width: 320, height: 844 } });
+
+  test('planner controls do not shrink or overlap', async ({ page }) => {
+    await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+    await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
+
+    const pills = await page.locator('.pax-pill').evaluateAll((els) => els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { width: r.width, height: r.height };
+    }));
+    for (const pill of pills) {
+      expect(pill.width).toBeGreaterThanOrEqual(32);
+      expect(pill.height).toBeGreaterThanOrEqual(40);
+    }
+
+    const vehicleOverflow = await page.locator('.sb-veh .veh-btn').evaluateAll((els) => els.some((el) => {
+      const button = el.getBoundingClientRect();
+      const caption = el.querySelector('small').getBoundingClientRect();
+      return caption.left < button.left || caption.right > button.right;
+    }));
+    expect(vehicleOverflow).toBe(false);
+  });
+
+  test('search edit gives each route field a full row', async ({ page }) => {
+    await page.goto('/search.html?from=cmb-airport&to=kandy&pax=2');
+    await page.locator('#sl-edit').click();
+    const from = await page.locator('#e-from').boundingBox();
+    const to = await page.locator('#e-to').boundingBox();
+    expect(from.width).toBeGreaterThanOrEqual(250);
+    expect(to.width).toBeGreaterThanOrEqual(250);
+    expect(to.y).toBeGreaterThanOrEqual(from.y + from.height + 8);
+  });
+
+  test('footer contact and ride-board filters stay inside the viewport', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.locator('.footer').scrollIntoViewIfNeeded();
+    const email = await page.getByText('hello@ceylonhop.com', { exact: true }).boundingBox();
+    expect(email.x).toBeGreaterThanOrEqual(18);
+    expect(email.x + email.width).toBeLessThanOrEqual(302);
+
+    await page.goto('/board.html');
+    const filterSelects = page.locator('.fsel select');
+    await expect(filterSelects).toHaveCount(2);
+    const filters = await filterSelects.evaluateAll((els) => els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    }));
+    expect(filters[0].right + 8).toBeLessThanOrEqual(filters[1].left);
+    expect(filters[1].right).toBeLessThanOrEqual(302);
+  });
+
+  test('mobile text fields use an iOS-safe font size', async ({ page }) => {
+    const fontSize = (selector) => page.locator(selector).first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+
+    await page.goto('/index.html');
+    expect(await fontSize('#q-from')).toBeGreaterThanOrEqual(16);
+
+    await page.goto('/search.html?from=cmb-airport&to=kandy&pax=2');
+    await page.locator('#sl-edit').click();
+    expect(await fontSize('#e-from')).toBeGreaterThanOrEqual(16);
+
+    await gotoBooking(page);
+    expect(await fontSize('.loc-input input')).toBeGreaterThanOrEqual(16);
+
+    await page.goto('/board.html');
+    expect(await fontSize('.fsel select')).toBeGreaterThanOrEqual(16);
+  });
+});

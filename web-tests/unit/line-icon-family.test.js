@@ -63,10 +63,24 @@ describe('inlined marks are filled by their host page', () => {
       inlinedBy: ['datepicker.js'],
       selectors: [['.dp-btn svg .wp', 'dp-btn']],
     },
+    // The results page draws its marks from two files: the option cards are built in
+    // search.js, the reassurance row is static in search.html. Both are listed so the
+    // "two waypoint dots" guard covers each.
     {
       page: 'search.html',
-      inlinedBy: ['search.js'],
-      selectors: [['.route-meta svg .wp', 'route-meta']],
+      inlinedBy: ['search.js', 'search.html'],
+      selectors: [
+        ['.route-meta svg .wp', 'route-meta'],
+        // The two card headers sit on filled discs — teal for private, saffron for shared —
+        // so each needs its own fill, and the shared one cannot be saffron-on-saffron.
+        ['.opt-private .o-ico svg .wp', 'o-ico'],
+        ['.opt-shared .o-ico svg .wp', 'o-ico'],
+        ['.veh-row .v-ico svg .wp', 'v-ico'],
+        ['.incl .chip svg .wp', 'chip'],
+        ['.noshare .ns-ico svg .wp', 'ns-ico'],
+        ['.shared-meta .sm svg .wp', 'sm'],
+        ['.reassure svg .wp', 'reassure'],
+      ],
     },
   ];
 

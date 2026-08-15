@@ -945,13 +945,38 @@ function ensureRepriceEl(){
 // which only ever fires from the Where step's own map. It needs a home that's visible no matter
 // which step is open, so it lives beside the running total in the persistent summary sidebar
 // rather than beside loc-wrap.
+// …which is true of the sidebar on a DESKTOP. On a phone that same sidebar is the collapsed
+// bottom sheet (body.js-mbar, booking.html:594), so a notice parked in it renders ~500px below
+// the fold behind visibility:hidden — and it holds the only control that releases the Continue
+// gate. Owner-reported (2026-08-15): correct an out-of-area pick-up and Continue never comes
+// back. So on a phone the notice lives with the step the customer is actually looking at, and
+// because a raise can fire from ANY step it has to travel with the active panel (see goStep).
+const phoneLayout = () => document.body.classList.contains('js-mbar')
+  && window.matchMedia('(max-width:880px)').matches;
+function engineNoteHome(){
+  if(phoneLayout()){
+    const panel=document.querySelector('.panel.active');
+    // Above the step's own nav row, so it reads as the reason the CTA below it is waiting.
+    if(panel) return { parent:panel, before:panel.querySelector('.nav-btns') };
+  }
+  const total=document.querySelector('#summary .s-total');
+  if(total && total.parentNode) return { parent:total.parentNode, before:total.nextSibling };
+  const summary=document.getElementById('summary');
+  return summary ? { parent:summary, before:null } : null;
+}
 function ensureEngineRepriceEl(){
   let el=document.getElementById('engine-reprice-note');
-  if(!el){
-    el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note';
-    const total=document.querySelector('#summary .s-total');
-    if(total && total.parentNode) total.parentNode.insertBefore(el, total.nextSibling);
-    else { const summary=document.getElementById('summary'); if(summary) summary.appendChild(el); }
+  if(!el){ el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note'; }
+  const home=engineNoteHome();
+  // Re-homed on every pass, not just on create: the step (and the viewport) can move under it.
+  // Everything below is gated on the parent actually CHANGING, so an unchanged gate re-rendering
+  // (which happens on nearly every keystroke) never yanks the page around.
+  if(home && el.parentNode!==home.parent){
+    home.parent.insertBefore(el, home.before||null);
+    // In the phone layout the CTA this blocks is the sticky bar — always in view — while the
+    // notice sits at the end of a long panel. Landing it in the flow isn't enough on its own:
+    // bring it to them, or the dead button still has no visible reason beside it.
+    if(phoneLayout()) el.scrollIntoView({ block:'center' });
   }
   return el;
 }
@@ -1469,16 +1494,29 @@ function setNum(el, next){
   if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
   else el.textContent = next;
 }
+// A Google-picked place arrives as its full formatted address ("… (CMB), Airport and Aviation
+// Services (Sri Lanka) (Private) Limited, Canada Friendship Rd, Katunayake, Sri Lanka"), and the
+// summary panel printed every segment of it — five wrapped lines in the teal route box, five more
+// in the serif <h3>. CH.shortPlace is the SAME shortener ops, the pay page, the emails and plan.js
+// use (ch-shortplace.js is compiled from api/src/quote/shortPlace.ts), so the customer sees the
+// label everyone else already sees for that place.
+//
+// DISPLAY ONLY. state.locFrom/locTo keep the full string, so re-pricing, the routed-distance
+// lookup, the out-of-area guard and what we submit in the booking are all unchanged.
+function shortPlaceLabel(place){
+  return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
+}
 function render(){
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   // live route from the actual entered locations
-  const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = state.locFrom || r.stops[0];
-  const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = state.locTo || r.stops[r.stops.length-1];
+  const _from = state.locFrom || r.stops[0], _to = state.locTo || r.stops[r.stops.length-1];
+  const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = shortPlaceLabel(_from);
+  const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = shortPlaceLabel(_to);
   // keep the summary title in sync with the entered route (single transfers)
   const _sn=document.getElementById('sum-name');
   if(_sn && routeNamePrefix && !isTrip){
-    _sn.textContent = `${routeNamePrefix} · ${state.locFrom||r.stops[0]} → ${state.locTo||r.stops[r.stops.length-1]}`;
+    _sn.textContent = `${routeNamePrefix} · ${shortPlaceLabel(_from)} → ${shortPlaceLabel(_to)}`;
   }
   document.getElementById('sum-date').textContent = state.flexDate ? 'To confirm (12h before)' : (state.date ? state.date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—');
   document.getElementById('sum-time').textContent = state.flexTime ? 'To confirm (12h before)' : (state.dep ? fmtTime(state.dep) : '—');
@@ -1717,6 +1755,11 @@ window.goStep=function(n){
   });
   document.querySelectorAll('.pline').forEach((l,i)=>l.classList.toggle('done',i<n-1));
   window.scrollTo({top:0,behavior:'smooth'});
+  // An unacknowledged raise blocks EVERY step's CTA, so its notice follows the customer here
+  // rather than staying on the step it fired from (phone layout — see engineNoteHome). It runs
+  // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
+  // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
+  renderRepriceNote();
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
@@ -2519,7 +2562,7 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
     {subtree:true,attributes:true,attributeFilter:['class']});
 
   // ── bottom sheet open/close
-  function openSheet(){ aside.classList.add('open'); scrim.hidden=false; bar.classList.add('sheet-open');
+  function openSheet(){ summary.scrollLeft=0; aside.classList.add('open'); scrim.hidden=false; bar.classList.add('sheet-open');
     totBtn.setAttribute('aria-expanded','true'); document.body.classList.add('mbar-lock'); }
   function closeSheet(){ aside.classList.remove('open'); scrim.hidden=true; bar.classList.remove('sheet-open');
     totBtn.setAttribute('aria-expanded','false'); document.body.classList.remove('mbar-lock'); }

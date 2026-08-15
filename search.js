@@ -8,13 +8,42 @@ mountFooter(false);
 mountWA();
 
 const T = window.TRANSFERS;
+/* Marks drawn from the house line set (img/icons/line/) carry `class="wp"` on one filled
+   waypoint dot — the family rule. The dot renders as an invisible hairline ring unless
+   search.html fills it; every slot below has a matching `.wp{fill:…}` rule there, and
+   web-tests/unit/line-icon-family.test.js pins the pair together.
+
+   `route` and `ck` are deliberately NOT from the set: it has no plain connector arrow and no
+   tick. */
 const ICONS = {
-  car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m0 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m10 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m0 0v-4M7 17h.01M17 17h.01"/></svg>',
-  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14V7a2 2 0 0 1 2-2h9l5 5v4M3 14h18M3 14v3h2m14-3v3h-2M9 5v5h9M7 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm10 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>',
-  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM7 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm10 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9.5 12.5l5 2.5M14.6 8.6l-5.2 2.6"/></svg>',
+  /* img/icons/line/{private-car,private-van}.svg — the same body as `shared-van` with the
+     waypoint dot moved INSIDE the cabin. That swap is the whole meaning: a dot out on a dashed
+     arc is a stop on a line others ride, a dot in the cabin is your own seat. Never use
+     `shared-van` on these rows. */
+  car:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 16.5v-2.6a1 1 0 0 1 .7-1l2-.6 2.1-3a2 2 0 0 1 1.6-.8h4.8a2 2 0 0 1 1.6.8l2.1 3 2 .6a1 1 0 0 1 .7 1v2.6"/><path d="M3.9 16.5H5m4.4 0h5.4m4.4 0h1.1"/><circle cx="7.2" cy="16.8" r="1.8"/><circle cx="16.8" cy="16.8" r="1.8"/><circle class="wp" cx="12" cy="11.4" r="1.7"/></svg>',
+  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v-6a1 1 0 0 1 1-1h9l3.5 3.5H19a1 1 0 0 1 1 1v2.5"/><path d="M4.5 16.5H5m9.6 0H9.4m9.2 0h.9"/><circle cx="7.2" cy="16.8" r="1.8"/><circle cx="16.8" cy="16.8" r="1.8"/><circle class="wp" cx="8.2" cy="12.2" r="1.7"/></svg>',
+  // img/icons/line/door-to-door.svg — a single point-to-point transfer. The set's README is
+  // explicit that this, not `chauffeur`, is the point-to-point mark.
+  d2d:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg>',
+  // img/icons/line/shared-van.svg — carries both the shared card's header and the
+  // "no shared seats" note, which are mutually exclusive renders.
+  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5v-6a1 1 0 0 1 1-1h9l3.5 3.5H19a1 1 0 0 1 1 1v2.5"/><path d="M4.5 16.5H5m9.6 0H9.4m9.2 0h.9"/><circle cx="7.2" cy="16.8" r="1.8"/><circle cx="16.8" cy="16.8" r="1.8"/><path d="M4.5 5.5C8 3.9 11.5 7 15 5.4" stroke-dasharray="2.6 2.6"/><circle class="wp" cx="18.5" cy="4.8" r="1.5"/></svg>',
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
-  seat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5m-8 0h12a2 2 0 0 1 2 2v3H5v-3a2 2 0 0 1 0-4zm0 9v-2m12 2v-2"/></svg>',
-  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>',
+  // img/icons/line/travellers.svg
+  seat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.5 20c0-3.2 2.5-5.3 5.5-5.3s5.5 2.1 5.5 5.3"/><path d="M15.5 12.6c2.9 0 5 2.1 5 5.1"/><circle class="wp" cx="16.7" cy="7.5" r="2"/></svg>',
+  // img/icons/line/pickup.svg
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>',
+  /* The private-transfer promises — img/icons/line/{flexi-time,your-line,rate-lock}.svg.
+     Deliberately NOT `chauffeur` for "private to your group": booking.html:735 uses that mark
+     for the chauffeur PRODUCT, one click further on, and the set's README keeps the two apart
+     on purpose. Reusing it here would advertise a different service. */
+  flexi:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>',
+  stops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg>',
+  // img/icons/line/{closes-soon,live-count}.svg — the shared service's departure and its
+  // seat availability.
+  departs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.6 1.8"/><path d="M9.5 3h5"/><path d="M17.5 5.5l1.5 1.5" stroke-dasharray="2 2.6"/><circle class="wp" cx="12" cy="13" r="1.3"/></svg>',
+  avail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h3.6l2.2-5.4 3.8 9.8 2.3-5.6"/><path d="M17.5 11.8h3" stroke-dasharray="2.2 2.6"/><circle class="wp" cx="15" cy="11.8" r="1.6"/></svg>',
   route:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h7"/></svg>',
   // img/icons/line/trip-date.svg — the datepicker button sits ~150px below this row and now
   // carries the same mark; two different calendars that close together read as a mistake.
@@ -218,7 +247,7 @@ function privateCardHtml() { return `
   <article class="opt opt-private">
     <span class="tag-top">Most flexible · recommended</span>
     <div class="o-head">
-      <div class="o-ico">${ICONS.car}</div>
+      <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
@@ -237,10 +266,10 @@ function privateCardHtml() { return `
       </div>
     </div>
     <div class="incl">
-      <span class="chip">${ICONS.ck} Private to your group</span>
-      <span class="chip">${ICONS.ck} Pick your own time</span>
-      <span class="chip">${ICONS.ck} Stops on request</span>
-      <span class="chip">${ICONS.ck} Fixed price, no meter</span>
+      <span class="chip">${ICONS.seat} Private to your group</span>
+      <span class="chip">${ICONS.flexi} Pick your own time</span>
+      <span class="chip">${ICONS.stops} Stops on request</span>
+      <span class="chip">${ICONS.lock} Fixed price, no meter</span>
     </div>
   </article>`; }
 
@@ -251,7 +280,7 @@ function privateSkeletonHtml() { return `
   <article class="opt opt-private is-pending" aria-busy="true">
     <span class="tag-top">Most flexible · recommended</span>
     <div class="o-head">
-      <div class="o-ico">${ICONS.car}</div>
+      <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
@@ -275,7 +304,7 @@ function privateSkeletonHtml() { return `
 function unpricedHtml() { return `
   <article class="opt opt-private opt-unpriced">
     <div class="o-head">
-      <div class="o-ico">${ICONS.car}</div>
+      <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">We couldn't work out a live price for ${dispFrom} → ${dispTo} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
@@ -303,8 +332,8 @@ if (shared) {
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
-      <div class="sm">${ICONS.clock} Departs ${timeStr} · ${shared.freqText}</div>
-      <div class="sm">${ICONS.seat} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
+      <div class="sm">${ICONS.departs} Departs ${timeStr} · ${shared.freqText}</div>
+      <div class="sm">${ICONS.avail} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
       <span class="chip">${ICONS.ck} AC car or van</span>
