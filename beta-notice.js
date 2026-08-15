@@ -22,6 +22,32 @@
 
   var lastFocus = null;      // returned to on close, so a keyboard user lands where they were
   var priorOverflow = '';
+  var priorScrollY = 0;
+
+  /* iOS Safari keeps touch-scrolling the page under an overlay even with body
+     overflow:hidden, so the lock is position:fixed on the body, offset by the current
+     scroll so the page doesn't visually snap to the top. */
+  function lockScroll() {
+    priorScrollY = window.pageYOffset || 0;
+    var s = document.body.style;
+    priorOverflow = s.overflow;
+    s.overflow = 'hidden';
+    s.position = 'fixed';
+    s.top = -priorScrollY + 'px';
+    s.left = '0';
+    s.right = '0';
+    s.width = '100%';
+  }
+  function unlockScroll() {
+    var s = document.body.style;
+    s.overflow = priorOverflow;
+    s.position = '';
+    s.top = '';
+    s.left = '';
+    s.right = '';
+    s.width = '';
+    try { window.scrollTo(0, priorScrollY); } catch (e) {}
+  }
 
   function el() { return document.querySelector('.ch-beta'); }
 
@@ -31,7 +57,7 @@
     remember();
     document.removeEventListener('keydown', onKey, true);
     if (box.parentNode) box.parentNode.removeChild(box);
-    document.body.style.overflow = priorOverflow;
+    unlockScroll();
     if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
   }
 
@@ -92,8 +118,7 @@
         '</div>' +
       '</div>');
 
-    priorOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockScroll();
 
     var box = el();
     box.addEventListener('click', function (e) { if (e.target === box) dismiss(); });

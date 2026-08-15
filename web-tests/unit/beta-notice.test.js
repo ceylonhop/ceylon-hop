@@ -2,7 +2,7 @@
 // The first-visit beta notice. It is the first thing a visitor arriving from the old site sees,
 // so the bar is: it must appear once, go away for good when dismissed, and never be able to trap
 // someone on the page — including when localStorage throws, which is Safari private mode.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,5 +104,44 @@ describe('beta notice', () => {
     run();
     button().click();
     expect(document.body.style.overflow).not.toBe('hidden');
+  });
+
+  // iOS Safari ignores body{overflow:hidden} for touch scrolling, so the page kept moving
+  // under the sheet (owner-reported 2026-08-15). The reliable lock is position:fixed on the
+  // body, offset by the scroll position so the page doesn't visually jump to the top.
+  describe('scroll lock that also holds on iOS', () => {
+    let scrollTo;
+    beforeEach(() => {
+      scrollTo = window.scrollTo;
+      window.scrollTo = () => {};
+    });
+    afterEach(() => { window.scrollTo = scrollTo; });
+
+    it('pins the body with position:fixed while open, offset by the scroll position', () => {
+      Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 480 });
+      try {
+        run();
+        expect(document.body.style.position).toBe('fixed');
+        expect(document.body.style.top).toBe('-480px');
+        expect(document.body.style.width).toBe('100%');
+      } finally {
+        Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 0 });
+      }
+    });
+
+    it('unpins the body and returns to the same scroll position on dismiss', () => {
+      Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 480 });
+      const calls = [];
+      window.scrollTo = (...a) => calls.push(a);
+      try {
+        run();
+        button().click();
+        expect(document.body.style.position).toBe('');
+        expect(document.body.style.top).toBe('');
+        expect(calls).toContainEqual([0, 480]);
+      } finally {
+        Object.defineProperty(window, 'pageYOffset', { configurable: true, value: 0 });
+      }
+    });
   });
 });

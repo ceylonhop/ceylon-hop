@@ -50,7 +50,11 @@ test('an engine-priced route shows a price for each vehicle', async ({ page }) =
   await expect(page.locator('.opt-private .veh-row').nth(1)).toContainText('$210');
   // the route header states the measured distance the engine came back with
   await expect(page.locator('#route-meta')).toContainText('~271 km');
-  await expect(page.locator('#route-title')).toContainText(UNKNOWN);
+  // The title states the SHORT display label ("pasikudah · Kalkudah"), not the full Google
+  // address — on a phone the full formatted address set in display serif is a wall of text.
+  // The full name still travels in the URL and the estimate intent (asserted in the next test).
+  await expect(page.locator('#route-title')).toContainText('pasikudah · Kalkudah');
+  await expect(page.locator('#route-title')).not.toContainText('Sri Lanka');
   // and the skeleton is gone
   await expect(page.locator('.opt-private.is-pending')).toHaveCount(0);
 });
