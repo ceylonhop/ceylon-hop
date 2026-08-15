@@ -163,6 +163,33 @@ has already been sent.
 - **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`), ✅ **refund** (`/refund`), ✅ **pre-trip reminder + thank-you/review request** (M14 scheduler — `POST /admin/jobs/notifications`), and (PR #35) ✅ **booking confirmed** (`/confirm`), ✅ **no-show** (`/no-show`), ✅ **awaiting details** (auto on paid+flexible), ✅ **payment-didn't-complete recovery** (watchdog sweep) now built + branded. Test them via §4a before deploy. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), booking-modified, no-availability. (Tracked in the agent's email roadmap notes.)
 - **M11** pricing engine + quoting tool + quote lifecycle ✅ **MERGED to main 2026-07-02** (PRs #1–#4: engine, tool, Postgres quotes, Ops Quote Generator). Remaining M11 scope: wire the engine into the PUBLIC booking flow (GL-3 above) and web-channel quote capture (deferred). · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers (pre-trip reminder + review request ✅ shipped via the scheduler; remaining: balance-due reminders, "confirm your details" nudges, SLA timers) · **M15** reporting/CSV export.
 
+### AT CUTOVER: make the e2e job a required check (owner decision 2026-08-15 — deliberately deferred)
+
+**One toggle in branch protection: add `web-tests e2e (offline)` to main's required checks.** Nothing
+to build; the job has run on every PR since #438 and has been green on `main` since #481.
+
+**Why it is advisory today, by choice and not by oversight.** The four incidents that motivated the
+job (PRs #92, #357/#360, #430) were all **stale tests, not broken product** — a spec referencing
+`#pax` after a rename, that sort of thing. Enforcing it now would mostly block merges over test
+drift, at ~8 minutes per PR across several concurrent sessions, to catch a class of problem a human
+notices in ten. It would also not have caught the two real near-misses of 2026-08-14 (a `ci.yml`
+job silently replaced by a stale branch; the unversioned beta-notice key that hid the redesign from
+anyone who dismissed the original) — both were review failures, not test failures. And the advisory
+job already shows red on the PR: "required" adds only enforcement, which matters exactly when
+people stop reading it.
+
+**Why that answer flips at cutover.** WordPress still serves customers today, so a regression here
+costs a bad staging demo. Once `prod.ceylonhop.com` is the live site it costs bookings, and 8
+minutes a PR is obviously cheap against that.
+
+**Flip it sooner if** a red advisory run ever gets merged past — that is the signal that nobody is
+reading it.
+
+**Worth doing first:** the job runs `--workers=2`. That cap was a mitigation for flakiness whose
+root cause was fixed in #452 (an empty `/admin/quote/estimate` stub throwing inside `render()`), so
+`--workers=4` should be safe now and roughly halves the wall clock. Prove it over a few real runs
+before promoting the check, so the gate people cannot bypass is also the fast one.
+
 ### Owner pricing decisions (2026-07-02) — recorded so launch work doesn't re-ask
 - **The engine rate card is the pricing truth** (`api/src/quote/rateCard.ts`) — treat that file as authoritative, not any numbers restated here. Prices are now computed **cost-plus-margin** (cost/km + 15% margin, 2026-07-11) and the front-end price tables are **code-generated** from the rate card (`npm run generate`, 2026-07-09); the previously-recorded 46¢/83¢/55¢ figures are superseded. Deposit 10% capped $50.
 - **Van 14 / Custom are custom-priced per quote** — the operator sets $/km in the quote tool (rate-card 130¢/175¢ are prefill defaults only).
