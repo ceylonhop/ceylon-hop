@@ -411,28 +411,39 @@
      Falls back to a plain swap when the shapes differ (e.g. "$—" → "$72.50"), because
      there is no sensible number to count from. */
   const NUM = /\d[\d,]*\.?\d*/g;
+  /* Stop any count still owed to this element and release BOTH its handles. The backstop below
+     is a setTimeout, so nulling the handle without clearing it leaves a live timer that fires up
+     to 80ms later and rewrites the string that count was headed for — and, its handle now lost,
+     nothing can cancel it. That was harmless for as long as every write was a number replacing
+     the same number, but it silently overwrote the FIRST caller to swap a figure for a word
+     (booking.js's "Calculating…" while a fresh price is in flight). Every path that writes
+     textContent and returns must come through here, not just the ones that started a count. */
+  function stopTween(el){
+    if(el._chTween) cancelAnimationFrame(el._chTween);
+    if(el._chTweenT) clearTimeout(el._chTweenT);
+    el._chTween = null; el._chTweenT = null;
+  }
   function tweenNumber(el, fromText, toText, opts){
     opts = opts || {};
     if(!el) return;
-    if(reduce() || fromText == null){ el.textContent = toText; return; }
+    if(reduce() || fromText == null){ stopTween(el); el.textContent = toText; return; }
     const a = String(fromText).match(NUM), b = String(toText).match(NUM);
-    if(!a || !b || a.length !== b.length){ el.textContent = toText; return; }
+    if(!a || !b || a.length !== b.length){ stopTween(el); el.textContent = toText; return; }
     const av = a.map(n=>parseFloat(n.replace(/,/g,'')));
     const bv = b.map(n=>parseFloat(n.replace(/,/g,'')));
-    if(av.every((v,i)=>v===bv[i])){ el.textContent = toText; return; }
+    if(av.every((v,i)=>v===bv[i])){ stopTween(el); el.textContent = toText; return; }
     // A stalled tween must never be able to leave a WRONG PRICE on screen. requestAnimationFrame
     // does not run in a background tab, so a traveller who switches tabs mid-count and comes
     // back to a re-rendered page could otherwise be looking at the old vehicle's figure. Two
     // guards: don't start a count we know can't run, and back every count with a timer that
     // writes the true value regardless of whether a single frame ever fired.
-    if(document.hidden){ el.textContent = toText; return; }
+    if(document.hidden){ stopTween(el); el.textContent = toText; return; }
     const dp = b.map(n=>(n.split('.')[1]||'').length);
     const dur = opts.duration || 420, t0 = performance.now();
     if(el._chTween) cancelAnimationFrame(el._chTween);
     if(el._chTweenT) clearTimeout(el._chTweenT);
     const land = () => {
-      if(el._chTween) cancelAnimationFrame(el._chTween);
-      el._chTween = null; el._chTweenT = null;
+      stopTween(el);
       el.textContent = toText;                 // the exact string, never a rounded rebuild of it
     };
     el._chTweenT = setTimeout(land, dur + 80); // backstop: the figure is correct even with zero frames

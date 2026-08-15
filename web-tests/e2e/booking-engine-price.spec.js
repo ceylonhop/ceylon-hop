@@ -305,6 +305,99 @@ test('a raise with no product or vehicle change is still gated', async ({ page }
   await expect(page.locator('#sum-total')).toHaveText('$100');
 });
 
+// The in-flight window. Changing a priced itinerary (service, vehicle, pax, a re-pinned spot)
+// makes engineEst stale, and calcTotal() used to fall straight through to the LOCAL formula for
+// the ~1.2s until the new estimate landed — a figure that is the OFFLINE FALLBACK, not anything
+// the customer was ever quoted. On a trip the drop is dramatic (the local chauffeur formula
+// prices the browser's static km table, not the engine's measured distances), so the total
+// visibly counted DOWN to a number we would not honour and then back up. The summary now says
+// what is actually happening instead of showing a price nobody quoted.
+const TRIP_QUERY = [
+  'mode=trip',
+  'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
+  'nights=0,1,0',
+  'dates=2026-08-08,2026-08-10',
+  'pax=2',
+  'vehicle=car',
+].join('&');
+
+// Records every value #sum-total takes from here on, so an intermediate figure that exists for
+// only a frame can't hide between two assertions. Install BEFORE the interaction under test.
+async function watchTotal(page) {
+  await page.evaluate(() => {
+    const el = document.getElementById('sum-total');
+    window.__seenTotals = [el.textContent];
+    new MutationObserver(() => window.__seenTotals.push(el.textContent))
+      .observe(el, { childList: true, characterData: true, subtree: true });
+  });
+}
+// Every numeric value seen. "Calculating…" carries no digits, so it drops out here rather than
+// parsing as a bogus figure.
+async function seenNumbers(page) {
+  const seen = await page.evaluate(() => window.__seenTotals);
+  return seen
+    .map((t) => parseFloat(String(t).replace(/[^0-9.]/g, '')))
+    .filter((n) => !Number.isNaN(n));
+}
+
+test('an in-flight re-estimate says so instead of showing the local fallback figure', async ({ page }) => {
+  // Both engine figures sit ABOVE this trip's local chauffeur formula ($226, measured — the
+  // local private figure is $112.50). That's what makes the bound below meaningful: a tween
+  // frame between $300 and $250 can never fall under $250, so anything that does is the local
+  // formula leaking through, not the count itself.
+  await gotoBooking(page, {
+    query: TRIP_QUERY,
+    estimate: {
+      respond: (intent) => (intent.product === 'chauffeur'
+        ? { totalCents: 25000, delayMs: 900 }
+        : { totalCents: 30000 }),
+    },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$300');
+
+  await watchTotal(page);
+  await page.locator('[data-svc="chauffeur"]').click();
+
+  // In flight: the total, and the Due now figure beside it on the payment step, both say the
+  // price is being worked out rather than each showing a different number.
+  await expect(page.locator('#sum-total')).toHaveText(/Calculating/);
+  await expect(page.locator('#pay-due .amt')).toHaveText(/Calculating/);
+
+  // Settles on the engine's chauffeur figure (lower than the private one, so it applies
+  // silently — the raise-acknowledge gate is a different spec's job).
+  await expect(page.locator('#sum-total')).toHaveText('$250');
+  await expect(page.locator('#pay-due .amt')).toHaveText('$250');
+
+  // The whole journey from $300 to $250 never dipped below the pair — no third figure.
+  const nums = await seenNumbers(page);
+  expect(Math.min(...nums)).toBeGreaterThanOrEqual(250);
+});
+
+test('an estimate that fails mid-change hands the total to the local fallback, not a stale engine figure', async ({ page }) => {
+  // A 500 (transient) rather than a 404: a 404 latches CH_PRICING off for the whole session,
+  // which is the flag-off world two specs above already pin. Here the engine is meant to be on
+  // and simply fails this one request — the moment we genuinely HAVE lost it, so the local
+  // formula is the honest number to fall back to and holding $300 would strand a price for an
+  // itinerary the customer no longer has.
+  await gotoBooking(page, {
+    query: TRIP_QUERY,
+    estimate: {
+      respond: (intent) => (intent.product === 'chauffeur'
+        ? { status: 500, delayMs: 700 }
+        : { totalCents: 30000 }),
+    },
+  });
+  await expect(page.locator('#sum-total')).toHaveText('$300');
+
+  await page.locator('[data-svc="chauffeur"]').click();
+  await expect(page.locator('#sum-total')).toHaveText(/Calculating/);
+
+  // $226 is this trip's local chauffeur formula — the fallback taking over, as it does with the
+  // flag off entirely. Pay is released too: there is no longer an estimate to wait for.
+  await expect(page.locator('#sum-total')).toHaveText('$226');
+  await expect(page.locator('#pay-due .amt')).toHaveText('$226');
+});
+
 test('the engine timing out never suppresses the local reprice notice (engine must have actually answered, not merely "not yet 404")', async ({ page }) => {
   // The estimate endpoint never settles within ch-pricing.js's own 3s abort — a timeout, not a
   // flag-off 404. window.CH_PRICING.available() stays true the whole time (only a 404 latches it

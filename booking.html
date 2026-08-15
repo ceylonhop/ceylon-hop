@@ -531,6 +531,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-div{height:1px;background:var(--line);margin:8px 0}
   .s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
   .s-total b{font-family:var(--display);font-size:1.7rem}
+  /* While a fresh engine estimate is in flight the total is a STATUS, not a price, so it drops
+     the display face and the price weight — at 1.7rem "Calculating…" would also wrap the row.
+     Same rule serves #pay-due's amount and the sticky bar's mirror of this figure. The pulse is
+     decoration only: anyone who asked for less motion still gets the words. */
+  .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
+    font-family:inherit;font-size:.92rem;font-weight:600;color:var(--ink-soft)}
+  @media (prefers-reduced-motion:no-preference){
+    .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
+      animation:chPricing 1.15s ease-in-out infinite}
+  }
+  @keyframes chPricing{0%,100%{opacity:.5}50%{opacity:1}}
   .s-perks{margin-top:14px;display:grid;gap:6px;font-size:.78rem;color:var(--ink-soft)}
   .s-perks div{display:flex;gap:.4rem;align-items:center}.s-perks svg{width:13px;height:13px;color:var(--teal-deep);flex:none}
 
@@ -1016,7 +1027,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
 </div>
 
-<script src="site.js?v=c736419c0c"></script>
+<script src="site.js?v=c684c8b62f"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=83197e77d0"></script>
 <script src="transfers-data.js?v=a7eaed83fa"></script>
@@ -1026,6 +1037,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
-<script src="booking.js?v=4f7409ab1d"></script>
+<script src="booking.js?v=20f3cc434e"></script>
 </body>
 </html>
