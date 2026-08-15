@@ -43,9 +43,19 @@ const geometry = (page) =>
       kids.reduce((a, k) => a + k.getBoundingClientRect().width, 0) +
       (kids.length - 1) * parseFloat(cs.gap || 0);
     const tops = [...new Set(kids.map((k) => Math.round(k.getBoundingClientRect().top)))];
+    /* Ask the text itself how many lines it occupies, rather than inferring it from the
+       item's height. The height heuristic this replaces (`height > lineHeight * 1.6`) was
+       really measuring the ICON box — a 26px icon plus its padding clears that threshold on
+       its own — so it reported all five labels wrapped on CI while visualRows was 1 and the
+       row didn't overflow. A Range over the label's text node produces one client rect per
+       line it is laid out on, which is the actual question. */
     const wrappedLabels = kids.filter((k) => {
-      const lh = parseFloat(getComputedStyle(k).lineHeight) || 20;
-      return k.getBoundingClientRect().height > lh * 1.6;
+      const text = [...k.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+      if (!text) return false;
+      const r = document.createRange();
+      r.selectNodeContents(text);
+      const lines = new Set([...r.getClientRects()].map((x) => Math.round(x.top)));
+      return lines.size > 1;
     }).length;
     return {
       items: kids.length,
