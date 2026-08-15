@@ -433,9 +433,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ph-secure svg{width:13px;height:13px}
 
   .pay-summary-row{display:flex;justify-content:space-between;align-items:baseline;background:var(--cream-deep);border-radius:12px;padding:14px 16px;margin-bottom:18px}
-  .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft)}
-  .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem}
-  .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem}
+  /* Money wins the width fight, and the label gives way. Both were shrinkable flex items, so
+     a long route name ("… → Ratmalana Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri
+     Lanka") squeezed the amount's box under its own text and the figure spilled out over the
+     panel's rounded edge — measured at 375px: a 34px box holding 67px of "$87.50", and 16px
+     holding 61px with a full Google address. `min-width:0` lets the label wrap instead (it
+     already has room to, its route name is display:block); `flex:none` + `nowrap` mean the
+     price can neither shrink nor break across two lines. */
+  .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft);min-width:0}
+  .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem;overflow-wrap:anywhere}
+  .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem;flex:none;white-space:nowrap}
   .pay-summary-row .amt small{display:block;font-family:var(--body);font-weight:500;font-size:.72rem;color:var(--ink-soft);text-align:right}
   .pay-choice{display:grid;gap:8px;margin-bottom:18px}
   .pay-choice .pc-opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s}
