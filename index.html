@@ -17,23 +17,29 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css?v=b3b9aecc47">
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js"></script>
-<script src="consent.js" defer></script>
+<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="consent.js?v=db789988e1" defer></script>
+<script src="beta-notice.js?v=8d367ffcc8" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<script src="tweaks.js"></script>
-<script src="datepicker.js"></script>
+<script>
+/* Wake a cold API instance while the visitor reads — prices come from it. Fire-and-forget:
+   a failure here must never surface, and never blocks rendering. */
+(function(){try{fetch((window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com')+'/health',{method:'GET',cache:'no-store'}).catch(function(){})}catch(e){}})();
+</script>
+<script src="tweaks.js?v=26d58fe065"></script>
+<script src="datepicker.js?v=9c0f3578dc"></script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94779669662","priceRange":"$$","sameAs":["https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html"]}</script>
 <style>
   /* ---- Hero ---- */
@@ -143,7 +149,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-pc .pc-frame{position:absolute;inset:0;padding:0;background:none;border-radius:0;box-shadow:none}
   .hero-pc .pc-img{position:absolute;inset:0;aspect-ratio:auto;border-radius:0;overflow:hidden;
      background:radial-gradient(120% 100% at 82% 0%, #124440, transparent 62%), linear-gradient(160deg,#0f3d39 0%,#092523 72%)}
-  .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
+  /* All hero photos live in one layer so the full-bleed variant and the parallax have a
+     single thing to move — they used to address #hero-photo directly, which would have left
+     slides 2 and 3 behind in the postcard. */
+  .pc-photos{position:absolute;inset:0;will-change:transform}
+  .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+  /* The extra slots are empty until someone drops a photo in. A visitor has no editing
+     runtime and must never see an empty slot's placeholder ring stacked over the real hero
+     photo; the author must, because that IS how a slot gets filled. */
+  .pc-photos image-slot:not([data-filled]):not([data-editable]){display:none}
+  /* Cross-fade, armed only once there are at least two photos to fade BETWEEN. Until then no
+     opacity is set at all, so a one-photo hero — and a hero whose JS never ran — is simply
+     the opaque slot it has always been. */
+  .pc-photos.hs-live image-slot{opacity:0;transition:opacity .9s ease}
+  .pc-photos.hs-live image-slot.hs-on{opacity:1}
+  @media(prefers-reduced-motion:reduce){.pc-photos.hs-live image-slot{transition:none}}
+  .hero-dots{display:flex;gap:9px;align-items:center}
+  .hero-dots[hidden]{display:none}
+  .hero-dots button{width:10px;height:10px;padding:0;border-radius:50%;cursor:pointer;
+    border:1.5px solid rgba(255,255,255,.9);background:transparent;transition:background .3s ease}
+  .hero-dots button[aria-current="true"]{background:#fff}
+  .hero-dots button:focus-visible{outline:2px solid #fff;outline-offset:3px}
   /* postcard chrome retired in the immersive presentation — elements stay in the DOM */
   .hero-pc .pc-cap,.hero-pc .pc-stamp,.hero-pc .postmark,.hero-pc .route-doodle,.hero-pc .pc-pin{display:none}
   .pc-pin[hidden]{display:none}
@@ -241,7 +267,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .book-go:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 20px 40px -14px rgba(236,58,36,.65), inset 0 1px 0 rgba(255,255,255,.28)}
   .book-go:active{transform:translateY(1px)}
   .book-go:focus-visible{outline:3px solid rgba(236,58,36,.4);outline-offset:2px}
-  .book-go[disabled]{opacity:.55;cursor:not-allowed;transform:none;filter:none}
   /* Not-ready-yet, but still pressable. Reads as "there's a step left" rather than "this control
      is dead": softer than the live button, but it keeps its pointer and its hover, and pressing
      it runs goBook()'s validation, which names the missing field and focuses it. */
@@ -265,27 +290,46 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      Trimmed on three axes — 28px icons, 18px gaps, .82rem type — which brings it to
      ~1135px. justify-content:center is the safety net: if a translation or a longer
      label ever pushes it over again, the wrapped row centres and reads as deliberate
-     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
-  .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
+     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js.
+
+     gap is 12px, not 16px, because the row must also survive being measured BEFORE Poppins
+     arrives. Until it does, each platform substitutes its own sans: Apple's is narrower than
+     Poppins, but Linux's and many Androids' are ~3.7% WIDER — 1136px against the 1152px box,
+     i.e. 16px from wrapping. Four gaps × 4px buys that margin back, and it costs nothing once
+     the webfont lands. The real cure is metrics-matched fallback @font-face for Poppins, the
+     way 'CH Bodoni' does it in site.css; this is the cheap half. */
+  .trust-row{display:flex;align-items:center;justify-content:center;gap:12px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
   .trust-row .item{display:flex;align-items:center;gap:.55rem}
-  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:var(--teal);background:rgba(var(--accent-rgb),.13);border-radius:50%}
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
      Set this lower and you get the worst case: a wrapped row still justified apart, so
      the orphan hangs at the left edge — which is exactly how this bug looked. */
-  @media(min-width:1160px){ .trust-row{justify-content:space-between} }
-  /* Between the one-line width and the mobile scroll strip, free wrapping puts four
-     items up and one alone underneath. Three columns splits five as 3 + 2 instead, and
-     the aligned columns read as a deliberate grid rather than a broken row. */
-  @media(min-width:951px) and (max-width:1159px){
-    .trust-row{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 18px;padding-block:16px}
+  @media(min-width:1201px){ .trust-row{justify-content:space-between} }
+  /* Between the one-line width and the scroll strip the row used to become a 3-column and
+     then a 2-column grid — which IS the "five items, two rows" stack this strip is meant to
+     avoid; it just made the stack tidy. It scales instead: one line, with type, icons and
+     gaps shrinking together, so the row never gains a second row on the way down.
+     Every number here is sized against the WIDER of the two fonts this row is ever set in.
+     The pre-webfont fallback sets ~3.7% wider on Linux and Android than Poppins, and CI runs
+     in it, so a band tuned on Poppins alone breaks there — as it did: `flex-wrap:nowrap` kept
+     the ROW on one line and pushed every label into two lines inside it instead. Measured
+     widths (Poppins → fallback ×1.037): .82rem/26px icons = 1079 → 1119; .76/22 = 1006 →
+     1043; .70/20 = 926 → 960. Against a content box of viewport−48 that means .82rem stops
+     fitting at 1200, not 1160, which is where the band now starts.
+     It stops at 1040 because that is where the shrinking stops being honest: 960 against a
+     992px box leaves nothing, and any narrower the type has to go under 11px — smaller than
+     anything else on the site — so the horizontal strip below takes over instead.
+     Labels are nowrap: a shrinking row must never buy its single line by double-decking the
+     text. If the sizing above is ever wrong the row overflows, which the spec catches
+     loudly, rather than quietly restacking. */
+  @media(min-width:1041px) and (max-width:1200px){
+    .trust-row{flex-wrap:nowrap;
+      font-size:clamp(.7rem, 1.21vw - .086rem, .82rem);
+      gap:clamp(8px, 2.52vw - 18.19px, 12px)}
+    .trust-row .item{white-space:nowrap}
+    .trust-row svg{width:clamp(20px, 3.77vw - 19.29px, 26px);height:clamp(20px, 3.77vw - 19.29px, 26px);padding:5px}
   }
-  /* Below ~950 a third column squeezes cells under 280px and the longest label
-     ("Free cancellation up to 24h before") wraps to two lines inside its cell. Two
-     columns keeps every label on one line. */
-  @media(min-width:761px) and (max-width:950px){
-    .trust-row{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 18px;padding-block:16px}
-  }
-  @media(max-width:760px){
+  @media(max-width:1040px){
     .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding-block:15px 17px;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .trust-row::-webkit-scrollbar{display:none}
@@ -419,6 +463,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
   .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1.05rem;flex:none}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
+  /* the attribution has to read as a real link back to the listing, not as body text —
+     it is what lets a reader check the quote, so it must not disappear into the muted line */
+  .rev .who span a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
+  .rev .who span a:hover{color:var(--accent-deep);text-decoration-color:currentColor}
   .rev .post-stamp{position:absolute;top:16px;right:16px}
 
   /* refined glass trust badge over the photo */
@@ -449,12 +497,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="hero-scrim"></div>
   <div class="wrap hero-inner">
     <div class="hero-copy">
-    <!-- Review count appears here AND in the reviews section below (and in board.js TA_REVIEWS).
-         Keep all three in step; the figure must match the live Tripadvisor listing. -->
-    <a class="hero-badge" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 30 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· 30 reviews</span></a>
+    <!-- Review count comes from ta-data.js — change it there, not here. These stay as
+         static text so crawlers still read the figure; ta-data.js only refreshes them. -->
+    <a class="hero-badge" data-ta-count-label href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 31 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· <span data-ta-count>31</span> reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
       <p class="hero-note">Fixed prices · Free cancellation up to 24h before · No change fees</p>
+      <!-- Carousel controls live in the copy column, not on the photo: the photo layer sits in
+           the postcard figure at z-index 0, underneath the hero scrim, so anything placed there
+           is unclickable no matter its own z-index. Here they are always reachable, and they
+           never collide with the booking card at any width. Hidden until a 2nd photo exists. -->
+      <div class="hero-dots" id="hero-dots" role="group" aria-label="Choose a hero photo" hidden></div>
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
@@ -480,7 +533,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <input id="q-to" required placeholder="Where to?"></div>
           <div id="mid-stops"></div>
         </div>
-        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
+        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> <span id="add-stop-label">Add a stop</span></button>
         <p class="bk-error full" id="bk-error" role="alert" hidden></p>
         <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
       </form>
@@ -489,7 +542,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <figure class="hero-postcard" id="hero-postcard">
       <div class="pc-frame">
         <div class="pc-img" id="pc-img">
-          <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+          <div class="pc-photos" id="pc-photos">
+            <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+            <image-slot id="hero-photo-2" shape="rect" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
+            <image-slot id="hero-photo-3" shape="rect" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+          </div>
           <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
         </div>
         <figcaption class="pc-cap">wish you were here? you can be&hellip;</figcaption>
@@ -592,7 +649,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
       <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
-      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ 30 reviews on Tripadvisor ↗</a>
+      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ <span data-ta-count>31</span> reviews on Tripadvisor ↗</a>
     </div>
     <div class="grid cols-3" id="reviews"></div>
   </div>
@@ -611,11 +668,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <div data-footer></div>
 
-<script src="site.js"></script>
-<script src="tours-data.js"></script>
-<script src="transfers-data.js"></script>
-<script src="ch-map.js"></script>
-<script src="image-slot.js"></script>
+<script src="site.js?v=c736419c0c"></script>
+<script src="ta-data.js?v=8b2b56a308"></script>
+<script src="tours-data.js?v=953bf693f8"></script>
+<script src="transfers-data.js?v=a7eaed83fa"></script>
+<script src="ch-map.js?v=ddde78533b"></script>
+<script src="image-slot.js?v=f20592da50"></script>
 <script>
   const __heroV=(window.__tweaks&&window.__tweaks.read().hero)||'postcard';
   // The hero is the immersive full-bleed photo, so the nav sits on a dark image:
@@ -681,17 +739,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // reviews
   const STAR='<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
   const AVC=['var(--teal)','var(--saffron)','var(--tomato)'];
-  const reviews=[
-    ['Maya','Germany','9-stop island trip','Honestly the easiest way to see Sri Lanka solo. Met three of my now-best travel friends in the van and the driver felt like a local big brother.'],
-    ['Tom & Elise','Australia','Private Galle transfer','We changed our plans twice and the team just sorted it on WhatsApp. AC van was spotless — and so much cheaper than the private quotes we got.'],
-    ['Priya','Canada','Ella → Arugam Bay','Booked the night before, confirmed in minutes. On time, comfy ride through the hills. We’re using Ceylon Hop for the whole trip now.']
-  ];
-  document.getElementById('reviews').innerHTML = reviews.map(([name,country,trip,txt],i)=>`
+  // Real reviews, verbatim from ta-data.js — quoted in quotation marks and stamped with the
+  // reviewer's name and the review's own date, linking back so any of it can be checked.
+  document.getElementById('reviews').innerHTML = TA.quotes.map((r,i)=>`
     <div class="card rev reveal">
       <div class="qmark">&ldquo;</div>
-      <p>${txt}</p>
+      <p>&ldquo;${r.text}&rdquo;</p>
       <div class="stars">${STAR.repeat(5)}</div>
-      <div class="who"><div class="av" style="background:${AVC[i%3]}">${name[0]}</div><div><b>${name} · ${country}</b><br><span>${trip}</span></div></div>
+      <div class="who"><div class="av" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><a href="${TA.url}" target="_blank" rel="noopener">Review on Tripadvisor</a> · ${r.written}</span></div></div>
     </div>`).join('');
 
   // blog
@@ -759,20 +814,43 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const rows=[...mids.querySelectorAll('.mid-stop')];
       const n=rows.length;
       odGroup.classList.toggle('has-stops', n>0);
-      // last field is always the final destination; everything before it is a numbered stop
+      // last field is always the final destination; everything before it is a numbered stop.
+      // The PLACEHOLDERS have to move with the labels, not stay where they were written.
+      // Adding a stop turns the drop-off field into "Stop 2" — but it kept asking "Where to?",
+      // which reads as the end of the journey, while the row that had genuinely become the
+      // drop-off invited "Where to next?". Someone filling the form top-to-bottom on the hint
+      // text alone put their destination in the middle and then met a field asking for a place
+      // after it. "Where to?" is this site's phrasing for a final stop (it's what the field says
+      // in single-transfer mode), so it belongs on whichever row is currently last.
       if(toLabel) toLabel.textContent = n>0 ? 'Stop 2' : 'Drop-off';
+      if(to) to.placeholder = n>0 ? 'Where to next?' : 'Where to?';
       rows.forEach((row,i)=>{
         const last=i===n-1;
         row.querySelector('label').textContent = last ? 'Drop-off' : ('Stop '+(i+3));
         const input=row.querySelector('input');
-        if(input) input.placeholder = last ? 'Where to next?' : 'Add a place along the way…';
+        if(input) input.placeholder = last ? 'Where to?' : 'Add a place along the way…';
       });
+      syncAddStop();
+    }
+    /* The hero card is a good place to SKETCH a trip and a bad place to build an itinerary:
+       past five places the rows crowd the card, and the planner — which has room, dates and
+       per-leg pricing — is the tool that does this well. So at three mid-stops the button
+       stops growing the card and hands the trip over instead, carrying everything typed so
+       far. The internal cap of 8 in addMid() stays as a guard; it's simply unreachable from
+       here now. */
+    const INLINE_MID_MAX=3;
+    const addStopLabel=document.getElementById('add-stop-label');
+    function handsOffToPlanner(){ return midCount()>=INLINE_MID_MAX; }
+    function syncAddStop(){
+      const over=handsOffToPlanner();
+      if(addStopLabel) addStopLabel.textContent = over ? 'Add more stops in the planner' : 'Add a stop';
+      addStop.classList.toggle('to-planner', over);
     }
     function addMid(val='', opts={}){
       if(midCount()>=8) return;
       const row=document.createElement('div');
       row.className='field mid-stop place-field';
-      row.innerHTML=`<label>Stop</label><input class="mid-select" required aria-label="Stop" placeholder="Where to next?">`+
+      row.innerHTML=`<label>Stop</label><input class="mid-select" required aria-label="Stop" placeholder="Where to?">`+
         `<button type="button" class="rm" aria-label="Remove this stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
       const sel=row.querySelector('input');
       if(val) sel.value=val;
@@ -790,7 +868,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if(!opts.silent && window.CH && CH.motion) CH.motion.enter(row);
       sel.focus({ preventScroll:true });
     }
-    addStop.addEventListener('click',()=>addMid());
+    addStop.addEventListener('click',()=>{
+      /* At the cap this button IS the multi-stop submit — same validation, same destination.
+         goBook() already sends a multi-stop trip to plan.html with every place in `stops`, so
+         routing through it (rather than building a second URL here) means the hand-off can
+         never drift from what "Plan this trip" does. The form is novalidate, so goBook's own
+         per-field messages still do the checking. */
+      if(handsOffToPlanner()){ form.requestSubmit(); return; }
+      addMid();
+    });
 
     document.getElementById('swap').addEventListener('click',()=>{
       const a=from.value, aid=from.dataset.placeId||'', asrc=from.dataset.placeSource||'';
@@ -825,6 +911,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       }
     }
     update();
+    /* goBook() disables this button and fills it with a spinner in the instant before it
+       assigns location.href. A browser that then stores the page in its back/forward cache
+       replays that DOM verbatim on Back — no script re-runs on a restore, so nothing ever
+       puts the button back, and the traveller returns to a homepage whose only search CTA is
+       greyed out and spinning "Opening your trip…" for good. (A Back that re-executes the
+       document instead is already fine: update() runs on load.)
+       Repairing via update() rather than a hardcoded label is what keeps the modes honest —
+       it derives the text from the CURRENT mode, so a restored multi-stop form comes back as
+       "Plan this trip" and not "See prices & book". */
+    window.addEventListener('pageshow', function(e){ if(e.persisted) update(); });
     window.__heroMidValues = midValues;
     window.__heroMode = ()=>bookMode;
   })();
@@ -832,7 +928,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // ---- hero variant (postcard | full-bleed) — tweakable, same photo slot in both ----
   window.__heroVariant=function(v){
     const sec=document.getElementById('hero-sec'); if(!sec) return;
-    const slot=document.getElementById('hero-photo'), pcImg=document.getElementById('pc-img'), nav=document.querySelector('.nav');
+    // the whole photo layer moves, not just the first slide — see .pc-photos in the CSS above
+    const slot=document.getElementById('pc-photos'), pcImg=document.getElementById('pc-img'), nav=document.querySelector('.nav');
     const full = v==='full-bleed';
     sec.classList.toggle('hero-immersive', full);
     sec.classList.toggle('hero-pc', !full);
@@ -843,6 +940,68 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     slot.style.transform='';
   };
   window.__heroVariant((window.__tweaks&&window.__tweaks.read().hero)||'postcard');
+
+  /* ---- hero carousel ----
+     Cross-fades the hero photo slots. A slot with NO image is not a slide, which is what lets
+     this ship with only the first photo filled: one photo means no dots, no rotation and no
+     opacity handling at all, i.e. exactly the hero that was here before. Drop a second photo
+     in and it becomes a carousel by itself.
+     Slots fill asynchronously (the sidecar arrives over fetch) and the author can drop a photo
+     in at any moment, so the rotation is rebuilt whenever a slot's filled state changes rather
+     than read once at load. */
+  (function(){
+    const wrap=document.getElementById('pc-photos'), dotsEl=document.getElementById('hero-dots');
+    if(!wrap || !dotsEl) return;
+    const slots=[...wrap.querySelectorAll('image-slot')];
+    const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
+    const INTERVAL=6000;
+    let slides=[], at=0, timer=null, paused=false;
+
+    function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+    function start(){
+      stop();
+      // One slide has nothing to rotate to; reduced motion means the traveller has asked for
+      // no unprompted movement, so the dots become the only way through.
+      if(slides.length<2 || paused || reduce.matches) return;
+      timer=setInterval(function(){ show(at+1); }, INTERVAL);
+    }
+    function show(n){
+      if(!slides.length) return;
+      at=(n%slides.length+slides.length)%slides.length;
+      slides.forEach(function(s,k){ s.classList.toggle('hs-on', k===at); });
+      [...dotsEl.children].forEach(function(d,k){ d.setAttribute('aria-current', String(k===at)); });
+    }
+    function build(){
+      slides=slots.filter(function(s){ return s.hasAttribute('data-filled'); });
+      const live=slides.length>1;
+      wrap.classList.toggle('hs-live', live);
+      dotsEl.hidden=!live;
+      dotsEl.innerHTML='';
+      slots.forEach(function(s){ s.classList.remove('hs-on'); });
+      if(live) slides.forEach(function(s,k){
+        const b=document.createElement('button');
+        b.type='button';
+        b.setAttribute('aria-label','Show hero photo '+(k+1));
+        b.addEventListener('click',function(){ show(k); start(); });
+        dotsEl.appendChild(b);
+      });
+      show(0);
+      start();
+    }
+
+    const mo=new MutationObserver(build);
+    slots.forEach(function(s){ mo.observe(s,{attributes:true,attributeFilter:['data-filled']}); });
+    // Hovering or tabbing into the hero means the traveller is looking at or using it — don't
+    // move the picture under them. The card sits over this photo, so the listener goes on the
+    // whole hero section, not the photo layer.
+    const hero=document.getElementById('hero-sec')||wrap;
+    ['mouseenter','focusin'].forEach(function(e){ hero.addEventListener(e,function(){ paused=true; stop(); }); });
+    ['mouseleave','focusout'].forEach(function(e){ hero.addEventListener(e,function(){ paused=false; start(); }); });
+    // A background tab throttles timers into a burst on return — stop rather than pile up.
+    document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
+    if(reduce.addEventListener) reduce.addEventListener('change',function(){ start(); });
+    build();
+  })();
 
   // hero entrance is pure CSS now (auto-playing keyframes with fill:both) — no JS
   // reveal needed, so content is never dependent on a class toggle or a transition
@@ -857,7 +1016,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if(tick) return; tick=true;
       requestAnimationFrame(function(){
         tick=false;
-        const y=window.scrollY, slot=document.getElementById('hero-photo');
+        const y=window.scrollY, slot=document.getElementById('pc-photos');
         if(!slot || y>820) return;
         if(sec.classList.contains('hero-immersive')) slot.style.transform='translateY('+(y*.14)+'px) scale(1.07)';
         else slot.style.transform='translateY('+(y*.05)+'px) scale(1.07)';

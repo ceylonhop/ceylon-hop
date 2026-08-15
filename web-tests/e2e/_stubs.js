@@ -98,6 +98,62 @@ export function installStubs() {
 
 const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
 
+// index/why/tours/tour/search/plan.html each fire a fire-and-forget GET to
+// CEYLON_HOP_API + '/health' on load, to warm a cold Render instance before showing a price
+// (see 0e0f077). gotoBooking() below already stubs '**/health' for the booking journey; specs
+// that navigate to those six pages directly must call this first, or the "offline by default"
+// suite (playwright.config.js) fires a real request at the production API on every local run.
+// booking.html ALSO loads ch-pricing.js unconditionally (Phase 3), which fires its own POST
+// /quote/v2/estimate on load regardless of whether the spec knows about engine pricing — a
+// spec that reaches booking.html by any route other than gotoBooking() (which stubs this
+// itself) must call blockLiveApi() too, or that POST goes to the real prod API. 404 is the
+// flag-off shape the real API answers with today, matching gotoBooking's own default.
+export async function blockLiveApi(page) {
+  await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
+  await page.route('**/quote/v2/estimate', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }));
+}
+
+// Engine price estimate (Phase 3, POST /quote/v2/estimate). Pass this via gotoBooking's own
+// `estimate` opt (registered BEFORE navigation) rather than calling it again after — ch-pricing.js
+// debounces only 400ms, and gotoBooking's own default 404 can already have landed and latched
+// CH_PRICING.available() false by the time `await gotoBooking(...)` returns (page.goto() waits
+// for the 'load' event, which on a real page can easily take longer than 400ms); once latched, a
+// route registered afterwards never even gets a fetch to answer.
+//
+// `respond(intent, n)` is how a spec gets a DIFFERENT body for a LATER request (e.g. "higher
+// total after a change") without depending on request ORDER matching the order the spec expects:
+// it's called with the posted intent (so it can key off the actual pax/legs/etc, not a guess at
+// which request this is) and the 1-based call count, and its return value is merged over the
+// defaults below. `sequence` is the simpler array form for when call order genuinely is what
+// varies the response — the Nth request gets `sequence[N-1]`, and the last entry repeats past
+// the end of the array. The default single-response body is deterministic and distinct from
+// every local-formula figure the fixtures use, so a spec can tell "engine total shown" from
+// "local fallback" apart at a glance.
+export async function installEstimateStub(page, opts = {}) {
+  const { sequence = null, respond = null, ...single } = opts;
+  let n = 0;
+  await page.route('**/quote/v2/estimate', async (r) => {
+    n += 1;
+    const intent = JSON.parse(r.request().postData() || '{}');
+    const o = respond ? (respond(intent, n) || {})
+      : sequence ? sequence[Math.min(n - 1, sequence.length - 1)]
+      : single;
+    const {
+      status = 200,
+      totalCents = 12345,
+      amountDueNowCents = totalCents,
+      estimated = false,
+      legs = [{ from: 'A', to: 'B', distanceKm: 100, durationMin: 120 }],
+      delayMs = 0,
+    } = o;
+    if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    if (status !== 200) {
+      return r.fulfill({ status, contentType: 'application/json', body: '{"error":"not_found"}' });
+    }
+    return r.fulfill(json({ totalCents, amountDueNowCents, estimated, legs }));
+  });
+}
+
 /**
  * Set up stubs + API mocks, then navigate to a page.
  * opts:
@@ -121,6 +177,7 @@ export async function gotoBooking(page, opts = {}) {
     googleDelay = 0,
     pickGeo = null,                  // {lat,lng}: pin Google picks inside a drop-off area
     checkoutError = null,            // {status, body}: make POST /bookings/:id/checkout refuse
+    estimate = null,                 // installEstimateStub opts: switches this spec into the engine-priced world
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -162,6 +219,17 @@ export async function gotoBooking(page, opts = {}) {
     rateLockedUntil: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
     totalCents: 12100,
   })));
+
+  // Engine price estimate (Phase 3, booking.js's CH_PRICING wiring). booking.html loads
+  // ch-pricing.js unconditionally, so EVERY booking spec fires POST /quote/v2/estimate whether
+  // it knows about engine pricing or not — CLAUDE.md rules out real external services, so this
+  // MUST always be intercepted here, not left to specs to opt into individually. Default is 404
+  // (QUOTE_V2_ENABLED off), the exact shape the real API answers with today and the one every
+  // pre-existing booking spec was written against: ch-pricing.js's 404-latch makes that byte-
+  // identical to local-pricing-only behaviour (see booking-engine-price.spec.js's flag-off spec).
+  // Pass gotoBooking's `estimate` option (or call installEstimateStub again after navigating, to
+  // change the response mid-test) to switch a spec into the engine-priced world.
+  await installEstimateStub(page, estimate ? { ...estimate } : { status: 404 });
 
   // checkout params
   await page.route('**/bookings/*/checkout', (r) => {

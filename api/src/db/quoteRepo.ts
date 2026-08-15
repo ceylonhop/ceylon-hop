@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import type { NewQuoteDiscount, QuoteDiscountRepo } from './quoteDiscountRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import { quoteTravelDate } from './quoteTravelDate';
 import type { PaySelection } from '../quote/paySelection';
 
 export type QuoteStatus =
@@ -143,6 +145,11 @@ export interface QuoteSummary {
   // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
   // a $0 total is a symptom, the marker is the fact.
   unpriced: boolean;
+  // Last day of travel (spec 2026-08-01), derived per request from request_json.legs[].date —
+  // NOT a stored column. Null when no leg carries a usable date. The queue uses it to tell a
+  // live sent quote from one whose trip has already happened, which send age cannot do (see
+  // the sweep's note in api/src/services/quoteExpiry.ts).
+  travelDate: string | null;
   createdAt: Date;
 }
 
@@ -260,6 +267,20 @@ export function sameQuoteContent(a: unknown, b: unknown): boolean {
   return stableStringify(a) === stableStringify(b);
 }
 
+/**
+ * The founder's discount intent on a save (spec §6):
+ *   omitted / 'preserve' → leave any active discount exactly as it is
+ *   'remove'             → supersede the active one as removed
+ *   'apply'              → supersede any active one as replaced, then insert this
+ *
+ * `quoteRevision` is filled in by the repo, not the caller: it is the revision the save PRODUCES,
+ * which the caller cannot know before the transaction runs.
+ */
+export type DiscountIntent =
+  | { kind: 'preserve' }
+  | { kind: 'remove'; by: string }
+  | { kind: 'apply'; by: string; row: Omit<NewQuoteDiscount, 'quoteId' | 'quoteRevision'> };
+
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
@@ -279,7 +300,12 @@ export interface QuoteRepo {
   // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
   // duplicate. Returns null for an unknown id.
-  update(id: string, q: NewQuote): Promise<SavedQuote | null>;
+  /**
+   * Ops content save. `discount` carries the founder's TRI-STATE intent (spec §6) and is written
+   * in the SAME transaction as the quote and its version snapshot — a quote priced one way with
+   * an audit row saying another is the failure this boundary exists to prevent.
+   */
+  update(id: string, q: NewQuote, discount?: DiscountIntent): Promise<SavedQuote | null>;
   // Soft-delete: stamp deletedAt/deletedBy and hide the row from get()/list() while keeping it in
   // the table. Idempotent-ish: returns null for an unknown or already-deleted id. Role/status
   // gating lives in the route, not here — the repo only records the intent.
@@ -345,12 +371,20 @@ function toSummary(q: SavedQuote): QuoteSummary {
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
     unpriced: isUnpricedShell(q),
+    travelDate: quoteTravelDate(requestLegs(q.request)),
     createdAt: q.createdAt,
   };
 }
 
 export class InMemoryQuoteRepo implements QuoteRepo {
   private rows = new Map<string, SavedQuote>();
+  /**
+   * Optional and injected rather than owned: a caller that wants the discount side of a save
+   * exercised hands in the same discount repo it will read from. Left unset, `update` ignores a
+   * discount intent entirely, so every existing test constructing a bare InMemoryQuoteRepo is
+   * unaffected.
+   */
+  constructor(private discounts?: QuoteDiscountRepo) {}
   // Superseded versions, oldest-first per quote (listRevisions reverses).
   private revisions = new Map<string, QuoteRevision[]>();
   private usedReferences = new Set<string>();
@@ -532,7 +566,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return { ...row };
   }
 
-  async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
+  async update(id: string, q: NewQuote, discount: DiscountIntent = { kind: 'preserve' }): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
     // Same guard softDelete uses: a deleted row is off-limits to a content write. The shell sweep
     // can delete a shell an operator still has open, and their next autosave would otherwise
@@ -592,6 +626,16 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     // makes a pay link minted against the old price refuse to be paid.
     row.revision += 1;
     row.updatedAt = new Date();
+
+    // Same ordering as the Postgres transaction — supersede, then insert. The fake has no real
+    // transaction, so this is a shape check only; atomicity itself is asserted against Postgres
+    // in postgres.test.ts, because that is the only place it is a real property.
+    if (discount.kind !== 'preserve' && this.discounts) {
+      await this.discounts.supersede(id, discount.kind === 'remove' ? 'removed' : 'replaced', discount.by);
+      if (discount.kind === 'apply') {
+        await this.discounts.apply({ ...discount.row, quoteId: id, quoteRevision: row.revision });
+      }
+    }
     return { ...row };
   }
 

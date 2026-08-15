@@ -1,5 +1,10 @@
 # GTM-NL6K22CM — Phase 0 configuration checklist
 
+> **Phase 0 covers the marketing site only.** The pay link, customer quote, manage-booking
+> and Ride Board properties shipped afterwards and have their own events, consent path and
+> console steps — see **[`property-tracking.md`](property-tracking.md)**, which extends this
+> checklist rather than replacing it. Do that one too, or those four properties stay dark.
+
 Do this in the Google Tag Manager + GA4 web UI. The site code already pushes all events
 below to `dataLayer`; these steps turn them into tags. Reuse the EXISTING container/property.
 
@@ -18,6 +23,9 @@ below to `dataLayer`; these steps turn them into tags. Reuse the EXISTING contai
 ## Microsoft Clarity
 - [ ] Add the Microsoft Clarity tag (Community template) → project `qrhbzsb6w8`,
       trigger: All Pages (respecting consent). Verify replays appear in Clarity.
+- [ ] Every page now sets the Clarity custom tags `property` and `env` (analytics.js). Build a
+      saved filter per property once replays land — `property = pay` first. See
+      [`property-tracking.md`](property-tracking.md) §2.1.
 
 ## Consent
 - [ ] Enable Consent Mode; confirm all tags have "Require additional consent" =

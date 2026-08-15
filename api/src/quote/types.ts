@@ -1,3 +1,4 @@
+import type { ResolvedDiscount } from './discount';
 import type { Vehicle, ExtraCode } from './rateCard';
 import type { PriceFinishStrategy } from './priceFinish';
 
@@ -85,6 +86,14 @@ export interface QuoteResult {
   depositCents: number;
   amountDueNowCents: number;
   marginEstimateCents: number | null; // total − cost basis; null for shared (cost not modelled). FOUNDER-ONLY (margin:view): stripped server-side (incl. nested in a persisted quote's `result`) for finance/ops — see internalQuote.ts stripQuoteMargin()
+  // Founder manual discounts (spec 2026-08-09). ABSENT — not zero — when no discount was
+  // requested, so an undiscounted QuoteResult stays byte-identical to what it was before the
+  // feature existed. That is what the zero-discount gate in goldens.test.ts relies on.
+  // `discount` is present whenever a discount was REQUESTED, even if both limits reduced it to
+  // zero, so a caller can tell "capped to nothing" from "never asked".
+  discountCents?: number;
+  totalBeforeDiscountCents?: number;
+  discount?: ResolvedDiscount;
   rateCardVersion: string;
   warnings: string[];
 }

@@ -302,6 +302,27 @@
       "when": 1786517600000,
       "tag": "0042_booking_legs",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786604000000,
+      "tag": "0043_payment_settled_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786690400000,
+      "tag": "0044_quote_discounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786776800000,
+      "tag": "0045_distance_cache",
+      "breakpoints": true
     }
   ]
 }

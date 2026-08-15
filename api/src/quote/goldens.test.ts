@@ -3,6 +3,12 @@
 // Snapshots are captured from the PRE-ride-model engine and are the equivalence
 // contract for the refactor: the new engine must reproduce every one deep-equal.
 // NEVER regenerate these to make a diff pass — a golden diff is a bug in new code.
+//
+// SECOND PURPOSE (2026-08-09) — the zero-discount gate for founder manual discounts,
+// Task 1 of docs/superpowers/plans/2026-08-09-founder-manual-discounts.md. Discounts add
+// an arithmetic step between core pricing and finishing; this corpus is what proves that
+// omitting a discount leaves every existing price cent-identical. The cases below the
+// marker were added for that gate, covering ground the refactor corpus did not need.
 import { describe, it, expect } from 'vitest';
 import { quote } from './engine';
 import { quoteBreakdown } from './breakdown';
@@ -53,6 +59,33 @@ const GOLDEN_REQUESTS: Record<string, QuoteRequest> = {
     ] },
   // shared (untouched by the refactor, pinned anyway)
   shared_two_seats: { product: 'shared', legs: [{ routeId: 'ella-kandy', seats: 2, seatPriceCents: 2950 }] },
+
+  // ─── added 2026-08-09 for the zero-discount gate ───────────────────────────────
+  // The van minimum fare. It moved 50.00 → 49.99 on 2026-08-07 (PR #349) and the
+  // refactor corpus has no van case short enough to hit a floor at all, so nothing
+  // currently pins it. 25 km → buffer 5 → 30 billable × 54.05¢ = $16.22, floor wins.
+  private_van_single_floor: { product: 'private', vehicle: 'van', pax: 4, bags: 4,
+    legs: [{ from: 'Galle', to: 'Unawatuna', distanceKm: 25 }] },
+  // A multi-stop RIDE (3 stops, 2 segments) — the shape multi-stop rides introduced.
+  // The discount design rules that via stops break route identity, so the shape has to
+  // be pinned before anything reads it. Note the corpus above only ever uses PrivateLeg.
+  private_car_multi_stop_ride: { product: 'private', vehicle: 'car', pax: 2, bags: 2,
+    legs: [{ stops: ['Colombo', 'Pinnawala', 'Kandy'], segmentKms: [85, 40] }] },
+  // Every chargeable extra at once. A manual discount's eligible base is the FULL quote
+  // including extras, and each extra's cost is assumed equal to its sell price (spec
+  // §5.3), so all six need their sell prices pinned before that assumption is coded.
+  private_car_all_extras: { product: 'private', vehicle: 'car', pax: 3, bags: 3,
+    legs: [{ from: 'Kandy', to: 'Sigiriya', distanceKm: 90 }],
+    extras: ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] },
+  // Finishing where the PROPORTIONAL cap rejects the charm candidate and the strategy
+  // falls back to nearest-50. 70 km → buffer 7 → 77 billable × 40.25¢ = $30.99; the
+  // charm target on the $10 grid is $29.00, a $1.99 drop = 6.4% of the raw, well over
+  // the 2.5% bps limit → rejected, so it rounds to $31.00 instead.
+  // Discounts move the subtotal that this decision is made from, so the boundary must
+  // be pinned first. (The absolute $10 cap cannot bind on a $10 grid — max drop is
+  // $9.99 by construction — so it is deliberately not exercised here.)
+  private_car_finishing_bps_rejects_charm: { product: 'private', vehicle: 'car', pax: 2, bags: 2,
+    legs: [{ from: 'Matara', to: 'Tangalle', distanceKm: 70 }] },
 };
 
 describe('golden corpus — pre-ride-model engine outputs', () => {

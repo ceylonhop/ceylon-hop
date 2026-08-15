@@ -4,12 +4,12 @@ import { renderStandalone, ORIGIN } from './render-page.mjs';
 import { ROOT } from './generate-route-pages.mjs';
 
 const legalStyle = `
-  .legal-hero{background:linear-gradient(160deg,#0d8f8c,#0AB9B6 60%,#2aa9bf);color:#fff;padding:104px 0 40px;margin-top:-74px}
+  .legal-hero{background:linear-gradient(160deg,#1E6273,#24758A 60%,#277F97);color:#fff;padding:104px 0 40px;margin-top:-74px}
   .legal-hero h1{color:#fff;font-weight:700;margin:0}
   .legal-hero p{color:rgba(255,255,255,.9);margin:.4rem 0 0}
   .legal-body{max-width:64ch}
   .legal-body h2{margin:1.8rem 0 .5rem;font-size:1.2rem}
-  .legal-body p,.legal-body li{color:var(--ink-soft,#4a5a57);line-height:1.65}
+  .legal-body p,.legal-body li{color:var(--ink-soft,#6c6a6b);line-height:1.65}
   .legal-body ul{margin:.4rem 0 1rem;padding-left:1.2rem}`;
 
 function legalPage(slug, heading, tagline, description, fragmentFile) {
@@ -37,7 +37,7 @@ const notFoundPage = () => renderStandalone({
   .nf .wrap{max-width:560px}
   .nf-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 8px}
   .nf .eyebrow{color:var(--teal-deep,#08938f)}
-  .nf h1{font-family:var(--display,Georgia,serif);font-size:clamp(2rem,6vw,3.1rem);line-height:1.05;margin:.25rem 0 .55rem;color:var(--ink,#2C2A2B)}
+  .nf h1{font-family:var(--display,Georgia,serif);font-size:clamp(2rem,6vw,3.1rem);line-height:1.05;margin:.25rem 0 .55rem;color:var(--ink,#3A3739)}
   .nf .lead{color:var(--ink-soft,#6c6a6b);font-size:1.02rem;max-width:40ch;margin:0 auto}
   .nf .flex{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px}
   @keyframes nf-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
@@ -224,17 +224,17 @@ const longDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB',
 });
 
 const blogStyle = `
-  .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
-  .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(8,120,118,.6),transparent 70%)}
+  .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#1E6273 0%,#24758A 55%,#277F97 100%);overflow:hidden}
+  .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(30,98,115,.6),transparent 70%)}
   .post-hero .wrap{position:relative;z-index:2;max-width:900px}
   /* With a photo the decorative radial gradients are replaced by a real scrim,
      so white hero text keeps its contrast over an arbitrary image. */
   .post-hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
-  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(12,58,56,.60),rgba(12,58,56,.82));z-index:1}
+  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(13,51,64,.60),rgba(13,51,64,.82));z-index:1}
   .post-embed{margin:2rem 0;max-width:360px}
-  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0c3a38}
+  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0d3340}
   .post-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
+  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#6c6a6b)}
   .post-hero .breadcrumbs{padding-top:0;margin-bottom:18px}
   .post-kicker{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:.32rem .7rem;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3)}
   .post-hero h1{color:#fff;font-weight:700;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
@@ -242,16 +242,16 @@ const blogStyle = `
   .post-body{padding:clamp(40px,5vw,68px) 0 clamp(32px,4vw,52px)}
   .post-body .wrap{max-width:900px}
   .article{max-width:68ch;font-size:1.06rem;line-height:1.78}
-  .article > p:first-child{font-size:1.14rem;color:var(--ink,#2C2A2B)}
-  .article p{margin:0 0 1.15rem;color:var(--ink-soft,#4a5a57)}
-  .article h2{font-family:var(--display,Georgia,serif);font-size:clamp(1.35rem,2.6vw,1.72rem);line-height:1.2;margin:2.4rem 0 .7rem;color:var(--ink,#2C2A2B)}
-  .article h3{font-size:1.08rem;margin:1.7rem 0 .45rem;color:var(--ink,#2C2A2B)}
+  .article > p:first-child{font-size:1.14rem;color:var(--ink,#3A3739)}
+  .article p{margin:0 0 1.15rem;color:var(--ink-soft,#6c6a6b)}
+  .article h2{font-family:var(--display,Georgia,serif);font-size:clamp(1.35rem,2.6vw,1.72rem);line-height:1.2;margin:2.4rem 0 .7rem;color:var(--ink,#3A3739)}
+  .article h3{font-size:1.08rem;margin:1.7rem 0 .45rem;color:var(--ink,#3A3739)}
   .article ul,.article ol{margin:0 0 1.2rem;padding-left:1.25rem}
-  .article li{margin:.42rem 0;color:var(--ink-soft,#4a5a57)}
+  .article li{margin:.42rem 0;color:var(--ink-soft,#6c6a6b)}
   .article a{color:var(--accent-deep,#08938f);text-underline-offset:2px}
   .article blockquote{margin:1.3rem 0;padding:.85rem 1.15rem;border-left:3px solid var(--accent,#0AB9B6);background:var(--pc-teal,#e3f4ef);border-radius:0 var(--r-sm,10px) var(--r-sm,10px) 0}
-  .article blockquote p{margin:0;color:var(--ink,#2C2A2B)}
-  .article strong{color:var(--ink,#2C2A2B)}
+  .article blockquote p{margin:0;color:var(--ink,#3A3739)}
+  .article strong{color:var(--ink,#3A3739)}
   .post-next{margin:44px 0 0;padding:24px 26px;background:var(--paper,#fffdf8);border:1px solid var(--line,#e7e3d6);border-radius:var(--r,16px);max-width:68ch}
   .post-next h2{font-size:1.05rem;margin:.35rem 0 .7rem}
   .post-next ul{margin:0;padding-left:1.1rem}

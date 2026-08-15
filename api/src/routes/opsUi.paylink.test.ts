@@ -45,6 +45,18 @@ describe('ops shell: payment link wiring', () => {
     expect(body).toMatch(/showToast\('Payment link copied — SANDBOX, test cards only', 'error'\)/);
   });
 
+  it('reads the server’s refusal REASON rather than blaming approval status', () => {
+    // The 409 body carries `reason`. Both mint paths must route through the one mapper, or a
+    // discounted quote gets told to fix a status that was correct all along (2026-08-10).
+    expect(body).toContain('function payLinkRefusal(err, fallback)');
+    expect(body).toMatch(/err\.reason === 'discounted'/);
+    expect(body).toContain('A discounted quote can only take a full-total payment link');
+    // Both pay-link call sites go through it — the bodyless mint and the partial picker.
+    // (The separate /quote-link handler keeps its own inline text: that route has no `reason`.)
+    const callers = body.split('\n').filter((l) => l.includes('showToast(payLinkRefusal(err,'));
+    expect(callers.length).toBe(2);
+  });
+
   it('delegates mint and copy through the action switch', () => {
     expect(body).toContain("action === 'mintPayLink'");
     expect(body).toContain("action === 'copyPayLink'");

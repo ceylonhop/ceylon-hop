@@ -31,8 +31,8 @@ describe('analytics snippet (Phase 0)', () => {
   it('loads the GTM container and the analytics helper via headAssets (with path prefix)', () => {
     const out = headAssets('../');
     expect(out).toContain('GTM-NL6K22CM');
-    expect(out).toContain('src="../analytics.js"');
-    expect(out).toContain('src="../consent.js"');
+    expect(out).toMatch(/src="\.\.\/analytics\.js(\?v=\w+)?"/);
+    expect(out).toMatch(/src="\.\.\/consent\.js(\?v=\w+)?"/);
   });
 
   it('carries no API secrets — only publishable IDs', () => {

@@ -26,7 +26,9 @@ test('dropping back below 4 recommends the cheaper car (with savings) and re-pri
   const note = page.locator('#cap-note');
   await expect(note).toBeVisible();
   await expect(note).toContainText('Switch to AC car');
-  await expect(note).toContainText('save $');
+  // ~ prefix (Phase 3, Task 4): this is the local vanPrice()/carPrice() comparison figure on the
+  // capacity-note CTA, kept intentionally local (instant) rather than the adopted engine total.
+  await expect(note).toContainText('save ~$');
 
   await page.evaluate(() => window.switchToCar());
   await expect(page.locator('#sum-adlabel')).toHaveText('AC car (up to 3)');

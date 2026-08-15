@@ -395,7 +395,7 @@ describe('payment webhook ops alerts (M17)', () => {
       bookingId: b.id, provider: 'cash', orderId: `${b.reference}-MANUAL`,
       amount: b.total, currency: b.currency, idempotencyKey: `manual-paid:${b.id}`,
     });
-    await payments.markSucceededManually(manual.id, { reference: 'slip-9' });
+    await payments.markSucceededManually(manual.id, { reference: 'slip-9', settledBy: 'ops@x.com' });
     await bookings.setStatus(b.id, 'paid');
 
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });

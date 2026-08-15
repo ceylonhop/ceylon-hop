@@ -18,6 +18,11 @@ export interface QuoteViewOption {
   includedText: string;
   totalCents: number;
   totalUsd: string;
+  /* A founder discount, when one is applied. Both figures come from the STORED result, and
+     because finishing runs BEFORE the discount (owner, 2026-08-09) they reconcile exactly:
+     totalBeforeUsd − discountUsd === totalUsd. That is why the customer can be shown a
+     breakdown at all — the old order left a cent stranded in the hidden finishing row. */
+  discount?: { totalBeforeUsd: string; discountUsd: string };
   cancellation: { headline: string; ladder: string[] };
   lead: boolean;
   waText: string;
@@ -56,6 +61,8 @@ interface ViewQuote {
   totalCents: number;
   requestedService?: string | null;
   request: unknown;
+  /** The stored QuoteResult. Carries the founder's discount when there is one. */
+  result?: unknown;
 }
 
 interface ToolLegLite {
@@ -208,6 +215,18 @@ export function customerQuoteView(
   // The secondary option has no stored counterpart, so it is necessarily a recompute; that is
   // fine, because ops re-prices the quote before any of it can be charged.
   const pricedTotal = quote.totalCents;
+  // The founder's negotiation, straight off the stored result — no recompute, no extra query.
+  const storedResult = (quote.result ?? {}) as { totalBeforeDiscountCents?: number; discountCents?: number };
+  const discountOff = storedResult.discountCents && storedResult.discountCents > 0 ? storedResult.discountCents : null;
+  /* The pre-discount total. DERIVED when the stored result predates the finishing reorder (#422),
+     which renamed discountedSubtotalCents → totalBeforeDiscountCents: a quote discounted before
+     that deploy carries the old field, and requiring the new one made the breakdown silently
+     vanish on a genuinely discounted quote (Q-ZKPZY, $259 → $229, observed on staging).
+     total + discount is exact under the current order — total IS totalBefore − discount — so the
+     derivation is not a fallback approximation, it is the same arithmetic read the other way. */
+  const discountBefore = discountOff == null
+    ? null
+    : storedResult.totalBeforeDiscountCents ?? pricedTotal + discountOff;
   const otherTotal = wantsBoth ? totalFor(other) : null;
 
   const waFor = (label: string | null) =>
@@ -228,6 +247,11 @@ export function customerQuoteView(
       includedText: c.included,
       totalCents: cents,
       totalUsd: usd(cents),
+      // Only on the card that was actually priced: the comparison card is a recompute with no
+      // stored discount behind it, so showing one there would be inventing a saving.
+      ...(lead && discountBefore != null && discountOff != null
+        ? { discount: { totalBeforeUsd: usd(discountBefore), discountUsd: usd(discountOff) } }
+        : {}),
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),

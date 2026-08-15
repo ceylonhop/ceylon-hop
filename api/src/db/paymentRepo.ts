@@ -25,6 +25,10 @@ export interface PaymentSettlementEvidence {
   // activity notes. The DB CHECK only requires this to be non-null for a succeeded payment, so
   // the new value needs no migration.
   settlementSource: 'webhook' | 'legacy_backfill' | 'manual' | null;
+  // The staff email that recorded an out-of-band payment. Null for gateway money, which has no
+  // human actor. Lives here rather than in ops_notes because that field is editable by a role
+  // denied payments:act — the one person who must not be able to erase it (0043).
+  settledBy: string | null;
   updatedAt: Date;
 }
 
@@ -39,7 +43,7 @@ export interface PaymentRepo {
   // Settle a payment that no gateway will ever confirm (cash / bank transfer taken by ops).
   // Separate from markSucceeded() so real out-of-band money is never stamped 'legacy_backfill';
   // `reference` is whatever the operator can cite (a bank slip number), and is optional.
-  markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment>;
+  markSucceededManually(id: string, evidence: { reference: string | null; settledBy: string }): Promise<Payment>;
   markFailed(id: string): Promise<Payment>;
   // Did this booking's money arrive out-of-band? findByBookingId() returns the narrow Payment
   // shape, which drops the provenance; the watchdog needs exactly this distinction to tell a
@@ -55,6 +59,10 @@ export interface PaymentRepo {
   // number — and a numeric-looking slip handed to PayHere's Refund API would ask them to refund
   // a payment that is not theirs. Cash and bank transfers are refunded the way they were taken.
   gatewayPaymentIdFor(paymentId: string): Promise<string | null>;
+  // Who recorded an out-of-band payment; null for gateway money. Same narrow-reader shape as
+  // gatewayPaymentIdFor above — the Payment type drops provenance on purpose, and there is no
+  // WRITER for this outside markSucceededManually, which is what makes the record immutable (0043).
+  settledByFor(paymentId: string): Promise<string | null>;
 }
 
 export class InMemoryPaymentRepo implements PaymentRepo {
@@ -72,6 +80,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       gatewayPaymentId: null,
       settledAt: null,
       settlementSource: null,
+      settledBy: null,
       updatedAt: new Date(),
     };
     this.byId.set(payment.id, payment);
@@ -102,7 +111,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     return this.toPayment(updated);
   }
 
-  async markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment> {
+  async markSucceededManually(id: string, evidence: { reference: string | null; settledBy: string }): Promise<Payment> {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
     const now = new Date();
@@ -112,6 +121,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       gatewayPaymentId: evidence.reference,
       settledAt: now,
       settlementSource: 'manual',
+      settledBy: evidence.settledBy,
       updatedAt: now,
     };
     this.byId.set(id, updated);
@@ -136,6 +146,10 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     const row = this.byId.get(paymentId);
     if (!row || row.status !== 'succeeded' || row.settlementSource !== 'webhook') return null;
     return row.gatewayPaymentId ?? null;
+  }
+
+  async settledByFor(paymentId: string): Promise<string | null> {
+    return this.byId.get(paymentId)?.settledBy ?? null;
   }
 
   getForSettlement(id: string): InternalPaymentRecord | null {

@@ -47,6 +47,21 @@ const SITE_HOME = 'https://ceylonhop.com/';
 
 const JS = 'text/javascript; charset=utf-8';
 
+/* Customer pages served from the REPO ROOT by this API (not GitHub Pages — these live on the
+   ops/pay hosts). Two traps, both hit for real on 2026-08-09 and neither obvious from here:
+
+   1. THE RENDERED PAGE IS CACHED IN MEMORY for the life of the process (see `cache` below). An
+      edit to one of these files is invisible until the service RESTARTS — there is no revalidation
+      and no TTL. Correct file on disk, stale bytes on the wire.
+
+   2. A COMMIT THAT TOUCHES ONLY THESE FILES MAY NOT DEPLOY AT ALL. Render's build filter for this
+      service is scoped to the API, so a repo-root HTML/CSS change triggers no build; it ships only
+      as a passenger on a commit that also changes something under `api/`. A typography fix to
+      quote.html sat on main for half an hour looking deployed and was not.
+
+   Together they are quietly nasty: the change is merged, CI is green, main is correct, and the
+   live page is unchanged with nothing anywhere reporting a problem. If you edit one of these and
+   staging does not move, check the deploy actually ran before you go looking for a bug. */
 const PAGES = ['manage.html', 'pay.html', 'quote.html'];
 const ASSETS: [string, string][] = [
   ['site.css', 'text/css; charset=utf-8'],
@@ -55,6 +70,7 @@ const ASSETS: [string, string][] = [
   ['favicon.svg', 'image/svg+xml'],
   ['analytics.js', JS],
   ['consent.js', JS],
+  ['consent-transactional.js', JS], // the analytics-only, CTA-safe consent strip on pay/quote
   ['phone-countries.js', JS],
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use

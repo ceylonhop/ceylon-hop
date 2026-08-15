@@ -66,7 +66,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
   // human recorded this, never a gateway — and the operator's optional reference is the only
   // evidence there is, so it goes where a gateway id would. Who did it lives in the booking's
   // activity notes, written by the route.
-  async markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment> {
+  async markSucceededManually(id: string, evidence: { reference: string | null; settledBy: string }): Promise<Payment> {
     const now = new Date();
     const [row] = await this.db
       .update(payments)
@@ -75,6 +75,9 @@ export class PostgresPaymentRepo implements PaymentRepo {
         gatewayPaymentId: evidence.reference,
         settledAt: now,
         settlementSource: 'manual',
+        // The immutable half of the record. The ops note carrying this before 0043 is editable
+        // by a role denied payments:act; a column is not.
+        settledBy: evidence.settledBy,
         updatedAt: now,
       })
       .where(eq(payments.id, id))
@@ -100,6 +103,12 @@ export class PostgresPaymentRepo implements PaymentRepo {
       )
       .limit(1);
     return row?.gatewayPaymentId ?? null;
+  }
+
+  async settledByFor(paymentId: string): Promise<string | null> {
+    const [row] = await this.db.select({ settledBy: payments.settledBy })
+      .from(payments).where(eq(payments.id, paymentId)).limit(1);
+    return row?.settledBy ?? null;
   }
 
   async hasManualSettlement(bookingId: string): Promise<boolean> {

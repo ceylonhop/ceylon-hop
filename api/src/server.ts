@@ -12,12 +12,15 @@ import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
+import { CachedMapsAdapter } from './adapters/cachedMaps';
+import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
@@ -57,7 +60,7 @@ const adapter =
         : undefined)
     : new FakePaymentAdapter();
 
-const maps = config.GOOGLE_MAPS_API_KEY
+const rawMaps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
   : new FakeMapsAdapter();
 
@@ -69,6 +72,12 @@ const email = config.RESEND_API_KEY
   : new FakeEmailAdapter();
 
 const { db, sql } = createDb(config.DATABASE_URL);
+
+// Distance cache (spec 2026-08-12): only wrap the REAL adapter. Keyless dev keeps the bare
+// fake — wrapping it would write synthetic distances into whatever database the env points at.
+const maps = config.GOOGLE_MAPS_API_KEY
+  ? new CachedMapsAdapter(rawMaps, new PostgresDistanceCacheRepo(db))
+  : rawMaps;
 
 // Apply pending DB migrations before serving, so deployed code never ships ahead of the
 // schema (the quote 500s of 2026-07-12, when 0014's columns were missing). Runs
@@ -111,6 +120,12 @@ const app = createApp({
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
+  // Founder manual discounts. WITHOUT this line app.ts falls back to the in-memory repo, and the
+  // failure is silent and confusing: PostgresQuoteRepo.update still writes the row inside the save
+  // transaction, so the discount really is in Postgres — but every READ goes to an empty object.
+  // The quote prices correctly on save and then shows undiscounted on the next load, which is how
+  // it reached staging (2026-08-09).
+  quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),

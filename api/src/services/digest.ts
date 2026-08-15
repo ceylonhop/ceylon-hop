@@ -63,7 +63,7 @@ export async function buildDigest(
     '<h2 style="font-size:18px;margin:0 0 12px">Daily ops digest</h2>',
     detailTable(rows),
     alertRows.length ? `<h3 style="font-size:14px;margin:0 0 8px">Alerts fired (24h)</h3>${detailTable(alertRows)}` : '<p style="font-size:14px;color:#6b7280">No alerts fired in the last 24h.</p>',
-    link ? `<p style="margin:16px 0 0"><a href="${link}/ops" style="color:#0a7d6f">Open the ops dashboard</a></p>` : '',
+    link ? `<p style="margin:16px 0 0"><a href="${link}/ops" style="color:#24758A">Open the ops dashboard</a></p>` : '',
   ].join('');
 
   const wrapped = opsEmailShell(html, textLines.join('\n'));

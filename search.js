@@ -24,7 +24,16 @@ const ICONS = {
 const params = new URLSearchParams(location.search);
 let fromId = params.get('from'), toId = params.get('to');
 let date = params.get('date') || '';
-let pax = Math.max(1, parseInt(params.get('pax')) || 1);
+/* The party size is the ONE thing that decides which product is cheaper here: shared is
+   per seat, private is per vehicle. The homepage hero deliberately asks a single question
+   (from + to) and nothing on the site links here with `pax`, so on a normal landing we have
+   simply never been told. This used to default to 1 and then state a saving derived from
+   that guess — right for a solo traveller, wrong for everyone else. Unset now means unset,
+   mirroring the planner's traveller gate (plan.js), and every consumer below omits its
+   clause rather than inventing a number. */
+const paxParam = parseInt(params.get('pax'), 10);
+let pax = (paxParam >= 1 && paxParam <= 6) ? paxParam : null;
+const paxText = pax == null ? '' : `${pax} traveller${pax > 1 ? 's' : ''}`;
 // fall back to a sensible demo route when NO destination was given (a bare landing on the
 // page). But if a `to` WAS provided and we can't honour it (unknown place, or same as the
 // pick-up), that's a stale/broken route link — send them to the 404 rather than silently
@@ -45,7 +54,9 @@ if (!T.place(toId) || toId === fromId) {
   attachLocalPlaceAutocomplete(ef);
   attachLocalPlaceAutocomplete(et);
   document.getElementById('e-date').value = date;
-  document.getElementById('e-pax').value = String(Math.min(6, pax));
+  // blank (the "How many?" placeholder) until the customer picks — preselecting 1 is the
+  // same guess in a different place, and it makes Update silently commit it.
+  document.getElementById('e-pax').value = pax == null ? '' : String(Math.min(6, pax));
   document.getElementById('e-swap').addEventListener('click', () => {
     const a = ef.value, aid = ef.dataset.placeId || '', asrc = ef.dataset.placeSource || '';
     ef.value = et.value; ef.dataset.placeId = et.dataset.placeId || ''; ef.dataset.placeSource = et.dataset.placeSource || '';
@@ -87,7 +98,8 @@ window.updateSearch = function (e) {
     location.href = 'plan.html?' + p.toString();
     return false;
   }
-  const p = new URLSearchParams({ from: f.id, to: t.id, date: selectedDate, pax: selectedPax });
+  const p = new URLSearchParams({ from: f.id, to: t.id, date: selectedDate });
+  if (selectedPax) p.set('pax', selectedPax);  // left on "How many?" stays unset, not `pax=`
   location.href = 'search.html?' + p.toString();
   return false;
 };
@@ -106,17 +118,15 @@ document.getElementById('route-meta').innerHTML =
   `<span>${ICONS.pin} ~${quote.km} km</span>` +
   `<span>${ICONS.clock} approx ${quote.duration} drive</span>` +
   `<span>${ICONS.cal} ${dateText}</span>` +
-  `<span>${ICONS.seat} ${pax} traveller${pax > 1 ? 's' : ''}</span>`;
+  (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
 
-// ---- locked search summary (Kayak/Expedia pattern) ----
-// The chosen search shows read-only; the edit fields stay collapsed until the
-// customer clicks "Edit search". Changing a param is a deliberate act (then Update).
-document.getElementById('sl-route').innerHTML =
-  `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
-document.getElementById('sl-meta').textContent =
-  `~${quote.km} km · approx ${quote.duration} drive · ${dateText} · ${pax} traveller${pax > 1 ? 's' : ''}`;
+// ---- collapsed search editor (Kayak/Expedia pattern) ----
+// The chosen search stays put; the edit fields stay collapsed behind "Edit search", so
+// changing a param is a deliberate act (then Update). The route summary the button used to
+// sit beside is gone — the h1 + meta above ARE the summary, and stating them twice on one
+// screen was the whole complaint. Only the button toggles now; the hero never moves.
 window.editSearch = function () {
-  document.getElementById('srch-locked').hidden = true;
+  document.getElementById('sl-edit').hidden = true;
   document.getElementById('srch-bar').hidden = false;
   document.getElementById('sl-cancel').hidden = false;
   const f = document.getElementById('e-from');
@@ -127,17 +137,17 @@ window.cancelEdit = function () {
   document.getElementById('sl-cancel').hidden = true;
   const err = document.getElementById('srch-err');
   if (err) err.hidden = true;
-  document.getElementById('srch-locked').hidden = false;
+  document.getElementById('sl-edit').hidden = false;
 };
 
 // An unrecognised destination (stale bookmark, mistyped link) used to hard-redirect to 404.
 // Open the picker with an explanation instead, so warm traffic can recover in place.
 if (unknownDestination) {
-  const locked = document.getElementById('srch-locked');
+  const editBtn = document.getElementById('sl-edit');
   const bar = document.getElementById('srch-bar');
   const err = document.getElementById('srch-err');
-  if (locked && bar) {
-    locked.hidden = true;
+  if (editBtn && bar) {
+    editBtn.hidden = true;
     bar.hidden = false;
     const cancel = document.getElementById('sl-cancel');
     if (cancel) cancel.hidden = true; // nothing valid to cancel back to
@@ -151,7 +161,8 @@ if (unknownDestination) {
 // grow this transfer into a multi-stop trip without starting over
 (function(){
   const a=document.getElementById('add-stops'); if(!a) return;
-  const p=new URLSearchParams({stops:fromP.name+'|'+toP.name, pax:String(pax)});
+  const p=new URLSearchParams({stops:fromP.name+'|'+toP.name});
+  if(pax != null) p.set('pax', String(pax));  // don't hand the planner a count we invented
   if(date) p.set('start', date);
   a.href='plan.html?'+p.toString();
   a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add stops to this trip';
@@ -160,8 +171,12 @@ if (unknownDestination) {
 
 // ---- build CTAs ----
 function bookUrl(extra) {
-  return 'booking.html?' + new URLSearchParams(Object.assign(
-    { from: fromId, to: toId, date, pax: String(pax) }, extra)).toString();
+  // `pax` is forwarded only when the customer actually chose one. Booking collects the
+  // traveller count properly on its own step, so an absent param costs nothing there —
+  // whereas a guessed one arrives pre-filled and looks like their answer.
+  const base = { from: fromId, to: toId, date };
+  if (pax != null) base.pax = String(pax);
+  return 'booking.html?' + new URLSearchParams(Object.assign(base, extra)).toString();
 }
 
 const privateCard = `
@@ -197,8 +212,12 @@ const privateCard = `
 let sharedCard = '';
 let noShare = '';
 if (shared) {
-  const perPaxPrivate = quote.car / Math.min(3, Math.max(1, pax));
-  const savePct = Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
+  // A saving can only be stated against a known party size — the private car is one fixed
+  // fare however many ride in it, so "% saved" moves entirely with the head count (on
+  // Kandy → Ella: ~64% for one, ~29% for two, and by three the private car is the cheaper
+  // of the two). With no count given we show both prices and claim nothing.
+  const perPaxPrivate = pax == null ? null : quote.car / Math.min(3, pax);
+  const savePct = perPaxPrivate == null ? null : Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
   const timeStr = shared.times.map(t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; }).join(' & ');
   sharedCard = `
   <article class="opt opt-shared">
@@ -209,10 +228,10 @@ if (shared) {
     </div>
     <p class="o-desc">Hop a reserved seat on our <b>${shared.corridorLabel}</b> service. Same AC comfort, a friendly Pro&nbsp;Hopper guide on board — for a fraction of the price.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    ${savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
+    ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       <div class="sm">${ICONS.clock} Departs ${timeStr} · ${shared.freqText}</div>
-      <div class="sm">${ICONS.seat} Seats for ${pax} traveller${pax > 1 ? 's' : ''} — we confirm availability on WhatsApp</div>
+      <div class="sm">${ICONS.seat} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
       <span class="chip">${ICONS.ck} AC car or van</span>
@@ -242,13 +261,21 @@ document.getElementById('results').innerHTML =
 (function () {
   if (typeof window.chTrack !== 'function') return;
   var listId = fromId + '_' + toId;
+  // GA4 wants an integer quantity on every item, so an unknown count reports as 1 rather
+  // than null (a null risks the whole item being dropped). The honest signal lives on the
+  // `search` event instead: `pax` is present only when the customer chose one, and
+  // `pax_set` says which of the two happened — chTrack is a bare dataLayer push, so an
+  // absent key, undefined and null are indistinguishable downstream. A boolean isn't.
+  var qty = pax == null ? 1 : pax;
   var items = [
-    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'car', price: quote.car, quantity: pax },
-    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'van', price: quote.van, quantity: pax }
+    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'car', price: quote.car, quantity: qty },
+    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'van', price: quote.van, quantity: qty }
   ];
-  if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: pax });
+  if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: qty });
 
-  window.chTrack('search', { from: fromId, to: toId, date: date, pax: pax, source: 'search' });
+  var searchEvent = { from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search' };
+  if (pax != null) searchEvent.pax = pax;
+  window.chTrack('search', searchEvent);
   window.chTrack('view_item_list', { item_list_id: listId, currency: 'USD', items: items });
 
   // select_item: delegate on the results container; read mode/vehicle from the CTA href.
@@ -261,8 +288,9 @@ document.getElementById('results').innerHTML =
   }, true); // capture: fires before navigation starts
 })();
 
-// breadcrumbs
-mountBreadcrumbs([['Home','index.html'],['Search'],[`${fromP.name} → ${toP.name}`]]);
+// breadcrumbs — no route crumb. It restated "A → B" in full a few hundred pixels above an
+// h1 that says exactly that, which is a lot of trail for one hop off the homepage.
+mountBreadcrumbs([['Home','index.html'],['Search']]);
 
 // WhatsApp help card under results
 const help=document.getElementById('srch-help');
@@ -273,7 +301,7 @@ if(help){
       <b>Not sure which to pick, or need a custom route?</b>
       <p>Message a real Hop planner — we usually reply in minutes during Sri Lanka hours.</p>
     </div>
-    <a class="btn btn-wa" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! I have a question about '+fromP.name+' → '+toP.name+'.')}" target="_blank" rel="noopener">${ICON.wa} Ask on WhatsApp</a>`;
+    <a class="btn btn-wa" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! I have a question about '+fromP.name+' → '+toP.name+'.')}" target="_blank" rel="noopener">${ICON.wa} Chat on WhatsApp</a>`;
 }
 
 initReveal();

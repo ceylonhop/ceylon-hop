@@ -8,19 +8,24 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css">
-<link rel="stylesheet" href="ticket.css">
+<link rel="stylesheet" href="site.css?v=b3b9aecc47">
+<link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js"></script>
-<script src="consent.js" defer></script>
+<!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
+<script>window.CH_PROPERTY='manage';</script>
+<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="consent.js?v=db789988e1" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
-(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:P,message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+// Published so the page can report HANDLED failures — a 500 on /bookings/view used to render
+// as "Something went wrong. Please try again." and reach nobody.
+window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
@@ -59,6 +64,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
   function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+
+  // Clarity masks form INPUTS by default, not rendered text — and the greeting carries the
+  // customer's first name. The booking reference stays legible on purpose: it is the join key
+  // back to the booking, and a replay you cannot tie to an order answers nothing.
+  var MASK = ' data-clarity-mask="true"';
+
+  // ── funnel + failure reporting (2026-08-07) ─────────────────────────────────────────
+  // The booking-management page pushed nothing, so a customer coming back to pay a balance
+  // was invisible until the money either arrived or didn't. Guarded; no PII ever.
+  function track(event, params){
+    if (typeof window.chTrack === 'function') window.chTrack(event, params || {});
+  }
+  function report(what, err){
+    var x = err || {};
+    if (typeof window.chReportError === 'function') {
+      window.chReportError('[manage] ' + what + (x.message ? ' — ' + x.message : ''), x.stack);
+    }
+  }
+  // Same gate as pay.html: `purchase` becomes revenue and GA4 cannot take it back, so a
+  // sandbox checkout must never reach it.
+  function trackPurchase(v, sandbox){
+    if (sandbox) return;
+    if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
+    track('purchase', {
+      transaction_id: String(v.reference || ''),
+      value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
+      currency: v.currency || 'USD',
+    });
+  }
 
   // Money the way the pay page shows it: USD gets its symbol and both decimals, so $229.00
   // reads as a price rather than a value out of a database.
@@ -180,7 +214,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function render(v, errMsg){
     var due = Number(v.balanceDueCents || 0);
     var html =
-      '<div class="pp-hello">' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
+      '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
       + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
       + '<div class="ticket"><div class="t-main">'
@@ -211,7 +245,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html += '</div></div>' + waLine();
     paint(html);
     var btn = document.getElementById('paybtn');
-    if (btn) btn.addEventListener('click', function(){ pay(v); });
+    if (btn) btn.addEventListener('click', function(){
+      track('begin_checkout', {
+        value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
+        currency: v.currency || 'USD',
+      });
+      pay(v);
+    });
   }
 
   // The same interstitial as the pay page: PayHere's window takes a moment to appear, and a
@@ -249,21 +289,44 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // whatever it returned rather than pretending on this page that money moved.
         if (!/payhere\.lk/.test(checkout.checkoutUrl)) { location.href = checkout.checkoutUrl; return; }
         if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
-        payhere.onCompleted = function(){ location.reload(); };   // the webhook is the source of truth
-        payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged.'); };
-        payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
-        payhere.startPayment(Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields));
+        var sandbox = /sandbox\.payhere\.lk/.test(checkout.checkoutUrl);
+        var money = { value: Math.round(Number(v.amountDueNowCents || 0)) / 100, currency: v.currency || 'USD' };
+        track('payment_initiated', money);
+        // These three are the SDK's own callbacks — the iframe flow pay.html moved away from
+        // (docs/checkout-redirect-spec.md). Instrumenting them is the only way to see an
+        // outcome on this page at all; see docs/known-bugs.md for the flow itself.
+        payhere.onCompleted = function(){ trackPurchase(v, sandbox); location.reload(); };   // the webhook is the source of truth
+        payhere.onDismissed = function(){ track('payment_dismissed', money); fail('Payment window closed — nothing was charged.'); };
+        payhere.onError = function(){ track('payment_failed', money); fail('The payment didn’t go through. No charge was made.'); };
+        payhere.startPayment(Object.assign({ sandbox: sandbox }, checkout.fields));
       })
-      .catch(function(e){ fail(e.message); });
+      .catch(function(e){
+        track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
+        report('checkout start failed', e);
+        fail(e.message);
+      });
   }
 
-  if (!t) { errView('This link isn’t valid.'); return; }
+  if (!t) { track('manage_link_invalid', { reason: 'no_token' }); errView('This link isn’t valid.'); return; }
   fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(res){
-    if (res.status === 401) throw new Error('This link isn’t valid or has changed.');
-    if (res.status === 404) throw new Error('We couldn’t find this booking.');
-    if (!res.ok) throw new Error('Something went wrong. Please try again.');
+    if (res.status === 401) { track('manage_link_invalid', { reason: 'unauthorised' }); throw new Error('This link isn’t valid or has changed.'); }
+    if (res.status === 404) { track('manage_link_invalid', { reason: 'not_found' }); throw new Error('We couldn’t find this booking.'); }
+    if (!res.ok) {
+      // A 5xx here is OUR fault, not an expired link, and it used to reach nobody.
+      track('manage_link_invalid', { reason: 'http_' + res.status });
+      report('bookings/view failed', new Error('view ' + res.status));
+      throw new Error('Something went wrong. Please try again.');
+    }
     return res.json();
-  }).then(function(v){ render(v); }).catch(function(e){ errView(e.message); });
+  }).then(function(v){
+    track('manage_opened', {
+      status: String(v.status || ''),
+      has_balance: Number(v.balanceDueCents || 0) > 0,
+      value: Math.round(Number(v.totalCents || 0)) / 100,
+      currency: v.currency || 'USD',
+    });
+    render(v);
+  }).catch(function(e){ errView(e.message); });
 })();
 </script>
 </body>

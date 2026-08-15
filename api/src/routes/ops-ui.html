@@ -15,7 +15,7 @@
    /errors/client sink (same-origin) → Sentry + founder alert. Prefixed [ops-ui] so ops-tooling
    errors are distinguishable from customer-site ones. Placed first so it catches early errors. */
 (function(){var n=0;
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:'ops',message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});
 /* Handled-failure reporting: the catch blocks below swallow errors into a toast or a silent
@@ -342,6 +342,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
+  /* Trip already happened: the one section you close out rather than work. Recede the rows
+     so a queue full of them still reads as background, but keep them fully legible — this is
+     a pile to clear, not an error state. */
+  .qsec-tripover .qrow{background:transparent;border-style:dashed;box-shadow:none}
+  .qsec-tripover .qrow:hover{background:var(--paper)}
   /* Queue loading skeleton. The three lists each had their own idea of "waiting": Analytics
      shimmered, Bookings borrowed the EMPTY state (⏳ inside .qempty — which for a beat reads as
      "there are no bookings"), and Quotes printed a line of italic text. One idiom now, shaped
@@ -788,6 +793,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-outline.is-pending::before, .qv .ch-btn-ghost.is-pending::before,
 .qv .ch-btn-dashed.is-pending::before, .qv .ch-btn-ghostdanger.is-pending::before { border-color: var(--black); border-top-color: transparent; }
 .qv [data-action][data-inflight] { pointer-events: none; }
+/* Founder manual discount — sits directly under the total it changes. */
+.ch-discount { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule, #e6e1d8); }
+.ch-discount-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.ch-discount-cap { margin-top: 4px; font-size: 12px; color: var(--muted-2); line-height: 1.4; }
+.ch-discount-locked { margin-top: 4px; font-size: 12px; color: var(--muted-2); }
+.ch-discount-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ch-discount-form select, .ch-discount-form input { font: inherit; font-size: 13px; padding: 5px 7px; border: 1px solid var(--rule, #e6e1d8); border-radius: 7px; background: #fff; }
+.ch-discount-form select { flex: 0 0 auto; }
+.ch-discount-form [data-discount-value] { flex: 0 1 92px; }
+.ch-discount-form [data-discount-reason] { flex: 1 1 140px; min-width: 0; }
+.ch-discount-form button { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--rule, #e6e1d8); background: var(--teal, #0f8a80); color: #fff; cursor: pointer; }
+.ch-discount-form .ch-discount-remove { background: #fff; color: var(--muted-2); }
+@media (max-width: 640px) { .ch-discount-form [data-discount-reason] { flex-basis: 100%; } }
 @keyframes ch-btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   /* No spin, but the state must still READ as busy. NOT currentColor here: .is-pending sets
@@ -2460,6 +2478,40 @@ function quoteAgeChip(q){
   const title=q.createdAt?' title="Requested '+esc(new Date(q.createdAt).toLocaleString())+'"':'';
   return `<span class="qage tone-${quoteAgeTone(q.createdAt,q.status)}"${title}>${esc(label)}</span>`;
 }
+/* ── trip-over quotes (spec 2026-08-01) ──────────────────────────────────────
+   A sent quote whose trip has already happened is dead, but nothing in the queue notices:
+   `lost` has never once been used, so `sent` is terminal in practice and the working list
+   fills with quotes for trips that departed weeks ago.
+
+   TRAVEL DATE, NOT SEND AGE — and that distinction is the whole point. Send age is already
+   handled server-side by expireStaleQuotes (api/src/services/quoteExpiry.ts), and its TTL had
+   to be raised 30 → 180 days (PR #214) precisely because send age can't tell a live quote from
+   a dead one: the team parks quotes in 'sent' as a working state. Travel date can. A quote sent
+   8 days ago for a trip that departed 3 days ago reads as fresh on the send clock and is dead
+   in fact. This rule adds NO second send-age timer — that policy has one owner, and it is the
+   sweep.
+
+   DERIVED ONLY: reads travelDate off the list projection, never writes status. The database
+   still says 'sent' and the founder funnel is untouched. Making it durable is a later call.
+
+   Both helpers are self-contained — no DOM, no module state, `today` passed in — so
+   web-tests/unit can extract and eval them straight out of this file, the same way
+   quoteMatches() is tested. */
+const QTRIP_GRACE_DAYS=3;   /* days after the LAST travel day before a trip reads as over — a
+                               trip that ended yesterday may still be converting offline */
+function qDaysBetween(fromIso,toIso){
+  const a=Date.parse(String(fromIso).slice(0,10)+'T00:00:00Z');
+  const b=Date.parse(String(toIso).slice(0,10)+'T00:00:00Z');
+  if(isNaN(a)||isNaN(b))return NaN;
+  return Math.round((b-a)/86400000);
+}
+/* NaN comparisons are false throughout, so an unparseable date can never retire a quote —
+   the failure direction is "leave it in the working list", never "hide it". A quote with no
+   travel date at all (the tours-as-suggestions blank-date default) is left to the sweep. */
+function quoteTripOver(q,todayIso){
+  if(!q||q.status!=='sent'||!q.travelDate)return false;
+  return qDaysBetween(q.travelDate,todayIso)>QTRIP_GRACE_DAYS;
+}
 async function loadOpsQuotes(){
   try{
     const r=await fetch('/admin/quote/list',{credentials:'same-origin'});
@@ -2556,6 +2608,10 @@ function viewQuotes(){
   const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
   const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
   const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
+  /* Sent quotes whose trip has already happened drop out of the status sections into their own
+     group at the bottom (spec 2026-08-01). Colombo's day, reusing anColomboToday() rather than
+     defining a second offset that could drift from the analytics one. */
+  const tripOver=new Set(opsQuotes.filter(q=>quoteTripOver(q,anColomboToday())).map(q=>q.id));
   // Search results come from opsQuotes DIRECTLY — never from mineRows/byStatus, which partition
   // the queue between them and would duplicate or drop rows once flattened into one list.
   const hits=query?opsQuotes.filter(q=>quoteMatches(query,q)):[];
@@ -2604,7 +2660,8 @@ function viewQuotes(){
   let rendered=0;
   sections.forEach(sec=>{
     const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
-    const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
+    const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[])
+      .filter(q=>!tripOver.has(q.id)); /* rendered below in their own section instead */
     if(!rows.length)return;
     // Yours first within the section. A stable partition (not .sort, which would also reorder
     // the rest) so the server's ordering survives inside each half.
@@ -2620,6 +2677,19 @@ function viewQuotes(){
       <div class="qlist">${rows.map(q=>quoteRowHtml(q)).join('')}</div>
     </div>`;
   });
+  // Always last: these need closing out, not working. Kept visible (not hidden or collapsed) —
+  // a quote that silently disappeared would be worse than one sitting in a labelled pile.
+  const overRows=opsQuotes.filter(q=>tripOver.has(q.id)&&(!allowed||allowed.has(q.status)));
+  if(overRows.length){
+    rendered++;
+    html+=`<div class="qsection qsec-tripover">
+      <div class="qsection-head">
+        <h2 class="qsection-title">Trip date passed<span class="qsection-count">${overRows.length}</span></h2>
+        <span class="qsection-hint">Sent quotes for trips that have already happened — mark them booked or lost</span>
+      </div>
+      <div class="qlist">${overRows.map(q=>quoteRowHtml(q)).join('')}</div>
+    </div>`;
+  }
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
   paintQuotesView(html);
 }
@@ -4175,8 +4245,119 @@ var DRIVING_CATS = {
 // Route variants exist only on 2-stop legs, so the override targets a single-segment leg — we
 // reuse the ride-model wire builder (toolLegPayload) and just stamp the variant's km onto the
 // legacy mirror + that segment. (pickupLocation/dropoffLocation are retired — legFrom/legTo now.)
+/* ── Founder manual discount ──────────────────────────────────────────────────────────────────
+   The founder types an AMOUNT or a PERCENT. Everything else — the two limits, what is actually
+   allowed, which limit bit — is decided by the server and rendered here. The client deliberately
+   computes no money at all.
+   Editable only while the quote is (draft / changes_requested); elsewhere it is a read-only row,
+   matching the save route, which refuses a discount on any other status. */
+/* The SAME rule the rest of the editor uses. An earlier version of this read state.savedStatus,
+   which does not exist — so it fell through to 'draft' and rendered an editable control on a
+   quote in review, which the save route would then refuse. One rule, one place. */
+function discountEditable() { return isEditableNow(); }
+
+function discountControlHtml(est) {
+  if (!viewerCan('discount:apply_manual')) {
+    // Other roles see THAT it was discounted (the negative line is already in lineItems above)
+    // but get no control and no cap diagnostics.
+    return '';
+  }
+  var d = est && est.discount;
+  var out = [];
+  out.push('<div class="ch-discount" data-testid="discount-control">');
+
+  if (d) {
+    var applied = d.applied ? d.applied.usd || fmtUsd(d.applied.cents) : '';
+    out.push('  <div class="ch-discount-row"><span>Discount applied</span><strong data-testid="discount-applied">' + esc(applied) + '</strong></div>');
+    // Asked-for vs allowed, and WHY — the founder should never wonder where the rest went.
+    if (d.capReason && d.requested && d.applied && d.requested.cents > d.applied.cents) {
+      out.push('  <div class="ch-discount-cap" data-testid="discount-cap">You asked for ' + esc(d.requested.usd || fmtUsd(d.requested.cents))
+        + ' — ' + (d.capReason === 'percentage_cap'
+            ? 'the 30% ceiling'
+            : 'the vehicle minimum fare')
+        + ' allows ' + esc(applied) + '.</div>');
+    }
+  }
+
+  if (!discountEditable()) {
+    out.push('  <div class="ch-discount-locked">Reopen to edit to change the discount.</div>');
+    out.push('</div>');
+    return out.join('');
+  }
+
+  var cur = state.discount || { method: 'fixed', value: '', reason: '' };
+  out.push('  <div class="ch-discount-form">');
+  out.push('    <select data-discount-method aria-label="Discount type">');
+  out.push('      <option value="fixed"' + (cur.method === 'fixed' ? ' selected' : '') + '>$ off</option>');
+  out.push('      <option value="percentage"' + (cur.method === 'percentage' ? ' selected' : '') + '>% off</option>');
+  out.push('    </select>');
+  out.push('    <input data-discount-value type="number" min="0" step="0.01" placeholder="' + (cur.method === 'fixed' ? 'Amount' : 'Percent') + '" value="' + esc(discountInputValue(cur)) + '" aria-label="Discount amount">');
+  out.push('    <input data-discount-reason type="text" maxlength="500" placeholder="Reason (required)" value="' + esc(cur.reason || '') + '" aria-label="Discount reason">');
+  out.push('    <button type="button" data-action="applyDiscount">Apply</button>');
+  if (state.discount) out.push('    <button type="button" data-action="removeDiscount" class="ch-discount-remove">Remove</button>');
+  out.push('  </div>');
+  out.push('</div>');
+  return out.join('');
+}
+
+/* Cents and basis points are the WIRE units; the founder types dollars and percents. One place
+   converts each way so a $10.00 discount can never be sent as 10 cents. */
+function discountInputValue(d) {
+  if (d.value === '' || d.value == null) return '';
+  return d.method === 'fixed' ? (Number(d.value) / 100).toFixed(2) : String(Number(d.value) / 100);
+}
+function discountWireValue(method, typed) {
+  var n = Number(typed);
+  if (!isFinite(n) || n < 0) return null;
+  return method === 'fixed' ? Math.round(n * 100) : Math.round(n * 100);
+}
+
+/* Called by the delegated [data-action] dispatcher, so the control survives every re-render of
+   the money pane without a rebind — the pane is rebuilt as an HTML string on each estimate. */
+function applyDiscountFromForm() {
+  var root = document.querySelector('[data-testid="discount-control"]');
+  if (!root) return;
+  var methodEl = root.querySelector('[data-discount-method]');
+  var valueEl = root.querySelector('[data-discount-value]');
+  var reasonEl = root.querySelector('[data-discount-reason]');
+  var method = methodEl ? methodEl.value : 'fixed';
+  var wire = discountWireValue(method, valueEl ? valueEl.value : '');
+  var reason = (reasonEl ? reasonEl.value : '').trim();
+  // The server rejects both of these too; catching them here saves a round trip and lets the
+  // message name the box rather than the field.
+  if (wire == null || wire <= 0) { toast('Enter a discount amount'); return; }
+  if (!reason) { toast('A reason is required'); return; }
+  state.discount = { method: method, value: wire, reason: reason };
+  _discountTouched = true;
+  markDirty();
+  refreshEstimate();
+}
+
+function removeDiscount() {
+  state.discount = null;
+  _discountTouched = true;
+  markDirty();
+  refreshEstimate();
+}
+
+/* The discount AS IT GOES ON THE WIRE. One builder, used by every request that prices: the money
+   pane's estimate (_runEstimate), the distance-check estimate (buildEstimatePayload) and save.
+   The first version of this feature put the discount only in buildEstimatePayload(), which the
+   money pane does NOT use — _runEstimate builds its own payload from buildToolRequest(). The pane
+   therefore priced undiscounted through three separate "fixes". If a new request prices a quote,
+   it calls this. */
+function discountWire(d) {
+  if (!d) return undefined;
+  return d.method === 'fixed'
+    ? { method: 'fixed', amountCents: d.value, reason: d.reason }
+    : { method: 'percentage', basisPoints: d.value, reason: d.reason };
+}
+
 function buildEstimatePayload(override) {
   return {
+    // Omitted entirely when there is none — the server treats absent as "no discount", and on
+    // SAVE absent means "preserve", which is a different thing (see savePayload).
+    discount: discountWire(state.discount),
     service: state.service || 'private',
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
@@ -4266,6 +4447,10 @@ async function _runEstimate() {
   // Build the payload (Task 2 mapping; Task 7: shared wire builder — estimate + save send
   // the same leg shape, per-segment stops/segmentKms + the legacy from/to/distanceKm mirror)
   var payload = buildToolRequest(pricedLegs);
+  // Price WITH the founder's discount, or the pane shows a number the customer will not be
+  // charged. This is the request the money pane actually renders from.
+  var _dw = discountWire(state.discount);
+  if (_dw) payload.discount = _dw;
 
   var result = await apiEstimate(payload);
 
@@ -4478,6 +4663,10 @@ let state = {
   luggageCount: 2,
   vehicleType: null,
   service: 'private',
+  /* Founder manual discount (spec 2026-08-09). Null = none. The AMOUNT here is what the founder
+     ASKED for; what they are actually allowed comes back from the server, which owns both limits.
+     The client never computes an applied amount — it renders one. */
+  discount: null, // { method: 'fixed'|'percentage', value: number, reason: string }
   /* Quote intent (spec 2026-07-17): what the CUSTOMER asked for. Starts unselected and is
      NEVER derived from `service` above (I4) — a pre-filled value gets accepted unread, which
      is the failure this field exists to prevent. */
@@ -4938,6 +5127,20 @@ async function apiEstimate(payload) {
   } catch (e) { window.opsReportError && window.opsReportError('apiEstimate', e); return { error: 'Network error' }; }
 }
 
+/* The founder's stored discount, so a reopened quote reprices WITH it. Silent on failure: an
+   unreadable history must not block opening a quote — the pane then shows the stored total from
+   the server, which is still the right number. */
+async function apiActiveDiscount(id) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id) + '/discounts');
+    if (!r.ok) return null;
+    var body = await jsonOrNull(r);
+    var rows = (body && body.discounts) || [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].status === 'active') return rows[i];
+    return null;
+  } catch (e) { window.opsReportError && window.opsReportError('apiActiveDiscount', e); return null; }
+}
+
 async function apiRateCard() {
   try {
     var r = await api('/admin/quote/rate-card');
@@ -5093,6 +5296,11 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
+    // founder always may; ops may only on a single-leg standard transfer. Never derive it from
+    // caps: the capability alone is true on every quote, including the ones the server refuses.
+    // Defaults false so a quote that has not been loaded yet can never offer the button.
+    mayApprove: false,
   };
   lastEstimate = null;
   lastEstimateError = null;
@@ -5133,6 +5341,13 @@ async function claimDraftRow() {
   var res = await apiCreateDraft();
   if (seq !== _openSeq) return;
   if (!res || !res.id) return;
+  // A save raced this claim and won: the session already has a REAL row (the id-less first save
+  // inserted one). Binding the late shell here rebound the whole session — every later save
+  // wrote the on-screen quote into the empty shell (a near-identical duplicate) and the assign
+  // picker PATCHed the wrong row (reproduced 2026-08-13). Keep the row we have; the shell is
+  // redundant, so delete it rather than strand a $0 row in the queue. Fire-and-forget: a failed
+  // delete only leaves queue clutter for the 24h sweep, never a mis-bound editor.
+  if (state.savedId) { apiDelete(res.id); return; }
   state.savedId = res.id;
   state.reference = res.reference || res.id;
   state.unpriced = true;
@@ -5159,8 +5374,18 @@ function savePayload() {
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
     internalNotes: state.internalNotes || '', // ops-only scratchpad (punch list); `service` now comes from buildToolRequest()
     requestedService: state.requestedService,
+    /* TRI-STATE (spec §6). state.discount === null means the founder REMOVED it, and null on the
+       wire is what tells the server to supersede the stored row. `undefined` would be dropped by
+       JSON.stringify and read as "preserve" — the opposite. _discountTouched distinguishes "the
+       founder changed this" from "this quote simply has none", so an ordinary autosave never
+       sends a removal it did not mean. */
+    discount: _discountTouched ? (discountWire(state.discount) || null) : undefined,
   }, buildToolRequest());
 }
+
+/* Set only by the founder acting on the control. Reset once a save has carried the intent, so a
+   later autosave falls back to "preserve" rather than re-sending it. */
+let _discountTouched = false;
 
 /* A leg's identity ON THE WIRE — everything that decides which distances belong to it, and
    deliberately NOT the distances themselves (those are what we're adopting). */
@@ -5341,6 +5566,16 @@ function approveReady() {
 }
 function markSent()        { return transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 
+/* One place to turn a 409 refusal into a sentence. The server distinguishes its reasons — it
+   sends `reason: 'discounted'` — and collapsing every not_linkable into a single string is what
+   sent an operator hunting an approval problem that did not exist (owner-caught, 2026-08-10).
+   Each caller keeps its own fallback for the shape/status refusals it can actually provoke. */
+function payLinkRefusal(err, fallback) {
+  if (!err || err.error !== 'not_linkable') return 'Could not create the payment link';
+  if (err.reason === 'discounted') return 'A discounted quote can only take a full-total payment link — use "Payment link" instead';
+  return fallback;
+}
+
 /* Payment link (spec 2026-07-31). Minting is STATELESS server-side — no booking, no status
    change — so this button is safe to press any number of times: the URL is identical per
    revision. The row it reveals is what ops copies into the WhatsApp message next to the
@@ -5352,9 +5587,7 @@ async function mintPayLink() {
     var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', { method: 'POST' });
     if (!r.ok) {
       var err = await jsonOrNull(r);
-      showToast(err && err.error === 'not_linkable'
-        ? 'Only an approved (ready or sent) quote can take a payment link'
-        : 'Could not create the payment link', 'error');
+      showToast(payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
       return;
     }
     var body = await jsonOrNull(r);
@@ -5513,9 +5746,7 @@ async function confirmPayPart() {
     });
     if (!r.ok) {
       var err = await jsonOrNull(r);
-      showToast(err && err.error === 'not_linkable'
-        ? 'That selection can\u2019t be sold on its own'
-        : 'Could not create the payment link', 'error');
+      showToast(payLinkRefusal(err, 'That selection can\u2019t be sold on its own'), 'error');
       _payPicker.busy = false; render();
       return;
     }
@@ -5817,6 +6048,7 @@ async function reopenQuote(id) {
     state.savedId = q.id;
     state.reference = q.reference || q.id;
     state.status = q.status || 'draft';
+    state.mayApprove = !!q.mayApprove; // shells never qualify, but read it rather than assume
     state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
     state.customerTotalVia = q.customerTotalVia || null;
     state.assignedTo = q.assignedTo || null;
@@ -5895,6 +6127,7 @@ async function reopenQuote(id) {
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
   state.legs = legs;
   state.status = q.status || 'draft';
+  state.mayApprove = !!q.mayApprove; // server's per-quote answer; see the state defaults
   state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
   state.customerTotalVia = q.customerTotalVia || null;
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
@@ -5907,6 +6140,21 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+
+  /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
+     state.discount is client state and starts null on every page load; without this the pane
+     shows the undiscounted price while the stored quote is discounted — pane $62.00, stored
+     $51.99 (owner, staging, 2026-08-09).
+     THIS MUST LIVE ON THE PRICED PATH. The first version of this fix sat in the unpriced-SHELL
+     branch above, which returns early and only ever runs for a quote with no itinerary — so it
+     never executed for a real quote and the bug survived the fix.
+     _discountTouched stays FALSE: rehydrating is not the founder touching the control, so a
+     later autosave still means "preserve" rather than re-applying. */
+  var activeDiscount = await apiActiveDiscount(q.id);
+  state.discount = activeDiscount
+    ? { method: activeDiscount.method, value: activeDiscount.value, reason: activeDiscount.reason }
+    : null;
+  _discountTouched = false;
 
   lastEstimate = null;
   lastEstimateError = null;
@@ -6990,6 +7238,11 @@ function renderSummaryCardBody() {
     + '</span>');
   lines.push('</div>');
 
+  // Founder manual discount, directly under the total it changes. FOUNDER-ONLY: the server
+  // enforces discount:apply_manual on both estimate and save, so this is presentation — a hidden
+  // control has never been authorization.
+  lines.push(discountControlHtml(est));
+
   // What the customer was last quoted, when that differs from the number above it.
   lines.push(priceDriftHtml(state.customerTotalCents, state.customerTotalVia, est.total.cents));
   // Version history sits below the money, where you look when a number surprises you.
@@ -7810,7 +8063,15 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
-    else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
+    /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
+       says this particular quote qualifies — a single-leg, standard-priced, undiscounted private
+       transfer. Keyed on state.mayApprove, never on the capability: quote:approve_simple is true
+       for every ops session, so gating on it would offer the button on chauffeur and multi-leg
+       quotes too and 403 on the press.
+       Note what is NOT added: no Send back, no zone or delete controls. Those stay founder-only,
+       which is why this lives in the else branch rather than flipping `approver` — the approver
+       branch above hands out Send back and Reopen alongside Approve as one bundle. */
+    else if (s === 'pending_review') { if (state.mayApprove) out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal')); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // reopen = pull it back from review to fix something. One line on purpose: the review-lock test scans this bar line-by-line for the reopen door.
   }
   // Delete (spec 2026-07-22): soft delete, only for a SAVED quote, gated by state + role to mirror
   // the server. draft/changes_requested → anyone here (ops); pending_review/ready → approver
@@ -8892,6 +9153,10 @@ function attachEventListeners() {
     var isText = (id === 'f-firstName' || id === 'f-lastName' || id === 'f-contact');
     el.addEventListener('input', function() {
       fieldMap[id](el.value);
+      // These fields are quote content like any other mutator: without markDirty() a rename
+      // armed no autosave and the chip kept saying "Saved" over an unsaved edit — the change
+      // was silently lost on navigate-away (found 2026-08-13).
+      markDirty();
       // Text basics: live-update the contact validity + itinerary gate (renders only on a
       // flip, so the operator's typing/focus is never disrupted mid-keystroke).
       if (isText) syncBasics();
@@ -8946,7 +9211,11 @@ function attachEventListeners() {
     var action = el.getAttribute('data-action');
     var legId = el.getAttribute('data-leg');
 
-    if (action === 'addLeg') {
+    if (action === 'applyDiscount') {
+      applyDiscountFromForm();
+    } else if (action === 'removeDiscount') {
+      removeDiscount();
+    } else if (action === 'addLeg') {
       var cat = el.getAttribute('data-cat') || 'transfer';
       addLeg(cat);
     } else if (action === 'removeLeg') {

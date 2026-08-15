@@ -927,3 +927,100 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain("err.message==='trip_start_unknown'");
   });
 });
+
+describe('founder manual discount control', () => {
+  const shell = async () => (await createApp().request('/ops')).text();
+
+  it('gates the control on the capability, not on a hardcoded role', async () => {
+    const body = await shell();
+    expect(body).toContain("viewerCan('discount:apply_manual')");
+    // The same mistake the quote:approve gate was fixed for — never re-introduce a role string.
+    expect(body).not.toContain("state.role==='founder' && state.discount");
+  });
+
+  it('renders the control under the total, and only while the quote is editable', async () => {
+    const body = await shell();
+    expect(body).toContain('discountControlHtml(est)');
+    // ONE editability rule for the whole editor. An earlier version of this control keyed off
+    // state.savedStatus, which does not exist — so it fell through to 'draft' and offered an
+    // editable control on a quote in review that the save route would then refuse.
+    expect(body).toContain('function discountEditable() { return isEditableNow(); }');
+    expect(body).toContain('Reopen to edit to change the discount.');
+  });
+
+  it('offers both an amount and a percent, and demands a reason', async () => {
+    const body = await shell();
+    expect(body).toContain('data-discount-method');
+    expect(body).toContain('>$ off<');
+    expect(body).toContain('>% off<');
+    expect(body).toContain('Reason (required)');
+    expect(body).toContain("toast('A reason is required')");
+  });
+
+  it('converts dollars and percents to the WIRE units in exactly one place', async () => {
+    const body = await shell();
+    // A $10.00 discount must never be sent as 10 cents. One converter each way.
+    expect(body).toContain('function discountWireValue(method, typed)');
+    expect(body).toContain('function discountInputValue(d)');
+  });
+
+  it('sends null — not undefined — when the founder removes one', async () => {
+    const body = await shell();
+    // JSON.stringify DROPS undefined, and the server reads absent as "preserve": the opposite of
+    // remove. _discountTouched is what separates "changed it" from "never had one".
+    expect(body).toContain('_discountTouched');
+    expect(body).toContain('function removeDiscount()');
+  });
+
+  it('never computes an applied amount client-side — the server owns both limits', async () => {
+    const body = await shell();
+    // The pane renders what it is given. No 30% and no floor arithmetic in the browser.
+    expect(body).not.toContain('MAX_DISCOUNT_PCT');
+    expect(body).not.toContain('* 0.3');
+    expect(body).toContain('data-testid="discount-applied"');
+    expect(body).toContain('data-testid="discount-cap"');
+  });
+
+  it('REHYDRATES the stored discount when a quote is reopened', async () => {
+    const body = await shell();
+    // Observed on staging 2026-08-09: apply $10, refresh, and the pane showed $62.00 while the
+    // stored quote was $51.99. state.discount is client state and starts null, so without this
+    // the estimate reprices undiscounted and the operator reads a price nobody will be charged.
+    expect(body).toContain('async function apiActiveDiscount(id)');
+    expect(body).toContain('state.discount = activeDiscount');
+    // Rehydration is NOT the founder touching it — a later autosave must still mean "preserve".
+    expect(body).toContain('_discountTouched = false;');
+
+    // PLACEMENT, which is what actually went wrong. The first version of this fix sat in the
+    // unpriced-SHELL branch of reopenQuote, which returns early and only runs for a quote with no
+    // itinerary — so it never executed for a real quote and the bug survived the fix entirely.
+    // It must appear EXACTLY once, and after the priced path's convertedBookingId assignment.
+    const calls = body.split('await apiActiveDiscount(q.id)').length - 1;
+    expect(calls, 'rehydration must exist exactly once').toBe(1);
+    const pricedMarker = body.indexOf('state.convertedBookingId = q.convertedBookingId');
+    const hydration = body.indexOf('await apiActiveDiscount(q.id)');
+    expect(pricedMarker).toBeGreaterThan(-1);
+    expect(hydration, 'rehydration must be on the PRICED path').toBeGreaterThan(pricedMarker);
+  });
+
+  it('sends the discount on the path the MONEY PANE actually uses', async () => {
+    const body = await shell();
+    // The bug that survived three fixes: the discount was added to buildEstimatePayload(), which
+    // only the distance-check calls. _runEstimate builds its own payload from buildToolRequest()
+    // and is what the pane renders from — so the pane priced undiscounted every time.
+    // One wire builder, and _runEstimate must use it.
+    expect(body).toContain('function discountWire(d)');
+    const runEstimate = body.indexOf('async function _runEstimate()');
+    const nextFn = body.indexOf('\nfunction ', runEstimate + 10);
+    const bodyOfRunEstimate = body.slice(runEstimate, nextFn > 0 ? nextFn : runEstimate + 6000);
+    expect(bodyOfRunEstimate, '_runEstimate must put the discount on its payload')
+      .toContain('discountWire(state.discount)');
+  });
+
+  it('uses the delegated dispatcher, so it survives a money-pane re-render', async () => {
+    const body = await shell();
+    expect(body).toContain("data-action=\"applyDiscount\"");
+    expect(body).toContain("action === 'applyDiscount'");
+    expect(body).toContain("action === 'removeDiscount'");
+  });
+});

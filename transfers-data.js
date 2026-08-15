@@ -213,7 +213,10 @@
     ['Unawatuna', 6.01, 80.25], ['Nilaveli', 8.70, 81.19], ['Pasikudah', 7.92, 81.56],
     ['Hatton', 6.89, 80.60], ["Adam's Peak", 6.81, 80.50], ['Wilpattu', 8.45, 80.05],
     ['Kalpitiya', 8.23, 79.77], ['Jaffna', 9.66, 80.02], ['Haputale', 6.77, 80.96],
-    ['Kitulgala', 6.99, 80.41]
+    ['Kitulgala', 6.99, 80.41],
+    // Server-vocabulary parity (api/src/adapters/maps.ts KNOWN_PLACES): via-stops the ops
+    // quote tool offers must also resolve here, or kmBetween() returns null for them.
+    ['Nilaveli Beach', 8.70, 81.19], ['Nanu Oya', 6.94, 80.77], ['Thanthirimale', 8.42, 80.22]
   ];
   function nrm(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z]/g,'').trim(); }
   function words(s){

@@ -135,7 +135,7 @@ describe('InMemoryPaymentSettlementRepo', () => {
       currency: 'USD',
       idempotencyKey: `manual-paid:${f.booking.id}`,
     });
-    await f.payments.markSucceededManually(manual.id, { reference: 'slip-9' });
+    await f.payments.markSucceededManually(manual.id, { reference: 'slip-9', settledBy: 'ops@x.com' });
     await f.bookings.setStatus(f.booking.id, 'paid');
 
     const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(f.event);

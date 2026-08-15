@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, pickPlace } from './_stubs.js';
+import { blockLiveApi, gotoBooking, pickPlace } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // gotoBooking installs the Google/PayHere stubs and mocks the API; `path` retargets it at
 // any page. With the stubs present, ch-map's loadJs() short-circuits and the REAL Google
@@ -113,8 +116,8 @@ test('the modal lists the stops, numbered and colour-matched to the pins', async
   await expect(items.nth(2).locator('.ch-lg-n')).toHaveText('3');
 
   // Pick-up green, final drop-off orange — matching the pin colours.
-  await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(10, 125, 111)');
-  await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(232, 98, 58)');
+  await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(36, 117, 138)');
+  await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(236, 58, 36)');
 });
 
 test('the booking transfer map is expandable too', async ({ page }) => {
