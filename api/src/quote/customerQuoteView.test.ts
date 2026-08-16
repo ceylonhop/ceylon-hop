@@ -331,3 +331,167 @@ describe('a negotiated price on the customer quote page', () => {
     expect(view.options[1]?.discount).toBeUndefined();
   });
 });
+
+describe('per-journey prices', () => {
+  const shown = (over: Record<string, unknown> = {}) =>
+    customerQuoteView(quote({ showLegPrices: true, ...over }), p2pOnly).options[0].legPrices;
+
+  it('is null unless ops ticked the quote', () => {
+    expect(customerQuoteView(quote(), p2pOnly).options[0].legPrices).toBeNull();
+  });
+
+  it('is null on a chauffeur-priced quote even when ticked', () => {
+    const v = customerQuoteView(
+      quote({
+        showLegPrices: true,
+        request: {
+          engine: { product: 'chauffeur', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+          tool: { passengerCount: 2, legs: [] },
+        },
+      }),
+      { pointToPoint: null, chauffeur: { totalCents: 118_000 } },
+    );
+    expect(v.options[0].legPrices).toBeNull();
+  });
+
+  it('is null on the secondary option, which is a recompute not the approved total', () => {
+    const v = customerQuoteView(quote({ showLegPrices: true, requestedService: 'both' }), both);
+    expect(v.options[1].legPrices).toBeNull();
+  });
+
+  it('shows one whole-dollar row per journey, named without the vehicle tag', () => {
+    const lp = shown({
+      result: {
+        lineItems: [
+          { label: 'Colombo Airport → Sigiriya (car)', amountCents: 4508, meta: { distanceKm: 168 } },
+          { label: 'Sigiriya → Kandy (car)', amountCents: 3180, meta: { distanceKm: 92 } },
+        ],
+      },
+      totalCents: 7600,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'Colombo Airport → Sigiriya', amountUsd: '$45' },
+      { label: 'Sigiriya → Kandy', amountUsd: '$32' },
+    ]);
+  });
+
+  it('folds an attributed extra into its own leg rather than adding a row', () => {
+    const lp = shown({
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 5000 },
+          { label: 'B → C (car)', amountCents: 5000 },
+          { label: 'Sightseeing stops (up to 3h) — A → B', amountCents: 1000, meta: { kind: 'extra', code: 'sightseeing', legIndex: 0 } },
+        ],
+      },
+      totalCents: 11000,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$60' },
+      { label: 'B → C', amountUsd: '$50' },
+    ]);
+  });
+
+  it('gives an unattributed extra its own row', () => {
+    const lp = shown({
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 5000 },
+          // Brief's fixture omitted `meta` entirely here, which — per the documented contract
+          // ("extras carry meta.kind === 'extra', carrying meta.legIndex when attributed") —
+          // made this indistinguishable from a driving leg (both have meta?.kind === undefined),
+          // so it got bucketed as a leg and had its meaningful "(up to 3h)" suffix stripped as if
+          // it were a vehicle tag. Restored the kind so it lands in the unattributed-extra path.
+          // See task-3-report.md.
+          { label: 'Sightseeing stops (up to 3h)', amountCents: 1000, meta: { kind: 'extra' } },
+        ],
+      },
+      totalCents: 6000,
+    });
+    expect(lp!.rows.map((r) => r.label)).toEqual(['A → B', 'Sightseeing stops (up to 3h)']);
+  });
+
+  it('labels a downward remainder as rounded down', () => {
+    const lp = shown({
+      result: { lineItems: [{ label: 'A → B (car)', amountCents: 36146 }] },
+      totalCents: 35900,
+    });
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$361' }]);
+    expect(lp!.reconcile).toEqual({ label: 'Rounded down', amountUsd: '−$2' });
+    expect(lp!.totalUsd).toBe('$359');
+  });
+
+  it('labels an upward remainder as rounding, not a discount', () => {
+    const lp = shown({
+      result: { lineItems: [{ label: 'A → B (car)', amountCents: 5040 }] },
+      totalCents: 5050,
+    });
+    // Brief said '+$1'; that contradicts the invariant. wholeDollars(5040) = 5000, and the
+    // reconcile is the EXACT remainder against totalCents (5050 - 5000 = 50 cents = $0.50), by
+    // the same "solved for reconcile" formula the invariant test relies on for this identical
+    // case ({ legs: [5040], total: 5050 } appears verbatim there too). Showing '+$1' here would
+    // make rows(+$50) + reconcile(+$1) = $51 ≠ the $50.50 actually charged — the invariant test
+    // itself proves '+$1' is wrong for this input. See task-3-report.md.
+    expect(lp!.reconcile).toEqual({ label: 'Rounding', amountUsd: '+$0.50' });
+  });
+
+  it('omits the remainder row when it is exactly zero', () => {
+    const lp = shown({
+      result: { lineItems: [{ label: 'A → B (car)', amountCents: 5000 }] },
+      totalCents: 5000,
+    });
+    expect(lp!.reconcile).toBeNull();
+  });
+
+  it('gives a discount its own row instead of burying it in the remainder', () => {
+    const lp = shown({
+      result: {
+        lineItems: [{ label: 'A → B (car)', amountCents: 20000 }],
+        discountCents: 5000,
+        totalBeforeDiscountCents: 20000,
+      },
+      totalCents: 15000,
+    });
+    expect(lp!.discount).toEqual({ label: 'Discount', amountUsd: '−$50' });
+    expect(lp!.reconcile).toBeNull();
+    expect(lp!.totalUsd).toBe('$150');
+  });
+
+  // THE INVARIANT. Whatever rounding and finishing did, the column the customer adds up must
+  // land on the figure the pay link charges.
+  it('always sums to the charged total', () => {
+    const cases = [
+      { legs: [4508, 3180, 5917, 5112, 5917, 3623, 7889], total: 35900, discount: 0 },
+      { legs: [4999], total: 4999, discount: 0 },
+      { legs: [5040], total: 5050, discount: 0 },
+      { legs: [20000, 10000], total: 25000, discount: 5000 },
+      { legs: [3333, 3333, 3334], total: 9900, discount: 0 },
+    ];
+    for (const c of cases) {
+      const lp = shown({
+        result: {
+          lineItems: c.legs.map((a, i) => ({ label: `L${i} → M${i} (car)`, amountCents: a })),
+          ...(c.discount ? { discountCents: c.discount, totalBeforeDiscountCents: c.total + c.discount } : {}),
+        },
+        totalCents: c.total,
+      })!;
+      const parse = (s: string) => Math.round(Number(s.replace(/[$,+]/g, '').replace('−', '-')) * 100);
+      const sum =
+        lp.rows.reduce((s, r) => s + parse(r.amountUsd), 0) +
+        (lp.reconcile ? parse(lp.reconcile.amountUsd) : 0) +
+        (lp.discount ? parse(lp.discount.amountUsd) : 0);
+      expect(sum, `legs ${c.legs} total ${c.total}`).toBe(c.total);
+      expect(parse(lp.totalUsd)).toBe(c.total);
+    }
+  });
+
+  it('never leaks lineItem meta', () => {
+    const lp = shown({
+      result: {
+        lineItems: [{ label: 'A → B (car)', amountCents: 5000, meta: { hotZone: 'Ella +12%', vehicle: 'car' } }],
+      },
+      totalCents: 5000,
+    });
+    expect(JSON.stringify(lp)).not.toMatch(/hotZone|Ella \+12%|vehicle/);
+  });
+});

@@ -34,6 +34,18 @@ export interface QuoteViewOption {
   cancellation: { headline: string; ladder: string[] };
   lead: boolean;
   waText: string;
+  legPrices: QuoteViewLegPrices | null;
+}
+
+/* What each journey costs, for the customer who asked (spec 2026-08-16). Display-only, and
+   whole dollars: `reconcile` is the REMAINDER against the charged total, never the engine's own
+   `price_adjustment` row — so rows + reconcile + discount === totalCents by construction,
+   whatever rounding and finishing did. That is the arithmetic the customer will check. */
+export interface QuoteViewLegPrices {
+  rows: { label: string; amountUsd: string }[];
+  reconcile: { label: string; amountUsd: string } | null;
+  discount: { label: string; amountUsd: string } | null;
+  totalUsd: string;
 }
 
 // A stretch of the journey the map draws with ONE route query. Ops can pin a leg to the
@@ -71,6 +83,7 @@ interface ViewQuote {
   request: unknown;
   /** The stored QuoteResult. Carries the founder's discount when there is one. */
   result?: unknown;
+  showLegPrices?: boolean;
 }
 
 interface ToolLegLite {
@@ -209,6 +222,69 @@ function mapRunsOf(quote: ViewQuote): MapRun[] {
   }));
 }
 
+interface StoredLineItem {
+  label: string;
+  amountCents: number;
+  meta?: { kind?: string; legIndex?: number };
+}
+
+// "Colombo Airport → Sigiriya (car)" → "Colombo Airport → Sigiriya". The vehicle tag is an ops
+// annotation; the customer already knows what they are travelling in.
+const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$/, '');
+
+const wholeDollars = (cents: number): number => Math.round(cents / 100) * 100;
+
+function legPricesFor(
+  quote: ViewQuote,
+  service: 'private' | 'chauffeur',
+  lead: boolean,
+  totalCents: number,
+  discountOff: number | null,
+): QuoteViewLegPrices | null {
+  // Lead-only and private-only. The secondary option's total is a recompute with no stored
+  // lineItems behind it, so a breakdown there would reconcile to a number that was never
+  // approved — the same reason the stored total already outranks the recompute. Chauffeur is
+  // priced by the day and has no per-leg price to show at all.
+  if (!quote.showLegPrices || !lead || service !== 'private') return null;
+
+  const stored = (quote.result ?? {}) as { lineItems?: StoredLineItem[] };
+  const items = Array.isArray(stored.lineItems) ? stored.lineItems : [];
+  // Driving legs are the only rows the engine pushes with no meta.kind; extras, the finishing
+  // adjustment and the discount all carry one.
+  const legs = items.filter((li) => li.meta?.kind === undefined);
+  if (!legs.length) return null;
+
+  // An extra attributed to a leg folds into that leg, so the rail stays one row per journey.
+  const amounts = legs.map((li) => li.amountCents);
+  const loose: StoredLineItem[] = [];
+  for (const e of items.filter((li) => li.meta?.kind === 'extra')) {
+    const i = e.meta?.legIndex;
+    if (i != null && Number.isInteger(i) && i >= 0 && i < amounts.length) amounts[i] += e.amountCents;
+    else loose.push(e);
+  }
+
+  // journeyLabel strips a trailing "(car)"-style vehicle tag off a driving leg. An unattributed
+  // extra's own label carries no vehicle tag, and its parenthetical (e.g. "(up to 3h)") is part
+  // of what it IS — stripping it there would delete meaning, not an annotation.
+  const rows = [
+    ...legs.map((li, i) => ({ label: journeyLabel(li.label), cents: wholeDollars(amounts[i]) })),
+    ...loose.map((e) => ({ label: e.label, cents: wholeDollars(e.amountCents) })),
+  ];
+
+  // rows + reconcile − discount === totalCents, solved for reconcile.
+  const off = discountOff ?? 0;
+  const gap = totalCents + off - rows.reduce((s, r) => s + r.cents, 0);
+
+  return {
+    rows: rows.map((r) => ({ label: r.label, amountUsd: usd(r.cents) })),
+    reconcile: gap === 0
+      ? null
+      : { label: gap < 0 ? 'Rounded down' : 'Rounding', amountUsd: `${gap < 0 ? '−' : '+'}${usd(Math.abs(gap))}` },
+    discount: off > 0 ? { label: 'Discount', amountUsd: `−${usd(off)}` } : null,
+    totalUsd: usd(totalCents),
+  };
+}
+
 export function customerQuoteView(
   quote: ViewQuote,
   services: { pointToPoint: { totalCents: number } | null; chauffeur: { totalCents: number } | null },
@@ -279,6 +355,7 @@ export function customerQuoteView(
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),
+      legPrices: legPricesFor(quote, service, lead, cents, lead ? discountOff : null),
     };
   };
 
