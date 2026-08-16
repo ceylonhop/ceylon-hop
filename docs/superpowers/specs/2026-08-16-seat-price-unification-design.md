@@ -1,8 +1,9 @@
 # Shared-seat catalogue, price correction, and ride board on search — design
 
 Date: 2026-08-16
-Status: **ready to plan.** All blocking inputs received; two prices assumed and flagged
-(§1.2).
+Status: **BUILT** on `feat/shared-seat-catalogue` (4 commits, not pushed). All three steps
+implemented and green: api `npm run check` 2364 passed, web-tests 1126 passed. Two prices
+remain assumed and flagged (§1.2). See §11 for what shipped vs what this document planned.
 Owner decisions were all made explicitly in the brainstorming session of 2026-08-16.
 
 ---
@@ -491,3 +492,51 @@ how the live Mirissa/Weligama page treats its two pickup points. A one-line chan
 | Removing `yala-mirissa` leaves Ahangama with no shared mention. | Confirmed discontinued (D9). Noted in case Ahangama needs separate copy. |
 | Generated files (`trip/*`, `routes-data.js`) are stop-and-ask. | Nothing hand-edited; all output flows from `npm run generate`. |
 | Existing `shared_request` rows on withdrawn routes. | Not checked — `api/.env` `DATABASE_URL` points at **prod** and was not queried. Withdrawal stops new bookings; existing ones are untouched and still render in ops. |
+
+---
+
+## 11. What shipped (2026-08-16)
+
+Branch `feat/shared-seat-catalogue`, 4 commits, **not pushed**.
+
+| Commit | What |
+|---|---|
+| `45c943ec` | Catalogue replaces adjacency; per-product prices; regenerate |
+| `9e8bef5a` | `POST /bookings/shared` prices from the product |
+| `1f1c9144` | Board prices catalogue legs from the catalogue |
+| `31191c17` | Board strip + non-service-day handoff on search |
+
+### 11.1 Found during implementation, not in the plan
+
+1. **12 route-content intros promised a shared seat on legs we do not sell** — e.g.
+   *"a cheaper shared seat from the airport covers this run too"*. Hand-written prose the
+   generator cannot police. Rewritten, and now guarded by a test that fails if any pair
+   without a catalogue leg mentions a shared seat.
+2. **Ella→Yala copy quoted 8:00am** against a published 09:00 departure. Fixed.
+3. **Codegen corruption latent in `applySharedPrices`** — its `/price:\s*\d+/` stopped at
+   the decimal point, so a second pass over a $27.49 catalogue produced `price:27.49.49`.
+   Only surfaced because catalogue prices carry cents. Fixed + regression test.
+4. **`POST /bookings/shared` rejected every intermediate leg** — it validated the departure
+   time against the CORRIDOR's published times (when the van leaves its first stop), so
+   Sigiriya→Kandy at 11:30 was `unknown_departure_time`. Now validated against the product,
+   and the error names the boarding point.
+5. **The board's create form disagreed with its own backend** — it quoted
+   `pairCorridor().seat` (the corridor's flat rate) while `POST /board` persisted a
+   distance-derived price. New `TRANSFERS.boardSeatPrice()` mirrors the server exactly.
+6. **Cents vs dollars, confirmed as a real hazard** — the client now reads a generated
+   `SEAT_PRICING` block in cents; a test pins client == server across every baked distance.
+
+### 11.2 Corrections to this document
+
+- §5.1 said 4 of 44 trip pages would keep a shared chip. Actual: **5 of 54** — `BASE_PAIRS`
+  had grown, and CMB→Sigiriya is a catalogue leg with a page.
+- The chat plan briefly put the search handoff before board pricing. That is backwards: the
+  handoff promises "same price", which is only true once §6 lands. Built in the right order.
+
+### 11.3 Still open
+
+- The two assumed prices (§1.2): CMB→Sigiriya $27.49, Mirissa/Weligama→Colombo $29.99.
+- Landing pages for the three sellable legs that have none (§5.1).
+- CMB/Negombo→Kandy through-leg: physically possible, no product, no price.
+- Porting "free cancellation up to 10 days" into `terms.html` §7 (§1.3, §8).
+- **Outside this repo:** WordPress still sells daily; it must reduce to Wed & Sat (§1.0).
