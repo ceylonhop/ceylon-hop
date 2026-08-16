@@ -435,8 +435,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
-      // Display-only, and never set at save(): a new quote is off until ops ticks it via patch().
-      showLegPrices: false,
+      // Display-only. A new quote is off unless a caller explicitly asks otherwise via q.showLegPrices.
+      showLegPrices: q.showLegPrices ?? false,
       // Offer validity (spec 2026-08-05 D9): never set at save() — a new quote isn't approved
       // yet. Stamped later via patch() on the → ready transition.
       offerValidUntil: null,

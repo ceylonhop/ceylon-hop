@@ -744,4 +744,12 @@ describe('showLegPrices — the per-journey breakdown gate', () => {
     await repo.update(saved.id, sample());
     expect((await repo.get(saved.id))?.showLegPrices).toBe(true);
   });
+
+  it('can be turned back off once it was on', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    await repo.patch(saved.id, { showLegPrices: true });
+    await repo.patch(saved.id, { showLegPrices: false });
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(false);
+  });
 });
