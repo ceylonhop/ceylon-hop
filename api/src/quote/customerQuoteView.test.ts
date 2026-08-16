@@ -222,6 +222,43 @@ describe('customerQuoteView', () => {
   });
 });
 
+// What the money buys, as separate lines (owner, 2026-08-16). The customer's question at this
+// box is "what am I being charged for", and one `·`-joined sentence answered it as a paragraph.
+describe('what each option says is included', () => {
+  const opts = () => customerQuoteView(quote({ requestedService: 'both' }), both).options;
+
+  it('gives private transfers its three inclusions as separate items, no lead-in', () => {
+    const inc = opts()[0].included;
+    expect(inc.lead).toBeNull();
+    expect(inc.items).toEqual([
+      'Pick up and drop off',
+      'Air-conditioned car with driver',
+      'Fuel, tolls and parking',
+    ]);
+  });
+
+  it('puts the chauffeur card\'s "everything in X, plus" above its items, not inside them', () => {
+    const inc = opts()[1].included;
+    expect(inc.lead).toBe('Everything in Private transfers, plus:');
+    expect(inc.items).toEqual([
+      'Your car and driver stays for the whole trip',
+      'Sightseeing, waiting',
+      "Driver's meals & rooms covered",
+    ]);
+    // The lead-in is a sentence ABOUT the list — bulleting it would claim it as an inclusion.
+    expect(inc.items.some((i) => /Everything in/.test(i))).toBe(false);
+  });
+
+  // A quote.html cached before the bullets shipped still reads includedText, so it has to keep
+  // saying the same thing the bullets do rather than going blank.
+  it('keeps the legacy one-line sentence in step with the items', () => {
+    for (const o of opts()) {
+      for (const item of o.included.items) expect(o.includedText).toContain(item);
+      if (o.included.lead) expect(o.includedText.startsWith(o.included.lead)).toBe(true);
+    }
+  });
+});
+
 // The page must never print a number the pay link would not charge. The pay link charges the
 // STORED total (quotePay.ts: soldCents ?? totalCents); approval snapshots the rate card without
 // re-writing totalCents, so a recompute can legitimately differ from it after a rate-card deploy.

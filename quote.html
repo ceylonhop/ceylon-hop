@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css?v=8bf6f8423a">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
-<link rel="stylesheet" href="quote.css?v=7bce0d9eda">
+<link rel="stylesheet" href="quote.css?v=d6af34c1b8">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -290,6 +290,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return base + ' The difference is whether the driver stays with you.';
   }
 
+  // What the money buys, one line per inclusion (owner, 2026-08-16). A `·`-joined sentence made
+  // three separate things read as one paragraph, and this box is where a customer works out what
+  // they are being charged for. `lead` is a sentence ABOUT the list ("Everything in Private
+  // transfers, plus:"), so it sits above the bullets rather than becoming one.
+  // Falls back to the old sentence for a view served by an API that predates the bullets.
+  function includedHtml(opt){
+    var inc = opt.included;
+    var items = inc && Array.isArray(inc.items) ? inc.items : [];
+    if (!items.length) return '<div class="included"><b>Included</b>' + esc(opt.includedText || '') + '</div>';
+    return '<div class="included"><b>Included</b>'
+      + (inc.lead ? '<p class="inc-lead">' + esc(inc.lead) + '</p>' : '')
+      + '<ul class="inc-list">'
+      + items.map(function(it){ return '<li>' + esc(it) + '</li>'; }).join('')
+      + '</ul></div>';
+  }
+
   // IDENTICAL structure on both cards, row for row. No chip (owner critique, 2026-08-06):
   // the teal ring and the solid CTA already say "this is the one we quoted" — a third badge
   // was one signal more than the distinction needed, its label was ambiguous, and it broke
@@ -305,7 +321,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return '<div class="ticket' + (opt.lead ? ' opt-lead' : '') + '"><div class="t-main">'
       + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3></div>'
       + '<p class="opt-d">' + esc(opt.blurb) + '</p>'
-      + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
+      + includedHtml(opt)
       // A negotiated price shows its two ends. These reconcile exactly — finishing runs before the
       // discount — so the customer can check the arithmetic and it holds.
       + (opt.discount

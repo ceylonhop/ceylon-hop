@@ -27,6 +27,7 @@ function opt({ service, name, totalCents, lead }) {
     service,
     name,
     blurb: `${name} — the e2e blurb.`,
+    included: { lead: 'Everything the trip needs, plus:', items: ['A car', 'A driver', 'Fuel and tolls'] },
     includedText: 'Everything the trip needs, included.',
     totalCents,
     totalUsd: dollars,
@@ -99,6 +100,30 @@ test('a live quote link renders the trip, a priced option and a WhatsApp CTA', a
   const text = await waText(cta);
   expect(text, 'CTA text must carry the quote reference').toContain(REF);
   expect(text, "the option card's CTA must carry that option's name").toContain(PRIVATE_OPT.name);
+});
+
+// What the money buys, one line per inclusion (owner, 2026-08-16) — the customer's question at
+// this box is "what am I being charged for", and a `·`-joined sentence answered it as a paragraph.
+test('the included box lists each inclusion as its own line, lead-in above them', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  const box = page.locator('.opts .ticket').first().locator('.included');
+  await expect(box.locator('.inc-list li')).toHaveText(PRIVATE_OPT.included.items);
+  // The lead-in describes the list; bulleting it would claim it as an inclusion of its own.
+  await expect(box.locator('.inc-lead')).toHaveText(PRIVATE_OPT.included.lead);
+});
+
+test('an option served without bullets still shows its inclusions as a sentence', async ({ page }) => {
+  const legacy = { ...PRIVATE_OPT, included: undefined };
+  const body = { state: 'live', view: view({ options: [legacy] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  const box = page.locator('.opts .ticket').first().locator('.included');
+  await expect(box).toContainText(PRIVATE_OPT.includedText);
+  await expect(box.locator('.inc-list')).toHaveCount(0);
 });
 
 test('every option-card CTA is a wa.me link naming its own option', async ({ page }) => {
