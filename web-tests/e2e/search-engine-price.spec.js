@@ -48,8 +48,8 @@ test('an engine-priced route shows a price for each vehicle', async ({ page }) =
 
   await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$155');
   await expect(page.locator('.opt-private .veh-row').nth(1)).toContainText('$210');
-  // the route header states the measured distance the engine came back with
-  await expect(page.locator('#route-meta')).toContainText('~271 km');
+  // the route header uses the shared public rounding contract, not minute-level precision
+  await expect(page.locator('#route-meta')).toContainText('Approx. 270 km · around 5½ hours');
   // The title states the SHORT display label ("pasikudah · Kalkudah"), not the full Google
   // address — on a phone the full formatted address set in display serif is a wall of text.
   // The full name still travels in the URL and the estimate intent (asserted in the next test).

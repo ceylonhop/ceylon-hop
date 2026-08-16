@@ -49,7 +49,11 @@ describe('privateQuote (the fare customers see)', () => {
 
   it('uses the REAL drive time (minutes), not a distance-derived estimate', () => {
     // CMB->Ella is 335km but only ~4h57m (highway), not 335/42 = ~8h.
-    expect(T.privateQuote('cmb-airport', 'ella').duration).toBe('4h 57m');
+    expect(T.privateQuote('cmb-airport', 'ella')).toMatchObject({
+      duration: '4h 57m',
+      durationMin: 297,
+      estimated: false,
+    });
   });
 
   it('honours the minimum fare floors on ultra-short hops', () => {
