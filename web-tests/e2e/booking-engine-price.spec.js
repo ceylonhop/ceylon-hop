@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking, fillContact, pickPlace } from './_stubs.js';
+import { futureIsoDate } from '../dates.js';
 
 // Phase 3 (engine-driven pricing), Task 3: booking.js wires POST /quote/v2/estimate through
 // CH_PRICING (ch-pricing.js, Task 1) onto the adoption slot (booking.js, Task 2). These specs
@@ -220,7 +221,7 @@ test('choosing chauffeur on a trip re-estimates through the engine with a distin
     'mode=trip',
     'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
     'nights=0,1,0',
-    'dates=2026-08-08,2026-08-10',
+    `dates=${futureIsoDate(30)},${futureIsoDate(32)}`,
     'pax=2',
     'vehicle=car',
   ].join('&');
@@ -316,7 +317,7 @@ const TRIP_QUERY = [
   'mode=trip',
   'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
   'nights=0,1,0',
-  'dates=2026-08-08,2026-08-10',
+  `dates=${futureIsoDate(30)},${futureIsoDate(32)}`,
   'pax=2',
   'vehicle=car',
 ].join('&');
