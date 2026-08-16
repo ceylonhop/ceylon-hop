@@ -352,7 +352,17 @@ if (shared && offDay) {
   // of the two). With no count given we show both prices and claim nothing.
   const perPaxPrivate = pax == null ? null : quote.car / Math.min(3, pax);
   const savePct = perPaxPrivate == null ? null : Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
-  const timeStr = shared.times.map(t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; }).join(' & ');
+  const fmtTime = t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; };
+  const timeStr = shared.times.map(fmtTime).join(' & ');
+  /* One marketed product picks up at several places: the Negombo→Sigiriya van leaves CMB at
+     7:00 and Negombo at 7:30. Showing only the boarding time for the leg searched hides the
+     other pickup, so a traveller flying in can't tell the same van collects them at arrivals.
+     List the whole sequence, as the product page does, and mark the stop they searched. */
+  const stops = shared.pickups || [];
+  const pickupRows = stops.length > 1
+    ? `<div class="sm">${ICONS.departs} Runs ${shared.freqText} — pick-up points:</div>
+       <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
+    : `<div class="sm">${ICONS.departs} Departs ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''} · ${shared.freqText}</div>`;
   sharedCard = `
   <article class="opt opt-shared">
     <span class="tag-top">Best value · share &amp; save</span>
@@ -364,7 +374,7 @@ if (shared && offDay) {
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
-      <div class="sm">${ICONS.departs} Departs ${timeStr} · ${shared.freqText}</div>
+      ${pickupRows}
       <div class="sm">${ICONS.avail} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
     </div>
     <div class="incl">

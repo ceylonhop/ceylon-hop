@@ -221,6 +221,16 @@
     const p = SHARED_PRODUCTS.find((x) => x.from === from.name && x.to === to.name);
     if (!p) return null;
     const c = CORRIDORS.find((c) => c.id === p.corridorId);
+    // Every boarding point on this run, in departure order. One marketed product picks up at
+    // several places — the Negombo→Sigiriya van leaves CMB at 7:00 and Negombo at 7:30 —
+    // and a traveller needs the whole sequence to know where and when to stand, exactly as
+    // the live product page lists it. Grouped by product AND destination, since one product
+    // id can serve two destinations (Mirissa/Weligama → Colombo and → the airport).
+    const pickups = SHARED_PRODUCTS
+      .filter((x) => x.id === p.id && x.to === p.to)
+      .slice()
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .map((x) => ({ place: x.from, time: x.time, point: x.pickup }));
     return {
       corridorId: p.corridorId,
       corridorLabel: c ? c.label : p.corridorId,
@@ -229,6 +239,7 @@
       // leaves its first stop, which is wrong for every stop after it.
       times: [p.time],
       pickup: p.pickup,
+      pickups,
       days: c ? c.days : SHARED_DAYS,
       freqText: c ? c.freqText : 'Wed & Sat'
     };

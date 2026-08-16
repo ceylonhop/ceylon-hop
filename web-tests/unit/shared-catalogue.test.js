@@ -110,6 +110,46 @@ describe('route-content prose only mentions a shared seat where we sell one', ()
   });
 });
 
+// One marketed product boards in several places: the Negombo→Sigiriya van leaves CMB at
+// 7:00 and Negombo at 7:30. Showing only the searched leg's time hid the other pickup, so
+// a traveller flying in could not tell the same van collects them at arrivals.
+describe('pickup sequence', () => {
+  it('lists every boarding point on the run, in departure order', () => {
+    const p = T.sharedOption('negombo', 'sigiriya').pickups;
+    expect(p.map(x => `${x.time} ${x.point}`)).toEqual([
+      '07:00 CMB Airport',
+      '07:30 Zen Cafe, Negombo',
+    ]);
+  });
+
+  it('gives the same sequence whichever stop was searched', () => {
+    expect(T.sharedOption('cmb-airport', 'sigiriya').pickups)
+      .toEqual(T.sharedOption('negombo', 'sigiriya').pickups);
+  });
+
+  it('groups by destination, not just product id', () => {
+    // south-airport serves BOTH Colombo and the airport; a leg must not inherit the other's
+    // stops. Each destination sees Mirissa 14:45 then Weligama 15:00, and nothing else.
+    for (const to of ['cmb-airport', 'colombo']) {
+      const p = T.sharedOption('mirissa', to).pickups;
+      expect(p.map(x => x.place)).toEqual(['Mirissa', 'Weligama']);
+    }
+  });
+
+  it('leaves a single-boarding leg with one stop', () => {
+    const p = T.sharedOption('sigiriya', 'kandy').pickups;
+    expect(p).toHaveLength(1);
+    expect(p[0].point).toBe('Barista Cafe, Sigiriya');
+  });
+
+  it('always contains the leg the traveller searched', () => {
+    for (const [from, to] of CATALOGUE) {
+      const s = T.sharedOption(from, to);
+      expect(s.pickups.some(x => x.time === s.times[0]), `${from} -> ${to}`).toBe(true);
+    }
+  });
+});
+
 // The board's create form quoted the corridor's flat seat while POST /board persisted a
 // distance-derived price, so the number in the modal could differ from the list created.
 // boardSeatPrice mirrors the server rule exactly.
