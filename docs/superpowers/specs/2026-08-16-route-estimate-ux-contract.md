@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-16
 
-**Status:** Proposed — awaiting owner approval
+**Status:** Approved for implementation
 
 **Scope:** UI/UX consistency for customer-facing distance and journey-duration estimates
 
