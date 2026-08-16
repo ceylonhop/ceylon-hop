@@ -142,7 +142,6 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
 });
 
 test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?step=dates&stops=Colombo%20city%7CKandy%7CTrincomalee&pax=2&vehicle=car');
 
@@ -161,7 +160,6 @@ test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
 });
 
 test('same-day legs over 10 hours block continuing', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?step=dates&stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
 

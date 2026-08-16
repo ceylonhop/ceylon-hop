@@ -191,11 +191,8 @@ export async function gotoBooking(page, opts = {}) {
   if (pickGeo) {
     await page.addInitScript((g) => { window.__E2E_PICK_GEO = g; }, pickGeo);
   }
-  // Pre-seed the cookie choice so the consent banner never overlays controls near the
-  // bottom of the viewport (it intercepts pointer events and flakes autocomplete clicks).
-  await page.addInitScript(() => {
-    try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) {}
-  });
+  // (Until 2026-08-16 this pre-seeded 'ceylonhop_consent' so the consent banner could not
+  // overlay controls near the bottom of the viewport. The banner is gone, so is the seed.)
 
   // never hit the network for these
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
