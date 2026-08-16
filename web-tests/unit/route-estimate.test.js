@@ -32,21 +32,21 @@ describe('customer route-estimate rounding', () => {
 
   it('does not expose minute-level false precision for long journeys', () => {
     expect(formatRouteEstimate({ distanceKm: 335, durationMin: 297, state: 'browse' }))
-      .toBe('Approx. 335 km · around 5 hours');
+      .toBe('Approx. 335 km · 5h');
     expect(formatRouteEstimate({ distanceKm: 338, durationMin: 322, state: 'browse' }))
-      .toBe('Approx. 340 km · around 5½ hours');
+      .toBe('Approx. 340 km · 5h 30m');
   });
 });
 
 describe('customer route-estimate states', () => {
   it('explains a material exact-location update', () => {
     expect(formatRouteEstimate({ distanceKm: 338, durationMin: 322, state: 'exact' }))
-      .toBe('Updated for your pickup and destination: approx. 340 km · around 5½ hours');
+      .toBe('Updated for your pickup and destination: approx. 340 km · 5h 30m');
   });
 
   it('labels fallback figures as estimated', () => {
     expect(formatRouteEstimate({ distanceKm: 118, durationMin: 177, state: 'estimated' }))
-      .toBe('Estimated journey — approx. 120 km · around 3 hours. Final route confirmed before payment.');
+      .toBe('Estimated journey — approx. 120 km · 3h. Final route confirmed before payment.');
     expect(formatRouteEstimate({ state: 'estimated' }))
       .toBe('Estimated journey — final route confirmed before payment');
   });
@@ -60,7 +60,7 @@ describe('customer route-estimate states', () => {
 
   it('keeps partial safe information rather than inventing the missing half', () => {
     expect(formatRouteEstimate({ distanceKm: 41, state: 'browse' })).toBe('Approx. 40 km');
-    expect(formatRouteEstimate({ durationMin: 58, state: 'browse' })).toBe('Around 60 minutes');
+    expect(formatRouteEstimate({ durationMin: 58, state: 'browse' })).toBe('Approx. 60 min');
   });
 });
 
