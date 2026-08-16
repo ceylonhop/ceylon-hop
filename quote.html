@@ -281,12 +281,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       }
       return dayRowHtml(day, i === days.length - 1, price);
     }).join('');
-    return '<div class="hops">' + html + sumHtml(legPrices) + '</div>';
+    // Rows beyond the driving-day count are unattributed extras (e.g. sightseeing stops) that
+    // never landed on a leg. They still have to reach the customer or the column stops adding
+    // up to the Total, so they surface in the summary block instead of the rail.
+    var extras = rows.length ? rows.slice(next) : [];
+    return '<div class="hops">' + html + sumHtml(legPrices, extras) + '</div>';
   }
 
-  function sumHtml(lp){
+  function sumHtml(lp, extras){
     if (!lp) return '';
     var r = '';
+    (extras || []).forEach(function(row){
+      r += '<div class="r"><span>' + esc(row.label) + '</span><span>' + esc(row.amountUsd) + '</span></div>';
+    });
     if (lp.reconcile) r += '<div class="r"><span>' + esc(lp.reconcile.label) + '</span><span>' + esc(lp.reconcile.amountUsd) + '</span></div>';
     if (lp.discount) r += '<div class="r"><span>' + esc(lp.discount.label) + '</span><span>' + esc(lp.discount.amountUsd) + '</span></div>';
     r += '<div class="r tot"><span>Total</span><span>' + esc(lp.totalUsd) + '</span></div>';
