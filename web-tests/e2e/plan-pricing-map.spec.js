@@ -24,13 +24,13 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
 
   await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   const legMeta = page.locator('#rail [data-dist]');
-  await expect(legMeta).toContainText('136 km');
-  await expect(legMeta).toContainText('Google distance');
+  await expect(legMeta).toContainText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(legMeta).toContainText('Reviewed route');
   await expect(legMeta).toContainText('from $59');
-  await expect(legMeta.locator('.lm-src')).toHaveText('Google distance');
+  await expect(legMeta.locator('.lm-src')).toHaveText('Reviewed route');
   await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $59');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
-  await expect(page.locator('#st-drive')).toContainText('136 km');
+  await expect(page.locator('#st-drive')).toHaveText('Approx. 135 km · around 3 hours 45 minutes');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 
@@ -74,6 +74,22 @@ test('mobile planner keeps unselected vehicle option text readable', async ({ pa
   await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', selected);
 });
 
+test('mobile planner keeps the longer shared route estimate readable', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
+
+  const meta = page.locator('#rail [data-dist]');
+  await expect(meta).toContainText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(meta.locator('.lm-src')).toBeHidden();
+  await expect(meta.locator('.lm-sep')).toBeHidden();
+  expect(await meta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+
+  const drive = page.locator('#st-drive');
+  await expect(drive).toHaveText('Approx. 135 km · around 3 hours 45 minutes');
+  expect(await drive.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
 test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
@@ -93,7 +109,7 @@ test('planner guide range never rounds a priced car transfer down to zero', asyn
     routeKm: 52,
   });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('52 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · around 1 hour 15 minutes');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $29');
   await expect(page.locator('#sum-amt')).toHaveText(/\$29[-\u2013]\$40/);
   await expect(page.locator('#sum-amt')).not.toContainText('$0');
@@ -106,7 +122,7 @@ test('planner passes Google-measured leg distance into booking handoff', async (
     routeKm: 52,
   });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('52 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · around 1 hour 15 minutes');
   await page.locator('#request-btn').click();
   await page.locator('#dates-continue').click();
   await page.waitForURL('**/booking.html?**');
@@ -122,7 +138,7 @@ test('search add-stops handoff preserves the equivalent base route price', async
   await page.locator('#add-stops').click();
   await page.waitForURL('**/plan.html?**');
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('136 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 135 km · around 3 hours 45 minutes');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
