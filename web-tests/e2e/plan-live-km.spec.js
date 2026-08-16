@@ -4,6 +4,31 @@ import { blockLiveApi } from './_stubs.js';
 // plan.html pings the live API on load (0e0f077) — keep the suite offline.
 test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
+test('planner keeps Google routed duration instead of deriving time from distance', async ({ page }) => {
+  await page.addInitScript(() => {
+    const Route = {
+      computeRoutes: async () => ({
+        routes: [{ legs: [{ distanceMeters: 118000, durationMillis: 177 * 60000 }] }],
+      }),
+    };
+    const places = {
+      AutocompleteSessionToken: function () {},
+      AutocompleteSuggestion: { fetchAutocompleteSuggestions: async () => ({ suggestions: [] }) },
+    };
+    const libs = { routes: { Route }, places };
+    window.google = { maps: { importLibrary: async (name) => libs[name] || {} } };
+  });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Yatiyanthota, Sri Lanka|Ratnapura, Sri Lanka') + '&pax=2&vehicle=car');
+
+  const expected = 'Approx. 120 km · around 3 hours';
+  const meta = page.locator('#rail .leg-card').first().locator('[data-dist]');
+  await expect(meta).toContainText(expected);
+  await expect(meta).toContainText('Google route');
+  await expect(meta).not.toContainText('2h 49m');
+  await expect(page.locator('#st-drive')).toHaveText(expected);
+});
+
 // A Google-only planner leg gets its distance from CH_MAP.routeStats. ch-map.js collapses
 // transient routing failures (over-quota / rejected computeRoutes) into a resolved `null`,
 // and plan.js used to CACHE that null — poisoning the leg so it stayed unpriceable for the
@@ -39,5 +64,6 @@ test('a transient routeStats failure does not poison the leg — the next render
 
   // Any re-render (adding a leg) re-requests the un-poisoned leg — the retry succeeds.
   await page.locator('#add-stop').click();
-  await expect(dist()).toContainText('120 km', { timeout: 6000 });
+  await expect(dist()).toContainText('Approx. 120 km · around 2 hours', { timeout: 6000 });
+  await expect(dist()).toContainText('Google route');
 });
