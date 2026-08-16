@@ -52,6 +52,52 @@ describe('analytics snippet present on every hand-authored root page', () => {
   });
 });
 
+/* The loader used to run wherever a page was opened. Clarity and GA4 count a SESSION per
+   page load, so the e2e suite (~100 spec files against a localhost static server) invented
+   several hundred "live users" per CI run, and every local preview added more.
+
+   chEnv() cannot fix this — it only LABELS data with ch_env, and by the time it runs GTM
+   has loaded and Clarity is already recording. The gate has to be in the head, ahead of
+   the loader, which is what these guard. */
+describe('analytics does not load off a real host', () => {
+  // Pull the guard out of the SHIPPED string and execute it, so this tests the bytes that
+  // actually reach the browser rather than a copy of the logic.
+  const guard = (hostname) => {
+    const m = analyticsSnippet.match(/if\((![\s\S]*?)\)return;/);
+    expect(m, 'no hostname guard found in analyticsSnippet').toBeTruthy();
+    return new Function('location', `return ${m[1]};`)({ hostname });
+  };
+
+  it('skips GTM on localhost, loopback, file:// and preview hosts', () => {
+    for (const h of ['localhost', '127.0.0.1', '', '0.0.0.0', 'ceylonhop.github.io']) {
+      expect(guard(h), `${h || '(file://)'} should NOT load analytics`).toBe(true);
+    }
+  });
+
+  it('still loads GTM on the real hosts', () => {
+    for (const h of ['ceylonhop.com', 'www.ceylonhop.com', 'prod.ceylonhop.com',
+      'pay.ceylonhop.com', 'ops.staging.ceylonhop.com', 'ceylon-hop-api.onrender.com']) {
+      expect(guard(h), `${h} SHOULD load analytics`).toBe(false);
+    }
+  });
+
+  it('is not fooled by lookalike hostnames', () => {
+    for (const h of ['evil-ceylonhop.com', 'ceylonhop.com.evil.example', 'notceylonhop.com']) {
+      expect(guard(h), `${h} must not be treated as ours`).toBe(true);
+    }
+  });
+
+  it('the guard runs BEFORE the GTM script is injected', () => {
+    expect(analyticsSnippet.indexOf(')return;')).toBeLessThan(analyticsSnippet.indexOf('googletagmanager.com'));
+  });
+
+  it('every hand-authored page carries the gate, not just the generated ones', () => {
+    for (const p of PAGES) {
+      expect(read(p).includes(")return;w[l]=w[l]||[];"), `${p} has an UNGATED GTM loader`).toBe(true);
+    }
+  });
+});
+
 describe('privacy disclosure', () => {
   it('the privacy source fragment mentions analytics cookies and opt-out', () => {
     const src = read('tools/legal/privacy.body.html').toLowerCase();
