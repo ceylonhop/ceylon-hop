@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css?v=8bf6f8423a">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
-<link rel="stylesheet" href="quote.css?v=d6af34c1b8">
+<link rel="stylesheet" href="quote.css?v=20d248dfb0">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -241,7 +241,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // one row per calendar day — .hops rail, ticket.css's dot-and-line down the side, extended
   // here with STAY rows (a night with no journey) so a gap day reads as "you're resting", not
   // as a hole in the itinerary.
-  function dayRowHtml(day, isLast){
+  function dayRowHtml(day, isLast, price){
     var isStay = day.kind === 'stay';
     var dotClass = 'hop-dot' + (isStay ? ' stay' : (isLast ? ' end' : ''));
     var lineHtml = isLast ? '' : '<span class="hop-line' + (isStay ? ' dash' : '') + '"></span>';
@@ -250,17 +250,47 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       : '';
     return '<div class="hop' + (isStay ? ' is-stay' : '') + '">'
       + '<div class="hop-rail"><span class="' + dotClass + '"></span>' + lineHtml + '</div>'
-      + '<div><div class="hop-t">' + esc(day.title) + '</div>'
+      + '<div><div class="hop-t"><span class="hop-title">' + esc(day.title) + '</span>'
+      + (price ? '<span class="hop-p">' + esc(price) + '</span>' : '') + '</div>'
       + '<div class="hop-d">' + esc(day.date) + '</div>'
       + (day.meta ? '<div class="hop-m">' + esc(day.meta) + '</div>' : '')
       + stops
       + '</div></div>';
   }
-  function daysHtml(days){
+  // Per-journey prices (spec 2026-08-16), shown only when ops ticked this quote. Rows are
+  // consumed in itinerary order against the DRIVING days — the projection emits exactly one row
+  // per driving leg, in the same order quoteDays lays them out. Stay days are priced too, as
+  // "no charge": that is the private blurb's "you only pay for the days you're moving", proved.
+  function daysHtml(days, legPrices){
     days = days || [];
-    return '<div class="hops">' + days.map(function(day, i){
-      return dayRowHtml(day, i === days.length - 1);
-    }).join('') + '</div>';
+    var rows = (legPrices && legPrices.rows) || [];
+    var next = 0;
+    var staySeen = false;
+    var html = days.map(function(day, i){
+      var isStay = day.kind === 'stay';
+      var price = null;
+      if (rows.length) {
+        if (isStay) {
+          // Once per stay BLOCK, not on every consecutive stay row.
+          price = staySeen ? null : 'no charge';
+          staySeen = true;
+        } else {
+          staySeen = false;
+          price = next < rows.length ? rows[next++].amountUsd : null;
+        }
+      }
+      return dayRowHtml(day, i === days.length - 1, price);
+    }).join('');
+    return '<div class="hops">' + html + sumHtml(legPrices) + '</div>';
+  }
+
+  function sumHtml(lp){
+    if (!lp) return '';
+    var r = '';
+    if (lp.reconcile) r += '<div class="r"><span>' + esc(lp.reconcile.label) + '</span><span>' + esc(lp.reconcile.amountUsd) + '</span></div>';
+    if (lp.discount) r += '<div class="r"><span>' + esc(lp.discount.label) + '</span><span>' + esc(lp.discount.amountUsd) + '</span></div>';
+    r += '<div class="r tot"><span>Total</span><span>' + esc(lp.totalUsd) + '</span></div>';
+    return '<div class="hop-sum">' + r + '</div>';
   }
 
   // Every option's action is WhatsApp, prefilled with the quote reference and the tapped
@@ -377,8 +407,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       html += lapsed ? '<div class="stale">' + optsHtml + '</div>' : optsHtml;
     }
     html += '<div class="ticket"><div class="t-main">'
-      + '<div class="t-head"><span class="t-ref">Day by day</span></div>'
-      + daysHtml(v.days)
+      + '<div class="t-head"><span class="t-ref">Day by day</span>'
+      + (v.options && v.options.length > 1 && v.options[0].legPrices
+          ? '<span class="t-ref t-ref-soft">' + esc(v.options[0].name.toLowerCase()) + ' prices</span>'
+          : '')
+      + '</div>'
+      + daysHtml(v.days, (v.options && v.options[0] && v.options[0].legPrices) || null)
       + '</div></div>'
       + '<p class="pp-note">Anything you’d like changed — dates, stops, a bigger vehicle —<br>'
       + '<a href="' + waHref(v.waText) + '">just message us</a> and we’ll update this page.</p>';

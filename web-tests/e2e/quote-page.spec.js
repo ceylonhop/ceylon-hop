@@ -21,7 +21,7 @@ test.use({ viewport: { width: 375, height: 812 } });
 const PAGE = '/quote.html?t=test-token';
 const REF = 'Q-E2E77';
 
-function opt({ service, name, totalCents, lead }) {
+function opt({ service, name, totalCents, lead, legPrices = null }) {
   const dollars = `$${(totalCents / 100).toFixed(totalCents % 100 ? 2 : 0)}`;
   return {
     service,
@@ -35,6 +35,7 @@ function opt({ service, name, totalCents, lead }) {
     deltaText: null,
     cancellation: { headline: 'Free cancellation until 24 hours before departure.', ladder: ['Full refund more than 24h out.'] },
     lead,
+    legPrices,
     waText: `Hi! I'd like to book the ${name} option for quote ${REF}`,
   };
 }
@@ -163,6 +164,38 @@ test('no pay button and no /p link exists anywhere on the page', async ({ page }
   await expect(page.locator('#paybtn')).toHaveCount(0);
   await expect(page.locator('a[href*="/p?t="]')).toHaveCount(0);
   await expect(page.locator('a[href*="/p.html"]')).toHaveCount(0);
+});
+
+const PRICED_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 45_000, lead: true });
+PRICED_OPT.legPrices = {
+  rows: [
+    { label: 'Colombo Airport → Kandy', amountUsd: '$120' },
+    { label: 'Kandy → Ella', amountUsd: '$140' },
+  ],
+  reconcile: { label: 'Rounded down', amountUsd: '−$2' },
+  discount: null,
+  totalUsd: '$258',
+};
+
+test('per-journey prices sit on each journey header, stay days show no charge once', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRICED_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.hop:not(.is-stay) .hop-p')).toHaveText(['$120', '$140']);
+  // DAYS has one stay row between the two journeys; it is priced as no charge, not blank.
+  await expect(page.locator('.hop.is-stay .hop-p')).toHaveText(['no charge']);
+  await expect(page.locator('.hop-sum .r').first()).toContainText('Rounded down');
+  await expect(page.locator('.hop-sum .r.tot')).toContainText('$258');
+});
+
+test('no prices anywhere in the rail when the quote was not ticked', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.hop-p')).toHaveCount(0);
+  await expect(page.locator('.hop-sum')).toHaveCount(0);
 });
 
 // The customer must see the road the quote was PRICED on. Ops can pin a leg to the toll-free
