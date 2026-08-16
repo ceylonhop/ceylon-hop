@@ -1090,7 +1090,9 @@
   }
 
   /* ----- create-a-list form (uses transfers-data) ----- */
-  var T = window.TRANSFERS || { CORRIDORS: [], byId: {}, sharedOption: function () { return null; } };
+  // corridorFor, NOT sharedOption: the board pools routes we do not schedule, so it must
+  // keep matching every corridor pair even after the scheduled catalogue narrowed.
+  var T = window.TRANSFERS || { CORRIDORS: [], byId: {}, corridorFor: function () { return null; } };
   var cFrom = document.getElementById('c-from'), cTo = document.getElementById('c-to'),
     cDate = document.getElementById('c-date'), cTime = document.getElementById('c-time'),
     cNote = document.getElementById('c-note'), cEst = document.getElementById('c-est');
@@ -1104,7 +1106,7 @@
   cFrom.innerHTML = ALL_STOPS.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
 
   function pairCorridor(a, b) {
-    var so = T.sharedOption ? T.sharedOption(a, b) : null;
+    var so = T.corridorFor ? T.corridorFor(a, b) : null;
     if (so) return { id: so.corridorId, seat: so.seat };
     var c = (T.CORRIDORS || []).find(function (c) { return c.stops.indexOf(a) !== -1 && c.stops.indexOf(b) !== -1; });
     return c ? { id: c.id, seat: c.seat } : null;

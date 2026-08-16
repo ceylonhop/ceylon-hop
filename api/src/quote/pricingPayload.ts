@@ -3,7 +3,7 @@
 // so the front-end never hand-copies a price. Cents -> whole USD conversion happens here, once, at the
 // boundary — the backend stays in integer minor units.
 import { RATE_CARD } from './rateCard';
-import { DEFAULT_CORRIDORS } from '../db/departureRepo';
+import { DEFAULT_CORRIDORS, SHARED_PRODUCTS } from '../db/departureRepo';
 
 export type PricingPayload = {
   perKm: { car: number; van: number };
@@ -16,6 +16,18 @@ export type PricingPayload = {
   depositCap: number; // whole USD
   extras: Record<string, number>; // USD per extra code
   corridorSeat: Record<string, number>; // corridorId -> whole-USD seat price
+  // The shared catalogue: the DIRECTED legs we actually sell, each with its own USD
+  // price and boarding time. The front-end offers a shared seat on these and nothing
+  // else — corridor adjacency is not an offer (see departureRepo.ts SHARED_PRODUCTS).
+  sharedProducts: Array<{
+    id: string;
+    corridorId: string;
+    from: string;
+    to: string;
+    seat: number; // whole USD
+    time: string;
+    pickup: string | null;
+  }>;
 };
 
 const usd = (cents: number) => cents / 100;
@@ -38,5 +50,14 @@ export function buildPricingPayload(): PricingPayload {
     depositCap: usd(RATE_CARD.deposit.capCents),
     extras,
     corridorSeat,
+    sharedProducts: SHARED_PRODUCTS.map((p) => ({
+      id: p.id,
+      corridorId: p.corridorId,
+      from: p.fromPlace,
+      to: p.toPlace,
+      seat: usd(p.seatPrice),
+      time: p.time,
+      pickup: p.pickup,
+    })),
   };
 }
