@@ -556,6 +556,13 @@ describe('per-journey prices', () => {
     ];
     for (const c of cases) {
       const lp = shown({
+        request: {
+          engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+          tool: {
+            passengerCount: 2,
+            legs: c.legs.map((_, i) => ({ from: `L${i}`, to: `M${i}`, date: '2026-08-20', distanceKm: 100 })),
+          },
+        },
         result: {
           lineItems: c.legs.map((a, i) => ({ label: `L${i} → M${i} (car)`, amountCents: a })),
           ...(c.discount ? { discountCents: c.discount, totalBeforeDiscountCents: c.total + c.discount } : {}),
@@ -570,6 +577,92 @@ describe('per-journey prices', () => {
       expect(sum, `legs ${c.legs} total ${c.total}`).toBe(c.total);
       expect(parse(lp.totalUsd)).toBe(c.total);
     }
+  });
+
+  // Finding 2: the engine's own `price_adjustment` and `discount` rows are skipped on purpose —
+  // `reconcile`/`discount` below are COMPUTED as remainders against the charged total, so reading
+  // the engine's rows back would double-count them. If the skip were ever deleted, the invariant
+  // test would still pass (the remainder absorbs the stray rows), so this has to check identity,
+  // not just the sum.
+  it('never prints the engine\'s own adjustment or discount rows, computing its own instead', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'A', to: 'B', date: '2026-08-20', distanceKm: 100 },
+            { from: 'B', to: 'C', date: '2026-08-22', distanceKm: 100 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 20000 },
+          { label: 'B → C (car)', amountCents: 20000 },
+          { label: 'Final price adjustment', amountCents: -246, meta: { kind: 'price_adjustment', strategy: 'charm' } },
+          { label: 'Discount', amountCents: -5000, meta: { kind: 'discount' } },
+        ],
+        // The projection's own discount row is read from these top-level fields, never from the
+        // lineItems' own 'Discount' row — so this exercises both skips at once: the adjustment
+        // row folds into `reconcile`, and the lineItems' discount row is ignored in favour of
+        // the one computed from discountCents.
+        discountCents: 5000,
+        totalBeforeDiscountCents: 39754,
+      },
+      totalCents: 34754,
+    });
+    expect(lp!.rows.map((r) => r.label)).not.toContain('Final price adjustment');
+    expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$200' },
+      { label: 'B → C', amountUsd: '$200' },
+    ]);
+    // reconcile and discount are the PROJECTION's own computed rows, not the engine's stored ones:
+    // reconcile absorbs the skipped -246 price_adjustment as a remainder, and discount is $50
+    // (from discountCents), not the lineItems' own -5000 'Discount' row (which would print $50 too,
+    // but by construction, not by being read back).
+    expect(lp!.reconcile).toEqual({ label: 'Rounded down', amountUsd: '−$2.46' });
+    expect(lp!.discount).toEqual({ label: 'Discount', amountUsd: '−$50' });
+    const parse = (s: string) => Math.round(Number(s.replace(/[$,+]/g, '').replace('−', '-')) * 100);
+    const sum =
+      lp!.rows.reduce((s, r) => s + parse(r.amountUsd), 0) +
+      (lp!.reconcile ? parse(lp!.reconcile.amountUsd) : 0) +
+      (lp!.discount ? parse(lp!.discount.amountUsd) : 0);
+    expect(sum).toBe(34754);
+  });
+
+  // Finding 3: N is trusted today (request and result are written atomically), but if it ever
+  // overran the real leg rows, a bare slice-by-N could pull an internal row into the leg bucket
+  // and show it to a customer as a journey. The projection stops at the first internal row
+  // regardless of N.
+  it('never buckets an internal row as a journey even if N overruns the leg rows', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: {
+          passengerCount: 2,
+          // N (driving-leg count) is 3, but the stored result only has ONE real leg row before
+          // its internal rows — the shape a corrupt/legacy result could have.
+          legs: [
+            { from: 'A', to: 'B', date: '2026-08-20', distanceKm: 100 },
+            { from: 'B', to: 'C', date: '2026-08-22', distanceKm: 100 },
+            { from: 'C', to: 'D', date: '2026-08-24', distanceKm: 100 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 20000 },
+          { label: 'Final price adjustment', amountCents: -246, meta: { kind: 'price_adjustment', strategy: 'charm' } },
+          { label: 'Discount', amountCents: -5000, meta: { kind: 'discount' } },
+        ],
+      },
+      totalCents: 14754,
+    });
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$200' }]);
+    expect(lp!.rows.map((r) => r.label)).not.toContain('Final price adjustment');
+    expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
   });
 
   it('never leaks lineItem meta', () => {

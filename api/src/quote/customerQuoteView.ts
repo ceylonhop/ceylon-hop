@@ -266,7 +266,13 @@ function legPricesFor(
   // indistinguishable from a travel row — counting it as one would shift every later price
   // onto the wrong journey. A stored list shorter than N (a legacy or partial result) just
   // yields the rows it has.
-  const n = Math.min(drivingLegCount, items.length);
+  //
+  // Defensive: N is trusted (request and result are written atomically), but if it ever
+  // overran the real leg rows, a bare slice could pull the engine's own price_adjustment or
+  // discount row into the leg bucket and show it to a customer as a journey. Stop at the first
+  // internal row regardless of N so that can never happen.
+  const firstInternal = items.findIndex((li) => li.meta?.kind === 'price_adjustment' || li.meta?.kind === 'discount');
+  const n = Math.min(drivingLegCount, firstInternal === -1 ? items.length : firstInternal);
   const legs = items.slice(0, n);
   if (!legs.length) return null;
 
