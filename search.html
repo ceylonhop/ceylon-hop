@@ -204,6 +204,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .noshare .ns-ico svg .wp{fill:currentColor;stroke:none}
   .noshare b{display:block;margin-bottom:.2rem}
   .noshare p{font-size:.92rem;color:var(--ink-soft);margin:0}
+  /* ---- ride board strip: who else is already going this way ----
+     Sits BELOW the option grid, not inside it: the grid means "what you buy" (private vs
+     shared), this means "who else is going". It also renders late, so keeping it out of
+     the grid means it never reflows the prices the traveller came for. */
+  .board-strip{margin-top:28px;padding:24px;background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r-lg)}
+  .board-strip .bs-h{font-family:var(--display);font-size:1.35rem;font-weight:700;margin:0 0 .2rem}
+  .board-strip .bs-sub{font-size:.92rem;color:var(--ink-soft);margin:0 0 16px}
+  .board-strip .bs-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .board-strip .bs-card{display:block;padding:14px 16px;background:var(--white);border:1.5px solid var(--line);border-radius:12px;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
+  .board-strip .bs-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .board-strip .bs-when{font-weight:700;font-size:.95rem}
+  .board-strip .bs-count{font-size:.86rem;color:var(--ink-soft);margin:.15rem 0 .5rem}
+  .board-strip .bs-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .board-strip .bs-price{font-weight:700}
+  .board-strip .bs-go{font-size:.86rem;font-weight:600;color:var(--accent-ink,var(--ink))}
+  .board-strip .bs-go svg{width:14px;height:14px;vertical-align:-2px}
+  @media(max-width:640px){.board-strip{padding:18px}}
 
   .reassure{display:flex;gap:26px;flex-wrap:wrap;margin-top:38px;padding-top:26px;border-top:1px solid var(--line);color:var(--ink-soft);font-size:.9rem;font-weight:500}
   .reassure .ra{display:flex;align-items:center;gap:.5rem}
@@ -270,6 +287,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="ch-pricing.js?v=a2511d67e7"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="search.js?v=983fa74658"></script>
+<script src="search.js?v=888e1d4734"></script>
 </body>
 </html>

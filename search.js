@@ -311,9 +311,41 @@ function unpricedHtml() { return `
     <a class="btn btn-wa o-cta" target="_blank" rel="noopener" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! Could I get a price for ' + fromP.name + ' → ' + toP.name + '?')}">${ICON.wa} Get a price on WhatsApp</a>
   </article>`; }
 
+/* Shared service runs Wed & Sat. Picking any other day used to leave a shared card on
+   screen that could not be booked — the API 400s `not_a_service_day` and the datepicker
+   greys the day out — so the traveller was shown an option and then refused it.
+   As service reduces from daily to Wed & Sat, that is 5 days in 7.
+   On those days the ride board IS the offer: pool a van at the same seat price, and it
+   runs once enough names commit. A blank date ("Flexible") is NOT an off day — we show
+   the scheduled card and any pooled lists together and let the traveller choose. */
+const searchDow = date ? new Date(date + 'T00:00:00').getDay() : null;
+const offDay = !!(shared && searchDow !== null && shared.days.indexOf(searchDow) === -1);
+
 let sharedCard = '';
 let noShare = '';
-if (shared) {
+if (shared && offDay) {
+  const dayName = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
+  sharedCard = `
+  <article class="opt opt-shared opt-pool">
+    <span class="tag-top">Share &amp; save · pool a van</span>
+    <div class="o-head">
+      <div class="o-ico">${ICONS.share}</div>
+      <div><h2>Shared ride</h2><div class="o-sub">Pool a van on your date</div></div>
+    </div>
+    <p class="o-desc">Our scheduled <b>${shared.corridorLabel}</b> seat runs ${shared.freqText}, so it doesn't go on a ${dayName}. Put your name on the ride board instead — same seat price, and the van runs once enough travellers join.</p>
+    <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
+    <div class="shared-meta">
+      <div class="sm">${ICONS.departs} Your date — ${dateText}</div>
+      <div class="sm">${ICONS.avail} Nothing is charged until the van is confirmed</div>
+    </div>
+    <div class="incl">
+      <span class="chip">${ICONS.ck} AC car or van</span>
+      <span class="chip">${ICONS.ck} Same price as a scheduled seat</span>
+      <span class="chip">${ICONS.ck} Meet other travellers</span>
+    </div>
+    <a class="btn btn-primary o-cta" href="board.html">Put it on the ride board ${ICON.arrow}</a>
+  </article>`;
+} else if (shared) {
   // A saving can only be stated against a known party size — the private car is one fixed
   // fare however many ride in it, so "% saved" moves entirely with the head count (on
   // Kandy → Ella: ~64% for one, ~29% for two, and by three the private car is the cheaper
@@ -362,9 +394,53 @@ function renderResults(state) {
     : state === 'pending' ? privateSkeletonHtml()
     : unpricedHtml();
   document.getElementById('results').innerHTML =
-    `<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
+    `<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>` +
+    `<section id="board-strip" hidden></section>`;
 }
 renderResults(engineRoute ? 'pending' : 'priced');
+
+/* ---- ride board: who else is already going this way ----
+   Additive and non-blocking. The prices are what the traveller came for, so a slow or
+   failing /board must never hold up or break the page: it renders nothing and reports.
+   Deliberately NOT routed through ch-pricing's estimate() — that tracks a single intent
+   and concurrent calls orphan each other. This is an independent fetch. */
+(function loadBoardLists() {
+  // A list can only exist on a corridor pair, so an engine route (a Google-picked place)
+  // can never have one — skip the round trip entirely.
+  if (engineRoute || sameEnds) return;
+  const base = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
+  if (!base) return;
+  const qs = new URLSearchParams({ from: fromP.name, to: toP.name });
+  fetch(`${base}/board?${qs.toString()}`, { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => { if (d && Array.isArray(d.lists)) renderBoardStrip(d.lists); })
+    .catch(() => {}); // silent: the board is a bonus, the prices are the page
+})();
+
+function renderBoardStrip(lists) {
+  const el = document.getElementById('board-strip');
+  if (!el || !lists.length) return;
+  // Exact-date matches first, then soonest. Filtering to the exact date would leave this
+  // empty almost always — search's date is usually blank ("Flexible date").
+  const sorted = lists.slice().sort((a, b) =>
+    (date ? (b.date === date) - (a.date === date) : 0) || String(a.date).localeCompare(String(b.date)));
+  const money = c => { const d = c / 100; return d % 1 === 0 ? String(d) : d.toFixed(2); };
+  const when = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const people = sorted.reduce((n, l) => n + (l.committed || 0), 0);
+  el.hidden = false;
+  el.className = 'board-strip';
+  el.innerHTML =
+    `<h2 class="bs-h">${people} ${people === 1 ? 'traveller is' : 'travellers are'} already going this way</h2>
+     <p class="bs-sub">Add your name and the van runs once enough people join. Nothing is charged until it's confirmed.</p>
+     <div class="bs-list">${sorted.slice(0, 4).map(l => {
+       const need = Math.max(0, (l.minSeats || 0) - (l.committed || 0));
+       return `<a class="bs-card" href="board.html#/${encodeURIComponent(l.code)}">
+         <div class="bs-when">${when(l.date)}${l.slot ? ` · ${l.slot}` : ''}</div>
+         <div class="bs-count">${l.committed || 0} of ${l.minSeats || 0} names${need > 0 ? ` — ${need} more to run` : ' — running'}</div>
+         <div class="bs-foot"><span class="bs-price">$${money(l.seatPrice)} / seat</span><span class="bs-go">Add your name ${ICON.arrow}</span></div>
+       </a>`;
+     }).join('')}</div>`;
+}
 
 // ---- funnel: search + results view (Phase 0 analytics) ----
 // Called once prices exist. An engine route reports after its estimate lands, so view_item_list
