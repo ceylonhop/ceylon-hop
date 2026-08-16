@@ -153,6 +153,19 @@ window.updateSearch = function (e) {
    scheduled corridor in the baked table, and no such service exists for an arbitrary place. */
 let quote = engineRoute ? null : T.privateQuote(fromId, toId);
 const shared = engineRoute ? null : T.sharedOption(fromId, toId);
+const browseEstimateId = `${fromId}>${toId}:${engineRoute ? 'engine-v2' : 'reviewed-v1'}`;
+function routeFingerprint(value) {
+  let hash=2166136261;
+  for(const ch of String(value||'')){ hash^=ch.charCodeAt(0); hash=Math.imul(hash,16777619); }
+  return `r${(hash>>>0).toString(36)}`;
+}
+function tagRouteEstimate(q, state) {
+  if (!q) return q;
+  q.estimateState = state || (q.estimated ? 'estimated' : 'browse');
+  q.estimateId = browseEstimateId;
+  return q;
+}
+tagRouteEstimate(quote);
 const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
 /* Display label ONLY. A Google place arrives as its full formatted address ("Ratmalana
    Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka") and, set in the h1's
@@ -169,9 +182,16 @@ const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB',
 // 'measuring' only while an estimate is genuinely in flight — once it has failed there is
 // nothing being measured, and leaving the line up reads as a page still working on it.
 function renderMeta(measuring) {
+  const estimateText = quote && window.CH && CH.routeEstimate
+    ? CH.routeEstimate.formatRouteEstimate({
+        distanceKm: quote.km,
+        durationMin: quote.durationMin,
+        state: quote.estimateState,
+      })
+    : '';
   document.getElementById('route-meta').innerHTML =
-    (quote
-      ? `<span>${ICONS.pin} ~${quote.km} km</span><span>${ICONS.clock} approx ${quote.duration} drive</span>`
+    (quote && estimateText
+      ? `<span class="route-estimate">${ICONS.clock} ${estimateText}</span>`
       : measuring ? `<span>${ICONS.pin} Measuring your route…</span>` : '') +
     `<span>${ICONS.cal} ${dateText}</span>` +
     (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
@@ -234,6 +254,12 @@ function bookUrl(extra) {
   // traveller count properly on its own step, so an absent param costs nothing there —
   // whereas a guessed one arrives pre-filled and looks like their answer.
   const base = { from: fromId, to: toId, date };
+  if (quote) {
+    base.estimateKm = String(quote.km);
+    if (quote.durationMin != null) base.estimateMin = String(quote.durationMin);
+    base.estimateState = quote.estimateState || 'browse';
+    base.estimateId = quote.estimateId || browseEstimateId;
+  }
   if (pax != null) base.pax = String(pax);
   const all = Object.assign(base, extra);
   // An engine-priced route has no separate unfinished fare, so rawPrice comes through null —
@@ -394,7 +420,11 @@ function trackResults() {
   ];
   if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: qty });
 
-  var searchEvent = { from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search' };
+  var searchEvent = {
+    from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search',
+    estimate_state: quote.estimateState,
+    route_fingerprint: routeFingerprint(quote.estimateId)
+  };
   if (pax != null) searchEvent.pax = pax;
   window.chTrack('search', searchEvent);
   window.chTrack('view_item_list', { item_list_id: listId, currency: 'USD', items: items });
@@ -425,12 +455,6 @@ if (!engineRoute) trackResults();
    If either call fails there is no fallback price to show — no local formula can price a place
    with no baked distance — so the card becomes an honest "we'll price it by hand" instead. */
 if (engineRoute) (function () {
-  // "3h 21m" / "45 min" — the same shape the baked table's durationText produces.
-  function minutesText(min) {
-    const h = Math.floor(min / 60), m = Math.round(min % 60);
-    if (h <= 0) return `${Math.max(20, m)} min`;
-    return m >= 8 ? `${h}h ${m}m` : `${h}h`;
-  }
   const legs = [{ from: fromP.name, to: toP.name }];
   const base = { product: 'private', pax: 1, bags: 0, legs, extras: [] };
   if (date) base.date = date;
@@ -460,18 +484,17 @@ if (engineRoute) (function () {
       return;
     }
     const leg = (car.legs && car.legs[0]) || {};
-    const km = leg.distanceKm != null ? Math.round(leg.distanceKm) : null;
-    quote = {
+    const km = leg.distanceKm != null ? leg.distanceKm : null;
+    quote = tagRouteEstimate({
       km: km,
-      // Prefer the routed duration that came back with the distance; fall back to the local
-      // km→time curve so the meta line never sits empty next to a real price.
-      duration: leg.durationMin != null ? minutesText(leg.durationMin) : (km != null ? T.durationText(km) : '—'),
+      durationMin: leg.durationMin != null ? leg.durationMin : null,
+      estimated: car.estimated === true,
       car: car.totalCents / 100,
       van: van.totalCents / 100,
       // The engine total IS the final fare — there is no separate unfinished figure to hand on,
       // so booking receives `price` alone and re-prices through the same endpoint on arrival.
       rawCar: null, rawVan: null
-    };
+    }, car.estimated === true ? 'estimated' : 'browse');
     if (quote.km == null) { quote = null; renderMeta(false); renderResults('unpriced'); return; }
     renderMeta(false);
     renderResults('priced');

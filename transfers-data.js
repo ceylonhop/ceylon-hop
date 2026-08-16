@@ -161,11 +161,14 @@
   function privateQuote(fromId, toId) {
     const km = roadKm(fromId, toId);
     const real = realLeg(fromId, toId);
+    const durationMin = real ? real[1] : Math.max(20, Math.round((km / 42) * 60));
     const rawCar = legPrice(km, 'car');         // sedan, up to 3 pax
     const rawVan = legPrice(km, 'van');         // AC van, up to 6 pax
     return {
       km,
-      duration: real ? minToText(real[1]) : durationText(km),
+      durationMin,
+      duration: real ? minToText(durationMin) : durationText(km),
+      estimated: !real,
       car: finishPrice(rawCar, FLOORS.car),
       van: finishPrice(rawVan, FLOORS.van),
       rawCar,
