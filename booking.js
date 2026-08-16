@@ -849,10 +849,22 @@ function departuresFor(){
   const base = (r.times&&r.times.length) ? r.times : (r.type==='shared' ? ['07:30'] : ['07:00','08:30','10:00']);
   return base.map((t,i)=>({time:t, label:i===0?'Morning hop':(i===1?'Midday hop':'Late hop')}));
 }
+// A private pick-up inside the 12-hour notice window is refused by the API, so it must not be
+// offered. Only private pickups are filtered: shared seats run on scheduled departures with
+// their own service-day rules and are deliberately exempt.
+function tooSoonToPickUp(time){
+  if(!perVehicle || !state.date) return false;
+  const at = colomboInstant(fmtISO(state.date), time);
+  return !!at && (at.getTime() - Date.now()) < PRIVATE_MIN_LEAD_HOURS*3600000;
+}
 function renderDeps(){
   const sel=document.getElementById('dep-select');
   const hint=document.getElementById('dep-hint');
-  const deps=departuresFor();
+  const all=departuresFor();
+  const deps=all.filter(dp=>!tooSoonToPickUp(dp.time));
+  const trimmed=deps.length<all.length;
+  // A time carried over from the URL or an earlier date may now be inside the window.
+  if(state.dep && !deps.some(dp=>dp.time===state.dep)) state.dep=null;
 
   // Shared ride with a single fixed departure — show a read-only card, no picker needed
   if(isShared && deps.length===1){
@@ -880,8 +892,12 @@ function renderDeps(){
   sel.style.opacity = state.flexTime ? '.45' : '1';
   hint.style.display='block';
   hint.textContent = perVehicle
-    ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.' : 'Choose any time of day — your private vehicle leaves when you do.')
+    ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.'
+      : (deps.length===0 ? `We need ${PRIVATE_MIN_LEAD_HOURS} hours to arrange a driver — please pick a later date.`
+        : (trimmed ? `Earlier pick-ups are gone — we need ${PRIVATE_MIN_LEAD_HOURS} hours’ notice to arrange your driver.`
+          : 'Choose any time of day — your private vehicle leaves when you do.')))
     : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a scheduled departure.');
+  if(deps.length===0) { sel.disabled=true; sel.style.opacity='.45'; }
   let opts=`<option value="" ${!state.dep?'selected':''} disabled>Choose a ${perVehicle?'pick-up time':'departure'}…</option>`;
   opts+=deps.map(dp=>`<option value="${dp.time}" ${state.dep===dp.time?'selected':''}>${fmtTime(dp.time)} · ${dp.label}</option>`).join('');
   sel.innerHTML=opts;
@@ -1172,6 +1188,34 @@ function tripDatesComplete(){
   }
   return true;
 }
+// ── Minimum notice ────────────────────────────────────────────────────────────────────────
+// Mirrors api/src/domain/dateRules.ts (PRIVATE_MIN_LEAD_HOURS / CHAUFFEUR_MIN_LEAD_DAYS). The
+// API is the real gate — these only keep the wizard from offering what it will reject with
+// `lead_time_too_short`. Sri Lanka is a fixed UTC+05:30 with no DST, so a literal offset gives
+// the exact pick-up instant no matter which timezone the traveller is browsing from.
+const PRIVATE_MIN_LEAD_HOURS = 12;
+const CHAUFFEUR_MIN_LEAD_DAYS = 7;
+function colomboInstant(iso, time){
+  const d = new Date(iso+'T'+(time||'00:00')+':00+05:30');
+  return isNaN(d.getTime()) ? null : d;
+}
+// Today in Colombo, plus the chauffeur notice — the earliest date a chauffeur trip may start.
+function earliestChauffeurISO(){
+  const d = new Date(Date.now() + 5.5*3600000);
+  d.setUTCDate(d.getUTCDate() + CHAUFFEUR_MIN_LEAD_DAYS);
+  return d.toISOString().slice(0,10);
+}
+function fmtNoticeDate(iso){
+  const d = new Date(iso+'T00:00:00');
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+}
+// Does this trip start inside the chauffeur notice window? Judged on the EARLIEST date — the
+// car is committed from the first day, wherever that date sits in the list.
+function chauffeurTooSoon(){
+  const dated = tripDates.filter(d=>(d||'').trim()).sort();
+  return !!dated.length && dated[0] < earliestChauffeurISO();
+}
+
 // Chauffeur duration from the trip dates: nights on the road = (last date − first date),
 // days the car is kept = nights + 1. Driver accommodation = one night per night away.
 function chauffeurDuration(){
@@ -1527,22 +1571,30 @@ function render(){
     const pvt=document.getElementById('svc-private-tag'), chf=document.getElementById('svc-chauffeur-tag');
     if(pvt) pvt.textContent='Priced per leg · pay in full';
 
-    // chauffeur is billed per day, so it needs every leg dated before we can quote it
+    // chauffeur is billed per day, so it needs every leg dated before we can quote it — and it
+    // holds one car and driver for the whole journey, so it also needs 7 days' notice
     const cx=document.getElementById('chauffeur-extra');
     const datesOK=tripDatesComplete();
+    const tooSoon=chauffeurTooSoon();
+    const chOK=datesOK && !tooSoon;
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
-    if(chf) chf.textContent=datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote';
+    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
     if(chBtn && chBtn.style.display!=='none'){
-      chBtn.disabled=!datesOK;
-      chBtn.setAttribute('aria-disabled', datesOK?'false':'true');
-      chBtn.classList.toggle('disabled', !datesOK);
+      chBtn.disabled=!chOK;
+      chBtn.setAttribute('aria-disabled', chOK?'false':'true');
+      chBtn.classList.toggle('disabled', !chOK);
     }
-    if(!datesOK && state.svc==='chauffeur'){
+    if(!chOK && state.svc==='chauffeur'){
       state.svc='private';
       document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
     }
     if(cx){
-      if(!datesOK){
+      if(datesOK && tooSoon){
+        cx.className='cx-inline warn'; cx.style.display='block';
+        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Chauffeur-guide trips need '+CHAUFFEUR_MIN_LEAD_DAYS+' days’ notice</b></div>'+
+          '<p>Your driver-guide stays with you for the whole journey, so we need time to assign one. The earliest chauffeur start is <b>'+fmtNoticeDate(earliestChauffeurISO())+'</b> — your private transfers are unaffected.</p>'+
+          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
+      } else if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
@@ -1555,7 +1607,8 @@ function render(){
       } else { cx.style.display='none'; cx.innerHTML=''; }
     }
     // can't proceed on a chauffeur trip until it's fully dated (no per-day rate without the days)
-    const n1=document.getElementById('n1'); if(n1) n1.disabled = (state.svc==='chauffeur' && !datesOK);
+    // and outside the notice window
+    const n1=document.getElementById('n1'); if(n1) n1.disabled = (state.svc==='chauffeur' && !chOK);
   }
 
   // luggage capacity controls + note (step 2)

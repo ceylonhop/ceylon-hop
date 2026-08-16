@@ -2,7 +2,17 @@ import { Hono } from 'hono';
 import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
-import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from '../domain/dateRules';
+import {
+  isoToday,
+  isPastIsoDate,
+  firstPastDate,
+  isoWeekday,
+  serviceDaysLabel,
+  isTooSoonPrivate,
+  isTooSoonChauffeur,
+  PRIVATE_MIN_LEAD_HOURS,
+  CHAUFFEUR_MIN_LEAD_DAYS,
+} from '../domain/dateRules';
 import {
   priceSingle,
   priceTrip,
@@ -31,6 +41,10 @@ import {
   verifyPayReturnToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
+
+// Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
+const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
+const CHAUFFEUR_NOTICE_MESSAGE = `Chauffeur-guide trips need at least ${CHAUFFEUR_MIN_LEAD_DAYS} days' notice — please pick a later start date.`;
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
 // flagged ($1 absorbs rounding differences, never a real disagreement).
@@ -314,6 +328,10 @@ function billingFrom(body: unknown): BillingParse {
     if (isPastIsoDate(parsed.data.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
     }
+    // Minimum notice — a driver and vehicle have to be assigned before the pickup.
+    if (isTooSoonPrivate(parsed.data.date, parsed.data.time)) {
+      return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
+    }
 
     const key = c.req.header('Idempotency-Key');
     if (key) {
@@ -372,6 +390,17 @@ function billingFrom(body: unknown): BillingParse {
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
+    }
+    // Minimum notice. A chauffeur-guide holds one car and driver for the whole journey, so it
+    // needs far more warning than a private transfer — the trip's start date is what binds.
+    const tripDates = parsed.data.dates ?? [];
+    if (parsed.data.serviceType === 'chauffeur') {
+      if (isTooSoonChauffeur(tripDates)) {
+        return c.json({ error: 'lead_time_too_short', message: CHAUFFEUR_NOTICE_MESSAGE }, 400);
+      }
+    } else if (tripDates.some((d) => isTooSoonPrivate(d, undefined))) {
+      // Trip legs carry no time of day, so a private trip is judged on the calendar floor alone.
+      return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
     }
 
     const key = c.req.header('Idempotency-Key');
