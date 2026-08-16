@@ -66,11 +66,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 // keeps prod, pay/quote/ride and staging tracking exactly as before) plus the Render
 // API host. Everything else — localhost, 127.0.0.1, file:// (hostname ''), preview
 // hosts, github.io — loads no analytics at all.
+//
+// Written with slice(-14) rather than the obvious /(^|\.)ceylonhop\.com$/ because this
+// snippet is inlined into the pay/quote link-unfurl previews, and customerPages.test.ts
+// asserts those previews contain no '$' at all — a blunt but effective proxy for "the
+// amount never leaks into a WhatsApp link preview". A regex anchor would have smuggled
+// a dollar sign in and defeated that guard for a reason nothing to do with money.
 export const analyticsSnippet = `<script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
-<script>(function(w,d,s,l,i){if(!/(^|\\.)ceylonhop\\.com$/.test(location.hostname)&&location.hostname!=='ceylon-hop-api.onrender.com')return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
+<script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
 
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
 // Content-hash stamp for cache-busting (mirrors tools/stamp-asset-versions.mjs, which
