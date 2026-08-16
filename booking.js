@@ -1901,7 +1901,7 @@ async function runPayment(){
   }, 6000);
   let booking;
   try { booking = await createApiBooking(); }
-  catch(e){ clearTimeout(slow); return phShowEnd('error','We couldn’t start your booking just now — please try again in a moment.'); }
+  catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
   clearTimeout(slow);
   if(!booking){ return simulatePayThenConfirm(null); }
 
@@ -2018,6 +2018,20 @@ function phShowFinalRepriceGate(booking, fromAmt, toAmt){
   };
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
+}
+
+/* Turn a refused POST /bookings/* (the error createApiBooking throws) into words.
+   Returns the phShowEnd(kind, msg, opts) argument list.
+
+   Shows the server's own `message` and nothing else: those 400s carry copy written for the
+   customer where the rule lives — a date in the past, a shared route that doesn't run that
+   day or at that time — and re-writing them here is how the two drift. Everything without
+   one keeps the generic line, which is honest advice for exactly those cases: a 5xx
+   (`internal_error`, no message), an aborted/failed fetch, or a body naming only an internal
+   code (invalid_request's Zod details) can all succeed on a retry. */
+function bookingCreateFailure(err){
+  const msg = err && err.body && err.body.message;
+  return ['error', msg || 'We couldn’t start your booking just now — please try again in a moment.'];
 }
 
 /* Turn a refused POST /bookings/:id/checkout into words + an honest retry button.
@@ -2312,7 +2326,17 @@ async function createApiBooking(){
       method:'POST', headers:{'content-type':'application/json','idempotency-key':idemKey}, body, signal: ctrl.signal
     });
   } finally { clearTimeout(timer); }
-  if(!res.ok) throw new Error('booking_failed_'+res.status);
+  // Carry the refusal, don't discard it: the API answers some 400s with copy written for the
+  // customer (date_in_past, not_a_service_day…), and throwing only the status collapsed every
+  // one of them into "try again in a moment" — advice that can never work for a refusal the
+  // customer has to go back and fix. Same error shape board.js's apiFetch throws (status +
+  // parsed body), read by bookingCreateFailure.
+  if(!res.ok){
+    const err = new Error('booking_failed_'+res.status);
+    err.status = res.status;
+    err.body = await res.json().catch(()=>null);
+    throw err;
+  }
   return await res.json();
 }
 

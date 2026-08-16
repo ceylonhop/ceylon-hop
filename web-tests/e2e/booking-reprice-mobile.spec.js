@@ -36,6 +36,21 @@ const onScreen = (locator) => locator.evaluate((el) => {
   return r.top < window.innerHeight && r.bottom > 0;
 });
 
+/* The gate compares the new engine total against the one already adopted — booking.js's
+   handleEngineEstimate only opens it when `engineEst` is already set (priorCents != null).
+   So a raise test has a PRECONDITION: the pre-pick estimate must have landed first.
+
+   That used to happen by luck. GTM is a slow third-party script, and waiting on it delayed
+   page load just enough for the first estimate to settle before the spec picked a place.
+   Gating GTM off localhost removed the delay, the pick landed first, and the raise became
+   the FIRST engine price the page ever saw — nothing to compare against, no gate, and these
+   two tests failed while the product was working correctly.
+
+   Waiting for the pre-pick figure states the precondition instead of inheriting it from a
+   tag manager's latency. toHaveText (not a fixed wait) because setNum tweens every money
+   figure — a timed sample lands mid-count and reads as a phantom price. */
+const settleFirstEstimate = (page) => expect(page.locator('#sum-total')).toHaveText('$100');
+
 // html{scroll-behavior:smooth} (site.css) means the notice is still travelling when it first
 // appears — poll rather than sampling one frame, or this reads as "off screen" mid-flight.
 const expectOnScreen = (locator, why) => expect.poll(() => onScreen(locator), { message: why }).toBe(true);
@@ -64,6 +79,7 @@ test('on a phone, the price-raise acknowledgement is on screen with the step', a
 test('pressing it from the phone layout releases the gate', async ({ page }) => {
   await page.setViewportSize(PHONE);
   await gotoBooking(page, RAISE);
+  await settleFirstEstimate(page);
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
   await expect(page.locator('#n1')).toBeDisabled();
 
@@ -81,6 +97,7 @@ test('the notice follows the customer to whatever step they move to', async ({ p
   // inline notice must travel with the active panel rather than stranding itself on step 2.
   await page.setViewportSize(PHONE);
   await gotoBooking(page, RAISE);
+  await settleFirstEstimate(page);
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
   await expect(page.locator('#engine-reprice-note')).toHaveCount(1);
 
