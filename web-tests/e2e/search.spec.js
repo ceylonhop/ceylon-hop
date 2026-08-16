@@ -155,8 +155,8 @@ test('mobile search states the route once and still puts prices above the fold',
   // means the hero has to stay small enough for the prices to clear the fold.
   await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
   await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
-  await expect(page.locator('#route-meta')).toContainText('~152 km');
-  await expect(page.locator('#route-meta')).toContainText('approx');
+  await expect(page.locator('#route-meta')).toContainText('Approx. 150 km');
+  await expect(page.locator('#route-meta')).toContainText('around 3 hours 15 minutes');
   await expect(page.locator('#add-stops')).toBeVisible();
   await expect(page.locator('#sl-edit')).toBeVisible();
   await expect(page.locator('.opt-private')).toBeVisible();
