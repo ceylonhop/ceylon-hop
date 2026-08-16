@@ -179,9 +179,10 @@ describe('billing details on public booking creation', () => {
     const spy = spyAdapter();
     const app = createApp({ adapter: spy.adapter });
     const res = await post(app, '/bookings/shared', {
-      corridorId: 'hill-line',
+      from: 'Negombo',
+      to: 'Sigiriya / Dambulla',
       date: futureServiceDay(),
-      time: '08:00',
+      time: '07:30',
       seats: 2,
       bags: 2,
       customer,
