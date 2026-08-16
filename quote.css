@@ -81,6 +81,16 @@
 .opts .ticket{display:flex}
 .opts .t-main{display:flex;flex-direction:column;flex:1;min-width:0}
 .opts .included{flex:1}
+/* The inclusion list (owner, 2026-08-16). Bullets sit INSIDE the cream box's padding — a
+   default `ul` indent would hang them off its left edge — and the marker is a small dot in
+   --ink-faint so the list reads as quiet detail, not a checklist competing with the total.
+   Kept in quote.css, not ticket.css: pay.html shares .included and still prints a sentence. */
+.inc-lead{margin:0 0 6px}
+.inc-list{list-style:none;margin:0;padding:0}
+.inc-list li{position:relative;padding-left:13px}
+.inc-list li:before{content:'';position:absolute;left:2px;top:.62em;width:4px;height:4px;
+  border-radius:50%;background:var(--ink-faint)}
+.inc-list li+li{margin-top:3px}
 .opts .tot{margin-top:13px}
 .opts .paysub{margin-bottom:0}
 .opts>*{min-width:0}

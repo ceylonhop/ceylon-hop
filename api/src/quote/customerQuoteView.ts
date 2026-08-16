@@ -15,6 +15,14 @@ export interface QuoteViewOption {
   service: 'private' | 'chauffeur';
   name: string;
   blurb: string;
+  /* What the money buys, as SEPARATE lines (owner, 2026-08-16): a customer scanning two totals
+     has to be able to see what each one covers, and a `·`-joined sentence made three inclusions
+     read as one paragraph. `lead` is the chauffeur card's "Everything in Private transfers,
+     plus:" — a sentence ABOUT the list, not an item in it. */
+  included: { lead: string | null; items: string[] };
+  /* The same content as one sentence. Legacy: the ONLY reader is a quote.html cached before the
+     bullets shipped (api-served customer pages cache hard), which would otherwise print an empty
+     Included box. Derived from `included`, never authored — delete once caches have turned over. */
   includedText: string;
   totalCents: number;
   totalUsd: string;
@@ -110,7 +118,10 @@ const COPY = {
     // sentence (it reuses payPageCopy's wording for pay-page parity), and the two collided on
     // the live page. This line instead carries the differentiator the comparison turns on.
     blurb: "The lowest-cost way to do this trip — you only pay for the days you're moving.",
-    included: 'Air-conditioned car with an English-speaking driver · fuel, tolls and parking · every pickup at your door.',
+    included: {
+      lead: null,
+      items: ['Pick up and drop off', 'Air-conditioned car with driver', 'Fuel, tolls and parking'],
+    },
   },
   chauffeur: {
     // 'Chauffeur-guide' — the site's own term (booking.js's label, terms.html §7's defined
@@ -120,7 +131,14 @@ const COPY = {
     // "Everything in X, plus" — pricing-table grammar. The two cards' included boxes used to be
     // near-identical feature lists, so scanning them answered nothing about what the extra money
     // buys; this one now lists only the difference.
-    included: "Everything in Private transfers, plus: your driver stays between journeys · sightseeing stops on the way · driver's meals & rooms covered.",
+    included: {
+      lead: 'Everything in Private transfers, plus:',
+      items: [
+        'Your car and driver stays for the whole trip',
+        'Sightseeing, waiting',
+        "Driver's meals & rooms covered",
+      ],
+    },
   },
 } as const;
 
@@ -132,6 +150,11 @@ const SECONDARY_PHRASE: Record<'private' | 'chauffeur', string> = {
   chauffeur: 'with your driver throughout',
   private: 'travelling journey by journey',
 };
+
+// The pre-bullets sentence, rebuilt from the bullets so the two can never say different things.
+// Only a stale cached quote.html reads it; see QuoteViewOption.includedText.
+const legacyIncludedText = (inc: { lead: string | null; items: readonly string[] }): string =>
+  `${inc.lead ? `${inc.lead} ` : ''}${inc.items.join(' · ')}.`;
 
 function legsOf(quote: ViewQuote): ToolLegLite[] {
   const req = (quote.request ?? {}) as { tool?: { legs?: ToolLegLite[] } };
@@ -244,7 +267,8 @@ export function customerQuoteView(
       service,
       name: c.name,
       blurb: c.blurb,
-      includedText: c.included,
+      included: { lead: c.included.lead, items: [...c.included.items] },
+      includedText: legacyIncludedText(c.included),
       totalCents: cents,
       totalUsd: usd(cents),
       // Only on the card that was actually priced: the comparison card is a recompute with no
