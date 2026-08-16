@@ -286,13 +286,13 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await from.press('Enter');
 
   await expect(from).toHaveValue('Colombo Airport (CMB)');
-  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 150 km · around 3 hours 15 minutes');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $67');
 
   await page.reload();
 
   await expect(page.locator('#rail .leg-card').first().locator('.leg-from')).toHaveValue('Colombo Airport (CMB)');
-  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 150 km · around 3 hours 15 minutes');
 });
 
 test('planner place search layers popular route then Google results for hotel text', async ({ page }) => {

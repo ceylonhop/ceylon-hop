@@ -239,7 +239,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:700}
   .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);white-space:nowrap}
   .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
-  @media(max-width:540px){.leg-meta .lm-src{display:none}}
+  @media(max-width:540px){
+    .leg-meta .lm-src,.leg-meta .lm-sep{display:none}
+    .leg-meta .lm-dist{flex:1 0 100%;line-height:1.4;text-align:right}
+    .leg-meta .lm-price{margin-left:auto}
+    .sum-stats .sum-stat:last-child #st-drive{width:100%;white-space:normal;line-height:1.4;text-align:left;margin-top:3px}
+  }
 
   .leg-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:11px}
   .leg-date label{font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:5px}
@@ -617,8 +622,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="transfers-data.js?v=0a8cfb8f1a"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
+<script src="route-estimate.js?v=36ccedd1e1"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=a5847f81be"></script>
+<script src="plan.js?v=ce8eb3d269"></script>
 </body>
 </html>

@@ -64,48 +64,80 @@ function roadKm(a,b){
   const s=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
   return Math.round(2*R*Math.asin(Math.sqrt(s))*1.35);
 }
-const liveKmCache = new Map();
-const liveKmPending = new Set();
-const liveKmWaiters = new Map();
-function liveKmKey(a,b){ return norm(a)+'|'+norm(b); }
-function legKm(a,b){
+const liveRouteCache = new Map();
+const liveRoutePending = new Set();
+const liveRouteWaiters = new Map();
+function liveRouteKey(a,b){ return norm(a)+'|'+norm(b); }
+function localRouteEstimate(a,b){
   const g1=resolve(a), g2=resolve(b);
-  if(g1&&g2) return roadKm(g1,g2);
-  const key=liveKmKey(a,b);
-  return liveKmCache.has(key) ? liveKmCache.get(key) : null;
-}
-function requestLiveKm(a,b,cb){
-  if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
-  if(resolve(a)&&resolve(b)) return;
-  const key=liveKmKey(a,b);
-  if(typeof cb==='function'){
-    if(!liveKmWaiters.has(key)) liveKmWaiters.set(key, []);
-    liveKmWaiters.get(key).push(cb);
+  if(!g1 || !g2) return null;
+  if(g1.id && g2.id && T.privateQuote){
+    const quote=T.privateQuote(g1.id,g2.id);
+    if(quote && quote.km>0){
+      return {
+        distanceKm:quote.km,
+        durationMin:quote.durationMin,
+        state:quote.estimated?'estimated':'browse',
+        source:quote.estimated?'estimated':'reviewed'
+      };
+    }
   }
-  if(liveKmCache.has(key)){
-    const km=liveKmCache.get(key);
-    if(km!=null && typeof cb==='function') cb(km);
+  const km=roadKm(g1,g2);
+  return km>0 ? {
+    distanceKm:km,
+    durationMin:Math.max(20,Math.round((km/42)*60)),
+    state:'estimated',
+    source:'estimated'
+  } : null;
+}
+function legRouteEstimate(a,b){
+  const key=liveRouteKey(a,b);
+  return liveRouteCache.get(key) || localRouteEstimate(a,b);
+}
+function legKm(a,b){
+  const route=legRouteEstimate(a,b);
+  return route ? route.distanceKm : null;
+}
+function requestLiveRoute(a,b,cb){
+  if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
+  const local=localRouteEstimate(a,b);
+  if(local && local.source==='reviewed') return;
+  const key=liveRouteKey(a,b);
+  if(typeof cb==='function'){
+    if(!liveRouteWaiters.has(key)) liveRouteWaiters.set(key, []);
+    liveRouteWaiters.get(key).push(cb);
+  }
+  if(liveRouteCache.has(key)){
+    const route=liveRouteCache.get(key);
+    if(route && typeof cb==='function') cb(route);
     return;
   }
-  if(liveKmPending.has(key)) return;
-  liveKmPending.add(key);
+  if(liveRoutePending.has(key)) return;
+  liveRoutePending.add(key);
   window.CH_MAP.routeStats([a,b]).then(stats=>{
-    liveKmPending.delete(key);
-    const km=stats && stats.km ? stats.km : null;
-    const waiters=liveKmWaiters.get(key)||[];
-    liveKmWaiters.delete(key);
+    liveRoutePending.delete(key);
+    const route=stats && stats.km ? {
+      distanceKm:stats.km,
+      durationMin:stats.durationMin,
+      state:'browse',
+      source:'google'
+    } : null;
+    const waiters=liveRouteWaiters.get(key)||[];
+    liveRouteWaiters.delete(key);
     // Only cache a SUCCESS. routeStats collapses transient failures (over-quota, network,
     // non-OK Directions status) to null (see ch-map.js), so caching null would poison the
     // leg — it would stay unpriceable for the whole session with no retry. Leaving the key
     // uncached lets the next render re-request.
-    if(km!=null){ liveKmCache.set(key, km); waiters.forEach(fn=>fn(km)); }
+    if(route){ liveRouteCache.set(key, route); waiters.forEach(fn=>fn(route)); }
   }).catch(()=>{
-    liveKmPending.delete(key);
-    liveKmWaiters.delete(key); // hard failure (e.g. script load) — don't poison the cache either
+    liveRoutePending.delete(key);
+    liveRouteWaiters.delete(key); // hard failure (e.g. script load) — don't poison the cache either
   });
 }
-function durationText(km){
-  return T.durationText ? T.durationText(km) : `${km} km`;
+function routeEstimateText(route){
+  return window.CH && CH.routeEstimate
+    ? CH.routeEstimate.formatRouteEstimate(route)
+    : (route && route.distanceKm ? `Approx. ${route.distanceKm} km` : '');
 }
 function drivingMinutes(km){ return Math.round((km/42)*60); }
 function minutesText(min){
@@ -476,12 +508,17 @@ function vehiclePriceIcon(){
   return `<span class="lm-veh" title="${isVan?'Private AC van':'Private AC car'}" aria-label="${isVan?'Private AC van':'Private AC car'}">${isVan?VAN_ICO:CAR_ICO}</span>`;
 }
 
-function distHtml(km, price){
-  if(km==null){
+function distHtml(route, price){
+  if(!route || route.distanceKm==null){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
   }
-  return `<span class="lm-dist"><b>${km} km</b> · ~${durationText(km)}</span>`+
-         `<span class="lm-src" title="Distance &amp; time estimated by Google">Google distance</span>`+
+  const source=route.source==='google' ? 'Google route'
+    : route.source==='reviewed' ? 'Reviewed route' : 'Estimated route';
+  const sourceTitle=route.source==='google' ? 'Distance and journey time routed by Google'
+    : route.source==='reviewed' ? 'Distance and journey time from the reviewed route table'
+      : 'Approximate route until Google routing is available';
+  return `<span class="lm-dist">${routeEstimateText(route)}</span>`+
+         `<span class="lm-src" title="${sourceTitle}">${source}</span>`+
          `<span class="lm-sep">·</span>`+
          `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`;
 }
@@ -526,8 +563,9 @@ function render(){
 
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
-    const km=!isStay?legKm(leg.from,leg.to):null;
-    if(!isStay && km==null && leg.from && leg.to) requestLiveKm(leg.from, leg.to, ()=>render());
+    const route=!isStay?legRouteEstimate(leg.from,leg.to):null;
+    const km=route?route.distanceKm:null;
+    if(!isStay && (!route || route.state==='estimated') && leg.from && leg.to) requestLiveRoute(leg.from, leg.to, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = isStay ? `Stay ${i+1}` : `Leg ${i+1}`;
 
@@ -573,7 +611,7 @@ function render(){
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
-            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(km,price)}</div>`}
+            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price)}</div>`}
           <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
@@ -591,9 +629,10 @@ function render(){
       function recompute(){
         markRouteCustomized();
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
-        const k=legKm(fromI.value,toI.value);
+        const route=legRouteEstimate(fromI.value,toI.value);
+        const k=route?route.distanceKm:null;
         const pr=k!=null?legPrice(k,state.vehicle):null;
-        distEl.innerHTML=distHtml(k,pr);
+        distEl.innerHTML=distHtml(route,pr);
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
@@ -701,9 +740,10 @@ function refreshVehiclePricing(){
     if(!leg || leg.type==='stay') return;
     const distEl=el.querySelector('[data-dist]');
     if(!distEl) return;
-    const km=legKm(leg.from,leg.to);
+    const route=legRouteEstimate(leg.from,leg.to);
+    const km=route?route.distanceKm:null;
     const price=km!=null?legPrice(km,state.vehicle):null;
-    distEl.innerHTML=distHtml(km,price);
+    distEl.innerHTML=distHtml(route,price);
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
     const from=before.get(el.dataset.i);
@@ -769,12 +809,21 @@ function shortPlaceLabel(place){
 
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
-  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0;
+  let totalKm=0, totalDurationMin=0, totalPrice=0, resolvedLegs=0, transferLegs=0;
+  let durationComplete=true, hasEstimatedRoute=false;
   state.legs.forEach(l=>{
     if(l.type==='stay'){ return; }
     transferLegs++;
-    const km=legKm(l.from,l.to);
-    if(km!=null){ totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
+    const route=legRouteEstimate(l.from,l.to);
+    const km=route?route.distanceKm:null;
+    if(km!=null){
+      totalKm+=km;
+      totalPrice+=legPrice(km,state.vehicle);
+      resolvedLegs++;
+      if(route.durationMin>0) totalDurationMin+=route.durationMin;
+      else durationComplete=false;
+      if(route.state==='estimated') hasEstimatedRoute=true;
+    }
   });
 
   const dated=state.legs.filter(l=>l.date).map(l=>l.date).sort((a,b)=>a-b);
@@ -786,15 +835,20 @@ function updateSummary(opts={}){
     : `Dates flexible${paxText}`;
 
   // These four sit directly under a price that now counts, so leaving them to snap made the
-  // panel read as half-alive. Same helper, same rules: it declines when the shape changes
-  // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
+  // panel read as half-alive. Route copy uses the same rounded customer contract as Search and
+  // Booking, retaining Google's duration instead of deriving time from distance.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
   // No Nights stat: it counted only nights on explicit stay-put cards, so a pure transfer plan
   // showed a permanent 0 beside "Hotels are your own" and read as "this trip has no nights".
   // Nights still live on the stay cards and as the `3n` badges in the route strip.
   setStat('st-legs', String(transferLegs));
-  setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
+  const summaryRoute=totalKm ? {
+    distanceKm:totalKm,
+    durationMin:durationComplete&&resolvedLegs?totalDurationMin:null,
+    state:hasEstimatedRoute?'estimated':'browse'
+  } : null;
+  setStat('st-drive', summaryRoute?routeEstimateText(summaryRoute):'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
     seq.map(s=>`<span>${shortPlaceLabel(s.place)||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
