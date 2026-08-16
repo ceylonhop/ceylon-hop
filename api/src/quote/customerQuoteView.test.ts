@@ -26,9 +26,32 @@ const p2pOnly = { pointToPoint: { totalCents: 84_000 }, chauffeur: null };
 describe('customerQuoteView', () => {
   it('never emits margin on any path', () => {
     const v = customerQuoteView(
-      quote({ marginCents: 31_000, rateCardJson: { costPerKmCents: 40 }, requestedService: 'both' }),
+      quote({
+        marginCents: 31_000,
+        rateCardJson: { costPerKmCents: 40 },
+        requestedService: 'both',
+        // The per-journey rail POPULATED — otherwise legPrices is null on both options and this
+        // test never looks at the newest thing that reads the stored, founder-only lineItems.
+        showLegPrices: true,
+        result: {
+          lineItems: [
+            {
+              label: 'Colombo Airport → Sigiriya (car)',
+              amountCents: 46_500,
+              meta: { distanceKm: 168, billableKm: 178, vehicle: 'car', hotZone: 'Ella +12%' },
+            },
+            {
+              label: 'Sigiriya → Kandy (car)',
+              amountCents: 37_500,
+              meta: { distanceKm: 92, billableKm: 102, vehicle: 'car' },
+            },
+          ],
+        },
+      }),
       both,
     );
+    // Prove the populated path was actually exercised, not silently skipped.
+    expect(v.options[0].legPrices?.rows).toHaveLength(2);
     const s = JSON.stringify(v);
     expect(s).not.toMatch(/margin/i);
     expect(s).not.toMatch(/rateCard|costPerKm|markup|hotZone/i);
@@ -336,6 +359,14 @@ describe('per-journey prices', () => {
   const shown = (over: Record<string, unknown> = {}) =>
     customerQuoteView(quote({ showLegPrices: true, ...over }), p2pOnly).options[0].legPrices;
 
+  // A request with ONE driving leg. The split is "the first N lineItems are the driving legs",
+  // N coming from the request — so a fixture whose lineItems are one leg plus an extra has to
+  // carry a one-leg request too, or it is not a shape the engine can produce.
+  const oneLegRequest = {
+    engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+    tool: { passengerCount: 2, legs: [{ from: 'A', to: 'B', date: '2026-08-20', distanceKm: 100 }] },
+  };
+
   it('is null unless ops ticked the quote', () => {
     expect(customerQuoteView(quote(), p2pOnly).options[0].legPrices).toBeNull();
   });
@@ -392,23 +423,79 @@ describe('per-journey prices', () => {
     ]);
   });
 
-  it('gives an unattributed extra its own row', () => {
+  // priceExtras() pushes an UNATTRIBUTED extra as a bare { label, amountCents } — no `meta` key
+  // at all (extrasDeposit.ts). That is the real engine shape, so it is the shape asserted here:
+  // it must land after the legs, keep its own label whole, and never be mistaken for a journey.
+  it('gives an unattributed extra its own row, label intact', () => {
     const lp = shown({
+      request: oneLegRequest,
       result: {
         lineItems: [
           { label: 'A → B (car)', amountCents: 5000 },
-          // Brief's fixture omitted `meta` entirely here, which — per the documented contract
-          // ("extras carry meta.kind === 'extra', carrying meta.legIndex when attributed") —
-          // made this indistinguishable from a driving leg (both have meta?.kind === undefined),
-          // so it got bucketed as a leg and had its meaningful "(up to 3h)" suffix stripped as if
-          // it were a vehicle tag. Restored the kind so it lands in the unattributed-extra path.
-          // See task-3-report.md.
-          { label: 'Sightseeing stops (up to 3h)', amountCents: 1000, meta: { kind: 'extra' } },
+          { label: 'Sightseeing stops (up to 3h)', amountCents: 1000 },
         ],
       },
       totalCents: 6000,
     });
-    expect(lp!.rows.map((r) => r.label)).toEqual(['A → B', 'Sightseeing stops (up to 3h)']);
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$50' },
+      { label: 'Sightseeing stops (up to 3h)', amountUsd: '$10' },
+    ]);
+  });
+
+  // The rail is read POSITIONALLY against the itinerary's driving days, so an extra that slips
+  // into the leg bucket does not just mislabel itself — it shifts every later journey's price
+  // onto the wrong day. Two legs, an unattributed extra between nothing: leg 2 must still be $32.
+  it('keeps each journey on its own price when an unattributed extra follows the legs', () => {
+    const lp = shown({
+      result: {
+        lineItems: [
+          { label: 'Colombo Airport → Sigiriya (car)', amountCents: 4508 },
+          { label: 'Sigiriya → Kandy (car)', amountCents: 3180 },
+          { label: 'Luggage rack', amountCents: 1500 },
+        ],
+      },
+      totalCents: 9200,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'Colombo Airport → Sigiriya', amountUsd: '$45' },
+      { label: 'Sigiriya → Kandy', amountUsd: '$32' },
+      { label: 'Luggage rack', amountUsd: '$15' },
+    ]);
+  });
+
+  // The view maps every non-chauffeur product onto the 'private' card, so the gate has to read
+  // the ENGINE's product: a `shared` quote is priced per seat and has no per-journey price.
+  it('is null on a shared quote even when ticked', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'shared', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: { passengerCount: 2, legs: [{ from: 'A', to: 'B', date: '2026-08-20' }] },
+      },
+      result: { lineItems: [{ label: 'A → B (seat)', amountCents: 5000 }] },
+      totalCents: 5000,
+    });
+    expect(lp).toBeNull();
+  });
+
+  // Stored results are JSON off the wire and can be malformed. A corrupt row must degrade to
+  // $0, not print "$NaN" on the row AND poison the remainder with it.
+  it('degrades a malformed amount to $0 rather than $NaN', () => {
+    const lp = shown({
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 5000 },
+          { label: 'B → C (car)' },
+        ],
+      },
+      totalCents: 6000,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$50' },
+      { label: 'B → C', amountUsd: '$0' },
+    ]);
+    expect(lp!.reconcile).toEqual({ label: 'Rounding', amountUsd: '+$10' });
+    expect(JSON.stringify(lp)).not.toMatch(/NaN/);
   });
 
   it('labels a downward remainder as rounded down', () => {

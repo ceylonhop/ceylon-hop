@@ -234,10 +234,17 @@ const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$
 
 const wholeDollars = (cents: number): number => Math.round(cents / 100) * 100;
 
+// A stored row is JSON off the wire and can be malformed (an old shape, a hand-edited result).
+// A missing or non-numeric amount degrades to $0 rather than poisoning its row AND the
+// remainder with "$NaN" — the customer sees a wrong-looking zero, never a broken page.
+const amountOf = (li: StoredLineItem): number =>
+  typeof li.amountCents === 'number' && Number.isFinite(li.amountCents) ? li.amountCents : 0;
+
 function legPricesFor(
   quote: ViewQuote,
-  service: 'private' | 'chauffeur',
+  product: string | null,
   lead: boolean,
+  drivingLegCount: number,
   totalCents: number,
   discountOff: number | null,
 ): QuoteViewLegPrices | null {
@@ -245,30 +252,45 @@ function legPricesFor(
   // lineItems behind it, so a breakdown there would reconcile to a number that was never
   // approved — the same reason the stored total already outranks the recompute. Chauffeur is
   // priced by the day and has no per-leg price to show at all.
-  if (!quote.showLegPrices || !lead || service !== 'private') return null;
+  //
+  // Gate on the ENGINE's product, not the view's service: the view maps every non-chauffeur
+  // product onto the 'private' card, so a `shared` quote would slip a private-only gate.
+  if (!quote.showLegPrices || !lead || product !== 'private') return null;
 
   const stored = (quote.result ?? {}) as { lineItems?: StoredLineItem[] };
   const items = Array.isArray(stored.lineItems) ? stored.lineItems : [];
-  // Driving legs are the only rows the engine pushes with no meta.kind; extras, the finishing
-  // adjustment and the discount all carry one.
-  const legs = items.filter((li) => li.meta?.kind === undefined);
+  // "The first N are the driving legs" — the contract engine.ts states where it pushes extras
+  // AFTER the travel rows on purpose, and the same split ops-ui makes. N is the REQUEST's own
+  // driving-leg count, never a meta sniff: an unattributed extra is pushed as a bare
+  // { label, amountCents } with no `meta` at all (extrasDeposit.ts), so by shape alone it is
+  // indistinguishable from a travel row — counting it as one would shift every later price
+  // onto the wrong journey. A stored list shorter than N (a legacy or partial result) just
+  // yields the rows it has.
+  const n = Math.min(drivingLegCount, items.length);
+  const legs = items.slice(0, n);
   if (!legs.length) return null;
 
-  // An extra attributed to a leg folds into that leg, so the rail stays one row per journey.
-  const amounts = legs.map((li) => li.amountCents);
+  // Everything after the legs is an extra, the engine's finishing adjustment, or the discount.
+  // The last two are skipped: `reconcile` below is the remainder against the CHARGED total, so
+  // reading the engine's own adjustment back would double-count it. An extra attributed to a
+  // leg folds into that leg, so the rail stays one row per journey.
+  const amounts = legs.map(amountOf);
   const loose: StoredLineItem[] = [];
-  for (const e of items.filter((li) => li.meta?.kind === 'extra')) {
+  for (const e of items.slice(n)) {
+    const kind = e.meta?.kind;
+    if (kind === 'price_adjustment' || kind === 'discount') continue;
     const i = e.meta?.legIndex;
-    if (i != null && Number.isInteger(i) && i >= 0 && i < amounts.length) amounts[i] += e.amountCents;
+    if (i != null && Number.isInteger(i) && i >= 0 && i < amounts.length) amounts[i] += amountOf(e);
     else loose.push(e);
   }
 
-  // journeyLabel strips a trailing "(car)"-style vehicle tag off a driving leg. An unattributed
-  // extra's own label carries no vehicle tag, and its parenthetical (e.g. "(up to 3h)") is part
-  // of what it IS — stripping it there would delete meaning, not an annotation.
+  // journeyLabel strips a trailing "(car)"-style vehicle tag, and is safe by construction now
+  // that it only ever sees real driving legs — those always carry the tag. A loose extra's own
+  // parenthetical ("Sightseeing stops (up to 3h)") is part of what it IS, so its label is left
+  // exactly as stored: stripping it there would delete meaning, not an ops annotation.
   const rows = [
     ...legs.map((li, i) => ({ label: journeyLabel(li.label), cents: wholeDollars(amounts[i]) })),
-    ...loose.map((e) => ({ label: e.label, cents: wholeDollars(e.amountCents) })),
+    ...loose.map((e) => ({ label: e.label, cents: wholeDollars(amountOf(e)) })),
   ];
 
   // rows + reconcile − discount === totalCents, solved for reconcile.
@@ -328,6 +350,10 @@ export function customerQuoteView(
     : storedResult.totalBeforeDiscountCents ?? pricedTotal + discountOff;
   const otherTotal = wantsBoth ? totalFor(other) : null;
 
+  // The driving legs of the REQUEST. Read before the cards are built: it is both the trip stat
+  // and the N that splits the stored lineItems into "the first N are the driving legs".
+  const driving = legsOf(quote).filter(drives);
+
   const waFor = (label: string | null) =>
     label
       ? `Hi! I'd like to book the ${label} option for quote ${quote.reference}`
@@ -355,14 +381,20 @@ export function customerQuoteView(
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),
-      legPrices: legPricesFor(quote, service, lead, cents, lead ? discountOff : null),
+      legPrices: legPricesFor(
+        quote,
+        engine?.product ?? null,
+        lead,
+        driving.length,
+        cents,
+        lead ? discountOff : null,
+      ),
     };
   };
 
   const options: QuoteViewOption[] = [build(priced, pricedTotal, true)];
   if (otherTotal != null) options.push(build(other, otherTotal, false));
 
-  const driving = legsOf(quote).filter(drives);
   const kms = driving.map((l) => (typeof l.distanceKm === 'number' ? l.distanceKm : 0));
   const totalKm = kms.some((k) => k > 0) ? Math.round(kms.reduce((a, b) => a + b, 0)) : null;
 
