@@ -480,13 +480,10 @@ function billingFrom(body: unknown): BillingParse {
     const dow = isoWeekday(req.date);
     if (dow !== null && !corridor.serviceDays.includes(dow)) {
       const label = serviceDaysLabel(corridor.serviceDays);
-      // Not a dead end. As service reduces to Wed & Sat this fires on 5 days in 7, and the
-      // ride board exists precisely to catch that demand: the traveller starts a list for
-      // their own date at the same seat price, and the van runs once enough names commit.
       return c.json(
         {
           error: 'not_a_service_day',
-          message: `This shared route only departs on ${label}. Book it as a private transfer, or put your date on the ride board and we'll run a van once enough travellers join.`,
+          message: `This shared route only departs on ${label}. Pick one of those days, or book it as a private transfer.`,
         },
         400,
       );
