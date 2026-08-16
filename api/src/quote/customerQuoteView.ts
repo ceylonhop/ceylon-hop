@@ -234,6 +234,38 @@ const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$
 
 const wholeDollars = (cents: number): number => Math.round(cents / 100) * 100;
 
+// UTC-midnight on the YYYY-MM-DD part. A copy of quoteDays.ts's parseUtc — see drivingRailOrder.
+const legDayMs = (s: string | undefined): number | null => {
+  if (!s) return null;
+  const t = Date.parse(String(s).slice(0, 10) + 'T00:00:00Z');
+  return Number.isNaN(t) ? null : t;
+};
+
+/* The order the DAY BY DAY rail will render the driving legs in, as indices into the REQUEST's
+   own driving legs. The rail's rows and the price rows below are matched POSITIONALLY by the
+   page — the Nth journey shown gets the Nth price — but the two orderings come from different
+   places: the rail sorts by date, while the engine prices `req.legs` as given and never sorts.
+   Left unreconciled, a quote whose stored legs are out of chronological order puts a real price
+   on a journey it does not belong to.
+
+   MUST STAY IN STEP WITH quoteDays.ts (the rail is the authority; this conforms to it):
+     - the same UTC-midnight date parse, over ALL legs — stays take part in the sort too;
+     - the same stable sort by date, so same-day legs keep request order;
+     - the same fallback: ANY undated leg makes calendar arithmetic meaningless there, so
+       quoteDays emits `legs.map(rowFor)` in REQUEST order — and so must this, or the fix
+       reintroduces the very bug in the opposite direction. Tours default to blank dates. */
+function drivingRailOrder(legs: ToolLegLite[]): number[] {
+  const dated = legs.map((l, i) => ({ l, i, t: legDayMs(l.date) }));
+  const ordered = dated.some((e) => e.t == null)
+    ? dated
+    : [...dated].sort((a, b) => a.t! - b.t! /* stable: equal dates keep request order */);
+  // Driving legs numbered in REQUEST order — the numbering the stored lineItems are in, and the
+  // numbering an attributed extra's `legIndex` refers to.
+  const requestIndex = new Map<number, number>();
+  for (const [i, l] of legs.entries()) if (drives(l)) requestIndex.set(i, requestIndex.size);
+  return ordered.filter((e) => drives(e.l)).map((e) => requestIndex.get(e.i)!);
+}
+
 // A stored row is JSON off the wire and can be malformed (an old shape, a hand-edited result).
 // A missing or non-numeric amount degrades to $0 rather than poisoning its row AND the
 // remainder with "$NaN" — the customer sees a wrong-looking zero, never a broken page.
@@ -290,12 +322,19 @@ function legPricesFor(
     else loose.push(e);
   }
 
+  // NOW reorder — after the fold, never before. `legIndex` counts driving legs in REQUEST order,
+  // so folding against any other order would attach an extra to the wrong journey. Indices past
+  // the rows we actually have are dropped (n can be short of the request's driving-leg count),
+  // which leaves exactly the same n rows, permuted: the sum — and so the invariant — is untouched.
+  const railOrder = drivingRailOrder(legsOf(quote)).filter((i) => i < legs.length);
+
   // journeyLabel strips a trailing "(car)"-style vehicle tag, and is safe by construction now
   // that it only ever sees real driving legs — those always carry the tag. A loose extra's own
   // parenthetical ("Sightseeing stops (up to 3h)") is part of what it IS, so its label is left
   // exactly as stored: stripping it there would delete meaning, not an ops annotation.
   const rows = [
-    ...legs.map((li, i) => ({ label: journeyLabel(li.label), cents: wholeDollars(amounts[i]) })),
+    ...railOrder.map((i) => ({ label: journeyLabel(legs[i].label), cents: wholeDollars(amounts[i]) })),
+    // Loose extras stay trailing, after every leg row — they belong to no journey.
     ...loose.map((e) => ({ label: e.label, cents: wholeDollars(amountOf(e)) })),
   ];
 

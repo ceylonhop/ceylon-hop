@@ -665,6 +665,138 @@ describe('per-journey prices', () => {
     expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
   });
 
+  // The rail and this column are matched POSITIONALLY — the Nth journey row gets the Nth price.
+  // quoteDays sorts the legs by DATE; the engine prices `req.legs` as given and never sorts. So a
+  // quote whose stored legs are out of chronological order put a real price on the wrong journey.
+  it('orders leg rows as the rail renders them, not as the request stored them', () => {
+    const out = {
+      showLegPrices: true,
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-24' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            // Stored SECOND-day-first — ops reordered the itinerary after pricing.
+            { from: 'Kandy', to: 'Ella', date: '2026-08-24', distanceKm: 120 },
+            { from: 'Colombo Airport', to: 'Kandy', date: '2026-08-20', distanceKm: 116 },
+          ],
+        },
+      },
+      // lineItems are in REQUEST order: that is the only order the engine emits.
+      result: {
+        lineItems: [
+          { label: 'Kandy → Ella (car)', amountCents: 9000 },
+          { label: 'Colombo Airport → Kandy (car)', amountCents: 4000 },
+        ],
+      },
+      totalCents: 13000,
+    };
+    const v = customerQuoteView(quote(out), p2pOnly);
+    expect(v.options[0].legPrices!.rows).toEqual([
+      { label: 'Colombo Airport → Kandy', amountUsd: '$40' },
+      { label: 'Kandy → Ella', amountUsd: '$90' },
+    ]);
+    // And the thing that actually matters: row i belongs to journey i of the rail.
+    expect(v.days.filter((d) => d.kind === 'journey').map((d) => d.title)).toEqual(
+      v.options[0].legPrices!.rows.map((r) => r.label),
+    );
+  });
+
+  // An attributed extra's `legIndex` counts the engine's driving legs in REQUEST order, so the
+  // fold has to happen against request order and the reorder afterwards — or the extra rides to
+  // the wrong journey. Here the $10 sightseeing belongs to leg 0 = the LATER journey.
+  it('folds an attributed extra by request index before reordering', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-24' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'Kandy', to: 'Ella', date: '2026-08-24', distanceKm: 120 },
+            { from: 'Colombo Airport', to: 'Kandy', date: '2026-08-20', distanceKm: 116 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'Kandy → Ella (car)', amountCents: 9000 },
+          { label: 'Colombo Airport → Kandy (car)', amountCents: 4000 },
+          { label: 'Sightseeing stops (up to 3h) — Kandy → Ella', amountCents: 1000, meta: { kind: 'extra', legIndex: 0 } },
+          { label: 'Luggage rack', amountCents: 500 },
+        ],
+      },
+      totalCents: 14500,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'Colombo Airport → Kandy', amountUsd: '$40' },
+      { label: 'Kandy → Ella', amountUsd: '$100' },
+      // Loose extras stay trailing, after all leg rows.
+      { label: 'Luggage rack', amountUsd: '$5' },
+    ]);
+  });
+
+  // quoteDays bails out of calendar arithmetic when ANY leg is undated and emits the legs in
+  // REQUEST order. Sorting here regardless would introduce the same bug in the other direction.
+  it('keeps REQUEST order when a leg is undated, exactly as the rail does', () => {
+    const out = {
+      showLegPrices: true,
+      request: {
+        engine: { product: 'private' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'Kandy', to: 'Ella', date: '2026-08-24', distanceKm: 120 },
+            { from: 'Colombo Airport', to: 'Kandy', date: '', distanceKm: 116 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'Kandy → Ella (car)', amountCents: 9000 },
+          { label: 'Colombo Airport → Kandy (car)', amountCents: 4000 },
+        ],
+      },
+      totalCents: 13000,
+    };
+    const v = customerQuoteView(quote(out), p2pOnly);
+    expect(v.options[0].legPrices!.rows).toEqual([
+      { label: 'Kandy → Ella', amountUsd: '$90' },
+      { label: 'Colombo Airport → Kandy', amountUsd: '$40' },
+    ]);
+    expect(v.days.filter((d) => d.kind === 'journey').map((d) => d.title)).toEqual(
+      v.options[0].legPrices!.rows.map((r) => r.label),
+    );
+  });
+
+  // A stay_day leg is a rail row but never a priced one, and it takes part in the date sort. The
+  // driving legs' price rows must still land on the driving rows in rail order.
+  it('orders around an interleaved stay day', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-24' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'Kandy', to: 'Ella', date: '2026-08-24', distanceKm: 120 },
+            { from: 'Kandy', to: 'Kandy', date: '2026-08-22', category: 'stay_day' },
+            { from: 'Colombo Airport', to: 'Kandy', date: '2026-08-20', distanceKm: 116 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'Kandy → Ella (car)', amountCents: 9000 },
+          { label: 'Colombo Airport → Kandy (car)', amountCents: 4000 },
+        ],
+      },
+      totalCents: 13000,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'Colombo Airport → Kandy', amountUsd: '$40' },
+      { label: 'Kandy → Ella', amountUsd: '$90' },
+    ]);
+  });
+
   it('never leaks lineItem meta', () => {
     const lp = shown({
       result: {
