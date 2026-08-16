@@ -5408,6 +5408,17 @@ async function claimDraftRow() {
   state.reference = res.reference || res.id;
   state.unpriced = true;
   if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+  // setShowLegPrices() no-ops when savedId was still null (nothing to PATCH yet), so a tick made
+  // before the shell existed never reached the server. Sync it now that the row is real.
+  if (state.showLegPrices) {
+    apiPatch(state.savedId, { showLegPrices: true }).then(function(res2) {
+      if (!res2 || res2.error) {
+        state.showLegPrices = false; // revert — the control must not lie about what's stored
+        render();
+        showToast('Could not update — try again', 'error');
+      }
+    });
+  }
   // Bind the URL to the row we just claimed (history REPLACE — see opsBindQuoteUrl). Without this
   // a mid-quote reload landed on an id-less #quote: no row claimed, savedId null, assign picker
   // disabled, and the $0 shell stranded in the queue.
