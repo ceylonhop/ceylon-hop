@@ -32,6 +32,7 @@ export function renderPricingBlock(p) {
     `const DEPOSIT_CAP = ${p.depositCap};`,
     `const EXTRAS = ${j(p.extras)};`,
     `const CORRIDOR_SEAT = ${j(p.corridorSeat)};`,
+    `const SEAT_PRICING = ${j(p.seatPricing)};`,
     `const SHARED_PRODUCTS = ${j(p.sharedProducts)};`,
     PRICING_END,
   ].join('\n');

@@ -1107,7 +1107,13 @@
 
   function pairCorridor(a, b) {
     var so = T.corridorFor ? T.corridorFor(a, b) : null;
-    if (so) return { id: so.corridorId, seat: so.seat };
+    // Seat price via boardSeatPrice, which mirrors POST /board exactly (catalogue price on a
+    // leg we sell, road-distance price otherwise). The corridor's own flat seat is NOT what
+    // the server stores, so quoting it here made the form disagree with the created list.
+    if (so) {
+      var seat = T.boardSeatPrice ? T.boardSeatPrice(a, b) : null;
+      return { id: so.corridorId, seat: seat == null ? so.seat : seat };
+    }
     var c = (T.CORRIDORS || []).find(function (c) { return c.stops.indexOf(a) !== -1 && c.stops.indexOf(b) !== -1; });
     return c ? { id: c.id, seat: c.seat } : null;
   }

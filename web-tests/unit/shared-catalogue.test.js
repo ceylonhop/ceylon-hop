@@ -110,6 +110,44 @@ describe('route-content prose only mentions a shared seat where we sell one', ()
   });
 });
 
+// The board's create form quoted the corridor's flat seat while POST /board persisted a
+// distance-derived price, so the number in the modal could differ from the list created.
+// boardSeatPrice mirrors the server rule exactly.
+describe('boardSeatPrice mirrors POST /board', () => {
+  // seatPriceForDistance, reimplemented from api/src/quote/seatPrice.ts in CENTS.
+  const PER_KM_CENTS_VAN = 54.05, FLOOR_CENTS_VAN = 4999, SEATS = 3, ROUND = 50;
+  const serverSeat = (km) =>
+    (Math.round(Math.max(Math.round(km * PER_KM_CENTS_VAN), FLOOR_CENTS_VAN) / SEATS / ROUND) * ROUND) / 100;
+
+  it('takes the catalogue price on a leg we sell', () => {
+    expect(T.boardSeatPrice('negombo', 'sigiriya')).toBe(27.49);
+    expect(T.boardSeatPrice('sigiriya', 'kandy')).toBe(19.99);
+  });
+
+  it('takes the distance price everywhere else, matching the server to the cent', () => {
+    const pairs = [
+      ['kandy', 'ella'], ['weligama', 'mirissa'], ['cmb-airport', 'kandy'],
+      ['galle', 'bentota'], ['ella', 'mirissa'], ['yala', 'galle'], ['sigiriya', 'negombo'],
+    ];
+    for (const [a, b] of pairs) {
+      expect(T.boardSeatPrice(a, b), `${a} -> ${b}`).toBe(serverSeat(T.roadKm(a, b)));
+    }
+  });
+
+  // The dollar PER_KM (0.5405) times 100 is not always the cent rate (54.05); crossing a
+  // 50c boundary that way is a silent 50c disagreement with the server.
+  it('agrees with the server across every baked distance', () => {
+    for (const a of Object.keys(T.byId)) {
+      for (const b of Object.keys(T.byId)) {
+        if (a === b || T.sharedOption(a, b)) continue;
+        const km = T.roadKm(a, b);
+        if (!km) continue;
+        expect(T.boardSeatPrice(a, b), `${a} -> ${b} @ ${km}km`).toBe(serverSeat(km));
+      }
+    }
+  });
+});
+
 describe('corridorFor — the ride board keeps pooling everything', () => {
   it('still resolves pairs that are no longer sold as scheduled seats', () => {
     for (const [a, b] of [

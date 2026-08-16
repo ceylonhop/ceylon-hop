@@ -15,6 +15,7 @@
   const DEPOSIT_CAP = 50;
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
   const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30};
+  const SEAT_PRICING = {"perKmCentsVan":54.05,"floorCentsVan":4999,"seatsCoveringVan":3};
   const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo city","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo city","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"}];
   /* @end:pricing */
 
@@ -233,6 +234,26 @@
     };
   }
 
+  /**
+   * What a ride-board seat costs on this leg — the SAME rule the server applies in
+   * POST /board: the catalogue price where we sell a scheduled seat, otherwise the van
+   * fare for the road distance split across the seats that cover the van.
+   *
+   * Computed in CENTS from SEAT_PRICING, not from the dollar PER_KM/FLOORS above: going
+   * back through ×100 can cross a 50c rounding boundary and disagree with the server by
+   * 50c. Returns dollars, or null when we have no road distance to price against.
+   */
+  function boardSeatPrice(fromId, toId) {
+    const p = sharedOption(fromId, toId);
+    if (p) return p.seat;
+    const km = roadKm(fromId, toId);
+    if (!km) return null;
+    const vanFare = Math.max(Math.round(km * SEAT_PRICING.perKmCentsVan), SEAT_PRICING.floorCentsVan);
+    const perSeat = vanFare / SEAT_PRICING.seatsCoveringVan;
+    const round = PRICE_FINISHING.roundToCents;
+    return (Math.round(perSeat / round) * round) / 100;
+  }
+
   /** Corridor membership only — undirected, adjacency-based. Used by the ride board. */
   function corridorFor(fromId, toId) {
     if (fromId === toId) return null;
@@ -397,7 +418,7 @@
   // ---- expose ----
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
-    roadKm, durationText, privateQuote, sharedOption, corridorFor,
+    roadKm, durationText, privateQuote, sharedOption, corridorFor, boardSeatPrice,
     resolvePlace, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_CAP,

@@ -4,6 +4,7 @@
 // boundary — the backend stays in integer minor units.
 import { RATE_CARD } from './rateCard';
 import { DEFAULT_CORRIDORS, SHARED_PRODUCTS } from '../db/departureRepo';
+import { SEATS_COVERING_VAN } from './seatPrice';
 
 export type PricingPayload = {
   perKm: { car: number; van: number };
@@ -16,6 +17,10 @@ export type PricingPayload = {
   depositCap: number; // whole USD
   extras: Record<string, number>; // USD per extra code
   corridorSeat: Record<string, number>; // corridorId -> whole-USD seat price
+  // Seat-price inputs in CENTS, so the front-end reproduces seatPriceForDistance() exactly.
+  // The dollar `perKm`/`floors` above lose the last place through ×100, which can land on the
+  // other side of a 50c rounding boundary — a silent 50c disagreement with the server.
+  seatPricing: { perKmCentsVan: number; floorCentsVan: number; seatsCoveringVan: number };
   // The shared catalogue: the DIRECTED legs we actually sell, each with its own USD
   // price and boarding time. The front-end offers a shared seat on these and nothing
   // else — corridor adjacency is not an offer (see departureRepo.ts SHARED_PRODUCTS).
@@ -50,6 +55,11 @@ export function buildPricingPayload(): PricingPayload {
     depositCap: usd(RATE_CARD.deposit.capCents),
     extras,
     corridorSeat,
+    seatPricing: {
+      perKmCentsVan: RATE_CARD.perKmCents.van,
+      floorCentsVan: RATE_CARD.floorCents.van,
+      seatsCoveringVan: SEATS_COVERING_VAN,
+    },
     sharedProducts: SHARED_PRODUCTS.map((p) => ({
       id: p.id,
       corridorId: p.corridorId,
