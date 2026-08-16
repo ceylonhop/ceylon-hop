@@ -201,6 +201,13 @@ export async function gotoBooking(page, opts = {}) {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.route('**/www.payhere.lk/**', (r) => r.abort());
   await page.route('**/*sandbox.payhere.lk/**', (r) => r.abort());
+  // Belt and braces with the hostname gate in site-chrome.mjs's analyticsSnippet: the
+  // gate already stops the loader firing off localhost, but a spec that stubs its own
+  // page or hard-codes a real host would slip past it. GTM loading here is not a
+  // harmless extra request — Clarity and GA4 each count a SESSION per page load, and
+  // ~100 spec files' worth of loads showed up as hundreds of "live users" per CI run.
+  await page.route('**/www.googletagmanager.com/**', (r) => r.abort());
+  await page.route('**/*.clarity.ms/**', (r) => r.abort());
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
 
   // booking creation
