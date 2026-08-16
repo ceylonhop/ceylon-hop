@@ -4699,6 +4699,9 @@ let state = {
   status: 'draft',
   notes: '',
   internalNotes: '', // ops-only scratchpad (quotes.internal_notes) — distinct from send-back `notes`
+  // Per-journey price breakdown on the customer's quote page (spec 2026-08-16). Display-only,
+  // off by default — see setShowLegPrices().
+  showLegPrices: false,
   legs: [newLeg()],
 };
 
@@ -4731,6 +4734,11 @@ function applyContentLock() {
   regions.forEach(function(region) {
     region.querySelectorAll('input, select, textarea, button').forEach(function(el) {
       if (el.closest('[data-action="toggleMap"]') || el.matches('[data-action="toggleMap"]')) return; // viewing the route is not editing
+      // Per-journey price breakdown (spec 2026-08-16): display-only, not quote content, and it
+      // persists on its own PATCH with no approval gate — locking it here would make the one
+      // state where ops most wants it (an approved, ready/sent quote) the one state it can't
+      // be ticked in.
+      if (el.matches('[data-action="setShowLegPrices"]')) return;
       el.disabled = true;
     });
   });
@@ -4872,6 +4880,29 @@ function setRequestedService(dim) {
   if (next === 'private' || next === 'chauffeur') setService(next);
   markDirty();
   render();
+}
+
+/* Per-journey price breakdown on the customer's quote page (spec 2026-08-16). DISPLAY-ONLY —
+   deliberately not routed through mutate(): mutate() re-estimates on vehicleType/passengerCount/
+   luggageCount only, so this field is already outside that re-price path, but mutate()'s markDirty
+   would still queue it onto the ordinary autosave — which (a) only runs while the quote is
+   draft/changes_requested (isEditableNow()), so it would silently never reach a ready/sent quote,
+   and (b) POSTs savePayload() to /save, whose Zod schema has no showLegPrices key, so the value
+   would be dropped on the floor even on a draft. Persist it directly via the same PATCH /:id route
+   status changes use (internalQuote.ts), which has no content-lock or approval gate on this field —
+   ticking it must never re-price and must never require re-approval. */
+function setShowLegPrices(on) {
+  var prev = state.showLegPrices;
+  state.showLegPrices = !!on;
+  render();
+  if (!state.savedId) return; // nothing to persist until the quote itself exists server-side
+  apiPatch(state.savedId, { showLegPrices: state.showLegPrices }).then(function(res) {
+    if (!res || res.error) {
+      state.showLegPrices = prev; // revert — the control must not lie about what's stored
+      render();
+      showToast('Could not update — try again', 'error');
+    }
+  });
 }
 
 // R1/R3: set the chosen service. Flipping to private converts any stay_day leg to
@@ -5311,6 +5342,7 @@ function resetToNew() {
     customerTotalVia: null,
     notes: '',
     internalNotes: '',
+    showLegPrices: false,
     legs: [newLeg()],
     savedId: null,
     reference: null,
@@ -6118,6 +6150,7 @@ async function reopenQuote(id) {
     // added via the internal-notes PATCH on the next real save.
     state.notes = q.notes || '';
     state.internalNotes = q.internalNotes || '';
+    state.showLegPrices = !!q.showLegPrices;
     state.unpriced = true;
     render();
     showToast('Opened ' + (q.reference || q.id));
@@ -6190,6 +6223,7 @@ async function reopenQuote(id) {
   state.customerTotalVia = q.customerTotalVia || null;
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
   state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
+  state.showLegPrices = !!q.showLegPrices; // per-journey breakdown on the customer's quote page
   state.savedId = q.id;
   state.reference = q.reference || q.id;
   state.unpriced = !!(q.request && q.request.shell === true);
@@ -8808,6 +8842,9 @@ function render() {
     // it does NOT gate the itinerary.
     '        <div class="ch-basics-rule"></div>',
     renderRequestedService(),
+    // Per-journey price breakdown (spec 2026-08-16): a display setting for the customer's quote
+    // page, off by default. Persists immediately on tick — see setShowLegPrices().
+    '        <label class="ch-hz-toggle" for="f-showLegPrices"><input id="f-showLegPrices" type="checkbox" data-action="setShowLegPrices"' + (st.showLegPrices ? ' checked' : '') + '> Show price per journey on the customer\'s quote page</label>',
     '      </div>',
 
     // Itinerary (dense rows) — locked until every trip basic is filled in.
@@ -9383,6 +9420,8 @@ function attachEventListeners() {
       setService(el.getAttribute('data-service'));
     } else if (action === 'setRequestedService') {
       setRequestedService(el.getAttribute('data-req'));
+    } else if (action === 'setShowLegPrices') {
+      setShowLegPrices(el.checked);
     } else if (action === 'setVehicle') {
       mutate({ vehicleType: el.getAttribute('data-veh') });
     } else if (action === 'toggleFee') {
