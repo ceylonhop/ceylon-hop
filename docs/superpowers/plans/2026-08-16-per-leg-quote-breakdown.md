@@ -47,8 +47,11 @@ Task order puts the customer-visible change **last**: nothing a customer can see
 - Modify: `api/drizzle/meta/_journal.json`
 - Modify: `api/src/db/schema.ts:548` (beside `requestedService`)
 - Modify: `api/src/db/quoteRepo.ts:112` (`SavedQuote`), `:164` (`QuotePatch`)
+- Modify: `api/src/db/quoteRepo.ts` — `InMemoryQuoteRepo.save()` (~`:432`) and `.update()` (~`:615`)
 - Modify: `api/src/db/postgresQuoteRepo.ts:70`, `:115`, `:472`
-- Test: `api/src/db/postgresQuoteRepo.test.ts`
+- Test: `api/src/db/quoteRepo.test.ts`
+
+There is no `postgresQuoteRepo.test.ts` in this repo and no test Postgres is required: `quoteRepo.test.ts` exercises `InMemoryQuoteRepo`, which is the parity implementation every route test runs against. The Postgres mapping is covered by the typechecker plus the existing route tests, matching how `requestedService` was added.
 
 **Interfaces:**
 - Consumes: nothing.
@@ -93,25 +96,40 @@ ALTER TABLE "quotes" ADD COLUMN "show_leg_prices" boolean DEFAULT false NOT NULL
 
 - [ ] **Step 4: Write the failing repo round-trip test**
 
-In `api/src/db/postgresQuoteRepo.test.ts`, following the file's existing setup pattern for a saved quote:
+In `api/src/db/quoteRepo.test.ts`, add a describe block. Build the `NewQuote` the same way the neighbouring tests in that file do — reuse their fixture helper rather than inventing one:
 
 ```ts
-it('defaults show_leg_prices to false and round-trips an explicit true', async () => {
-  const saved = await repo.save(newQuoteFixture());
-  expect(saved.showLegPrices).toBe(false);
+describe('showLegPrices — the per-journey breakdown gate', () => {
+  it('defaults to false on a new quote', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(newQuote());
+    expect(saved.showLegPrices).toBe(false);
+  });
 
-  await repo.patch(saved.id, { showLegPrices: true });
-  const reloaded = await repo.get(saved.id);
-  expect(reloaded?.showLegPrices).toBe(true);
+  it('round-trips an explicit true through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(newQuote());
+    await repo.patch(saved.id, { showLegPrices: true });
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(true);
+  });
+
+  // An ops content re-save must not silently untick a display setting the operator turned on.
+  it('survives an ordinary content re-save that does not mention it', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(newQuote());
+    await repo.patch(saved.id, { showLegPrices: true });
+    await repo.update(saved.id, newQuote());
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(true);
+  });
 });
 ```
 
-Use whatever the file already calls its repo handle and quote fixture — do not invent new helpers.
+If `update()`'s signature in this repo differs, match the file's existing update tests exactly.
 
 - [ ] **Step 5: Run it to verify it fails**
 
-Run: `cd api && npx vitest run src/db/postgresQuoteRepo.test.ts -t 'show_leg_prices'`
-Expected: FAIL — `showLegPrices` is `undefined`, and `patch` rejects the unknown key.
+Run: `cd api && npx vitest run src/db/quoteRepo.test.ts -t 'showLegPrices'`
+Expected: FAIL — `showLegPrices` is `undefined`, and `patch` does not know the key.
 
 - [ ] **Step 6: Plumb it through the repo**
 
@@ -128,12 +146,29 @@ and to `QuotePatch`:
   showLegPrices?: boolean;
 ```
 
-In `api/src/db/postgresQuoteRepo.ts`, add `showLegPrices: r.showLegPrices,` to the row mapper at line ~70, and `showLegPrices: q.showLegPrices ?? false,` at the two insert/return sites (~115, ~472). Add `quotes.showLegPrices` to the column list at ~279 if that select enumerates columns explicitly.
+In `api/src/db/quoteRepo.ts`'s `InMemoryQuoteRepo`, add to the `save()` row literal beside `requestedService` (~`:432`):
+
+```ts
+      // Display-only, and never set at save(): a new quote is off until ops ticks it via patch().
+      showLegPrices: false,
+```
+
+In `update()` (~`:615`), do **not** follow the `requestedService` line's unconditional reset. A content re-save must preserve the operator's tick, so write it like the `assignedTo` block above it:
+
+```ts
+    // Only when explicitly provided — an ordinary content save must not untick a display
+    // setting the operator turned on.
+    if (q.showLegPrices !== undefined) row.showLegPrices = q.showLegPrices;
+```
+
+This requires `showLegPrices?: boolean` on `NewQuote` as well as `QuotePatch`.
+
+In `api/src/db/postgresQuoteRepo.ts`, add `showLegPrices: r.showLegPrices,` to the row mapper at line ~70, and `showLegPrices: q.showLegPrices ?? false,` at the two insert/return sites (~115, ~472). Add `quotes.showLegPrices` to the column list at ~279 if that select enumerates columns explicitly. Mirror the update-preserves-it semantics there too.
 
 - [ ] **Step 7: Run the test to verify it passes**
 
-Run: `cd api && npx vitest run src/db/postgresQuoteRepo.test.ts -t 'show_leg_prices'`
-Expected: PASS
+Run: `cd api && npx vitest run src/db/quoteRepo.test.ts -t 'showLegPrices'`
+Expected: PASS (all three)
 
 - [ ] **Step 8: Apply the migration locally and run the full gate**
 
@@ -143,7 +178,7 @@ Expected: migration applies; typecheck, lint and the full suite pass.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add api/drizzle/0046_quote_show_leg_prices.sql api/drizzle/meta/_journal.json api/src/db/schema.ts api/src/db/quoteRepo.ts api/src/db/postgresQuoteRepo.ts api/src/db/postgresQuoteRepo.test.ts
+git add api/drizzle/0046_quote_show_leg_prices.sql api/drizzle/meta/_journal.json api/src/db/schema.ts api/src/db/quoteRepo.ts api/src/db/quoteRepo.test.ts api/src/db/postgresQuoteRepo.ts
 git commit -m "feat(quote): add show_leg_prices, the per-quote breakdown gate"
 ```
 
