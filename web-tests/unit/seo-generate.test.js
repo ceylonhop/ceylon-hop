@@ -17,9 +17,15 @@ describe('generateAll', () => {
     expect(html).not.toContain('aggregateRating');
     expect(html).toContain('../../site.css'); // relative asset ref
   });
-  it('CTA deep-links into search with from/to prefilled', () => {
+  // The route page used to be a signpost: it showed price CHIPS and deep-linked into
+  // search.html to do the actual selling. Under design A it IS the product page — the
+  // options and their prices are on it, so it books directly and never forwards.
+  it('books from the page itself rather than deep-linking into search', () => {
     const html = out.get('trip/kandy-to-ella/index.html');
-    expect(html).toContain('../../search.html?from=kandy&to=ella');
+    expect(html).not.toContain('search.html?from=kandy&to=ella');
+    // &amp; because the href is escaped — a bare & in an attribute is invalid HTML,
+    // which the old hand-built search link got wrong.
+    expect(html).toContain('booking.html?from=kandy&amp;to=ella');
   });
   it('reverse page uses the back narrative and same prices', () => {
     const fwd = out.get('trip/kandy-to-ella/index.html');

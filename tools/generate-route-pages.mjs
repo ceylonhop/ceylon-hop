@@ -30,6 +30,67 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 const slug = (a, b) => `${a}-to-${b}`;
 const price = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
 
+/* ── Design A: the two option cards ───────────────────────────────────────────
+   docs/superpowers/plans/2026-08-16-unified-route-page.md
+
+   Two options, never three. A shared seat is a DATE WITH NAMES ON IT, so there is
+   no "scheduled" product beside a "pooled" one, and no unavailable state — any
+   date can run once enough travellers commit.
+
+   Emitted as complete static HTML on purpose. These pages exist to be indexed, so
+   a crawler must see the prices, the boarding points and the CTAs with no JS at
+   all; the runtime layer only refreshes live list rows and handles the date field.
+   web-tests/unit/route-page-unified.test.js asserts this against script-stripped
+   markup. */
+const MIN_SEATS = 3; // domain/rideList.ts policyForCorridor — three names run the van
+
+function optionCards(T, from, to, q, shared, p) {
+  const bookHref = `${p}booking.html?from=${from}&to=${to}`;
+  const priv = `
+      <article class="opt opt-private">
+        <span class="opt-tag">Most flexible</span>
+        <h2>Private transfer</h2>
+        <p class="opt-sub">Door to door · runs every day · your own vehicle</p>
+        <div class="veh"><span class="veh-n">AC car<small>up to 3 travellers + bags</small></span><span class="veh-p">$${price(q.car)}<small>total, fixed</small></span></div>
+        <div class="veh"><span class="veh-n">AC van<small>up to 6 travellers + bags</small></span><span class="veh-p">$${price(q.van)}<small>total, fixed</small></span></div>
+        <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Book private transfer</a>
+      </article>`;
+
+  if (!shared) {
+    return `<div class="opt-grid">${priv}
+      <article class="opt opt-none">
+        <span class="opt-tag opt-tag-mute">Not on this route</span>
+        <h2>Shared ride</h2>
+        <p class="opt-sub">No shared van here</p>
+        <p class="opt-desc">We don't run a shared van between ${esc(T.byId[from].name)} and ${esc(T.byId[to].name)}, and it isn't a route travellers pool either. A private transfer covers it door to door at a fixed price — and for three or more it often works out close to a seat price anyway.</p>
+      </article></div>`;
+  }
+
+  const stops = shared.pickups
+    .map(s => `<li><b>${esc(fmtTime(s.time))}</b> ${esc(s.point || T.byId[from].name)}</li>`)
+    .join('');
+  return `<div class="opt-grid">${priv}
+      <article class="opt opt-shared">
+        <span class="opt-tag opt-tag-warm">Best value · share &amp; save</span>
+        <h2>Shared ride</h2>
+        <p class="opt-sub">One van, split between you</p>
+        <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
+        <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
+        <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
+        <ul class="pickups">${stops}</ul>
+        <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}">
+          <a class="btn btn-cta opt-cta" href="${p}board.html">See who's going &amp; add your name</a>
+        </div>
+      </article></div>`;
+}
+
+/** 07:30 → 7:30am, matching how the product pages state boarding times. */
+function fmtTime(t) {
+  const [h, m] = String(t).split(':');
+  const H = Number(h);
+  return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`;
+}
+
 function priceChips(q, shared) {
   const chips = [
     `<div class="pc"><span class="pc-k">Private car</span><span class="pc-v">from $${price(q.car)}</span></div>`,
@@ -45,9 +106,11 @@ function faqItems(from, to, q, shared) {
       `The drive is about ${humanDuration(q.duration)} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
+    // Design A: a shared seat is a date with names on it. No fixed timetable is quoted,
+    // because there is no date we refuse — the van runs when enough travellers commit.
     shared
-      ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel.replace(/\s*→\s*/g, '–')} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
-      : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest shared service.`],
+      ? [`How does a shared seat work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the van runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the van is confirmed — if it never fills, you pay nothing.`]
+      : [`Is there a shared option on this route?`, `This route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
     [`How do I book the ${from} to ${to} transfer?`,
@@ -164,6 +227,26 @@ ${headAssets}
   .pc-k{display:block;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;color:rgba(255,255,255,.85)}
   .pc-v{display:block;font-size:1.15rem;font-weight:800}
   .pc-share{background:rgba(255,214,140,.2);border-color:rgba(255,214,140,.5)}
+  /* Design A option cards — the page's whole job. Static: a crawler sees all of it. */
+  .route-options{padding:34px 0 0}
+  .opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  @media(max-width:820px){.opt-grid{grid-template-columns:1fr}}
+  .opt{position:relative;background:var(--paper,#fffdf8);border:1.5px solid var(--line,#e7e3d6);border-radius:20px;padding:26px}
+  .opt-tag{position:absolute;top:-12px;left:20px;background:var(--accent,#63BFD6);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:.28rem .8rem}
+  .opt-tag-warm{background:var(--saffron,#F9A429)}
+  .opt-tag-mute{background:var(--ink-soft,#6c6a6b)}
+  .opt h2{margin:.3rem 0 .1rem;font-size:1.4rem}
+  .opt-sub{font-size:.7rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);margin:0 0 .8rem}
+  .opt-desc{font-size:.94rem;color:var(--ink-soft,#6c6a6b);margin:.5rem 0 0}
+  .veh{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:13px;padding:12px 15px;margin-top:10px}
+  .veh-n{font-weight:700;font-size:.97rem} .veh-n small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.82rem}
+  .veh-p{font-weight:800;font-size:1.25rem;text-align:right} .veh-p small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.72rem}
+  .seat-price{margin:.2rem 0 .1rem} .seat-price b{font-size:2.3rem;line-height:1} .seat-price span{color:var(--ink-soft,#6c6a6b);font-weight:600}
+  .runs-line{font-size:.9rem;font-weight:600;margin:.1rem 0 .5rem}
+  .pickups{list-style:none;margin:.7rem 0 0;padding:0;display:grid;gap:.25rem}
+  .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
+  .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
+  .opt-cta{margin-top:16px;width:100%;text-align:center}
   .route-body{padding:52px 0}
   .route-body .lede{font-size:1.08rem;line-height:1.7;max-width:64ch}
   .route-hl{margin:22px 0 0;padding-left:1.1rem}
@@ -191,11 +274,14 @@ ${header}
       <nav class="route-crumbs" aria-label="Breadcrumb" style="color:rgba(255,255,255,.8)"><a href="${p}index.html" style="color:inherit">Home</a> · <a href="${p}trip/" style="color:inherit">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
       <h1>${esc(fromName)} to ${esc(toName)}</h1>
       <p class="sub">Private transfer${shared ? ' &amp; shared ride' : ''} — ${q.km} km, about ${humanDuration(q.duration)} door to door.</p>
-      <div class="price-chips">${priceChips(q, shared)}</div>
       <div class="route-cta">
-        <a class="btn btn-cta" href="${p}search.html?from=${from}&to=${to}">See prices &amp; book</a>
         <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
       </div>
+    </div>
+  </section>
+  <section class="section route-options" id="top-options">
+    <div class="wrap">
+      ${optionCards(T, from, to, q, shared, p)}
     </div>
   </section>
   <section class="section route-body">
@@ -212,7 +298,9 @@ ${header}
         ${faqHtml}
       </div>
       <div class="route-cta" style="margin-top:8px">
-        <a class="btn btn-primary" href="${p}search.html?from=${from}&to=${to}">Get your fixed price</a>
+        <!-- The prices are already ON this page, so the tail CTA returns the reader to
+             them rather than forwarding to search.html for a second opinion. -->
+        <a class="btn btn-primary" href="#top-options">See your options</a>
       </div>
     </div>
   </section>
