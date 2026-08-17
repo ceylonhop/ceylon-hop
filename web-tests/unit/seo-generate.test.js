@@ -30,7 +30,10 @@ describe('generateAll', () => {
   it('reverse page uses the back narrative and same prices', () => {
     const fwd = out.get('trip/kandy-to-ella/index.html');
     const rev = out.get('trip/ella-to-kandy/index.html');
-    expect(rev).toContain('<h1>Ella to Kandy</h1>');
+    // The squiggle replaced the word "to" VISUALLY; the phrase these pages rank for must
+    // survive in the markup, so a visually-hidden " to " keeps the h1 reading "Ella to Kandy".
+    expect(rev).toMatch(/<h1>Ella\b[\s\S]*?<span class="vh"> to <\/span>Kandy<\/h1>/);
+    expect(rev.replace(/<[^>]+>/g, '')).toContain('Ella to Kandy');
     expect(rev).toContain('$59'); // symmetric finished pricing
     expect(fwd).not.toBe(rev);
   });

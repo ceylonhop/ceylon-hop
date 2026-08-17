@@ -44,6 +44,22 @@
   live.hidden = true;
   host.parentNode.insertBefore(live, host);
 
+  /* Who is already on a list, as initials. GET /board's projectList returns first names
+     only — no email, no sub — so this is exactly what the board itself shows. A row with
+     faces reads as people going somewhere; the same row without them reads as inventory. */
+  var FACE_BG = ['#24758A', '#F9A429', '#08938f', '#EC3A24'];
+  function faces(members) {
+    var m = (members || []).slice(0, 3);
+    if (!m.length) return '';
+    var h = '<span class="ld-faces">';
+    for (var i = 0; i < m.length; i++) {
+      var n = String(m[i].firstName || '?').trim().charAt(0).toUpperCase();
+      h += '<span class="ld-face" style="background:' + FACE_BG[i % FACE_BG.length] + '">' + esc(n) + '</span>';
+    }
+    if ((members || []).length > 3) h += '<span class="ld-face ld-face-more">+</span>';
+    return h + '</span>';
+  }
+
   function listOn(d) {
     for (var i = 0; i < state.lists.length; i++) {
       if (state.lists[i].date === iso(d)) return state.lists[i];
@@ -67,11 +83,12 @@
       var exact = state.date && l.date === iso(state.date);
       var when = new Date(l.date + 'T00:00:00');
       h += '<a class="ld-row' + (exact ? ' is-yours' : '') + '" href="board.html#/' + encodeURIComponent(l.code) + '">' +
+        faces(l.members) +
         '<span class="ld-when">' + esc(fmt(when)) + (l.slot ? ' · ' + esc(l.slot) : '') +
         (exact ? ' <span class="ld-tag">your date</span>' : '') + '</span>' +
         '<span class="ld-count"><b>' + got + ' of ' + (l.minSeats || MIN) + '</b>' +
         (need > 0 ? ' — ' + need + ' more to run' : ' — running') + '</span>' +
-        '<span class="ld-meter"><i style="width:' + Math.min(100, (got / (l.minSeats || MIN)) * 100) + '%"></i></span>' +
+        '<span class="ld-meter"><i' + (need <= 0 ? ' class="full"' : '') + ' style="width:' + Math.min(100, (got / (l.minSeats || MIN)) * 100) + '%"></i></span>' +
         '<span class="ld-go">→</span></a>';
     }
     return h;
