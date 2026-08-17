@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical.** This plan describes the feature as first built. The owner revised it after
+> seeing it working — no reconciliation row, no "no charge" on stay days, and nothing shown
+> at all on a quote that offers chauffeur. The spec is the current record; this file is kept
+> for the reasoning behind the build order, not as a description of what ships.
+
 **Goal:** Let ops reveal a per-journey price breakdown on an individual customer quote, off by default, so a customer deciding which journeys to keep can see what each one costs.
 
 **Architecture:** A new `quotes.show_leg_prices` column gates the feature per quote. `customerQuoteView` projects the engine's own `lineItems` into a display-only `legPrices` block on the lead option; `quote.html` renders it into the DAY BY DAY rail. Displayed leg prices are whole dollars and a computed remainder row guarantees the column sums to the charged total.

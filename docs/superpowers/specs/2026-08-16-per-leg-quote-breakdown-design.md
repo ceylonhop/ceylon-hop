@@ -45,11 +45,35 @@ to cut.
 |---|---|---|
 | 1 | Who gates it? | **Ops ticks it per quote**, off by default. Not a customer-openable expander. |
 | 2 | Chauffeur card? | **No breakdown.** Private card only. |
-| 3 | The gap between legs and total | **Its own reconciliation row.** Leg prices stay identical to the ops timeline's. |
+| 3 | The gap between legs and total | ~~Its own reconciliation row.~~ **Superseded — see Revisions.** The rounding is spread into the leg prices instead. |
 | 4 | Placement | **In the DAY BY DAY rail**, price right-aligned on the journey's header line, invoice-style. |
 | 5 | Rate exposure | **Accepted.** Per-leg money makes the ~$0.44/km rate derivable; that is inherent and the gate limits who sees it. |
-| 6 | Number format | **Whole dollars**, with the reconciliation row absorbing the remainder so the column always adds up. |
+| 6 | Number format | **Whole dollars**, summing exactly to the total. |
 | 7 | Storage | **A new column** — the long-term solve, not the JSON shortcut. |
+
+## Revisions — 2026-08-16, owner, after seeing it built
+
+Three changes on the built feature. They supersede the decisions above wherever the two disagree;
+the body of this spec has been updated to describe what actually ships.
+
+1. **No reconciliation row.** Decision 3 gave the rounding remainder its own "Rounded down" line.
+   The owner cut it. The requirement it existed to serve — the column must add up — stands, so
+   the remainder is now spread across the leg prices instead. This is the option originally
+   declined as "spread it across the legs"; removing the row makes it the only way to keep both
+   whole dollars and an honest sum.
+
+   **Consequence, accepted:** a leg on the customer's page can read up to $1 below the figure the
+   ops timeline shows for that same leg (Martina's Kitulgala → Nuwara Eliya: engine $31.80, page
+   $31). Quoting a leg by hand from the tool may not match what the customer is looking at.
+
+2. **No "no charge" on stay days.** Stay rows render exactly as they did before this feature.
+   The "you only pay for the days you're moving" claim goes unproven on the page; the owner
+   preferred the quieter rail.
+
+3. **Nothing at all on a quote that offers chauffeur.** The gate was "lead option and privately
+   priced". It is now additionally: if the view carries more than one option, every option gets
+   `null`. This replaces labelling the rail with the lead option's name — that code and its test
+   were removed, since there is no longer a case where prices sit beside a chauffeur total.
 
 ## Design
 
@@ -84,7 +108,7 @@ setting, not a pricing input: it must not re-estimate and must not require re-ap
 ```ts
 legPrices: {
   rows: { label: string; amountUsd: string }[];   // one per journey, in itinerary order
-  reconcile: { label: string; amountUsd: string } | null;
+  discount: { label: string; amountUsd: string } | null;
   totalUsd: string;
 } | null
 ```
@@ -92,66 +116,93 @@ legPrices: {
 `null` unless **all** of:
 
 - `quote.showLegPrices` is true, and
+- the view carries exactly **one** option (revision 3 — a quote offering chauffeur shows no
+  per-journey prices anywhere), and
 - the option is the **lead** option (the one that was priced), and
-- the priced product is `private`.
+- the priced product is `private` — tested against the engine's product, not the view's service,
+  which maps every non-chauffeur product to `private`.
 
 **Why lead-only.** On a `both` quote only the priced option has a stored `result`; the other
 option's total is a live recompute. A breakdown on the recomputed card would reconcile to a
 number that is not the approved one — which contradicts the rule `customerQuoteView` already
-enforces, that the stored total wins and a recompute must never quietly outrank it. So if ops
-priced chauffeur, ticking the box does nothing.
+enforces, that the stored total wins and a recompute must never quietly outrank it. Revision 3
+makes this moot for two-option quotes, but the rule stays as the inner guard.
+
+**Row order.** Leg rows are ordered by `drivingRailOrder()`, which replicates `quoteDays.ts`'s
+date sort — *including* its fallback to request order when any leg has an unparseable date. The
+rail and the prices are matched positionally, and `quoteDays` sorts by date while the engine
+prices in request order, so without this a quote whose legs were entered out of chronological
+order puts every price on the wrong journey. The two sorts are duplicated and must be kept in
+step by hand.
 
 Rows are projected from `result.lineItems`. **Never** their `meta`, which carries the
 founder-only `hotZone` annotation. The existing "never emits margin on any path" test in
 `customerQuoteView.test.ts` guards this and must keep passing.
 
-### Reconciliation — the invariant
+### The invariant
 
-Displayed leg price = the engine's figure rounded to the nearest dollar.
+**`Σ(rows) − discount === totalCents`, exactly, for every input.** `totalCents` is the figure the
+pay link actually charges. Display rounding can never change what is billed.
 
-The reconciliation row is **computed as the remainder**, not read from the engine's
-`price_adjustment`:
+It holds by construction rather than by care: the rows are *derived from* the total, not summed
+toward it. Let `target = totalCents + discountCents`. The displayed amounts are a distribution of
+`target`, so their sum is `target` by definition, and `target − discount` is `totalCents`.
 
-```
-reconcile = totalCents − Σ(displayed leg amounts)
-```
+The distribution (revision 1 — the reconciliation row is gone):
 
-This is the guarantee. Whatever rounding does, and whatever the engine's finishing did, the
-column lands on `totalCents` — which is the figure the pay link actually charges. Displayed
-rounding can never change what is billed.
+1. Loose extra rows take their own value first, quantised as below. The legs absorb the remainder.
+2. The rest is spread across the leg rows in proportion to their true engine amounts, by
+   **largest remainder**, so the shares sum to exactly the remaining target.
+3. **The quantisation unit follows the target.** If `target` is a whole number of dollars — the
+   common case, since charm finishing lands on `…9.00` — rows are whole dollars. If `target`
+   carries cents, rows are quantised in cents instead.
+
+Step 3 exists because forcing whole dollars onto a cents-bearing target produced visibly broken
+output: two *identical* $200 legs against a $397.54 target rendered `$199.54` and `$198`, because
+$397.54 cannot split evenly into whole dollars. Following the target gives `$198.77` twice. A
+future reader will be tempted to simplify this back to always-whole-dollars; that reintroduces the
+bug.
 
 Worked example (Martina's itinerary, real engine output):
 
 ```
 engine legs   45.08  31.80  59.17  51.12  59.17  36.23  78.89   = 361.46
-displayed     45     32     59     51     59     36     79      = 361
+displayed     45     31     59     51     59     36     78      = 359
 total (charged)                                                 = 359
-reconcile     359 − 361                                         = −2
 ```
 
-`finishPrice`'s `nearestIncrement` (`priceFinish.ts:47`) can round **up**, so `reconcile` may
-be positive. It is labelled by sign — "Rounded down −$2" when negative, "Rounding +$1" when
-positive — rather than assuming a discount. When it is exactly zero the row is omitted.
+Note the cost, accepted by the owner: the displayed leg is not the engine's figure for that leg.
+Kitulgala → Nuwara Eliya shows $31 against an engine price of $31.80. The ops timeline still shows
+the engine's figures, so the two can differ by up to $1 per leg.
 
-On a discounted quote the discount is its own row above the total, or the column would not add
-up.
+On a discounted quote the discount keeps its own row above the total — revision 1 removed the
+rounding row, not the discount.
 
 ### Extras
 
-An extra attributed to a leg folds into that leg's displayed price, so the rail stays one row
-per journey. An unattributed extra gets its own row above the reconciliation row.
+An extra attributed to a leg (`meta.legIndex`) folds into that leg's amount *before* the rows are
+reordered for the rail, so it stays on its own leg. The rail keeps one row per journey. An
+unattributed extra — which the engine emits with **no `meta` at all** — gets its own trailing row.
+
+Driving legs are identified as the **first N line items**, N being the request's driving-leg
+count, per the contract documented at `engine.ts:71-74`. They cannot be identified by "no
+`meta.kind`": an unattributed extra has no meta either, and would land in the leg bucket and shift
+every subsequent price onto the wrong journey.
 
 ### Rendering
 
 In `quote.html`'s DAY BY DAY rail:
 
 - Price right-aligned on the journey's header line (`.hop-t` becomes a flex row: title, price).
-- Stay rows show "no charge" **once per stay block**, not on every consecutive stay row.
-- Reconciliation row and Total at the foot of the rail, divided by a hairline.
-- On a `both` quote the rail is labelled with the option the prices belong to, so the figures
-  are never read against the chauffeur total.
+- Stay rows carry **no price element at all** (revision 2) — they render as they did before this
+  feature existed.
+- Any unattributed-extra rows, then the Discount row when present, then Total, at the foot of the
+  rail, divided by a hairline. No rounding row (revision 1).
+- No rail label. A quote offering chauffeur shows no prices at all (revision 3), so there is no
+  longer a case where the figures could be read against the wrong total.
 
 Styles go in `quote.css`. Not `ticket.css` — `pay.html` shares `.hop` and must be unaffected.
+`pay.html` does not load `quote.css`, which is what makes that separation real.
 
 ## Out of scope
 
@@ -168,9 +219,14 @@ Styles go in `quote.css`. Not `ticket.css` — `pay.html` shares `.hop` and must
 - **Migration.** Merging it to `main` *is* its release to staging; prod follows on the next
   `main → production` promote. Additive with a default, so the blast radius is small, but it
   is a schema change and needs the owner's explicit go.
-- **Drift.** The rail's leg prices and the ops timeline's leg prices come from the same
-  `lineItems`, so they cannot disagree — provided the projection never re-derives them from
-  `quoteBreakdown()`.
+- **Ops/customer divergence.** Revision 1 spreads the rounding into the legs, so a displayed leg
+  can sit up to $1 below the engine's figure for it. The ops timeline shows the engine's figures.
+  Quoting a leg by hand from the tool may not match the customer's page. Accepted.
+- **Two duplicated rules.** The date sort is copied between `quoteDays.ts` and
+  `customerQuoteView.ts`, and `customerQuoteView.ts` keeps a local `drives` predicate rather than
+  importing `quote/legCategory.ts`. Both are load-bearing for putting the right price on the right
+  journey. Adding a new non-driving category to `legCategory.ts` without updating the local copy
+  would shift every price. Known, not fixed — the correct fix spans three files.
 
 ## Testing
 
@@ -178,16 +234,21 @@ Unit (`customerQuoteView.test.ts`):
 
 - flag off → `legPrices` is `null`
 - chauffeur-priced quote → `null` even with the flag on
-- non-lead option → `null`
-- **the invariant**: `Σ(rows) + reconcile === totalCents`, across a range of quotes including
-  a discounted one, a floored short-hop one, and one where the finish rounded up
-- margin-safety: the existing "never emits margin" assertion still passes with the flag on
+- a quote carrying two options → `null` on both
+- a `shared`-product quote → `null` (the gate reads the engine product, not the view service)
+- **the invariant**: `Σ(rows) − discount === totalCents`, across a discounted quote, a single-leg
+  quote, one where the finish rounded up, and one whose total carries cents
+- identical legs against a cents-bearing total render identical amounts
+- an unattributed extra keeps its full label and its own row; an attributed one folds into its leg
+- legs stored out of chronological order still put each price on its own journey
+- the engine's `price_adjustment` and `discount` rows are never rendered as journeys
+- margin-safety: the existing "never emits margin" assertion passes with the flag ON and populated
 
 E2E (`quote-page.spec.js`):
 
-- prices render right-aligned on the journey header; stay rows read "no charge" once per block
-- a `both` quote labels the rail with the option the prices belong to
-- flag off → no prices anywhere in the rail
+- prices render right-aligned on the journey header
+- stay rows carry no price element
+- flag off → no prices and no summary block anywhere in the rail
 
 ## Release
 
