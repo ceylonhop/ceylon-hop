@@ -156,7 +156,7 @@ test('mobile search states the route once and still puts prices above the fold',
   await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
   await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
   await expect(page.locator('#route-meta')).toContainText('Approx. 150 km');
-  await expect(page.locator('#route-meta')).toContainText('around 3 hours 15 minutes');
+  await expect(page.locator('#route-meta')).toContainText('Approx. 150 km · 3h 15m');
   await expect(page.locator('#add-stops')).toBeVisible();
   await expect(page.locator('#sl-edit')).toBeVisible();
   await expect(page.locator('.opt-private')).toBeVisible();
@@ -331,11 +331,15 @@ test('a route with no shared service shows the "no shared seats" panel in the gr
    two people save ~29%, and three are $4 better off in the private car. It also announced
    "Seats for 1 traveller" as though the customer had said so.
    Unset now means unset — mirroring the planner's own traveller gate (plan.js). */
+/* Kandy -> Ella was the fixture here because adjacency on the hill-line corridor gave it a
+   shared card. It never was a product we sell, and the shared catalogue withdrew it — so
+   these two moved to Negombo -> Sigiriya, a real catalogue leg ($27.49 a seat against a
+   $65.50 private car). The point of both tests is the PARTY SIZE, not the route. */
 test('an unasked party size is not invented: no count, no savings claim, no pax handed on', async ({ page }) => {
   // exactly what the homepage produces — from + to, nothing else
-  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella' });
+  await gotoBooking(page, { path: '/search.html', query: 'from=negombo&to=sigiriya' });
 
-  // the shared card is present (Kandy -> Ella runs a corridor), but claims nothing about savings
+  // the shared card is present (we sell this leg), but claims nothing about savings
   await expect(page.locator('.opt-shared')).toBeVisible();
   await expect(page.locator('.shared-save')).toHaveCount(0);
   await expect(page.getByText(/Save ~\d+%/)).toHaveCount(0);
@@ -351,16 +355,17 @@ test('an unasked party size is not invented: no count, no savings claim, no pax 
   for (const h of hrefs) expect(h).not.toMatch(/[?&]pax=/);
 
   // the raw comparison the customer can make for themselves is untouched
-  await expect(page.getByText('$21').first()).toBeVisible();       // per seat
+  await expect(page.getByText('$27.49').first()).toBeVisible();      // per seat
   await expect(page.getByText('total, fixed').first()).toBeVisible(); // per vehicle
 });
 
 test('a party size the customer DID choose is still honoured end to end', async ({ page }) => {
-  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
+  await gotoBooking(page, { path: '/search.html', query: 'from=negombo&to=sigiriya&pax=2' });
 
   await expect(page.getByText('2 travellers').first()).toBeVisible();
   await expect(page.locator('.shared-save')).toBeVisible();
-  await expect(page.locator('.shared-save')).toHaveText(/Save ~29%/);
+  // two sharing a $65.50 car pay $32.75 each against a $27.49 seat — ~16%
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~16%/);
   await expect(page.locator('a[href*="booking.html"][href*="pax=2"]').first()).toBeVisible();
 });
 

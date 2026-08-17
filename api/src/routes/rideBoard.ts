@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
+import { sharedProductFor } from '../db/departureRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
 import type { MapsAdapter } from '../adapters/maps';
@@ -285,25 +286,35 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const fromPlace = input.from ?? corridor.fromPlace;
     const toPlace = input.to ?? corridor.toPlace;
 
-    // Seat price comes from the engine, off the real road distance — same basis as a transfer
-    // leg, split three ways. A crow-flies estimate is NOT good enough to charge against (it runs
-    // tens of percent out), so if Google can't answer we decline rather than guess.
-    let distance = null;
-    try {
-      distance = await deps.maps.distance(fromPlace, toPlace);
-    } catch {
-      distance = null;
+    // On a leg we already sell as a scheduled seat, the board charges the SAME price. A pooled
+    // van and a scheduled seat on one journey showing two different numbers is the divergence
+    // this whole change exists to remove — and the catalogue price is authoritative, so there
+    // is nothing to ask Google about (no distance call, and no cannot_price_route to hit).
+    const product = sharedProductFor(fromPlace, toPlace);
+    let seatPrice: number;
+    if (product) {
+      seatPrice = product.seatPrice;
+    } else {
+      // Off-catalogue: price off the real road distance — same basis as a transfer leg, split
+      // three ways. A crow-flies estimate is NOT good enough to charge against (it runs tens of
+      // percent out), so if Google can't answer we decline rather than guess.
+      let distance = null;
+      try {
+        distance = await deps.maps.distance(fromPlace, toPlace);
+      } catch {
+        distance = null;
+      }
+      if (!distance || distance.estimated) {
+        return c.json(
+          {
+            error: 'cannot_price_route',
+            message: "We couldn't work out the distance for that route just now — please try again in a moment.",
+          },
+          503,
+        );
+      }
+      seatPrice = seatPriceForDistance(distance.km);
     }
-    if (!distance || distance.estimated) {
-      return c.json(
-        {
-          error: 'cannot_price_route',
-          message: "We couldn't work out the distance for that route just now — please try again in a moment.",
-        },
-        503,
-      );
-    }
-    const seatPrice = seatPriceForDistance(distance.km);
     const list = await deps.rideLists.createList({
       corridorId: corridor.id,
       fromPlace,

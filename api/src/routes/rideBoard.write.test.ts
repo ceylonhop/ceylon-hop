@@ -321,6 +321,69 @@ describe('POST /board/:code/scratch', () => {
   });
 });
 
+// A pooled van and a scheduled seat on the SAME leg must cost the same, or the search page
+// shows two prices for one journey. On a catalogue leg the board takes the catalogue price;
+// everywhere else it still prices off the road distance.
+describe('POST /board (create) — catalogue legs', () => {
+  const noMaps = {
+    provider: 'outage', places: async () => [], distanceVariants: async () => null,
+    distance: async () => { throw new Error('distance must not be called on a catalogue leg'); },
+  };
+
+  function catalogueApp() {
+    const rideLists = new InMemoryRideListRepo();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    return createApp({
+      rideLists, paygw: new FakeTokenizedPaymentAdapter(), customerVerifier: verifier,
+      maps: noMaps as never,
+    });
+  }
+
+  it('prices a catalogue leg from the catalogue, without asking Google', async () => {
+    const app = catalogueApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    // $27.49 — the scheduled seat price, not seatPriceForDistance(148) = $26.50.
+    expect((await res.json()).list.seatPrice).toBe(2749);
+  });
+
+  it('gives a second catalogue leg on the same corridor its own price', async () => {
+    const app = catalogueApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Sigiriya / Dambulla', to: 'Kandy', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).toBe(1999);
+  });
+
+  it('still prices an off-catalogue leg off the road distance', async () => {
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(164)); // fake maps km
+  });
+
+  it('does not price the REVERSE of a catalogue leg from the catalogue', async () => {
+    // Sigiriya -> Negombo is not sold; pooling it is fine, but at the distance price.
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Sigiriya / Dambulla', to: 'Negombo', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).not.toBe(2749);
+  });
+});
+
 describe('POST /board (create) — pricing', () => {
   // A crow-flies estimate runs tens of percent out, so it must never become a seat price. When
   // Google can't answer we decline the list rather than charge against a guess.

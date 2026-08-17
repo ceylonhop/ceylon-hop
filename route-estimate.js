@@ -33,22 +33,21 @@
     if (rounded == null) return '';
     // Preserve the short-journey unit even when 58–59 minutes rounds to 60. It reads as an
     // honest short-trip estimate instead of crossing presentation bands because of rounding.
-    if (rawMinutes < 60) return `${rounded} minutes`;
+    if (rawMinutes < 60) return `${rounded} min`;
 
     const hours = Math.floor(rounded / 60);
     const minutes = rounded % 60;
-    if (minutes === 0) return `${hours} hour${hours === 1 ? '' : 's'}`;
-    if (minutes === 30) return `${hours}½ hours`;
-    return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minutes`;
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h ${minutes}m`;
   }
 
   function estimateDetails(distanceKm, durationMin) {
     const roundedKm = roundDistanceKm(distanceKm);
     const duration = durationWords(durationMin);
     const parts = [];
-    if (roundedKm != null) parts.push(`Approx. ${roundedKm} km`);
-    if (duration) parts.push(`${parts.length ? 'around' : 'Around'} ${duration}`);
-    return parts.join(' · ');
+    if (roundedKm != null) parts.push(`${roundedKm} km`);
+    if (duration) parts.push(duration);
+    return parts.length ? `Approx. ${parts.join(' · ')}` : '';
   }
 
   function lowerFirst(value) {
