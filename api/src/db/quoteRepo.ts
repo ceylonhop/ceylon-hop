@@ -61,6 +61,8 @@ export interface NewQuote {
   // Quote intent (spec 2026-07-17). What the customer ASKED for ('private'|'chauffeur'|'both'),
   // vs `product` = what was priced. Optional here; the submit gate lives in the route.
   requestedService?: string | null;
+  // Per-journey price breakdown (spec 2026-08-16). Display-only; see SavedQuote.showLegPrices.
+  showLegPrices?: boolean;
   // Audit (spec 2026-07-16). The acting staff email. On save() both are stamped; on update()
   // only updatedBy moves — createdBy is write-once, so a founder editing an ops person's quote
   // never becomes its author.
@@ -110,6 +112,8 @@ export interface SavedQuote {
   notes: string | null;
   internalNotes: string | null;
   requestedService: string | null;
+  /** Display-only: does this quote's customer page list a price per journey? Never null. */
+  showLegPrices: boolean;
   offerValidUntil: Date | null;
   assignedTo: string | null;
   assignedAt: Date | null;
@@ -191,6 +195,7 @@ export interface QuotePatch {
   customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' | 'quote_link' };
   // Offer validity (spec 2026-08-05 D9). Stamped on → ready; null = no validity recorded.
   offerValidUntil?: Date | null;
+  showLegPrices?: boolean;
 }
 
 // Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
@@ -430,6 +435,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
+      // Display-only. A new quote is off unless a caller explicitly asks otherwise via q.showLegPrices.
+      showLegPrices: q.showLegPrices ?? false,
       // Offer validity (spec 2026-08-05 D9): never set at save() — a new quote isn't approved
       // yet. Stamped later via patch() on the → ready transition.
       offerValidUntil: null,
@@ -562,6 +569,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       row.customerTotalVia = patch.customerTotal.via;
     }
     if (patch.offerValidUntil !== undefined) row.offerValidUntil = patch.offerValidUntil;
+    if (patch.showLegPrices !== undefined) row.showLegPrices = patch.showLegPrices;
     row.updatedAt = now;
     return { ...row };
   }
@@ -613,6 +621,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.notes = q.notes ?? null;
     row.internalNotes = q.internalNotes ?? null;
     row.requestedService = q.requestedService ?? null;
+    // Only when explicitly provided — an ordinary content save must not untick a display
+    // setting the operator turned on.
+    if (q.showLegPrices !== undefined) row.showLegPrices = q.showLegPrices;
     // The stored pay-link selection dies with the content it described. legIndexes are POSITIONAL,
     // so an edit that reorders or deletes a leg leaves them pointing at legs nobody chose — the
     // revision bump already retires the token, this stops the stale selection driving the ops

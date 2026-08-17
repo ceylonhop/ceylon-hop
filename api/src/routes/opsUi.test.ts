@@ -676,6 +676,21 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(body).toContain("setShellRoute('quote',{ quoteId:id, replace:true })");
   });
 
+  it('a tick made before the shell existed is synced once claimDraftRow lands the row', () => {
+    // setShowLegPrices() returns early (nothing to PATCH) while state.savedId is still null — the
+    // exact window between "+ New quote" and the shell landing. Without a re-sync here, the
+    // checkbox stays visibly ticked while show_leg_prices sits false server-side: an ops person
+    // sends the customer a link believing it shows the per-journey breakdown, and it does not.
+    const claim = fnBody('claimDraftRow');
+    expect(claim).toContain('if (state.showLegPrices) {');
+    expect(claim).toContain('apiPatch(state.savedId, { showLegPrices: true })');
+    // Must fire only after savedId is actually set to the new row, not before.
+    expect(claim.indexOf('state.savedId = res.id;')).toBeLessThan(claim.indexOf('if (state.showLegPrices)'));
+    // Same "must not lie about what's stored" failure handling as setShowLegPrices itself.
+    expect(claim).toContain('state.showLegPrices = false;');
+    expect(claim).toContain("showToast('Could not update — try again', 'error');");
+  });
+
   it('the shell price blocker cannot fire while a price is on screen', () => {
     const blockers = fnBody('submitBlockers');
     // `state.unpriced` only clears on a save round-trip and autosave is debounced 2.5s, so a bare
