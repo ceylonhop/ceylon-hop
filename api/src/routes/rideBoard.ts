@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { randomUUID } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
@@ -95,16 +96,27 @@ export function projectList({ list, members }: RideListWithMembers, viewerSub?: 
 }
 
 const firstNameOf = (name: string): string => name.trim().split(/\s+/)[0] || name;
+const lastNameOf = (name: string): string => name.trim().split(/\s+/).slice(1).join(' ') || '-';
+const PREAPPROVAL_TTL_MS = 30 * 60_000;
+
+function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 export interface RideBoardDeps {
   rideLists: RideListRepo;
   departures: DepartureRepo; // corridor resolution + seat price
-  paygw: TokenizedPaymentAdapter; // card-on-file preapproval (fake until owner swaps in PayHere)
+  paygw: TokenizedPaymentAdapter; // PayHere in production; a deterministic fake in automated tests
   customer: { sessionSecret: string; googleClientId: string; verifier?: JwtVerifier };
   maps: MapsAdapter; // road distance for the seat price
   memberLinkSecret: string; // "manage my name" capability token
   currency?: string;
   allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
+  boardBaseUrl?: string; // browser return/cancel origin for PayHere preapproval
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -173,6 +185,53 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const cust = c.get('customer');
     if (!cust) return c.json({ me: null });
     return c.json({ me: { firstName: firstNameOf(cust.name), country: cust.country, photo: cust.photo ?? null } });
+  });
+
+  // PayHere returns the reusable customer token only to this signed server callback. The
+  // browser's return_url carries no trustworthy result and merely polls /payments/:orderId.
+  r.post('/payhere/notify', async (c) => {
+    const event = deps.paygw.parsePreapprovalWebhook(await c.req.text());
+    if (!event) return c.json({ error: 'invalid_signature' }, 400);
+    if (event.status === 'succeeded' && event.ref) {
+      await deps.rideLists.approveMemberPreapproval(event.orderId, event.ref);
+    } else if (event.status === 'failed' || event.status === 'cancelled') {
+      await deps.rideLists.failMemberPreapproval(event.orderId);
+    }
+    return c.json({ ok: true });
+  });
+
+  r.get('/payments/:orderId', requireCustomer(), async (c) => {
+    const cust = c.get('customer')!;
+    const found = await deps.rideLists.getByPreapprovalOrder(c.req.param('orderId'));
+    if (!found || found.member.sub !== cust.sub) return c.json({ error: 'not_found' }, 404);
+    if (
+      found.member.status === 'preapproval_pending' &&
+      (found.member.preapprovalExpiresAt?.getTime() ?? 0) <= Date.now()
+    ) {
+      await deps.rideLists.failMemberPreapproval(c.req.param('orderId'));
+      return c.json({ status: 'failed', error: 'payment_expired' });
+    }
+    if (found.member.status === 'preapproval_pending') return c.json({ status: 'pending' });
+    if (found.member.status === 'preapproval_failed' || found.member.status === 'scratched') {
+      return c.json({ status: 'failed' });
+    }
+    const full = await deps.rideLists.getById(found.list.id);
+    if (!full) return c.json({ error: 'not_found' }, 404);
+    return c.json({
+      status: 'succeeded',
+      list: projectList(full, cust.sub),
+      manageToken: signRideMemberToken(found.list.id, cust.sub, deps.memberLinkSecret),
+    });
+  });
+
+  r.post('/payments/:orderId/cancel', requireCustomer(), async (c) => {
+    const cust = c.get('customer')!;
+    const found = await deps.rideLists.getByPreapprovalOrder(c.req.param('orderId'));
+    if (!found || found.member.sub !== cust.sub) return c.json({ error: 'not_found' }, 404);
+    if (found.member.status === 'preapproval_pending') {
+      await deps.rideLists.failMemberPreapproval(c.req.param('orderId'));
+    }
+    return c.json({ ok: true });
   });
 
   // ---- reads (public) ------------------------------------------------------
@@ -257,12 +316,10 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       note: input.note ?? null,
       cutoffAt: cutoffAt(input.date, input.slot),
       createdBy: cust.sub,
+      initialStatus: 'pending_payment',
     });
-    const { ref } = await deps.paygw.preapprove({
-      customerRef: cust.sub,
-      customer: { firstName: firstNameOf(cust.name), email: cust.email, country: cust.country },
-    });
-    await deps.rideLists.addMember(list.id, {
+    const orderId = `RBPA-${randomUUID()}`;
+    const pending = await deps.rideLists.beginMemberPreapproval(list.id, {
       sub: cust.sub,
       firstName: firstNameOf(cust.name),
       country: cust.country,
@@ -270,8 +327,34 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       photoUrl: cust.photo ?? null,
       preferredTime: input.preferredTime ?? null,
       seats: input.seats ?? 1,
-      preapprovalRef: ref,
-    });
+    }, orderId, new Date(Date.now() + PREAPPROVAL_TTL_MS));
+    if (!pending) return c.json({ error: 'full' }, 409);
+    let preapproval;
+    try {
+      preapproval = await deps.paygw.preapprove({
+        customerRef: cust.sub,
+        orderId,
+        items: `Ceylon Hop shared ride ${fromPlace} to ${toPlace}`,
+        currency: deps.currency ?? 'USD',
+        returnUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
+        cancelUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
+        customer: {
+          firstName: firstNameOf(cust.name), lastName: lastNameOf(cust.name), email: cust.email,
+          phone: input.payment?.phone, address: input.payment?.address, city: input.payment?.city,
+          country: countryName(cust.country),
+        },
+      });
+    } catch (error) {
+      await deps.rideLists.failMemberPreapproval(orderId);
+      if ((error as Error).message === 'payment_details_required') {
+        return c.json({ error: 'payment_details_required' }, 400);
+      }
+      throw error;
+    }
+    if (preapproval.status === 'requires_action') {
+      return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
+    }
+    await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
     const fresh = await deps.rideLists.getByCode(list.code);
     logEvent('ride_board.list_created', {
       code: list.code, corridorId: list.corridorId, date: list.date, slot: list.slot,
@@ -309,16 +392,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       return c.json({ error: 'full' }, 409);
     }
 
-    let ref: string | null = null;
-    if (!alreadyOn) {
-      ref = (
-        await deps.paygw.preapprove({
-          customerRef: cust.sub,
-          customer: { firstName: firstNameOf(cust.name), email: cust.email, country: cust.country },
-        })
-      ).ref;
-    }
-    const member = await deps.rideLists.addMember(found.list.id, {
+    const previous = found.members.find((m) => m.sub === cust.sub);
+    const memberArgs = {
       sub: cust.sub,
       firstName: firstNameOf(cust.name),
       country: cust.country,
@@ -326,8 +401,50 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       photoUrl: cust.photo ?? null,
       preferredTime: preferredTime ?? null,
       seats,
-      preapprovalRef: ref,
-    });
+      preapprovalRef: previous?.preapprovalRef ?? null,
+    };
+    let member;
+    // A live member is changing seats; a scratched member with a still-valid PayHere token is
+    // rejoining. Neither needs to approve the same card again.
+    if (alreadyOn || previous?.preapprovalRef) {
+      member = await deps.rideLists.addMember(found.list.id, memberArgs);
+    } else {
+      const orderId = `RBPA-${randomUUID()}`;
+      member = await deps.rideLists.beginMemberPreapproval(
+        found.list.id,
+        memberArgs,
+        orderId,
+        new Date(Date.now() + PREAPPROVAL_TTL_MS),
+      );
+      if (!member) return c.json({ error: 'full' }, 409);
+      let preapproval;
+      try {
+        preapproval = await deps.paygw.preapprove({
+          customerRef: cust.sub,
+          orderId,
+          items: `Ceylon Hop shared ride ${found.list.fromPlace} to ${found.list.toPlace}`,
+          currency: deps.currency ?? 'USD',
+          returnUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
+          cancelUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
+          customer: {
+            firstName: firstNameOf(cust.name), lastName: lastNameOf(cust.name), email: cust.email,
+            phone: parsed.data.payment?.phone, address: parsed.data.payment?.address,
+            city: parsed.data.payment?.city, country: countryName(cust.country),
+          },
+        });
+      } catch (error) {
+        await deps.rideLists.failMemberPreapproval(orderId);
+        if ((error as Error).message === 'payment_details_required') {
+          return c.json({ error: 'payment_details_required' }, 400);
+        }
+        throw error;
+      }
+      if (preapproval.status === 'requires_action') {
+        return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
+      }
+      await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
+      member = (await deps.rideLists.getByPreapprovalOrder(orderId))?.member ?? null;
+    }
     if (!member) return c.json({ error: 'full' }, 409);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
     const committed = committedSeats(fresh?.members ?? []);

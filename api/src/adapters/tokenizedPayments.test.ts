@@ -28,7 +28,8 @@ describe('FakeTokenizedPaymentAdapter — interface shape', () => {
   it('preapprove resolves to an object whose only contract is a non-empty string ref', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const res = await a.preapprove({ customerRef: 'sub-1' });
-    expect(Object.keys(res)).toEqual(['ref']);
+    expect(Object.keys(res)).toEqual(['status', 'ref']);
+    expect(res.status).toBe('approved');
     expect(typeof res.ref).toBe('string');
     expect(res.ref.length).toBeGreaterThan(0);
   });
@@ -213,17 +214,19 @@ describe('FakeTokenizedPaymentAdapter — money edge cases', () => {
     expect(a.charges[0]?.currency).toBe('lkr');
   });
 
-  // documents: unlike FakePaymentAdapter (payments.ts), which throws if
-  // constructed with NODE_ENV=production, this fake has no such guard. Booting
-  // prod without a real tokenized adapter silently gives every Ride Board join
-  // a fake card that always "charges". app.ts defaults `paygw` to this class.
-  it('documents: it does NOT refuse to construct in production (unlike FakePaymentAdapter)', () => {
+  it('refuses to construct in production unless a non-money environment explicitly opts in', () => {
     const prev = process.env.NODE_ENV;
+    const prevAllow = process.env.ALLOW_FAKE_PAYMENTS;
     process.env.NODE_ENV = 'production';
+    delete process.env.ALLOW_FAKE_PAYMENTS;
     try {
+      expect(() => new FakeTokenizedPaymentAdapter()).toThrow(/must never be used in production/);
+      process.env.ALLOW_FAKE_PAYMENTS = '1';
       expect(() => new FakeTokenizedPaymentAdapter()).not.toThrow();
     } finally {
       process.env.NODE_ENV = prev;
+      if (prevAllow === undefined) delete process.env.ALLOW_FAKE_PAYMENTS;
+      else process.env.ALLOW_FAKE_PAYMENTS = prevAllow;
     }
   });
 });

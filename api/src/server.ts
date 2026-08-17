@@ -11,6 +11,8 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
+import { PayHereTokenizedPaymentAdapter } from './adapters/payhereTokenized';
+import { FakeTokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
 import { CachedMapsAdapter } from './adapters/cachedMaps';
 import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
@@ -59,6 +61,17 @@ const adapter =
         ? { appId: config.PAYHERE_APP_ID, appSecret: config.PAYHERE_APP_SECRET }
         : undefined)
     : new FakePaymentAdapter();
+
+const ridePaygw =
+  config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET &&
+  config.PAYHERE_APP_ID && config.PAYHERE_APP_SECRET && config.PAYHERE_RIDE_NOTIFY_URL
+    ? new PayHereTokenizedPaymentAdapter(
+        config.PAYHERE_MERCHANT_ID,
+        config.PAYHERE_MERCHANT_SECRET,
+        { mode: config.PAYHERE_MODE, notifyUrl: config.PAYHERE_RIDE_NOTIFY_URL },
+        { appId: config.PAYHERE_APP_ID, appSecret: config.PAYHERE_APP_SECRET },
+      )
+    : new FakeTokenizedPaymentAdapter();
 
 const rawMaps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
@@ -130,6 +143,7 @@ const app = createApp({
   zones: new PostgresZonesRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),
   adapter,
+  paygw: ridePaygw,
   maps,
   email,
   alerts,
