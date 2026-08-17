@@ -37,13 +37,13 @@ export interface QuoteViewOption {
   legPrices: QuoteViewLegPrices | null;
 }
 
-/* What each journey costs, for the customer who asked (spec 2026-08-16). Display-only, and
-   whole dollars: `reconcile` is the REMAINDER against the charged total, never the engine's own
-   `price_adjustment` row — so rows + reconcile + discount === totalCents by construction,
-   whatever rounding and finishing did. That is the arithmetic the customer will check. */
+/* What each journey costs, for the customer who asked (spec 2026-08-16, revised by the owner
+   2026-08-16). Display-only, and whole dollars — but there is NO rounding row: the rounding is
+   spread across the journeys themselves (see distributeExact), so `rows` sum to exactly the
+   pre-discount figure and Σ(rows) − discount === totalCents by construction, whatever rounding
+   and finishing did. That is the arithmetic the customer will check. */
 export interface QuoteViewLegPrices {
   rows: { label: string; amountUsd: string }[];
-  reconcile: { label: string; amountUsd: string } | null;
   discount: { label: string; amountUsd: string } | null;
   totalUsd: string;
 }
@@ -234,6 +234,58 @@ const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$
 
 const wholeDollars = (cents: number): number => Math.round(cents / 100) * 100;
 
+// Exact integer floor division. `Math.floor(a / b)` goes through a float, and the products below
+// (weight × dollars) are large enough that a quotient landing exactly on an integer could come
+// back a hair under it. The correction loops run at most once and keep the identity
+// `q*den <= num < (q+1)*den` true in integers, which is what the largest-remainder proof needs.
+function floorDiv(num: number, den: number): number {
+  let q = Math.floor(num / den);
+  while (q * den > num) q -= 1;
+  while ((q + 1) * den <= num) q += 1;
+  return q;
+}
+
+/* Spread `target` across `weights.length` rows so the displayed amounts sum to EXACTLY `target`
+   (owner, 2026-08-16: no "Rounded down" row — the column must still add up, so the rounding goes
+   into the journeys instead of into a row of its own).
+
+   Whole dollars, by LARGEST REMAINDER (Hamilton's method): each row gets floor(w_i·D/W) dollars,
+   and the D − Σfloor dollars still to hand out — an integer in [0, N) — go to the rows with the
+   biggest fractional part, ties to the earlier row. That is exact by construction: floor division
+   in integers leaves a remainder in [0, W), so the shortfall is bounded by N and every dollar is
+   placed. Any residual CENTS (only when the price finish left cents on the total) land on the
+   single largest row, so every other row stays a whole number of dollars.
+
+   Degenerate weights (all zero, or negative from a malformed stored row) fall back to equal
+   shares — the sum still lands on `target`, which is the guarantee that matters. */
+function distributeExact(target: number, weights: number[]): number[] {
+  const n = weights.length;
+  if (!n) return [];
+  const residual = target % 100; // sign follows `target`; target − residual is a whole-dollar sum
+  const dollars = (target - residual) / 100;
+
+  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+  const totalW = w.reduce((a, b) => a + b, 0);
+  const eff = totalW > 0 ? w : w.map(() => 1);
+  const den = totalW > 0 ? totalW : n;
+
+  const shares = eff.map((x) => floorDiv(x * dollars, den));
+  const rems = eff.map((x, i) => x * dollars - shares[i] * den);
+  let left = dollars - shares.reduce((a, b) => a + b, 0);
+  // `left` is in [0, n) by the floor-division bound, so this hands out every remaining dollar.
+  const order = rems.map((r, i) => ({ r, i })).sort((a, b) => b.r - a.r || a.i - b.i);
+  for (let k = 0; left > 0; k += 1, left -= 1) shares[order[k % n].i] += 1;
+
+  const cents = shares.map((s) => s * 100);
+  if (residual !== 0) {
+    // The largest row absorbs the odd cents — on the smallest one they would read as a typo.
+    let big = 0;
+    for (let i = 1; i < cents.length; i += 1) if (cents[i] > cents[big]) big = i;
+    cents[big] += residual;
+  }
+  return cents;
+}
+
 // UTC-midnight on the YYYY-MM-DD part. A copy of quoteDays.ts's parseUtc — see drivingRailOrder.
 const legDayMs = (s: string | undefined): number | null => {
   if (!s) return null;
@@ -276,6 +328,7 @@ function legPricesFor(
   quote: ViewQuote,
   product: string | null,
   lead: boolean,
+  soleOption: boolean,
   drivingLegCount: number,
   totalCents: number,
   discountOff: number | null,
@@ -287,7 +340,13 @@ function legPricesFor(
   //
   // Gate on the ENGINE's product, not the view's service: the view maps every non-chauffeur
   // product onto the 'private' card, so a `shared` quote would slip a private-only gate.
-  if (!quote.showLegPrices || !lead || product !== 'private') return null;
+  //
+  // SOLE-OPTION too (owner, 2026-08-16). A quote that also offers Chauffeur-guide shows no
+  // per-journey prices at all — not even on the private card. The rail sits below BOTH cards and
+  // there is only one of it, so a column of private figures under a two-option comparison invites
+  // the customer to add it up against the chauffeur total, which it was never a breakdown of.
+  // Labelling whose prices they were was the first answer; the owner's is that they don't appear.
+  if (!quote.showLegPrices || !lead || !soleOption || product !== 'private') return null;
 
   const stored = (quote.result ?? {}) as { lineItems?: StoredLineItem[] };
   const items = Array.isArray(stored.lineItems) ? stored.lineItems : [];
@@ -309,7 +368,7 @@ function legPricesFor(
   if (!legs.length) return null;
 
   // Everything after the legs is an extra, the engine's finishing adjustment, or the discount.
-  // The last two are skipped: `reconcile` below is the remainder against the CHARGED total, so
+  // The last two are skipped: the leg rows below are distributed to hit the CHARGED total, so
   // reading the engine's own adjustment back would double-count it. An extra attributed to a
   // leg folds into that leg, so the rail stays one row per journey.
   const amounts = legs.map(amountOf);
@@ -328,25 +387,33 @@ function legPricesFor(
   // which leaves exactly the same n rows, permuted: the sum — and so the invariant — is untouched.
   const railOrder = drivingRailOrder(legsOf(quote)).filter((i) => i < legs.length);
 
+  /* The figure the rows must add up to: the PRE-discount total, because the discount is its own
+     row below them. `total + discount` is exact — finishing runs before the discount (#422), so
+     total IS totalBefore − discount.
+
+     A loose extra keeps its own rounded value: it is a thing the customer bought at a price, not
+     a share of the journey money, and nudging it by a dollar to make a column balance would
+     misstate what that thing cost. So the legs absorb the whole rounding between them. */
+  const off = discountOff ?? 0;
+  const target = totalCents + off;
+  const looseCents = loose.map((e) => wholeDollars(amountOf(e)));
+  const legTarget = target - looseCents.reduce((s, c) => s + c, 0);
+  // Weighted by each journey's TRUE engine amount (extras folded in), in the order the rail
+  // renders them — so the spread is proportional to what each journey actually cost.
+  const legCents = distributeExact(legTarget, railOrder.map((i) => amounts[i]));
+
   // journeyLabel strips a trailing "(car)"-style vehicle tag, and is safe by construction now
   // that it only ever sees real driving legs — those always carry the tag. A loose extra's own
   // parenthetical ("Sightseeing stops (up to 3h)") is part of what it IS, so its label is left
   // exactly as stored: stripping it there would delete meaning, not an ops annotation.
   const rows = [
-    ...railOrder.map((i) => ({ label: journeyLabel(legs[i].label), cents: wholeDollars(amounts[i]) })),
+    ...railOrder.map((i, k) => ({ label: journeyLabel(legs[i].label), amountUsd: usd(legCents[k]) })),
     // Loose extras stay trailing, after every leg row — they belong to no journey.
-    ...loose.map((e) => ({ label: e.label, cents: wholeDollars(amountOf(e)) })),
+    ...loose.map((e, k) => ({ label: e.label, amountUsd: usd(looseCents[k]) })),
   ];
 
-  // rows + reconcile − discount === totalCents, solved for reconcile.
-  const off = discountOff ?? 0;
-  const gap = totalCents + off - rows.reduce((s, r) => s + r.cents, 0);
-
   return {
-    rows: rows.map((r) => ({ label: r.label, amountUsd: usd(r.cents) })),
-    reconcile: gap === 0
-      ? null
-      : { label: gap < 0 ? 'Rounded down' : 'Rounding', amountUsd: `${gap < 0 ? '−' : '+'}${usd(Math.abs(gap))}` },
+    rows,
     discount: off > 0 ? { label: 'Discount', amountUsd: `−${usd(off)}` } : null,
     totalUsd: usd(totalCents),
   };
@@ -430,6 +497,7 @@ export function customerQuoteView(
         quote,
         engine?.product ?? null,
         lead,
+        otherTotal == null, // sole option: a two-option quote shows no per-journey prices at all
         driving.length,
         cents,
         lead ? discountOff : null,

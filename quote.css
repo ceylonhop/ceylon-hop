@@ -107,17 +107,12 @@
 .hop-t .hop-title{flex:1;min-width:0}
 .hop-p{flex:none;font-family:var(--display);font-weight:700;font-size:1rem;color:var(--ink);
   font-variant-numeric:tabular-nums}
-/* A stay day is priced too — quietly. "no charge" in the meta voice is the private card's
-   "you only pay for the days you're moving", shown rather than claimed. */
-.hop.is-stay .hop-p{font-family:inherit;font-weight:600;font-size:.7rem;letter-spacing:.04em;
-  text-transform:uppercase;color:var(--ink-faint)}
 .hop-sum{margin:4px 0 0 25px;padding-top:11px;border-top:1px solid var(--line-soft,#f0ece1)}
 .hop-sum .r{display:flex;justify-content:space-between;gap:12px;font-size:.8rem;
   color:var(--ink-soft);padding:2px 0}
 .hop-sum .r span:last-child{font-variant-numeric:tabular-nums}
 .hop-sum .r.tot{margin-top:7px;padding-top:9px;border-top:1px solid var(--line-soft,#f0ece1);
   font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink)}
-.t-ref-soft{color:var(--ink-faint);margin-left:8px}
 .opt-n{font-family:var(--display);font-weight:700;font-size:1.2rem;letter-spacing:0;margin:0;color:var(--ink)}
 .opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
 /* Cancellation is reassurance, not a selling point (owner critique, 2026-08-06): quiet grey in

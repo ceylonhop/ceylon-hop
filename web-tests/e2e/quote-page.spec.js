@@ -167,26 +167,29 @@ test('no pay button and no /p link exists anywhere on the page', async ({ page }
 });
 
 const PRICED_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 45_000, lead: true });
+// No rounding row (owner, 2026-08-16): the projection spreads the rounding across the journeys,
+// so what the page renders is rows that already add up to the Total.
 PRICED_OPT.legPrices = {
   rows: [
     { label: 'Colombo Airport → Kandy', amountUsd: '$120' },
     { label: 'Kandy → Ella', amountUsd: '$140' },
   ],
-  reconcile: { label: 'Rounded down', amountUsd: '−$2' },
   discount: null,
-  totalUsd: '$258',
+  totalUsd: '$260',
 };
 
-test('per-journey prices sit on each journey header, stay days show no charge once', async ({ page }) => {
+test('per-journey prices sit on each journey header, and stay days carry no price at all', async ({ page }) => {
   const body = { state: 'live', view: view({ options: [PRICED_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
   await stubQuoteView(page, body);
   await page.goto(PAGE);
 
   await expect(page.locator('.hop:not(.is-stay) .hop-p')).toHaveText(['$120', '$140']);
-  // DAYS has one stay row between the two journeys; it is priced as no charge, not blank.
-  await expect(page.locator('.hop.is-stay .hop-p')).toHaveText(['no charge']);
-  await expect(page.locator('.hop-sum .r').first()).toContainText('Rounded down');
-  await expect(page.locator('.hop-sum .r.tot')).toContainText('$258');
+  // DAYS has one stay row between the two journeys. It renders exactly as it did before this
+  // feature existed — no price element, not even a "no charge" label (owner, 2026-08-16).
+  await expect(page.locator('.hop.is-stay .hop-p')).toHaveCount(0);
+  await expect(page.locator('.hop-sum .r.tot')).toContainText('$260');
+  // The only summary row is the Total: nothing between the journeys and it.
+  await expect(page.locator('.hop-sum .r')).toHaveCount(1);
 });
 
 test('no prices anywhere in the rail when the quote was not ticked', async ({ page }) => {
@@ -201,8 +204,8 @@ test('no prices anywhere in the rail when the quote was not ticked', async ({ pa
 // A row beyond the driving-day count is an unattributed extra (e.g. "Sightseeing stops (up to
 // 3h)") that legPricesFor pushed onto the end because no leg claimed it (customerQuoteView.ts).
 // daysHtml only consumes one row per driving day, so this row has nowhere in the rail to land —
-// it belongs in the summary, above the reconciliation row, or the column stops adding up to the
-// Total and the whole point of the breakdown is defeated.
+// it belongs in the summary, above the Total, or the column stops adding up and the whole point
+// of the breakdown is defeated.
 const OPT_WITH_EXTRA_ROW = opt({ service: 'private', name: 'Private transfers', totalCents: 46_800, lead: true });
 OPT_WITH_EXTRA_ROW.legPrices = {
   rows: [
@@ -210,12 +213,11 @@ OPT_WITH_EXTRA_ROW.legPrices = {
     { label: 'Kandy → Ella', amountUsd: '$140' },
     { label: 'Sightseeing stops (up to 3h)', amountUsd: '$10' },
   ],
-  reconcile: { label: 'Rounding', amountUsd: '+$8' },
   discount: null,
-  totalUsd: '$278',
+  totalUsd: '$270',
 };
 
-test('an unattributed extra row reaches the summary, above reconcile, instead of being dropped', async ({ page }) => {
+test('an unattributed extra row reaches the summary, above the Total, instead of being dropped', async ({ page }) => {
   const body = { state: 'live', view: view({ options: [OPT_WITH_EXTRA_ROW] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
   await stubQuoteView(page, body);
   await page.goto(PAGE);
@@ -226,21 +228,8 @@ test('an unattributed extra row reaches the summary, above reconcile, instead of
   const rows = page.locator('.hop-sum .r');
   await expect(rows).toHaveText([
     'Sightseeing stops (up to 3h)$10', // surplus row first
-    'Rounding+$8', // then reconcile
-    'Total$278', // then the total, last
+    'Total$270', // then the total, last
   ]);
-});
-
-// Two options means the rail's prices are only ONE option's figures, never the other's total —
-// so the head must name whose prices they are (quote.html: v.options.length > 1 &&
-// v.options[0].legPrices). Untested before this: a two-option view where the lead carries
-// legPrices.
-test('the rail head names the lead option when two options are shown and it carries per-journey prices', async ({ page }) => {
-  const body = { state: 'live', view: view({ options: [PRICED_OPT, CHAUFFEUR_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
-  await stubQuoteView(page, body);
-  await page.goto(PAGE);
-
-  await expect(page.locator('.t-head .t-ref-soft')).toHaveText(PRICED_OPT.name.toLowerCase() + ' prices');
 });
 
 // Finding 3 (task-4 review): the rail's journey order comes from quoteDays.ts's `isStay`
@@ -267,7 +256,6 @@ INTERLEAVED_OPT.legPrices = {
     { label: 'Kandy → Ella', amountUsd: '$140' },
     { label: 'Ella → Galle', amountUsd: '$360' },
   ],
-  reconcile: null,
   discount: null,
   totalUsd: '$620',
 };

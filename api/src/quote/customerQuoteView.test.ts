@@ -29,9 +29,10 @@ describe('customerQuoteView', () => {
       quote({
         marginCents: 31_000,
         rateCardJson: { costPerKmCents: 40 },
-        requestedService: 'both',
-        // The per-journey rail POPULATED — otherwise legPrices is null on both options and this
-        // test never looks at the newest thing that reads the stored, founder-only lineItems.
+        // Deliberately a ONE-option quote (`private`, though `both` is priceable below): the
+        // per-journey rail has to be POPULATED or this test never looks at the newest thing that
+        // reads the stored, founder-only lineItems — and a two-option quote now suppresses it.
+        requestedService: 'private',
         showLegPrices: true,
         result: {
           lineItems: [
@@ -385,11 +386,57 @@ describe('per-journey prices', () => {
     expect(v.options[0].legPrices).toBeNull();
   });
 
-  it('is null on the secondary option, which is a recompute not the approved total', () => {
-    const v = customerQuoteView(quote({ showLegPrices: true, requestedService: 'both' }), both);
+  /* Owner, 2026-08-16: a quote that also offers Chauffeur-guide shows NO per-journey prices —
+     not on the secondary card (a recompute, never the approved total) and not on the private
+     card either. There is one DAY BY DAY rail below both cards, so a column of private figures
+     under a two-option comparison invites the customer to add it up against the chauffeur total.
+     Naming whose prices they were was the earlier answer; this is the owner's. */
+  it('is null on BOTH options when the quote offers chauffeur alongside private', () => {
+    const v = customerQuoteView(
+      quote({
+        showLegPrices: true,
+        requestedService: 'both',
+        result: {
+          lineItems: [
+            { label: 'Colombo Airport → Sigiriya (car)', amountCents: 46_500 },
+            { label: 'Sigiriya → Kandy (car)', amountCents: 37_500 },
+          ],
+        },
+      }),
+      both,
+    );
+    expect(v.options).toHaveLength(2);
+    expect(v.options[0].legPrices).toBeNull();
     expect(v.options[1].legPrices).toBeNull();
   });
 
+  // The same quote with only the private option offered — the breakdown is back. Without this,
+  // the assertion above could pass because the projection broke, not because the gate held.
+  it('still shows the breakdown on a single-option private quote', () => {
+    const v = customerQuoteView(
+      quote({
+        showLegPrices: true,
+        requestedService: 'private',
+        result: {
+          lineItems: [
+            { label: 'Colombo Airport → Sigiriya (car)', amountCents: 46_500 },
+            { label: 'Sigiriya → Kandy (car)', amountCents: 37_500 },
+          ],
+        },
+      }),
+      both,
+    );
+    expect(v.options).toHaveLength(1);
+    expect(v.options[0].legPrices!.rows).toEqual([
+      { label: 'Colombo Airport → Sigiriya', amountUsd: '$465' },
+      { label: 'Sigiriya → Kandy', amountUsd: '$375' },
+    ]);
+  });
+
+  // Whole dollars, and they already add up: 4508 + 3180 = 7688 engine cents against a $76 charged
+  // total, so the $0.88 the finish took off is spread over the two journeys rather than shown as
+  // a row of its own — leg 1 keeps its rounded-up $45, leg 2 gives up the dollar (largest
+  // remainder: .56 beats .43).
   it('shows one whole-dollar row per journey, named without the vehicle tag', () => {
     const lp = shown({
       result: {
@@ -402,7 +449,7 @@ describe('per-journey prices', () => {
     });
     expect(lp!.rows).toEqual([
       { label: 'Colombo Airport → Sigiriya', amountUsd: '$45' },
-      { label: 'Sigiriya → Kandy', amountUsd: '$32' },
+      { label: 'Sigiriya → Kandy', amountUsd: '$31' },
     ]);
   });
 
@@ -490,47 +537,54 @@ describe('per-journey prices', () => {
       },
       totalCents: 6000,
     });
+    // The zero-weight row takes no share of the total, so the whole $60 lands on the good leg.
+    // A wrong-looking figure on a corrupt row, never "$NaN" and never a column that fails to add.
     expect(lp!.rows).toEqual([
-      { label: 'A → B', amountUsd: '$50' },
+      { label: 'A → B', amountUsd: '$60' },
       { label: 'B → C', amountUsd: '$0' },
     ]);
-    expect(lp!.reconcile).toEqual({ label: 'Rounding', amountUsd: '+$10' });
     expect(JSON.stringify(lp)).not.toMatch(/NaN/);
   });
 
-  it('labels a downward remainder as rounded down', () => {
+  // A downward finish ($361.46 engine → $359 charged) used to print "Rounded down −$2". The row
+  // is gone (owner, 2026-08-16), so the one journey there is simply shown at what it is charged.
+  it('absorbs a downward finish into the leg price instead of a rounding row', () => {
     const lp = shown({
       result: { lineItems: [{ label: 'A → B (car)', amountCents: 36146 }] },
       totalCents: 35900,
     });
-    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$361' }]);
-    expect(lp!.reconcile).toEqual({ label: 'Rounded down', amountUsd: '−$2' });
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$359' }]);
     expect(lp!.totalUsd).toBe('$359');
   });
 
-  it('labels an upward remainder as rounding, not a discount', () => {
+  // `finishPrice`'s 'nearest_50_cents' can leave CENTS on the total. With no remainder row to put
+  // them in, they ride on the largest leg — which here is the only leg — so the column still adds
+  // up to the $50.50 the pay link charges rather than to a tidier $50.
+  it('puts the odd cents of a finished total on the largest leg', () => {
     const lp = shown({
       result: { lineItems: [{ label: 'A → B (car)', amountCents: 5040 }] },
       totalCents: 5050,
     });
-    // Brief said '+$1'; that contradicts the invariant. wholeDollars(5040) = 5000, and the
-    // reconcile is the EXACT remainder against totalCents (5050 - 5000 = 50 cents = $0.50), by
-    // the same "solved for reconcile" formula the invariant test relies on for this identical
-    // case ({ legs: [5040], total: 5050 } appears verbatim there too). Showing '+$1' here would
-    // make rows(+$50) + reconcile(+$1) = $51 ≠ the $50.50 actually charged — the invariant test
-    // itself proves '+$1' is wrong for this input. See task-3-report.md.
-    expect(lp!.reconcile).toEqual({ label: 'Rounding', amountUsd: '+$0.50' });
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$50.50' }]);
   });
 
-  it('omits the remainder row when it is exactly zero', () => {
+  it('leaves the leg prices alone when they already sum to the charged total', () => {
     const lp = shown({
-      result: { lineItems: [{ label: 'A → B (car)', amountCents: 5000 }] },
-      totalCents: 5000,
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 5000 },
+          { label: 'B → C (car)', amountCents: 3000 },
+        ],
+      },
+      totalCents: 8000,
     });
-    expect(lp!.reconcile).toBeNull();
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$50' },
+      { label: 'B → C', amountUsd: '$30' },
+    ]);
   });
 
-  it('gives a discount its own row instead of burying it in the remainder', () => {
+  it('gives a discount its own row instead of burying it in the leg prices', () => {
     const lp = shown({
       result: {
         lineItems: [{ label: 'A → B (car)', amountCents: 20000 }],
@@ -539,20 +593,28 @@ describe('per-journey prices', () => {
       },
       totalCents: 15000,
     });
+    // The rows sum to the PRE-discount $200 — the discount is a row of its own beneath them, or
+    // the column would not add up to the $150 charged.
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$200' }]);
     expect(lp!.discount).toEqual({ label: 'Discount', amountUsd: '−$50' });
-    expect(lp!.reconcile).toBeNull();
     expect(lp!.totalUsd).toBe('$150');
   });
 
-  // THE INVARIANT. Whatever rounding and finishing did, the column the customer adds up must
-  // land on the figure the pay link charges.
+  /* THE INVARIANT — the point of the whole feature. Whatever rounding and finishing did, the
+     column the customer adds up must land on the figure the pay link charges. With the rounding
+     row gone (owner, 2026-08-16) the rows themselves carry it, so the form is now:
+
+         Σ(rows) − discount === totalCents
+
+     and each row is a whole number of dollars except, at most, the largest leg when the finish
+     left cents on the total. */
   it('always sums to the charged total', () => {
     const cases = [
-      { legs: [4508, 3180, 5917, 5112, 5917, 3623, 7889], total: 35900, discount: 0 },
-      { legs: [4999], total: 4999, discount: 0 },
-      { legs: [5040], total: 5050, discount: 0 },
-      { legs: [20000, 10000], total: 25000, discount: 5000 },
-      { legs: [3333, 3333, 3334], total: 9900, discount: 0 },
+      { legs: [4508, 3180, 5917, 5112, 5917, 3623, 7889], total: 35900, discount: 0 }, // multi-leg
+      { legs: [4999], total: 4999, discount: 0 }, // single leg, cents on the total
+      { legs: [5040], total: 5050, discount: 0 }, // a finish that rounded UP
+      { legs: [20000, 10000], total: 25000, discount: 5000 }, // discounted
+      { legs: [3333, 3333, 3334], total: 9900, discount: 0 }, // thirds — largest remainder earns it
     ];
     for (const c of cases) {
       const lp = shown({
@@ -572,18 +634,21 @@ describe('per-journey prices', () => {
       const parse = (s: string) => Math.round(Number(s.replace(/[$,+]/g, '').replace('−', '-')) * 100);
       const sum =
         lp.rows.reduce((s, r) => s + parse(r.amountUsd), 0) +
-        (lp.reconcile ? parse(lp.reconcile.amountUsd) : 0) +
         (lp.discount ? parse(lp.discount.amountUsd) : 0);
       expect(sum, `legs ${c.legs} total ${c.total}`).toBe(c.total);
       expect(parse(lp.totalUsd)).toBe(c.total);
+      // No rounding row, so the only place stray cents can hide is a row — and at most one row
+      // may carry them (the largest). Everything else the customer reads is whole dollars.
+      const withCents = lp.rows.filter((r) => parse(r.amountUsd) % 100 !== 0);
+      expect(withCents.length, `legs ${c.legs} total ${c.total}`).toBeLessThanOrEqual(1);
     }
   });
 
   // Finding 2: the engine's own `price_adjustment` and `discount` rows are skipped on purpose —
-  // `reconcile`/`discount` below are COMPUTED as remainders against the charged total, so reading
-  // the engine's rows back would double-count them. If the skip were ever deleted, the invariant
-  // test would still pass (the remainder absorbs the stray rows), so this has to check identity,
-  // not just the sum.
+  // the leg rows are DISTRIBUTED to hit the charged total and `discount` is computed from the
+  // stored discountCents, so reading the engine's rows back would double-count them. If the skip
+  // were ever deleted, the invariant test would still pass (the distribution absorbs the stray
+  // rows), so this has to check identity, not just the sum.
   it('never prints the engine\'s own adjustment or discount rows, computing its own instead', () => {
     const lp = shown({
       request: {
@@ -614,21 +679,19 @@ describe('per-journey prices', () => {
     });
     expect(lp!.rows.map((r) => r.label)).not.toContain('Final price adjustment');
     expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
+    // The skipped −246 adjustment reaches the customer as a $2.46 shave on the leg rows, not as a
+    // row: two equal $200 legs against a $397.54 pre-discount target give $199 and $198 by largest
+    // remainder (tie → the earlier row), and the 54 odd cents ride on the larger of the two.
     expect(lp!.rows).toEqual([
-      { label: 'A → B', amountUsd: '$200' },
-      { label: 'B → C', amountUsd: '$200' },
+      { label: 'A → B', amountUsd: '$199.54' },
+      { label: 'B → C', amountUsd: '$198' },
     ]);
-    // reconcile and discount are the PROJECTION's own computed rows, not the engine's stored ones:
-    // reconcile absorbs the skipped -246 price_adjustment as a remainder, and discount is $50
-    // (from discountCents), not the lineItems' own -5000 'Discount' row (which would print $50 too,
-    // but by construction, not by being read back).
-    expect(lp!.reconcile).toEqual({ label: 'Rounded down', amountUsd: '−$2.46' });
+    // The discount is the PROJECTION's own computed row: $50 from discountCents, not the
+    // lineItems' own -5000 'Discount' row (which would print $50 too, but by being read back).
     expect(lp!.discount).toEqual({ label: 'Discount', amountUsd: '−$50' });
     const parse = (s: string) => Math.round(Number(s.replace(/[$,+]/g, '').replace('−', '-')) * 100);
     const sum =
-      lp!.rows.reduce((s, r) => s + parse(r.amountUsd), 0) +
-      (lp!.reconcile ? parse(lp!.reconcile.amountUsd) : 0) +
-      (lp!.discount ? parse(lp!.discount.amountUsd) : 0);
+      lp!.rows.reduce((s, r) => s + parse(r.amountUsd), 0) + (lp!.discount ? parse(lp!.discount.amountUsd) : 0);
     expect(sum).toBe(34754);
   });
 
@@ -660,7 +723,9 @@ describe('per-journey prices', () => {
       },
       totalCents: 14754,
     });
-    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$200' }]);
+    // One surviving leg row, so it carries the whole (corrupt) total — the point here is that the
+    // internal rows never appear as journeys, not what the one journey costs.
+    expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$147.54' }]);
     expect(lp!.rows.map((r) => r.label)).not.toContain('Final price adjustment');
     expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
   });

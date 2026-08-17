@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css?v=8bf6f8423a">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
-<link rel="stylesheet" href="quote.css?v=20d248dfb0">
+<link rel="stylesheet" href="quote.css?v=2d1a764cf3">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -259,26 +259,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   // Per-journey prices (spec 2026-08-16), shown only when ops ticked this quote. Rows are
   // consumed in itinerary order against the DRIVING days — the projection emits exactly one row
-  // per driving leg, in the same order quoteDays lays them out. Stay days are priced too, as
-  // "no charge": that is the private blurb's "you only pay for the days you're moving", proved.
+  // per driving leg, in the same order quoteDays lays them out. A stay day carries NO price
+  // element (owner, 2026-08-16): it renders exactly as it did before this feature existed.
   function daysHtml(days, legPrices){
     days = days || [];
     var rows = (legPrices && legPrices.rows) || [];
     var next = 0;
-    var staySeen = false;
     var html = days.map(function(day, i){
-      var isStay = day.kind === 'stay';
-      var price = null;
-      if (rows.length) {
-        if (isStay) {
-          // Once per stay BLOCK, not on every consecutive stay row.
-          price = staySeen ? null : 'no charge';
-          staySeen = true;
-        } else {
-          staySeen = false;
-          price = next < rows.length ? rows[next++].amountUsd : null;
-        }
-      }
+      var price = (rows.length && day.kind !== 'stay' && next < rows.length) ? rows[next++].amountUsd : null;
       return dayRowHtml(day, i === days.length - 1, price);
     }).join('');
     // Rows beyond the driving-day count are unattributed extras (e.g. sightseeing stops) that
@@ -294,7 +282,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     (extras || []).forEach(function(row){
       r += '<div class="r"><span>' + esc(row.label) + '</span><span>' + esc(row.amountUsd) + '</span></div>';
     });
-    if (lp.reconcile) r += '<div class="r"><span>' + esc(lp.reconcile.label) + '</span><span>' + esc(lp.reconcile.amountUsd) + '</span></div>';
     if (lp.discount) r += '<div class="r"><span>' + esc(lp.discount.label) + '</span><span>' + esc(lp.discount.amountUsd) + '</span></div>';
     r += '<div class="r tot"><span>Total</span><span>' + esc(lp.totalUsd) + '</span></div>';
     return '<div class="hop-sum">' + r + '</div>';
@@ -414,11 +401,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       html += lapsed ? '<div class="stale">' + optsHtml + '</div>' : optsHtml;
     }
     html += '<div class="ticket"><div class="t-main">'
-      + '<div class="t-head"><span class="t-ref">Day by day</span>'
-      + (v.options && v.options.length > 1 && v.options[0].legPrices
-          ? '<span class="t-ref t-ref-soft">' + esc(v.options[0].name.toLowerCase()) + ' prices</span>'
-          : '')
-      + '</div>'
+      + '<div class="t-head"><span class="t-ref">Day by day</span></div>'
       + daysHtml(v.days, (v.options && v.options[0] && v.options[0].legPrices) || null)
       + '</div></div>'
       + '<p class="pp-note">Anything you’d like changed — dates, stops, a bigger vehicle —<br>'
