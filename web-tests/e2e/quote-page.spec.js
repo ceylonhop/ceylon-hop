@@ -21,7 +21,7 @@ test.use({ viewport: { width: 375, height: 812 } });
 const PAGE = '/quote.html?t=test-token';
 const REF = 'Q-E2E77';
 
-function opt({ service, name, totalCents, lead }) {
+function opt({ service, name, totalCents, lead, legPrices = null }) {
   const dollars = `$${(totalCents / 100).toFixed(totalCents % 100 ? 2 : 0)}`;
   return {
     service,
@@ -35,6 +35,7 @@ function opt({ service, name, totalCents, lead }) {
     deltaText: null,
     cancellation: { headline: 'Free cancellation until 24 hours before departure.', ladder: ['Full refund more than 24h out.'] },
     lead,
+    legPrices,
     waText: `Hi! I'd like to book the ${name} option for quote ${REF}`,
   };
 }
@@ -163,6 +164,117 @@ test('no pay button and no /p link exists anywhere on the page', async ({ page }
   await expect(page.locator('#paybtn')).toHaveCount(0);
   await expect(page.locator('a[href*="/p?t="]')).toHaveCount(0);
   await expect(page.locator('a[href*="/p.html"]')).toHaveCount(0);
+});
+
+const PRICED_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 45_000, lead: true });
+// No rounding row (owner, 2026-08-16): the projection spreads the rounding across the journeys,
+// so what the page renders is rows that already add up to the Total.
+PRICED_OPT.legPrices = {
+  rows: [
+    { label: 'Colombo Airport → Kandy', amountUsd: '$120' },
+    { label: 'Kandy → Ella', amountUsd: '$140' },
+  ],
+  discount: null,
+  totalUsd: '$260',
+};
+
+test('per-journey prices sit on each journey header, and stay days carry no price at all', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRICED_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.hop:not(.is-stay) .hop-p')).toHaveText(['$120', '$140']);
+  // DAYS has one stay row between the two journeys. It renders exactly as it did before this
+  // feature existed — no price element, not even a "no charge" label (owner, 2026-08-16).
+  await expect(page.locator('.hop.is-stay .hop-p')).toHaveCount(0);
+  await expect(page.locator('.hop-sum .r.tot')).toContainText('$260');
+  // The only summary row is the Total: nothing between the journeys and it.
+  await expect(page.locator('.hop-sum .r')).toHaveCount(1);
+});
+
+test('no prices anywhere in the rail when the quote was not ticked', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.hop-p')).toHaveCount(0);
+  await expect(page.locator('.hop-sum')).toHaveCount(0);
+});
+
+// A row beyond the driving-day count is an unattributed extra (e.g. "Sightseeing stops (up to
+// 3h)") that legPricesFor pushed onto the end because no leg claimed it (customerQuoteView.ts).
+// daysHtml only consumes one row per driving day, so this row has nowhere in the rail to land —
+// it belongs in the summary, above the Total, or the column stops adding up and the whole point
+// of the breakdown is defeated.
+const OPT_WITH_EXTRA_ROW = opt({ service: 'private', name: 'Private transfers', totalCents: 46_800, lead: true });
+OPT_WITH_EXTRA_ROW.legPrices = {
+  rows: [
+    { label: 'Colombo Airport → Kandy', amountUsd: '$120' },
+    { label: 'Kandy → Ella', amountUsd: '$140' },
+    { label: 'Sightseeing stops (up to 3h)', amountUsd: '$10' },
+  ],
+  discount: null,
+  totalUsd: '$270',
+};
+
+test('an unattributed extra row reaches the summary, above the Total, instead of being dropped', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [OPT_WITH_EXTRA_ROW] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  // DAYS has exactly 2 driving days — the third row is the surplus and must not vanish.
+  await expect(page.locator('.hop:not(.is-stay) .hop-p')).toHaveText(['$120', '$140']);
+
+  const rows = page.locator('.hop-sum .r');
+  await expect(rows).toHaveText([
+    'Sightseeing stops (up to 3h)$10', // surplus row first
+    'Total$270', // then the total, last
+  ]);
+});
+
+// Finding 3 (task-4 review): the rail's journey order comes from quoteDays.ts's `isStay`
+// predicate; legPrices.rows order comes from the stored lineItems sliced by
+// customerQuoteView.ts's own LOCAL `drives` predicate. Read side by side:
+//   quoteDays.ts:          const isStay = (l) => (l.category || 'transfer') === 'stay_day';
+//   customerQuoteView.ts:  const drives = (l) => (l.category || 'transfer') !== 'stay_day';
+// `drives` is the exact logical negation of `isStay` — same default ('transfer'), same literal
+// ('stay_day') — so the two files agree on every leg, today, by construction. This test guards
+// that agreement from the rail's side: it would fail if a future edit made one file treat some
+// leg as a stay while the other still counted it as driving, because the rows would then land on
+// the wrong journey once more than one stay breaks up the itinerary.
+const INTERLEAVED_DAYS = [
+  { kind: 'journey', date: 'MON 10 AUG', title: 'Colombo Airport → Kandy', meta: '120 km · about 3 h', stops: [] },
+  { kind: 'stay', date: 'TUE 11 AUG', title: 'In Kandy', meta: null, stops: [] },
+  { kind: 'journey', date: 'WED 12 AUG', title: 'Kandy → Ella', meta: '140 km · about 4 h', stops: [] },
+  { kind: 'stay', date: 'THU 13 AUG', title: 'In Ella', meta: null, stops: [] },
+  { kind: 'journey', date: 'FRI 14 AUG', title: 'Ella → Galle', meta: '160 km · about 4 h', stops: [] },
+];
+const INTERLEAVED_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 62_000, lead: true });
+INTERLEAVED_OPT.legPrices = {
+  rows: [
+    { label: 'Colombo Airport → Kandy', amountUsd: '$120' },
+    { label: 'Kandy → Ella', amountUsd: '$140' },
+    { label: 'Ella → Galle', amountUsd: '$360' },
+  ],
+  discount: null,
+  totalUsd: '$620',
+};
+
+test('per-journey prices keep each named journey on its own figure across multiple interleaved stays', async ({ page }) => {
+  const body = {
+    state: 'live',
+    view: view({ options: [INTERLEAVED_OPT], days: INTERLEAVED_DAYS }),
+    validUntil: new Date(Date.now() + 7 * 864e5).toISOString(),
+  };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  const journeys = page.locator('.hop:not(.is-stay)');
+  await expect(journeys).toHaveCount(3);
+  for (const [i, row] of INTERLEAVED_OPT.legPrices.rows.entries()) {
+    await expect(journeys.nth(i).locator('.hop-title')).toHaveText(row.label);
+    await expect(journeys.nth(i).locator('.hop-p')).toHaveText(row.amountUsd);
+  }
 });
 
 // The customer must see the road the quote was PRICED on. Ops can pin a leg to the toll-free

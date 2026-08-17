@@ -548,6 +548,11 @@ export const quotes = pgTable('quotes', {
   // (internalQuote's PATCH), not a storage constraint. There is no 'legacy' sentinel — every
   // quote is gated, old ones included (spec I7).
   requestedService: text('requested_service'),
+  // Per-journey price breakdown (spec 2026-08-16). A DISPLAY setting, not a pricing input:
+  // when true the customer quote page lists what each journey costs. Off by default and set
+  // only by an explicit ops tick — a customer sees it only when they asked for it. NOT NULL
+  // with a default so every existing quote is off without a backfill.
+  showLegPrices: boolean('show_leg_prices').notNull().default(false),
   // Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured. Distinct from link
   // liveness, which is status-driven and has no clock. Stamped on → ready as approval + 7 days.
   offerValidUntil: timestamp('offer_valid_until', { withTimezone: true }),
