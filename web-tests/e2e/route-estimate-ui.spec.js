@@ -19,7 +19,7 @@ test('search and booking show the same rounded browse estimate', async ({ page }
     query: 'from=cmb-airport&to=ella&pax=2',
   });
 
-  await expect(page.locator('#route-meta')).toContainText('Approx. 335 km · around 5 hours');
+  await expect(page.locator('#route-meta')).toContainText('Approx. 335 km · 5h');
   await expect(page.locator('#route-meta')).not.toContainText('4h 57m');
 
   const href = await page.locator('.opt-private .veh-row').first().locator('a').getAttribute('href');
@@ -47,8 +47,8 @@ test('booking keeps the selected browse estimate when the map finishes', async (
     },
   });
 
-  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · around 2 hours 15 minutes');
-  await expect(page.locator('#sum-route-estimate')).toHaveText('Approx. 145 km · around 2 hours 15 minutes');
+  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · 2h 15m');
+  await expect(page.locator('#sum-route-estimate')).toHaveText('Approx. 145 km · 2h 15m');
   await expect(page.locator('#rm-bar')).not.toContainText('300 km');
 });
 
@@ -72,10 +72,10 @@ test('a material exact-location update is visible, persistent, and announced pol
     },
   });
 
-  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · around 2 hours 15 minutes');
+  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · 2h 15m');
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
 
-  const updated = 'Updated for your pickup and destination: approx. 160 km · around 3 hours';
+  const updated = 'Updated for your pickup and destination: approx. 160 km · 3h';
   await expect(page.locator('#rm-bar')).toContainText(updated);
   await expect(page.locator('#sum-route-estimate')).toHaveText(updated);
   await expect(page.locator('#route-estimate-status')).toHaveAttribute('aria-live', 'polite');
@@ -96,7 +96,7 @@ test('an unavailable exact-location estimate never leaves stale route figures be
     },
   });
 
-  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · around 2 hours 15 minutes');
+  await expect(page.locator('#rm-bar')).toContainText('Approx. 145 km · 2h 15m');
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
 
   const unavailable = 'We’ll confirm the journey time after reviewing your locations.';

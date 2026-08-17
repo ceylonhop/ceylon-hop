@@ -365,6 +365,7 @@ export function createApp(deps: AppDeps = {}) {
       maps,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
+      boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     }),
   );
   // Share links for the Ride Board. Its own mount, not /board/:code — that one answers

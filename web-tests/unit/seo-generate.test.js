@@ -17,6 +17,16 @@ describe('generateAll', () => {
     expect(html).not.toContain('aggregateRating');
     expect(html).toContain('../../site.css'); // relative asset ref
   });
+  it('uses the shared compact route estimate in visible copy, metadata, FAQ data and cards', () => {
+    const html = out.get('trip/kandy-to-ella/index.html');
+    const compact = 'Approx. 135 km · 3h 45m';
+    expect((html.match(/Approx\. 135 km · 3h 45m/g) || []).length).toBeGreaterThanOrEqual(4);
+    expect(html).not.toContain('136 km');
+    expect(html).not.toContain('about 4 hours');
+
+    const index = out.get('trip/index.html');
+    expect(index).toContain(`Kandy → Ella</span><span class="rt-meta">${compact} · from $59`);
+  });
   // The route page used to be a signpost: it showed price CHIPS and deep-linked into
   // search.html to do the actual selling. Under design A it IS the product page — the
   // options and their prices are on it, so it books directly and never forwards.

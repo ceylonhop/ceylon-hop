@@ -21,7 +21,7 @@ test('planner keeps Google routed duration instead of deriving time from distanc
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=' + encodeURIComponent('Yatiyanthota, Sri Lanka|Ratnapura, Sri Lanka') + '&pax=2&vehicle=car');
 
-  const expected = 'Approx. 120 km · around 3 hours';
+  const expected = 'Approx. 120 km · 3h';
   const meta = page.locator('#rail .leg-card').first().locator('[data-dist]');
   await expect(meta).toContainText(expected);
   await expect(meta).toContainText('Google route');
@@ -64,6 +64,6 @@ test('a transient routeStats failure does not poison the leg — the next render
 
   // Any re-render (adding a leg) re-requests the un-poisoned leg — the retry succeeds.
   await page.locator('#add-stop').click();
-  await expect(dist()).toContainText('Approx. 120 km · around 2 hours', { timeout: 6000 });
+  await expect(dist()).toContainText('Approx. 120 km · 2h', { timeout: 6000 });
   await expect(dist()).toContainText('Google route');
 });

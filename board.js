@@ -863,7 +863,7 @@
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge(taCaption('5.0 · ', 'reviews')) + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
-      '<div><b>$0 unless it runs.</b> If three seats are taken, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
+      '<div><b>No ride fare unless it runs.</b> Approve your card with PayHere now. At the cutoff, we charge the ride fare only if enough seats are pledged; otherwise the ride is called off.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
       (L.note ? '<div class="d-note"><b>' + esc(starterName) + ' says:</b> "' + esc(L.note) + '"</div>' : '') + '</div>' +
@@ -874,9 +874,9 @@
       '</div></div>' +
       '<div class="d-block"><h2>How the money works</h2><div class="tl">' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
-      '<div><h4>Now — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before it closes and the hold disappears.</p></div></div>' +
+      '<div><h4>Now — approve your card</h4><p>PayHere stores an encrypted card token for this ride; Ceylon Hop never sees your card number. A small verification charge may appear and be reversed. Scratch off before the cutoff and we will not charge the ride fare.</p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
-      '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' seats</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If not enough join by the cutoff, the ride\'s called off and you\'re never charged.</b></p></div></div>' +
+      '<div><h4>When the list closes</h4><p>At the cutoff, if at least <b>' + min + ' seats</b> are pledged, we charge each approved card its share (≈ <b>' + money(L.cost) + '</b>) and confirm the van. <b>If not enough join, the ride is called off and no ride fare is charged.</b></p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
       '<div><h4>' + esc(L.whenLabel) + ' — the van rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
       '</div></div>' +
@@ -894,7 +894,7 @@
       // ---- sticky join card ----
       '<aside class="d-join">' +
       (youIn
-        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if it fills. $0 held for now.') + '</span></div></div>'
+        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.') + '</span></div></div>'
         : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the van locks in. Never a cent before.</div>') +
       '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>' +
       '<div class="who-row">' + whoRow + '<span class="lbl">' + L.committed + ' of ' + min + ' in</span></div>' +
@@ -904,7 +904,7 @@
           '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
-          '<p class="fine">Google sign-in · card held by PayHere, <b>never charged unless it runs</b> · scratch off anytime</p>') +
+          '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
       (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
@@ -1206,7 +1206,7 @@
     updateCost();
     // A traveller already on the list is changing their seats, not adding their name again.
     document.getElementById('sign-btn-label').textContent = mySeatsOn(current)
-      ? 'Update my seats' : 'Add my name — $0 now';
+      ? 'Update my seats' : 'Continue to PayHere';
     // Threshold is per-list (corridors override the default), so never hard-code it here —
     // when creating, the list doesn't exist yet, so fall back to the policy default.
     document.getElementById('m-min').textContent = current ? current.minSeats : MIN_DEFAULT;
@@ -1337,12 +1337,43 @@
 
   /* ----- commit (create or join) ----- */
   document.getElementById('sign-btn').addEventListener('click', doCommit);
+  function paymentDetails() {
+    var phone = (document.getElementById('pay-phone').value || '').trim();
+    var city = (document.getElementById('pay-city').value || '').trim();
+    var address = (document.getElementById('pay-address').value || '').trim();
+    if (!phone || !city || !address) {
+      toast('Add your billing details', 'PayHere needs these to approve your card securely.');
+      var missing = !phone ? 'pay-phone' : !city ? 'pay-city' : 'pay-address';
+      document.getElementById(missing).focus();
+      return null;
+    }
+    return { phone: phone, city: city, address: address };
+  }
+
+  function handoffToPayHere(payment) {
+    if (!payment || !payment.checkoutUrl || !payment.fields) throw new Error('invalid_payment_handoff');
+    try { sessionStorage.setItem('ch_ride_payment', payment.orderId || ''); } catch (e) {}
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = payment.checkoutUrl;
+    form.style.display = 'none';
+    Object.keys(payment.fields).forEach(function (name) {
+      var input = document.createElement('input');
+      input.type = 'hidden'; input.name = name; input.value = payment.fields[name];
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+  }
+
   function doCommit() {
     var btn = document.getElementById('sign-btn');
     if (btn.dataset.busy) return;
     btn.dataset.busy = '1';
     var pref = selectedPref();
     var seats = selectedSeats();
+    var payment = mySeatsOn(current) ? undefined : paymentDetails();
+    if (!mySeatsOn(current) && !payment) { delete btn.dataset.busy; return; }
     var req;
     if (creating) {
       var c = pairCorridor(cFrom.value, cTo.value);
@@ -1353,16 +1384,21 @@
         slot: (cTime.querySelector('.sel') || { dataset: { t: 'morning' } }).dataset.t,
         note: (cNote.value || '').trim() || undefined,
         preferredTime: pref || undefined,
-        seats: seats
+        seats: seats,
+        payment: payment
       });
     } else {
       req = apiPost('/board/' + encodeURIComponent(current.code) + '/join', {
-        preferredTime: pref || undefined, seats: seats
+        preferredTime: pref || undefined, seats: seats, payment: payment
       });
     }
     var wasCreating = creating;
     req.then(function (data) {
       delete btn.dataset.busy;
+      if (data && data.status === 'payment_required') {
+        handoffToPayHere(data.payment);
+        return;
+      }
       var L = normalizeList(data.list);
       if (data.manageToken) state.manageTokens[L.code] = data.manageToken;
       state.byCode[L.code] = L;
@@ -1370,7 +1406,7 @@
       current = L;
       updateMyRidesButton();
       // The conversion. NOT 'purchase' — no money moves until the van locks at
-      // cutoff; this is a card held against a seat. `van_runs` is the thing the
+      // cutoff; this is an approved card against a seat. `van_runs` is the thing the
       // funnel actually turns on: a name that tipped a van over its threshold.
       ev(wasCreating ? 'create_ride_list' : 'join_ride', {
         item_list_id: LIST_ID, item_id: L.code,
@@ -1390,6 +1426,7 @@
       else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { toast('That route isn\'t served yet'); setStep(0); }
+      else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { toast('Check your billing details', 'Phone, address and city are required by PayHere.'); }
       else { toast("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
@@ -1416,12 +1453,12 @@
     })();
     document.getElementById('done-head').textContent = creating
       ? 'Your list is up on the board.'
-      : need === 0 ? 'That was the 4th name — it’s on!' : 'Your name’s on the list.';
+      : need === 0 ? 'Enough seats are pledged.' : 'Your name’s on the list.';
     document.getElementById('done-sub').textContent = creating
-      ? 'You’re name #1 — ' + need + ' more and the van rolls. Lists fill when their starter shares them.'
+      ? 'You’re name #1 — ' + need + ' more and the van can run. Lists fill when their starter shares them.'
       : need === 0
-        ? 'Everyone’s charged their share and the van is locked in. See you at the pickup.'
-        : need + ' more name' + (need > 1 ? 's' : '') + ' and the van rolls.';
+        ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
+        : need + ' more seat' + (need > 1 ? 's' : '') + ' and the van can run.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
@@ -1518,6 +1555,66 @@
     else if (!code && document.body.classList.contains('detail-open')) closeDetail();
   }
 
+  function clearPaymentQuery() {
+    try {
+      var url = new URL(location.href);
+      url.searchParams.delete('ridePayment');
+      url.searchParams.delete('cancelled');
+      history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash);
+    } catch (e) {}
+  }
+
+  // PayHere's browser return carries no payment result. The signed server callback updates the
+  // API, and this page polls that state before showing a success message.
+  function resumePaymentFromReturn() {
+    var params;
+    try { params = new URLSearchParams(location.search); } catch (e) { return Promise.resolve(); }
+    var orderId = params.get('ridePayment');
+    if (!orderId) {
+      try { orderId = sessionStorage.getItem('ch_ride_payment'); } catch (e) {}
+    }
+    if (!orderId) return Promise.resolve();
+    if (params.get('cancelled') === '1') {
+      var cancelRequest = apiPost('/board/payments/' + encodeURIComponent(orderId) + '/cancel', null)
+        .catch(function (e) { report(e, 'payhereCancel'); });
+      clearPaymentQuery();
+      try { sessionStorage.removeItem('ch_ride_payment'); } catch (e) {}
+      toast('Card approval cancelled', 'Your name was not added. You can try again anytime.');
+      return cancelRequest;
+    }
+    toast('Confirming your card with PayHere…', 'This normally takes a few seconds.');
+    function poll(left) {
+      return apiGet('/board/payments/' + encodeURIComponent(orderId)).then(function (data) {
+        if (data.status === 'pending' && left > 0) {
+          return new Promise(function (resolve) { setTimeout(resolve, 1000); }).then(function () { return poll(left - 1); });
+        }
+        if (data.status !== 'succeeded' || !data.list) {
+          if (data.status === 'pending') toast('PayHere is still confirming', 'Refresh this page in a moment — your seat appears only after approval.');
+          else toast('Card approval did not complete', 'Your name was not added. Please try again.');
+          return;
+        }
+        var L = normalizeList(data.list);
+        state.byCode[L.code] = L;
+        state.mineCodes.add(L.code);
+        if (data.manageToken) state.manageTokens[L.code] = data.manageToken;
+        current = L;
+        creating = L.members.some(function (m) { return m.isYou && m.isStarter; });
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        showSuccess(L);
+        updateMyRidesButton();
+        loadBoard();
+        clearPaymentQuery();
+        try { sessionStorage.removeItem('ch_ride_payment'); } catch (e) {}
+      }).catch(function (e) {
+        if (e.status === 401) toast('Sign in again to finish joining your ride');
+        else toast("Couldn't confirm PayHere yet", 'Refresh this page in a moment.');
+        report(e, 'payhereReturn');
+      });
+    }
+    return poll(12);
+  }
+
   /* live countdown ticker */
   function startTicker() {
     setInterval(function () {
@@ -1565,6 +1662,8 @@
     });
 
     Promise.all([me, board, mine]).then(function () {
+      return resumePaymentFromReturn();
+    }).then(function () {
       openFromHash();
       window.addEventListener('hashchange', openFromHash);
       startTicker();

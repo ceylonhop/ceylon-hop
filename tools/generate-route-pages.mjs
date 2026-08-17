@@ -1,8 +1,12 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadTransfers } from './load-transfers.mjs';
 import { renderChrome, assetV } from './site-chrome.mjs';
+
+const require = createRequire(import.meta.url);
+const { formatRouteEstimate } = require('../route-estimate.js');
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = 'https://ceylonhop.com';
@@ -29,6 +33,12 @@ const HUBS = [
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const slug = (a, b) => `${a}-to-${b}`;
 const price = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
+const lowerFirst = value => value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+const routeEstimate = q => formatRouteEstimate({
+  distanceKm: q.km,
+  durationMin: q.durationMin,
+  state: q.estimated ? 'estimated' : 'browse',
+});
 
 /* ── Design A: the two option cards ───────────────────────────────────────────
    docs/superpowers/plans/2026-08-16-unified-route-page.md
@@ -101,9 +111,10 @@ function priceChips(q, shared) {
 }
 
 function faqItems(from, to, q, shared) {
+  const estimate = lowerFirst(routeEstimate(q));
   const items = [
     [`How long does the ${from} to ${to} transfer take?`,
-      `The drive is about ${humanDuration(q.duration)} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
+      `Plan for ${estimate} by road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
     // Design A: a shared seat is a date with names on it. No fixed timetable is quoted,
@@ -179,6 +190,7 @@ function routePage(T, content, from, to, forward) {
   const shared = T.sharedOption(from, to);
   const intro = forward ? c.intro : c.back;
   const highlights = (!forward && c.highlightsBack) ? c.highlightsBack : c.highlights;
+  const estimate = routeEstimate(q);
   const url = `${ORIGIN}/trip/${slug(from, to)}/`;
   const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2 });
   const p = '../../';
@@ -188,14 +200,14 @@ function routePage(T, content, from, to, forward) {
   const title = shared
     ? `${fromName} to ${toName} — transfer & shared seat from $${shared.seat} | Ceylon Hop`
     : `${fromName} to ${toName} — private transfer | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${humanDuration(q.duration)}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
+  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${estimate}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
   const related = relatedRoutes(from, to);
   const relatedHtml = related.map(d => {
     const rq = T.privateQuote(d.from, d.to);
-    return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/"><span class="rt-name">${esc(T.byId[d.from].name)} → ${esc(T.byId[d.to].name)}</span><span class="rt-meta">${rq.km} km · from $${price(rq.car)}</span></a>`;
+    return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/"><span class="rt-name">${esc(T.byId[d.from].name)} → ${esc(T.byId[d.to].name)}</span><span class="rt-meta">${routeEstimate(rq)} · from $${price(rq.car)}</span></a>`;
   }).join('');
   const faqHtml = faq.map(([qq, a]) => `<div class="faq-q"><h3>${esc(qq)}</h3><p>${esc(a)}</p></div>`).join('\n        ');
 
@@ -314,8 +326,7 @@ ${header}
       <nav class="route-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> · <a href="${p}trip/">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
       <h1>${esc(fromName)} <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>${esc(toName)}</h1>
       <div class="route-meta">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${q.km} km</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/><circle class="wp" cx="12" cy="3.5" r="1.4"/></svg> about ${humanDuration(q.duration)}</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${esc(estimate)}</span>
         <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</span>
       </div>
       <div class="hero-stamp" aria-hidden="true">
@@ -375,7 +386,7 @@ function tripIndex(T, content) {
   for (const [a, b] of BASE_PAIRS) { dirs.push({ from: a, to: b }); dirs.push({ from: b, to: a }); }
   const card = ({ from, to }) => {
     const q = T.privateQuote(from, to);
-    return `<a class="rt-card" href="${p}trip/${slug(from, to)}/"><span class="rt-name">${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}</span><span class="rt-meta">${q.km} km · from $${price(q.car)}</span></a>`;
+    return `<a class="rt-card" href="${p}trip/${slug(from, to)}/"><span class="rt-name">${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}</span><span class="rt-meta">${routeEstimate(q)} · from $${price(q.car)}</span></a>`;
   };
   const groups = HUBS.map(h => {
     const inHub = dirs.filter(d => h.match(d)).sort((x, y) => T.byId[x.to].name.localeCompare(T.byId[y.to].name));
@@ -454,8 +465,8 @@ export function generateAll() {
 // Static pages that live outside the route generator but belong in the sitemap.
 // The blog posts are the site's only earned rankings, so they must be listed. Trailing
 // slashes are intentional — these are directory URLs and match the live WordPress ones.
-// "about 2h 57m" is false precision: the number is a model, not a measurement, and two routes of
-// different length were quoting the same minute. One rounding scheme for every page.
+// Compatibility wrapper for older generator callers. Public rounding belongs to the shared
+// formatter; this helper only parses the generator's legacy duration-string input.
 export function humanDuration(text) {
   const m = /^(?:(\d+)h)?\s*(?:(\d+)m)?$/.exec(String(text).trim());
   let mins;
@@ -465,10 +476,7 @@ export function humanDuration(text) {
     if (!only) return String(text); // unrecognised → leave it alone
     mins = Number(only[1]);
   }
-  if (mins < 60) return `${Math.round(mins / 15) * 15} minutes`;
-  const halves = Math.max(2, Math.round(mins / 30));
-  const h = Math.floor(halves / 2);
-  return halves % 2 ? `${h}\u00bd hours` : `${h} hour${h === 1 ? '' : 's'}`;
+  return formatRouteEstimate({ durationMin: mins, state: 'browse' }).replace(/^Approx\.\s*/, '');
 }
 
 export const SITEMAP_EXTRA = [

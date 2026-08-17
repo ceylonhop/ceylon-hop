@@ -29,6 +29,7 @@ export interface CreateListArgs {
   note: string | null;
   cutoffAt: Date;
   createdBy: string | null;
+  initialStatus?: RideListStatus;
 }
 
 export interface AddMemberArgs {
@@ -45,6 +46,11 @@ export interface AddMemberArgs {
 export interface RideListWithMembers {
   list: RideList;
   members: RideMember[];
+}
+
+export interface RidePreapproval {
+  list: RideList;
+  member: RideMember;
 }
 
 export interface ListFilter {
@@ -66,6 +72,16 @@ export interface RideListRepo {
   // Atomically add (or re-activate) a member. Returns null if the van is full; returns the
   // existing member if they're already live on the list (idempotent join).
   addMember(listId: string, args: AddMemberArgs, now?: Date): Promise<RideMember | null>;
+  beginMemberPreapproval(
+    listId: string,
+    args: AddMemberArgs,
+    orderId: string,
+    expiresAt: Date,
+    now?: Date,
+  ): Promise<RideMember | null>;
+  getByPreapprovalOrder(orderId: string): Promise<RidePreapproval | null>;
+  approveMemberPreapproval(orderId: string, ref: string, now?: Date): Promise<RideListWithMembers | null>;
+  failMemberPreapproval(orderId: string, now?: Date): Promise<void>;
   // Scratch a name off (soft — status → scratched). Returns true if a live member was removed.
   removeMember(listId: string, sub: string): Promise<boolean>;
   setStatus(id: string, status: RideListStatus): Promise<void>;
@@ -109,7 +125,7 @@ export class InMemoryRideListRepo implements RideListRepo {
       minSeats: args.minSeats,
       capacity: args.capacity,
       seatPrice: args.seatPrice,
-      status: 'gathering',
+      status: args.initialStatus ?? 'gathering',
       note: args.note,
       cutoffAt: args.cutoffAt,
       createdBy: args.createdBy,
@@ -207,6 +223,8 @@ export class InMemoryRideListRepo implements RideListRepo {
       preferredTime: args.preferredTime ?? null,
       seats: args.seats,
       preapprovalRef: args.preapprovalRef ?? null,
+      preapprovalOrderId: null,
+      preapprovalExpiresAt: null,
       status: 'held',
       joinedAt: now,
     };
@@ -214,6 +232,100 @@ export class InMemoryRideListRepo implements RideListRepo {
     this.members.set(listId, members);
     list.updatedAt = now;
     return { ...member };
+  }
+
+  async beginMemberPreapproval(
+    listId: string,
+    args: AddMemberArgs,
+    orderId: string,
+    expiresAt: Date,
+    now: Date = new Date(),
+  ): Promise<RideMember | null> {
+    const list = this.lists.get(listId);
+    if (!list) return null;
+    const members = this.members.get(listId) ?? [];
+    const existing = members.find((m) => m.sub === args.sub);
+    const reservedByOthers = members
+      .filter((m) => m.sub !== args.sub)
+      .filter((m) => countsForSeat(m) || (m.status === 'preapproval_pending' && (m.preapprovalExpiresAt?.getTime() ?? 0) > now.getTime()))
+      .reduce((total, m) => total + m.seats, 0);
+    if (reservedByOthers + args.seats > list.capacity) return null;
+    if (existing) {
+      existing.firstName = args.firstName;
+      existing.country = args.country;
+      existing.email = args.email;
+      existing.photoUrl = args.photoUrl ?? null;
+      existing.preferredTime = args.preferredTime ?? existing.preferredTime;
+      existing.seats = args.seats;
+      existing.preapprovalOrderId = orderId;
+      existing.preapprovalExpiresAt = expiresAt;
+      existing.status = 'preapproval_pending';
+      existing.joinedAt = now;
+      return { ...existing };
+    }
+    const position = members.reduce((max, m) => Math.max(max, m.position), 0) + 1;
+    const member: RideMember = {
+      id: randomUUID(), listId, position, sub: args.sub, firstName: args.firstName,
+      country: args.country, email: args.email, photoUrl: args.photoUrl ?? null,
+      preferredTime: args.preferredTime ?? null, seats: args.seats, preapprovalRef: null,
+      preapprovalOrderId: orderId, preapprovalExpiresAt: expiresAt,
+      status: 'preapproval_pending', joinedAt: now,
+    };
+    members.push(member);
+    this.members.set(listId, members);
+    list.updatedAt = now;
+    return { ...member };
+  }
+
+  async getByPreapprovalOrder(orderId: string): Promise<RidePreapproval | null> {
+    for (const [listId, members] of this.members) {
+      const member = members.find((m) => m.preapprovalOrderId === orderId);
+      const list = this.lists.get(listId);
+      if (member && list) return { list: { ...list }, member: { ...member } };
+    }
+    return null;
+  }
+
+  async approveMemberPreapproval(
+    orderId: string,
+    ref: string,
+    now: Date = new Date(),
+  ): Promise<RideListWithMembers | null> {
+    const found = await this.getByPreapprovalOrder(orderId);
+    if (!found) return null;
+    const list = this.lists.get(found.list.id)!;
+    const members = this.members.get(list.id) ?? [];
+    const member = members.find((m) => m.preapprovalOrderId === orderId)!;
+    if (member.status === 'held' || member.status === 'charged') {
+      if (list.status === 'pending_payment') list.status = 'gathering';
+      return this.clone(list.id);
+    }
+    const liveOtherSeats = committedSeats(members.filter((m) => m.sub !== member.sub));
+    if (
+      member.status !== 'preapproval_pending' ||
+      (member.preapprovalExpiresAt?.getTime() ?? 0) <= now.getTime() ||
+      liveOtherSeats + member.seats > list.capacity
+    ) {
+      member.status = 'preapproval_failed';
+      if (list.status === 'pending_payment') list.status = 'cancelled';
+      return this.clone(list.id);
+    }
+    member.preapprovalRef = ref;
+    member.status = 'held';
+    member.preapprovalExpiresAt = null;
+    if (list.status === 'pending_payment') list.status = 'gathering';
+    list.updatedAt = now;
+    return this.clone(list.id);
+  }
+
+  async failMemberPreapproval(orderId: string, now: Date = new Date()): Promise<void> {
+    const found = await this.getByPreapprovalOrder(orderId);
+    if (!found) return;
+    const list = this.lists.get(found.list.id)!;
+    const member = (this.members.get(list.id) ?? []).find((m) => m.preapprovalOrderId === orderId);
+    if (member?.status === 'preapproval_pending') member.status = 'preapproval_failed';
+    if (list.status === 'pending_payment') list.status = 'cancelled';
+    list.updatedAt = now;
   }
 
   async removeMember(listId: string, sub: string): Promise<boolean> {

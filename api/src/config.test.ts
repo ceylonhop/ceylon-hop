@@ -84,6 +84,9 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
         CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
         PAYHERE_MERCHANT_ID: '1226',
         PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+        PAYHERE_APP_ID: 'app-id',
+        PAYHERE_APP_SECRET: 'app-secret',
+        PAYHERE_RIDE_NOTIFY_URL: 'https://ops.ceylonhop.com/board/payhere/notify',
       }),
     ).not.toThrow();
   });
@@ -117,6 +120,9 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
         CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
         PAYHERE_MERCHANT_ID: '1226',
         PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+        PAYHERE_APP_ID: 'app-id',
+        PAYHERE_APP_SECRET: 'app-secret',
+        PAYHERE_RIDE_NOTIFY_URL: 'https://ops.ceylonhop.com/board/payhere/notify',
         CHECKOUT_TOKEN_COMPATIBILITY: 'true',
       }),
     ).toThrow(/CHECKOUT_TOKEN_COMPATIBILITY/);

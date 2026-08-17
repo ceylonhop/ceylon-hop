@@ -22,6 +22,9 @@ describe('production boot', () => {
     process.env.CUSTOMER_SESSION_SECRET = 'test-customer-session-secret-not-default';
     process.env.PAYHERE_MERCHANT_ID = '1230050';
     process.env.PAYHERE_MERCHANT_SECRET = 'test-merchant-secret';
+    process.env.PAYHERE_APP_ID = 'test-app-id';
+    process.env.PAYHERE_APP_SECRET = 'test-app-secret';
+    process.env.PAYHERE_RIDE_NOTIFY_URL = 'https://ops.ceylonhop.com/board/payhere/notify';
     delete process.env.ALLOW_FAKE_PAYMENTS; // prove it boots without the fake-payments escape hatch
 
     vi.resetModules();

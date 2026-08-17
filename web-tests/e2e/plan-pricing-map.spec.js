@@ -24,13 +24,13 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
 
   await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   const legMeta = page.locator('#rail [data-dist]');
-  await expect(legMeta).toContainText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(legMeta).toContainText('Approx. 135 km · 3h 45m');
   await expect(legMeta).toContainText('Reviewed route');
   await expect(legMeta).toContainText('from $59');
   await expect(legMeta.locator('.lm-src')).toHaveText('Reviewed route');
   await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $59');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
-  await expect(page.locator('#st-drive')).toHaveText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(page.locator('#st-drive')).toHaveText('Approx. 135 km · 3h 45m');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 
@@ -80,13 +80,13 @@ test('mobile planner keeps the longer shared route estimate readable', async ({ 
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
 
   const meta = page.locator('#rail [data-dist]');
-  await expect(meta).toContainText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(meta).toContainText('Approx. 135 km · 3h 45m');
   await expect(meta.locator('.lm-src')).toBeHidden();
   await expect(meta.locator('.lm-sep')).toBeHidden();
   expect(await meta.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
   const drive = page.locator('#st-drive');
-  await expect(drive).toHaveText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(drive).toHaveText('Approx. 135 km · 3h 45m');
   expect(await drive.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
 
@@ -109,7 +109,7 @@ test('planner guide range never rounds a priced car transfer down to zero', asyn
     routeKm: 52,
   });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · around 1 hour 15 minutes');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · 1h 15m');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $29');
   await expect(page.locator('#sum-amt')).toHaveText(/\$29[-\u2013]\$40/);
   await expect(page.locator('#sum-amt')).not.toContainText('$0');
@@ -122,7 +122,7 @@ test('planner passes Google-measured leg distance into booking handoff', async (
     routeKm: 52,
   });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · around 1 hour 15 minutes');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 50 km · 1h 15m');
   await page.locator('#request-btn').click();
   await page.locator('#dates-continue').click();
   await page.waitForURL('**/booking.html?**');
@@ -138,7 +138,7 @@ test('search add-stops handoff preserves the equivalent base route price', async
   await page.locator('#add-stops').click();
   await page.waitForURL('**/plan.html?**');
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 135 km · around 3 hours 45 minutes');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 135 km · 3h 45m');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
