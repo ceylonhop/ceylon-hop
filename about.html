@@ -156,9 +156,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   initChrome({active:'about.html', onDark:true});
-  const team=[['Dasis K','Co-founder','ph-photo'],['Roshen W','Co-founder','ph-photo'],['Kaylab Hash B.','Head of Marketing','ph-photo']];
-  document.getElementById('team').innerHTML=team.map(([n,role],i)=>`
-    <div class="team"><image-slot id="about-team-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:4/4.4" placeholder="Drop a photo — ${n}"></image-slot><h4>${n}</h4><span>${role}</span></div>`).join('');
+  const team=[['Dasis K','Co-founder','img/team-dasis.jpg'],['Roshen W','Co-founder','img/team-roshen.jpg'],['Devan S','Head of Marketing','img/team-devan.jpg']];
+  document.getElementById('team').innerHTML=team.map(([n,role,src],i)=>`
+    <div class="team"><image-slot id="about-team-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:4/4.4" src="${src}" placeholder="Drop a photo — ${n}"></image-slot><h4>${n}</h4><span>${role}</span></div>`).join('');
 
   const faqs=[
     ['What is the cancellation &amp; refund policy?','It depends on how you travel. Point-to-point transfers (even multi-leg) have free cancellation and unlimited changes up to 24 hours before travel — a full refund. Chauffeur-guide trips can be cancelled free up to 10 days before the start date; inside that window a tiered refund applies (80% within 10 days, 60% within 7, 40% within 2, none within 24 hours). Our concierge will always help you reschedule wherever possible.'],
