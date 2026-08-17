@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadTransfers } from './load-transfers.mjs';
-import { renderChrome } from './site-chrome.mjs';
+import { renderChrome, assetV } from './site-chrome.mjs';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = 'https://ceylonhop.com';
@@ -78,7 +78,7 @@ function optionCards(T, from, to, q, shared, p) {
         <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
         <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
         <ul class="pickups">${stops}</ul>
-        <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}">
+        <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
           <a class="btn btn-cta opt-cta" href="${p}board.html">See who's going &amp; add your name</a>
         </div>
       </article></div>`;
@@ -216,6 +216,10 @@ function routePage(T, content, from, to, forward) {
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
+<!-- Live ride dates come from here (route-page.js). "?api=off" disables it and
+     "?api=ORIGIN" points it elsewhere — the same contract as search.html and
+     booking.html, so one local API can be driven from any of them. -->
+<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
 <style>
   .route-hero{position:relative;color:#fff;padding:104px 0 44px;margin-top:-74px;background:linear-gradient(160deg,#1E6273 0%,#24758A 55%,#277F97 100%);overflow:hidden}
   .route-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 80% 10%,rgba(99,191,214,.5),transparent 70%),radial-gradient(50% 50% at 10% 90%,rgba(30,98,115,.6),transparent 70%)}
@@ -247,6 +251,27 @@ ${headAssets}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
+     unreachable, which is why nothing above depends on it. */
+  .ld-datebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .ld-chip{border:1.5px solid var(--line,#e7e3d6);background:#fff;border-radius:999px;padding:.42rem 1rem;font:inherit;font-weight:600;font-size:.86rem;cursor:pointer}
+  .ld-chip.is-on{background:var(--blue-deep,#24758A);border-color:var(--blue-deep,#24758A);color:#fff}
+  .ld-date{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+  .live-dates{margin-top:14px}
+  .ld-head{font-weight:700;font-size:.95rem;margin-bottom:.5rem}
+  .ld-first,.ld-alt{font-size:.88rem;color:var(--ink-soft,#6c6a6b);margin:.2rem 0 .6rem}
+  .ld-first b{color:var(--ink,#3A3739)}
+  .ld-rows{display:grid;gap:8px}
+  .ld-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:10px 13px;background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:12px;text-decoration:none;color:inherit}
+  .ld-row:hover{border-color:var(--accent,#63BFD6)}
+  .ld-row.is-yours{border-color:var(--saffron,#F9A429);background:#fffaf1}
+  .ld-when{font-weight:700;font-size:.9rem;grid-column:1}
+  .ld-tag{font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a00;background:#fdeecb;border-radius:999px;padding:.1rem .45rem}
+  .ld-count{grid-column:1;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b)}
+  .ld-count b{color:var(--ink,#3A3739)}
+  .ld-meter{grid-column:2;grid-row:1/3;width:52px;height:5px;border-radius:99px;background:var(--cream-deep,#E4E0D2);overflow:hidden}
+  .ld-meter i{display:block;height:100%;background:var(--teal,#0AB9B6);border-radius:99px}
+  .ld-go{grid-column:3;grid-row:1/3;color:var(--blue-deep,#24758A);font-weight:800}
   .route-body{padding:52px 0}
   .route-body .lede{font-size:1.08rem;line-height:1.7;max-width:64ch}
   .route-hl{margin:22px 0 0;padding-left:1.1rem}
@@ -314,6 +339,7 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<script src="${p}${assetV('route-page.js')}"></script>
 </body>
 </html>
 `;
