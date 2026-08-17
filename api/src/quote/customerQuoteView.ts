@@ -38,10 +38,10 @@ export interface QuoteViewOption {
 }
 
 /* What each journey costs, for the customer who asked (spec 2026-08-16, revised by the owner
-   2026-08-16). Display-only, and whole dollars — but there is NO rounding row: the rounding is
-   spread across the journeys themselves (see distributeExact), so `rows` sum to exactly the
-   pre-discount figure and Σ(rows) − discount === totalCents by construction, whatever rounding
-   and finishing did. That is the arithmetic the customer will check. */
+   2026-08-16). Display-only, and whole dollars WHEN THE TOTAL IS — but there is NO rounding row:
+   the rounding is spread across the journeys themselves (see distributeExact), so `rows` sum to
+   exactly the pre-discount figure and Σ(rows) − discount === totalCents by construction, whatever
+   rounding and finishing did. That is the arithmetic the customer will check. */
 export interface QuoteViewLegPrices {
   rows: { label: string; amountUsd: string }[];
   discount: { label: string; amountUsd: string } | null;
@@ -232,7 +232,8 @@ interface StoredLineItem {
 // annotation; the customer already knows what they are travelling in.
 const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$/, '');
 
-const wholeDollars = (cents: number): number => Math.round(cents / 100) * 100;
+// Round `cents` to the nearest multiple of `unit` (100 = whole dollars, 1 = whole cents — a no-op).
+const quantize = (cents: number, unit: number): number => Math.round(cents / unit) * unit;
 
 // Exact integer floor division. `Math.floor(a / b)` goes through a float, and the products below
 // (weight × dollars) are large enough that a quotient landing exactly on an integer could come
@@ -245,45 +246,37 @@ function floorDiv(num: number, den: number): number {
   return q;
 }
 
-/* Spread `target` across `weights.length` rows so the displayed amounts sum to EXACTLY `target`
-   (owner, 2026-08-16: no "Rounded down" row — the column must still add up, so the rounding goes
-   into the journeys instead of into a row of its own).
+/* Spread `target` across `weights.length` rows, in units of `unit` cents, so the displayed amounts
+   sum to EXACTLY `target` (owner, 2026-08-16: no "Rounded down" row — the column must still add
+   up, so the rounding goes into the journeys instead of into a row of its own).
 
-   Whole dollars, by LARGEST REMAINDER (Hamilton's method): each row gets floor(w_i·D/W) dollars,
-   and the D − Σfloor dollars still to hand out — an integer in [0, N) — go to the rows with the
-   biggest fractional part, ties to the earlier row. That is exact by construction: floor division
-   in integers leaves a remainder in [0, W), so the shortfall is bounded by N and every dollar is
-   placed. Any residual CENTS (only when the price finish left cents on the total) land on the
-   single largest row, so every other row stays a whole number of dollars.
+   By LARGEST REMAINDER (Hamilton's method): each row gets floor(w_i·U/W) units, and the U − Σfloor
+   units still to hand out — an integer in [0, N) — go to the rows with the biggest fractional
+   part, ties to the earlier row. That is exact by construction: floor division in integers leaves
+   a remainder in [0, W), so the shortfall is bounded by N and every unit is placed. Callers only
+   ever pass a `target` that is itself a whole multiple of `unit` (see legPricesFor's `unit`
+   comment), so there is never a leftover fraction of a unit to dump on any one row.
 
    Degenerate weights (all zero, or negative from a malformed stored row) fall back to equal
    shares — the sum still lands on `target`, which is the guarantee that matters. */
-function distributeExact(target: number, weights: number[]): number[] {
+function distributeExact(target: number, weights: number[], unit: number): number[] {
   const n = weights.length;
   if (!n) return [];
-  const residual = target % 100; // sign follows `target`; target − residual is a whole-dollar sum
-  const dollars = (target - residual) / 100;
+  const count = target / unit; // exact: target is guaranteed a whole multiple of unit
 
   const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
   const totalW = w.reduce((a, b) => a + b, 0);
   const eff = totalW > 0 ? w : w.map(() => 1);
   const den = totalW > 0 ? totalW : n;
 
-  const shares = eff.map((x) => floorDiv(x * dollars, den));
-  const rems = eff.map((x, i) => x * dollars - shares[i] * den);
-  let left = dollars - shares.reduce((a, b) => a + b, 0);
-  // `left` is in [0, n) by the floor-division bound, so this hands out every remaining dollar.
+  const shares = eff.map((x) => floorDiv(x * count, den));
+  const rems = eff.map((x, i) => x * count - shares[i] * den);
+  let left = count - shares.reduce((a, b) => a + b, 0);
+  // `left` is in [0, n) by the floor-division bound, so this hands out every remaining unit.
   const order = rems.map((r, i) => ({ r, i })).sort((a, b) => b.r - a.r || a.i - b.i);
   for (let k = 0; left > 0; k += 1, left -= 1) shares[order[k % n].i] += 1;
 
-  const cents = shares.map((s) => s * 100);
-  if (residual !== 0) {
-    // The largest row absorbs the odd cents — on the smallest one they would read as a typo.
-    let big = 0;
-    for (let i = 1; i < cents.length; i += 1) if (cents[i] > cents[big]) big = i;
-    cents[big] += residual;
-  }
-  return cents;
+  return shares.map((s) => s * unit);
 }
 
 // UTC-midnight on the YYYY-MM-DD part. A copy of quoteDays.ts's parseUtc — see drivingRailOrder.
@@ -396,11 +389,23 @@ function legPricesFor(
      misstate what that thing cost. So the legs absorb the whole rounding between them. */
   const off = discountOff ?? 0;
   const target = totalCents + off;
-  const looseCents = loose.map((e) => wholeDollars(amountOf(e)));
+  /* The quantisation UNIT follows `target`, not a fixed dollar grain. Charm finishing (the common
+     case) always lands `target` on a whole number of dollars, and whole dollars is the right grain
+     to show — it's what Martina's real quotes look like, and there is no reason to print cents
+     that were never on the total. But `nearest_50_cents` and `unchanged` finishing can legitimately
+     leave cents on `target`, and forcing whole-dollar rows THEN dumping the leftover cents onto one
+     "largest" row made two otherwise-identical journeys read a dollar-plus apart (verified: two
+     $200 legs on a $397.54 target rendered $199.54 and $198). Quantising in CENTS instead when the
+     total itself carries cents keeps equal legs equal, and still sums exactly to `target` either
+     way. DO NOT "simplify" this back to always-whole-dollars — that is the bug this unit choice
+     fixes. Chosen once here and used for BOTH the legs and the loose extras below, so the column
+     stays internally consistent. */
+  const unit = target % 100 === 0 ? 100 : 1;
+  const looseCents = loose.map((e) => quantize(amountOf(e), unit));
   const legTarget = target - looseCents.reduce((s, c) => s + c, 0);
   // Weighted by each journey's TRUE engine amount (extras folded in), in the order the rail
   // renders them — so the spread is proportional to what each journey actually cost.
-  const legCents = distributeExact(legTarget, railOrder.map((i) => amounts[i]));
+  const legCents = distributeExact(legTarget, railOrder.map((i) => amounts[i]), unit);
 
   // journeyLabel strips a trailing "(car)"-style vehicle tag, and is safe by construction now
   // that it only ever sees real driving legs — those always carry the tag. A loose extra's own

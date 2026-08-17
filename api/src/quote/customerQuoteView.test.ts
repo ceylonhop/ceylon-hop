@@ -568,6 +568,90 @@ describe('per-journey prices', () => {
     expect(lp!.rows).toEqual([{ label: 'A → B', amountUsd: '$50.50' }]);
   });
 
+  // Case that motivated the fix (owner, 2026-08-16): a `nearest_50_cents` or `unchanged` finish
+  // can leave cents on `target` with MORE than one leg behind it. Forcing whole-dollar rows and
+  // then dumping the odd cents onto the single largest row made two IDENTICAL legs read a
+  // dollar-plus apart — a customer comparing two $200 journeys saw $199.54 beside $198 and would
+  // ask about it. The fix quantises in CENTS instead whenever `target` itself carries cents, so
+  // equal legs render equal.
+  it('spreads a cents-bearing target in cents, not whole dollars, so identical legs render identically', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-22' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'A', to: 'B', date: '2026-08-20', distanceKm: 100 },
+            { from: 'B', to: 'C', date: '2026-08-22', distanceKm: 100 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 20000 },
+          { label: 'B → C (car)', amountCents: 20000 },
+        ],
+      },
+      totalCents: 39754,
+    });
+    expect(lp!.rows).toEqual([
+      { label: 'A → B', amountUsd: '$198.77' },
+      { label: 'B → C', amountUsd: '$198.77' },
+    ]);
+    expect(lp!.totalUsd).toBe('$397.54');
+  });
+
+  // Martina's real seven-leg quote (owner, 2026-08-16). The charm-finished total lands on a whole
+  // number of dollars, so this must render EXACTLY as it always did — whole-dollar rows by largest
+  // remainder — unaffected by the cents-mode branch the fix above added.
+  it("renders Martina's seven-leg quote in whole dollars, unchanged by the cents-mode fix", () => {
+    const legs = [4508, 3180, 5917, 5112, 5917, 3623, 7889];
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: {
+          passengerCount: 2,
+          legs: legs.map((_, i) => ({ from: `L${i}`, to: `M${i}`, date: '2026-08-20', distanceKm: 100 })),
+        },
+      },
+      result: { lineItems: legs.map((a, i) => ({ label: `L${i} → M${i} (car)`, amountCents: a })) },
+      totalCents: 35900,
+    });
+    expect(lp!.rows.map((r) => r.amountUsd)).toEqual(['$45', '$31', '$59', '$51', '$59', '$36', '$78']);
+    expect(lp!.totalUsd).toBe('$359');
+  });
+
+  // The invariant, specifically in the CENTS regime with more than one row (the case above only
+  // proves it for equal weights): unequal legs on a cents-bearing target still sum exactly, and
+  // in this regime more than one row is allowed to carry cents — the whole-dollar test's
+  // "at most one row" rule is a property of THAT regime, not a universal one.
+  it('holds the invariant in the cents regime too, with unequal legs', () => {
+    const lp = shown({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-24' },
+        tool: {
+          passengerCount: 2,
+          legs: [
+            { from: 'A', to: 'B', date: '2026-08-20', distanceKm: 100 },
+            { from: 'B', to: 'C', date: '2026-08-22', distanceKm: 100 },
+            { from: 'C', to: 'D', date: '2026-08-24', distanceKm: 100 },
+          ],
+        },
+      },
+      result: {
+        lineItems: [
+          { label: 'A → B (car)', amountCents: 10000 },
+          { label: 'B → C (car)', amountCents: 20000 },
+          { label: 'C → D (car)', amountCents: 30000 },
+        ],
+      },
+      totalCents: 59999,
+    });
+    const parse = (s: string) => Math.round(Number(s.replace(/[$,+]/g, '')) * 100);
+    expect(lp!.rows.reduce((s, r) => s + parse(r.amountUsd), 0)).toBe(59999);
+    expect(parse(lp!.totalUsd)).toBe(59999);
+  });
+
   it('leaves the leg prices alone when they already sum to the charged total', () => {
     const lp = shown({
       result: {
@@ -680,11 +764,13 @@ describe('per-journey prices', () => {
     expect(lp!.rows.map((r) => r.label)).not.toContain('Final price adjustment');
     expect(lp!.rows.map((r) => r.label)).not.toContain('Discount');
     // The skipped −246 adjustment reaches the customer as a $2.46 shave on the leg rows, not as a
-    // row: two equal $200 legs against a $397.54 pre-discount target give $199 and $198 by largest
-    // remainder (tie → the earlier row), and the 54 odd cents ride on the larger of the two.
+    // row. The $397.54 pre-discount target carries cents, so the spread quantises in CENTS, not
+    // whole dollars: two EQUAL $200 legs land on the same figure — $198.77 each — rather than one
+    // customer's journey reading $1.54 more than an identical one just because the residual cents
+    // used to get dumped on a single "largest" row.
     expect(lp!.rows).toEqual([
-      { label: 'A → B', amountUsd: '$199.54' },
-      { label: 'B → C', amountUsd: '$198' },
+      { label: 'A → B', amountUsd: '$198.77' },
+      { label: 'B → C', amountUsd: '$198.77' },
     ]);
     // The discount is the PROJECTION's own computed row: $50 from discountCents, not the
     // lineItems' own -5000 'Discount' row (which would print $50 too, but by being read back).
