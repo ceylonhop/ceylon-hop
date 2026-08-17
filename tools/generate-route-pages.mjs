@@ -79,7 +79,7 @@ function optionCards(T, from, to, q, shared, p) {
         <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
         <ul class="pickups">${stops}</ul>
         <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
-          <a class="btn btn-cta opt-cta" href="${p}board.html">See who's going &amp; add your name</a>
+          <a class="btn btn-cta opt-cta" href="${esc(`${p}board.html?from=${encodeURIComponent(T.byId[from].name)}&to=${encodeURIComponent(T.byId[to].name)}`)}">See who's going &amp; add your name</a>
         </div>
       </article></div>`;
 }

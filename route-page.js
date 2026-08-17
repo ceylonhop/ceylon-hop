@@ -90,10 +90,17 @@
       if (state.lists.length) {
         body += '<p class="ld-alt">Or join a date already gathering:</p><div class="ld-rows">' + rowsHtml() + '</div>';
       }
+    } else if (!state.lists.length) {
+      // Nobody on this route yet. The card promises "here are the dates people are on",
+      // so saying nothing leaves it looking broken — and a route only ever gets its FIRST
+      // list because someone was invited to start one. Ask, rather than showing a void.
+      head = 'Be the first to pick a date';
+      body = '<p class="ld-first">No one has put their name down on this route yet. ' +
+        'Choose the day you want to travel and it goes up instantly — the van runs once ' +
+        '<b>' + MIN + ' travellers</b> are going, and you pay nothing if it never fills.</p>';
     } else {
       var total = 0;
       for (var i = 0; i < state.lists.length; i++) total += state.lists[i].committed || 0;
-      if (!state.lists.length) return; // nothing live worth showing
       head = total + ' traveller' + (total === 1 ? ' is' : 's are') + ' already going this way';
       body = '<div class="ld-rows">' + rowsHtml() + '</div>';
     }
