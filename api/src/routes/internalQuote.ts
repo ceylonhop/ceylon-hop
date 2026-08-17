@@ -1463,6 +1463,9 @@ export function internalQuoteRoutes(deps: {
         notes: z.string().nullable().optional(),
         internalNotes: z.string().nullable().optional(),
         assignedTo: z.string().nullable().optional(),
+        // Display-only (spec 2026-08-16). Deliberately NOT a pricing input: setting it must not
+        // re-estimate, must not mark the quote dirty, and must not require re-approval.
+        showLegPrices: z.boolean().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request' }, 400);
@@ -1599,6 +1602,7 @@ export function internalQuoteRoutes(deps: {
       updatedBy: c.get('identity').email,
       customerTotal,
       offerValidUntil,
+      showLegPrices: body.showLegPrices,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not

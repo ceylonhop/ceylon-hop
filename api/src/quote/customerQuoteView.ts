@@ -34,6 +34,18 @@ export interface QuoteViewOption {
   cancellation: { headline: string; ladder: string[] };
   lead: boolean;
   waText: string;
+  legPrices: QuoteViewLegPrices | null;
+}
+
+/* What each journey costs, for the customer who asked (spec 2026-08-16, revised by the owner
+   2026-08-16). Display-only, and whole dollars WHEN THE TOTAL IS — but there is NO rounding row:
+   the rounding is spread across the journeys themselves (see distributeExact), so `rows` sum to
+   exactly the pre-discount figure and Σ(rows) − discount === totalCents by construction, whatever
+   rounding and finishing did. That is the arithmetic the customer will check. */
+export interface QuoteViewLegPrices {
+  rows: { label: string; amountUsd: string }[];
+  discount: { label: string; amountUsd: string } | null;
+  totalUsd: string;
 }
 
 // A stretch of the journey the map draws with ONE route query. Ops can pin a leg to the
@@ -71,6 +83,7 @@ interface ViewQuote {
   request: unknown;
   /** The stored QuoteResult. Carries the founder's discount when there is one. */
   result?: unknown;
+  showLegPrices?: boolean;
 }
 
 interface ToolLegLite {
@@ -209,6 +222,208 @@ function mapRunsOf(quote: ViewQuote): MapRun[] {
   }));
 }
 
+interface StoredLineItem {
+  label: string;
+  amountCents: number;
+  meta?: { kind?: string; legIndex?: number };
+}
+
+// "Colombo Airport → Sigiriya (car)" → "Colombo Airport → Sigiriya". The vehicle tag is an ops
+// annotation; the customer already knows what they are travelling in.
+const journeyLabel = (label: string): string => label.replace(/\s*\([^()]*\)\s*$/, '');
+
+// Round `cents` to the nearest multiple of `unit` (100 = whole dollars, 1 = whole cents — a no-op).
+const quantize = (cents: number, unit: number): number => Math.round(cents / unit) * unit;
+
+// Exact integer floor division. `Math.floor(a / b)` goes through a float, and the products below
+// (weight × dollars) are large enough that a quotient landing exactly on an integer could come
+// back a hair under it. The correction loops run at most once and keep the identity
+// `q*den <= num < (q+1)*den` true in integers, which is what the largest-remainder proof needs.
+function floorDiv(num: number, den: number): number {
+  let q = Math.floor(num / den);
+  while (q * den > num) q -= 1;
+  while ((q + 1) * den <= num) q += 1;
+  return q;
+}
+
+/* Spread `target` across `weights.length` rows, in units of `unit` cents, so the displayed amounts
+   sum to EXACTLY `target` (owner, 2026-08-16: no "Rounded down" row — the column must still add
+   up, so the rounding goes into the journeys instead of into a row of its own).
+
+   By LARGEST REMAINDER (Hamilton's method): each row gets floor(w_i·U/W) units, and the U − Σfloor
+   units still to hand out — an integer in [0, N) — go to the rows with the biggest fractional
+   part, ties to the earlier row. That is exact by construction: floor division in integers leaves
+   a remainder in [0, W), so the shortfall is bounded by N and every unit is placed. Callers only
+   ever pass a `target` that is itself a whole multiple of `unit` (see legPricesFor's `unit`
+   comment), so there is never a leftover fraction of a unit to dump on any one row.
+
+   Degenerate weights (all zero, or negative from a malformed stored row) fall back to equal
+   shares — the sum still lands on `target`, which is the guarantee that matters. */
+function distributeExact(target: number, weights: number[], unit: number): number[] {
+  const n = weights.length;
+  if (!n) return [];
+  const count = target / unit; // exact: target is guaranteed a whole multiple of unit
+
+  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+  const totalW = w.reduce((a, b) => a + b, 0);
+  const eff = totalW > 0 ? w : w.map(() => 1);
+  const den = totalW > 0 ? totalW : n;
+
+  const shares = eff.map((x) => floorDiv(x * count, den));
+  const rems = eff.map((x, i) => x * count - shares[i] * den);
+  let left = count - shares.reduce((a, b) => a + b, 0);
+  // `left` is in [0, n) by the floor-division bound, so this hands out every remaining unit.
+  const order = rems.map((r, i) => ({ r, i })).sort((a, b) => b.r - a.r || a.i - b.i);
+  for (let k = 0; left > 0; k += 1, left -= 1) shares[order[k % n].i] += 1;
+
+  return shares.map((s) => s * unit);
+}
+
+// UTC-midnight on the YYYY-MM-DD part. A copy of quoteDays.ts's parseUtc — see drivingRailOrder.
+const legDayMs = (s: string | undefined): number | null => {
+  if (!s) return null;
+  const t = Date.parse(String(s).slice(0, 10) + 'T00:00:00Z');
+  return Number.isNaN(t) ? null : t;
+};
+
+/* The order the DAY BY DAY rail will render the driving legs in, as indices into the REQUEST's
+   own driving legs. The rail's rows and the price rows below are matched POSITIONALLY by the
+   page — the Nth journey shown gets the Nth price — but the two orderings come from different
+   places: the rail sorts by date, while the engine prices `req.legs` as given and never sorts.
+   Left unreconciled, a quote whose stored legs are out of chronological order puts a real price
+   on a journey it does not belong to.
+
+   MUST STAY IN STEP WITH quoteDays.ts (the rail is the authority; this conforms to it):
+     - the same UTC-midnight date parse, over ALL legs — stays take part in the sort too;
+     - the same stable sort by date, so same-day legs keep request order;
+     - the same fallback: ANY undated leg makes calendar arithmetic meaningless there, so
+       quoteDays emits `legs.map(rowFor)` in REQUEST order — and so must this, or the fix
+       reintroduces the very bug in the opposite direction. Tours default to blank dates. */
+function drivingRailOrder(legs: ToolLegLite[]): number[] {
+  const dated = legs.map((l, i) => ({ l, i, t: legDayMs(l.date) }));
+  const ordered = dated.some((e) => e.t == null)
+    ? dated
+    : [...dated].sort((a, b) => a.t! - b.t! /* stable: equal dates keep request order */);
+  // Driving legs numbered in REQUEST order — the numbering the stored lineItems are in, and the
+  // numbering an attributed extra's `legIndex` refers to.
+  const requestIndex = new Map<number, number>();
+  for (const [i, l] of legs.entries()) if (drives(l)) requestIndex.set(i, requestIndex.size);
+  return ordered.filter((e) => drives(e.l)).map((e) => requestIndex.get(e.i)!);
+}
+
+// A stored row is JSON off the wire and can be malformed (an old shape, a hand-edited result).
+// A missing or non-numeric amount degrades to $0 rather than poisoning its row AND the
+// remainder with "$NaN" — the customer sees a wrong-looking zero, never a broken page.
+const amountOf = (li: StoredLineItem): number =>
+  typeof li.amountCents === 'number' && Number.isFinite(li.amountCents) ? li.amountCents : 0;
+
+function legPricesFor(
+  quote: ViewQuote,
+  product: string | null,
+  lead: boolean,
+  soleOption: boolean,
+  drivingLegCount: number,
+  totalCents: number,
+  discountOff: number | null,
+): QuoteViewLegPrices | null {
+  // Lead-only and private-only. The secondary option's total is a recompute with no stored
+  // lineItems behind it, so a breakdown there would reconcile to a number that was never
+  // approved — the same reason the stored total already outranks the recompute. Chauffeur is
+  // priced by the day and has no per-leg price to show at all.
+  //
+  // Gate on the ENGINE's product, not the view's service: the view maps every non-chauffeur
+  // product onto the 'private' card, so a `shared` quote would slip a private-only gate.
+  //
+  // SOLE-OPTION too (owner, 2026-08-16). A quote that also offers Chauffeur-guide shows no
+  // per-journey prices at all — not even on the private card. The rail sits below BOTH cards and
+  // there is only one of it, so a column of private figures under a two-option comparison invites
+  // the customer to add it up against the chauffeur total, which it was never a breakdown of.
+  // Labelling whose prices they were was the first answer; the owner's is that they don't appear.
+  if (!quote.showLegPrices || !lead || !soleOption || product !== 'private') return null;
+
+  const stored = (quote.result ?? {}) as { lineItems?: StoredLineItem[] };
+  const items = Array.isArray(stored.lineItems) ? stored.lineItems : [];
+  // "The first N are the driving legs" — the contract engine.ts states where it pushes extras
+  // AFTER the travel rows on purpose, and the same split ops-ui makes. N is the REQUEST's own
+  // driving-leg count, never a meta sniff: an unattributed extra is pushed as a bare
+  // { label, amountCents } with no `meta` at all (extrasDeposit.ts), so by shape alone it is
+  // indistinguishable from a travel row — counting it as one would shift every later price
+  // onto the wrong journey. A stored list shorter than N (a legacy or partial result) just
+  // yields the rows it has.
+  //
+  // Defensive: N is trusted (request and result are written atomically), but if it ever
+  // overran the real leg rows, a bare slice could pull the engine's own price_adjustment or
+  // discount row into the leg bucket and show it to a customer as a journey. Stop at the first
+  // internal row regardless of N so that can never happen.
+  const firstInternal = items.findIndex((li) => li.meta?.kind === 'price_adjustment' || li.meta?.kind === 'discount');
+  const n = Math.min(drivingLegCount, firstInternal === -1 ? items.length : firstInternal);
+  const legs = items.slice(0, n);
+  if (!legs.length) return null;
+
+  // Everything after the legs is an extra, the engine's finishing adjustment, or the discount.
+  // The last two are skipped: the leg rows below are distributed to hit the CHARGED total, so
+  // reading the engine's own adjustment back would double-count it. An extra attributed to a
+  // leg folds into that leg, so the rail stays one row per journey.
+  const amounts = legs.map(amountOf);
+  const loose: StoredLineItem[] = [];
+  for (const e of items.slice(n)) {
+    const kind = e.meta?.kind;
+    if (kind === 'price_adjustment' || kind === 'discount') continue;
+    const i = e.meta?.legIndex;
+    if (i != null && Number.isInteger(i) && i >= 0 && i < amounts.length) amounts[i] += amountOf(e);
+    else loose.push(e);
+  }
+
+  // NOW reorder — after the fold, never before. `legIndex` counts driving legs in REQUEST order,
+  // so folding against any other order would attach an extra to the wrong journey. Indices past
+  // the rows we actually have are dropped (n can be short of the request's driving-leg count),
+  // which leaves exactly the same n rows, permuted: the sum — and so the invariant — is untouched.
+  const railOrder = drivingRailOrder(legsOf(quote)).filter((i) => i < legs.length);
+
+  /* The figure the rows must add up to: the PRE-discount total, because the discount is its own
+     row below them. `total + discount` is exact — finishing runs before the discount (#422), so
+     total IS totalBefore − discount.
+
+     A loose extra keeps its own rounded value: it is a thing the customer bought at a price, not
+     a share of the journey money, and nudging it by a dollar to make a column balance would
+     misstate what that thing cost. So the legs absorb the whole rounding between them. */
+  const off = discountOff ?? 0;
+  const target = totalCents + off;
+  /* The quantisation UNIT follows `target`, not a fixed dollar grain. Charm finishing (the common
+     case) always lands `target` on a whole number of dollars, and whole dollars is the right grain
+     to show — it's what Martina's real quotes look like, and there is no reason to print cents
+     that were never on the total. But `nearest_50_cents` and `unchanged` finishing can legitimately
+     leave cents on `target`, and forcing whole-dollar rows THEN dumping the leftover cents onto one
+     "largest" row made two otherwise-identical journeys read a dollar-plus apart (verified: two
+     $200 legs on a $397.54 target rendered $199.54 and $198). Quantising in CENTS instead when the
+     total itself carries cents keeps equal legs equal, and still sums exactly to `target` either
+     way. DO NOT "simplify" this back to always-whole-dollars — that is the bug this unit choice
+     fixes. Chosen once here and used for BOTH the legs and the loose extras below, so the column
+     stays internally consistent. */
+  const unit = target % 100 === 0 ? 100 : 1;
+  const looseCents = loose.map((e) => quantize(amountOf(e), unit));
+  const legTarget = target - looseCents.reduce((s, c) => s + c, 0);
+  // Weighted by each journey's TRUE engine amount (extras folded in), in the order the rail
+  // renders them — so the spread is proportional to what each journey actually cost.
+  const legCents = distributeExact(legTarget, railOrder.map((i) => amounts[i]), unit);
+
+  // journeyLabel strips a trailing "(car)"-style vehicle tag, and is safe by construction now
+  // that it only ever sees real driving legs — those always carry the tag. A loose extra's own
+  // parenthetical ("Sightseeing stops (up to 3h)") is part of what it IS, so its label is left
+  // exactly as stored: stripping it there would delete meaning, not an ops annotation.
+  const rows = [
+    ...railOrder.map((i, k) => ({ label: journeyLabel(legs[i].label), amountUsd: usd(legCents[k]) })),
+    // Loose extras stay trailing, after every leg row — they belong to no journey.
+    ...loose.map((e, k) => ({ label: e.label, amountUsd: usd(looseCents[k]) })),
+  ];
+
+  return {
+    rows,
+    discount: off > 0 ? { label: 'Discount', amountUsd: `−${usd(off)}` } : null,
+    totalUsd: usd(totalCents),
+  };
+}
+
 export function customerQuoteView(
   quote: ViewQuote,
   services: { pointToPoint: { totalCents: number } | null; chauffeur: { totalCents: number } | null },
@@ -252,6 +467,10 @@ export function customerQuoteView(
     : storedResult.totalBeforeDiscountCents ?? pricedTotal + discountOff;
   const otherTotal = wantsBoth ? totalFor(other) : null;
 
+  // The driving legs of the REQUEST. Read before the cards are built: it is both the trip stat
+  // and the N that splits the stored lineItems into "the first N are the driving legs".
+  const driving = legsOf(quote).filter(drives);
+
   const waFor = (label: string | null) =>
     label
       ? `Hi! I'd like to book the ${label} option for quote ${quote.reference}`
@@ -279,13 +498,21 @@ export function customerQuoteView(
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),
+      legPrices: legPricesFor(
+        quote,
+        engine?.product ?? null,
+        lead,
+        otherTotal == null, // sole option: a two-option quote shows no per-journey prices at all
+        driving.length,
+        cents,
+        lead ? discountOff : null,
+      ),
     };
   };
 
   const options: QuoteViewOption[] = [build(priced, pricedTotal, true)];
   if (otherTotal != null) options.push(build(other, otherTotal, false));
 
-  const driving = legsOf(quote).filter(drives);
   const kms = driving.map((l) => (typeof l.distanceKm === 'number' ? l.distanceKm : 0));
   const totalKm = kms.some((k) => k > 0) ? Math.round(kms.reduce((a, b) => a + b, 0)) : null;
 

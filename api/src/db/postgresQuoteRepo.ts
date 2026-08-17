@@ -68,6 +68,7 @@ export function quoteRowToSaved(r: Row): SavedQuote {
     notes: r.notes,
     internalNotes: r.internalNotes,
     requestedService: r.requestedService,
+    showLegPrices: r.showLegPrices,
     offerValidUntil: r.offerValidUntil ?? null,
     assignedTo: r.assignedTo,
     assignedAt: r.assignedAt,
@@ -113,6 +114,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             notes: q.notes ?? null,
             internalNotes: q.internalNotes ?? null,
             requestedService: q.requestedService ?? null,
+            showLegPrices: q.showLegPrices ?? false,
             createdBy: q.createdBy ?? null,
             updatedBy: q.updatedBy ?? null,
             assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on insert (2026-07-22)
@@ -394,6 +396,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             }
           : {}),
         ...(patch.offerValidUntil !== undefined ? { offerValidUntil: patch.offerValidUntil } : {}),
+        ...(patch.showLegPrices !== undefined ? { showLegPrices: patch.showLegPrices } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
@@ -476,6 +479,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(q.assignedTo !== undefined
           ? { assignedTo: q.assignedTo ?? null, assignedAt: q.assignedTo ? new Date() : null }
           : {}),
+        // Only when explicitly provided — an ordinary content save must not untick a display
+        // setting the operator turned on.
+        ...(q.showLegPrices !== undefined ? { showLegPrices: q.showLegPrices } : {}),
         // A content write is a NEW REVISION, and whatever is holding the old one must be able
         // to tell. Pay links pin {quoteId, revision}; the bump is what lets quotePay.ts refuse a
         // link minted against a price that has since changed. Unconditional on purpose — this is

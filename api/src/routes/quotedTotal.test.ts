@@ -106,22 +106,23 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(b.amountDueNow).toBe(5500);
   });
 
-  it('shared seats always store the server corridor price; a divergent quotedTotal is flagged', async () => {
+  it('shared seats always store the server catalogue price; a divergent quotedTotal is flagged', async () => {
     const { app, conciergeTasks } = appWithTasks();
     const r = await post(app, '/bookings/shared', {
-      corridorId: 'hill-line',
+      from: 'Negombo',
+      to: 'Sigiriya / Dambulla',
       date: SOON,
-      time: '08:00',
+      time: '07:30',
       seats: 2,
       quotedTotal: 9000,
       customer,
     });
     expect(r.status).toBe(201);
     const b = await r.json();
-    expect(b.total).toBe(4200); // 2 × $21 (hill-line) — never the client's 9000
-    expect(b.amountDueNow).toBe(4200);
+    expect(b.total).toBe(5498); // 2 × $27.49 (catalogue) — never the client's 9000
+    expect(b.amountDueNow).toBe(5498);
     const tasks = await conciergeTasks.listByBooking(b.id);
     expect(tasks).toHaveLength(1);
-    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 9000¢, engine priced 4200¢`);
+    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 9000¢, engine priced 5498¢`);
   });
 });

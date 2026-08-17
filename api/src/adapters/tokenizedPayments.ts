@@ -12,7 +12,38 @@
 export interface PreapproveArgs {
   // A stable reference for the payer (e.g. the customer subject) — for traceability only.
   customerRef: string;
-  customer?: { firstName: string; email: string; country: string };
+  orderId?: string;
+  items?: string;
+  currency?: string;
+  returnUrl?: string;
+  cancelUrl?: string;
+  customer?: {
+    firstName: string;
+    lastName?: string;
+    email: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    country: string;
+  };
+}
+
+export interface PreapprovalCheckout {
+  provider: string;
+  orderId: string;
+  checkoutUrl: string;
+  fields: Record<string, string>;
+}
+
+export type PreapprovalResult =
+  | { status: 'approved'; ref: string; checkout?: never }
+  | { status: 'requires_action'; checkout: PreapprovalCheckout; ref?: never };
+
+export interface VerifiedPreapprovalEvent {
+  orderId: string;
+  providerTxnId: string;
+  status: 'succeeded' | 'pending' | 'cancelled' | 'failed';
+  ref?: string;
 }
 
 export interface ChargeArgs {
@@ -30,8 +61,10 @@ export interface ChargeResult {
 
 export interface TokenizedPaymentAdapter {
   readonly provider: string;
-  // Tokenize the card with a $0 hold; returns the reusable charge token.
-  preapprove(args: PreapproveArgs): Promise<{ ref: string }>;
+  // A fake may approve immediately. A real gateway returns a browser handoff and supplies
+  // the reusable token only in its signed server callback.
+  preapprove(args: PreapproveArgs): Promise<PreapprovalResult>;
+  parsePreapprovalWebhook(rawBody: string): VerifiedPreapprovalEvent | null;
   // Charge a preapproved token some amount, later.
   charge(args: ChargeArgs): Promise<ChargeResult>;
 }
@@ -43,9 +76,24 @@ export class FakeTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
   private readonly failRefs = new Set<string>();
   private seq = 0;
 
-  async preapprove(args: PreapproveArgs): Promise<{ ref: string }> {
+  constructor() {
+    const allowed = ['1', 'true', 'yes'].includes(
+      String(process.env.ALLOW_FAKE_PAYMENTS ?? '').trim().toLowerCase(),
+    );
+    if (process.env.NODE_ENV === 'production' && !allowed) {
+      throw new Error(
+        'FakeTokenizedPaymentAdapter must never be used in production — configure PayHere Automated Charging',
+      );
+    }
+  }
+
+  async preapprove(args: PreapproveArgs): Promise<{ status: 'approved'; ref: string }> {
     this.preapprovals.push(args);
-    return { ref: `pa_${++this.seq}` };
+    return { status: 'approved', ref: `pa_${++this.seq}` };
+  }
+
+  parsePreapprovalWebhook(): VerifiedPreapprovalEvent | null {
+    return null;
   }
 
   // Test helper: mark a token so the next charge on it fails (expired-card simulation).

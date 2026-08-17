@@ -17,6 +17,16 @@ describe('generateAll', () => {
     expect(html).not.toContain('aggregateRating');
     expect(html).toContain('../../site.css'); // relative asset ref
   });
+  it('uses the shared compact route estimate in visible copy, metadata, FAQ data and cards', () => {
+    const html = out.get('trip/kandy-to-ella/index.html');
+    const compact = 'Approx. 135 km · 3h 45m';
+    expect((html.match(/Approx\. 135 km · 3h 45m/g) || []).length).toBeGreaterThanOrEqual(4);
+    expect(html).not.toContain('136 km');
+    expect(html).not.toContain('about 4 hours');
+
+    const index = out.get('trip/index.html');
+    expect(index).toContain(`Kandy → Ella</span><span class="rt-meta">${compact} · from $59`);
+  });
   it('CTA deep-links into search with from/to prefilled', () => {
     const html = out.get('trip/kandy-to-ella/index.html');
     expect(html).toContain('../../search.html?from=kandy&to=ella');

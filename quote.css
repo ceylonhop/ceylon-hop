@@ -100,6 +100,19 @@
    paper-and-hairline ghost read as inactive on cream next to the solid green. Teal ink and a
    firmer border keep the hierarchy while staying unmistakably tappable. */
 .opts .btn-ghost{color:var(--accent-deep);border:1.5px solid #9ed4d0}
+/* Per-journey prices (spec 2026-08-16). Invoice shape: the money sits on the journey's header
+   line, right-aligned, so a customer scanning the right edge reads a column of figures. Tabular
+   numerals keep that column true. In quote.css and not ticket.css — pay.html shares .hop. */
+.hop-t{display:flex;align-items:baseline;gap:12px}
+.hop-t .hop-title{flex:1;min-width:0}
+.hop-p{flex:none;font-family:var(--display);font-weight:700;font-size:1rem;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.hop-sum{margin:4px 0 0 25px;padding-top:11px;border-top:1px solid var(--line-soft,#f0ece1)}
+.hop-sum .r{display:flex;justify-content:space-between;gap:12px;font-size:.8rem;
+  color:var(--ink-soft);padding:2px 0}
+.hop-sum .r span:last-child{font-variant-numeric:tabular-nums}
+.hop-sum .r.tot{margin-top:7px;padding-top:9px;border-top:1px solid var(--line-soft,#f0ece1);
+  font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink)}
 .opt-n{font-family:var(--display);font-weight:700;font-size:1.2rem;letter-spacing:0;margin:0;color:var(--ink)}
 .opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
 /* Cancellation is reassurance, not a selling point (owner critique, 2026-08-06): quiet grey in

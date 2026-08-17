@@ -16,7 +16,7 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
-import { departureTimesForCorridor } from '../db/departureRepo';
+import { sharedProductFor } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -456,11 +456,22 @@ function billingFrom(body: unknown): BillingParse {
       if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
-    const corridor = req.corridorId
-      ? await departures.getCorridor(req.corridorId)
-      : req.from && req.to
-        ? await departures.findCorridorByRoute(req.from, req.to)
-        : null;
+    // The catalogue decides what is sellable, not corridor adjacency. A corridor holds
+    // several products at different prices (airport-cultural sells Negombo->Sigiriya at
+    // $27.49 and Sigiriya->Kandy at $19.99), so `corridorId` alone cannot identify a
+    // booking and `corridor.seatPrice` cannot price one.
+    const product = req.from && req.to ? sharedProductFor(req.from, req.to) : null;
+    if (!product) {
+      return c.json(
+        {
+          error: 'not_a_shared_route',
+          message:
+            'We don’t run a scheduled shared seat on that route. Book it as a private transfer, or start a ride-board list and we’ll run a van once enough travellers join.',
+        },
+        400,
+      );
+    }
+    const corridor = await departures.getCorridor(product.corridorId);
     if (!corridor) return c.json({ error: 'unknown_corridor' }, 400);
 
     // Shared seats run a fixed weekly schedule — reject a date that isn't one of the
@@ -479,15 +490,16 @@ function billingFrom(body: unknown): BillingParse {
     }
 
     // Seat inventory is keyed on the departure time, and an unrecognised time creates a fresh
-    // full-capacity departure — so an arbitrary string sells the same van again. Only the
-    // corridor's published times are real departures.
-    const times = departureTimesForCorridor(corridor.id);
+    // full-capacity departure — so an arbitrary string sells the same van again. The real
+    // departure is the PRODUCT's boarding time at this stop: a corridor's own time is when
+    // the van leaves its first stop, which is wrong for every stop after it (Sigiriya→Kandy
+    // boards at 11:30 on a corridor whose van leaves CMB at 07:00).
     const time = req.time.trim();
-    if (times.length && !times.includes(time)) {
+    if (time !== product.time) {
       return c.json(
         {
           error: 'unknown_departure_time',
-          message: `This shared route departs at ${times.join(' and ')}. Pick one of those times, or book it as a private transfer.`,
+          message: `This shared route departs at ${product.time}${product.pickup ? ` from ${product.pickup}` : ''}. Pick that time, or book it as a private transfer.`,
         },
         400,
       );
@@ -501,11 +513,11 @@ function billingFrom(body: unknown): BillingParse {
     });
     if (!held) return c.json({ error: 'sold_out' }, 409);
 
-    // GL-3 — the corridor DB price is authoritative; the client's quotedTotal is never
+    // GL-3 — the catalogue price is authoritative; the client's quotedTotal is never
     // stored, only compared and flagged when it disagrees.
     const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priceShared(
       req.seats,
-      corridor.seatPrice,
+      product.seatPrice,
       req.bags ?? 0,
     );
     const input = {

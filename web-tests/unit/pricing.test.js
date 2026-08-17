@@ -49,7 +49,11 @@ describe('privateQuote (the fare customers see)', () => {
 
   it('uses the REAL drive time (minutes), not a distance-derived estimate', () => {
     // CMB->Ella is 335km but only ~4h57m (highway), not 335/42 = ~8h.
-    expect(T.privateQuote('cmb-airport', 'ella').duration).toBe('4h 57m');
+    expect(T.privateQuote('cmb-airport', 'ella')).toMatchObject({
+      duration: '4h 57m',
+      durationMin: 297,
+      estimated: false,
+    });
   });
 
   it('honours the minimum fare floors on ultra-short hops', () => {
@@ -212,15 +216,34 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
   });
 });
 
-describe('sharedOption (corridor seats)', () => {
-  it('finds a corridor when both stops share one', () => {
-    const s = T.sharedOption('mirissa', 'galle');
+// A shared seat is sold on an explicit catalogue of directed legs, NOT wherever two
+// places are adjacent on a corridor. Mirissa->Galle used to return an offer here purely
+// because south-coast lists both stops; no such service is sold. Full coverage lives in
+// shared-catalogue.test.js.
+describe('sharedOption (the scheduled catalogue)', () => {
+  it('offers a seat on a leg we sell', () => {
+    const s = T.sharedOption('ella', 'yala');
     expect(s).toBeTruthy();
-    expect(s.corridorId).toBeTruthy();
-    expect(s.seat).toBeGreaterThan(0);
+    expect(s.corridorId).toBe('ella-east');
+    expect(s.seat).toBe(22.99);
+    expect(s.times).toContain('09:00'); // the leg's own boarding time
   });
-  it('returns null when the pair is not on any corridor', () => {
+  it('offers nothing on a pair that merely shares a corridor', () => {
+    expect(T.sharedOption('mirissa', 'galle')).toBeNull();
     expect(T.sharedOption('cmb-airport', 'arugam-bay')).toBeNull();
     expect(T.sharedOption('galle', 'galle')).toBeNull();
+  });
+});
+
+describe('corridorFor (corridor membership, for the ride board)', () => {
+  it('still finds a corridor when both stops share one', () => {
+    const c = T.corridorFor('mirissa', 'galle');
+    expect(c).toBeTruthy();
+    expect(c.corridorId).toBeTruthy();
+    expect(c.seat).toBeGreaterThan(0);
+  });
+  it('returns null when the pair is not on any corridor', () => {
+    expect(T.corridorFor('cmb-airport', 'arugam-bay')).toBeNull();
+    expect(T.corridorFor('galle', 'galle')).toBeNull();
   });
 });

@@ -235,6 +235,41 @@ state.anchorKm = (window.TRANSFERS ? window.TRANSFERS.kmBetween(r.stops[0], r.st
 state.pendingReprice = null; // {km, extraKm, prices:{car,van}} while awaiting acknowledgement
 state.locTooFar = null;      // {which,name,area,km,limit} when an exact spot leaves its area
 
+// The route estimate selected on Search travels separately from price. Keeping the raw km/min
+// and its identity means Booking can render the exact same customer copy before any map or live
+// re-price finishes. Older/direct links fall back to the reviewed catalogue pair when available.
+function positiveNumberParam(name){
+  const n=Number(params.get(name));
+  return Number.isFinite(n) && n>0 ? n : null;
+}
+function selectedBrowseEstimate(){
+  const passedKm=positiveNumberParam('estimateKm');
+  const passedMin=positiveNumberParam('estimateMin');
+  const passedState=params.get('estimateState');
+  if(passedKm!=null || passedMin!=null){
+    return {
+      distanceKm:passedKm,
+      durationMin:passedMin,
+      state:passedState==='estimated'?'estimated':'browse',
+      estimateId:params.get('estimateId')||'search-selection'
+    };
+  }
+  if(window.TRANSFERS && routeFromId && routeToId){
+    const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
+    if(q && (q.km>0 || q.durationMin>0)) return {
+      distanceKm:q.km,
+      durationMin:q.durationMin,
+      state:q.estimated?'estimated':'browse',
+      estimateId:`${routeFromId}>${routeToId}:reviewed-v1`
+    };
+  }
+  return { state:'unavailable', estimateId:'unavailable' };
+}
+const browseRouteEstimate=selectedBrowseEstimate();
+let activeRouteEstimate=Object.assign({},browseRouteEstimate);
+let routeEstimateUnavailable=false;
+let lastRouteAnnouncement='';
+
 // ---- summary setup ----
 const typeLabel={shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
 document.getElementById('sum-type').innerHTML=typeLabel[r.type];
@@ -268,12 +303,19 @@ let userSetLocation=false; // true once the customer actively picks a pickup/dro
 function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
 const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
+function hasExactRouteInputs(){
+  return !isTrip && !isShared && (state.locFrom!==AREA_FROM || state.locTo!==AREA_TO);
+}
 
 function onLoc(){
   // exact spot when given; otherwise the settled area (payload, summary, map and the
   // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
   state.locFrom = locFrom.value.trim() || AREA_FROM;
   state.locTo   = locTo.value.trim()   || AREA_TO;
+  if(!hasExactRouteInputs()){
+    activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    routeEstimateUnavailable=false;
+  }
   checkExactRadius();
   render(); checkWhere(); scheduleRouteMap();
 }
@@ -482,26 +524,15 @@ function renderRouteMap(){
     svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#24758A','A',a.name)}${pin(pb,'#EC3A24','B',b.name)}</svg>`;
   }
 
-  // distance/time bar — shows the REAL Google route once it resolves, falling
-  // back to the offline straight-line estimate while loading / if routing fails.
-  const truck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg>';
-  const info='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
-  const minsToText=mins=>{ const h=Math.floor(mins/60), m=mins%60; if(h<=0) return `${Math.max(5,m)} min`; return m>=8?`${h}h ${m}m`:`${h}h`; };
-  const setBar=(km,durText)=>{
-    const meta = km!=null
-      ? `${truck}<span><b>${km} km</b> · about ${durText} drive</span>`
-      : `${info}<span>Distance confirmed on request</span>`;
-    const bar=document.getElementById('rm-bar');
-    if(bar) bar.innerHTML =
-      `<div class="rm-route"><span>${short(fromName)}</span><span class="ar">→</span><span>${short(toName)}</span></div>`+
-      `<div class="rm-meta">${meta}</div>`;
-  };
   const localKm = T ? T.kmBetween(fromName, toName) : null;
-  setBar(localKm, localKm!=null ? T.durationText(localKm) : null);
+  // Customer copy comes only from the selected/server estimate. The map below is visual context;
+  // its independent route result must never replace the figures Search handed into Booking.
+  paintCustomerRouteEstimate();
 
   // Clean Google map (route line, no panel/markers) with a loading state; SVG fallback.
   const canvas=document.getElementById('rm-canvas');
-  const showFallback=()=>{ canvas.innerHTML = svg; if(!svg) host.hidden=true; };
+  canvas.hidden=false;
+  const showFallback=()=>{ canvas.innerHTML = svg; if(!svg) canvas.hidden=true; };
   if(window.CH_MAP && window.CH_MAP.renderRoute){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
@@ -512,7 +543,6 @@ function renderRouteMap(){
       stopLabels: [fromName, toName],
       onFail: showFallback,
       onRoute: ({km, durationMin}) => {
-        setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
         // summary total always matches the route actually shown on the map. Once the engine has
         // actually DELIVERED an estimate this session, its own figure already prices the real
@@ -1292,6 +1322,18 @@ function buildEstimateIntent(){
 // instant a pax/vehicle/route change lands, ahead of the next re-estimate.
 function intentSig(intent){ return JSON.stringify(intent); }
 function currentIntentSig(){ return intentSig(buildEstimateIntent()); }
+function routeInputSig(intent){
+  if(!intent) return 'none';
+  const legs=Array.isArray(intent.legs) ? intent.legs.map(l=>({from:l.from,to:l.to}))
+    : Array.isArray(intent.travelDays) ? intent.travelDays.map(l=>({from:l.from,to:l.to})) : [];
+  return JSON.stringify({product:intent.product,legs});
+}
+function currentRouteInputSig(){ return routeInputSig(buildEstimateIntent()); }
+function routeFingerprint(value){
+  let hash=2166136261;
+  for(const ch of String(value||'')){ hash^=ch.charCodeAt(0); hash=Math.imul(hash,16777619); }
+  return `r${(hash>>>0).toString(36)}`;
+}
 // Called once a live estimate settles (Task 3 wires the fetch); sig is the intent signature it
 // was requested for, so an out-of-order or now-stale response can never silently override the total.
 function adoptEngineEstimate(est, sig){
@@ -1309,6 +1351,42 @@ function adoptEngineEstimate(est, sig){
 // guard calcTotal() applies, exposed so render()/the pay gate don't each re-derive it.
 function currentEngineEst(){
   return (engineEst && engineEst.intentSig===currentIntentSig()) ? engineEst : null;
+}
+
+function announceRouteEstimate(text){
+  if(!text || text===lastRouteAnnouncement) return;
+  lastRouteAnnouncement=text;
+  const live=document.getElementById('route-estimate-status');
+  if(live) live.textContent=text;
+}
+function adoptCustomerRouteEstimate(est, sig){
+  if(!hasExactRouteInputs() || sig!==currentIntentSig()) return;
+  const leg=est && Array.isArray(est.legs) ? est.legs.find(l=>l && (l.distanceKm>0 || l.durationMin>0)) : null;
+  if(!leg){
+    routeEstimateUnavailable=true;
+    announceRouteEstimate(window.CH && CH.routeEstimate
+      ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+      : 'We’ll confirm the journey time after reviewing your locations.');
+    return;
+  }
+  const next={distanceKm:leg.distanceKm,durationMin:leg.durationMin};
+  const material=!!(window.CH && CH.routeEstimate && CH.routeEstimate.isMaterialRouteChange(activeRouteEstimate,next));
+  activeRouteEstimate={
+    distanceKm:next.distanceKm,
+    durationMin:next.durationMin,
+    state:est.estimated===true?'estimated':(material?'exact':'browse'),
+    estimateId:'engine-v2',
+    routeSig:routeInputSig(buildEstimateIntent())
+  };
+  routeEstimateUnavailable=false;
+  if(material){
+    const text=CH.routeEstimate.formatRouteEstimate(activeRouteEstimate);
+    announceRouteEstimate(text);
+    if(typeof window.chTrack==='function') window.chTrack('route_estimate_update',{
+      surface:'booking',estimate_state:activeRouteEstimate.state,material:true,
+      route_fingerprint:routeFingerprint(activeRouteEstimate.routeSig)
+    });
+  }
 }
 
 // True while a fresh estimate is on its way for an itinerary the figure we hold no longer
@@ -1356,12 +1434,27 @@ function requestEstimate(){
   if(sig === lastRequestedSig) return;
   lastRequestedSig = sig;
   estimatePending = true;
+  if(hasExactRouteInputs()) routeEstimateUnavailable=false;
   window.CH_PRICING.estimate(intent, {
     onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
     // Flag off, a network hiccup, or a timeout — the local formula is already what's on
     // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
-    onUnavailable: function(){ estimatePending = false; render(); }
+    onUnavailable: function(reason){
+      estimatePending = false;
+      if(sig===currentIntentSig() && hasExactRouteInputs()){
+        routeEstimateUnavailable=true;
+        const text=window.CH && CH.routeEstimate
+          ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+          : 'We’ll confirm the journey time after reviewing your locations.';
+        announceRouteEstimate(text);
+        if(typeof window.chTrack==='function') window.chTrack('route_estimate_unavailable',{
+          surface:'booking',reason:reason||'unknown',
+          route_fingerprint:routeFingerprint(currentRouteInputSig())
+        });
+      }
+      render();
+    }
   });
 }
 
@@ -1389,6 +1482,7 @@ function handleEngineEstimate(est, sig){
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
+  adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
   if(priorCents!=null && est.totalCents > priorCents && !switchedProductOrVehicle(sig, engineEst.intentSig)){
     state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
@@ -1506,6 +1600,34 @@ function setNum(el, next){
 function shortPlaceLabel(place){
   return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
 }
+function customerRouteEstimateText(){
+  if(isTrip) return '';
+  if(hasExactRouteInputs()){
+    if(routeEstimateUnavailable){
+      return window.CH && CH.routeEstimate
+        ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+        : 'We’ll confirm the journey time after reviewing your locations.';
+    }
+    const routeChanged=activeRouteEstimate.routeSig!==currentRouteInputSig();
+    if(estimatePending && routeChanged) return 'Updating journey estimate…';
+  }
+  return window.CH && CH.routeEstimate
+    ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
+    : '';
+}
+function paintCustomerRouteEstimate(){
+  const text=customerRouteEstimateText();
+  const summary=document.getElementById('sum-route-estimate');
+  if(summary){ summary.textContent=text; summary.hidden=!text; }
+  const bar=document.getElementById('rm-bar');
+  if(!bar || isTrip) return;
+  const from=shortPlaceLabel(state.locFrom || r.stops[0]);
+  const to=shortPlaceLabel(state.locTo || r.stops[r.stops.length-1]);
+  const clock='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  bar.innerHTML=
+    `<div class="rm-route"><span>${acEsc(from)}</span><span class="ar">→</span><span>${acEsc(to)}</span></div>`+
+    `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
+}
 function render(){
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
@@ -1518,6 +1640,7 @@ function render(){
   if(_sn && routeNamePrefix && !isTrip){
     _sn.textContent = `${routeNamePrefix} · ${shortPlaceLabel(_from)} → ${shortPlaceLabel(_to)}`;
   }
+  paintCustomerRouteEstimate();
   document.getElementById('sum-date').textContent = state.flexDate ? 'To confirm (12h before)' : (state.date ? state.date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—');
   document.getElementById('sum-time').textContent = state.flexTime ? 'To confirm (12h before)' : (state.dep ? fmtTime(state.dep) : '—');
   document.getElementById('sum-bags').textContent = state.bags>0 ? (state.bags+' large bag'+(state.bags>1?'s':'')) : 'No large bags';

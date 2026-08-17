@@ -17,8 +17,13 @@ describe('loadTransfers', () => {
     expect(q.car).toBe(59);
     expect(q.van).toBe(81);
   });
-  it('finds a shared corridor where one exists', () => {
-    expect(T.sharedOption('kandy', 'ella')).toBeTruthy();      // hill-line
-    expect(T.sharedOption('cmb-airport', 'galle')).toBeNull(); // no shared corridor
+  it('offers a shared seat only on a leg we sell', () => {
+    expect(T.sharedOption('sigiriya', 'kandy').seat).toBe(19.99); // catalogue leg
+    expect(T.sharedOption('kandy', 'ella')).toBeNull();           // hill-line adjacency only
+    expect(T.sharedOption('cmb-airport', 'galle')).toBeNull();    // no corridor at all
+  });
+  it('still resolves corridor membership for the ride board', () => {
+    expect(T.corridorFor('kandy', 'ella')).toBeTruthy();
+    expect(T.corridorFor('cmb-airport', 'galle')).toBeNull();
   });
 });
