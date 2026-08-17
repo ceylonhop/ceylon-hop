@@ -13,9 +13,12 @@ const saturday = nextIsoWeekday(6); // the corridor's other service day
 const monday = nextIsoWeekday(1); // off-schedule (not a service day)
 
 const valid = {
-  corridorId: 'hill-line', // Kandy → Nuwara Eliya → Ella, $21/seat
+  // A leg we actually sell: Negombo → Sigiriya, $27.49/seat, boards 07:30.
+  // (hill-line's Kandy→Ella was withdrawn — corridor adjacency is no longer an offer.)
+  from: 'Negombo',
+  to: 'Sigiriya / Dambulla',
   date: wednesday, // Wednesday — a shared service day (corridors run Wed & Sat)
-  time: '08:00',
+  time: '07:30',
   seats: 2,
   customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
@@ -28,19 +31,84 @@ async function postShared(app: ReturnType<typeof createApp>, body: unknown) {
   });
 }
 
+// A shared seat is sold on an explicit catalogue of directed legs (departureRepo
+// SHARED_PRODUCTS), not on any pair that shares a corridor. Pricing follows: a corridor
+// holds several products at different prices (airport-cultural sells Negombo->Sigiriya at
+// $27.49 AND Sigiriya->Kandy at $19.99), so corridor.seatPrice cannot price a booking.
+describe('POST /bookings/shared — catalogue pricing', () => {
+  const leg = {
+    from: 'Negombo',
+    to: 'Sigiriya / Dambulla',
+    date: wednesday,
+    time: '07:30',
+    seats: 2,
+    customer: valid.customer,
+  };
+
+  it('prices from the product, not the corridor seat price', async () => {
+    const res = await postShared(createApp(), leg);
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.mode).toBe('shared');
+    expect(b.total).toBe(5498); // 2 × $27.49 — NOT 2 × $19 (airport-cultural seat)
+  });
+
+  it('prices a second product on the SAME corridor at its own price', async () => {
+    const res = await postShared(createApp(), {
+      ...leg, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 1,
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).total).toBe(1999); // $19.99, same corridor as above
+  });
+
+  it('accepts the product boarding time, not just the corridor departure', async () => {
+    // Sigiriya->Kandy boards at 11:30; the corridor's own time is 07:30 (when the van
+    // leaves CMB). Validating against the corridor rejected every intermediate leg.
+    const res = await postShared(createApp(), {
+      ...leg, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 1,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it('400s a pair that shares a corridor but is not sold', async () => {
+    const res = await postShared(createApp(), { ...leg, from: 'Kandy', to: 'Ella' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_a_shared_route');
+  });
+
+  it('400s the reverse of a sold leg', async () => {
+    const res = await postShared(createApp(), {
+      ...leg, from: 'Sigiriya / Dambulla', to: 'Negombo',
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_a_shared_route');
+  });
+});
+
 describe('POST /bookings/shared', () => {
-  it('books a shared seat (201) priced seats × corridor price', async () => {
+  it('books a shared seat (201) priced seats × catalogue price', async () => {
     const app = createApp();
     const res = await postShared(app, valid);
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.mode).toBe('shared');
-    expect(b.total).toBe(4200); // 2 seats × $21 (hill-line)
+    expect(b.total).toBe(5498); // 2 seats × $27.49 (negombo-sigiriya)
   });
 
-  it('400 for an unknown corridor', async () => {
+  it('ignores a bogus corridorId — the catalogue leg decides', async () => {
+    // corridorId is no longer the resolver: a corridor can hold several products at
+    // different prices, so from/to identifies the booking and carries its own corridor.
     const res = await postShared(createApp(), { ...valid, corridorId: 'nope' });
+    expect(res.status).toBe(201);
+    expect((await res.json()).input.corridorId).toBe('airport-cultural');
+  });
+
+  it('400s when from/to are missing, since a corridor alone cannot be priced', async () => {
+    const { from: _f, to: _t, ...noRoute } = valid;
+    void _f; void _t;
+    const res = await postShared(createApp(), { ...noRoute, corridorId: 'airport-cultural' });
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_a_shared_route');
   });
 
   it('400 for a malformed / non-calendar date (would otherwise bypass the past-date rule)', async () => {
@@ -52,31 +120,31 @@ describe('POST /bookings/shared', () => {
 
   it('resolves the corridor from from/to (what the website sends)', async () => {
     const app = createApp();
-    const { corridorId: _omit, ...byRoute } = valid;
-    void _omit;
-    const res = await postShared(app, { ...byRoute, from: 'Kandy', to: 'Ella', seats: 1 });
+    const res = await postShared(app, { ...valid, seats: 1 });
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.mode).toBe('shared');
-    expect(b.input.corridorId).toBe('hill-line');
-  });
-
-  it('resolves a mid-corridor pair (neither endpoint is the corridor terminus)', async () => {
-    const app = createApp();
-    const { corridorId: _o2, ...byRoute } = valid;
-    void _o2;
-    // Negombo → Kandy both sit on airport-cultural, but neither is its first/last stop
-    const res = await postShared(app, { ...byRoute, from: 'Negombo', to: 'Kandy', time: '07:30', seats: 1 });
-    expect(res.status).toBe(201);
-    const b = await res.json();
     expect(b.input.corridorId).toBe('airport-cultural');
   });
 
-  it('400 when from/to has no matching corridor', async () => {
-    const app = createApp();
-    const { corridorId: _o, ...byRoute } = valid;
-    void _o;
-    const res = await postShared(app, { ...byRoute, from: 'Nowhere', to: 'Elsewhere' });
+  it('sells a mid-corridor leg (neither endpoint is the corridor terminus)', async () => {
+    // Negombo → Sigiriya sits inside airport-cultural (CMB … Kandy); travellers do board
+    // mid-corridor, so an intermediate leg is a first-class product with its own price.
+    const res = await postShared(createApp(), { ...valid, seats: 1 });
+    expect(res.status).toBe(201);
+    expect((await res.json()).total).toBe(2749);
+  });
+
+  it('400s Negombo → Kandy: both on the corridor, but not a product', async () => {
+    // The van does run Negombo → … → Kandy, but we sell it as two legs and never priced
+    // the through-journey. Adjacency used to make it bookable at the corridor's $19.
+    const res = await postShared(createApp(), { ...valid, from: 'Negombo', to: 'Kandy' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_a_shared_route');
+  });
+
+  it('400 when from/to is not a catalogue leg', async () => {
+    const res = await postShared(createApp(), { ...valid, from: 'Nowhere', to: 'Elsewhere' });
     expect(res.status).toBe(400);
   });
 

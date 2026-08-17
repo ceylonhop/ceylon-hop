@@ -406,7 +406,7 @@ export const rideLists = pgTable(
     minSeats: integer('min_seats').notNull(),
     capacity: integer('capacity').notNull(),
     seatPrice: integer('seat_price').notNull(), // minor units
-    status: text('status').notNull().default('gathering'), // gathering|confirmed|expired|cancelled
+    status: text('status').notNull().default('gathering'), // pending_payment|gathering|confirmed|expired|cancelled
     note: text('note'),
     cutoffAt: timestamp('cutoff_at', { withTimezone: true }).notNull(),
     createdBy: text('created_by'), // customer subject
@@ -432,7 +432,9 @@ export const rideListMembers = pgTable(
     preferredTime: text('preferred_time'),
     seats: integer('seats').notNull().default(1),
     preapprovalRef: text('preapproval_ref'), // card-on-file token id (null while faked)
-    status: text('status').notNull().default('held'), // held|charged|charge_failed|scratched
+    preapprovalOrderId: text('preapproval_order_id').unique(),
+    preapprovalExpiresAt: timestamp('preapproval_expires_at', { withTimezone: true }),
+    status: text('status').notNull().default('held'), // preapproval_pending|preapproval_failed|held|charged|charge_failed|scratched
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   },
   // one membership per traveller per list (also the re-join upsert target)

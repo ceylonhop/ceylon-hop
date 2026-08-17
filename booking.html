@@ -536,6 +536,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-wa .tx b{display:block;font-size:.85rem;color:#0c6b39}
   .summary .s-body{padding:20px}
   .summary h3{font-size:1.1rem;line-height:1.2;margin-bottom:.3rem;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3}
+  .summary .s-estimate{margin:.55rem 0 .9rem;color:var(--ink-soft);font-size:.82rem;line-height:1.45}
+  .route-estimate-status{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
   .s-row{display:flex;justify-content:space-between;font-size:.88rem;padding:.45rem 0;color:var(--ink-soft)}
   .s-row b{color:var(--ink);font-weight:600}
   .s-div{height:1px;background:var(--line);margin:8px 0}
@@ -936,6 +938,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="s-body">
         <span class="pill pill-teal pill-dot" id="sum-type" style="margin-bottom:8px"></span>
         <h3 id="sum-name"></h3>
+        <p class="s-estimate" id="sum-route-estimate"></p>
+        <div class="route-estimate-status" id="route-estimate-status" aria-live="polite" aria-atomic="true"></div>
         <div class="s-row"><span>Date</span><b id="sum-date">—</b></div>
         <div class="s-row"><span>Departure</span><b id="sum-time">—</b></div>
         <div class="s-row"><span>Luggage</span><b id="sum-bags">—</b></div>
@@ -1044,15 +1048,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <script src="site.js?v=4183d938b0"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
-<script src="routes-data.js?v=83197e77d0"></script>
-<script src="transfers-data.js?v=a7eaed83fa"></script>
+<script src="routes-data.js?v=ec2f43a11a"></script>
+<script src="transfers-data.js?v=0a8cfb8f1a"></script>
 <!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
      it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
+<script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=baf6b655b9"></script>
+<script src="booking.js?v=8d5f4671ec"></script>
 </body>
 </html>

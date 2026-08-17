@@ -60,15 +60,24 @@ describe('renderPricingBlock', () => {
 });
 
 describe('applySharedPrices', () => {
-  it('rewrites a tampered shared-route price back to its corridor seat', () => {
+  it('rewrites a tampered shared-route price back to its catalogue price', () => {
     const T = loadTransfers();
     const src = readFileSync(routesPath, 'utf8');
-    // Tamper ella-yala's price; ella-yala is on the ella-east corridor (seat 23).
-    const tampered = src.replace(/(id:'ella-yala',[\s\S]*?price:\s*)\d+/, '$1999');
+    // Tamper ella-yala's price. It is now priced from the shared catalogue ($22.99),
+    // not its corridor's flat seat — corridor adjacency no longer sets any price.
+    const tampered = src.replace(/(id:'ella-yala',[\s\S]*?price:\s*)[\d.]+/, '$1999');
     expect(tampered).toContain('price:999');
     const out = applySharedPrices(tampered, T);
     expect(out).not.toContain('price:999');
-    expect(out).toMatch(/id:'ella-yala',[\s\S]*?price:23/);
+    expect(out).toMatch(/id:'ella-yala',[\s\S]*?price:22\.99/);
+  });
+
+  // Catalogue prices carry cents, and the rewrite regex used to stop at the decimal point:
+  // a second pass matched `price:27` and produced `price:27.49.49`.
+  it('does not corrupt a price with cents on a repeat pass', () => {
+    const T = loadTransfers();
+    const src = readFileSync(routesPath, 'utf8');
+    expect(applySharedPrices(applySharedPrices(src, T), T)).not.toMatch(/price:\d+\.\d+\./);
   });
 
   it('leaves an already-correct catalogue untouched (idempotent)', () => {

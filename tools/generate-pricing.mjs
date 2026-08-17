@@ -32,6 +32,8 @@ export function renderPricingBlock(p) {
     `const DEPOSIT_CAP = ${p.depositCap};`,
     `const EXTRAS = ${j(p.extras)};`,
     `const CORRIDOR_SEAT = ${j(p.corridorSeat)};`,
+    `const SEAT_PRICING = ${j(p.seatPricing)};`,
+    `const SHARED_PRODUCTS = ${j(p.sharedProducts)};`,
     PRICING_END,
   ].join('\n');
 }
@@ -75,7 +77,9 @@ function replaceRoutePrice(src, id, seat) {
   const idRe = new RegExp(`id:\\s*'${id.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}'`);
   const m = idRe.exec(src);
   if (!m) throw new Error(`route id '${id}' not found in routes-data.js`);
-  const priceRe = /price:\s*\d+/;
+  // Catalogue prices carry cents ($27.49), so the decimal part must be part of the match.
+  // Without it a second run matched only `price:27` and produced `price:27.49.49`.
+  const priceRe = /price:\s*\d+(?:\.\d+)?/;
   const after = src.slice(m.index);
   const pm = priceRe.exec(after);
   if (!pm) throw new Error(`no price field after shared route '${id}'`);

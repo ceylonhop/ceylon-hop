@@ -128,9 +128,10 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const app = createApp({ adapter, email, conciergeTasks, bookings, adminApiKey: 'smoke-key' });
 
     const shared = {
-      corridorId: 'hill-line',
+      from: 'Negombo', // a catalogue leg: Negombo → Sigiriya, $27.49, boards 07:30
+      to: 'Sigiriya / Dambulla',
       date: nextIsoWeekday(3), // Wednesday — a shared service day (corridors run Wed & Sat)
-      time: '08:00',
+      time: '07:30',
       seats: 2,
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
     };

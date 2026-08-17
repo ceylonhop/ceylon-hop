@@ -61,7 +61,55 @@ const CORRIDOR_ROUTES: CorridorRoute[] = [
   { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14, days: SHARED_SERVICE_DAYS, times: ['09:00', '14:00'] },
   { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
   { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24, days: SHARED_SERVICE_DAYS, times: ['08:30'] },
+  // The southbound airport run. Added 2026-08-16 with the catalogue: no existing corridor
+  // joined the south coast to CMB, so Mirissa/Weligama -> Airport could not be represented
+  // at all. Seeded by seedCorridors() at boot — no migration.
+  { id: 'south-airport', stops: ['Mirissa', 'Weligama', 'Colombo city', 'Colombo Airport (CMB)'], seat: 30, days: SHARED_SERVICE_DAYS, times: ['14:45'] },
 ];
+
+// ────────────────────────────────────────────────────────────────────────────
+//  THE SHARED CATALOGUE — what we actually sell (owner-supplied, 2026-08-16,
+//  from the live product pages at ceylonhop.com/trip/*).
+//
+//  A corridor's `stops` describe the ROAD a van travels. They are NOT an offer.
+//  Reading adjacency as an offer is what put a shared seat on 32 of 44 trip
+//  pages, 16 of them the reverse of the direction the van actually runs.
+//
+//  Offers come from here and nowhere else: explicit, DIRECTED legs, each with
+//  its own price and its own boarding time (a corridor's single departure time
+//  is when the van leaves its FIRST stop, which is wrong for every other stop).
+// ────────────────────────────────────────────────────────────────────────────
+export interface SharedProduct {
+  id: string; // marketed product id (several legs may share one)
+  corridorId: string;
+  fromPlace: string;
+  toPlace: string;
+  seatPrice: number; // minor units, per adult
+  time: string; // boarding time AT `fromPlace`
+  pickup: string | null; // named boarding point, as published
+}
+
+export const SHARED_PRODUCTS: SharedProduct[] = [
+  // Northbound: CMB 07:00 -> Negombo 07:30 -> Sigiriya 11:30 -> Kandy ~14:00
+  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:00', pickup: 'CMB Airport' },
+  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Negombo', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:30', pickup: 'Zen Cafe, Negombo' },
+  { id: 'sigiriya-kandy', corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy', seatPrice: 1999, time: '11:30', pickup: 'Barista Cafe, Sigiriya' },
+  // Ella run: Ella 09:00 -> Tissamaharama 11:15 (marketed as "Yala")
+  { id: 'ella-yala', corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Yala', seatPrice: 2299, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  // Southbound: Mirissa 14:45 -> Weligama 15:00 -> Colombo 18:30 -> CMB 19:00-20:00
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '14:45', pickup: 'Barista Cafe, Mirissa' },
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '15:00', pickup: 'Nomad Cafe, Weligama' },
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo city', seatPrice: 2999, time: '14:45', pickup: 'Barista Cafe, Mirissa' },
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo city', seatPrice: 2999, time: '15:00', pickup: 'Nomad Cafe, Weligama' },
+];
+
+const normPlace = (s: string) => s.trim().toLowerCase();
+
+/** The scheduled product for a DIRECTED leg, or null. Adjacency is not an offer. */
+export function sharedProductFor(from: string, to: string): SharedProduct | null {
+  const f = normPlace(from), t = normPlace(to);
+  return SHARED_PRODUCTS.find((p) => normPlace(p.fromPlace) === f && normPlace(p.toPlace) === t) ?? null;
+}
 
 export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
   id: c.id,
