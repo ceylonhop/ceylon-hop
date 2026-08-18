@@ -59,7 +59,8 @@ phase 3 rather than shipping then deleting it.
 
 This is the one phase that touches a live booking path, so it goes first and alone.
 
-1. **Seeded lists.** A scheduled departure becomes a list Ceylon Hop creates in advance.
+1. **Seeded lists.** A scheduled departure becomes a list Ceylon Hop creates in advance,
+   **16 weeks ahead** (owner, 2026-08-16).
    Seeding job creates lists for the next N weeks on each catalogue leg's Wed & Sat, at
    the catalogue price, with the product's boarding time.
    - `minSeats` stays 3 → seeded lists still need to fill (matches D1 reality).
@@ -131,18 +132,62 @@ Drop `shared_departure`, `shared_request`, `sweepStaleSharedHolds`; fold
 
 ---
 
-## 6. Sequencing and why
+## 6. Sequencing — REVISED 2026-08-16 after two findings
+
+### 6.1 Finding A — the ride board never takes a card
+
+`api/src/app.ts:141` is `deps.paygw ?? new FakeTokenizedPaymentAdapter()`, and `server.ts`
+passes no `paygw`. **Production runs the fake.** No real tokenized adapter exists in the
+repo — only `FakeTokenizedPaymentAdapter` implements the interface. So today, joining a
+list tokenizes nothing and the cutoff charges nothing, while the UI says *"your card is
+saved, charged only when the van is confirmed."*
+
+This would have made the original phase 1 ship a disaster: `POST /bookings/shared` takes
+**real money** through PayHere checkout, and retiring it in favour of the join flow would
+have moved all shared revenue onto a stub.
+
+**Owner has a separate thread building real card-on-file for the board.** This plan does
+NOT touch `tokenizedPayments.ts`, the `paygw` wiring, or the join payment path — that work
+is theirs, and phase 1 waits on it.
+
+### 6.2 Finding B — the board already accepts any date
+
+`POST /board` has **no service-day gating at all** (zero references to `serviceDays` /
+`isoWeekday` / `not_a_service_day`). Design A's core promise — *a van runs on any date once
+3 travellers commit* — is **already true in the backend.** The Wed & Sat rule is enforced
+only by `POST /bookings/shared`, the path design A stops using.
+
+So the route page does not depend on phase 1 at all. It can be built honestly today.
+
+### 6.3 Revised order
 
 ```
-merge 5 commits ──► phase 1 (booking unification) ──► phase 2 (route page)
-   money bugs          the risky one, alone            the visible one
-   fixed now                                                │
-                                                            ▼
-                                             phase 3 (reachability) ──► phase 4 (cleanup)
+merge #535 ──► phase 2 (route page)  ──► phase 3 (reachability)
+  money bugs     UNBLOCKED — the board          nav, homepage,
+  fixed now      already does any-date          missing pages
+                          │
+   [owner's card thread] ─┴──► phase 1 (retire POST /bookings/shared) ──► phase 4 (cleanup)
+                                  needs real card capture first
 ```
 
-Phase 1 before phase 2 because the page promises "any date runs" — untrue until the
-booking gate is gone. Phase 4 last because it is irreversible.
+Phase 2 moved ahead of phase 1: it is unblocked, it is the visible half, and it is the half
+that stops the page contradicting itself. Phase 1 became a *cleanup* — removing a payment
+path — rather than the enabling step, and it cannot start until the owner's card work lands.
+
+---
+
+## 6.4 Owner decisions, 2026-08-16
+
+| | Decision |
+|---|---|
+| Seeding horizon | **16 weeks** of Wed & Sat lists per catalogue leg |
+| `board.html` | **Kept** — the cross-route "see it all in one place" view. It stops being the *only* place pooling lives, not a page that goes away. |
+| Card capture | **Separate owner thread.** Out of scope here. |
+
+**Consequence of 16 weeks + real cards (for the card thread to consider, not this plan):**
+someone joining a list 16 weeks out holds a token until 48h before departure
+(`CUTOFF_HOURS_BEFORE = 48`). Whether PayHere tokens survive ~4 months, and whether that
+hold is acceptable to the customer, is a payment-side question.
 
 ---
 

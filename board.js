@@ -317,7 +317,14 @@
     manageTokens: {},     // code → manageToken (from create/join)
     fromOptions: [],      // union of from-names seen (filter select, never shrinks)
     toOptions: [],        // ditto for drop-offs — the two selects narrow to one corridor
-    filter: { from: 'all', to: 'all', mine: false },
+    /* Pre-filtered by ?from=&to= so a route page can hand a traveller straight to their
+       own route. Without this, "See who's going" landed on the unfiltered board and they
+       had to find the route again — the page knew what they wanted and threw it away.
+       Place NAMES, matching the /board query and what the route page emits. */
+    filter: (function () {
+      var q = new URLSearchParams(location.search);
+      return { from: q.get('from') || 'all', to: q.get('to') || 'all', mine: false };
+    })(),
     detailId: null,
     pendingCredential: null,
     gisReady: false
@@ -674,14 +681,21 @@
     var countHtml = state.loadFailed
       ? '<span class="count count-unknown">rides unavailable</span>'
       : '<span class="count"><b>' + open + '</b> gathering now</span>';
+    /* The options come from the lists we got back, so a filter that matches nothing has no
+       option to select and the dropdown renders BLANK next to a Clear button — the traveller
+       arriving from a route page would see an empty filter and no rides, with no clue the two
+       were related. Always include the active value, even when it returned nothing. */
+    var withActive = function (opts, active) {
+      return active !== 'all' && opts.indexOf(active) === -1 ? opts.concat([active]) : opts;
+    };
     filtersEl.innerHTML =
       '<label class="fsel"><span>Leaving from</span>' +
       '<select id="f-from"><option value="all">Anywhere</option>' +
-      state.fromOptions.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      withActive(state.fromOptions, f.from).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
       '</select></label>' +
       '<label class="fsel"><span>Going to</span>' +
       '<select id="f-to"><option value="all">Anywhere</option>' +
-      state.toOptions.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      withActive(state.toOptions, f.to).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
       '</select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
       ((f.from !== 'all' || f.to !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
