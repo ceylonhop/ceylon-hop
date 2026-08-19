@@ -1350,6 +1350,33 @@
     return { phone: phone, city: city, address: address };
   }
 
+  // The hand-off screen (2026-08-18). Shown BEFORE the request goes out, the way pay.html does
+  // it: pressing Continue must land on "Taking you to PayHere…" rather than on a button that
+  // merely dims. It hides the sheet's steps rather than joining them — see the comment on
+  // #pay-handoff in board.html for why it is not a fifth mstep.
+  function showHandoff() {
+    var el = document.getElementById('pay-handoff');
+    if (!el) return;
+    document.getElementById('steps').hidden = true;
+    ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) {
+      var m = document.getElementById(id);
+      if (m) { m.dataset.phHidden = m.hidden ? '1' : '0'; m.hidden = true; }
+    });
+    el.hidden = false;
+  }
+  // Restores exactly what was on screen before, so a failed request drops the payer back where
+  // they were instead of stranding them behind a spinner.
+  function hideHandoff() {
+    var el = document.getElementById('pay-handoff');
+    if (!el || el.hidden) return;
+    el.hidden = true;
+    document.getElementById('steps').hidden = false;
+    ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) {
+      var m = document.getElementById(id);
+      if (m && m.dataset.phHidden !== undefined) { m.hidden = m.dataset.phHidden === '1'; delete m.dataset.phHidden; }
+    });
+  }
+
   function handoffToPayHere(payment) {
     if (!payment || !payment.checkoutUrl || !payment.fields) throw new Error('invalid_payment_handoff');
     try { sessionStorage.setItem('ch_ride_payment', payment.orderId || ''); } catch (e) {}
@@ -1374,6 +1401,9 @@
     var seats = selectedSeats();
     var payment = mySeatsOn(current) ? undefined : paymentDetails();
     if (!mySeatsOn(current) && !payment) { delete btn.dataset.busy; return; }
+    // Only when a card approval is actually coming: a member already holding seats re-submits
+    // without ever touching PayHere, and showing them a gateway hand-off would be a lie.
+    if (payment) showHandoff();
     var req;
     if (creating) {
       var c = pairCorridor(cFrom.value, cTo.value);
@@ -1396,9 +1426,11 @@
     req.then(function (data) {
       delete btn.dataset.busy;
       if (data && data.status === 'payment_required') {
+        // Leave the hand-off screen up — we are about to navigate away to PayHere.
         handoffToPayHere(data.payment);
         return;
       }
+      hideHandoff();
       var L = normalizeList(data.list);
       if (data.manageToken) state.manageTokens[L.code] = data.manageToken;
       state.byCode[L.code] = L;
@@ -1422,6 +1454,9 @@
       showSuccess(L);
     }).catch(function (e) {
       delete btn.dataset.busy;
+      // Before any per-status handling: those branches call setStep()/toast() and assume the
+      // steps are on screen.
+      hideHandoff();
       if (e.status === 401) { toast('Please sign in to continue'); state.me = null; setStep(panels().indexOf('mstep-1')); }
       else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }

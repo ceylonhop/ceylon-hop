@@ -110,3 +110,71 @@ test('the PayHere return shows success only after the API reports signed approva
   expect(polls).toBeGreaterThanOrEqual(2);
   await expect(page).not.toHaveURL(/ridePayment/);
 });
+
+// The hand-off screen (2026-08-18). The board used to POST straight to PayHere from Continue,
+// so the first thing a payer saw was a teal page branded PayHere showing a card-approval amount
+// they had no reason to expect. pay.html has named the merchant line since 2026-08-05; this is
+// the same screen on the board.
+test('Continue lands on the PayHere hand-off screen, naming what they will see there', async ({ page }) => {
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await stubSignedInBoard(page, async (route) => {
+    await held; // hold the request open so the hand-off screen is observable, not a flash
+    return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
+      status: 'payment_required',
+      payment: {
+        provider: 'payhere-tokenized', orderId: 'RBPA-hold',
+        checkoutUrl: 'https://sandbox.payhere.lk/pay/preapprove',
+        fields: { merchant_id: '1234567', order_id: 'RBPA-hold', hash: 'SIGNED_SERVER_HASH' },
+      },
+    }) });
+  });
+  await page.route('https://sandbox.payhere.lk/pay/preapprove', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere card approval</h1>' }));
+
+  await page.goto('/board.html');
+  await page.locator(`[data-view="${list.code}"]`).click();
+  await page.locator('[data-detail-join]').last().click();
+  await page.fill('#pay-phone', '+44 7700 900123');
+  await page.fill('#pay-city', 'London');
+  await page.fill('#pay-address', '12 River Street');
+  await page.locator('#sign-btn').click();
+
+  // Visible BEFORE the response arrives — the payer must not be left on a dimmed button.
+  const handoff = page.locator('#pay-handoff');
+  await expect(handoff).toBeVisible();
+  await expect(handoff).toContainText('Taking you to PayHere');
+  await expect(handoff).toContainText('Ceylon Hop (PVT) LTD');
+  // The amount PayHere shows is a card approval, not the fare — saying so here is the whole point.
+  await expect(handoff).toContainText('not your ride fare');
+  await expect(page.locator('#mstep-2')).toBeHidden();
+  // The step rail goes too: .steps sets display:flex, which beats the hidden attribute, so this
+  // guards the [hidden] rule that makes hiding it actually work.
+  await expect(page.locator('#steps')).toBeHidden();
+
+  release();
+  await expect(page.getByRole('heading', { name: 'PayHere card approval' })).toBeVisible();
+});
+
+test('a failed join restores the form instead of stranding the payer on the hand-off screen', async ({ page }) => {
+  await stubSignedInBoard(page, async (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'internal_error' }) }));
+
+  await page.goto('/board.html');
+  await page.locator(`[data-view="${list.code}"]`).click();
+  await page.locator('[data-detail-join]').last().click();
+  await page.fill('#pay-phone', '+44 7700 900123');
+  await page.fill('#pay-city', 'London');
+  await page.fill('#pay-address', '12 River Street');
+  await page.locator('#sign-btn').click();
+
+  await expect(page.locator('#toast')).toContainText("Couldn't add your name");
+  // toBeAttached first: toBeHidden() alone passes for an element that does not exist, so
+  // without it this test would go green on a build that never had the hand-off screen.
+  await expect(page.locator('#pay-handoff')).toBeAttached();
+  await expect(page.locator('#pay-handoff')).toBeHidden();
+  // The form they must correct is back, with the steps rail restored alongside it.
+  await expect(page.locator('#mstep-2')).toBeVisible();
+  await expect(page.locator('#steps')).toBeVisible();
+  await expect(page.locator('#sign-btn')).toBeVisible();
+});
