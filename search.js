@@ -353,19 +353,28 @@ if (shared) {
      other pickup, so a traveller flying in can't tell the same van collects them at arrivals.
      List the whole sequence, as the product page does, and mark the stop they searched. */
   const stops = shared.pickups || [];
+  /* Design A (docs/superpowers/plans/2026-08-16-unified-route-page.md): a shared seat is a
+     DATE WITH NAMES ON IT. The route page says so; this card used to say "a reserved seat on
+     our scheduled service · Runs Wed & Sat", so the same van was described two different ways
+     depending on which URL you landed on. Same words in both places now.
+
+     Most catalogue legs have a route page and will eventually be served from there, but three
+     (weligama→cmb-airport, mirissa→colombo, weligama→colombo) have no page at all, so this
+     card is the only place they are ever described. It has to be right on its own. */
   const pickupRows = stops.length > 1
-    ? `<div class="sm">${ICONS.departs} Runs ${shared.freqText} — pick-up points:</div>
+    ? `<div class="sm">${ICONS.departs} Pick-up points:</div>
        <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
-    : `<div class="sm">${ICONS.departs} Departs ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''} · ${shared.freqText}</div>`;
+    : `<div class="sm">${ICONS.departs} Departs ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
   sharedCard = `
   <article class="opt opt-shared">
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">A reserved seat on our scheduled service</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
     </div>
-    <p class="o-desc">Hop a reserved seat on our <b>${shared.corridorLabel}</b> service. Same AC comfort, a friendly Pro&nbsp;Hopper guide on board — for a fraction of the price.</p>
+    <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
+    <p class="shared-runs">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       ${pickupRows}
