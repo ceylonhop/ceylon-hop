@@ -244,6 +244,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .sheet-head .x:hover{border-color:var(--ink);color:var(--ink)}
 .sheet-body{padding:18px 28px 28px}
 .steps{display:flex;gap:6px;margin:0 0 18px}
+/* display:flex above beats the `hidden` attribute, so the PayHere hand-off could not hide
+   the step rail without this — a redirect is not a step the payer is part-way through. */
+.steps[hidden]{display:none}
 .step-dot{height:4px;border-radius:2px;flex:1;background:var(--cream-deep);transition:.3s}
 .step-dot.on{background:var(--teal)}
 /* create-a-list form */
@@ -590,6 +593,37 @@ body.detail-open .detail{display:block}
     font-family:inherit;font-weight:700;font-size:.95rem;color:var(--teal-deep)}
   .board-more:active{background:var(--paper)}
 }
+
+/* ---- PayHere hand-off (2026-08-18) ----
+   Ported from pay.html, which has shown this since 2026-08-05. The board used to POST straight
+   to PayHere from the Continue button, so the first thing a payer saw was a teal page branded
+   PayHere with an amount they did not recognise. Naming the merchant line they will actually
+   land on turns that surprise into a confirmation.
+   Copied rather than shared: the base .pp-loading lives in ticket.css, which this page does not
+   load — the same reason pay.html copies quote.css's rows into its own style block. */
+.pp-loading{text-align:center;padding:34px 0 16px}
+.pp-loading h2{font-size:1.5rem;margin-bottom:2px}
+.pp-loading .lead{font-size:.92rem;color:var(--ink-soft);max-width:38ch;margin:8px auto 0;line-height:1.55}
+/* The hand-off drawn rather than described: us -> them, with something travelling the gap.
+   Motion standard: the dot travels, it does not blink. */
+.pp-hop{display:flex;align-items:center;justify-content:center;gap:13px;margin:2px 0 20px}
+.pp-hop .chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--paper);font-weight:700;font-size:.82rem;
+  color:var(--ink);white-space:nowrap;box-shadow:var(--shadow-s)}
+.pp-hop .chip img{width:19px;height:19px;border-radius:5px;display:block}
+.pp-hop .track{position:relative;width:64px;height:2px;background:var(--line);border-radius:2px;overflow:hidden;flex:none}
+.pp-hop .track:after{content:'';position:absolute;top:0;left:-26px;width:26px;height:2px;
+  background:var(--accent);animation:pphop 1.25s cubic-bezier(.45,0,.35,1) infinite}
+@keyframes pphop{0%{left:-26px}100%{left:64px}}
+@media (prefers-reduced-motion:reduce){ .pp-hop .track:after{animation:none;left:19px} }
+.pp-expect{margin:22px auto 0;max-width:340px;border:1px solid var(--line);border-radius:12px;
+  background:var(--wash,#faf8f5);padding:12px 14px;text-align:left}
+.pp-expect b{display:block;font-size:.63rem;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+.pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
+/* The amount PayHere shows on a preapproval is a card-approval figure, NOT the fare. A payer
+   who reads "$32.50" here and meets a different number there assumes something is wrong. */
+.pp-expect .amt-note{display:block;margin-top:4px;font-size:.82rem;color:var(--ink-soft);line-height:1.45}
 </style>
 </head>
 <body>
@@ -837,6 +871,25 @@ body.detail-open .detail{display:block}
         <button class="btn btn-ghost btn-block" id="see-list" hidden style="margin-top:10px">See your list on the board</button>
         <p class="whisper" style="margin-top:.85rem">We'll email you the second someone signs under you.</p>
       </div>
+
+      <!-- PayHere hand-off. An OVERLAY, deliberately not a fifth mstep: setStep() hardcodes the
+           four panel ids and drives the step dots off panels(), so a fifth would miscount the
+           dots and make a redirect look like a step the payer has to complete. -->
+      <div class="pp-loading" id="pay-handoff" hidden>
+        <div class="pp-hop">
+          <span class="chip"><img src="img/brand-c.svg" alt="" width="19" height="19">Ceylon Hop</span>
+          <span class="track"></span>
+          <span class="chip">🔒 PayHere</span>
+        </div>
+        <h2>Taking you to PayHere…</h2>
+        <p class="lead">You’ll approve your card on PayHere’s own secure page, then come straight
+          back here. We never see your card number.</p>
+        <div class="pp-expect"><b>On the next screen you should see</b>
+          <span class="who">Ceylon Hop (PVT) LTD</span>
+          <span class="amt-note">A small card-approval amount — this is not your ride fare.
+            Nothing is charged unless the list fills.</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -846,6 +899,6 @@ body.detail-open .detail{display:block}
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=664cba7583" defer></script>
+<script src="board.js?v=245c968ea0" defer></script>
 </body>
 </html>
