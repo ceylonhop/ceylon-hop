@@ -14,6 +14,7 @@ import {
   type AddMemberArgs,
   type RideListWithMembers,
   type ListFilter,
+  type RidePreapproval,
 } from './rideListRepo';
 
 // Postgres impl of RideListRepo — same shape/patterns as PostgresDepartureRepo.
@@ -34,6 +35,7 @@ interface MemberRow {
   id: string; list_id: string; position: number; sub: string; first_name: string; country: string;
   email: string; photo_url: string | null; preferred_time: string | null; seats: number;
   preapproval_ref: string | null; status: string; joined_at: Date;
+  preapproval_order_id: string | null; preapproval_expires_at: Date | null;
 }
 
 const toList = (r: ListRow): RideList => ({
@@ -47,6 +49,8 @@ const toMember = (r: MemberRow): RideMember => ({
   id: r.id, listId: r.list_id, position: r.position, sub: r.sub, firstName: r.first_name,
   country: r.country, email: r.email, photoUrl: r.photo_url, preferredTime: r.preferred_time,
   seats: r.seats, preapprovalRef: r.preapproval_ref, status: r.status as MemberStatus,
+  preapprovalOrderId: r.preapproval_order_id,
+  preapprovalExpiresAt: r.preapproval_expires_at ? new Date(r.preapproval_expires_at) : null,
   joinedAt: new Date(r.joined_at),
 });
 
@@ -80,10 +84,10 @@ export class PostgresRideListRepo implements RideListRepo {
       try {
         const rows = await this.sql<ListRow[]>`
           insert into ride_list
-            (code, corridor_id, from_place, to_place, date, slot, min_seats, capacity, seat_price, note, cutoff_at, created_by, created_at, updated_at)
+            (code, corridor_id, from_place, to_place, date, slot, min_seats, capacity, seat_price, status, note, cutoff_at, created_by, created_at, updated_at)
           values
             (${code}, ${args.corridorId}, ${args.fromPlace}, ${args.toPlace}, ${args.date}, ${args.slot},
-             ${args.minSeats}, ${args.capacity}, ${args.seatPrice}, ${args.note}, ${args.cutoffAt}, ${args.createdBy}, ${now}, ${now})
+             ${args.minSeats}, ${args.capacity}, ${args.seatPrice}, ${args.initialStatus ?? 'gathering'}, ${args.note}, ${args.cutoffAt}, ${args.createdBy}, ${now}, ${now})
           returning *`;
         return toList(rows[0]);
       } catch (err) {
@@ -185,6 +189,99 @@ export class PostgresRideListRepo implements RideListRepo {
       returning id`;
     if (rows.length) await this.touch(listId, new Date());
     return rows.length > 0;
+  }
+
+  async beginMemberPreapproval(
+    listId: string,
+    args: AddMemberArgs,
+    orderId: string,
+    expiresAt: Date,
+    now: Date = new Date(),
+  ): Promise<RideMember | null> {
+    const rows = await this.sql<MemberRow[]>`
+      insert into ride_list_member
+        (list_id, position, sub, first_name, country, email, photo_url, preferred_time, seats,
+         preapproval_ref, preapproval_order_id, preapproval_expires_at, status, joined_at)
+      select
+        ${listId},
+        (select coalesce(max(position), 0) + 1 from ride_list_member where list_id = ${listId}),
+        ${args.sub}, ${args.firstName}, ${args.country}, ${args.email}, ${args.photoUrl ?? null},
+        ${args.preferredTime ?? null}, ${args.seats}, null, ${orderId}, ${expiresAt},
+        'preapproval_pending', ${now}
+      where (
+        select coalesce(sum(seats), 0) from ride_list_member
+        where list_id = ${listId} and sub <> ${args.sub}
+          and (status in ('held', 'charged') or (status = 'preapproval_pending' and preapproval_expires_at > ${now}))
+      ) + ${args.seats} <= (select capacity from ride_list where id = ${listId})
+      on conflict (list_id, sub) do update set
+        first_name = excluded.first_name,
+        country = excluded.country,
+        email = excluded.email,
+        photo_url = excluded.photo_url,
+        preferred_time = coalesce(excluded.preferred_time, ride_list_member.preferred_time),
+        seats = excluded.seats,
+        preapproval_order_id = excluded.preapproval_order_id,
+        preapproval_expires_at = excluded.preapproval_expires_at,
+        status = 'preapproval_pending',
+        joined_at = excluded.joined_at
+      returning *`;
+    if (!rows[0]) return null;
+    await this.touch(listId, now);
+    return toMember(rows[0]);
+  }
+
+  async getByPreapprovalOrder(orderId: string): Promise<RidePreapproval | null> {
+    const rows = await this.sql<(MemberRow & { list_json: ListRow })[]>`
+      select m.*, row_to_json(l) as list_json
+      from ride_list_member m join ride_list l on l.id = m.list_id
+      where m.preapproval_order_id = ${orderId}`;
+    if (!rows[0]) return null;
+    return { list: toList(rows[0].list_json), member: toMember(rows[0]) };
+  }
+
+  async approveMemberPreapproval(
+    orderId: string,
+    ref: string,
+    now: Date = new Date(),
+  ): Promise<RideListWithMembers | null> {
+    const found = await this.getByPreapprovalOrder(orderId);
+    if (!found) return null;
+    if (found.member.status === 'held' || found.member.status === 'charged') {
+      await this.sql`
+        update ride_list set status = 'gathering', updated_at = ${now}
+        where id = ${found.list.id} and status = 'pending_payment'`;
+      return this.getById(found.list.id);
+    }
+    const rows = await this.sql<MemberRow[]>`
+      update ride_list_member m
+      set preapproval_ref = ${ref}, preapproval_expires_at = null, status = 'held', joined_at = ${now}
+      where m.preapproval_order_id = ${orderId}
+        and m.status = 'preapproval_pending'
+        and m.preapproval_expires_at > ${now}
+        and (
+          select coalesce(sum(seats), 0) from ride_list_member
+          where list_id = m.list_id and sub <> m.sub and status in ('held', 'charged')
+        ) + m.seats <= (select capacity from ride_list where id = m.list_id)
+      returning m.*`;
+    if (!rows[0]) {
+      await this.failMemberPreapproval(orderId, now);
+      return this.getById(found.list.id);
+    }
+    await this.sql`
+      update ride_list set status = 'gathering', updated_at = ${now}
+      where id = ${found.list.id} and status = 'pending_payment'`;
+    return this.getById(found.list.id);
+  }
+
+  async failMemberPreapproval(orderId: string, now: Date = new Date()): Promise<void> {
+    const found = await this.getByPreapprovalOrder(orderId);
+    if (!found) return;
+    await this.sql`
+      update ride_list_member set status = 'preapproval_failed'
+      where preapproval_order_id = ${orderId} and status = 'preapproval_pending'`;
+    await this.sql`
+      update ride_list set status = 'cancelled', updated_at = ${now}
+      where id = ${found.list.id} and status = 'pending_payment'`;
   }
 
   async setStatus(id: string, status: RideListStatus): Promise<void> {

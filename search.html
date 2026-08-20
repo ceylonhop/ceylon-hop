@@ -30,7 +30,7 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<script src="consent.js?v=355294e1eb" defer></script>
+<script src="consent.js?v=c2f4a12415" defer></script>
 <script src="beta-notice.js?v=5a5356a2c2" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
@@ -167,6 +167,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-price{display:flex;align-items:baseline;gap:.5rem;margin:.2rem 0 .2rem}
   .shared-price .amt{font-family:var(--display);font-size:2.6rem;font-weight:700;line-height:1}
   .shared-price .per{color:var(--ink-soft);font-weight:600}
+  /* The one line that explains the whole product, same wording as the route page. */
+  .shared-runs{font-size:.9rem;font-weight:600;margin:-.1rem 0 .6rem}
+  .shared-runs b{color:var(--accent-deep,#24758A)}
   .shared-save{display:inline-flex;align-items:center;gap:.4rem;background:rgba(10,185,182,.12);color:var(--teal-deep);font-weight:700;font-size:.82rem;padding:.35rem .7rem;border-radius:999px;margin-bottom:14px}
   .shared-save svg{width:15px;height:15px;flex:none}
   .shared-meta{display:grid;gap:10px;margin:6px 0 18px}
@@ -204,6 +207,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .noshare .ns-ico svg .wp{fill:currentColor;stroke:none}
   .noshare b{display:block;margin-bottom:.2rem}
   .noshare p{font-size:.92rem;color:var(--ink-soft);margin:0}
+  /* Pick-up points for a run that boards in more than one place. The stop the traveller
+     actually searched is marked, so the list reads as "your van, and where it stops"
+     rather than a timetable they have to decode. */
+  .pickup-list{list-style:none;margin:.1rem 0 0;padding:0 0 0 26px;display:grid;gap:.15rem}
+  .pickup-list li{font-size:.92rem;color:var(--ink-soft);display:flex;gap:.5rem;align-items:baseline}
+  .pickup-list li b{color:var(--ink);font-variant-numeric:tabular-nums;min-width:4.2em}
+  .pickup-list li.is-yours{color:var(--ink);font-weight:600}
+  .pickup-list li.is-yours::after{content:"your stop";font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--teal-deep);background:var(--cream-deep);border-radius:99px;padding:.1rem .45rem}
 
   .reassure{display:flex;gap:26px;flex-wrap:wrap;margin-top:38px;padding-top:26px;border-top:1px solid var(--line);color:var(--ink-soft);font-size:.9rem;font-weight:500}
   .reassure .ra{display:flex;align-items:center;gap:.5rem}
@@ -263,13 +274,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div data-footer></div>
 
 <script src="site.js?v=4183d938b0"></script>
-<script src="routes-data.js?v=83197e77d0"></script>
-<script src="transfers-data.js?v=a7eaed83fa"></script>
+<script src="routes-data.js?v=ec2f43a11a"></script>
+<script src="transfers-data.js?v=0a8cfb8f1a"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <!-- engine prices for routes that aren't in the baked table (see search.js) -->
 <script src="ch-pricing.js?v=a2511d67e7"></script>
+<script src="route-estimate.js?v=247a93e794"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="search.js?v=983fa74658"></script>
+<script src="search.js?v=bb7389787a"></script>
 </body>
 </html>

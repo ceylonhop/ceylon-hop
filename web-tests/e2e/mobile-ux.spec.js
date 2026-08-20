@@ -137,7 +137,7 @@ test('mobile exact location map stays compact and readable', async ({ page }) =>
   expect(barBox.height).toBeGreaterThanOrEqual(48);
   expect(noteBox.y).toBeGreaterThan(barBox.y);
   expect(navBox.y).toBeGreaterThan(noteBox.y);
-  await expect(page.locator('#rm-bar')).toContainText('145 km');
+  await expect(page.locator('#rm-bar')).toContainText('Approx. 150 km');
 });
 
 test.describe('320px customer-page layouts', () => {
