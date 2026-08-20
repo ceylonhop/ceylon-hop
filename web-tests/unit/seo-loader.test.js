@@ -14,8 +14,8 @@ describe('loadTransfers', () => {
     // Exact-cent core fares finish independently under the 2.5% cap.
     expect(q.rawCar).toBe(60.38);
     expect(q.rawVan).toBe(81.08);
-    expect(q.car).toBe(59);
-    expect(q.van).toBe(81);
+    expect(q.car).toBe(59.99); // $60.38 → the $60 threshold
+    expect(q.van).toBe(79.99); // $81.08 → the $80 threshold
   });
   it('offers a shared seat only on a leg we sell', () => {
     expect(T.sharedOption('sigiriya', 'kandy').seat).toBe(19.99); // catalogue leg

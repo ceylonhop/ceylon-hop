@@ -4,6 +4,15 @@
 // contract for the refactor: the new engine must reproduce every one deep-equal.
 // NEVER regenerate these to make a diff pass — a golden diff is a bug in new code.
 //
+// REGENERATED 2026-08-19 — the ONLY legitimate reason to do so: the final-price policy itself
+// changed by owner decision (priceFinish.ts, threshold finishing replacing the $10 charm grid),
+// so these snapshots' finishing rows are the thing under revision rather than the contract being
+// broken. Every changed figure was read and checked against the new rule before regenerating:
+// $88.55→$88.00, $188.62→$188.00 and $535.22→$535.00 drop cents where no threshold is in reach;
+// $60.80→$59.99 crosses one the old grid could not see; the van14 case keeps $149.00 exactly and
+// only renames its strategy. Core fares, buffers, floors and extras are unchanged throughout.
+// The standing rule still holds for every other diff: a golden change is a bug in new code.
+//
 // SECOND PURPOSE (2026-08-09) — the zero-discount gate for founder manual discounts,
 // Task 1 of docs/superpowers/plans/2026-08-09-founder-manual-discounts.md. Discounts add
 // an arithmetic step between core pricing and finishing; this corpus is what proves that

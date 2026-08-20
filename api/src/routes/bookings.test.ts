@@ -104,8 +104,8 @@ describe('POST /bookings/single', () => {
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.total).toBe(7850); // raw 7849¢ → nearest-50¢ final price
-    expect(b.amountDueNow).toBe(7850);
+    expect(b.total).toBe(7800); // raw 7849¢ → no threshold in reach, cents dropped
+    expect(b.amountDueNow).toBe(7800);
   });
 
   // ── Rate-lock (spec 2026-07-11 §4): a booking carrying a live web quote id is priced against
@@ -130,20 +130,20 @@ describe('POST /bookings/single', () => {
   it('an EXPIRED locked quote id falls back to the live card (the 7-day hold has lapsed)', async () => {
     const { app, quoteId } = await withLockedQuote(new Date(Date.now() - 86_400_000), 20); // expired yesterday
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
-    expect(b.total).toBe(7850); // live card raw 7849¢ → nearest-50¢ final price
+    expect(b.total).toBe(7800); // live card raw 7849¢ → no threshold in reach, cents dropped
   });
 
   it('an unknown quote id is ignored — prices on the live card, never crashes', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId: 'no-such-quote' })).json();
-    expect(b.total).toBe(7850);
+    expect(b.total).toBe(7800);
   });
 
   it('prices payload extras through the engine (GL-3)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['luggage', 'front'] });
     const b = await res.json();
-    expect(b.total).toBe(9150); // raw 9149¢ incl. extras → nearest-50¢ final price
+    expect(b.total).toBe(8999); // raw 9149¢ incl. extras → crosses the $90 threshold
   });
 
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
@@ -466,7 +466,7 @@ describe('a Maps outage must not silently reprice', () => {
     const app = createApp(); // fake adapter: its estimate is its normal output, never flagged
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     const b = await res.json();
-    expect(b.total).toBe(7850);
+    expect(b.total).toBe(7800);
     const checkout = await app.request(`/bookings/${b.id}/checkout`, {
       method: 'POST',
       headers: { authorization: `Bearer ${b.checkoutToken}` },
