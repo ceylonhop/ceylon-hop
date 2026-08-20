@@ -7,6 +7,19 @@ import { blockLiveApi } from './_stubs.js';
 // index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
 test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
+/* This file OWNS consent behaviour — grant on arrival, a stored refusal, the ASK_FIRST strip,
+   the choice carrying across properties. playwright.config.js seeds `ceylonhop_consent` for the
+   whole suite so the bar cannot intercept clicks in the ~70 specs that care about something
+   else; inheriting that here would mean every test starting from a decided state, which is the
+   one thing these tests must not do. So the file clears it and each test sets what it needs.
+
+   Registered before the tests' own addInitScript calls, and init scripts run in registration
+   order, so a test that seeds its own choice still wins. */
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { try { localStorage.removeItem('ceylonhop_consent'); } catch (e) {} });
+});
+
+
 // ─────────────────────────────────────────────────────────────────────────────────────────
 //  Analytics on the properties that shipped after Phase 0 — pay, quote, manage (2026-08-07).
 //
