@@ -55,7 +55,14 @@ const routeEstimate = q => formatRouteEstimate({
 const MIN_SEATS = 3; // domain/rideList.ts policyForCorridor — three names run the van
 
 function optionCards(T, from, to, q, shared, p) {
-  const bookHref = `${p}booking.html?from=${from}&to=${to}`;
+  // booking.js only reads from/to when `mode` is set; without it the page falls through to
+  // getRoute(id), finds nothing, and location.replace('plan.html')s -- so a CTA missing these
+  // params silently dumps the traveller in the planner. Same contract as search.js's bookUrl:
+  // the display price plus the unfinished fare, so extras are added before the finishing pass.
+  const bookHref = `${p}booking.html?${new URLSearchParams({
+    from, to, mode: 'private', vehicle: 'car',
+    price: String(q.car), rawPrice: String(q.rawCar),
+  })}`;
   const priv = `
       <article class="opt opt-private">
         <span class="opt-tag">Most flexible</span>
