@@ -23,7 +23,16 @@ test('route page renders with nav, both options priced, and books directly', asy
   const cta = page.getByRole('link', { name: /book private transfer/i }).first();
   await expect(cta).toBeVisible();
   await cta.click();
-  await expect(page).toHaveURL(/booking\.html\?from=kandy&to=ella/);
+  // Assert where the traveller ENDS UP, not where they pass through. This used to be a bare
+  // toHaveURL(/booking\.html/) straight after the click, which polls -- and booking.html's
+  // URL exists for a few ms before booking.js redirects. It matched that flicker and passed
+  // for the whole time the CTA was broken (it landed on plan.html). Waiting for the page to
+  // settle first is what makes this able to fail.
+  await page.waitForLoadState('networkidle');
+  await expect(page).toHaveURL(/booking\.html\?.*from=kandy.*to=ella/);
+  await expect(page).not.toHaveURL(/plan\.html/);
+  // and it arrives priced, rather than as a bare from/to booking.js cannot resolve
+  expect(new URL(page.url()).searchParams.get('mode')).toBe('private');
 });
 
 test('a route we DO sell shared states the seat price and its boarding points', async ({ page }) => {

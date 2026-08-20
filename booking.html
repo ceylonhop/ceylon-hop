@@ -510,13 +510,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* summary */
   .summary{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;max-height:calc(100vh - 110px);overflow-y:auto}
   .summary .s-route{background:var(--pc-teal);padding:16px 20px}
-  .summary .s-route .pt{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.92rem;color:var(--ink)}
+  .summary .s-route .pt{position:relative;display:flex;align-items:center;gap:10px;font-weight:600;font-size:.92rem;color:var(--ink)}
   /* Safety net for a name the shortener cannot split — one long comma-less place has no segments
      to drop, so cap the rows instead of letting them push the price out of the panel. */
   .summary .s-route .pt > span:not(.pin){min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
   .summary .s-route .pin{width:11px;height:11px;border-radius:50%;border:2.5px solid var(--teal-deep);background:#fff;flex:none}
   .summary .s-route .pt.to .pin{background:var(--saffron);border-color:var(--saffron)}
-  .summary .s-route .seg{height:16px;margin-left:4px;border-left:2px dashed var(--teal-deep);opacity:.45}
+  /* The rail joining the two pins is drawn as two elastic halves — one hanging off the pick-up
+     pin, one rising from the drop-off pin — so it always spans the exact gap between them,
+     however either place name wraps. .seg is now only the spacer that sets that gap. The old
+     fixed-height dashed border on .seg couldn't do this: it sat half a pixel left of the pin
+     column, its last dash was clipped mid-stroke, and the run drifted low and detached the
+     moment a long airport name went to two lines (the pins centre on their own row). Both
+     gradients are anchored at the seam and the lower one opens on a gap, so the dash rhythm
+     runs unbroken across the join. */
+  .summary .s-route .seg{height:16px}
+  .summary .s-route .pt.from::after,
+  .summary .s-route .pt.to::before{content:"";position:absolute;left:4.5px;width:2px;opacity:.45}
+  .summary .s-route .pt.from::after{top:calc(50% + 10px);bottom:-8px;
+    background:repeating-linear-gradient(to top,var(--teal-deep) 0 3px,transparent 3px 7px)}
+  .summary .s-route .pt.to::before{top:-8px;bottom:calc(50% + 10px);
+    background:repeating-linear-gradient(to bottom,transparent 0 4px,var(--teal-deep) 4px 7px)}
   /* trip mode: sidebar route lists every stop with the leg's travel date (or flexible) */
   .summary .s-route.s-trip{display:flex;flex-direction:column}
   .summary .s-route.s-trip .st-stop{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.9rem;color:var(--ink);padding:1px 0}
@@ -1057,7 +1071,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
+<!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=59e05b1ba4"></script>
+<script src="booking.js?v=a181ad6f52"></script>
 </body>
 </html>
