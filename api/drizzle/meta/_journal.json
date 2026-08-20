@@ -337,6 +337,13 @@
       "when": 1786923660000,
       "tag": "0047_quote_show_leg_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786923720000,
+      "tag": "0048_enable_rls_public",
+      "breakpoints": true
     }
   ]
 }
