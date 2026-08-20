@@ -244,6 +244,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .sheet-head .x:hover{border-color:var(--ink);color:var(--ink)}
 .sheet-body{padding:18px 28px 28px}
 .steps{display:flex;gap:6px;margin:0 0 18px}
+/* The reversal line is reassurance, not the offer — it must not compete with the two
+   sentences above it that say what is actually charged. */
+.deal .deal-fine{font-size:.86rem;opacity:.82;margin-top:6px}
 .step-dot{height:4px;border-radius:2px;flex:1;background:var(--cream-deep);transition:.3s}
 .step-dot.on{background:var(--teal)}
 /* create-a-list form */
@@ -775,17 +778,31 @@ body.detail-open .detail{display:block}
         </div>
         <div class="deal">
           <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          No ride fare today</h4>
-          <p>Approve your card securely with PayHere. We charge <b id="m-cost">$24.00</b><span id="m-cost-break"></span> <b>only if this list reaches <span id="m-min">3</span> seats</b> by the cutoff. PayHere may briefly show a small card-verification charge and reverse it. If the ride does not run, no ride fare is charged.</p>
+          You're not paying today</h4>
+          <!-- Rewritten 2026-08-18: the old copy made four money statements in one paragraph
+               ("No ride fare today", "We charge $X", "a small card-verification charge", "no ride
+               fare is charged") and a reader could not tell which applied to them. One sentence
+               per outcome now: what happens now, if it fills, if it doesn't. -->
+          <p>We only take your card details now — nothing is charged yet.</p>
+          <p><b>If this list reaches <span id="m-min">3</span> seats</b> by the cutoff, we charge
+            <b id="m-cost">$24.00</b><span id="m-cost-break"></span>. If it doesn't, you pay nothing.</p>
+          <p class="deal-fine">While PayHere approves your card you may see a small temporary
+            charge from them. It is reversed automatically and is not your ride fare.</p>
         </div>
         <div class="frow" style="margin-bottom:10px">
+          <div class="fld"><label for="pay-cc">Country code</label>
+            <select id="pay-cc" autocomplete="tel-country-code"></select></div>
           <div class="fld"><label for="pay-phone">Phone</label>
-            <input id="pay-phone" type="tel" autocomplete="tel" placeholder="+44 7700 900123"></div>
+            <input id="pay-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123"></div>
+        </div>
+        <!-- City pairs with address rather than with the phone: .frow is a 2-up grid, and the
+             dial code took the phone's old partner, which left city alone beside a gap. -->
+        <div class="frow" style="margin-bottom:12px">
           <div class="fld"><label for="pay-city">Billing city</label>
             <input id="pay-city" autocomplete="address-level2" placeholder="London"></div>
+          <div class="fld"><label for="pay-address">Billing address</label>
+            <input id="pay-address" autocomplete="street-address" placeholder="Street and number"></div>
         </div>
-        <div class="fld" style="margin-bottom:12px"><label for="pay-address">Billing address</label>
-          <input id="pay-address" autocomplete="street-address" placeholder="Street and number"></div>
         <div class="preftime">
           <span class="pref-lbl">Your preferred departure time?</span>
           <div class="pref-opts" id="pref-opts"></div>
@@ -845,7 +862,8 @@ body.detail-open .detail{display:block}
 <!-- ================= TOAST ================= -->
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+<script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=664cba7583" defer></script>
+<script src="board.js?v=f44ee2f2a0" defer></script>
 </body>
 </html>
