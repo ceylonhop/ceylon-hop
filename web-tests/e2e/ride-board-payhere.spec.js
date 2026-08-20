@@ -41,8 +41,9 @@ test('a self-service join requires billing details and posts the approval to Pay
   await stubSignedInBoard(page, async (route) => {
     joins++;
     const body = route.request().postDataJSON();
+    // Dial code and number are separate fields now, joined into one E.164-ish string.
     expect(body.payment).toEqual({
-      phone: '+44 7700 900123', city: 'London', address: '12 River Street',
+      phone: '+447700900123', city: 'London', address: '12 River Street',
     });
     return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
       status: 'payment_required',
@@ -69,7 +70,8 @@ test('a self-service join requires billing details and posts the approval to Pay
   await expect(page.locator('#toast')).toContainText('Add your billing details');
   expect(joins).toBe(0);
 
-  await page.fill('#pay-phone', '+44 7700 900123');
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '7700 900123');
   await page.fill('#pay-city', 'London');
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
@@ -111,6 +113,62 @@ test('the PayHere return shows success only after the API reports signed approva
   await expect(page).not.toHaveURL(/ridePayment/);
 });
 
+// Dial code + number (owner, 2026-08-18). One field asking for "+44 7700 900123" gets a local
+// number typed into it as often as not, and PayHere needs the country.
+test('a number typed with its own country code is not prefixed twice', async ({ page }) => {
+  let sent = null;
+  await stubSignedInBoard(page, async (route) => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
+      status: 'payment_required',
+      payment: { provider: 'payhere-tokenized', orderId: 'RBPA-dup',
+        checkoutUrl: 'https://sandbox.payhere.lk/pay/preapprove',
+        fields: { merchant_id: '1234567', order_id: 'RBPA-dup', hash: 'H' } },
+    }) });
+  });
+  await page.route('https://sandbox.payhere.lk/pay/preapprove', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere card approval</h1>' }));
+
+  await page.goto('/board.html');
+  await page.locator(`[data-view="${list.code}"]`).click();
+  await page.locator('[data-detail-join]').last().click();
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '447700900123');   // country code already typed in
+  await page.fill('#pay-city', 'London');
+  await page.fill('#pay-address', '12 River Street');
+  await page.locator('#sign-btn').click();
+
+  await expect(page.getByRole('heading', { name: 'PayHere card approval' })).toBeVisible();
+  expect(sent.payment.phone).toBe('+447700900123');   // not +44447700900123
+});
+
+test('a national leading zero is dropped', async ({ page }) => {
+  let sent = null;
+  await stubSignedInBoard(page, async (route) => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
+      status: 'payment_required',
+      payment: { provider: 'payhere-tokenized', orderId: 'RBPA-zero',
+        checkoutUrl: 'https://sandbox.payhere.lk/pay/preapprove',
+        fields: { merchant_id: '1234567', order_id: 'RBPA-zero', hash: 'H' } },
+    }) });
+  });
+  await page.route('https://sandbox.payhere.lk/pay/preapprove', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere card approval</h1>' }));
+
+  await page.goto('/board.html');
+  await page.locator(`[data-view="${list.code}"]`).click();
+  await page.locator('[data-detail-join]').last().click();
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '07700 900123');
+  await page.fill('#pay-city', 'London');
+  await page.fill('#pay-address', '12 River Street');
+  await page.locator('#sign-btn').click();
+
+  await expect(page.getByRole('heading', { name: 'PayHere card approval' })).toBeVisible();
+  expect(sent.payment.phone).toBe('+447700900123');
+});
+
 // The hand-off screen (2026-08-18). The board used to POST straight to PayHere from Continue,
 // so the first thing a payer saw was a teal page branded PayHere showing a card-approval amount
 // they had no reason to expect. pay.html has named the merchant line since 2026-08-05; this is
@@ -135,7 +193,8 @@ test('Continue lands on the PayHere hand-off screen, naming what they will see t
   await page.goto('/board.html');
   await page.locator(`[data-view="${list.code}"]`).click();
   await page.locator('[data-detail-join]').last().click();
-  await page.fill('#pay-phone', '+44 7700 900123');
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '7700 900123');
   await page.fill('#pay-city', 'London');
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
@@ -163,7 +222,8 @@ test('a failed join restores the form instead of stranding the payer on the hand
   await page.goto('/board.html');
   await page.locator(`[data-view="${list.code}"]`).click();
   await page.locator('[data-detail-join]').last().click();
-  await page.fill('#pay-phone', '+44 7700 900123');
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '7700 900123');
   await page.fill('#pay-city', 'London');
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
