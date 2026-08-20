@@ -2,9 +2,9 @@
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_car_no_pax 1`] = `
 {
-  "amountDueNowCents": 16750,
+  "amountDueNowCents": 16700,
   "currency": "USD",
-  "depositCents": 1675,
+  "depositCents": 1670,
   "lineItems": [
     {
       "amountCents": 6210,
@@ -18,28 +18,28 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_ca
       },
     },
     {
-      "amountCents": -6,
+      "amountCents": -56,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "floor_cents",
       },
     },
   ],
-  "marginEstimateCents": 2180,
-  "priceAdjustmentCents": -6,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 2130,
+  "priceAdjustmentCents": -56,
+  "priceStrategy": "floor_cents",
   "product": "chauffeur",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 16756,
-  "totalCents": 16750,
+  "totalCents": 16700,
   "warnings": [],
 }
 `;
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_van_span_idle 1`] = `
 {
-  "amountDueNowCents": 52900,
+  "amountDueNowCents": 53500,
   "currency": "USD",
   "depositCents": 5000,
   "lineItems": [
@@ -55,21 +55,21 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_va
       },
     },
     {
-      "amountCents": -622,
+      "amountCents": -22,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "charm",
+        "strategy": "floor_cents",
       },
     },
   ],
-  "marginEstimateCents": 6359,
-  "priceAdjustmentCents": -622,
-  "priceStrategy": "charm",
+  "marginEstimateCents": 6959,
+  "priceAdjustmentCents": -22,
+  "priceStrategy": "floor_cents",
   "product": "chauffeur",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 53522,
-  "totalCents": 52900,
+  "totalCents": 53500,
   "warnings": [
     "sightseeing included in chauffeur day rate",
   ],
@@ -78,9 +78,9 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_va
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_all_extras 1`] = `
 {
-  "amountDueNowCents": 10400,
+  "amountDueNowCents": 9999,
   "currency": "USD",
-  "depositCents": 1040,
+  "depositCents": 1000,
   "lineItems": [
     {
       "amountCents": 3985,
@@ -116,30 +116,30 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
       "label": "Waiting fee",
     },
     {
-      "amountCents": 15,
+      "amountCents": -386,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "threshold",
       },
     },
   ],
-  "marginEstimateCents": 6935,
-  "priceAdjustmentCents": 15,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 6534,
+  "priceAdjustmentCents": -386,
+  "priceStrategy": "threshold",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 10385,
-  "totalCents": 10400,
+  "totalCents": 9999,
   "warnings": [],
 }
 `;
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_finishing_bps_rejects_charm 1`] = `
 {
-  "amountDueNowCents": 3100,
+  "amountDueNowCents": 2999,
   "currency": "USD",
-  "depositCents": 310,
+  "depositCents": 300,
   "lineItems": [
     {
       "amountCents": 3099,
@@ -151,30 +151,30 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
       },
     },
     {
-      "amountCents": 1,
+      "amountCents": -100,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "threshold",
       },
     },
   ],
-  "marginEstimateCents": 405,
-  "priceAdjustmentCents": 1,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 304,
+  "priceAdjustmentCents": -100,
+  "priceStrategy": "threshold",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 3099,
-  "totalCents": 3100,
+  "totalCents": 2999,
   "warnings": [],
 }
 `;
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_multi_stop_ride 1`] = `
 {
-  "amountDueNowCents": 5550,
+  "amountDueNowCents": 5500,
   "currency": "USD",
-  "depositCents": 555,
+  "depositCents": 550,
   "lineItems": [
     {
       "amountCents": 5555,
@@ -195,21 +195,21 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
       },
     },
     {
-      "amountCents": -5,
+      "amountCents": -55,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "floor_cents",
       },
     },
   ],
-  "marginEstimateCents": 720,
-  "priceAdjustmentCents": -5,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 670,
+  "priceAdjustmentCents": -55,
+  "priceStrategy": "floor_cents",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 5555,
-  "totalCents": 5550,
+  "totalCents": 5500,
   "warnings": [],
 }
 `;
@@ -245,9 +245,9 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_single_long 1`] = `
 {
-  "amountDueNowCents": 8850,
+  "amountDueNowCents": 8800,
   "currency": "USD",
-  "depositCents": 885,
+  "depositCents": 880,
   "lineItems": [
     {
       "amountCents": 8855,
@@ -259,30 +259,30 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
       },
     },
     {
-      "amountCents": -5,
+      "amountCents": -55,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "floor_cents",
       },
     },
   ],
-  "marginEstimateCents": 1150,
-  "priceAdjustmentCents": -5,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 1100,
+  "priceAdjustmentCents": -55,
+  "priceStrategy": "floor_cents",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 8855,
-  "totalCents": 8850,
+  "totalCents": 8800,
   "warnings": [],
 }
 `;
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_two_legs_spec_example 1`] = `
 {
-  "amountDueNowCents": 6100,
+  "amountDueNowCents": 5999,
   "currency": "USD",
-  "depositCents": 610,
+  "depositCents": 600,
   "lineItems": [
     {
       "amountCents": 3180,
@@ -303,21 +303,21 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
       },
     },
     {
-      "amountCents": 20,
+      "amountCents": -81,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "threshold",
       },
     },
   ],
-  "marginEstimateCents": 2355,
-  "priceAdjustmentCents": 20,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 2254,
+  "priceAdjustmentCents": -81,
+  "priceStrategy": "threshold",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 6080,
-  "totalCents": 6100,
+  "totalCents": 5999,
   "warnings": [
     "Dambulla→Habarana hit the $29 car minimum",
   ],
@@ -414,9 +414,9 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_three_legs_extras 1`] = `
 {
-  "amountDueNowCents": 18850,
+  "amountDueNowCents": 18800,
   "currency": "USD",
-  "depositCents": 1885,
+  "depositCents": 1880,
   "lineItems": [
     {
       "amountCents": 6864,
@@ -454,21 +454,21 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
       "label": "Waiting fee",
     },
     {
-      "amountCents": -12,
+      "amountCents": -62,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "nearest_50_cents",
+        "strategy": "floor_cents",
       },
     },
   ],
-  "marginEstimateCents": 5972,
-  "priceAdjustmentCents": -12,
-  "priceStrategy": "nearest_50_cents",
+  "marginEstimateCents": 5922,
+  "priceAdjustmentCents": -62,
+  "priceStrategy": "floor_cents",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 18862,
-  "totalCents": 18850,
+  "totalCents": 18800,
   "warnings": [
     "Kandy→Nuwara Eliya hit the $49.99 van minimum",
     "Nuwara Eliya→Ella hit the $49.99 van minimum",
@@ -496,13 +496,13 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van1
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
-        "strategy": "charm",
+        "strategy": "threshold",
       },
     },
   ],
   "marginEstimateCents": 1692,
   "priceAdjustmentCents": -340,
-  "priceStrategy": "charm",
+  "priceStrategy": "threshold",
   "product": "private",
   "rateCardVersion": "2026-07-14",
   "subtotalCents": 15240,
