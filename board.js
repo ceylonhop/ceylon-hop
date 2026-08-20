@@ -1117,7 +1117,8 @@
     ALL_STOPS = Object.keys(seen);
   })();
   function placeName(id) { return (T.byId && T.byId[id] && T.byId[id].name) || PLACE_NAMES[id] || id; }
-  cFrom.innerHTML = ALL_STOPS.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
+  cFrom.innerHTML = '<option value="">Choose…</option>'
+    + ALL_STOPS.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
 
   function pairCorridor(a, b) {
     var so = T.corridorFor ? T.corridorFor(a, b) : null;
@@ -1134,12 +1135,21 @@
   var dupeTimer = null;
   function syncCreate() {
     var from = cFrom.value;
+    // Nothing picked yet: offer no destinations and no price rather than the first corridor's,
+    // which would be a number for a route the starter has not chosen.
+    if (!from) {
+      cTo.innerHTML = '<option value="">Choose…</option>';
+      cEst.innerHTML = '&mdash;';
+      if (dupeTimer) clearTimeout(dupeTimer);
+      return;
+    }
     var seen = {};
     (T.CORRIDORS || []).filter(function (c) { return c.stops.indexOf(from) !== -1; })
       .forEach(function (c) { c.stops.forEach(function (id) { if (id !== from) seen[id] = true; }); });
     var dests = Object.keys(seen);
     var prev = cTo.value;
-    cTo.innerHTML = dests.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
+    cTo.innerHTML = '<option value="">Choose…</option>'
+      + dests.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
     if (dests.indexOf(prev) !== -1) cTo.value = prev;
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
@@ -1168,9 +1178,11 @@
         if (dj) dj.addEventListener('click', function () { var id = dupe.code; closeModal(); openDetail(id, true); });
       }).catch(function () { nudge.hidden = true; });
   }
-  if (cFrom.querySelector('option[value="ella"]')) { cFrom.value = 'ella'; }
+  // Opens unset (owner, 2026-08-18). It used to land on Ella → Mirissa, which reads as a
+  // suggestion rather than a default and quietly biases what people put on the board — and a
+  // starter who did not notice would post the wrong route. A placeholder makes the choice
+  // explicit; syncCreate() leaves the destination list and the price blank until From is picked.
   syncCreate();
-  if (cTo.querySelector('option[value="mirissa"]')) { cTo.value = 'mirissa'; syncCreate(); }
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
   (function () { var d = new Date(Date.now() + 3 * 864e5); cDate.value = d.toISOString().slice(0, 10); cDate.min = new Date(Date.now() + 864e5).toISOString().slice(0, 10); })();
@@ -1337,8 +1349,37 @@
 
   /* ----- commit (create or join) ----- */
   document.getElementById('sign-btn').addEventListener('click', doCommit);
+  // Dial code + number, the shape booking.html has used since it shipped — one field asking for
+  // "+44 7700 900123" gets a local number typed into it as often as not, and PayHere needs the
+  // country. Populated from the SAME window.PHONE_COUNTRIES the booking form reads, so the two
+  // pages can never disagree about a country's code.
+  (function populateDialCodes() {
+    var sel = document.getElementById('pay-cc');
+    var list = window.PHONE_COUNTRIES;
+    if (!sel || !list) return;
+    sel.innerHTML = list.map(function (c) {
+      return '<option value="' + esc(c[2]) + '">' + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
+    }).join('');
+    var lk = list.find(function (c) { return c[1] === 'Sri Lanka'; });
+    if (lk) sel.value = lk[2];
+  })();
+
+  // Joins the two fields into one E.164-ish string for the API. Borrows the two rules booking.js
+  // learned the hard way: a number typed WITH its country code must not have it prefixed twice,
+  // and a national leading zero is dropped.
+  function joinedPhone() {
+    var sel = document.getElementById('pay-cc');
+    var raw = (document.getElementById('pay-phone').value || '').trim();
+    var digits = raw.replace(/[^\d]/g, '');
+    if (/^\s*\+/.test(raw)) return digits ? '+' + digits : '';
+    var code = ((sel && sel.value) || '+94').replace(/[^\d]/g, '');
+    var number = digits.replace(/^0+/, '');
+    if (code && number.indexOf(code) === 0 && number.length > code.length) number = number.slice(code.length);
+    return number ? '+' + code + number : '';
+  }
+
   function paymentDetails() {
-    var phone = (document.getElementById('pay-phone').value || '').trim();
+    var phone = joinedPhone();
     var city = (document.getElementById('pay-city').value || '').trim();
     var address = (document.getElementById('pay-address').value || '').trim();
     if (!phone || !city || !address) {
@@ -1348,6 +1389,33 @@
       return null;
     }
     return { phone: phone, city: city, address: address };
+  }
+
+  // The hand-off screen (2026-08-18). Shown BEFORE the request goes out, the way pay.html does
+  // it: pressing Continue must land on "Taking you to PayHere…" rather than on a button that
+  // merely dims. It hides the sheet's steps rather than joining them — see the comment on
+  // #pay-handoff in board.html for why it is not a fifth mstep.
+  function showHandoff() {
+    var el = document.getElementById('pay-handoff');
+    if (!el) return;
+    document.getElementById('steps').hidden = true;
+    ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) {
+      var m = document.getElementById(id);
+      if (m) { m.dataset.phHidden = m.hidden ? '1' : '0'; m.hidden = true; }
+    });
+    el.hidden = false;
+  }
+  // Restores exactly what was on screen before, so a failed request drops the payer back where
+  // they were instead of stranding them behind a spinner.
+  function hideHandoff() {
+    var el = document.getElementById('pay-handoff');
+    if (!el || el.hidden) return;
+    el.hidden = true;
+    document.getElementById('steps').hidden = false;
+    ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) {
+      var m = document.getElementById(id);
+      if (m && m.dataset.phHidden !== undefined) { m.hidden = m.dataset.phHidden === '1'; delete m.dataset.phHidden; }
+    });
   }
 
   function handoffToPayHere(payment) {
@@ -1374,6 +1442,9 @@
     var seats = selectedSeats();
     var payment = mySeatsOn(current) ? undefined : paymentDetails();
     if (!mySeatsOn(current) && !payment) { delete btn.dataset.busy; return; }
+    // Only when a card approval is actually coming: a member already holding seats re-submits
+    // without ever touching PayHere, and showing them a gateway hand-off would be a lie.
+    if (payment) showHandoff();
     var req;
     if (creating) {
       var c = pairCorridor(cFrom.value, cTo.value);
@@ -1396,9 +1467,11 @@
     req.then(function (data) {
       delete btn.dataset.busy;
       if (data && data.status === 'payment_required') {
+        // Leave the hand-off screen up — we are about to navigate away to PayHere.
         handoffToPayHere(data.payment);
         return;
       }
+      hideHandoff();
       var L = normalizeList(data.list);
       if (data.manageToken) state.manageTokens[L.code] = data.manageToken;
       state.byCode[L.code] = L;
@@ -1422,6 +1495,9 @@
       showSuccess(L);
     }).catch(function (e) {
       delete btn.dataset.busy;
+      // Before any per-status handling: those branches call setStep()/toast() and assume the
+      // steps are on screen.
+      hideHandoff();
       if (e.status === 401) { toast('Please sign in to continue'); state.me = null; setStep(panels().indexOf('mstep-1')); }
       else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
