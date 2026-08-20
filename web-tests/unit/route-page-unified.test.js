@@ -103,3 +103,35 @@ describe('route page — it is the destination, not a signpost', () => {
     }
   });
 });
+
+/* The "Book private transfer" CTA shipped (#543) as `booking.html?from=X&to=Y` with no
+   `mode`. booking.js only takes its from/to branch when `mode` is set -- without it the page
+   falls through to `getRoute(params.get('id'))`, finds nothing, and does
+   location.replace('plan.html'). So the primary CTA on all 44 route pages dumped the
+   traveller in the planner instead of booking the transfer they had just priced.
+
+   The e2e that should have caught it asserted toHaveURL(/booking\.html/) immediately after
+   the click. toHaveURL polls, and booking.html's URL exists for a few ms before the
+   redirect -- so it matched that flicker and passed for the entire time the CTA was broken.
+
+   search.js is the contract: bookUrl({ mode:'private', vehicle, price, rawPrice }). */
+describe('the private CTA links somewhere that actually books', () => {
+  for (const [path, html] of pages) {
+    it(`${path} sends booking.html everything it needs to price the transfer`, () => {
+      // script-stripped: a crawler and a no-JS traveller must get a working CTA too
+      const href = (noJs(html).match(/href="([^"]*booking\.html[^"]*)"/) || [])[1];
+      expect(href, 'no booking.html CTA in the static markup').toBeTruthy();
+      const qs = new URLSearchParams(href.replace(/&amp;/g, '&').split('?')[1]);
+
+      // Without mode, booking.js redirects to plan.html and the priced route is lost.
+      expect(qs.get('mode'), `${path} CTA is missing mode=private`).toBe('private');
+      expect(qs.get('from')).toBeTruthy();
+      expect(qs.get('to')).toBeTruthy();
+      expect(qs.get('vehicle')).toBe('car');
+      // Same money contract search.js uses: display price plus the unfinished fare, so
+      // extras are added before the single finishing pass in calcTotal().
+      expect(Number(qs.get('price')), `${path} price`).toBeGreaterThan(0);
+      expect(Number(qs.get('rawPrice')), `${path} rawPrice`).toBeGreaterThan(0);
+    });
+  }
+});
