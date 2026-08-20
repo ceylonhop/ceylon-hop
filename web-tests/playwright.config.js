@@ -86,11 +86,26 @@ export default defineConfig({
     // only 17 of the 89 spec files use those stubs, and a full-screen dialog reaches all of them.
     // The notice's own behaviour is covered by web-tests/unit/beta-notice.test.js and by
     // beta-notice.spec.js, which opts back out of this state.
+    //
+    // The consent bar is seeded here for the SAME reason, now that it ships on (2026-08-16).
+    // It is position:fixed at the bottom of the viewport with z-index 9999, so it intercepts
+    // pointer events on whatever sits under it — _stubs.js has seeded it away since the bar
+    // first existed, but that only ever reached the spec files using those stubs. With the
+    // bar switched on, three specs that touch nothing to do with consent (route-pages,
+    // ops-trip-calendar, ride-board-payhere) started failing under parallel load while passing
+    // in isolation: the classic shape of a click landing on an overlay. Measured: 0 failures on
+    // main, 3 with the bar on, and 0 again with this seed.
+    //
+    // 'denied' rather than 'granted' so no spec quietly starts handing consent to GTM.
+    // consent.js's own behaviour is covered by web-tests/unit/consent.test.js.
     storageState: {
       cookies: [],
       origins: [{
         origin: `http://localhost:${STATIC_PORT}`,
-        localStorage: [{ name: 'ceylonhop_beta_notice_v2', value: 'dismissed' }],
+        localStorage: [
+          { name: 'ceylonhop_beta_notice_v2', value: 'dismissed' },
+          { name: 'ceylonhop_consent', value: 'denied' },
+        ],
       }],
     },
     trace: 'on-first-retry',

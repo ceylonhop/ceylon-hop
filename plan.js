@@ -866,6 +866,32 @@ function updateSummary(opts={}){
   if(opts.priceFrom != null && window.CH && CH.motion) CH.motion.tweenNumber(amt, opts.priceFrom, next);
   else amt.textContent = next;
 
+  /* The planner's WhatsApp CTA opened an empty chat, so a multi-stop enquiry arrived with no
+     itinerary attached — the one message where the route is the whole question. Same treatment
+     booking.html's CTAs get.
+
+     Read back from what was just rendered (#sum-dates, and `next` above) rather than
+     recomputing: the guide price is a RANGE built by guidePriceRange, and a second
+     implementation of that would be free to drift from the figure the customer is looking at.
+     `next` is not read off the element because a tween may still be counting towards it. */
+  const wa = document.getElementById('sum-wa');
+  if (wa) {
+    const dates = (document.getElementById('sum-dates').textContent || '').trim();
+    const route = seq.map(s => s.place).filter(Boolean).join(' → ');
+    const veh = state.vehicle === 'van' ? 'AC van' : 'AC car';
+    // #sum-dates ALREADY reads "Dates flexible · 2 travellers" — it carries the party size as
+    // well as the dates. Appending pax again produced "2 travellers · 2 travellers"; use that
+    // line as written, and only fall back to composing one when there is no date summary yet.
+    const head = (dates && dates !== '—')
+      ? dates
+      : (state.pax + ' traveller' + (state.pax === 1 ? '' : 's'));
+    const msg = 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
+      + (route ? route + '\n' : '')
+      + head + ' · ' + veh
+      + (next && next !== '~$—' ? '\nGuide price ' + next : '');
+    wa.href = 'https://wa.me/94779669662?text=' + encodeURIComponent(msg);
+  }
+
   // gate the “Next” CTA until every leg has a pick-up AND drop-off (we can't price a blank leg)
   const incompleteLeg = firstIncompleteLeg()>=0;
   const reqBtn=document.getElementById('request-btn');

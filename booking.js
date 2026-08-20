@@ -1541,6 +1541,41 @@ function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPO
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 
+/* WhatsApp CTAs on this page opened an EMPTY chat, so an enquiry landed in the inbox with no
+   idea what the customer had been looking at — ops had to ask the route, the date and the
+   party size back before they could say anything useful. quote.html has prefilled its CTAs
+   since 2026-08-07 (waHref, quote.html:91) and search.js does the same for its route cards;
+   booking.html's two were the ones still bare.
+
+   Built entirely from what is already on screen. WhatsApp shows the customer the draft before
+   they send it, so nothing here is hidden from them and nothing leaves the page unless they
+   press send. Deliberately no name, phone or email — the message is about the TRIP; their
+   identity comes with the WhatsApp account itself.
+
+   Every field falls back rather than throwing: this runs on every render, including before a
+   date is picked or a price exists, and a broken href is worse than a vaguer message. */
+function waTripSummary(){
+  const stops = (isTrip && Array.isArray(tripStops) && tripStops.length) ? tripStops
+    : [state.locFrom || (r && r.stops ? r.stops[0] : ''), state.locTo || (r && r.stops ? r.stops[r.stops.length-1] : '')];
+  const route = stops.filter(Boolean).join(' → ');
+  const when = state.flexDate ? 'Date to confirm'
+    : (state.date ? state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}) : 'Date to confirm');
+  const pax = state.ad + state.ch;
+  const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
+  const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
+  let priced = '';
+  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
+    + (route ? route + '\n' : '')
+    + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
+    + priced;
+}
+function waHrefFor(text){ return 'https://wa.me/94779669662?text=' + encodeURIComponent(text); }
+function updateWaLinks(){
+  const s = document.getElementById('s-wa');
+  if (s) s.href = waHrefFor(waTripSummary());
+}
+
 // price of an AC van for this journey (single transfer or whole trip)
 function vanPrice(){
   if(isTrip) return tripQuoteWithKms('van').total;
@@ -1631,6 +1666,7 @@ function paintCustomerRouteEstimate(){
 function render(){
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
+  updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen
   // live route from the actual entered locations
   const _from = state.locFrom || r.stops[0], _to = state.locTo || r.stops[r.stops.length-1];
   const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = shortPlaceLabel(_from);
@@ -2515,6 +2551,13 @@ function finalizeBooking(apiBooking){
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
   const last=document.getElementById('f-last').value||'';
+  /* Past this point a real booking exists, so the confirmation CTA leads with the REFERENCE
+     rather than a trip summary — ops can look that up and see everything, which beats any
+     description. `ref` falls back to a locally minted code when the API booking is missing
+     (see above); that is still the code shown on the customer's pass, so quoting it back is
+     the fastest thing they can tell us either way. */
+  const confWa=document.getElementById('conf-wa');
+  if(confWa) confWa.href=waHrefFor('Hi Ceylon Hop — a question about my booking '+ref+'.');
   const dateText = state.flexDate ? 'To confirm' : (state.date?state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'To confirm');
   const timeText = state.flexTime ? 'To confirm' : (state.dep?fmtTime(state.dep):'To confirm');
   document.getElementById('pass-brand').innerHTML=cmark(26,'var(--accent)')+'<span>Ceylon Hop</span>';
