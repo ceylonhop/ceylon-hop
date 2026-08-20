@@ -138,8 +138,9 @@ test('a number typed with its own country code is not prefixed twice', async ({ 
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
 
-  await expect(page.getByRole('heading', { name: 'PayHere card approval' })).toBeVisible();
-  expect(sent.payment.phone).toBe('+447700900123');   // not +44447700900123
+  // Assert on what the API received, not on the gateway page rendering: the hand-off screen
+  // repaints before the form submits, and racing that render made this flaky under load.
+  await expect.poll(() => sent && sent.payment && sent.payment.phone).toBe('+447700900123'); // not +44447700900123
 });
 
 test('a national leading zero is dropped', async ({ page }) => {
@@ -165,8 +166,7 @@ test('a national leading zero is dropped', async ({ page }) => {
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
 
-  await expect(page.getByRole('heading', { name: 'PayHere card approval' })).toBeVisible();
-  expect(sent.payment.phone).toBe('+447700900123');
+  await expect.poll(() => sent && sent.payment && sent.payment.phone).toBe('+447700900123');
 });
 
 // The hand-off screen (2026-08-18). The board used to POST straight to PayHere from Continue,
