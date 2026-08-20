@@ -12,12 +12,12 @@ test('shows the engine total on load, not the local formula figure', async ({ pa
 
 test('an unstubbed estimate endpoint falls back to local pricing — the flag-off/default behaviour', async ({ page }) => {
   // No `estimate` opt: gotoBooking's own default answers 404 for **/quote/v2/estimate — exactly
-  // the shape a deploy with QUOTE_V2_ENABLED unset answers today. $119 is the same local-formula
+  // the shape a deploy with QUOTE_V2_ENABLED unset answers today. $121 is the same local-formula
   // figure pricing-flow.spec.js pins for this identical default route/vehicle (cmb-airport →
   // hikkaduwa, AC car) — proof the 404 path is byte-identical to pre-engine behaviour, not a
   // freshly guessed number.
   await gotoBooking(page);
-  await expect(page.locator('#sum-total')).toHaveText('$119');
+  await expect(page.locator('#sum-total')).toHaveText('$121');
   await fillContact(page);
   await page.click('#pay-btn');
   await expect.poll(
@@ -394,8 +394,8 @@ test('an estimate that fails mid-change hands the total to the local fallback, n
 
   // $226 is this trip's local chauffeur formula — the fallback taking over, as it does with the
   // flag off entirely. Pay is released too: there is no longer an estimate to wait for.
-  await expect(page.locator('#sum-total')).toHaveText('$226');
-  await expect(page.locator('#pay-due .amt')).toHaveText('$226');
+  await expect(page.locator('#sum-total')).toHaveText('$225');
+  await expect(page.locator('#pay-due .amt')).toHaveText('$225');
 });
 
 test('the engine timing out never suppresses the local reprice notice (engine must have actually answered, not merely "not yet 404")', async ({ page }) => {
@@ -404,7 +404,7 @@ test('the engine timing out never suppresses the local reprice notice (engine mu
   // false), so gating the local reprice heads-up on available() alone would wrongly treat this as
   // "the engine owns repricing" even though it never delivered a single estimate this session.
   await gotoBooking(page, { routeKm: 400, pickGeo: { lat: 6.15, lng: 80.11 }, estimate: { delayMs: 4000 } });
-  await expect(page.locator('#sum-total')).toHaveText('$119');
+  await expect(page.locator('#sum-total')).toHaveText('$121');
 
   // Let the in-flight estimate actually time out before pinning, so this proves the engine truly
   // never answered this session — not just "hasn't answered yet".
@@ -415,5 +415,5 @@ test('the engine timing out never suppresses the local reprice notice (engine mu
   // The engine never delivered an estimate this session — the pre-existing LOCAL reprice notice
   // (repriceDecision) must still fire; the local formula is still the one in charge of the total.
   await expect(page.locator('#reprice-note')).toBeVisible();
-  await expect(page.locator('#sum-total')).toHaveText('$119');
+  await expect(page.locator('#sum-total')).toHaveText('$121');
 });

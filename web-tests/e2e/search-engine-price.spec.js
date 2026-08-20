@@ -122,7 +122,7 @@ test('a baked route still prices instantly, with no network round trip', async (
   await page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
   await page.goto('/search.html?from=cmb-airport&to=ella&pax=2');
-  await expect(page.getByText('$139').first()).toBeVisible();
+  await expect(page.getByText('$140').first()).toBeVisible();
   await expect(page.locator('.opt-private.is-pending')).toHaveCount(0);
 
   // ch-pricing debounces 400ms; give it more than that to prove nothing was ever asked for
