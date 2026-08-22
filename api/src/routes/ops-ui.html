@@ -4021,14 +4021,32 @@ function initGoogleButton(){
 }
 window.initGoogleButton=initGoogleButton;
 
-/* boot: whoami → in-session boots the app, else show login (+ init the GIS button) */
+/* boot: whoami → in-session boots the app, else show login (+ init the GIS button).
+
+   ORDER CONTRACT — boot runs at the end of the FIRST script block, but bootApp() reaches
+   into things declared in later ones: morphdom (next block) and QuoteView (the block after
+   that, ~370 KB further down a 700 KB response). So the whoami fetch is fired here for the
+   head start, but it must not be CONSUMED until the parser has finished the document. Skip
+   that barrier and a fast whoami on a slow connection lands bootApp in a half-parsed page:
+   `QuoteView is not defined`, swallowed by the catch below, and the operator sees the login
+   card holding a perfectly good session. That was real — 929 Sentry events — and it bit every
+   refresh of a `?quote=` URL on mobile, because the builder route is the one boot path that
+   touches QuoteView (showQuoteView → QuoteView.init). Anything added to bootApp inherits this
+   contract: if it lives in a later block, DOMContentLoaded is what makes it exist. */
 (async function(){
   localStorage.removeItem('chAdminKey'); /* T5: stale secret from the quote tool's admin-key era */
   initGoogleButton(); /* if GIS already loaded; else the script's onload calls it */
   const devFoot=$('#devlogin-foot');
   if(devFoot&&devFoot.dataset.devLoginEnabled==='true'&&devLoginForm)devLoginForm.style.display='';
+  /* Settle the fetch into a plain value NOW rather than leaving a bare pending promise across
+     the barrier: a network failure before DOMContentLoaded would otherwise be an unhandled
+     rejection, and this page's own unhandledrejection listener would beacon it as a SECOND,
+     differently-worded Sentry error on top of the one the catch below already reports. */
+  const whoami=fetch('/admin/ops/whoami',{credentials:'same-origin'}).then(r=>({r}),e=>({e}));
+  if(document.readyState==='loading')await new Promise(done=>document.addEventListener('DOMContentLoaded',done,{once:true}));
   try{
-    const r=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
+    const {r,e}=await whoami;
+    if(e)throw e;
     if(r.ok){
       bootApp(await r.json()); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and login paths) */
     }else{showLogin();}
