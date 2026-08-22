@@ -164,6 +164,14 @@ server stored exactly this"), and this is pinned by a test (§7).
 warning and the toast as the receipt. "Reopen to edit" is still there, and resubmitting is one
 click.
 
+**"Not sent" is not the same as "the customer has not seen the price".** A `ready` quote can
+already have a pay link minted against it, which puts a number in the customer's hands without
+the quote ever reaching `sent` — that is precisely why `customer_total_at` is stamped by a
+pay-link mint as well as by mark-sent (spec 2026-08-05 §9). Ops reopening such a quote re-prices
+it. Accepted, not mitigated: the price-drift indicator already makes the move visible rather
+than silent, and the owner's rule is drawn at `sent`. Named here so the sharpest corner of that
+rule is on the record rather than discovered later.
+
 **Concurrent approval.** If the founder approves between the keystroke and the PATCH, the quote
 is `ready` and `ready → draft` is still a legal, un-gated transition, so the pull-back succeeds
 and the approval is undone. This is the same outcome as today's "Reopen to edit" race and needs
