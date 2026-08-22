@@ -400,7 +400,11 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' });
   await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
   await expect(page.locator('#f-firstName')).toBeEnabled();
-  await page.fill('#f-firstName', 'Nimal');
+  // page.fill sets the value and dispatches exactly ONE input event — markDirty() would fire once
+  // no matter what, so it can't tell an idempotence guard from no guard at all. pressSequentially
+  // types character-by-character (5 input events for "Nimal"), which actually exercises the
+  // `if (_pullback) return _pullback;` early-return in pullBackFromReview().
+  await page.locator('#f-firstName').pressSequentially('Nimal');
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
   expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(1);

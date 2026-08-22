@@ -646,6 +646,31 @@ describe('ops UI — editing a quote in review', () => {
     expect(body).toContain("classList.toggle('ch-locked', locked)");
     expect(body).toContain('viewing the route is not editing');
   });
+
+  it('the pull-back resolution is generation-guarded, like every other post-await state write', () => {
+    // Review finding 1: `id` alone is not enough — the resolution runs after an await, and the
+    // operator can open a different quote (reopenQuote/resetToNew bump _openSeq) before it lands.
+    // Without this, quote A's pull-back can stamp state.status = 'draft' onto quote B's editor.
+    const pb = fnBody('pullBackFromReview');
+    expect(pb).toContain('var seq = _openSeq;');
+    expect(pb).toContain('if (seq !== _openSeq) return');
+  });
+
+  it('a transition awaits an in-flight pull-back before reading the savable set', () => {
+    // Review finding 2: without this, a founder's Approve click during the pull-back round-trip
+    // races the pull-back's own status PATCH — the two can land in either order, and whichever
+    // loses either drops the edit that triggered the pull-back or leaves `state` disagreeing with
+    // the server.
+    expect(fnBody('transition')).toContain('if (_pullback) await _pullback;');
+  });
+
+  it('a successful transition clears a stale pull-back failure on the SAME quote', () => {
+    // Review finding 4: the reset sites in resetToNew/reopenQuote only cover a DIFFERENT quote
+    // being opened. Fail pull-back -> Reopen to edit -> fix -> resubmit lands back on
+    // pending_review with the same quote still open; without clearing the flag here,
+    // isEditableNow() re-locks the editor with no new failure to explain why.
+    expect(fnBody('transition')).toContain('_pullbackFailed = false;');
+  });
 });
 
 // Unpriced shells (spec 2026-07-29): "+ New quote" claims a real $0 row up front so the ticket is

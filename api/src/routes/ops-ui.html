@@ -4832,10 +4832,24 @@ var _pullback = null, _pullbackFailed = false;
 function pullBackFromReview() {
   if (_pullback) return _pullback;
   var id = state.savedId;
+  // Generation guard (owner, 2026-08-22), same pattern as saveQuote/fireAutosave/reopenQuote: the
+  // PATCH below is in flight across an await, and the operator is free to click a different quote
+  // in the queue before it resolves. reopenQuote()/resetToNew() bump _openSeq and re-hydrate
+  // `state` for THAT quote — if this resolution then went ahead and wrote state.status = 'draft'
+  // unguarded, it would stamp quote A's outcome onto quote B's now-open editor.
+  var seq = _openSeq;
   if (!id) return null; // nothing persisted yet — there is no review to leave
   _pullback = (async function () {
     var res = await apiPatch(id, { status: 'draft' });
-    if (!res || res.error) {
+    var ok = !!(res && !res.error);
+    // The write really happened for `id` regardless of what's on screen by the time it resolves,
+    // so the queue-level sync (keyed by id, not by `state`) stays unconditional — a stale entry in
+    // the queue list would be its own (smaller) bug. Deliberate choice: everything below this is
+    // gated on `seq`, because it all reads or writes `state`, which may belong to another quote now.
+    if (ok && window.opsUpsertQuote) window.opsUpsertQuote({ id: id, status: 'draft' });
+    if (ok && window.opsRefreshQuotes) window.opsRefreshQuotes();
+    if (seq !== _openSeq) return ok; // a different quote is open now — state/_pullbackFailed/toast/render all describe THIS quote, not it
+    if (!ok) {
       // Re-lock rather than let the operator keep typing into something that cannot save. The
       // explicit "Reopen to edit" button is still there as the manual way out.
       _pullbackFailed = true;
@@ -4844,8 +4858,6 @@ function pullBackFromReview() {
       return false;
     }
     state.status = 'draft';
-    if (window.opsUpsertQuote) window.opsUpsertQuote({ id: id, status: 'draft' });
-    if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     showToast('Pulled back out of review — resubmit when you\'re done');
     // Safe mid-keystroke: render() diff-renders and restores the focused field's in-progress
     // text and caret (captureEditorFocus / restoreEditorFocus).
@@ -5664,6 +5676,11 @@ async function transition(toStatus, opts) {
   // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
   // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
   // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
+  // A pull-back PATCH in flight must land before this reads state.status, or a concurrent status
+  // PATCH from here (e.g. Approve) can race it to the server in either order — leaving `state`
+  // disagreeing with whichever won, and possibly dropping the edit that triggered the pull-back.
+  // Same ordering guarantee saveQuote/fireAutosave already have on the /save path.
+  if (_pullback) await _pullback;
   // Must read the SAVABLE set, not the editable one: pending_review is editable on screen, and
   // flushing a save there POSTs to /save, takes a 409 and aborts the transition — the bug commit
   // 3d93b56 fixed, which widening isEditableNow() would silently reintroduce. There is nothing to
@@ -5688,6 +5705,13 @@ async function transition(toStatus, opts) {
     return;
   }
   state.status = toStatus;
+  // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
+  // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
+  // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
+  // editor the banner just told the operator to "just start editing" — silently, with no new
+  // failure to explain it. The reset sites in resetToNew/reopenQuote only cover a DIFFERENT quote
+  // being opened; this covers the same one moving on.
+  _pullbackFailed = false;
   // Mark-sent stamps the price-drift baseline server-side; take it on so the indicator clears
   // immediately rather than lingering until the next reload.
   if (res && res.customerTotalCents !== undefined) {
