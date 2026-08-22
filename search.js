@@ -387,7 +387,27 @@ if (shared) {
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;
+} else if (engineRoute) {
+  /* We never LOOKED, so we must not report a finding. `shared` is hardcoded null for an engine
+     route (line 155) because a scheduled seat is a directed catalogue entry keyed on two
+     catalogue ids, and an engine route has at least one end we don't have baked — the lookup
+     is skipped, not failed.
+
+     Printing the baked branch's copy here stated as fact something we never checked. On a
+     Google-picked "Sigiriya, Sri Lanka" that told the customer we run no shared service between
+     CMB and Sigiriya — one of the two corridors we actually sell seats on, at $27.49. Same
+     wrong sentence on every Google-picked search, whatever the route. Say what we know. */
+  noShare = `
+  <div class="noshare">
+    <div class="ns-ico">${ICONS.share}</div>
+    <div>
+      <b>Shared seats run on set routes</b>
+      <p>Our shared vans run a fixed set of scheduled routes, and we can only match those automatically. Your private transfer covers you door-to-door at a fixed price, whenever you want to leave.</p>
+    </div>
+  </div>`;
 } else {
+  // A baked pair DID go through the catalogue and came back empty — here the negative is a
+  // real finding, so it can be stated plainly.
   noShare = `
   <div class="noshare">
     <div class="ns-ico">${ICONS.share}</div>
