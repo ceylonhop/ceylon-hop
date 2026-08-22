@@ -82,29 +82,20 @@ export default defineConfig({
     // absorbed this the first time the suite ran — it went green — but green-by-retry on a
     // modal race is a flake with a fuse in it, not a passing suite.
     //
-    // Seeded HERE rather than in _stubs.js (which does the same for the consent banner) because
-    // only 17 of the 89 spec files use those stubs, and a full-screen dialog reaches all of them.
+    // Seeded HERE rather than in _stubs.js because only 17 of the 89 spec files use those
+    // stubs, and a full-screen dialog reaches all of them.
     // The notice's own behaviour is covered by web-tests/unit/beta-notice.test.js and by
     // beta-notice.spec.js, which opts back out of this state.
     //
-    // The consent bar is seeded here for the SAME reason, now that it ships on (2026-08-16).
-    // It is position:fixed at the bottom of the viewport with z-index 9999, so it intercepts
-    // pointer events on whatever sits under it — _stubs.js has seeded it away since the bar
-    // first existed, but that only ever reached the spec files using those stubs. With the
-    // bar switched on, three specs that touch nothing to do with consent (route-pages,
-    // ops-trip-calendar, ride-board-payhere) started failing under parallel load while passing
-    // in isolation: the classic shape of a click landing on an overlay. Measured: 0 failures on
-    // main, 3 with the bar on, and 0 again with this seed.
-    //
-    // 'denied' rather than 'granted' so no spec quietly starts handing consent to GTM.
-    // consent.js's own behaviour is covered by web-tests/unit/consent.test.js.
+    // (A 'ceylonhop_consent' seed sat here too, because the consent bar was position:fixed at
+    // z-index 9999 and intercepted clicks under it. The bar was removed on 2026-08-16 — there
+    // is nothing left to seed away.)
     storageState: {
       cookies: [],
       origins: [{
         origin: `http://localhost:${STATIC_PORT}`,
         localStorage: [
           { name: 'ceylonhop_beta_notice_v2', value: 'dismissed' },
-          { name: 'ceylonhop_consent', value: 'denied' },
         ],
       }],
     },
