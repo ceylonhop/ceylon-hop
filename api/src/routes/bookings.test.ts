@@ -390,10 +390,23 @@ describe('POST /bookings — minimum notice', () => {
       const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
       if (wd === 3 || wd === 6) date = iso;
     }
+    // The fixture must name a real catalogue product. It was `hill-line` with no from/to,
+    // which #535 broke twice over: hill-line is no longer a catalogued shared route, and the
+    // endpoint now resolves the product from from/to rather than corridorId (one corridor
+    // holds several products at different prices). Either fault alone returns
+    // not_a_shared_route BEFORE any notice rule is consulted -- so this assertion would have
+    // passed for the wrong reason, proving nothing about shared seats being exempt.
     const res = await jpost(app, '/bookings/shared', {
-      corridorId: 'hill-line', date, time: '08:00', seats: 2, customer: valid.customer,
+      corridorId: 'ella-east', from: 'Ella', to: 'Yala',
+      date, time: '09:00', seats: 2, customer: valid.customer,
     });
+    // Assert the CLAIM, not just the happy path: whatever else may refuse a shared booking,
+    // the notice rules must never be what does it. A bare toBe(201) would go quiet the day an
+    // unrelated gate starts returning 400, and the date picked above is only sometimes inside
+    // the 12h window, so the 201 alone does not pin this down.
     expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.error).not.toBe('lead_time_too_short');
   });
 });
 

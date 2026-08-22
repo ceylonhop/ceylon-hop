@@ -1752,6 +1752,12 @@ function render(){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Chauffeur-guide trips need '+CHAUFFEUR_MIN_LEAD_DAYS+' days’ notice</b></div>'+
           '<p>Your driver-guide stays with you for the whole journey, so we need time to assign one. The earliest chauffeur start is <b>'+fmtNoticeDate(earliestChauffeurISO())+'</b> — your private transfers are unaffected.</p>'+
+          // The notice window is a WEBSITE rule, not a capacity one: ops can still take a
+          // chauffeur booking inside it by hand (the API exempts staff bookings on purpose).
+          // Ending on "no" would turn away a trip we are actually able to run, so offer the
+          // one route that still works. waTripSummary() carries the itinerary, so the
+          // traveller does not retype what they just entered.
+          '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we\u2019ll see what we can do.</p>'+
           '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
       } else if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';

@@ -124,6 +124,25 @@ describe('chauffeur-guide — 7 days notice', () => {
     expect(cx.textContent).toContain('earliest chauffeur start is');
   });
 
+  /* The notice window is a WEBSITE rule, not a capacity one -- the API deliberately exempts
+     ops bookings, so staff can still take a chauffeur trip inside it by hand. A refusal that
+     ends on "no" therefore turns away a journey we are able to run. The explainer has to
+     offer the one route that still works, and it has to carry the itinerary so the traveller
+     does not retype what they just entered. */
+  it('offers WhatsApp as the way through, carrying the trip with it', () => {
+    const w = loadBooking(tripQuery(futureIsoDate(3), futureIsoDate(5)));
+    const wa = w.document.querySelector('#chauffeur-extra a[href*="wa.me"]');
+    expect(wa, 'no WhatsApp handoff in the chauffeur notice explainer').toBeTruthy();
+    expect(wa.target).toBe('_blank');
+    expect(wa.rel).toContain('noopener');
+
+    const msg = decodeURIComponent(wa.getAttribute('href').split('?text=')[1] || '');
+    expect(msg, 'the message should name the constraint being asked about').toContain('chauffeur-guide starting earlier');
+    // waTripSummary() -- the itinerary travels with the enquiry
+    expect(msg).toContain('Ceylon Hop');
+    expect(msg.length).toBeGreaterThan(60);
+  });
+
   it('will not let a chauffeur selection stand on a trip inside the window', () => {
     const w = loadBooking(tripQuery(futureIsoDate(3), futureIsoDate(5)));
     w.eval("state.svc='chauffeur'; render();");
