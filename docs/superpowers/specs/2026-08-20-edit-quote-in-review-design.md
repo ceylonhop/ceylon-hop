@@ -2,6 +2,8 @@
 
 Date: 2026-08-20
 Owner ask: "a quote should be editable by an ops role anytime before it's ready to send."
+Owner follow-up (2026-08-22): "as long as it's not sent to customer an ops person should be
+able to reopen." — extends §4.7 below to the `ready` state.
 
 ## 1. Problem
 
@@ -51,8 +53,14 @@ Leaving `POST /save` refusing `pending_review` is deliberate: it keeps "the foun
 exactly what they reviewed" a **server-enforced invariant** rather than a client convention.
 The client's job is to make the status honest *before* it saves, not to bypass the rule.
 
-Out of scope: `ready`. An ops-role user still cannot edit or reopen an approved quote — reopen
-from `ready` stays approver-only (`ops-ui.html:8166`). "Before ready to send" read literally.
+Also in scope (owner follow-up): giving an ops-role user the **"Reopen to edit"** button on a
+`ready` quote, which they do not have today (`ops-ui.html:8166`). This needs no server change
+either — only reopening a **`sent`** quote is founder-gated (`reopeningSent`,
+`internalQuote.ts:1532`); `ready → draft` is already accepted from an ops session, so today's
+lock is cosmetic and the button is the whole fix.
+
+Out of scope: `sent`. Reopening a quote the customer already has stays founder-only — that is
+the owner's line.
 
 ## 4. Behaviour
 
@@ -77,6 +85,13 @@ This applies to **everyone in the ops app**, ops and founders alike — editabil
 status, never on role, as it is everywhere else today. A founder who starts typing mid-review
 pulls the quote back too; that is the honest outcome, because they are changing it, not
 reviewing it.
+
+7. On a **`ready`** quote an ops-role user gets the same **"Reopen to edit"** button the
+   approver already has — identical placement, copy and behaviour, no confirm, just no longer
+   role-hidden. It is deliberately the *explicit button*, NOT the type-and-it-pulls-back
+   behaviour of §4.3: reopening an approved quote drops its frozen rate card and re-prices at
+   today's rates (`internalQuote.ts:1557`), so a stray keystroke silently moving an approved
+   price is a different order of consequence from leaving a review queue.
 
 No notification fires to the founder whose queue item was pulled — matching what "Reopen to
 edit" does today.
@@ -166,6 +181,8 @@ source-string scans and gets rewritten:
 - the quote-load path contains no `markDirty()` (the §6 hazard)
 - `applyContentLock` no longer disables the editor in `pending_review`
 - "Reopen to edit" is still on the `pending_review` action bar for both roles
+- "Reopen to edit" is now on the `ready` action bar for the non-approver role too, and is still
+  absent from `sent` for that role (the owner's line)
 
 Server tests are unchanged: `POST /save` must still 409 `not_editable` for `pending_review`
 (`internalQuote.test.ts`), and that assertion is now load-bearing — it is the invariant this
