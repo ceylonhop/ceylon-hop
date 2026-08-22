@@ -285,12 +285,14 @@ test('founder on a pending_review quote gets Approve + Send back + the reopen do
   await expect(page.locator('.ch-status-pill')).toContainText('In review');
   await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
   await expect(actions(page).locator('[data-action="sendBack"]')).toBeVisible();
-  // Review lock (owner, 2026-07-17): submission freezes content — the banner names the lock,
-  // the action bar offers the one door back in, and the editor renders inert.
+  // The founder's review powers are unchanged; what changed (2026-08-22) is that the editor
+  // underneath them is live, and touching it pulls the quote back out of review.
   await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
-  await expect(page.locator('.ch-review-banner')).toContainText(/locked/i);
-  await expect(page.locator('#quoteRoot .ch-app')).toHaveClass(/ch-locked/);
-  await expect(page.locator('#f-firstName')).toBeDisabled();
+  // Owner, 2026-08-22: review no longer freezes content. The banner warns that editing pulls the
+  // quote back, and the editor is live — the guarantee is kept by the pull-back, not by a lock.
+  await expect(page.locator('.ch-review-banner')).toContainText(/pulls it back to draft/i);
+  await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeEnabled();
 });
 
 // ── Ops self-approval (plan 2026-08-11) ──────────────────────────────────────
@@ -390,6 +392,18 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
   await actions(page).locator('[data-action="reopenToDraft"]').click();
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Editing in review (owner, 2026-08-22). Ops does not have to find the reopen button first —
+// typing is the gesture, and it takes the quote out of the founder's queue on the way.
+test('ops typing on a pending_review quote pulls it back to draft, once', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' });
+  await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeEnabled();
+  await page.fill('#f-firstName', 'Nimal');
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
+  expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(1);
 });
 
 // Phase 3b: opening a ready/sent quote must show the FROZEN price the server priced against the

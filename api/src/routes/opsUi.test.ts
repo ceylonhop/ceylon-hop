@@ -541,10 +541,12 @@ describe('ops UI — design elevation', () => {
   // Spec 2026-07-29: the row now exists from "+ New quote", so savedId is no longer part of the
   // gate — a shell's first real content must be able to autosave. vehicleType still gates it,
   // because POST /save prices server-side and cannot persist an unpriceable payload.
-  it('D4: autosave is debounced, gated on priceability + editable status, with a saved chip', () => {
+  it('D4: autosave is debounced, gated on priceability + savable status, with a saved chip', () => {
     expect(body).toContain('function fireAutosave(');
     expect(body).toContain('setTimeout(fireAutosave, 2500)');
-    expect(body).toContain('if (!isEditableNow() || !state.vehicleType) return;');
+    // Savable, not editable (owner, 2026-08-22): pending_review is editable on screen, but an
+    // autosave firing there must not reach /save before the pull-back PATCH lands.
+    expect(body).toContain('if (!isSavableNow() || !state.vehicleType) return;');
     expect(body).not.toContain('if (!state.savedId || !isEditableNow()');
     expect(body).toContain('ch-savestate');
   });
@@ -563,34 +565,86 @@ describe('ops UI — design elevation', () => {
   });
 });
 
-// Review lock (owner, 2026-07-17): submission freezes content; reopen-to-draft is the one
-// explicit door back in. Server enforces via /save 409 — these assert the UI tells the truth.
-describe('ops UI — review lock', () => {
+// Editing in review (owner, 2026-08-22). The editor is LIVE in pending_review; the first edit
+// PULLS THE QUOTE BACK to draft, so the founder can still never approve content they did not
+// see. The server keeps refusing /save for pending_review — that 409 is the invariant this
+// leans on, which is why the ordering assertions below are the important ones.
+describe('ops UI — editing a quote in review', () => {
   let body: string;
   beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
 
-  it('pending_review is no longer client-editable (gates autosave, ⌘S, palette, vehicle keys)', () => {
-    expect(body).toContain("return state.status === 'draft' || state.status === 'changes_requested';");
-    expect(body).not.toContain("state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested'");
+  // Local copy: the file scopes this helper per-describe (see the unpriced-shell block).
+  function fnBody(name: string): string {
+    const start = body.indexOf(`function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  }
+
+  it('the editor is live in pending_review, but saving is not', () => {
+    expect(fnBody('isEditableNow')).toContain("state.status === 'pending_review'");
+    const savable = fnBody('isSavableNow');
+    expect(savable).toContain("state.status === 'draft'");
+    expect(savable).toContain("state.status === 'changes_requested'");
+    expect(savable).not.toContain('pending_review');
   });
 
-  it('the editor renders inert while locked, with the map toggle exempt', () => {
-    expect(body).toContain('function applyContentLock(');
-    expect(body).toContain("classList.toggle('ch-locked', locked)");
-    expect(body).toContain('viewing the route is not editing');
+  it('the first edit pulls the quote back out of review', () => {
+    expect(fnBody('markDirty')).toContain('pullBackFromReview()');
+    expect(fnBody('pullBackFromReview')).toContain("{ status: 'draft' }");
   });
 
-  it('every locked row in the action bar offers the reopen door, and review loses Save', () => {
+  it('one burst of typing fires exactly one PATCH', () => {
+    expect(fnBody('pullBackFromReview')).toContain('if (_pullback) return _pullback;');
+  });
+
+  it('no edit can reach /save before the pull-back PATCH lands', () => {
+    const save = fnBody('saveQuote');
+    expect(save).toContain('if (_pullback) await _pullback;');
+    expect(save).toContain('if (!isSavableNow()) return false;');
+    expect(fnBody('fireAutosave')).toContain('if (!isSavableNow() || !state.vehicleType) return;');
+  });
+
+  it('a transition still flushes only what the server would accept', () => {
+    // Widening this to isEditableNow() makes Approve POST /save, take a 409 and abort — the
+    // bug commit 3d93b56 fixed. It must read the SAVABLE set, not the editable one.
+    expect(fnBody('transition')).toContain('var editable = isSavableNow();');
+  });
+
+  it('a failed pull-back re-locks the editor rather than pretending edits are safe', () => {
+    expect(fnBody('pullBackFromReview')).toContain('_pullbackFailed = true;');
+    expect(fnBody('isEditableNow')).toContain('_pullbackFailed');
+  });
+
+  it('loading a quote never marks it dirty (it would silently pull it out of review)', () => {
+    // reopenQuote() is the one path that hydrates a fetched quote into `state`. A markDirty()
+    // anywhere in it would fire the pull-back on OPEN — every in-review quote a founder merely
+    // looked at would leave their own queue. This is the sharpest hazard in the design (spec §6).
+    expect(fnBody('reopenQuote')).not.toContain('markDirty()');
+  });
+
+  it('the banner warns before anything is touched, and no longer claims a lock', () => {
+    expect(body).toContain('editing pulls it back to draft');
+    expect(body).toContain('comes back to you as a draft to resubmit');
+    expect(body).not.toContain('In review — locked');
+    expect(body).not.toContain('Submitted — locked');
+  });
+
+  it('the reopen door is still on the pending_review action bar for both roles', () => {
     const bar = body.slice(body.indexOf('function renderActionBar('), body.indexOf('function renderReviewBanner('));
     const reviewRows = bar.split('\n').filter(l => l.includes("'pending_review'"));
     expect(reviewRows.length).toBeGreaterThanOrEqual(2); // approver + submitter rows
-    reviewRows.forEach(row => expect(row).toContain("reopenToDraft"));
-    reviewRows.forEach(row => expect(row).not.toContain('SAVE'));
+    reviewRows.forEach(row => expect(row).toContain('reopenToDraft'));
   });
 
-  it('the banner names the lock', () => {
-    expect(body).toContain('In review — locked');
-    expect(body).toContain('Submitted — locked');
+  it('the editor still renders inert where it IS locked, with the map toggle exempt', () => {
+    expect(body).toContain('function applyContentLock(');
+    expect(body).toContain("classList.toggle('ch-locked', locked)");
+    expect(body).toContain('viewing the route is not editing');
   });
 });
 
@@ -652,7 +706,7 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(chip).toContain("else if (_autoState === 'error' && autosaveArmed)");
     expect(chip).toContain("txt = 'Autosave failed &mdash; use Save';");
     // The gate is only meaningful if it matches fireAutosave's own early return.
-    expect(fnBody('fireAutosave')).toContain('if (!isEditableNow() || !state.vehicleType) return;');
+    expect(fnBody('fireAutosave')).toContain('if (!isSavableNow() || !state.vehicleType) return;');
   });
 
   it('claiming the row marks it unpriced, and a successful save clears the marker', () => {

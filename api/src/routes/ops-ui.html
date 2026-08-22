@@ -4715,9 +4715,20 @@ var _dirty = false;
    POST /save runs resolveAndPrice() and cannot persist a payload it can't price. The 24h shell
    sweep is what bounds the queue now, not manual-first creation. */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
+// Content editability (owner, 2026-08-22, superseding the 2026-07-17 review lock). The EDITOR is
+// live for every state before approval, pending_review included. The guarantee that a founder
+// never approves content they did not see is now kept a different way: the first edit PULLS THE
+// QUOTE BACK to draft (pullBackFromReview), so a changed quote is never sitting in the review
+// queue. 'ready' stays locked on purpose — reopening it drops the frozen rate card and re-prices,
+// which must be a deliberate button press and never a stray keystroke.
 function isEditableNow() {
-  // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
-  // the founder approves exactly what they reviewed; reopen-to-draft is the one door back in.
+  if (state.status === 'pending_review') return !_pullbackFailed; // a failed pull-back re-locks
+  return state.status === 'draft' || state.status === 'changes_requested';
+}
+// The states POST /save actually accepts (internalQuote.ts 409s not_editable otherwise). This is
+// deliberately NOT the same set as isEditableNow: pending_review is editable on screen but must
+// reach draft before anything can persist. Every path that talks to /save gates on THIS one.
+function isSavableNow() {
   return state.status === 'draft' || state.status === 'changes_requested';
 }
 /* Review lock: while the quote isn't editable, the EDITOR is inert — every input/chip/button
@@ -4754,7 +4765,8 @@ async function fireAutosave() {
   // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
   // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
   // persisted at all. That window is the only place the beforeunload guard still matters.
-  if (!isEditableNow() || !state.vehicleType) return;
+  if (_pullback) await _pullback; // the pull-back PATCH must land before any /save
+  if (!isSavableNow() || !state.vehicleType) return;
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
   var seq = _openSeq;
   _autoSaving = true;
@@ -4810,7 +4822,43 @@ function updateSaveChip() {
   var el = document.getElementById('ch-savestate');
   if (el) el.outerHTML = renderSaveState(); // targeted swap — a full render() would reopen the place menu
 }
-function markDirty() { _dirty = true; _autoState = 'idle'; armAutosave(); updateSaveChip(); }
+/* Pull-back (owner, 2026-08-22). Editing a quote that is with the founder takes it OUT of the
+   review queue — the founder must never be able to approve content that changed after they read
+   it. Idempotent: a burst of typing fires exactly ONE PATCH, because every caller after the first
+   gets the same in-flight promise back. Never reached for 'ready' (markDirty cannot fire there —
+   the editor is locked), which is the point: dropping a rate lock re-prices, and no keystroke
+   should do that. */
+var _pullback = null, _pullbackFailed = false;
+function pullBackFromReview() {
+  if (_pullback) return _pullback;
+  var id = state.savedId;
+  if (!id) return null; // nothing persisted yet — there is no review to leave
+  _pullback = (async function () {
+    var res = await apiPatch(id, { status: 'draft' });
+    if (!res || res.error) {
+      // Re-lock rather than let the operator keep typing into something that cannot save. The
+      // explicit "Reopen to edit" button is still there as the manual way out.
+      _pullbackFailed = true;
+      showToast('Could not pull this back out of review — ' + ((res && res.error) || 'unknown error'), 'error');
+      render();
+      return false;
+    }
+    state.status = 'draft';
+    if (window.opsUpsertQuote) window.opsUpsertQuote({ id: id, status: 'draft' });
+    if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+    showToast('Pulled back out of review — resubmit when you\'re done');
+    // Safe mid-keystroke: render() diff-renders and restores the focused field's in-progress
+    // text and caret (captureEditorFocus / restoreEditorFocus).
+    render();
+    return true;
+  })().finally(function () { _pullback = null; });
+  return _pullback;
+}
+function markDirty() {
+  // Ahead of the flag on purpose: the autosave this arms must never reach /save before the PATCH.
+  if (state.status === 'pending_review') pullBackFromReview();
+  _dirty = true; _autoState = 'idle'; armAutosave(); updateSaveChip();
+}
 window.addEventListener('beforeunload', function(e) {
   if (_dirty) {
     e.preventDefault();
@@ -5325,6 +5373,7 @@ var _openSeq = 0;
 // Reset the builder to a blank draft (no prompt — callers decide whether to guard).
 function resetToNew() {
   _openSeq++; // an in-flight reopen must not clobber the fresh draft
+  _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
   legSeq = 0;
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
@@ -5534,6 +5583,12 @@ function adoptPricedLegs(sent, res) {
 // toast + re-render (used by transition(), which handles its own feedback).
 async function saveQuote(opts) {
   opts = opts || {};
+  // Ordering guarantee (owner, 2026-08-22). An edit made while the quote was still in review must
+  // not reach /save before the pull-back PATCH lands, or the server 409s not_editable and the
+  // operator's typing is silently lost. This await is what makes it a guarantee, not a race the
+  // 2.5s autosave debounce happens to win.
+  if (_pullback) await _pullback;
+  if (!isSavableNow()) return false; // pull-back failed; pullBackFromReview already said why
   if (!state.vehicleType) {
     showToast('Choose a vehicle type first', 'error');
     return false;
@@ -5609,7 +5664,11 @@ async function transition(toStatus, opts) {
   // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
   // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
   // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
-  var editable = isEditableNow(); // review lock: pending_review no longer flushes a save (it would 409)
+  // Must read the SAVABLE set, not the editable one: pending_review is editable on screen, and
+  // flushing a save there POSTs to /save, takes a 409 and aborts the transition — the bug commit
+  // 3d93b56 fixed, which widening isEditableNow() would silently reintroduce. There is nothing to
+  // flush anyway: any edit has already moved the quote to draft via the pull-back.
+  var editable = isSavableNow();
   /* The transition owns the queue refresh. Letting saveQuote refresh too starts a list request
      before the status PATCH, then another after it, then a third on queue entry. Those responses
      can land out of order and repeatedly move/replace the row under the operator's pointer. */
@@ -6114,6 +6173,7 @@ async function pickConfirmPlace(idx) {
 async function reopenQuote(id) {
   if (!id) return;
   var seq = ++_openSeq;
+  _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
   var q = await apiGetQuote(id);
   // Superseded while in flight (a newer open, + New quote, or logout): this response is
   // stale — drop it entirely. The error path below is gated too, so a stale failure can't
@@ -6293,8 +6353,8 @@ async function reopenQuote(id) {
     refreshEstimate();
   }
   // D7: this just loads a quote into the builder for viewing/editing — it is NOT the
-  // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" on a locked
-  // in-review quote contradicts its own "In review — locked" banner. "Opened" is honest.
+  // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" here would be
+  // misleading for a quote that hasn't actually left the review queue yet. "Opened" is honest.
   showToast('Opened ' + (q.reference || q.id));
 }
 
@@ -8309,11 +8369,11 @@ function renderSubmitBlockers() {
     '  <p class="ch-blockers-sub">' + (blockers.length === 1 ? 'One thing is' : blockers.length + ' things are')
       + ' still missing. Click one to jump to it.</p>',
     '  <ul class="ch-blockers-list">' + rows + '</ul>',
-    /* A quote already in review is content-LOCKED (isEditableNow), so every field the rows point
-       at is disabled — which reads as a dead list unless we name the one door back in. Reachable
-       for a quote submitted before this gate existed, or one whose price later fell out. */
+    /* A content-LOCKED quote has every field these rows point at disabled — which reads as a dead
+       list unless we name the door back in. Since 2026-08-22 this no longer covers pending_review
+       (that edits in place), so it must not say "while in review" any more. */
     (isEditableNow() ? '' :
-      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked while in review — '
+      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked — '
       + '<b>Reopen to edit</b> to fix these, then resubmit.</p>'),
     '</div>',
   ].join('');
@@ -8355,9 +8415,11 @@ function renderReviewBanner() {
       '<b>' + esc(title) + '</b>' + (body ? '<span>' + esc(body) + '</span>' : '') + '</div>';
   }
   if (s === 'pending_review') {
+    // States the consequence BEFORE anything is touched — this banner is the whole warning the
+    // pull-back gets, and it has to be readable before the first keystroke, not after it.
     return isApprover()
-      ? banner('amber', 'In review — locked', 'Approve, send back, or reopen to edit.')
-      : banner('amber', 'Submitted — locked', 'With the founder. Reopen to edit if you need to change it.');
+      ? banner('amber', 'In review', 'Approve, send back, or just start editing — editing pulls it back to draft.')
+      : banner('amber', 'Submitted — with the founder', 'Start editing and it comes back to you as a draft to resubmit.');
   }
   if (s === 'changes_requested') {
     return isApprover()
