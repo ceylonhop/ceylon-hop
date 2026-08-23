@@ -440,11 +440,12 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   // (the server keeps refusing /save for pending_review).
   //
   // Pressing Cmd/Ctrl+S HERE — immediately, while the PATCH above is still held — exercises the
-  // MANUAL-save entry point directly: ops-ui.html's keydown handler calls saveQuote() itself
-  // (`if (isEditableNow() && state.vehicleType) saveQuote();`), not through fireAutosave, which has
-  // its own independent `if (pb) await pb;` guard on the debounced path. Relying on the debounce
-  // alone would only ever prove fireAutosave's copy of the guard; this proves the invariant holds
-  // from BOTH entry points a real operator can trigger a save from.
+  // MANUAL-save entry point directly: ops-ui.html's keydown handler routes through
+  // saveQuoteFromShortcut(), which (since a pull-back is already in flight for this quote) calls
+  // saveQuote() itself, not through fireAutosave, which has its own independent
+  // `if (pb) await pb;` guard on the debounced path. Relying on the debounce alone would only ever
+  // prove fireAutosave's copy of the guard; this proves the invariant holds from BOTH entry points
+  // a real operator can trigger a save from.
   await page.keyboard.press('Control+s');
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 15000 });
   // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
@@ -453,8 +454,8 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   // The held PATCH (300ms -> 4000ms, above the 2.5s autosave debounce) is what makes this able to
   // fail at all, rather than passing on timing coincidence: at 300ms the PATCH always resolved
   // before either save path could race it, so the order held regardless of any guard. Verified by
-  // deliberately breaking it (see task-1-report.md, round 4, Finding 2): stripping BOTH `if (pb)
-  // await pb;` lines (saveQuote's and fireAutosave's) times this test out — no /save is ever sent,
+  // deliberately breaking it: stripping BOTH `if (pb) await pb;` lines (saveQuote's and
+  // fireAutosave's) times this test out — no /save is ever sent,
   // because saveQuote's own isSavableNow() check blocks it while pending_review and nothing retries
   // once the pull-back lands. Stripping only ONE of the two still passes, because they are
   // deliberately redundant: fireAutosave's guard covers the debounced path end to end, saveQuote's

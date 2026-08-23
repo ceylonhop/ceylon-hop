@@ -4906,6 +4906,11 @@ function pullBackFromReview() {
     render();
     return true;
   })();
+  // apiPatch itself cannot reject (it wraps its own try/catch), but render(), showToast() and
+  // window.opsUpsertQuote can throw, and that throw would otherwise propagate as an unhandled
+  // rejection to the three `await pb;` sites (saveQuote/fireAutosave/transition) — in
+  // fireAutosave that means no beacon and a dead autosave cycle, silently.
+  p = p.catch(function (e) { window.opsReportError && window.opsReportError('pullBackFromReview', e); return false; });
   p = p.finally(function () {
     // Release by IDENTITY, not by id alone: confirm this promise still owns the map entry before
     // deleting it. Cheap insurance against a stale release dropping a newer pull-back's ownership
@@ -5437,6 +5442,12 @@ function resetToNew() {
   _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
   _pullbackRetries = 0;
   legSeq = 0;
+  // Leg ids are per-quote (legSeq resets to 0 above), so a deferred auto-distance callback
+  // parked against the quote we're leaving could resume against a same-numbered leg on the
+  // fresh draft. _openSeq guards the resume itself (see resolveSegmentDistance/
+  // runAutoDistanceSingle); clearing here means there is nothing left to resume at all.
+  Object.keys(_distTimers).forEach(function (k) { clearTimeout(_distTimers[k]); delete _distTimers[k]; });
+  _distCache = {};
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
     firstName: '',
@@ -5721,6 +5732,21 @@ async function saveQuote(opts) {
   return false;
 }
 
+// ⌘S and the command palette's "Save quote" action share this gate. isEditableNow() lets
+// pending_review through — the editor is live there on screen — but saveQuote() only accepts the
+// SAVABLE set (`if (!isSavableNow()) return false;`), silently, with no toast: an untouched
+// pending_review quote (nothing typed yet, no pull-back in flight) would hit that check and the
+// keypress/menu click would do nothing at all with no explanation. A user-pressed shortcut must
+// never be a silent no-op.
+function saveQuoteFromShortcut() {
+  if (!isEditableNow() || !state.vehicleType) return;
+  if (state.status === 'pending_review' && !pendingPullback()) {
+    showToast('Nothing to save yet — start typing to pull this quote out of review first');
+    return;
+  }
+  saveQuote();
+}
+
 // ── Maker-checker transitions ─────────────────────────────────────────────────
 // Persist current edits (in place), then move the quote to `toStatus`. An optional
 // note (the send-back reason) rides on the PATCH. On success, optionally bounce back
@@ -5784,8 +5810,11 @@ async function transition(toStatus, opts) {
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
   // editor the banner just told the operator to "just start editing" — silently, with no new
   // failure to explain it. The reset sites in resetToNew/reopenQuote only cover a DIFFERENT quote
-  // being opened; this covers the same one moving on.
+  // being opened; this covers the same one moving on. _pullbackRetries rides along: left nonzero,
+  // a second future failure on this quote would hit its cap early and fireAutosave would stop
+  // re-arming — quietly making "Reopen to edit" the only way out sooner than it should be.
   _pullbackFailed = false;
+  _pullbackRetries = 0;
   // Mark-sent stamps the price-drift baseline server-side; take it on so the indicator clears
   // immediately rather than lingering until the next reload.
   if (res && res.customerTotalCents !== undefined) {
@@ -6278,6 +6307,13 @@ async function reopenQuote(id) {
   var seq = ++_openSeq;
   _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
   _pullbackRetries = 0;
+  // Leg ids are per-quote (legSeq resets to 0 below once the fetch lands), so a leg id can
+  // collide across quotes. A deferred auto-distance callback parked against the quote we're
+  // LEAVING could otherwise resume against a same-numbered leg on the one we're opening.
+  // _openSeq (just bumped above) guards the resume itself (see resolveSegmentDistance/
+  // runAutoDistanceSingle); clearing here means there is nothing left to resume at all.
+  Object.keys(_distTimers).forEach(function (k) { clearTimeout(_distTimers[k]); delete _distTimers[k]; });
+  _distCache = {};
   var q = await apiGetQuote(id);
   // Superseded while in flight (a newer open, + New quote, or logout): this response is
   // stale — drop it entirely. The error path below is gated too, so a stale failure can't
@@ -8524,6 +8560,14 @@ function renderReviewBanner() {
       '<b>' + esc(title) + '</b>' + (body ? '<span>' + esc(body) + '</span>' : '') + '</div>';
   }
   if (s === 'pending_review') {
+    // A failed pull-back re-locks the editor (isEditableNow() reads _pullbackFailed) but leaves
+    // state.status still 'pending_review', so without this branch the banner keeps telling the
+    // operator to "just start editing" over an editor that no longer responds to typing — the
+    // only explanation left is a toast that has already faded. Same flag, same exemption pattern
+    // as the save chip (renderSaveState) and the ⌘S/palette save gate.
+    if (_pullbackFailed) {
+      return banner('amber', 'Could not pull this back out of review', 'Your edit was not saved. Use "Reopen to edit" to try again.');
+    }
     // States the consequence BEFORE anything is touched — this banner is the whole warning the
     // pull-back gets, and it has to be readable before the first keystroke, not after it.
     return isApprover()
@@ -9881,7 +9925,7 @@ function attachEventListeners() {
   app.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
-      if (isEditableNow() && state.vehicleType) saveQuote();
+      saveQuoteFromShortcut();
       return;
     }
     if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
@@ -9970,7 +10014,13 @@ async function resolveSegmentDistance(legId, i) {
   if (cached[i] === cacheKey) return; // already fetched this exact pair
   cached[i] = cacheKey;
 
+  // legId is a per-QUOTE sequence number (legSeq resets on reopenQuote/resetToNew), so the
+  // same legId can exist on two different quotes. The leg-identity checks below only prove
+  // "a leg that still looks like this one exists" — they can't tell whether it's still the
+  // SAME QUOTE's leg. _openSeq (bumped on every reopen/reset) closes that gap.
+  var seq = _openSeq;
   var seg = await apiDistance(from, to);
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
 
   // Guard: leg/stops may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
@@ -9999,7 +10049,13 @@ async function runAutoDistanceSingle(legId) {
   if (cached[0] === cacheKey) return; // already fetched this exact from/to
   cached[0] = cacheKey;
 
+  // legId is a per-QUOTE sequence number (legSeq resets on reopenQuote/resetToNew), so the
+  // same legId can exist on two different quotes. The leg-identity checks below only prove
+  // "a leg that still looks like this one exists" — they can't tell whether it's still the
+  // SAME QUOTE's leg. _openSeq (bumped on every reopen/reset) closes that gap.
+  var seq = _openSeq;
   var seg = await apiDistance(from, to);
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
 
   // Guard: leg may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
@@ -10014,6 +10070,7 @@ async function runAutoDistanceSingle(legId) {
     // auto-open the modal once (guarded). One compare call per resolved leg; maps.ts caches
     // variants 24h so re-renders/edits don't re-bill.
     var v = await apiDistance(from, to, true);
+    if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
     var live = state.legs.find(function (l) { return l.id === legId; });
     if (live && live.stops.length === 2 && legFrom(live).trim() === from && legTo(live).trim() === to && !live.segments[0].manual) {
       if (v && v.variants) { live.routeOptions = v.variants; live._sameRoute = false; }
@@ -11035,7 +11092,7 @@ window.opsQuoteKbar = function() {
   var root = document.getElementById('quoteRoot');
   if (!root || root.hidden || !root.querySelector('.ch-app')) return [];
   var acts = [];
-  if (isEditableNow() && state.vehicleType) acts.push({ label: 'Save quote', hint: '\u2318S', run: function() { saveQuote(); } });
+  if (isEditableNow() && state.vehicleType) acts.push({ label: 'Save quote', hint: '\u2318S', run: function() { saveQuoteFromShortcut(); } });
   if (isEditableNow()) acts.push({ label: 'Add leg', hint: '\u21B5 in a leg', run: function() { addLeg('transfer'); } });
   return acts;
 };

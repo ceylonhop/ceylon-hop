@@ -620,6 +620,10 @@ describe('ops UI — editing a quote in review', () => {
     expect(save.indexOf('var seq = _openSeq;')).toBeLessThan(save.indexOf('var pb = pendingPullback();'));
     expect(save.indexOf('var pb = pendingPullback();')).toBeLessThan(save.indexOf('if (pb) await pb;'));
     expect(save.indexOf('if (pb) await pb;')).toBeLessThan(save.indexOf('if (seq !== _openSeq) return false;'));
+    // `indexOf` above only ever finds the FIRST capture — a second, later `var seq = _openSeq;`
+    // (e.g. a stray re-capture reintroducing the round-4 bug it replaced) would sit after every
+    // assertion above and go completely unnoticed. Pin the count, not just the position.
+    expect((save.match(/var seq = _openSeq;/g) || []).length).toBe(1);
     expect(save).toContain('if (!isSavableNow()) return false;');
     // fireAutosave re-arms (not a bare return) to recover from a failed pull-back, so manual
     // recovery doesn't need a fresh keystroke to resume autosave.
@@ -647,6 +651,10 @@ describe('ops UI — editing a quote in review', () => {
     expect(fa.indexOf('var pb = pendingPullback();')).toBeLessThan(fa.indexOf('if (pb) await pb;'));
     expect(fa.indexOf('if (pb) await pb;')).toBeLessThan(fa.indexOf('if (seq !== _openSeq) return;'));
     expect(fa.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(fa.indexOf('if (!state.vehicleType) return;'));
+    // Exactly one capture, reused (not re-captured) for the LATER `seq !== _openSeq` check further
+    // down the function — `indexOf` above only proves a first capture exists in the right place; a
+    // second, later `var seq = _openSeq;` would go unnoticed by every assertion above it.
+    expect((fa.match(/var seq = _openSeq;/g) || []).length).toBe(1);
   });
 
   it('fireAutosave re-arms only to recover from a failed pull-back, and only up to a limit', () => {
@@ -671,7 +679,7 @@ describe('ops UI — editing a quote in review', () => {
     expect(fnBody('isEditableNow')).toContain('_pullbackFailed');
   });
 
-  it('a failed pull-back still shows the unsaved-typing chip, not a blank one (round 3, Finding 3)', () => {
+  it('a failed pull-back still shows the unsaved-typing chip, not a blank one', () => {
     // isEditableNow() is false once a pull-back fails (re-locked), which used to blank the save
     // chip entirely — hiding exactly the state where the operator most needs to see "Unsaved":
     // typed content that never reached the server. The exemption must be narrow: it should only
@@ -693,6 +701,20 @@ describe('ops UI — editing a quote in review', () => {
     expect(body).toContain('comes back to you as a draft to resubmit');
     expect(body).not.toContain('In review — locked');
     expect(body).not.toContain('Submitted — locked');
+  });
+
+  it('a failed pull-back gets its own banner, not the stale "just start editing" copy', () => {
+    // After a failed pull-back isEditableNow() re-locks the editor (_pullbackFailed true), but
+    // state.status is still 'pending_review' — without a dedicated branch here the banner would
+    // keep telling the operator to "just start editing" over an editor that no longer responds,
+    // and the only explanation left would be a toast that has already faded. Checked BEFORE the
+    // normal pending_review copy, same exemption pattern as renderSaveState's `!_pullbackFailed`
+    // chip guard and the ⌘S/palette save gate's `pendingPullback()` check.
+    const rb = fnBody('renderReviewBanner');
+    expect(rb).toContain('if (_pullbackFailed) {');
+    expect(rb).toContain('Reopen to edit');
+    expect(rb.indexOf("if (s === 'pending_review') {")).toBeLessThan(rb.indexOf('if (_pullbackFailed) {'));
+    expect(rb.indexOf('if (_pullbackFailed) {')).toBeLessThan(rb.indexOf("banner('amber', 'In review'"));
   });
 
   it('the reopen door is still on the pending_review action bar for both roles', () => {
@@ -774,6 +796,18 @@ describe('ops UI — editing a quote in review', () => {
     expect(staleBlock).toContain("window.opsReportError && window.opsReportError('pullBackFromReview'");
   });
 
+  it('a thrown render()/showToast()/opsUpsertQuote inside the pull-back is caught, not left unhandled', () => {
+    // apiPatch itself cannot reject, but render()/showToast()/window.opsUpsertQuote can throw, and
+    // that throw would otherwise propagate as an unhandled rejection to the three `await pb;` sites
+    // (saveQuote/fireAutosave/transition) — in fireAutosave that means no beacon and a dead autosave
+    // cycle for that turn, silently. The catch must sit BEFORE the identity-checked `.finally()` so
+    // the promise stored in `_pullbacks[id]` (and everything awaiting it) always settles.
+    const pb = fnBody('pullBackFromReview');
+    expect(pb).toContain("p = p.catch(function (e) { window.opsReportError && window.opsReportError('pullBackFromReview', e); return false; });");
+    expect(pb.indexOf('p = p.catch(function (e) {')).toBeGreaterThan(pb.indexOf('})();'));
+    expect(pb.indexOf('p = p.catch(function (e) {')).toBeLessThan(pb.indexOf('p = p.finally(function () {'));
+  });
+
   it('a transition awaits an in-flight pull-back before reading the savable set', () => {
     // Review finding 2: without this, a founder's Approve click during the pull-back round-trip
     // races the pull-back's own status PATCH — the two can land in either order, and whichever
@@ -787,17 +821,16 @@ describe('ops UI — editing a quote in review', () => {
     expect(t.indexOf('if (pb) await pb;')).toBeLessThan(t.indexOf('var editable = isSavableNow();'));
   });
 
-  it('the transition await is itself generation-guarded (Important 2, round 2)', () => {
+  it('the transition await is itself generation-guarded, not just the save/fireAutosave copies', () => {
     // transition() had no guard of its own: reopenQuote() can re-point `state` at a different
     // quote while parked on the await above. Without this, a resumed transition would PATCH
     // whatever quote is open BY THEN to toStatus — not the one Approve/Send-back was pressed on.
     // Deliberately scoped to ONLY this await; the pre-existing `await saveQuote(...)` a few lines
     // below opens the identical window and is left unguarded on purpose (out of this fix's scope).
     // TODO(round-3-review): that pre-existing `await saveQuote(...)` window is a KNOWN, deliberately
-    // unguarded hole (see task-1-report.md) — the assertion below that `flushToPatch` has no
-    // `_openSeq` will correctly go RED the day someone closes it. That is a fix landing, not a
-    // regression; update/remove this test alongside that change rather than reading its failure
-    // as a break.
+    // unguarded hole — the assertion below that `flushToPatch` has no `_openSeq` will correctly go
+    // RED the day someone closes it. That is a fix landing, not a regression; update/remove this
+    // test alongside that change rather than reading its failure as a break.
     const t = fnBody('transition');
     expect(t).toContain('var seq = _openSeq;');
     expect(t).toContain('if (seq !== _openSeq) return;');
@@ -840,6 +873,12 @@ describe('ops UI — editing a quote in review', () => {
     const t = fnBody('transition');
     expect(t).toContain('_pullbackFailed = false;');
     expect(t.indexOf('state.status = toStatus;')).toBeLessThan(t.indexOf('_pullbackFailed = false;'));
+    // _pullbackRetries must ride along with _pullbackFailed here too: left nonzero across a
+    // successful transition, a SECOND future pull-back failure on this same quote would hit
+    // fireAutosave's retry cap (`_pullbackRetries < 6`) early, so it would stop re-arming and
+    // "Reopen to edit" would quietly become the only way out sooner than it should be.
+    expect(t).toContain('_pullbackRetries = 0;');
+    expect(t.indexOf('_pullbackFailed = false;')).toBeLessThan(t.indexOf('_pullbackRetries = 0;'));
   });
 
   it('a transition that skips the flush (quote not savable) does not discard the typing', () => {
@@ -862,6 +901,92 @@ describe('ops UI — editing a quote in review', () => {
     // The owner's line: a quote the customer already has stays founder-only.
     const sentRows = bar.split('\n').filter(l => l.includes("s === 'sent'"));
     expect(sentRows.filter(r => r.includes('reopenToDraft'))).toHaveLength(1); // approver row only
+  });
+
+  it('⌘S and the command-palette save both go through the shared shortcut gate, never bare saveQuote()', () => {
+    // isEditableNow() lets pending_review through (the editor is live on screen there), but
+    // saveQuote() only accepts the SAVABLE set (`if (!isSavableNow()) return false;`) with no
+    // toast — an untouched pending_review quote (nothing typed, no pull-back in flight) would make
+    // a Cmd+S press or the palette's "Save quote" action a silent no-op. Both entry points must
+    // route through the same gate so a press either does something or says why.
+    expect(fnBody('saveQuoteFromShortcut')).toContain('saveQuote();');
+    expect(body).toContain('saveQuoteFromShortcut();');
+    expect(body).not.toContain('if (isEditableNow() && state.vehicleType) saveQuote();');
+    expect(body).not.toContain("run: function() { saveQuote(); } });");
+  });
+
+  it('the shortcut gate explains itself instead of doing nothing on an untouched in-review quote', () => {
+    const sc = fnBody('saveQuoteFromShortcut');
+    expect(sc).toContain("state.status === 'pending_review' && !pendingPullback()");
+    expect(sc).toContain('showToast(');
+    // The toast branch must return BEFORE the real saveQuote() call, or it fires both.
+    expect(sc.indexOf("state.status === 'pending_review' && !pendingPullback()")).toBeLessThan(sc.indexOf('saveQuote();'));
+  });
+});
+
+// Deferred auto-distance work must not pull the WRONG quote out of review. scheduleAutoDistance
+// parks a 350ms timer keyed by legId; runAutoDistanceSingle/resolveSegmentDistance resume after an
+// `await apiDistance(...)` and end in updateLeg() -> markDirty(). Their existing guards are
+// leg-IDENTITY based (state.legs.find(l => l.id === legId)), but leg ids are a per-QUOTE sequence
+// number that resets to 0 on both reopenQuote and resetToNew — so a leg id can exist on two
+// different quotes at once. Edit a leg on quote A, switch straight to a pending_review quote B
+// whose colliding leg id is non-manual with both stops filled, and the resumed callback can write
+// to B and pull B out of the founder's queue with no operator edit on B at all.
+describe('ops UI — deferred auto-distance must not pull the wrong quote out of review', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  function fnBody(name: string): string {
+    const start = body.indexOf(`function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  }
+
+  it('resolveSegmentDistance is generation-guarded around its distance-fetch await', () => {
+    const rsd = fnBody('resolveSegmentDistance');
+    expect(rsd).toContain('var seq = _openSeq;');
+    expect(rsd).toContain('var seg = await apiDistance(from, to);');
+    expect(rsd).toContain('if (seq !== _openSeq) return;');
+    // Captured before the await, checked immediately after it, and — critically — before the
+    // pre-existing leg-identity guard, which only proves a same-shaped leg exists, not that it
+    // belongs to the same quote.
+    expect(rsd.indexOf('var seq = _openSeq;')).toBeLessThan(rsd.indexOf('var seg = await apiDistance(from, to);'));
+    expect(rsd.indexOf('var seg = await apiDistance(from, to);')).toBeLessThan(rsd.indexOf('if (seq !== _openSeq) return;'));
+    expect(rsd.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(rsd.indexOf('// Guard: leg/stops may have changed while we awaited'));
+  });
+
+  it('runAutoDistanceSingle is generation-guarded around BOTH of its awaits', () => {
+    // Two awaits in this function can each resume against a switched quote: the initial distance
+    // fetch, and the route-compare follow-up fetch that only runs when the first one resolved a
+    // real distance.
+    const rads = fnBody('runAutoDistanceSingle');
+    expect(rads).toContain('var seq = _openSeq;');
+    expect((rads.match(/if \(seq !== _openSeq\) return;/g) || []).length).toBe(2);
+    expect(rads.indexOf('var seq = _openSeq;')).toBeLessThan(rads.indexOf('var seg = await apiDistance(from, to);'));
+    const firstGuard = rads.indexOf('if (seq !== _openSeq) return;');
+    expect(rads.indexOf('var seg = await apiDistance(from, to);')).toBeLessThan(firstGuard);
+    expect(firstGuard).toBeLessThan(rads.indexOf('// Guard: leg may have changed while we awaited'));
+    const secondGuard = rads.indexOf('if (seq !== _openSeq) return;', firstGuard + 1);
+    expect(rads.indexOf('var v = await apiDistance(from, to, true);')).toBeLessThan(secondGuard);
+    expect(secondGuard).toBeLessThan(rads.indexOf('var live = state.legs.find('));
+  });
+
+  it('a quote switch drops the deferred-distance timers and cache, not just guards a stale resume', () => {
+    // _openSeq guards the RESUME; clearing _distTimers/_distCache means there is nothing parked
+    // to resume in the first place — belt and suspenders, since a merely-guarded stale resume
+    // still burns a network round trip and (if it lands after ANOTHER quote switch back to the
+    // original) could still find a live, matching seq by coincidence.
+    const reset = fnBody('resetToNew');
+    expect(reset).toContain('_distTimers[k]');
+    expect(reset).toContain('_distCache = {};');
+    const reopen = fnBody('reopenQuote');
+    expect(reopen).toContain('_distTimers[k]');
+    expect(reopen).toContain('_distCache = {};');
   });
 });
 
