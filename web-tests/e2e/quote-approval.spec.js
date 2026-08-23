@@ -405,16 +405,26 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
 // typing is the gesture, and it takes the quote out of the founder's queue on the way.
 test('ops typing on a pending_review quote pulls it back to draft, once', async ({ page }) => {
   const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' });
-  // Review finding, Minor 5 (round 2): with a 0ms mocked round-trip, if the PATCH resolves between
-  // keystrokes then state.status is already 'draft' by the second keystroke and markDirty() never
-  // re-enters pullBackFromReview() at all — toHaveLength(1) would pass with NO idempotence guard
-  // present. Hold the PATCH so every one of the 5 keystrokes below is guaranteed to fire while the
-  // pull-back is still in flight (the map entry for q1 in `_pullbacks` is still populated).
+  // With a 0ms mocked round-trip, if the PATCH resolves between keystrokes then state.status is
+  // already 'draft' by the second keystroke and markDirty() never re-enters pullBackFromReview()
+  // at all — toHaveLength(1) below would pass with NO idempotence guard present. Hold the PATCH so
+  // every one of the 5 keystrokes is guaranteed to fire while the pull-back is still in flight.
+  //
+  // The hold is also what makes the ordering assertions below actually exercise the guarantee they
+  // name, rather than passing on debounce timing alone: the autosave debounce is 2.5s
+  // (ops-ui.html:4760), so the hold must clear that bar. At 300ms the PATCH always resolved (and
+  // its map entry cleared) well before the debounce ever fired, so saveQuote's/fireAutosave's own
+  // `if (pb) await pb;` guards were never actually awaiting anything by the time either ran — the
+  // PATCH-before-/save order held by coincidence of timing, not because a guard enforced it, and
+  // deleting either guard left both assertions green. At 4000ms the debounce fires FIRST, while the
+  // pull-back is still genuinely in flight, so the guard is what makes the /save wait for the PATCH
+  // — without it the assertions below would go red.
+  //
   // Registered after openDetail() so it wins (Playwright matches routes in reverse registration
   // order); falls back to the harness's own handler for everything else, including the PATCH
   // itself once the delay has elapsed.
   await page.route('**/admin/quote/**', async (route) => {
-    if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 300));
+    if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 4000));
     await route.fallback();
   });
   await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
@@ -424,18 +434,34 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   // types character-by-character (5 input events for "Nimal"), which actually exercises the
   // `if (_pullbacks[id]) return _pullbacks[id];` early-return in pullBackFromReview().
   await page.locator('#f-firstName').pressSequentially('Nimal');
-  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  // Idempotence alone doesn't prove the ORDERING guarantee — that no POST /save for this quote is
+  // ever issued before the PATCH {status:'draft'} that pulls it back, and that it never takes a
+  // 409 (not_editable) on the way. That guarantee is the whole reason the pull-back design exists
+  // (the server keeps refusing /save for pending_review).
+  //
+  // Pressing Cmd/Ctrl+S HERE — immediately, while the PATCH above is still held — exercises the
+  // MANUAL-save entry point directly: ops-ui.html's keydown handler calls saveQuote() itself
+  // (`if (isEditableNow() && state.vehicleType) saveQuote();`), not through fireAutosave, which has
+  // its own independent `if (pb) await pb;` guard on the debounced path. Relying on the debounce
+  // alone would only ever prove fireAutosave's copy of the guard; this proves the invariant holds
+  // from BOTH entry points a real operator can trigger a save from.
+  await page.keyboard.press('Control+s');
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 15000 });
   // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
   expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(1);
 
-  // Round 3 review, Finding 6. Idempotence alone (above) doesn't prove the ORDERING guarantee —
-  // that no POST /save for this quote is ever issued before the PATCH {status:'draft'} that pulls
-  // it back, and that it never takes a 409 (not_editable) on the way. That guarantee is the whole
-  // reason the pull-back design exists (the server keeps refusing /save for pending_review); until
-  // now it was pinned only by source-scan string matching. The typed keystrokes above already
-  // armed autosave (2.5s debounce), so waiting for its /save proves the real client code, not a
-  // synthetic race.
-  await expect.poll(() => store.events.some((e) => e.type === 'save' && e.id === 'q1'), { timeout: 10000 })
+  // The held PATCH (300ms -> 4000ms, above the 2.5s autosave debounce) is what makes this able to
+  // fail at all, rather than passing on timing coincidence: at 300ms the PATCH always resolved
+  // before either save path could race it, so the order held regardless of any guard. Verified by
+  // deliberately breaking it (see task-1-report.md, round 4, Finding 2): stripping BOTH `if (pb)
+  // await pb;` lines (saveQuote's and fireAutosave's) times this test out — no /save is ever sent,
+  // because saveQuote's own isSavableNow() check blocks it while pending_review and nothing retries
+  // once the pull-back lands. Stripping only ONE of the two still passes, because they are
+  // deliberately redundant: fireAutosave's guard covers the debounced path end to end, saveQuote's
+  // covers the manual Cmd+S path end to end, and this test drives both paths. That redundancy is
+  // correct — do not read "removing one guard alone doesn't fail this test" as the guard being
+  // unnecessary.
+  await expect.poll(() => store.events.some((e) => e.type === 'save' && e.id === 'q1'), { timeout: 15000 })
     .toBe(true);
   const q1Events = store.events.filter((e) => e.id === 'q1');
   const patchIdx = q1Events.findIndex((e) => e.type === 'patch' && e.status === 'draft');

@@ -545,10 +545,12 @@ describe('ops UI — design elevation', () => {
     expect(body).toContain('function fireAutosave(');
     expect(body).toContain('setTimeout(fireAutosave, 2500)');
     // Savable, not editable (owner, 2026-08-22): pending_review is editable on screen, but an
-    // autosave firing there must not reach /save before the pull-back PATCH lands. Round 3 review,
-    // Finding 4: re-arms rather than returning bare, so recovery from a failed pull-back doesn't
-    // need a fresh keystroke to resume autosave.
-    expect(body).toContain('if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }');
+    // autosave firing there must not reach /save before the pull-back PATCH lands. Unpriceable
+    // (!vehicleType) goes quiet with a bare return; not-yet-savable re-arms only for the specific
+    // failed-pull-back recovery case (see the dedicated test below), not for every not-savable
+    // status.
+    expect(body).toContain('if (!state.vehicleType) return;');
+    expect(body).toContain('if (_pullbackFailed && _pullbackRetries < 6) { _pullbackRetries++; armAutosave(); }');
     expect(body).not.toContain('if (!state.savedId || !isEditableNow()');
     expect(body).toContain('ch-savestate');
   });
@@ -608,14 +610,20 @@ describe('ops UI — editing a quote in review', () => {
 
   it('no edit can reach /save before the pull-back PATCH lands', () => {
     const save = fnBody('saveQuote');
-    // Round 3, Finding 1: awaits THIS quote's pull-back via pendingPullback(), not a global.
+    // `seq` is captured BEFORE the pull-back await and reused after it (not re-captured), so a
+    // reopen landing mid-await is caught before this resumes and saves against the wrong quote —
+    // and it awaits THIS quote's pull-back via pendingPullback(), not a global.
+    expect(save).toContain('var seq = _openSeq;');
     expect(save).toContain('var pb = pendingPullback();');
     expect(save).toContain('if (pb) await pb;');
+    expect(save).toContain('if (seq !== _openSeq) return false;');
+    expect(save.indexOf('var seq = _openSeq;')).toBeLessThan(save.indexOf('var pb = pendingPullback();'));
     expect(save.indexOf('var pb = pendingPullback();')).toBeLessThan(save.indexOf('if (pb) await pb;'));
+    expect(save.indexOf('if (pb) await pb;')).toBeLessThan(save.indexOf('if (seq !== _openSeq) return false;'));
     expect(save).toContain('if (!isSavableNow()) return false;');
-    // Round 3, Finding 4: fireAutosave re-arms (not a bare return) when the quote is not savable,
-    // so manual recovery from a failed pull-back doesn't need a fresh keystroke to resume autosave.
-    expect(fnBody('fireAutosave')).toContain("if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }");
+    // fireAutosave re-arms (not a bare return) to recover from a failed pull-back, so manual
+    // recovery doesn't need a fresh keystroke to resume autosave.
+    expect(fnBody('fireAutosave')).toContain('if (_pullbackFailed && _pullbackRetries < 6) { _pullbackRetries++; armAutosave(); }');
   });
 
   it('a transition still flushes only what the server would accept', () => {
@@ -624,13 +632,12 @@ describe('ops UI — editing a quote in review', () => {
     expect(fnBody('transition')).toContain('var editable = isSavableNow();');
   });
 
-  it('fireAutosave is generation-guarded around its own pull-back await (round 3, Finding 2)', () => {
-    // The `if (_pullback) await _pullback;` this task first added sat ABOVE the pre-existing
-    // `var seq = _openSeq;`, so a reopen mid-await was not caught: `_dirty` was already checked
-    // for the OLD quote before the await, and the resumed autosave would re-read `state` for
-    // whatever quote is open by the time the pull-back settles — POSTing /save for a quote the
-    // operator merely opened, not edited. `seq` must be captured before the await and checked
-    // (with a bail) immediately after, mirroring transition's own guard.
+  it('fireAutosave is generation-guarded around its own pull-back await', () => {
+    // `seq` must be captured before the await and checked (with a bail) immediately after,
+    // mirroring saveQuote's/transition's own guards — `_dirty` above was already checked for the
+    // OLD quote before the await, and the resumed autosave would otherwise re-read `state` for
+    // whatever quote is open by the time the pull-back settles, POSTing /save for a quote the
+    // operator merely opened, not edited.
     const fa = fnBody('fireAutosave');
     expect(fa).toContain('var seq = _openSeq;');
     expect(fa).toContain('var pb = pendingPullback();');
@@ -639,18 +646,23 @@ describe('ops UI — editing a quote in review', () => {
     expect(fa.indexOf('var seq = _openSeq;')).toBeLessThan(fa.indexOf('var pb = pendingPullback();'));
     expect(fa.indexOf('var pb = pendingPullback();')).toBeLessThan(fa.indexOf('if (pb) await pb;'));
     expect(fa.indexOf('if (pb) await pb;')).toBeLessThan(fa.indexOf('if (seq !== _openSeq) return;'));
-    expect(fa.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(fa.indexOf('if (!isSavableNow() || !state.vehicleType)'));
+    expect(fa.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(fa.indexOf('if (!state.vehicleType) return;'));
   });
 
-  it('fireAutosave re-arms instead of going silent when the quote is not (yet) savable (round 3, Finding 4)', () => {
+  it('fireAutosave re-arms only to recover from a failed pull-back, and only up to a limit', () => {
     // A failed pull-back re-locks the editor but leaves typed content in `_dirty`. Manual recovery
     // ("Reopen to edit" -> transition('draft') succeeds) does not itself re-arm autosave, so a bare
-    // `return` here would strand the typing unsaved until the next keystroke or Cmd+S. Mirrors the
-    // `_ac.menuEl` branch immediately below, which already retries instead of going silent — pinned
-    // to run BEFORE that branch so it isn't mistaken for a duplicate of it.
+    // `return` here would strand the typing unsaved until the next keystroke or Cmd+S. Scoped to
+    // exactly that case — NOT every not-savable status, and NOT the unpriceable-shell case, which
+    // stays a silent bare return just below — and bounded, so an abandoned tab does not poll
+    // forever waiting for a pull-back that never gets manually retried.
     const fa = fnBody('fireAutosave');
-    expect(fa).toContain('if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }');
-    expect(fa.indexOf('if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }'))
+    expect(fa).toContain('if (!state.vehicleType) return;');
+    expect(fa).toContain('if (!isSavableNow()) {');
+    expect(fa).toContain('if (_pullbackFailed && _pullbackRetries < 6) { _pullbackRetries++; armAutosave(); }');
+    // vehicleType is checked (and returns bare, no re-arm) BEFORE the savable/re-arm check.
+    expect(fa.indexOf('if (!state.vehicleType) return;')).toBeLessThan(fa.indexOf('if (!isSavableNow()) {'));
+    expect(fa.indexOf('if (_pullbackFailed && _pullbackRetries < 6) { _pullbackRetries++; armAutosave(); }'))
       .toBeLessThan(fa.indexOf('if (_ac && _ac.menuEl) { armAutosave(); return; }'));
   });
 
@@ -801,17 +813,21 @@ describe('ops UI — editing a quote in review', () => {
     expect(flushToPatch).not.toContain('_openSeq');
   });
 
-  it('a transition already sitting on the target status after its pull-back does not re-PATCH', () => {
-    // Round 3, Finding 5: "Reopen to edit" pressed while a pull-back to draft on the SAME quote is
-    // still in flight. transition() awaits it, the pull-back succeeds and sets state.status =
-    // 'draft' itself, and a resumed transition PATCHing draft -> draft is not a transition the
-    // server accepts (illegal_transition) — that raw code would otherwise leak through the generic
-    // "Could not update —" toast. Pinned between the seq guard and the savable-set read, since it
-    // must fire before transition does anything else with `state`.
+  it('a transition already sitting on the target status after ITS OWN pull-back does not re-PATCH', () => {
+    // "Reopen to edit" pressed while a pull-back to draft on the SAME quote is still in flight.
+    // transition() awaits it, the pull-back succeeds and sets state.status = 'draft' itself, and a
+    // resumed transition PATCHing draft -> draft is not a transition the server accepts
+    // (illegal_transition) — that raw code would otherwise leak through the generic "Could not
+    // update —" toast. Pinned between the seq guard and the savable-set read, since it must fire
+    // before transition does anything else with `state`.
+    //
+    // Gated on `pb` (there really was a pull-back this call awaited), not on same-status alone: an
+    // unrelated same-status press (e.g. a stale double click with no pull-back in play) must still
+    // reach the server and opts.toast/opts.goQueue below, not become a silent no-op.
     const t = fnBody('transition');
-    expect(t).toContain('if (state.status === toStatus) return;');
-    expect(t.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(t.indexOf('if (state.status === toStatus) return;'));
-    expect(t.indexOf('if (state.status === toStatus) return;')).toBeLessThan(t.indexOf('var editable = isSavableNow();'));
+    expect(t).toContain('if (pb && state.status === toStatus) return;');
+    expect(t.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(t.indexOf('if (pb && state.status === toStatus) return;'));
+    expect(t.indexOf('if (pb && state.status === toStatus) return;')).toBeLessThan(t.indexOf('var editable = isSavableNow();'));
   });
 
   it('a successful transition clears a stale pull-back failure on the SAME quote', () => {
@@ -896,8 +912,10 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(chip).toContain('var autosaveArmed = !!state.vehicleType;');
     expect(chip).toContain("else if (_autoState === 'error' && autosaveArmed)");
     expect(chip).toContain("txt = 'Autosave failed &mdash; use Save';");
-    // The gate is only meaningful if it matches fireAutosave's own early return.
-    expect(fnBody('fireAutosave')).toContain('if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }');
+    // The gate is only meaningful if it matches fireAutosave's own early return — a bare return,
+    // no re-arm, since an unpriced shell with typed content has nothing to retry until it has a
+    // vehicle type; polling every 2.5s for it would be pure waste.
+    expect(fnBody('fireAutosave')).toContain('if (!state.vehicleType) return;');
   });
 
   it('claiming the row marks it unpriced, and a successful save clears the marker', () => {
@@ -960,13 +978,18 @@ describe('ops UI — unpriced shell lifecycle', () => {
     const save = fnBody('saveQuote');
     expect(save).toContain('var seq = _openSeq;');
     expect(save).toMatch(/if \(seq !== _openSeq\) \{[\s\S]{0,300}return false;/);
-    // The capture must happen BEFORE the await — captured after it (or dropped below it) can
-    // never differ from the live _openSeq by the time it's compared, making the guard permanently
-    // inert while every assertion here still passes.
+    // `seq` is captured once, above even the pull-back await, and reused by BOTH generation checks
+    // in this function — the early one right after that await (`if (seq !== _openSeq) return
+    // false;`, covering a reopen landing during the pull-back) and this one after apiSave (the
+    // brace form asserted above, covering a reopen landing during the save itself). Capturing after
+    // either await (or dropping the check below it) can never differ from the live _openSeq by the
+    // time it's compared, making the guard permanently inert while every assertion here still
+    // passes — so this pins the SECOND (post-apiSave) occurrence specifically, not just "some"
+    // `if (seq !== _openSeq)` in the function.
     expect(save.indexOf('var seq = _openSeq;')).toBeLessThan(save.indexOf('await apiSave('));
-    // The guard must sit between the await and the state writes.
-    expect(save.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(save.indexOf('await apiSave('));
-    expect(save.indexOf('if (seq !== _openSeq)')).toBeLessThan(save.indexOf('state.savedId = res.id;'));
+    const staleSaveGuardIdx = save.indexOf('if (seq !== _openSeq) {');
+    expect(staleSaveGuardIdx).toBeGreaterThan(save.indexOf('await apiSave('));
+    expect(staleSaveGuardIdx).toBeLessThan(save.indexOf('state.savedId = res.id;'));
   });
 
   it('an assign superseded while in flight is dropped, not painted onto the quote now open', () => {
