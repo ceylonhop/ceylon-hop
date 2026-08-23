@@ -599,7 +599,9 @@ describe('ops UI — editing a quote in review', () => {
   });
 
   it('one burst of typing fires exactly one PATCH', () => {
-    expect(fnBody('pullBackFromReview')).toContain('if (_pullback) return _pullback;');
+    // Keyed to the quote (round 2, Important 1) — see the dedicated keying test below for why a
+    // bare `if (_pullback) return _pullback;` was not enough.
+    expect(fnBody('pullBackFromReview')).toContain('if (_pullback && _pullbackId === id) return _pullback;');
   });
 
   it('no edit can reach /save before the pull-back PATCH lands', () => {
@@ -648,28 +650,101 @@ describe('ops UI — editing a quote in review', () => {
   });
 
   it('the pull-back resolution is generation-guarded, like every other post-await state write', () => {
-    // Review finding 1: `id` alone is not enough — the resolution runs after an await, and the
-    // operator can open a different quote (reopenQuote/resetToNew bump _openSeq) before it lands.
-    // Without this, quote A's pull-back can stamp state.status = 'draft' onto quote B's editor.
+    // Review finding 1 (round 1): `id` alone is not enough — the resolution runs after an await,
+    // and the operator can open a different quote (reopenQuote/resetToNew bump _openSeq) before it
+    // lands. Without this, quote A's pull-back can stamp state.status = 'draft' onto quote B's
+    // editor. Position-pinned, not just presence: a guard that existed but sat in the wrong place
+    // (e.g. below the state write) would satisfy plain toContain checks while doing nothing.
     const pb = fnBody('pullBackFromReview');
     expect(pb).toContain('var seq = _openSeq;');
-    expect(pb).toContain('if (seq !== _openSeq) return');
+    expect(pb).toContain('if (seq !== _openSeq)');
+    // Captured BEFORE the await, or it can never differ from the live _openSeq when compared.
+    expect(pb.indexOf('var seq = _openSeq;')).toBeLessThan(pb.indexOf('await apiPatch('));
+    // The guard must sit between the await and the state write it protects.
+    expect(pb.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(pb.indexOf('await apiPatch('));
+    expect(pb.indexOf('if (seq !== _openSeq)')).toBeLessThan(pb.indexOf("state.status = 'draft';"));
+  });
+
+  it('the pull-back slot is keyed to the quote it belongs to, not a single global flag', () => {
+    // Review finding, Important 1 (round 2): a bare `if (_pullback) return _pullback;` returns
+    // regardless of which quote it belongs to. Pull-back in flight for quote A → operator opens
+    // quote B (still pending_review) → types → the guard hands back A's promise and B is never
+    // PATCHed, leaving it in the founder's queue with changed content — the exact invariant the
+    // whole design exists to protect.
+    const pb = fnBody('pullBackFromReview');
+    expect(pb).toContain('if (_pullback && _pullbackId === id) return _pullback;');
+    // `id` must be read before the keyed check means anything, and the slot must be claimed for
+    // THIS id before the async work starts — claiming it after the await would leave a window
+    // where a second caller sees no owner yet and starts its own PATCH for the same quote.
+    expect(pb.indexOf('var id = state.savedId;')).toBeLessThan(pb.indexOf('if (_pullback && _pullbackId === id) return _pullback;'));
+    expect(pb.indexOf('_pullbackId = id;')).toBeLessThan(pb.indexOf('(async function'));
+    // The finally must only release the slot it still owns — an unconditional clear would drop a
+    // newer pull-back's promise reference out from under its own awaiters.
+    expect(pb).toContain('if (_pullbackId === id) { _pullback = null; _pullbackId = null; }');
+  });
+
+  it('a stale-generation pull-back FAILURE is reported, not swallowed', () => {
+    // Review finding, Minor 6 (round 2): returning before the toast/render on a stale generation
+    // is correct (state now describes a different quote) — but that left a failure on quote `id`
+    // completely silent. Same beacon pattern as reopenQuote's/saveQuote's stale-discard reports.
+    const pb = fnBody('pullBackFromReview');
+    const staleBlock = pb.slice(pb.indexOf('if (seq !== _openSeq)'), pb.indexOf("if (!ok) {\n      // Re-lock"));
+    expect(staleBlock).toContain("window.opsReportError && window.opsReportError('pullBackFromReview'");
   });
 
   it('a transition awaits an in-flight pull-back before reading the savable set', () => {
     // Review finding 2: without this, a founder's Approve click during the pull-back round-trip
     // races the pull-back's own status PATCH — the two can land in either order, and whichever
     // loses either drops the edit that triggered the pull-back or leaves `state` disagreeing with
-    // the server.
-    expect(fnBody('transition')).toContain('if (_pullback) await _pullback;');
+    // the server. Pinned above the savable-set read it exists to protect.
+    const t = fnBody('transition');
+    expect(t).toContain('if (_pullback) await _pullback;');
+    expect(t.indexOf('if (_pullback) await _pullback;')).toBeLessThan(t.indexOf('var editable = isSavableNow();'));
+  });
+
+  it('the transition await is itself generation-guarded (Important 2, round 2)', () => {
+    // transition() had no guard of its own: reopenQuote() can re-point `state` at a different
+    // quote while parked on the await above. Without this, a resumed transition would PATCH
+    // whatever quote is open BY THEN to toStatus — not the one Approve/Send-back was pressed on.
+    // Deliberately scoped to ONLY this await; the pre-existing `await saveQuote(...)` a few lines
+    // below opens the identical window and is left unguarded on purpose (out of this fix's scope).
+    const t = fnBody('transition');
+    expect(t).toContain('var seq = _openSeq;');
+    expect(t).toContain('if (seq !== _openSeq) return;');
+    expect(t.indexOf('var seq = _openSeq;')).toBeLessThan(t.indexOf('if (_pullback) await _pullback;'));
+    expect(t.indexOf('if (_pullback) await _pullback;')).toBeLessThan(t.indexOf('if (seq !== _openSeq) return;'));
+    expect(t.indexOf('if (seq !== _openSeq) return;')).toBeLessThan(t.indexOf('var editable = isSavableNow();'));
+    // The pre-existing hole is NOT what this guard covers — pin that the flush-save line and
+    // everything between it and the status PATCH still has no seq check of its own. Anchored on
+    // the actual code line (not the comment above, which also mentions "saveQuote" by name).
+    const flushLine = "if (editable && !(await saveQuote({ silent: true, deferQueueRefresh: true }))) return;";
+    expect(t).toContain(flushLine);
+    const flushToPatch = t.slice(t.indexOf(flushLine), t.indexOf('var patchBody ='));
+    expect(flushToPatch).not.toContain('_openSeq');
   });
 
   it('a successful transition clears a stale pull-back failure on the SAME quote', () => {
     // Review finding 4: the reset sites in resetToNew/reopenQuote only cover a DIFFERENT quote
     // being opened. Fail pull-back -> Reopen to edit -> fix -> resubmit lands back on
     // pending_review with the same quote still open; without clearing the flag here,
-    // isEditableNow() re-locks the editor with no new failure to explain why.
-    expect(fnBody('transition')).toContain('_pullbackFailed = false;');
+    // isEditableNow() re-locks the editor with no new failure to explain why. Pinned below the
+    // success write, or a copy sitting in the earlier failure branch (which returns before ever
+    // reaching here) would satisfy a plain toContain just as well.
+    const t = fnBody('transition');
+    expect(t).toContain('_pullbackFailed = false;');
+    expect(t.indexOf('state.status = toStatus;')).toBeLessThan(t.indexOf('_pullbackFailed = false;'));
+  });
+
+  it('a transition that skips the flush (quote not savable) does not discard the typing', () => {
+    // Review finding, Minor 7 (round 2): before this task pending_review was content-locked, so
+    // unsaved typing could never coexist with a non-savable quote. Now it can — a failed pull-back
+    // re-locks the editor but leaves already-typed content in memory, `editable` is false, the
+    // flush above never runs, and an unconditional `_dirty = false` here would discard it.
+    const t = fnBody('transition');
+    expect(t).toContain('if (editable) _dirty = false;');
+    // Exactly one clear in the whole function, and it's the guarded one above — an unconditional
+    // `_dirty = false;` sitting anywhere else in transition() would still discard the typing.
+    expect((t.match(/_dirty = false;/g) || []).length).toBe(1);
   });
 });
 

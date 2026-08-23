@@ -398,12 +398,23 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
 // typing is the gesture, and it takes the quote out of the founder's queue on the way.
 test('ops typing on a pending_review quote pulls it back to draft, once', async ({ page }) => {
   const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' });
+  // Review finding, Minor 5 (round 2): with a 0ms mocked round-trip, if the PATCH resolves between
+  // keystrokes then state.status is already 'draft' by the second keystroke and markDirty() never
+  // re-enters pullBackFromReview() at all — toHaveLength(1) would pass with NO idempotence guard
+  // present. Hold the PATCH so every one of the 5 keystrokes below is guaranteed to fire while
+  // `_pullback` is still non-null. Registered after openDetail() so it wins (Playwright matches
+  // routes in reverse registration order); falls back to the harness's own handler for everything
+  // else, including the PATCH itself once the delay has elapsed.
+  await page.route('**/admin/quote/**', async (route) => {
+    if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 300));
+    await route.fallback();
+  });
   await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
   await expect(page.locator('#f-firstName')).toBeEnabled();
   // page.fill sets the value and dispatches exactly ONE input event — markDirty() would fire once
   // no matter what, so it can't tell an idempotence guard from no guard at all. pressSequentially
   // types character-by-character (5 input events for "Nimal"), which actually exercises the
-  // `if (_pullback) return _pullback;` early-return in pullBackFromReview().
+  // `if (_pullback && _pullbackId === id) return _pullback;` early-return in pullBackFromReview().
   await page.locator('#f-firstName').pressSequentially('Nimal');
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
