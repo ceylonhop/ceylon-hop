@@ -78,7 +78,6 @@ describe('customer pay pages are served by the API host', () => {
       ['/ticket.css', 'text/css'],
       ['/phone-countries.js', 'javascript'],
       ['/analytics.js', 'javascript'],
-      ['/consent.js', 'javascript'],
       ['/favicon.svg', 'image/svg+xml'],
       ['/img/ceylon-hop-touch-icon.png', 'image/png'],
       ['/img/brand-c.svg', 'image/svg+xml'],

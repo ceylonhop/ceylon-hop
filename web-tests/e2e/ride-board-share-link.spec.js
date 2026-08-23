@@ -20,9 +20,6 @@ const LIST = {
 const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
 
 async function stubApi(page) {
-  await page.addInitScript(() => {
-    try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) { /* ignore */ }
-  });
   await page.route((u) => isApiHost(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board') {
