@@ -4765,10 +4765,22 @@ async function fireAutosave() {
   // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
   // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
   // persisted at all. That window is the only place the beforeunload guard still matters.
-  if (_pullback) await _pullback; // the pull-back PATCH must land before any /save
-  if (!isSavableNow() || !state.vehicleType) return;
-  if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  // Round 3 review, Finding 2: captured BEFORE the pull-back await, not after. `_dirty` above was
+  // already checked for whichever quote was open when the timer fired; if the operator opens a
+  // DIFFERENT quote during this await, reopenQuote() sets _dirty = false for it, but that check
+  // already passed here — without this guard the resumed autosave would re-read `state` for the
+  // NEW quote and POST /save for a quote the operator merely opened.
   var seq = _openSeq;
+  var pb = pendingPullback(); // round 3 review, Finding 1: THIS quote's pull-back, not a global
+  if (pb) await pb;
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
+  // Round 3 review, Finding 4: re-arm instead of just returning. A failed pull-back re-locks the
+  // editor (isSavableNow() false) but leaves the typed content in _dirty; manual recovery (press
+  // "Reopen to edit" -> transition('draft') succeeds) does not itself re-arm autosave, so without
+  // this the typing would sit unsaved until the next keystroke or Cmd+S. Mirrors the _ac.menuEl
+  // branch just below, which already retries instead of going silent.
+  if (!isSavableNow() || !state.vehicleType) { armAutosave(); return; }
+  if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok;
@@ -4789,7 +4801,13 @@ async function fireAutosave() {
   updateSaveChip();
 }
 function renderSaveState() {
-  if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
+  // Round 3 review, Finding 3: a failed pull-back leaves isEditableNow() false (re-locked) while
+  // _dirty can still be true — the operator's typing never reached the server. Blanking the chip
+  // there hides exactly the moment "Unsaved" matters most. Every OTHER locked state (ready/sent/
+  // etc) never carries a true _pullbackFailed — every path that sets it also clears it on the next
+  // successful transition (round 2 review, Minor 4) — so this only reopens the chip for the
+  // failed-pull-back case, not for every genuinely locked quote.
+  if (!isEditableNow() && !_pullbackFailed) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   // Whether anything typed is being written down at all. fireAutosave() returns early while
   // there is no vehicle type (POST /save prices, and an unpriceable payload cannot be
@@ -4828,24 +4846,33 @@ function updateSaveChip() {
    every caller after the first gets the same in-flight promise back. Never reached for 'ready'
    (markDirty cannot fire there — the editor is locked), which is the point: dropping a rate lock
    re-prices, and no keystroke should do that. */
-var _pullback = null, _pullbackId = null, _pullbackFailed = false;
+var _pullbacks = {}, _pullbackFailed = false;
+// Round 3 review, Finding 1: exactly what pullBackFromReview() would compute for the CURRENT
+// quote — pulled out so the three ordering guards below (saveQuote/fireAutosave/transition) each
+// await the promise belonging to whatever quote is open NOW, never a global that might still hold
+// some OTHER quote's in-flight pull-back.
+function pendingPullback() {
+  return state.savedId ? _pullbacks[state.savedId] : null;
+}
 function pullBackFromReview() {
   var id = state.savedId;
-  // Keyed slot (owner, 2026-08-22, round 2 review). _pullback used to be a single global flag: a
-  // pull-back in flight for quote A made this early-return win for quote B too (same promise,
-  // wrong quote), so B's edit never PATCHed and stayed sitting in the founder's queue with changed
-  // content — the exact thing pull-back exists to prevent. Keying the slot to `id` lets two
-  // quotes' pull-backs run independently.
-  if (_pullback && _pullbackId === id) return _pullback;
-  // Generation guard (owner, 2026-08-22), same pattern as saveQuote/fireAutosave/reopenQuote: the
-  // PATCH below is in flight across an await, and the operator is free to click a different quote
-  // in the queue before it resolves. reopenQuote()/resetToNew() bump _openSeq and re-hydrate
-  // `state` for THAT quote — if this resolution then went ahead and wrote state.status = 'draft'
-  // unguarded, it would stamp quote A's outcome onto quote B's now-open editor.
-  var seq = _openSeq;
   if (!id) return null; // nothing persisted yet — there is no review to leave
-  _pullbackId = id; // claim the slot for THIS quote before the async work starts
-  _pullback = (async function () {
+  // Per-quote idempotence via a MAP keyed by id (round 3 review, Finding 1), replacing the round-2
+  // "keyed slot" — a single (promise, id) pair that could only remember ONE quote's pull-back at a
+  // time. Sequence that broke it: quote A pending, PATCH in flight (slot = A) -> operator opens
+  // quote B (also pending_review) and types -> the keyed check `_pullbackId === id` doesn't match
+  // B, falls through, B claims the slot (slot = B), A's promise is evicted from the slot but still
+  // in flight -> operator clicks back to A before its PATCH lands and types again -> the check
+  // falls through AGAIN (slot now belongs to B, not A) -> a SECOND PATCH fires for A. A map gives
+  // every quote its own entry, so there is nothing to fall through to.
+  if (_pullbacks[id]) return _pullbacks[id]; // one burst of typing on THIS quote, one PATCH
+  // Generation guard, same pattern as saveQuote/fireAutosave/reopenQuote: the PATCH below is in
+  // flight across an await, and the operator is free to click a different quote in the queue
+  // before it resolves. reopenQuote()/resetToNew() bump _openSeq — if the resolution below then
+  // went ahead and wrote state.status unguarded, it would stamp this quote's outcome onto
+  // whatever quote is open by the time it lands.
+  var seq = _openSeq;
+  var p = (async function () {
     var res = await apiPatch(id, { status: 'draft' });
     var ok = !!(res && !res.error);
     // The write really happened for `id` regardless of what's on screen by the time it resolves,
@@ -4876,13 +4903,16 @@ function pullBackFromReview() {
     // text and caret (captureEditorFocus / restoreEditorFocus).
     render();
     return true;
-  })().finally(function () {
-    // Only release the slot if we still own it — a newer pull-back for a DIFFERENT quote may
-    // already have claimed _pullbackId/_pullback while this one was in flight, and clearing them
-    // unconditionally would drop that newer promise out from under its own awaiters.
-    if (_pullbackId === id) { _pullback = null; _pullbackId = null; }
+  })();
+  p = p.finally(function () {
+    // Release on IDENTITY, not id (round 3 review, Finding 1): by the time this settles, id's map
+    // entry may already belong to a NEWER pull-back for the SAME quote — e.g. this one failed and
+    // was cleared, and a fresh keystroke started another before this .finally ran. Clearing
+    // unconditionally would drop that newer promise's ownership out from under its own awaiters.
+    if (_pullbacks[id] === p) delete _pullbacks[id];
   });
-  return _pullback;
+  _pullbacks[id] = p; // claim the entry synchronously — no other caller can race this assignment
+  return p;
 }
 function markDirty() {
   // Ahead of the flag on purpose: the autosave this arms must never reach /save before the PATCH.
@@ -5617,7 +5647,10 @@ async function saveQuote(opts) {
   // not reach /save before the pull-back PATCH lands, or the server 409s not_editable and the
   // operator's typing is silently lost. This await is what makes it a guarantee, not a race the
   // 2.5s autosave debounce happens to win.
-  if (_pullback) await _pullback;
+  // Round 3 review, Finding 1: THIS quote's pull-back (pendingPullback), not a global — a global
+  // slot can hold some OTHER quote's promise while this one has none in flight, or vice versa.
+  var pb = pendingPullback();
+  if (pb) await pb;
   if (!isSavableNow()) return false; // pull-back failed; pullBackFromReview already said why
   if (!state.vehicleType) {
     showToast('Choose a vehicle type first', 'error');
@@ -5706,8 +5739,18 @@ async function transition(toStatus, opts) {
   // kind of window and is deliberately left unguarded — that hole predates this task and is out of
   // its scope.
   var seq = _openSeq;
-  if (_pullback) await _pullback;
+  // Round 3 review, Finding 1: THIS quote's pull-back (pendingPullback), not a global — see the
+  // helper's own comment for the sequence that broke the old single/keyed-slot design.
+  var pb = pendingPullback();
+  if (pb) await pb;
   if (seq !== _openSeq) return; // a different quote is open now — bail before reading/writing state
+  // Round 3 review, Finding 5: the pull-back just awaited can itself have already reached
+  // `toStatus` — e.g. "Reopen to edit" pressed while a pull-back to draft on this same quote is
+  // still in flight. By the time we resume, state.status is already 'draft'; PATCHing draft ->
+  // draft again is not a transition the server accepts (illegal_transition), and that raw code
+  // would otherwise leak through the generic "Could not update —" toast below. Nothing left to
+  // do here — the pull-back's own toast/render/queue-sync already covered it.
+  if (state.status === toStatus) return;
   // Must read the SAVABLE set, not the editable one: pending_review is editable on screen, and
   // flushing a save there POSTs to /save, takes a 409 and aborts the transition — the bug commit
   // 3d93b56 fixed, which widening isEditableNow() would silently reintroduce. There is nothing to

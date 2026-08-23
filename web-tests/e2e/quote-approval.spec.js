@@ -116,7 +116,10 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     // flag is the gate; this cap being present here is what makes that distinction testable.
     ops: ['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read'],
   };
-  const store = { patches: [], saves: [], list: quotes.slice() };
+  // `events` interleaves saves and patches in the order the server actually received them —
+  // `patches`/`saves` alone can't prove ORDERING between the two request types, only what each
+  // contained. See "the pull-back PATCH always precedes any /save for that quote" below.
+  const store = { patches: [], saves: [], events: [], list: quotes.slice() };
 
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
@@ -142,13 +145,16 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
           // Mirror the real API's maker-checker lock: a content re-save is only allowed while the
           // quote is still editable; a ready/sent/decided quote 409s (internalQuote /save guard).
           if (!['draft', 'pending_review', 'changes_requested'].includes(existing.status)) {
+            store.events.push({ type: 'save', id: body.id, statusCode: 409 });
             return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_editable', status: existing.status }) });
           }
+          store.events.push({ type: 'save', id: body.id, statusCode: 200 });
           const bodyName = customerNameFromBody(body);
           if (bodyName) existing.customerName = bodyName;
           return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
         }
       }
+      store.events.push({ type: 'save', id: body.id || null, statusCode: 200 });
       const bodyName = customerNameFromBody(body);
       const saved = fullQuote({ id: 'new1', status: 'draft', customerName: bodyName });
       store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: bodyName }));
@@ -159,6 +165,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
       const id = m[1];
       const body = JSON.parse(req.postData() || '{}');
       store.patches.push({ id, ...body });
+      store.events.push({ type: 'patch', id, status: body.status });
       const existing = store.list.find((q) => q.id === id);
       if (existing && body.status) existing.status = body.status;
       return r.fulfill(json(fullQuote({ id, status: body.status || 'draft' })));
@@ -401,10 +408,11 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   // Review finding, Minor 5 (round 2): with a 0ms mocked round-trip, if the PATCH resolves between
   // keystrokes then state.status is already 'draft' by the second keystroke and markDirty() never
   // re-enters pullBackFromReview() at all — toHaveLength(1) would pass with NO idempotence guard
-  // present. Hold the PATCH so every one of the 5 keystrokes below is guaranteed to fire while
-  // `_pullback` is still non-null. Registered after openDetail() so it wins (Playwright matches
-  // routes in reverse registration order); falls back to the harness's own handler for everything
-  // else, including the PATCH itself once the delay has elapsed.
+  // present. Hold the PATCH so every one of the 5 keystrokes below is guaranteed to fire while the
+  // pull-back is still in flight (the map entry for q1 in `_pullbacks` is still populated).
+  // Registered after openDetail() so it wins (Playwright matches routes in reverse registration
+  // order); falls back to the harness's own handler for everything else, including the PATCH
+  // itself once the delay has elapsed.
   await page.route('**/admin/quote/**', async (route) => {
     if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 300));
     await route.fallback();
@@ -414,11 +422,27 @@ test('ops typing on a pending_review quote pulls it back to draft, once', async 
   // page.fill sets the value and dispatches exactly ONE input event — markDirty() would fire once
   // no matter what, so it can't tell an idempotence guard from no guard at all. pressSequentially
   // types character-by-character (5 input events for "Nimal"), which actually exercises the
-  // `if (_pullback && _pullbackId === id) return _pullback;` early-return in pullBackFromReview().
+  // `if (_pullbacks[id]) return _pullbacks[id];` early-return in pullBackFromReview().
   await page.locator('#f-firstName').pressSequentially('Nimal');
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
   expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(1);
+
+  // Round 3 review, Finding 6. Idempotence alone (above) doesn't prove the ORDERING guarantee —
+  // that no POST /save for this quote is ever issued before the PATCH {status:'draft'} that pulls
+  // it back, and that it never takes a 409 (not_editable) on the way. That guarantee is the whole
+  // reason the pull-back design exists (the server keeps refusing /save for pending_review); until
+  // now it was pinned only by source-scan string matching. The typed keystrokes above already
+  // armed autosave (2.5s debounce), so waiting for its /save proves the real client code, not a
+  // synthetic race.
+  await expect.poll(() => store.events.some((e) => e.type === 'save' && e.id === 'q1'), { timeout: 10000 })
+    .toBe(true);
+  const q1Events = store.events.filter((e) => e.id === 'q1');
+  const patchIdx = q1Events.findIndex((e) => e.type === 'patch' && e.status === 'draft');
+  const saveIdx = q1Events.findIndex((e) => e.type === 'save');
+  expect(patchIdx).toBeGreaterThanOrEqual(0);
+  expect(saveIdx).toBeGreaterThan(patchIdx); // the PATCH must precede any /save, not just exist
+  expect(q1Events.some((e) => e.type === 'save' && e.statusCode === 409)).toBe(false); // no 409 taken
 });
 
 // Phase 3b: opening a ready/sent quote must show the FROZEN price the server priced against the
