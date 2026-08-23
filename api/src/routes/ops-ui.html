@@ -4875,6 +4875,40 @@ function pullBackFromReview() {
   // whatever quote is open by the time it lands.
   var seq = _openSeq;
   var p = (async function () {
+    // Verify the quote is still pending_review before PATCHing it to draft. Nothing here polls
+    // state.status — it's written only by reopenQuote/saveQuote's response/transition — so an
+    // ops tab left open on this quote while the founder approves it ELSEWHERE still reads
+    // pending_review, and the next keystroke would otherwise PATCH ready -> draft: legal,
+    // un-gated, and it silently drops the frozen rate card (internalQuote.ts:1557). One GET,
+    // shared by the whole burst of typing via the _pullbacks[id] map above.
+    var current = await apiGetQuote(id);
+    if (!current || current.error) {
+      // Could not confirm the status — never PATCH blind. Same shape as the failed-PATCH branch
+      // further down: re-lock if this is still the quote on screen, else just beacon the miss.
+      if (seq !== _openSeq) {
+        window.opsReportError && window.opsReportError('pullBackFromReview', 'status check failed for ' + id + ' after a different quote was opened');
+        return false;
+      }
+      _pullbackFailed = true;
+      showToast('Could not pull this back out of review — ' + ((current && current.error) || 'unknown error'), 'error');
+      render();
+      return false;
+    }
+    if (current.status !== 'pending_review') {
+      // Moved on elsewhere since this tab last synced (approved, sent, deleted, ...). Do NOT
+      // PATCH — that would move it to draft from wherever it actually is now, and for 'ready'
+      // that means dropping the frozen rate card. This isn't a pull-back FAILURE — nothing broke,
+      // the quote is just no longer in review — so _pullbackFailed (which means exactly "the
+      // pull-back failed") stays untouched. The operator's typed edits stay in `state` regardless
+      // (they cannot be saved from a non-savable status, but nothing here discards them); adopt
+      // the real status and say what happened and how to keep going.
+      if (seq === _openSeq) {
+        state.status = current.status;
+        showToast('This quote moved on while you were editing (now ' + current.status + ') — use "Reopen to edit" if you still want to change it', 'error');
+        render();
+      }
+      return false;
+    }
     var res = await apiPatch(id, { status: 'draft' });
     var ok = !!(res && !res.error);
     // The write really happened for `id` regardless of what's on screen by the time it resolves,

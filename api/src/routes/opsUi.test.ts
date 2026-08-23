@@ -739,11 +739,71 @@ describe('ops UI — editing a quote in review', () => {
     const pb = fnBody('pullBackFromReview');
     expect(pb).toContain('var seq = _openSeq;');
     expect(pb).toContain('if (seq !== _openSeq)');
-    // Captured BEFORE the await, or it can never differ from the live _openSeq when compared.
+    // Captured BEFORE either await, or it can never differ from the live _openSeq when compared.
+    expect(pb.indexOf('var seq = _openSeq;')).toBeLessThan(pb.indexOf('await apiGetQuote('));
     expect(pb.indexOf('var seq = _openSeq;')).toBeLessThan(pb.indexOf('await apiPatch('));
-    // The guard must sit between the await and the state write it protects.
-    expect(pb.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(pb.indexOf('await apiPatch('));
-    expect(pb.indexOf('if (seq !== _openSeq)')).toBeLessThan(pb.indexOf("state.status = 'draft';"));
+    // The guard around the PATCH must sit between it and the state write it protects. There is an
+    // earlier `if (seq !== _openSeq)` guarding the status-check await too (see the dedicated
+    // status-verification test below) — search FROM the PATCH so this pins the right one.
+    expect(pb.indexOf('if (seq !== _openSeq)', pb.indexOf('await apiPatch('))).toBeGreaterThan(pb.indexOf('await apiPatch('));
+    expect(pb.indexOf('if (seq !== _openSeq)', pb.indexOf('await apiPatch('))).toBeLessThan(pb.indexOf("state.status = 'draft';"));
+  });
+
+  it('the pull-back re-verifies status with the server before PATCHing to draft (owner decision)', () => {
+    // Nothing polls state.status while an ops tab sits open — it's written only by
+    // reopenQuote/saveQuote's response/transition — so a founder approving THIS quote elsewhere
+    // leaves a stale-reading tab that would otherwise PATCH ready -> draft on the next keystroke:
+    // legal, un-gated, and it drops the frozen rate card (internalQuote.ts:1557). The GET must run
+    // BEFORE the PATCH, and the status check must sit fully between them.
+    const pb = fnBody('pullBackFromReview');
+    expect(pb).toContain('var current = await apiGetQuote(id);');
+    expect(pb).toContain("if (current.status !== 'pending_review') {");
+    expect(pb.indexOf('await apiGetQuote(')).toBeLessThan(pb.indexOf('await apiPatch('));
+    expect(pb.indexOf("if (current.status !== 'pending_review') {")).toBeGreaterThan(pb.indexOf('await apiGetQuote('));
+    expect(pb.indexOf("if (current.status !== 'pending_review') {")).toBeLessThan(pb.indexOf('await apiPatch('));
+  });
+
+  it('the PATCH is unreachable once the status check finds the quote has moved on', () => {
+    // Every path through the "not pending_review" block returns before the PATCH line, so a
+    // stale-status pull-back can never fall through into PATCHing anyway — not just "usually
+    // doesn't", structurally cannot.
+    const pb = fnBody('pullBackFromReview');
+    const block = pb.slice(pb.indexOf("if (current.status !== 'pending_review') {"), pb.indexOf('var res = await apiPatch('));
+    expect(block).not.toContain('apiPatch(');
+    expect(block.trim().endsWith('return false;\n    }')).toBe(true);
+  });
+
+  it('a failed status check never PATCHes blind — it re-locks like a failed pull-back, not a moved-on quote', () => {
+    const pb = fnBody('pullBackFromReview');
+    const block = pb.slice(pb.indexOf('if (!current || current.error) {'), pb.indexOf("if (current.status !== 'pending_review') {"));
+    expect(block).toContain('_pullbackFailed = true;');
+    expect(block).toContain("showToast('Could not pull this back out of review");
+    expect(block).not.toContain('apiPatch(');
+  });
+
+  it('a quote that moved on is adopted honestly, not flagged as a pull-back FAILURE', () => {
+    // _pullbackFailed means "the pull-back failed" — nothing failed here, the quote simply moved
+    // on (e.g. approved elsewhere) before this GET landed. Adopt the real status, re-render, and
+    // name "Reopen to edit" as the way forward; do NOT set _pullbackFailed for this case.
+    const pb = fnBody('pullBackFromReview');
+    const block = pb.slice(pb.indexOf("if (current.status !== 'pending_review') {"), pb.indexOf('var res = await apiPatch('));
+    expect(block).toContain('state.status = current.status;');
+    expect(block).toContain('Reopen to edit');
+    expect(block).not.toContain('_pullbackFailed = true;');
+  });
+
+  it('both awaits in the pull-back are generation-guarded before touching state, not just the PATCH', () => {
+    // Two awaits now (the status GET, then the PATCH) — each must recheck _openSeq before writing
+    // state/_pullbackFailed/toasts/render(), mirroring the file's seq/await/recheck idiom at every
+    // await in the edit path (spec 5.3), not just the PATCH's pre-existing guard.
+    const pb = fnBody('pullBackFromReview');
+    expect((pb.match(/if \(seq !== _openSeq\)/g) || []).length).toBe(2);
+    const getBlock = pb.slice(pb.indexOf('var current = await apiGetQuote(id);'), pb.indexOf('var res = await apiPatch('));
+    expect(getBlock).toContain('if (seq !== _openSeq)');
+    expect(getBlock).toContain('if (seq === _openSeq)');
+    // Both re-checks sit AFTER the GET await and BEFORE any state/_pullbackFailed/toast/render
+    // write in their branch — pinned earlier by the two dedicated tests above (unreachable-PATCH,
+    // failed-check-re-locks) via slice-based ordering; this test only pins the count and presence.
   });
 
   it('the pull-back promise lives in a per-quote map, not a single global slot', () => {
