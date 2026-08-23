@@ -120,8 +120,8 @@ so its sentence drops the "while in review" clause.
 
 ### 5.2 The pull-back
 
-`markDirty()` (`ops-ui.html:4813`) is the single funnel every content mutator already goes
-through — that is the hook:
+`markDirty()` is the single funnel every content mutator already goes through — that is the
+hook:
 
 ```
 function markDirty() {
@@ -130,29 +130,55 @@ function markDirty() {
 }
 ```
 
-`pullBackFromReview()` is **idempotent** — it parks its in-flight promise in a module-level
-`_pullback` and returns that same promise for every subsequent keystroke, so a burst of typing
-fires exactly one PATCH. On success it sets `state.status = 'draft'`, calls `opsUpsertQuote` +
-`opsRefreshQuotes`, toasts, and `render()`s. On failure it restores `state.status` and re-locks.
+`pullBackFromReview()` is **idempotent per quote**. Its in-flight promise lives in `_pullbacks`,
+a map keyed by quote id — not a single module-level slot: a slot can only ever remember one
+quote's pull-back, so a burst of typing on quote A, a detour to quote B (also `pending_review`)
+before A's PATCH lands, and back to A again would fire a second PATCH for A. The map gives every
+quote its own entry: `pendingPullback()` reads `_pullbacks[state.savedId]` for whichever quote is
+open now, `pullBackFromReview()` returns the existing entry for `id` if one is already in flight,
+claims the slot synchronously before its async work starts, and releases it in `.finally()` by
+promise **identity** (`_pullbacks[id] === p`), not by id alone, so a newer pull-back that has
+since claimed the same id is never evicted by an older one settling late.
+
+Because the PATCH crosses an await, the operator is free to open a different quote before it
+resolves. The resolution captures `var seq = _openSeq;` before the await and checks
+`if (seq !== _openSeq)` after it: on a generation mismatch, `state.status`, `_pullbackFailed`,
+the toast and `render()` are all skipped (they would describe the wrong quote), but the
+queue-level sync (`opsUpsertQuote`/`opsRefreshQuotes`, keyed by `id` not `state`) still runs
+unconditionally, and a failure is still reported via `opsReportError` rather than silently
+dropped. On success it sets `state.status = 'draft'`, toasts, and `render()`s. On failure it sets
+`_pullbackFailed = true` and re-locks (`isEditableNow()` reads the flag).
 
 Calling `render()` mid-typing is safe: `render()` diff-renders and already snapshots and
 restores the focused field's in-progress text and caret (`captureEditorFocus` /
-`restoreEditorFocus`, `ops-ui.html:9111`).
+`restoreEditorFocus`).
 
 ### 5.3 Ordering guarantee
 
 An edit must never reach `/save` before the status PATCH lands, or it eats a `not_editable`
-409. `saveQuote()` (`ops-ui.html:5535`) is the single funnel to `/save`, so the guard goes at
-its top:
+409. `saveQuote()`, `fireAutosave()` and `transition()` are the three funnels that can reach
+`/save` or issue a competing status PATCH, and each carries the same hand-placed guard around its
+own await of the current quote's pull-back:
 
 ```
-if (_pullback) await _pullback;
+var seq = _openSeq;
+var pb = pendingPullback();
+if (pb) await pb;
+if (seq !== _openSeq) return false; // a different quote is open now — bail before touching state
 if (!isSavableNow()) return false;
 ```
 
-`fireAutosave()`'s own gate becomes `isSavableNow()` for the same reason. The 2.5s autosave
-debounce means the PATCH almost always lands first anyway — the await is what makes it a
-guarantee rather than a race.
+`seq` is captured before the await and reused (not re-captured) after it — a reopen landing
+mid-await must be caught before the resumed call reads or writes `state`, which may belong to a
+different quote by then. This is the file's general idiom for "am I still on the same quote after
+an await" — every await in the edit path follows the same seq/await/recheck shape, not just the
+pull-back's own.
+
+`fireAutosave()`'s own gate becomes `isSavableNow()` for the same reason, and additionally
+re-arms (rather than returning bare) when a failed pull-back leaves typed content unsaved, up to
+a bounded retry count, so manual recovery ("Reopen to edit") doesn't strand the typing until the
+next keystroke. The 2.5s autosave debounce means the PATCH almost always lands first anyway — the
+await is what makes it a guarantee rather than a race.
 
 ## 6. Risks
 
