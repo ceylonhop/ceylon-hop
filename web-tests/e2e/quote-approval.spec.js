@@ -35,6 +35,9 @@ function summary(over) {
     // Same plumbing for the per-quote approve flag: not part of the real summary shape (the queue
     // renders no approve affordance), carried here only so the GET /:id stub can reflect it.
     ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
+    // Same plumbing again, for "does this quote already have a pay link out" (owner decision,
+    // reopen-with-live-link confirm). Not part of the real summary shape either.
+    ...('customerTotalVia' in over ? { customerTotalVia: over.customerTotalVia } : {}),
     ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
@@ -77,6 +80,9 @@ function fullQuote(over) {
     // approve THIS quote". Absent on most fixtures, which is the honest default — the client must
     // treat a missing flag as "no", never fall back to the capability.
     ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
+    // 'pay_link' means a link was minted against this quote and a number is with the customer —
+    // reopenToDraft() reads this to decide whether to confirm before PATCHing (owner decision).
+    customerTotalVia: over.customerTotalVia || null,
     // Phase 3b: the real GET /:id ships the quote priced against its locked card. Mirror that so
     // reopening a ready/sent quote renders this frozen estimate instead of the live /estimate.
     estimate: over.estimate || {
@@ -173,7 +179,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}), ...('mayApprove' in existing ? { mayApprove: existing.mayApprove } : {}) })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}), ...('mayApprove' in existing ? { mayApprove: existing.mayApprove } : {}), ...('customerTotalVia' in existing ? { customerTotalVia: existing.customerTotalVia } : {}) })));
     }
     return r.fulfill(json({}));
   });
@@ -398,6 +404,45 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
   const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' });
   await actions(page).locator('[data-action="reopenToDraft"]').click();
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Owner decision (post-review): a 'ready' quote can already have a pay link minted against it —
+// stateFor() (quotePay.ts) only serves 'ready'/'sent' as payable, so the instant the reopen PATCH
+// lands the link goes 'unavailable' and a customer mid-checkout hits a dead page. Reopening such
+// a quote must confirm first; a linkless ready quote must stay a single click.
+test('reopening a ready quote WITH a pay link out asks for confirmation, and cancelling sends no PATCH', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'pay_link' });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  // The dialog is synchronous from the page's perspective — give Playwright's CDP round-trip a
+  // moment to have delivered and dismissed it before asserting on the aftermath.
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/payment link/i);
+  expect(dialogMessage).toMatch(/stop.*working/i);
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
+});
+
+test('reopening a ready quote WITH a pay link out and confirming proceeds to PATCH', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'pay_link' });
+  page.on('dialog', (dialog) => dialog.accept());
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+test('reopening a ready quote with NO pay link out never prompts', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' }); // no customerTotalVia
+  let dialogFired = false;
+  page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(dialogFired).toBe(false);
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
 });
 

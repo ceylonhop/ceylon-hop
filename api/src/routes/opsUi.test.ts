@@ -963,6 +963,36 @@ describe('ops UI — editing a quote in review', () => {
     expect(sentRows.filter(r => r.includes('reopenToDraft'))).toHaveLength(1); // approver row only
   });
 
+  it('reopenToDraft confirms before dropping an outstanding pay link (owner decision)', () => {
+    // A 'ready' quote can already have a pay link minted against it — stateFor() (quotePay.ts)
+    // only serves 'ready'/'sent' as payable, so the instant this PATCH lands the link goes
+    // 'unavailable' and a customer mid-checkout hits a dead page. customerTotalVia === 'pay_link'
+    // is how the client knows a link is out (set from reopenQuote()/saveQuote()'s response).
+    // window.confirm is this file's established idiom for exactly this kind of destructive
+    // confirm (see the hot-zone boost/delete confirms), not a new modal.
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toContain("state.customerTotalVia === 'pay_link'");
+    expect(rtd).toContain('window.confirm(');
+    expect(rtd.indexOf("state.customerTotalVia === 'pay_link'")).toBeLessThan(rtd.indexOf('window.confirm('));
+    // Declining must abort before the transition — no PATCH at all.
+    expect(rtd.indexOf('window.confirm(')).toBeLessThan(rtd.indexOf('return;'));
+    expect(rtd.indexOf('return;')).toBeLessThan(rtd.indexOf("return transition('draft'"));
+  });
+
+  it('reopenToDraft stays a single unconfirmed click when there is no pay link out', () => {
+    // Only confirm when a link is actually out — a linkless 'ready' quote (the common case) must
+    // not gain friction. Both conditions live on the SAME `if`, short-circuited by `&&`, so
+    // window.confirm is never even called unless customerTotalVia is already 'pay_link'.
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toContain("if (state.customerTotalVia === 'pay_link' && !window.confirm(");
+  });
+
+  it('the message names what actually breaks — the link stops working — not a generic warning', () => {
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toMatch(/payment link.*already out/i);
+    expect(rtd).toMatch(/stop.*working/i);
+  });
+
   it('⌘S and the command-palette save both go through the shared shortcut gate, never bare saveQuote()', () => {
     // isEditableNow() lets pending_review through (the editor is live on screen there), but
     // saveQuote() only accepts the SAVABLE set (`if (!isSavableNow()) return false;`) with no

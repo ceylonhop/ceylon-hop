@@ -6161,7 +6161,15 @@ function renderPayLinkRow() {
     + '</div>';
 }
 function markOutcome(s)    { return transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
-function reopenToDraft()   { return transition('draft', { toast: 'Reopened for editing' }); }
+function reopenToDraft() {
+  // A pay link already out means a number is in the customer's hands right now — stateFor()
+  // (quotePay.ts) only serves 'ready'/'sent' quotes as payable, so the instant this PATCH lands
+  // the link goes 'unavailable' and a customer mid-checkout hits a dead page. customerTotalVia
+  // is set to 'pay_link' exactly when a link was minted (reopenQuote()/saveQuote() adopt it from
+  // the server), so a quote with no link out stays a single, unconfirmed click.
+  if (state.customerTotalVia === 'pay_link' && !window.confirm('A payment link is already out for this quote. Reopening it will stop that link working. Continue?')) return;
+  return transition('draft', { toast: 'Reopened for editing' });
+}
 
 // Delete (spec 2026-07-22): soft delete + back to the queue. The button only shows for the
 // states/roles the server allows, but the server is authoritative — so map its refusals to
