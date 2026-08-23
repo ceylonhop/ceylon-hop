@@ -87,11 +87,15 @@ pulls the quote back too; that is the honest outcome, because they are changing 
 reviewing it.
 
 7. On a **`ready`** quote an ops-role user gets the same **"Reopen to edit"** button the
-   approver already has — identical placement, copy and behaviour, no confirm, just no longer
-   role-hidden. It is deliberately the *explicit button*, NOT the type-and-it-pulls-back
-   behaviour of §4.3: reopening an approved quote drops its frozen rate card and re-prices at
-   today's rates (`internalQuote.ts:1557`), so a stray keystroke silently moving an approved
-   price is a different order of consequence from leaving a review queue.
+   approver already has — identical placement, copy and behaviour, no longer role-hidden. It is
+   deliberately the *explicit button*, NOT the type-and-it-pulls-back behaviour of §4.3:
+   reopening an approved quote drops its frozen rate card and re-prices at today's rates
+   (`internalQuote.ts:1557`), so a stray keystroke silently moving an approved price is a
+   different order of consequence from leaving a review queue. Post-review addition (owner
+   decision): if a pay link has already been minted (`state.customerTotalVia === 'pay_link'`)
+   the button confirms before it fires — reopening would make that link `unavailable` mid-checkout
+   (`stateFor()`, `quotePay.ts:175`, serves only `ready`/`sent`) — and aborts on cancel. A `ready`
+   quote with no link out is unaffected and stays a single click.
 
 No notification fires to the founder whose queue item was pulled — matching what "Reopen to
 edit" does today.
@@ -194,14 +198,20 @@ click.
 already have a pay link minted against it, which puts a number in the customer's hands without
 the quote ever reaching `sent` — that is precisely why `customer_total_at` is stamped by a
 pay-link mint as well as by mark-sent (spec 2026-08-05 §9). Ops reopening such a quote re-prices
-it. Accepted, not mitigated: the price-drift indicator already makes the move visible rather
-than silent, and the owner's rule is drawn at `sent`. Named here so the sharpest corner of that
-rule is on the record rather than discovered later.
+it and stops that link resolving (`stateFor()`, `quotePay.ts:175`, serves only `ready`/`sent`).
+Mitigated after review, not merely accepted: "Reopen to edit" now confirms first whenever a link
+is out (§4.7), so the operator gets a chance not to make that move by accident. The customer can
+never be charged the *wrong amount* either way — the pay token pins `revision`, so a post-reopen
+save just resolves the link to `revised` — the hazard this closes is availability, not price.
 
-**Concurrent approval.** If the founder approves between the keystroke and the PATCH, the quote
-is `ready` and `ready → draft` is still a legal, un-gated transition, so the pull-back succeeds
-and the approval is undone. This is the same outcome as today's "Reopen to edit" race and needs
-no new handling. A concurrently *deleted* quote 404s and hits the failure path (§4.5).
+**Concurrent approval — closed for the stray keystroke, unchanged for the deliberate click.** If
+the founder approves between a keystroke and the pull-back's PATCH, the pull-back (§5.2) now
+re-reads the quote's status first and finds `ready`; it aborts instead of PATCHing `ready →
+draft`, adopts the real status into `state`, and tells the operator the quote moved on. The
+approval survives. This does **not** apply to the explicit "Reopen to edit" button, which still
+PATCHes `ready → draft` on a deliberate press (now with the pay-link confirm above) — only the
+automatic, type-and-it-pulls-back path was the hazard, and only that path is closed. A
+concurrently *deleted* quote still 404s and hits the failure path (§4.5).
 
 ## 7. Tests
 
