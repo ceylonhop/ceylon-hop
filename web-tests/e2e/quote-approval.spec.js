@@ -602,3 +602,19 @@ test('no console errors while opening the detail view and switching output tabs'
   await expect(page.locator('#view .qhead')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+// Owner, 2026-08-22: "as long as it's not sent to customer an ops person should be able to
+// reopen." The server already allows ready → draft for ops (only `sent` is founder-gated), so
+// this is the UI catching up with the rule, not a new permission.
+test('ops on a ready quote gets the reopen door', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'ready' });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+test('ops on a SENT quote still has no reopen door', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'sent' });
+  await expect(actions(page).locator('[data-action="markWon"]')).toBeVisible(); // bar did render
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toHaveCount(0);
+});

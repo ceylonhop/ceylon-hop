@@ -8327,7 +8327,12 @@ function renderActionBar() {
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
+    /* Reopen on 'ready' for ops too (owner, 2026-08-22): anything the customer has not been sent
+       is theirs to pull back. The server already accepted this — only `sent` is founder-gated —
+       so hiding the button was cosmetic. Deliberately the BUTTON and not the type-and-pull-back
+       of pending_review: reopening drops the frozen rate card and re-prices. One line on purpose,
+       like the pending_review row: the action-bar tests scan this bar line-by-line. */
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server

@@ -853,6 +853,16 @@ describe('ops UI — editing a quote in review', () => {
     // `_dirty = false;` sitting anywhere else in transition() would still discard the typing.
     expect((t.match(/_dirty = false;/g) || []).length).toBe(1);
   });
+
+  it('the ready row offers reopen to both roles, and the sent row only to the approver', () => {
+    const bar = body.slice(body.indexOf('function renderActionBar('), body.indexOf('function renderReviewBanner('));
+    const readyRows = bar.split('\n').filter(l => l.includes("s === 'ready'"));
+    expect(readyRows.length).toBeGreaterThanOrEqual(2); // approver + non-approver rows
+    readyRows.forEach(row => expect(row).toContain('reopenToDraft'));
+    // The owner's line: a quote the customer already has stays founder-only.
+    const sentRows = bar.split('\n').filter(l => l.includes("s === 'sent'"));
+    expect(sentRows.filter(r => r.includes('reopenToDraft'))).toHaveLength(1); // approver row only
+  });
 });
 
 // Unpriced shells (spec 2026-07-29): "+ New quote" claims a real $0 row up front so the ticket is
