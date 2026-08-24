@@ -4895,16 +4895,18 @@ function pullBackFromReview() {
       return false;
     }
     if (current.status !== 'pending_review') {
-      // Moved on elsewhere since this tab last synced (approved, sent, deleted, ...). Do NOT
-      // PATCH — that would move it to draft from wherever it actually is now, and for 'ready'
-      // that means dropping the frozen rate card. This isn't a pull-back FAILURE — nothing broke,
-      // the quote is just no longer in review — so _pullbackFailed (which means exactly "the
-      // pull-back failed") stays untouched. The operator's typed edits stay in `state` regardless
-      // (they cannot be saved from a non-savable status, but nothing here discards them); adopt
-      // the real status and say what happened and how to keep going.
+      // Moved on elsewhere since this tab last synced (approved, sent, ...). A deleted quote
+      // never reaches here — apiGetQuote() 404s, which the `!current || current.error` branch
+      // above already handles. Do NOT PATCH — that would move it to draft from wherever it
+      // actually is now, and for 'ready' that means dropping the frozen rate card. This isn't a
+      // pull-back FAILURE — nothing broke, the quote is just no longer in review — so
+      // _pullbackFailed (which means exactly "the pull-back failed") stays untouched. The
+      // operator's typed edits stay in `state` regardless (they cannot be saved from a
+      // non-savable status, but nothing here discards them); adopt the real status and say what
+      // happened and how to keep going.
       if (seq === _openSeq) {
         state.status = current.status;
-        showToast('This quote moved on while you were editing (now ' + current.status + ') — use "Reopen to edit" if you still want to change it', 'error');
+        showToast('This quote moved on while you were editing (now ' + (STATUS_LABELS[current.status] || current.status) + ') — use "Reopen to edit" if you still want to change it', 'error');
         render();
       }
       return false;
@@ -6165,9 +6167,16 @@ function reopenToDraft() {
   // A pay link already out means a number is in the customer's hands right now — stateFor()
   // (quotePay.ts) only serves 'ready'/'sent' quotes as payable, so the instant this PATCH lands
   // the link goes 'unavailable' and a customer mid-checkout hits a dead page. customerTotalVia
-  // is set to 'pay_link' exactly when a link was minted (reopenQuote()/saveQuote() adopt it from
-  // the server), so a quote with no link out stays a single, unconfirmed click.
-  if (state.customerTotalVia === 'pay_link' && !window.confirm('A payment link is already out for this quote. Reopening it will stop that link working. Continue?')) return;
+  // is set to 'pay_link' once the SERVER has echoed a mint back (reopenQuote()/saveQuote() adopt
+  // it from the response) — but mintPayLink()/confirmPayPart() set _payLink and render()
+  // immediately on mint, and nothing refetches the quote afterward, so a link minted THIS
+  // session and never confirmed dies with no warning if this only read customerTotalVia. _payLink
+  // is cleared on every quote switch (open/reset/list-refresh), so it can never leak onto a
+  // different quote. Scoped to 'ready'/'sent' — the only statuses stateFor() ever calls payable —
+  // so a pending_review quote, whose link is already 'unavailable' regardless, doesn't get a
+  // false "reopening will stop it working" prompt (its own link died at submission already).
+  // A quote with no link out at all stays a single, unconfirmed click either way.
+  if ((state.customerTotalVia === 'pay_link' || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm('A payment link is already out for this quote. Reopening it will stop that link working. Continue?')) return;
   return transition('draft', { toast: 'Reopened for editing' });
 }
 

@@ -980,11 +980,33 @@ describe('ops UI — editing a quote in review', () => {
   });
 
   it('reopenToDraft stays a single unconfirmed click when there is no pay link out', () => {
-    // Only confirm when a link is actually out — a linkless 'ready' quote (the common case) must
-    // not gain friction. Both conditions live on the SAME `if`, short-circuited by `&&`, so
-    // window.confirm is never even called unless customerTotalVia is already 'pay_link'.
+    // Only confirm when a link is actually out (server-recorded OR minted this session) AND the
+    // status is one stateFor() still calls payable. All of that lives on ONE `if`, short-circuited
+    // by `&&`, so window.confirm is never even called for a linkless quote or an already-dead one.
     const rtd = fnBody('reopenToDraft');
-    expect(rtd).toContain("if (state.customerTotalVia === 'pay_link' && !window.confirm(");
+    expect(rtd).toContain("if ((state.customerTotalVia === 'pay_link' || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm(");
+  });
+
+  it('a pay link minted THIS session also gates the confirm, not just the server-recorded stamp (review finding 1)', () => {
+    // mintPayLink()/confirmPayPart() set _payLink and render() — neither sets customerTotalVia,
+    // and nothing refetches the quote afterward — so a link minted, then immediately followed by
+    // pressing "Reopen to edit" (the exact adjacency the confirm exists for) would read
+    // customerTotalVia === null and skip the confirm without this. _payLink alone is sufficient
+    // to gate it, ahead of the window.confirm call.
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toContain('_payLink');
+    expect(rtd.indexOf('_payLink')).toBeLessThan(rtd.indexOf('window.confirm('));
+  });
+
+  it('the confirm only fires when stateFor() still considers the link payable — ready or sent (review finding 2)', () => {
+    // stateFor() (quotePay.ts) returns payable only for 'ready'/'sent'; on pending_review the
+    // link is ALREADY 'unavailable', so warning "reopening will stop it working" there would be
+    // false. Both statuses are checked ahead of window.confirm.
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toContain("state.status === 'ready'");
+    expect(rtd).toContain("state.status === 'sent'");
+    expect(rtd.indexOf("state.status === 'ready'")).toBeLessThan(rtd.indexOf('window.confirm('));
+    expect(rtd.indexOf("state.status === 'sent'")).toBeLessThan(rtd.indexOf('window.confirm('));
   });
 
   it('the message names what actually breaks — the link stops working — not a generic warning', () => {

@@ -424,8 +424,14 @@ test('reopening a ready quote WITH a pay link out asks for confirmation, and can
   await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
   expect(dialogMessage).toMatch(/payment link/i);
   expect(dialogMessage).toMatch(/stop.*working/i);
-  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
+  // A real settle window, not a single sample taken the instant the dialog resolves — matching
+  // how the sibling "PATCH precedes /save" test below corroborates its own negative (no 409
+  // taken) by waiting for a definite subsequent signal, not a snapshot. window.confirm IS
+  // synchronous and the `return` precedes any await, so a racing PATCH shouldn't be possible by
+  // construction — this proves it instead of assuming it.
+  await page.waitForLoadState('networkidle');
   await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
 });
 
 test('reopening a ready quote WITH a pay link out and confirming proceeds to PATCH', async ({ page }) => {
@@ -438,6 +444,45 @@ test('reopening a ready quote WITH a pay link out and confirming proceeds to PAT
 
 test('reopening a ready quote with NO pay link out never prompts', async ({ page }) => {
   const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' }); // no customerTotalVia
+  let dialogFired = false;
+  page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(dialogFired).toBe(false);
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Review finding 1 (critical): mintPayLink()/confirmPayPart() set _payLink and render() on mint,
+// but neither sets customerTotalVia and nothing refetches the quote afterward — so gating the
+// confirm on customerTotalVia alone misses the exact adjacency the confirm exists for: mint a
+// link, then immediately press the "Reopen to edit" button right beside it, in the same session.
+test('minting a pay link THIS session also confirms before reopening, even though customerTotalVia is not stamped yet', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' }); // no customerTotalVia
+  await page.route('**/admin/quote/q1/pay-link', (r) => r.fulfill(json({ url: 'https://pay.example.test/q1', payhereMode: 'off', amountCents: 12100 })));
+  await actions(page).locator('[data-action="mintPayLink"]').click();
+  // payLinkPress() mints then copies synchronously — the button flips to "Link copied ✓" once
+  // _payLink is set, which is what the confirm below is actually gated on.
+  await expect(actions(page).locator('[data-action="mintPayLink"]')).toContainText('Link copied', { timeout: 10000 });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/payment link/i);
+  expect(dialogMessage).toMatch(/stop.*working/i);
+  // Real settle window before trusting the negative — see the sibling cancel test above.
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
+});
+
+// Review finding 2 (minor): stateFor() (quotePay.ts) already returns 'unavailable' for
+// pending_review, so a link stamped BEFORE the quote was sent back into review is already dead —
+// warning "reopening will stop it working" there would be false, and pure friction.
+test('a pending_review quote with a stamped pay link does not prompt — the link is already dead per stateFor()', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'pending_review', customerTotalVia: 'pay_link' });
   let dialogFired = false;
   page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
   await actions(page).locator('[data-action="reopenToDraft"]').click();
