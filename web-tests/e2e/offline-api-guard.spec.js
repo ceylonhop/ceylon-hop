@@ -17,12 +17,10 @@ import { test, expect } from '@playwright/test';
 
 const LIVE_HOST = /onrender\.com|ceylonhop\.com/i;
 
-// Scoped to the ERROR BEACON on purpose. Loading these pages unstubbed also fires
-// GET /health (index, booking) and GET /quotes/pay/view (pay) at the live API — real
-// chatter, but payload-free GETs that raise no alert, and blocking them means rewriting
-// every API request, which un-stubs the ride-board specs (they match the API by hostname).
-// Those are logged as a separate finding; this guard covers what actually mails the founder.
-const isBeacon = (url) => url.includes('/errors/client');
+// Covers ALL live-API traffic, not just the beacon: loading these pages unstubbed also fired
+// GET /health (index, booking) and GET /quotes/pay/view (pay) at the live API. Those are
+// payload-free GETs that alert nobody, but they made CI depend on prod being reachable —
+// a cold Render instance answers slowly — so the rewrite now covers every API request.
 
 // Beacon pages reached three different ways: a token page, the home page, and the booking
 // page (which also resolves its base from ?api=).
@@ -34,7 +32,7 @@ for (const target of PAGES) {
     page.on('request', (r) => {
       let host = '';
       try { host = new URL(r.url()).hostname; } catch { return; }
-      if (LIVE_HOST.test(host) && isBeacon(r.url())) hits.push(r.url());
+      if (LIVE_HOST.test(host)) hits.push(r.url());
     });
 
     await page.goto(target);
@@ -45,8 +43,8 @@ for (const target of PAGES) {
     await expect.poll(async () => {
       await page.waitForTimeout(120);
       return hits.length;
-    }, { timeout: 3000, message: 'an error beacon reached a live API host' }).toBe(0);
+    }, { timeout: 3000, message: 'a request reached a live API host' }).toBe(0);
 
-    expect(hits, `error beacons addressed to a live host: ${hits.join(', ')}`).toEqual([]);
+    expect(hits, `requests addressed to a live host: ${hits.join(', ')}`).toEqual([]);
   });
 }

@@ -20,18 +20,28 @@ describe('serve-booking offline API injection', () => {
     expect(out.indexOf(SNIPPET)).toBeLessThan(out.indexOf('first()'));
   });
 
-  it('rewrites BOTH transports, and only the errors path', () => {
+  it('rewrites BOTH transports', () => {
     expect(SNIPPET).toContain('sendBeacon');   // the un-interceptable one
-    expect(SNIPPET).toContain('fetch');        // the fallback the snippet also uses
-    expect(SNIPPET).toContain('/errors/client');
+    expect(SNIPPET).toContain('fetch');        // the fallback the reporter also uses
+  });
+
+  it('targets the live API hosts, and nothing else', () => {
+    const live = /(^|\.)ceylonhop\.com$|\.onrender\.com$/;
+    expect(live.test('ceylon-hop-api.onrender.com')).toBe(true);
+    expect(live.test('ops.ceylonhop.com')).toBe(true);
+    expect(live.test('fonts.googleapis.com')).toBe(false); // fonts/GTM/GIS must keep loading
+    expect(SNIPPET).toContain('ceylonhop');
+    expect(SNIPPET).toContain('onrender');
   });
 
   it('leaves window.CEYLON_HOP_API alone — moving it un-stubs the ride-board specs', () => {
     expect(SNIPPET).not.toContain('CEYLON_HOP_API');
   });
 
-  it('keeps the PATH so page.route("**/errors/client") still matches', () => {
-    expect(SNIPPET).toContain('location.origin+x.pathname');
+  // Path AND query preserved is what lets every existing route keep matching: glob routes
+  // (**/health) and exact-path predicates (pathname === '/board/me') both still hit.
+  it('preserves path and query when re-pointing at the local origin', () => {
+    expect(SNIPPET).toContain('location.origin+x.pathname+x.search');
   });
 
   it('handles <head> with attributes, and a page with no head at all', () => {

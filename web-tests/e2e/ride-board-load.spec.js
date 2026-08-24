@@ -23,11 +23,18 @@ const LISTS = {
 
 const isMe = (u) => new URL(u).pathname === '/board/me';
 const isBoard = (u) => new URL(u).pathname === '/board';
-// The API host, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically.
-// Deliberately NOT "anything non-local": fonts, GTM and the GIS script must keep loading
-// as they did before. Kept broad across both hosts so moving the API can never silently
-// un-stub these tests onto the live backend.
-const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
+// The API, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically, and
+// SAME-ORIGIN under the offline test server, which rewrites every live-API request to its own
+// origin with the path intact (serve-booking.js). Both forms are matched, so these stay
+// stubbed whether or not that rewrite is in play.
+//
+// Still deliberately NOT "anything non-local": fonts, GTM and the GIS script must keep
+// loading. The path arm is just as narrow — /board.html and /site.css do not match it,
+// because `board` must be followed by a slash or end-of-path.
+const API_PATH = /^\/(board|health|errors)(\/|$)/;
+const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname)
+  || /\.onrender\.com$/.test(u.hostname)
+  || API_PATH.test(u.pathname);
 
 /** Stub the board API, holding /board/me open for ME_DELAY_MS. Returns a timing log. */
 async function stubApi(page) {

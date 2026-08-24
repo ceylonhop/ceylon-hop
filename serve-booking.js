@@ -31,17 +31,20 @@ const TYPES = {
 // bad_request in seven places) therefore sent REAL client_error reports to prod, and from
 // there to Sentry and the founder's alert email. Only 2 of 89 specs had a hand-rolled net.
 //
-// The fix is structural and deliberately NARROW: rewrite the DESTINATION of /errors/client
-// requests to this server's own origin, leaving window.CEYLON_HOP_API alone.
+// The fix is structural: rewrite the DESTINATION of every request addressed to a live API
+// host to this server's own origin, leaving window.CEYLON_HOP_API itself alone.
 //
-// Rewriting the API base instead was tried first and is WRONG: ride-board-*.spec.js stubs by
-// hostname predicate (isApiHost matches *.ceylonhop.com / *.onrender.com and deliberately not
-// "anything non-local"), so moving the base un-stubbed those specs and 6 tests failed. Keeping
-// the base intact means every spec sees exactly what it saw before.
+// Rewriting the BASE instead was tried and is wrong: ride-board-*.spec.js stubs by hostname
+// predicate, so moving the base un-stubbed those specs. Rewriting the destination in-page
+// keeps `window.CEYLON_HOP_API` reading exactly as before for anything that inspects it
+// (share-link builders, analytics property detection).
 //
-// Keeping the PATH intact matters too: error-beacon.spec.js asserts on its own
-// page.route('**/errors/client'), and that glob still matches after the host swap — so the
-// beacon stays observable to any spec that wants it, it just can never leave the machine.
+// The PATH AND QUERY are preserved deliberately, so every existing route keeps matching:
+// glob routes (`**/health`, `**/quote/v2/estimate`) still match, and exact-path predicates
+// (`new URL(u).pathname === '/board/me'`) still match. Only a predicate keyed on the HOSTNAME
+// stops matching — that is the ride-board trio, updated to accept either form.
+//
+// Scope: fetch + sendBeacon. No root page uses XMLHttpRequest.
 //
 // Only active when CH_TEST_OFFLINE_API=1, set by web-tests/playwright.config.js on its
 // webServer. The 4173 dev preview is deliberately untouched.
@@ -52,8 +55,9 @@ const OFFLINE_API = process.env.CH_TEST_OFFLINE_API === '1';
 
 const INJECTED = [
   '<script>(function(){',
+  'var LIVE=/(^|\\.)ceylonhop\\.com$|\\.onrender\\.com$/;',
   'function local(u){try{var x=new URL(u,location.href);',
-  "if(x.pathname.indexOf('/errors/client')>-1&&x.origin!==location.origin)return location.origin+x.pathname;",
+  'if(x.origin!==location.origin&&LIVE.test(x.hostname))return location.origin+x.pathname+x.search;',
   '}catch(e){}return u;}',
   'var sb=navigator.sendBeacon&&navigator.sendBeacon.bind(navigator);',
   'if(sb)navigator.sendBeacon=function(u,d){return sb(local(u),d)};',
