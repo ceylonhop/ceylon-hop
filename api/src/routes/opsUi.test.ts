@@ -215,6 +215,28 @@ describe('ops UI shell', () => {
     expect(body).toContain('/errors/client');                       // same sink as the customer pages
     expect(body).toContain('[ops-ui]');                             // tagged distinctly from customer errors
   });
+
+  it('gates boot on DOMContentLoaded, because bootApp needs later script blocks', async () => {
+    // The page is one ~700 KB document in three inline script blocks. Boot sits at the end of
+    // the first; QuoteView is declared in the third, ~370 KB further down the response. Boot
+    // used to consume whoami the moment it answered, so on any connection where the tail of the
+    // document arrived after the (small, fast) whoami, bootApp ran against a half-parsed page:
+    // showQuoteView -> QuoteView.init -> "QuoteView is not defined", swallowed into showLogin().
+    // Operators on mobile got the login card while holding a valid session; 929 Sentry events.
+    const body = await (await createApp().request('/ops')).text();
+
+    // The ordering that makes the barrier necessary. If a future refactor moves QuoteView above
+    // boot (or moves boot to the bottom), this assertion is what should be revisited first.
+    expect(body.indexOf('/* boot: whoami')).toBeLessThan(body.indexOf('const QuoteView'));
+
+    // The barrier itself.
+    expect(body).toContain("if(document.readyState==='loading')await new Promise(done=>document.addEventListener('DOMContentLoaded',done,{once:true}));");
+
+    // Fired before the barrier (keeps the head start) but settled into a value at creation: a
+    // bare pending promise crossing the barrier would surface a network failure as an unhandled
+    // rejection, which this page's own listener would beacon as a second, duplicate error.
+    expect(body).toContain("const whoami=fetch('/admin/ops/whoami',{credentials:'same-origin'}).then(r=>({r}),e=>({e}));");
+  });
 });
 
 describe('ops UI — manual refund workflow (SH9)', () => {

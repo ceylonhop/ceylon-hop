@@ -69,8 +69,6 @@ const ASSETS: [string, string][] = [
   ['quote.css', 'text/css; charset=utf-8'],
   ['favicon.svg', 'image/svg+xml'],
   ['analytics.js', JS],
-  ['consent.js', JS],
-  ['consent-transactional.js', JS], // the analytics-only, CTA-safe consent strip on pay/quote
   ['phone-countries.js', JS],
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use

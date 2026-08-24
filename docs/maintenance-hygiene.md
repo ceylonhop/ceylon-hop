@@ -48,9 +48,8 @@ A page's `<head>` must carry, in this order (see any hand-authored page or `head
    are `noindex`; `manage.html` is `noindex, nofollow` because it renders a customer's
    booking by token). Marketing/content pages stay indexable.
 3. `theme-color`, `favicon`, OG tags, stylesheet
-4. **Analytics + consent snippet** (consent-defaults `<script>` → GTM loader → `analytics.js`
-   (sync) → `consent.js` (defer)) — byte-identical to `analyticsSnippet` in
-   `tools/site-chrome.mjs`.
+4. **Analytics snippet** (consent-defaults `<script>` → GTM loader → `analytics.js`
+   (sync)) — byte-identical to `analyticsSnippet` in `tools/site-chrome.mjs`.
 5. **Error beacon** `<script>` (the `errorBeaconSnippet` IIFE).
 6. Page-specific scripts last.
 
@@ -99,10 +98,15 @@ Then: add the page to the relevant guard tests
   the backend; the front-end formats for display only.
 
 ### Adding a **new tracking vendor or cookie**
-- Update the consent grants in `consent.js` and the disclosure in
-  `tools/legal/privacy.body.html` (then regenerate — privacy.html is generated), and add
-  the tag to the GTM checklist. Consent defaults are **denied** until the banner is
-  accepted; keep it that way.
+- Update the disclosure in `tools/legal/privacy.body.html` (then regenerate — privacy.html
+  is generated) and add the tag to the GTM checklist.
+- There is **no consent banner** (owner, 2026-08-16): `analytics_storage` defaults to
+  **granted** in `analyticsSnippet`, so a new vendor starts collecting the moment its tag
+  goes live — the privacy policy is the only thing telling visitors about it, so update it
+  in the same change.
+- The three `ad_*` signals default to **denied**. The site runs no ads; keep it that way
+  unless the owner says otherwise, and change it here rather than inside the GTM container
+  so it stays reviewable.
 
 ### Touching **/ops** (founder tooling)
 - Respect the founder / finance / ops RBAC roles and the founder-only gating already in
@@ -129,7 +133,7 @@ Then: add the page to the relevant guard tests
 | Crashes / bugs | **Sentry** (errors only) | Backend 500s (`app.onError`) + front-end uncaught JS (`/errors/client` beacon) |
 | Founder alerts (email) | `alerts` adapter | API errors, client errors, confirmation-email failures |
 | Funnel / conversions | **GA4 via GTM** | `chTrack` events (search → … → purchase) |
-| Session replay / rage-clicks | **Microsoft Clarity** | All pages (via GTM, consent-gated) |
+| Session replay / rage-clicks | **Microsoft Clarity** | All pages (via GTM; records every visitor since the banner was removed 2026-08-16) |
 
 Sentry = "did it break." GA4 = "what did users do." Clarity = "watch them do it." They
 don't overlap.
@@ -142,7 +146,7 @@ don't overlap.
 - [ ] `cd api && npm run check` green (typecheck + lint + tests) if you touched `api/`.
 - [ ] If you changed `headAssets` / a generator / a `tools/legal` fragment → `npm run
       generate` and committed the regenerated pages (drift guard).
-- [ ] New page carries: correct `robots`, analytics snippet, `consent.js`, error beacon.
+- [ ] New page carries: correct `robots`, analytics snippet, error beacon.
 - [ ] New tracked action: guarded `chTrack`, prod-gated if revenue, added to GTM checklist + an e2e.
 - [ ] Price change mirrored front-end ↔ backend and parity guard passes.
 - [ ] No secrets added to front-end; no swallowed errors added to backend.
