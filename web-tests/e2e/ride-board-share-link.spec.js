@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isApiRequest } from './_api-host.js';
 
 // Share links used to be built as https://ceylonhop.com/board/<code> — the old WordPress
 // apex, which 404s, on a path nothing serves. Every link a starter sent was dead, and the
@@ -22,16 +23,9 @@ const LIST = {
 // origin with the path intact (serve-booking.js). Both forms are matched, so these stay
 // stubbed whether or not that rewrite is in play.
 //
-// Still deliberately NOT "anything non-local": fonts, GTM and the GIS script must keep
-// loading. The path arm is just as narrow — /board.html and /site.css do not match it,
-// because `board` must be followed by a slash or end-of-path.
-const API_PATH = /^\/(board|health|errors)(\/|$)/;
-const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname)
-  || /\.onrender\.com$/.test(u.hostname)
-  || API_PATH.test(u.pathname);
 
 async function stubApi(page) {
-  await page.route((u) => isApiHost(u), (route) => {
+  await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [LIST] }) });
