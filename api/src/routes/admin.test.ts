@@ -376,9 +376,11 @@ describe('POST /admin/jobs/watchdog', () => {
 // GL-3 — cancelling/refunding a shared booking must give its seats back to the departure.
 describe('shared seat release on cancel/refund', () => {
   const shared = {
-    corridorId: 'hill-line', // capacity 12
+    // Negombo → Sigiriya, a catalogue leg on airport-cultural (capacity 12)
+    from: 'Negombo',
+    to: 'Sigiriya / Dambulla',
     date: nextIsoWeekday(3), // a Wednesday — a shared service day (corridors run Wed & Sat)
-    time: '08:00',
+    time: '07:30',
     seats: 12, // the whole bus, so a leaked hold is observable as a sold-out 409
     customer: valid.customer,
   };

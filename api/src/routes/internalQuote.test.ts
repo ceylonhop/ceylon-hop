@@ -376,6 +376,22 @@ describe('internal quoting tool route', () => {
     expect((await patch(app, `/admin/quote/${q.id}`, { notes: 123 })).status).toBe(400);
   });
 
+  it('PATCH /:id accepts showLegPrices and persists it', async () => {
+    const app = createApp();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+    const res = await patch(app, `/admin/quote/${q.id}`, { showLegPrices: true });
+    expect(res.status).toBe(200);
+    const got = await (await authedGet(app, `/admin/quote/${q.id}`)).json();
+    expect(got.showLegPrices).toBe(true);
+  });
+
+  it('PATCH /:id rejects a non-boolean showLegPrices', async () => {
+    const app = createApp();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+    const res = await patch(app, `/admin/quote/${q.id}`, { showLegPrices: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
   // ── Maker-checker approval gate ────────────────────────────────────────────
   const patchAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });

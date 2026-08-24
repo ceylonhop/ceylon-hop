@@ -53,7 +53,6 @@
   // ---- Header ----
   const NAVLINKS = [
     ['Plan a trip','plan.html'],
-    ['Ride board','board.html'],
     ['Tours','tours.html'],
     ['Travel Guide','blog.html'],
     ['Why us','why.html'],
@@ -205,8 +204,23 @@
         if(!key || seen.has(key)) return;
         seen.add(key); out.push(p);
       }
+      /* A Google row that IS one of our catalogue places is the same place said Google's way —
+         "Sigiriya, Sri Lanka" beside "Sigiriya / Dambulla". A customer reads them as one place,
+         but only ours carries the id that buys baked pricing and a shared seat, so the dropdown
+         was a coin-flip with the shared product on one face. Typing "Negombo" or "Ella" never
+         had this problem (shouldAskGoogle sees an exact match and skips Google entirely); this
+         closes the same gap for the three places whose catalogue name isn't what a person types.
+
+         Dropped ONLY when the twin is already on screen, so collapsing a row can never remove
+         the place from the menu. And it trims the MERGE, not the lookup — Google is still asked,
+         because "Sigiriya Village Hotel" has to stay reachable. */
+      const localIds=new Set(local.map(p=>p.id).filter(Boolean));
       local.forEach(add);
-      google.forEach(add);
+      google.forEach(p=>{
+        const twin=T.placeAliasId ? T.placeAliasId(p.label || p.main) : null;
+        if(twin && localIds.has(twin)) return;
+        add(p);
+      });
       return out.slice(0,limit);
     }
     function shouldAskGoogle(q, local){

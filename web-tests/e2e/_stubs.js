@@ -191,16 +191,20 @@ export async function gotoBooking(page, opts = {}) {
   if (pickGeo) {
     await page.addInitScript((g) => { window.__E2E_PICK_GEO = g; }, pickGeo);
   }
-  // Pre-seed the cookie choice so the consent banner never overlays controls near the
-  // bottom of the viewport (it intercepts pointer events and flakes autocomplete clicks).
-  await page.addInitScript(() => {
-    try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) {}
-  });
+  // (Until 2026-08-16 this pre-seeded 'ceylonhop_consent' so the consent banner could not
+  // overlay controls near the bottom of the viewport. The banner is gone, so is the seed.)
 
   // never hit the network for these
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.route('**/www.payhere.lk/**', (r) => r.abort());
   await page.route('**/*sandbox.payhere.lk/**', (r) => r.abort());
+  // Belt and braces with the hostname gate in site-chrome.mjs's analyticsSnippet: the
+  // gate already stops the loader firing off localhost, but a spec that stubs its own
+  // page or hard-codes a real host would slip past it. GTM loading here is not a
+  // harmless extra request — Clarity and GA4 each count a SESSION per page load, and
+  // ~100 spec files' worth of loads showed up as hundreds of "live users" per CI run.
+  await page.route('**/www.googletagmanager.com/**', (r) => r.abort());
+  await page.route('**/*.clarity.ms/**', (r) => r.abort());
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
 
   // booking creation

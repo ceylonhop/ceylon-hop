@@ -18,6 +18,9 @@ const Env = z.object({
   PAYHERE_MERCHANT_SECRET: z.string().optional(),
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
+  // Dedicated callback for Ride Board card preapprovals. This receives customer_token,
+  // not an ordinary payment event, so it must never share /webhooks/payments.
+  PAYHERE_RIDE_NOTIFY_URL: z.string().url().optional(),
   // Refund API (PayHere Settings -> API Keys, permission "Automated Charging API"). Optional
   // and deliberately NOT required in production: without them the ops UI simply offers the
   // manual dashboard refund, which is a supported flow rather than a degraded one.
@@ -198,6 +201,16 @@ export function buildConfig(env: Record<string, string | undefined>) {
         '(without them the fake payment adapter would accept forged webhooks and mark ' +
         'bookings paid without a real charge) — refusing to boot. If this is a staging ' +
         'deployment that runs on fake payments, set ALLOW_FAKE_PAYMENTS=1 there.',
+    );
+  }
+  if (
+    cfg.NODE_ENV === 'production' &&
+    !allowFakePayments(cfg.ALLOW_FAKE_PAYMENTS) &&
+    !(cfg.PAYHERE_APP_ID && cfg.PAYHERE_APP_SECRET && cfg.PAYHERE_RIDE_NOTIFY_URL)
+  ) {
+    throw new Error(
+      'PAYHERE_APP_ID, PAYHERE_APP_SECRET and PAYHERE_RIDE_NOTIFY_URL must be set in production ' +
+        'so Ride Board joins use real PayHere preapproval and Automated Charging — refusing to boot.',
     );
   }
   return cfg;

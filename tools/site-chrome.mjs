@@ -14,7 +14,6 @@ const YEAR = 2026;
 
 const NAVLINKS = [
   ['Plan a trip', 'plan.html'],
-  ['Ride board', 'board.html'],
   ['Tours', 'tours.html'],
   ['Travel Guide', 'blog.html'],
   ['Why us', 'why.html'],
@@ -48,14 +47,48 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>`;
 
-// Phase 0 analytics: Consent Mode v2 defaults (deny until the banner grants) then the
-// GTM loader. GA4 + Clarity + Ads + Meta are all tags configured INSIDE GTM-NL6K22CM
-// (see docs/analytics/gtm-container-checklist.md) — no per-tag code lives in the repo.
+// Phase 0 analytics: Consent Mode v2 defaults, then the GTM loader. GA4 + Clarity + Ads
+// + Meta are all tags configured INSIDE GTM-NL6K22CM (see
+// docs/analytics/gtm-container-checklist.md) — no per-tag code lives in the repo.
+//
+// analytics_storage defaults to GRANTED and there is no banner (owner decision
+// 2026-08-16). The previous shape — deny everything until a banner granted — is what made
+// prod.ceylonhop.com report zero visitors whenever the banner was off: every hit went out
+// as gcs=G100, a cookieless ping that never becomes a user, so sessions, funnels and
+// cross-domain attribution all collapsed. The site is not running ads, so the three ad_*
+// signals stay hard-denied here rather than being dropped: if an ads tag is ever added
+// inside the container it still cannot set an advertising cookie without this line
+// changing first, in a reviewed commit.
+//
+// wait_for_update is deliberately absent — it existed to give the banner time to answer,
+// and with nothing left to answer it only delayed every hit by half a second.
+//
+// The loader is gated on hostname because it previously ran EVERYWHERE the pages were
+// opened, and Clarity/GA4 count a session per load regardless of who (or what) opened
+// it. The e2e suite alone loads pages across ~100 spec files against a localhost static
+// server, so every CI run manufactured a few hundred "live users" in Clarity — the
+// offline stubs abort maps/payhere but never blocked googletagmanager. Local previews
+// and file:// opens did the same, quietly.
+//
+// chEnv() in analytics.js only LABELS data (ch_env) — it cannot suppress collection,
+// because by the time it runs GTM has already loaded and Clarity has already started
+// recording. The gate therefore has to live here, in the head, before the loader.
+//
+// The allowlist mirrors chEnv()'s notion of a real host: any *.ceylonhop.com (which
+// keeps prod, pay/quote/ride and staging tracking exactly as before) plus the Render
+// API host. Everything else — localhost, 127.0.0.1, file:// (hostname ''), preview
+// hosts, github.io — loads no analytics at all.
+//
+// Written with slice(-14) rather than the obvious /(^|\.)ceylonhop\.com$/ because this
+// snippet is inlined into the pay/quote link-unfurl previews, and customerPages.test.ts
+// asserts those previews contain no '$' at all — a blunt but effective proxy for "the
+// amount never leaks into a WhatsApp link preview". A regex anchor would have smuggled
+// a dollar sign in and defeated that guard for a reason nothing to do with money.
 export const analyticsSnippet = `<script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
 </script>
-<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
+<script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
 
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
 // Content-hash stamp for cache-busting (mirrors tools/stamp-asset-versions.mjs, which
@@ -81,7 +114,6 @@ export function headAssets(p) {
 <link rel="stylesheet" href="${p}${assetV('site.css')}">
 ${analyticsSnippet}
 <script src="${p}${assetV('analytics.js')}"></script>
-<script src="${p}${assetV('consent.js')}" defer></script>
 ${errorBeaconSnippet}`;
 }
 

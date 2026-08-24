@@ -142,7 +142,6 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
 });
 
 test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?step=dates&stops=Colombo%20city%7CKandy%7CTrincomalee&pax=2&vehicle=car');
 
@@ -161,7 +160,6 @@ test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
 });
 
 test('same-day legs over 10 hours block continuing', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?step=dates&stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
 
@@ -286,13 +284,13 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await from.press('Enter');
 
   await expect(from).toHaveValue('Colombo Airport (CMB)');
-  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 150 km · 3h 15m');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $67');
 
   await page.reload();
 
   await expect(page.locator('#rail .leg-card').first().locator('.leg-from')).toHaveValue('Colombo Airport (CMB)');
-  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 150 km · 3h 15m');
 });
 
 test('planner place search layers popular route then Google results for hotel text', async ({ page }) => {

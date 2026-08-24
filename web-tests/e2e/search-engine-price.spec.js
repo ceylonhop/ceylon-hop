@@ -48,8 +48,8 @@ test('an engine-priced route shows a price for each vehicle', async ({ page }) =
 
   await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$155');
   await expect(page.locator('.opt-private .veh-row').nth(1)).toContainText('$210');
-  // the route header states the measured distance the engine came back with
-  await expect(page.locator('#route-meta')).toContainText('~271 km');
+  // the route header uses the shared public rounding contract, not minute-level precision
+  await expect(page.locator('#route-meta')).toContainText('Approx. 270 km · 5h 30m');
   // The title states the SHORT display label ("pasikudah · Kalkudah"), not the full Google
   // address — on a phone the full formatted address set in display serif is a wall of text.
   // The full name still travels in the URL and the estimate intent (asserted in the next test).
@@ -147,4 +147,43 @@ test('an engine price carries the free-text place through to booking', async ({ 
   // No unfinished fare exists for an engine price, and "rawPrice=null" would parseFloat to 0 —
   // a free transfer. It must be absent, not null.
   expect(q.has('rawPrice')).toBe(false);
+});
+
+/*
+  An engine route must not report a shared-seat finding it never made.
+
+  `shared` is hardcoded null whenever either end is outside the baked catalogue
+  (search.js:155) — a scheduled seat is a directed catalogue entry keyed on two
+  catalogue ids, so the lookup is SKIPPED, not failed. The panel nonetheless
+  printed "We don't run a scheduled shared service between X and Y right now".
+
+  Owner-reported 2026-08-22: picking "Sigiriya, Sri Lanka" from Google instead of
+  the catalogue's "Sigiriya / Dambulla" put that sentence on CMB → Sigiriya — one
+  of the two corridors we do sell seats on, at $27.49/seat. The same sentence was
+  firing on every Google-picked search, whatever the route.
+*/
+test('an engine route never claims we run no shared service', async ({ page }) => {
+  await gotoBooking(page, {
+    path: '/search.html',
+    query: `from=cmb-airport&to=${encodeURIComponent('Sigiriya, Sri Lanka')}`,
+    estimate: { respond: byVehicle },
+  });
+
+  const panel = page.locator('.noshare');
+  await expect(panel).toBeVisible();
+  await expect(panel).not.toContainText("We don't run a scheduled shared service");
+  await expect(panel).not.toContainText('No shared seats on this route');
+  // States the rule we can actually vouch for, and still lands the private transfer.
+  await expect(panel).toContainText('Shared seats run on set routes');
+  await expect(panel).toContainText('door-to-door at a fixed price');
+});
+
+test('a baked pair we truly do not serve still says so plainly', async ({ page }) => {
+  // CMB → Galle is in the catalogue and has no scheduled seat: the lookup RAN and
+  // came back empty, so the negative is a finding and stays stated as one.
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=galle' });
+
+  const panel = page.locator('.noshare');
+  await expect(panel).toContainText('No shared seats on this route');
+  await expect(panel).toContainText("We don't run a scheduled shared service");
 });

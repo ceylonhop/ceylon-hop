@@ -69,8 +69,18 @@ describe('beta notice', () => {
     expect(document.getElementById(labelledBy)?.textContent?.trim()).toBeTruthy();
   });
 
-  it('moves focus to the dismiss button so a keyboard user is not stranded behind it', () => {
+  // The panel, not the button: focusing the button made mobile WebKit ring it on arrival. Focus
+  // still has to land inside the dialog or a keyboard user is stranded on the page behind it.
+  it('moves focus into the dialog so a keyboard user is not stranded behind it', () => {
     run();
+    const panel = notice().querySelector('.ch-beta-panel');
+    expect(document.activeElement).toBe(panel);
+    expect(panel.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('puts the first Tab on the dismiss button', () => {
+    run();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
     expect(document.activeElement).toBe(button());
   });
 

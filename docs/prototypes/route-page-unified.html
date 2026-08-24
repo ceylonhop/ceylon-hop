@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Negombo to Sigiriya — transfer &amp; shared seat | Ceylon Hop</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Caveat:wght@600;700&display=swap');
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Bold'),local('BodoniSvtyTwoITCTT-Bold');font-weight:700;font-style:normal;font-display:swap;ascent-override:113%;descent-override:40%;line-gap-override:0%}
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Book'),local('BodoniSvtyTwoITCTT-Book');font-weight:400;font-style:normal;font-display:swap;ascent-override:113%;descent-override:40%;line-gap-override:0%}
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Book Italic'),local('BodoniSvtyTwoITCTT-BookIta');font-weight:400;font-style:italic;font-display:swap;ascent-override:113%;descent-override:40%;line-gap-override:0%}
+
+:root{
+  --blue:#63BFD6;--blue-deep:#24758A;--teal:#0AB9B6;--teal-deep:#08938f;
+  --saffron:#F9A429;--tomato:#EC3A24;--ink:#3A3739;--ink-soft:#6c6a6b;
+  --cream:#F0EEE5;--cream-deep:#E4E0D2;--paper:#fffdf8;--white:#fff;--line:#e7e3d6;
+  --display:'CH Bodoni','Bodoni Moda','Didot',Georgia,serif;
+  --body:'Poppins',system-ui,-apple-system,sans-serif;
+  --hand:'Caveat','Bradley Hand',cursive;--r:18px;--r-lg:24px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);color:var(--ink);background:var(--cream);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.12;letter-spacing:.005em}
+a{color:inherit}
+button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none;font-size:inherit}
+.kicker{font-weight:600;font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--blue-deep)}
+
+/* demo bar */
+.proto{background:var(--ink);color:#fff;padding:.55rem 1rem;font-size:.8rem;font-weight:600;letter-spacing:.02em;display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap}
+.proto b{color:var(--saffron)}
+.rsw{display:inline-flex;gap:6px;background:rgba(255,255,255,.1);border-radius:999px;padding:3px}
+.rsw button{border-radius:999px;padding:.28rem .8rem;font-size:.76rem;font-weight:700;color:#cfcac6}
+.rsw button.on{background:var(--saffron);color:#3A3739}
+
+header{background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.nav{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px 24px}
+.brand{font-family:var(--display);font-weight:700;font-size:1.45rem;display:flex;align-items:center;gap:.55rem;text-decoration:none}
+.brand .c{width:30px;height:30px;border-radius:50%;background:conic-gradient(from 210deg,var(--saffron),#f7c46a 60%,var(--saffron));display:grid;place-items:center;color:#fff;font-size:1.05rem;font-family:var(--display)}
+nav.links{display:flex;gap:26px;font-weight:600;font-size:.92rem}
+nav.links a{text-decoration:none} nav.links a:hover{color:var(--blue-deep)}
+@media(max-width:760px){nav.links{display:none}}
+
+.hero{background:linear-gradient(180deg,var(--paper) 0%,var(--cream) 100%);border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+.hero-in{max-width:1120px;margin:0 auto;padding:34px 24px 40px;position:relative}
+.crumb{font-size:.82rem;color:var(--ink-soft);margin-bottom:20px;font-weight:500}
+.crumb a{text-decoration:none;color:var(--ink-soft)} .crumb b{color:var(--ink);font-weight:600}
+.hero h1{font-size:clamp(2.2rem,4.6vw,3.4rem);display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;font-variation-settings:"opsz" 60}
+.hero h1 .arr{color:var(--blue);display:inline-flex;transform:translateY(4px)}
+.hero h1 .arr svg{width:36px;height:36px}
+.meta{display:flex;gap:22px;flex-wrap:wrap;color:var(--ink-soft);font-size:.95rem;margin-top:14px;font-weight:500}
+.meta span{display:inline-flex;align-items:center;gap:.5rem}
+.meta svg{width:17px;height:17px;color:var(--teal-deep)}
+.meta svg .wp{fill:var(--saffron);stroke:none}
+.doodle{position:absolute;right:24px;top:30px;width:230px;pointer-events:none}
+@media(max-width:900px){.doodle{display:none}}
+.doodle .hand-note{font-family:var(--hand);font-size:1.25rem;color:var(--blue-deep);transform:rotate(-3deg);text-align:center}
+.stamp{position:absolute;right:0;top:-14px;width:74px;height:88px;background:var(--paper);border:1.5px dashed var(--cream-deep);border-radius:4px;transform:rotate(6deg);display:grid;place-items:center;box-shadow:0 2px 8px rgba(58,55,57,.08)}
+.stamp-in{width:58px;height:70px;background:linear-gradient(180deg,#bfe4ee 0 55%,#f6d9a0 55% 70%,#7ccbc9 70% 100%);border-radius:2px;position:relative;overflow:hidden;display:grid;place-items:center;font-size:1.1rem}
+.stamp-in::after{content:"CEYLON HOP · '26";position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:.38rem;letter-spacing:.06em;font-weight:700;color:#835f1d}
+
+.datebar{max-width:1120px;margin:26px auto 0;padding:0 24px}
+.datebar-in{background:var(--paper);border:1.5px solid var(--line);border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 3px 14px rgba(58,55,57,.05)}
+.datebar label.q{font-weight:600;font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
+.dchip{border:1.5px solid var(--line);background:var(--white);border-radius:999px;padding:.5rem 1.1rem;font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:.5rem;transition:border-color .15s,background .15s,color .15s}
+.dchip:hover{border-color:var(--blue-deep)}
+.dchip.sel{background:var(--blue-deep);border-color:var(--blue-deep);color:#fff}
+.dchip svg{width:15px;height:15px}
+.dchip .x{opacity:.75;font-weight:400}
+.davail{font-size:.85rem;font-weight:500;color:var(--ink-soft);display:flex;align-items:flex-start;gap:.5rem}
+.davail .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex:none;margin-top:.48em}
+.davail.warn .dot{background:var(--saffron)}
+#datePick{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+@media(max-width:520px){.datebar-in{gap:9px}.datebar label.q{width:100%}.dchip{width:100%;justify-content:center}.dchip .longlabel{display:none}.davail{width:100%}}
+
+.wrap{max-width:1120px;margin:0 auto;padding:26px 24px 10px}
+.opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+@media(max-width:900px){.opt-grid{grid-template-columns:1fr}}
+.opt{background:var(--paper);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:26px;position:relative;box-shadow:0 6px 24px rgba(58,55,57,.05);animation:rise .45s ease both}
+.opt:nth-child(2){animation-delay:.07s}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.tag-top{position:absolute;top:-13px;left:20px;color:#fff;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:.32rem .85rem;box-shadow:0 2px 8px rgba(58,55,57,.14)}
+.tag-teal{background:var(--blue)} .tag-saf{background:var(--saffron)} .tag-grey{background:var(--ink-soft)}
+.o-head{display:flex;gap:14px;align-items:center;margin:4px 0 10px}
+.o-ico{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;color:#fff;flex:none}
+.o-ico svg{width:24px;height:24px}
+.o-ico.t{background:var(--blue)} .o-ico.s{background:var(--saffron)} .o-ico.g{background:var(--cream-deep);color:var(--ink-soft)}
+.opt h2{font-size:1.45rem}
+.o-sub{font-size:.7rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin-top:.15rem}
+.o-desc{font-size:.94rem;color:var(--ink-soft);margin:.35rem 0 .9rem}
+.o-desc b{color:var(--ink)}
+
+.veh{display:flex;align-items:center;gap:14px;background:var(--white);border:1.5px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:10px;transition:border-color .15s}
+.veh:hover{border-color:var(--blue)}
+.veh .vic{width:40px;height:40px;border-radius:11px;background:var(--cream);display:grid;place-items:center;flex:none}
+.veh .vic svg{width:22px;height:22px} .veh .vic svg .wp{fill:var(--saffron);stroke:none}
+.veh .vinfo{flex:1} .veh .vinfo b{font-size:.98rem}
+.veh .vinfo small{display:block;color:var(--ink-soft);font-size:.82rem}
+.veh .vprice{text-align:right}
+.veh .vprice .amt{font-family:var(--display);font-weight:700;font-size:1.5rem;line-height:1}
+.veh .vprice small{display:block;color:var(--ink-soft);font-size:.72rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;background:var(--blue-deep);color:#fff;border-radius:999px;padding:.68rem 1.5rem;font-weight:700;font-size:.92rem;text-decoration:none;transition:transform .15s,box-shadow .15s;border:1.5px solid var(--blue-deep)}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(36,117,138,.28)}
+.btn.sm{padding:.5rem 1.15rem;font-size:.86rem}
+.btn.block{width:100%;margin-top:14px}
+.avail-line{display:flex;align-items:center;gap:.5rem;font-size:.88rem;font-weight:600;color:var(--teal-deep);margin-top:12px}
+.avail-line svg{width:16px;height:16px;flex:none}
+
+/* ---- the merged shared column ---- */
+.sprice{display:flex;align-items:baseline;gap:.5rem;margin:.2rem 0 .1rem}
+.sprice .amt{font-family:var(--display);font-size:2.5rem;font-weight:700;line-height:1}
+.sprice .per{color:var(--ink-soft);font-weight:600}
+.sprice .fromlbl{font-size:.9rem;color:var(--ink-soft);font-weight:600;margin-right:.1rem}
+/* Design A: the ONE sentence that explains the whole product. It replaces the
+   scheduled-vs-pooled distinction entirely. */
+.runsline{font-size:.9rem;color:var(--ink);font-weight:600;margin:-.1rem 0 .5rem}
+.runsline b{color:var(--blue-deep)}
+.stops{display:flex;gap:.55rem;align-items:flex-start;font-size:.87rem;color:var(--ink-soft);background:var(--cream);border-radius:12px;padding:.6rem .8rem;margin:.2rem 0 .1rem}
+.stops svg{width:15px;height:15px;flex:none;margin-top:.18em;color:var(--teal-deep)}
+.stops svg .wp{fill:var(--saffron);stroke:none}
+.stops b{color:var(--ink);font-variant-numeric:tabular-nums}
+.firstup{border:1.5px solid var(--saffron);background:#fffaf1;border-radius:14px;padding:14px 16px;margin-top:14px}
+.firstup .fu-h{font-weight:700;font-size:.95rem;margin-bottom:.25rem}
+.firstup p{font-size:.87rem;color:var(--ink-soft);margin-bottom:.7rem}
+.firstup p b{color:var(--ink)}
+.social{display:flex;align-items:center;gap:.55rem;font-size:.88rem;color:var(--ink-soft);margin:.35rem 0 .2rem}
+.social b{color:var(--ink)}
+.faces{display:inline-flex}
+.face{width:25px;height:25px;border-radius:50%;border:2px solid var(--paper);display:inline-grid;place-items:center;font-size:.62rem;font-weight:800;color:#fff}
+.face+.face{margin-left:-8px}
+
+.sblock{border:1.5px solid var(--line);border-radius:16px;padding:15px 17px;background:var(--white);margin-top:14px}
+.sblock.hot{border-color:var(--saffron);box-shadow:0 4px 14px rgba(249,164,41,.13)}
+.sblock.flat{background:var(--cream);border-style:dashed}
+.sb-h{font-size:.68rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:.45rem;margin-bottom:.6rem}
+.sb-h svg{width:14px;height:14px;color:var(--teal-deep)}
+.sb-h .badge{margin-left:auto;font-size:.62rem;letter-spacing:.06em;background:var(--cream);color:var(--blue-deep);border-radius:999px;padding:.14rem .55rem}
+.pickups{list-style:none;display:grid;gap:.26rem;margin:.1rem 0 .7rem}
+.pickups li{display:flex;align-items:baseline;gap:.7rem;font-size:.92rem;color:var(--ink-soft)}
+.pickups li b{color:var(--ink);font-variant-numeric:tabular-nums;min-width:4.5em;font-weight:600}
+.pickups li.yours{color:var(--ink);font-weight:600}
+.pickups li .ybadge{font-size:.63rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--blue-deep);background:var(--cream);border-radius:999px;padding:.12rem .5rem}
+.pickups li.arrv{border-top:1px dashed var(--line);padding-top:.45rem;margin-top:.2rem}
+
+/* pooled date rows — compact, INSIDE the shared card */
+.plist{list-style:none;display:grid;gap:8px}
+.prow{display:flex;align-items:center;gap:12px;background:var(--paper);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;text-decoration:none;transition:border-color .15s,transform .15s}
+.prow:hover{border-color:var(--blue);transform:translateX(2px)}
+.prow.exact{border-color:var(--saffron);background:#fffaf1}
+.prow .pw{flex:1;min-width:0}
+.prow .pd{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.prow .pd .etag{font-size:.6rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#8a5a00;background:#fdeecb;border-radius:999px;padding:.1rem .45rem}
+.prow .pn{font-size:.81rem;color:var(--ink-soft)}
+.prow .pn b{color:var(--ink)}
+.prow .pmeter{width:52px;height:5px;border-radius:99px;background:var(--cream-deep);overflow:hidden;flex:none}
+.prow .pmeter i{display:block;height:100%;background:var(--teal);border-radius:99px}
+.prow .pmeter i.full{background:var(--saffron)}
+.prow .pgo{color:var(--blue-deep);font-weight:800;font-size:1.05rem;flex:none}
+.startrow{display:flex;align-items:center;justify-content:center;gap:.5rem;border:1.5px dashed var(--line);border-radius:12px;padding:10px;font-weight:700;font-size:.88rem;color:var(--blue-deep);text-decoration:none;transition:border-color .15s}
+.startrow:hover{border-color:var(--blue-deep);background:var(--white)}
+.noday{display:flex;align-items:center;gap:.5rem;font-size:.9rem;font-weight:700;color:#b13b22;margin:.3rem 0 .2rem}
+.noday svg{width:17px;height:17px;flex:none}
+.shift{display:inline-flex;align-items:center;gap:.45rem;border:1.5px solid var(--line);background:var(--paper);border-radius:999px;padding:.42rem .95rem;font-weight:600;font-size:.85rem;margin:.15rem .45rem 0 0;transition:border-color .15s}
+.shift:hover{border-color:var(--blue-deep);color:var(--blue-deep)}
+.shift .sdot{width:6px;height:6px;border-radius:50%;background:var(--saffron)}
+.mini{font-size:.87rem;color:var(--ink-soft);margin:.15rem 0 .6rem}
+.mini b{color:var(--ink)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.chip{display:inline-flex;align-items:center;gap:.4rem;background:var(--cream);border-radius:999px;padding:.4rem .85rem;font-size:.81rem;font-weight:600}
+.chip svg{width:14px;height:14px;color:var(--teal-deep)}
+
+.edit{max-width:1120px;margin:44px auto 0;padding:0 24px;display:grid;grid-template-columns:1.4fr 1fr;gap:40px}
+@media(max-width:860px){.edit{grid-template-columns:1fr}}
+.edit h3{font-size:1.7rem;margin-bottom:.6rem}
+.edit .lede{font-family:var(--display);font-style:italic;font-weight:400;font-size:1.18rem;margin-bottom:.8rem}
+.edit p{color:var(--ink-soft);font-size:.96rem;margin-bottom:.9rem;max-width:64ch}
+.hl{list-style:none;display:grid;gap:.5rem;margin-top:6px}
+.hl li{display:flex;gap:.6rem;align-items:baseline;font-size:.93rem;color:var(--ink-soft)}
+.hl li::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--saffron);flex:none}
+.postcard{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:14px;transform:rotate(1.6deg);box-shadow:0 10px 30px rgba(58,55,57,.12);max-width:360px;justify-self:center;align-self:start}
+.postcard .ph{aspect-ratio:4/3;border-radius:3px;background:linear-gradient(180deg,#9fd3e4 0%,#c8e8ef 38%,#f3dea8 55%,#4d8f6a 56%,#3d7d59 78%,#d9c98f 79%,#e8dcae 100%);position:relative;overflow:hidden}
+.postcard .ph::before{content:"";position:absolute;left:18%;bottom:22%;width:34%;height:52%;background:#5a4a3a;clip-path:polygon(15% 100%,32% 18%,50% 0,68% 22%,85% 100%)}
+.postcard .cap{font-family:var(--hand);font-size:1.3rem;text-align:center;margin-top:10px;transform:rotate(-1deg)}
+.faq{margin-top:26px;display:grid;gap:10px}
+.faq details{background:var(--paper);border:1.5px solid var(--line);border-radius:14px;padding:14px 18px}
+.faq summary{font-weight:700;font-size:.95rem;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq summary::after{content:"+";font-family:var(--display);font-size:1.3rem;color:var(--blue-deep)}
+.faq details[open] summary::after{content:"–"}
+.faq details p{font-size:.9rem;color:var(--ink-soft);margin-top:.5rem;max-width:60ch}
+footer{margin-top:60px;background:var(--ink);color:#cfcac6;padding:34px 24px;text-align:center;font-size:.88rem}
+footer .fb{font-family:var(--display);color:#fff;font-size:1.3rem;margin-bottom:.4rem}
+footer p{max-width:34ch;margin:0 auto;color:#9a968d}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="proto">
+  <span>DESIGN <b>A</b> · one shared option · no schedule to explain</span>
+  <span class="rsw">
+    <button class="on" data-route="ns" type="button">Busy route</button>
+    <button data-route="ke" type="button">Quieter route</button>
+    <button data-route="ct" type="button">No shared van</button>
+  </span>
+</div>
+
+<header>
+  <div class="nav">
+    <a class="brand" href="#"><span class="c">C</span>Ceylon Hop</a>
+    <nav class="links"><a href="#">Plan a trip</a><a href="#">Routes</a><a href="#">Tours</a><a href="#">Travel Guide</a><a href="#">Why us</a></nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero-in">
+    <div class="crumb"><a href="#">Home</a> › <a href="#">Routes</a> › <b id="crumbRoute">Negombo to Sigiriya</b></div>
+    <h1><span id="hFrom">Negombo</span> <span class="arr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span> <span id="hTo">Sigiriya / Dambulla</span></h1>
+    <div class="meta">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> <span id="hKm">~148 km</span></span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/><circle class="wp" cx="12" cy="3.5" r="1.4"/></svg> <span id="hDur">approx 3h 14m</span></span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</span>
+    </div>
+    <div class="doodle">
+      <svg viewBox="0 0 230 60" fill="none"><path d="M8 46 C60 10 150 54 218 16" stroke="#24758A" stroke-width="1.6" stroke-dasharray="1 7" stroke-linecap="round"/><circle cx="8" cy="46" r="4" fill="#24758A"/><circle cx="218" cy="16" r="5.5" fill="none" stroke="#F9A429" stroke-width="2.5"/></svg>
+      <div class="hand-note" id="doodleNote">the Lion Rock run</div>
+      <div class="stamp"><div class="stamp-in">🌴</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="datebar">
+  <div class="datebar-in">
+    <label class="q">When are you going?</label>
+    <button class="dchip sel" id="chipFlex" type="button">I'm flexible</button>
+    <button class="dchip" id="chipDate" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 9.5h17M8 2.8v4M16 2.8v4"/></svg>
+      <span id="chipDateTxt">Choose a date<span class="longlabel"> · check availability</span></span><span class="x" id="chipDateX" hidden>✕</span>
+    </button>
+    <input type="date" id="datePick" aria-label="travel date">
+    <span class="davail" id="dateNote"><span class="dot"></span>a shared van runs on <b>any date</b> once 3 travellers are going</span>
+  </div>
+</div>
+
+<main class="wrap">
+  <!-- The DEFAULT state (Negombo→Sigiriya, no date) is baked into static HTML: this is
+       what a crawler and any no-JS visitor gets, and on the real page it is what the
+       generator would emit. JS re-renders it identically on load, then takes over for
+       date changes. Never leave these two cards empty — an indexed page must be complete
+       without JavaScript. (Demo dates below are illustrative; JS recomputes them live.) -->
+  <div class="opt-grid">
+    <article class="opt" id="privCard">
+      <span class="tag-top tag-teal">Most flexible · recommended</span>
+      <div class="o-head">
+        <div class="o-ico t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="5.5" cy="18" r="1.8"/><circle cx="18.5" cy="6" r="1.8"/><path d="M7 16.5C10 13 14 11 16.8 7.6" stroke-dasharray="1 3.4"/></svg></div>
+        <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · runs every day</div></div>
+      </div>
+      <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, Negombo straight to Sigiriya / Dambulla.</p>
+      <div class="veh">
+        <div class="vic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15l1.4-4.2A2 2 0 0 1 7.3 9.5h9.4a2 2 0 0 1 1.9 1.3L20 15v3.4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V18H7v.4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle class="wp" cx="7.6" cy="15.2" r="1.1"/><circle cx="16.4" cy="15.2" r="1.1"/></svg></div>
+        <div class="vinfo"><b>AC car</b><small>up to 3 travellers + bags</small></div>
+        <div class="vprice"><span class="amt">$65.50</span><small>total, fixed</small></div>
+      </div>
+      <div class="veh">
+        <div class="vic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a2 2 0 0 1 2-2h10.6a3 3 0 0 1 2.5 1.3l1.6 2.4a3 3 0 0 1 .5 1.7v3.1a1.5 1.5 0 0 1-1.5 1.5h-.7"/><path d="M3.5 9v6.5A1.5 1.5 0 0 0 5 17h.6"/><circle cx="8" cy="17.2" r="1.6" fill="#fff" stroke="#fff"/><circle cx="16" cy="17.2" r="1.6"/><path d="M9.6 17.2h4.8"/></svg></div>
+        <div class="vinfo"><b>AC van</b><small>up to 6 travellers + bags</small></div>
+        <div class="vprice"><span class="amt">$88</span><small>total, fixed</small></div>
+      </div>
+      <a class="btn block" href="#">Book private <span>→</span></a>
+    </article>
+
+    <article class="opt" id="sharedCard">
+      <span class="tag-top tag-saf">Best value · share &amp; save</span>
+      <div class="o-head">
+        <div class="o-ico s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a2 2 0 0 1 2-2h10.6a3 3 0 0 1 2.5 1.3l1.6 2.4a3 3 0 0 1 .5 1.7v3.1a1.5 1.5 0 0 1-1.5 1.5h-.7"/><path d="M3.5 9v6.5A1.5 1.5 0 0 0 5 17h.6"/><circle cx="8" cy="17.2" r="1.6" fill="#fff" stroke="#fff"/><circle cx="16" cy="17.2" r="1.6"/><path d="M9.6 17.2h4.8"/></svg></div>
+        <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
+      </div>
+      <div class="sprice"><span class="amt">$27.49</span><span class="per">/ seat</span></div>
+      <p class="runsline">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
+      <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
+      <div class="stops"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg><span><b>7:00am</b> CMB Airport · <b>7:30am</b> Zen Cafe, Negombo · arrives <b>11:30am</b> Sigiriya</span></div>
+      <div class="sblock">
+        <div class="sb-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.5 20c0-3.2 2.5-5.3 5.5-5.3s5.5 2.1 5.5 5.3"/><path d="M15.5 12.6c2.9 0 5 2.1 5 5.1"/></svg> Who's going<span class="badge">5 gathering</span></div>
+        <ul class="plist">
+          <a class="prow" href="#"><span class="faces"><span class="face" style="background:#24758A">A</span><span class="face" style="background:#F9A429">M</span></span><span class="pw"><span class="pd">Wed 19 Aug · morning</span><span class="pn"><b>2 of 3</b> — 1 more to run</span></span><span class="pmeter"><i style="width:66.6%"></i></span><span class="pgo">→</span></a>
+          <a class="prow" href="#"><span class="faces"><span class="face" style="background:#24758A">S</span><span class="face" style="background:#F9A429">J</span></span><span class="pw"><span class="pd">Thu 20 Aug · morning</span><span class="pn"><b>2 of 3</b> — 1 more to run</span></span><span class="pmeter"><i style="width:66.6%"></i></span><span class="pgo">→</span></a>
+          <a class="prow" href="#"><span class="faces"><span class="face" style="background:#24758A">K</span></span><span class="pw"><span class="pd">Sat 22 Aug · afternoon</span><span class="pn"><b>1 of 3</b> — 2 more to run</span></span><span class="pmeter"><i style="width:33.3%"></i></span><span class="pgo">→</span></a>
+          <a class="startrow" href="#">+ Start a list for your date</a>
+        </ul>
+      </div>
+    </article>
+  </div>
+</main>
+
+<section class="edit">
+  <div>
+    <span class="kicker">The route</span>
+    <h3 id="edTitle">The road to the Lion Rock</h3>
+    <p class="lede" id="edLede">Beach town to ancient citadel in a morning — lagoon and palms giving way to spice country, then the dry-zone plains of the Cultural Triangle.</p>
+    <p id="edBody">Leaving Negombo, the road skirts the lagoon before turning inland through rubber and spice country around Kurunegala. By late morning the scenery flattens into tank-and-paddy land, and then Sigiriya's rock fortress appears above the treeline — visible a full twenty minutes before you arrive.</p>
+    <ul class="hl" id="edHl">
+      <li>Dambulla's cave temples are 20 minutes from drop-off — an easy same-day add</li>
+      <li>Climb Sigiriya at 7am the next morning to beat the heat and the queues</li>
+      <li>Pidurangala rock, opposite Sigiriya, is the photographer's sunrise choice</li>
+    </ul>
+    <div class="faq">
+      <details><summary>How does a shared seat work?</summary><p>Pick the date you want. When <b>3 travellers</b> are going on that date the van runs, and everyone pays $27.49. Your card is saved when you add your name and is <b>only charged once the van is confirmed</b> — if it never fills, you pay nothing.</p></details>
+      <details><summary>What if nobody else is on my date?</summary><p>Start the list anyway — it goes up instantly and other travellers can join. Or pick a date that is already gathering: the page shows you which ones are closest to running.</p></details>
+      <details><summary>What's the cancellation policy?</summary><p>Free cancellation up to 10 days before departure, and changes up to 24 hours before.</p></details>
+    </div>
+  </div>
+  <figure class="postcard"><div class="ph"></div><figcaption class="cap">wish you were here? — you are.</figcaption></figure>
+</section>
+
+<footer>
+  <div class="fb">Ceylon Hop</div>
+  <p>Private transfers &amp; shared rides that make exploring Sri Lanka easy, social and stress-free.</p>
+</footer>
+
+<script>
+/* ============================================================
+   Shared taxi and the ride board are ONE product, so they are one
+   card. The card has four shapes:
+     1  shared runs on this route  → price + "runs once 3 are going" + the dates
+     B  no schedule, lists     → pooled-only, the board IS the shared option
+     C  neither                → honest "no shared option", private only
+     D  date is an off day     → seat block swaps for shift-a-day + pool
+   Real page: sharedOption() gives A/C, GET /board gives the lists.
+   ============================================================ */
+(function () {
+  'use strict';
+  var DAY = 864e5, MIN = 3;
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  function addD(d, n) { return new Date(d.getTime() + n * DAY); }
+  function nextDow(from, dow, excl) { var d = excl ? addD(from, 1) : new Date(from.getTime()); while (d.getDay() !== dow) d = addD(d, 1); return d; }
+  function prevDow(from, dow) { var d = addD(from, -1); while (d.getDay() !== dow) d = addD(d, -1); return d; }
+  function fmt(d) { return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function fmtLong(d) { return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }); }
+  function iso(d) { return d.toISOString().slice(0, 10); }
+  function money(n) { return n % 1 === 0 ? String(n) : n.toFixed(2); }
+  var FACE_BG = ['#24758A', '#F9A429', '#08938f', '#EC3A24'];
+
+  function offset(n) { var d = addD(today, n); return d; }
+  function offDay(n) { var d = offset(n); while ([3, 6].indexOf(d.getDay()) !== -1) d = addD(d, 1); return d; }
+
+  var ROUTES = {
+    /* A — a real catalogue leg: scheduled seat AND pooled lists */
+    ns: {
+      crumb: 'Negombo to Sigiriya', from: 'Negombo', to: 'Sigiriya / Dambulla',
+      km: '~148 km', dur: 'approx 3h 14m', note: 'the Lion Rock run',
+      priv: { car: 65.50, van: 88 },
+      /* The van's stops are route facts, not a "schedule" — they're the same whichever
+         date fills. Wed & Sat lists are simply pre-seeded, so they tend to have names. */
+      stops: '<b>7:00am</b> CMB Airport · <b>7:30am</b> Zen Cafe, Negombo · arrives <b>11:30am</b> Sigiriya',
+      poolSeat: 27.49,
+      lists: [
+        { date: nextDow(today, 3, true), slot: 'morning', got: 2, names: ['A', 'M'] },
+        { date: offDay(3), slot: 'morning', got: 2, names: ['S', 'J'] },
+        { date: nextDow(today, 6, true), slot: 'afternoon', got: 1, names: ['K'] }
+      ],
+      ed: {
+        t: 'The road to the Lion Rock',
+        l: 'Beach town to ancient citadel in a morning — lagoon and palms giving way to spice country, then the dry-zone plains of the Cultural Triangle.',
+        b: "Leaving Negombo, the road skirts the lagoon before turning inland through rubber and spice country around Kurunegala. By late morning the scenery flattens into tank-and-paddy land, and then Sigiriya's rock fortress appears above the treeline — visible a full twenty minutes before you arrive.",
+        h: ["Dambulla's cave temples are 20 minutes from drop-off — an easy same-day add", 'Climb Sigiriya at 7am the next morning to beat the heat and the queues', "Pidurangala rock, opposite Sigiriya, is the photographer's sunrise choice"]
+      }
+    },
+    /* B — withdrawn from the schedule, still poolable. THE case you asked about. */
+    ke: {
+      crumb: 'Kandy to Ella', from: 'Kandy', to: 'Ella',
+      km: '~136 km', dur: 'approx 3h 47m', note: 'the hill-country traverse',
+      priv: { car: 59, van: 81 },
+      stops: null, /* never a scheduled product, so no established pick-up points */
+      poolSeat: 24.50,
+      lists: [
+        { date: offset(4), slot: 'morning', got: 2, names: ['R', 'T'] },
+        { date: offset(9), slot: 'morning', got: 1, names: ['N'] }
+      ],
+      ed: {
+        t: 'Tea, waterfalls and hairpins',
+        l: 'The full hill-country traverse — 136 km of estates, tunnels and switchbacks, close to four hours by road.',
+        b: 'Your driver can pause at a working tea factory, or drop you at Nanu Oya to ride the celebrated blue train for the final leg into Ella. The road climbs through Gampola and Pussellawa, past Ramboda Falls, then drops through the Ella Gap.',
+        h: ['Stop at a working tea factory for a tasting on the way', 'Ride the blue train for the last leg — we drop you at the station', "Ella Rock and Little Adam's Peak are both walkable from town"]
+      }
+    },
+    /* C — no corridor at all: no schedule, no pooling. Private only, said plainly. */
+    ct: {
+      crumb: 'Colombo to Trincomalee', from: 'Colombo city', to: 'Trincomalee',
+      km: '~269 km', dur: 'approx 5h 23m', note: 'across to the east',
+      priv: { car: 114, van: 153 },
+      stops: null, poolSeat: null, lists: [],
+      ed: {
+        t: 'Coast to coast',
+        l: 'Right across the island — the wet-zone lowlands giving way to dry scrub, then the long blue of the east coast.',
+        b: 'The road runs north-east through Kurunegala and Dambulla before dropping to the coast at Trincomalee. It is a long day on the road, which is exactly why a private car with stops on demand suits it better than a fixed departure.',
+        h: ['Break the drive at Dambulla or Sigiriya — a popular overnight', 'Nilaveli and Uppuveli beaches are 20 minutes north of town', 'Whale watching runs from Trincomalee May to September']
+      }
+    }
+  };
+
+  var ICON = {
+    ck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 9.5h17M8 2.8v4M16 2.8v4"/></svg>',
+    seat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.5 20c0-3.2 2.5-5.3 5.5-5.3s5.5 2.1 5.5 5.3"/><path d="M15.5 12.6c2.9 0 5 2.1 5 5.1"/></svg>',
+    van: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a2 2 0 0 1 2-2h10.6a3 3 0 0 1 2.5 1.3l1.6 2.4a3 3 0 0 1 .5 1.7v3.1a1.5 1.5 0 0 1-1.5 1.5h-.7"/><path d="M3.5 9v6.5A1.5 1.5 0 0 0 5 17h.6"/><circle cx="8" cy="17.2" r="1.6" fill="#fff" stroke="#fff"/><circle cx="16" cy="17.2" r="1.6"/><path d="M9.6 17.2h4.8"/></svg>',
+    car: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15l1.4-4.2A2 2 0 0 1 7.3 9.5h9.4a2 2 0 0 1 1.9 1.3L20 15v3.4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1V18H7v.4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><circle class="wp" cx="7.6" cy="15.2" r="1.1"/><circle cx="16.4" cy="15.2" r="1.1"/></svg>',
+    route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="5.5" cy="18" r="1.8"/><circle cx="18.5" cy="6" r="1.8"/><path d="M7 16.5C10 13 14 11 16.8 7.6" stroke-dasharray="1 3.4"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 15.8v.2"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg>'
+  };
+
+  var state = { route: 'ns', date: null };
+  var R = function () { return ROUTES[state.route]; };
+  var el = function (id) { return document.getElementById(id); };
+
+  function listOn(d) { var L = R().lists; for (var i = 0; i < L.length; i++) if (iso(L[i].date) === iso(d)) return L[i]; return null; }
+  function faces(names, plus) {
+    var h = '';
+    for (var i = 0; i < names.length; i++) h += '<span class="face" style="background:' + FACE_BG[i % 4] + '">' + names[i] + '</span>';
+    if (plus) h += '<span class="face" style="background:#6c6a6b">+</span>';
+    return h;
+  }
+  function allNames() { var n = []; R().lists.forEach(function (l) { n = n.concat(l.names); }); return n; }
+  function totalPeople() { var t = 0; R().lists.forEach(function (l) { t += l.got; }); return t; }
+
+  /* ---------- the pooled date rows (shared by every shape) ---------- */
+  function poolRows(showStart) {
+    var L = R().lists.slice().sort(function (a, b) {
+      if (state.date) { var ea = iso(a.date) === iso(state.date) ? 1 : 0, eb = iso(b.date) === iso(state.date) ? 1 : 0; if (ea !== eb) return eb - ea; }
+      return a.date - b.date;
+    });
+    var h = '<ul class="plist">';
+    for (var i = 0; i < L.length; i++) {
+      var l = L[i], need = MIN - l.got, exact = state.date && iso(l.date) === iso(state.date);
+      h += '<a class="prow' + (exact ? ' exact' : '') + '" href="#">' +
+        '<span class="faces">' + faces(l.names) + '</span>' +
+        '<span class="pw"><span class="pd">' + fmt(l.date) + ' · ' + l.slot + (exact ? ' <span class="etag">your date</span>' : '') + '</span>' +
+        '<span class="pn"><b>' + l.got + ' of ' + MIN + '</b>' + (need > 0 ? ' — ' + need + ' more to run' : ' — running ✓') + '</span></span>' +
+        '<span class="pmeter"><i' + (need <= 0 ? ' class="full"' : '') + ' style="width:' + Math.min(100, (l.got / MIN) * 100) + '%"></i></span>' +
+        '<span class="pgo">→</span></a>';
+    }
+    if (showStart !== false) h += '<a class="startrow" href="#">+ Start a list for ' + (state.date ? fmt(state.date) : 'your date') + '</a>';
+    h += '</ul>';
+    return h;
+  }
+
+  /* ---------- private card — never unavailable ---------- */
+  function renderPrivate() {
+    var r = R(), dated = !!state.date;
+    el('privCard').innerHTML =
+      '<span class="tag-top tag-teal">' + (dated ? 'Available on your date ✓' : 'Most flexible · recommended') + '</span>' +
+      '<div class="o-head"><div class="o-ico t">' + ICON.route + '</div><div><h2>Private transfer</h2>' +
+      '<div class="o-sub">Door-to-door · runs every day</div></div></div>' +
+      '<p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ' + r.from + ' straight to ' + r.to + '.</p>' +
+      '<div class="veh"><div class="vic">' + ICON.car + '</div><div class="vinfo"><b>AC car</b><small>up to 3 travellers + bags</small></div>' +
+      '<div class="vprice"><span class="amt">$' + money(r.priv.car) + '</span><small>total, fixed</small></div></div>' +
+      '<div class="veh"><div class="vic">' + ICON.van + '</div><div class="vinfo"><b>AC van</b><small>up to 6 travellers + bags</small></div>' +
+      '<div class="vprice"><span class="amt">$' + money(r.priv.van) + '</span><small>total, fixed</small></div></div>' +
+      (dated ? '<div class="avail-line">' + ICON.ck + '<span>Available ' + fmtLong(state.date) + ' — any pick-up time you like</span></div>' : '') +
+      '<a class="btn block" href="#">Book private <span>→</span></a>';
+  }
+
+  /* ---------- DESIGN A — ONE shared option ----------
+     There is no "scheduled" and no "ride board". A shared seat is a date with names
+     on it. Wed & Sat lists are pre-seeded by ops, so they simply tend to have names
+     already — the customer never has to learn a distinction that doesn't affect them.
+     Two shapes only:
+       1  dates exist (or can) → price + "runs once 3 are going" + the dates
+       2  no shared on this route at all → say so, point at private
+  ------------------------------------------------------------------ */
+  function renderShared() {
+    var r = R(), c = el('sharedCard'), has = r.lists.length > 0;
+
+    /* shape 2 — nothing shared at all */
+    if (r.poolSeat === null) {
+      c.innerHTML =
+        '<span class="tag-top tag-grey">Not on this route</span>' +
+        '<div class="o-head"><div class="o-ico g">' + ICON.van + '</div><div><h2>Shared ride</h2>' +
+        '<div class="o-sub">No shared option here</div></div></div>' +
+        '<p class="o-desc">We don\'t run a scheduled van between <b>' + r.from + '</b> and <b>' + r.to + '</b>, and it isn\'t a route travellers pool either — it\'s long, and the timings rarely line up.</p>' +
+        '<div class="sblock flat"><div class="sb-h">' + ICON.warn + ' What we\'d suggest</div>' +
+        '<p class="mini">A private transfer covers it door-to-door at a fixed price, and you can break the drive wherever you like. For a group of three or more it often works out close to a seat price anyway.</p>' +
+        '<a class="btn sm" href="#">See private options ↑</a></div>';
+      return;
+    }
+
+    /* shape 1 — the ONE shared option */
+    var seatNum = r.poolSeat;
+    var mine = state.date ? listOn(state.date) : null;
+    var noneYet = state.date && !mine;
+
+    var head = '<span class="tag-top tag-saf">' +
+      (mine ? 'Going on your date ✓' : 'Best value · share &amp; save') + '</span>' +
+      '<div class="o-head"><div class="o-ico s">' + ICON.van + '</div><div><h2>Shared ride</h2>' +
+      '<div class="o-sub">One van, split between you</div></div></div>';
+
+    var price = '<div class="sprice"><span class="amt">$' + money(seatNum) + '</span><span class="per">/ seat</span></div>' +
+      '<p class="runsline">Runs once <b>' + MIN + ' travellers</b> are going · nothing charged until it\'s confirmed</p>' +
+      '<p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>' +
+      (r.stops ? '<div class="stops">' + ICON.pin + '<span>' + r.stops + '</span></div>' : '');
+
+    /* the traveller named a date nobody is on yet — the only branch in the whole card */
+    var first = '';
+    if (noneYet) {
+      first = '<div class="firstup"><div class="fu-h">No one\'s going ' + fmt(state.date) + ' yet</div>' +
+        '<p>Put your name down and it goes up instantly. Your card is saved and <b>charged only if ' + (MIN - 1) + ' more travellers join</b> — if they don\'t, you pay nothing.</p>' +
+        '<a class="btn sm" href="#">Start the list for ' + fmt(state.date) + ' →</a></div>';
+    }
+
+    var listHead = noneYet ? ' Or join a date already gathering' : ' Who\'s going';
+    var body = first +
+      (has || !noneYet
+        ? '<div class="sblock"><div class="sb-h">' + ICON.seat + listHead +
+          (totalPeople() ? '<span class="badge">' + totalPeople() + ' gathering</span>' : '') + '</div>' +
+          poolRows(!noneYet) + '</div>'
+        : '');
+
+    c.innerHTML = head + price + body;
+  }
+
+  function render() {
+    var r = R();
+    el('crumbRoute').textContent = r.crumb;
+    el('hFrom').textContent = r.from; el('hTo').textContent = r.to;
+    el('hKm').textContent = r.km; el('hDur').textContent = r.dur;
+    el('doodleNote').textContent = r.note;
+    el('edTitle').textContent = r.ed.t; el('edLede').textContent = r.ed.l; el('edBody').textContent = r.ed.b;
+    el('edHl').innerHTML = r.ed.h.map(function (x) { return '<li>' + x + '</li>'; }).join('');
+
+    el('chipFlex').classList.toggle('sel', !state.date);
+    el('chipDate').classList.toggle('sel', !!state.date);
+    el('chipDateTxt').innerHTML = state.date ? fmtLong(state.date) : 'Choose a date<span class="longlabel"> · check availability</span>';
+    el('chipDateX').hidden = !state.date;
+
+    /* Design A: no service days, so the note never says "unavailable" for a shared seat —
+       every date can run. It reports how close the chosen date is to going. */
+    var n = el('dateNote'), mine = state.date ? listOn(state.date) : null;
+    if (!r.poolSeat) {
+      n.className = 'davail';
+      n.innerHTML = '<span class="dot"></span>no shared van on this route — private transfer runs every day';
+    } else if (!state.date) {
+      n.className = 'davail';
+      n.innerHTML = '<span class="dot"></span>a shared van runs on <b>any date</b> once ' + MIN + ' travellers are going';
+    } else if (mine) {
+      var need = MIN - mine.got;
+      n.className = 'davail';
+      n.innerHTML = '<span class="dot"></span><b>' + mine.got + ' already going ' + fmt(state.date) + '</b>' +
+        (need > 0 ? ' — ' + need + ' more and it runs' : ' — this one is running ✓');
+    } else {
+      n.className = 'davail warn';
+      n.innerHTML = '<span class="dot"></span>no one on ' + fmt(state.date) + ' yet — be the first, or pick a date already gathering';
+    }
+    renderPrivate(); renderShared();
+  }
+
+  el('chipFlex').addEventListener('click', function () { state.date = null; render(); });
+  el('chipDate').addEventListener('click', function () {
+    if (state.date) { state.date = null; render(); return; }
+    var dp = el('datePick'); dp.min = iso(addD(today, 1));
+    if (dp.showPicker) { try { dp.showPicker(); } catch (e) { dp.focus(); } } else dp.focus();
+  });
+  el('datePick').addEventListener('change', function () {
+    if (this.value) { state.date = new Date(this.value + 'T00:00:00'); render(); }
+  });
+  var sw = document.querySelectorAll('.rsw button');
+  for (var i = 0; i < sw.length; i++) sw[i].addEventListener('click', function () {
+    for (var j = 0; j < sw.length; j++) sw[j].classList.remove('on');
+    this.classList.add('on');
+    state.route = this.getAttribute('data-route'); state.date = null; el('datePick').value = '';
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

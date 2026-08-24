@@ -27,10 +27,17 @@ const IsoDate = z.string().refine(
 export const Slot = z.enum(['morning', 'afternoon']);
 export type Slot = z.infer<typeof Slot>;
 
-export const RideListStatus = z.enum(['gathering', 'confirmed', 'expired', 'cancelled']);
+export const RideListStatus = z.enum(['pending_payment', 'gathering', 'confirmed', 'expired', 'cancelled']);
 export type RideListStatus = z.infer<typeof RideListStatus>;
 
-export const MemberStatus = z.enum(['held', 'charged', 'charge_failed', 'scratched']);
+export const MemberStatus = z.enum([
+  'preapproval_pending',
+  'preapproval_failed',
+  'held',
+  'charged',
+  'charge_failed',
+  'scratched',
+]);
 export type MemberStatus = z.infer<typeof MemberStatus>;
 
 // Candidate departure times per slot — travellers mark a preference; the group's
@@ -108,6 +115,11 @@ export const CreateListInput = z
     note: z.string().max(140).optional(),
     preferredTime: z.string().min(1).optional(),
     seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
+    payment: z.object({
+      phone: z.string().trim().min(5).max(32),
+      address: z.string().trim().min(3).max(200),
+      city: z.string().trim().min(2).max(100),
+    }).optional(),
   })
   .refine((d) => Boolean(d.corridorId) || Boolean(d.from && d.to), {
     message: 'from and to (or corridorId) are required',
@@ -121,6 +133,11 @@ export type CreateListInput = z.infer<typeof CreateListInput>;
 export const JoinInput = z.object({
   preferredTime: z.string().min(1).optional(),
   seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
+  payment: z.object({
+    phone: z.string().trim().min(5).max(32),
+    address: z.string().trim().min(3).max(200),
+    city: z.string().trim().min(2).max(100),
+  }).optional(),
 });
 export type JoinInput = z.infer<typeof JoinInput>;
 
@@ -158,6 +175,8 @@ export interface RideMember {
   preferredTime: string | null;
   seats: number;
   preapprovalRef: string | null; // card-on-file token id (null while faked/unheld)
+  preapprovalOrderId?: string | null;
+  preapprovalExpiresAt?: Date | null;
   status: MemberStatus;
   joinedAt: Date;
 }

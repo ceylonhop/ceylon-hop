@@ -82,15 +82,21 @@ export default defineConfig({
     // absorbed this the first time the suite ran — it went green — but green-by-retry on a
     // modal race is a flake with a fuse in it, not a passing suite.
     //
-    // Seeded HERE rather than in _stubs.js (which does the same for the consent banner) because
-    // only 17 of the 89 spec files use those stubs, and a full-screen dialog reaches all of them.
+    // Seeded HERE rather than in _stubs.js because only 17 of the 89 spec files use those
+    // stubs, and a full-screen dialog reaches all of them.
     // The notice's own behaviour is covered by web-tests/unit/beta-notice.test.js and by
     // beta-notice.spec.js, which opts back out of this state.
+    //
+    // (A 'ceylonhop_consent' seed sat here too, because the consent bar was position:fixed at
+    // z-index 9999 and intercepted clicks under it. The bar was removed on 2026-08-16 — there
+    // is nothing left to seed away.)
     storageState: {
       cookies: [],
       origins: [{
         origin: `http://localhost:${STATIC_PORT}`,
-        localStorage: [{ name: 'ceylonhop_beta_notice_v2', value: 'dismissed' }],
+        localStorage: [
+          { name: 'ceylonhop_beta_notice_v2', value: 'dismissed' },
+        ],
       }],
     },
     trace: 'on-first-retry',

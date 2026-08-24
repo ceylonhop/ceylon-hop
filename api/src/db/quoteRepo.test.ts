@@ -721,3 +721,35 @@ describe('offerValidUntil', () => {
     expect(patched!.offerValidUntil?.toISOString()).toBe(when.toISOString());
   });
 });
+
+describe('showLegPrices — the per-journey breakdown gate', () => {
+  it('defaults to false on a new quote', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    expect(saved.showLegPrices).toBe(false);
+  });
+
+  it('round-trips an explicit true through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    await repo.patch(saved.id, { showLegPrices: true });
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(true);
+  });
+
+  // An ops content re-save must not silently untick a display setting the operator turned on.
+  it('survives an ordinary content re-save that does not mention it', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    await repo.patch(saved.id, { showLegPrices: true });
+    await repo.update(saved.id, sample());
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(true);
+  });
+
+  it('can be turned back off once it was on', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    await repo.patch(saved.id, { showLegPrices: true });
+    await repo.patch(saved.id, { showLegPrices: false });
+    expect((await repo.get(saved.id))?.showLegPrices).toBe(false);
+  });
+});

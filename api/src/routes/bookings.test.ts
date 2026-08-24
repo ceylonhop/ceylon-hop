@@ -305,7 +305,7 @@ describe('POST /bookings — no past dates (trip + shared)', () => {
   it('shared rejects a past date (400 date_in_past)', async () => {
     const app = createApp();
     const res = await jpost(app, '/bookings/shared', {
-      corridorId: 'hill-line', date: '2020-01-01', time: '08:00', seats: 2, customer: valid.customer,
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: '2020-01-01', time: '07:30', seats: 2, customer: valid.customer,
     });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('date_in_past');
@@ -337,7 +337,7 @@ describe('POST /bookings/shared — seat-hold compensation', () => {
     }
     const app = createApp({ departures, bookings: new FailingBookings() });
     const res = await jpost(app, '/bookings/shared', {
-      corridorId: 'hill-line', date: futureServiceDay(), time: '08:00', seats: 2, customer: valid.customer,
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2, customer: valid.customer,
     });
     expect(res.status).toBeGreaterThanOrEqual(500); // the create threw
     expect(released).toBe(2); // the 2 held seats were given back, not stranded on the departure
@@ -346,11 +346,11 @@ describe('POST /bookings/shared — seat-hold compensation', () => {
   it('charges the shared extra-bag fee end to end ($10/bag beyond one free per seat)', async () => {
     const app = createApp();
     const res = await jpost(app, '/bookings/shared', {
-      corridorId: 'hill-line', date: futureServiceDay(), time: '08:00', seats: 2, bags: 4, customer: valid.customer,
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2, bags: 4, customer: valid.customer,
     });
     expect(res.status).toBe(201);
-    // 2 seats × $21 + 2 extra bags × $10 = $62 — the fee the customer saw is actually captured
-    expect((await res.json()).total).toBe(6200);
+    // 2 seats × $27.49 + 2 extra bags × $10 = $74.98 — the fee the customer saw is actually captured
+    expect((await res.json()).total).toBe(7498);
   });
 });
 
@@ -409,17 +409,17 @@ describe('POST /bookings — pricing and inventory cannot be undercut', () => {
 
   // Inventory is keyed on the departure time and holdSeats find-or-creates a FULL van, so an
   // unrecognised time minted another 12 seats: 12 at '07:30', 12 more at '7:30', and so on.
-  it('refuses a departure time the corridor does not publish', async () => {
+  it('refuses a departure time the product does not publish', async () => {
     const app = createApp();
     const date = futureServiceDay();
     const sold = await jpost(app, '/bookings/shared', {
-      corridorId: 'airport-cultural', date, time: '07:30', seats: 12, customer: valid.customer,
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date, time: '07:30', seats: 12, customer: valid.customer,
     });
     expect(sold.status).toBe(201); // the one real departure is now full
 
     for (const time of ['7:30', '07:30 ', '07:31', 'lunchtime', '99:99']) {
       const res = await jpost(app, '/bookings/shared', {
-        corridorId: 'airport-cultural', date, time, seats: 12, customer: valid.customer,
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date, time, seats: 12, customer: valid.customer,
       });
       expect([400, 409]).toContain(res.status); // never a fresh 12-seat van
     }

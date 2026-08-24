@@ -235,6 +235,41 @@ state.anchorKm = (window.TRANSFERS ? window.TRANSFERS.kmBetween(r.stops[0], r.st
 state.pendingReprice = null; // {km, extraKm, prices:{car,van}} while awaiting acknowledgement
 state.locTooFar = null;      // {which,name,area,km,limit} when an exact spot leaves its area
 
+// The route estimate selected on Search travels separately from price. Keeping the raw km/min
+// and its identity means Booking can render the exact same customer copy before any map or live
+// re-price finishes. Older/direct links fall back to the reviewed catalogue pair when available.
+function positiveNumberParam(name){
+  const n=Number(params.get(name));
+  return Number.isFinite(n) && n>0 ? n : null;
+}
+function selectedBrowseEstimate(){
+  const passedKm=positiveNumberParam('estimateKm');
+  const passedMin=positiveNumberParam('estimateMin');
+  const passedState=params.get('estimateState');
+  if(passedKm!=null || passedMin!=null){
+    return {
+      distanceKm:passedKm,
+      durationMin:passedMin,
+      state:passedState==='estimated'?'estimated':'browse',
+      estimateId:params.get('estimateId')||'search-selection'
+    };
+  }
+  if(window.TRANSFERS && routeFromId && routeToId){
+    const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
+    if(q && (q.km>0 || q.durationMin>0)) return {
+      distanceKm:q.km,
+      durationMin:q.durationMin,
+      state:q.estimated?'estimated':'browse',
+      estimateId:`${routeFromId}>${routeToId}:reviewed-v1`
+    };
+  }
+  return { state:'unavailable', estimateId:'unavailable' };
+}
+const browseRouteEstimate=selectedBrowseEstimate();
+let activeRouteEstimate=Object.assign({},browseRouteEstimate);
+let routeEstimateUnavailable=false;
+let lastRouteAnnouncement='';
+
 // ---- summary setup ----
 const typeLabel={shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
 document.getElementById('sum-type').innerHTML=typeLabel[r.type];
@@ -268,12 +303,19 @@ let userSetLocation=false; // true once the customer actively picks a pickup/dro
 function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
 const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
+function hasExactRouteInputs(){
+  return !isTrip && !isShared && (state.locFrom!==AREA_FROM || state.locTo!==AREA_TO);
+}
 
 function onLoc(){
   // exact spot when given; otherwise the settled area (payload, summary, map and the
   // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
   state.locFrom = locFrom.value.trim() || AREA_FROM;
   state.locTo   = locTo.value.trim()   || AREA_TO;
+  if(!hasExactRouteInputs()){
+    activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    routeEstimateUnavailable=false;
+  }
   checkExactRadius();
   render(); checkWhere(); scheduleRouteMap();
 }
@@ -482,26 +524,15 @@ function renderRouteMap(){
     svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#24758A','A',a.name)}${pin(pb,'#EC3A24','B',b.name)}</svg>`;
   }
 
-  // distance/time bar — shows the REAL Google route once it resolves, falling
-  // back to the offline straight-line estimate while loading / if routing fails.
-  const truck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg>';
-  const info='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
-  const minsToText=mins=>{ const h=Math.floor(mins/60), m=mins%60; if(h<=0) return `${Math.max(5,m)} min`; return m>=8?`${h}h ${m}m`:`${h}h`; };
-  const setBar=(km,durText)=>{
-    const meta = km!=null
-      ? `${truck}<span><b>${km} km</b> · about ${durText} drive</span>`
-      : `${info}<span>Distance confirmed on request</span>`;
-    const bar=document.getElementById('rm-bar');
-    if(bar) bar.innerHTML =
-      `<div class="rm-route"><span>${short(fromName)}</span><span class="ar">→</span><span>${short(toName)}</span></div>`+
-      `<div class="rm-meta">${meta}</div>`;
-  };
   const localKm = T ? T.kmBetween(fromName, toName) : null;
-  setBar(localKm, localKm!=null ? T.durationText(localKm) : null);
+  // Customer copy comes only from the selected/server estimate. The map below is visual context;
+  // its independent route result must never replace the figures Search handed into Booking.
+  paintCustomerRouteEstimate();
 
   // Clean Google map (route line, no panel/markers) with a loading state; SVG fallback.
   const canvas=document.getElementById('rm-canvas');
-  const showFallback=()=>{ canvas.innerHTML = svg; if(!svg) host.hidden=true; };
+  canvas.hidden=false;
+  const showFallback=()=>{ canvas.innerHTML = svg; if(!svg) canvas.hidden=true; };
   if(window.CH_MAP && window.CH_MAP.renderRoute){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
@@ -512,7 +543,6 @@ function renderRouteMap(){
       stopLabels: [fromName, toName],
       onFail: showFallback,
       onRoute: ({km, durationMin}) => {
-        setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
         // summary total always matches the route actually shown on the map. Once the engine has
         // actually DELIVERED an estimate this session, its own figure already prices the real
@@ -945,13 +975,38 @@ function ensureRepriceEl(){
 // which only ever fires from the Where step's own map. It needs a home that's visible no matter
 // which step is open, so it lives beside the running total in the persistent summary sidebar
 // rather than beside loc-wrap.
+// …which is true of the sidebar on a DESKTOP. On a phone that same sidebar is the collapsed
+// bottom sheet (body.js-mbar, booking.html:594), so a notice parked in it renders ~500px below
+// the fold behind visibility:hidden — and it holds the only control that releases the Continue
+// gate. Owner-reported (2026-08-15): correct an out-of-area pick-up and Continue never comes
+// back. So on a phone the notice lives with the step the customer is actually looking at, and
+// because a raise can fire from ANY step it has to travel with the active panel (see goStep).
+const phoneLayout = () => document.body.classList.contains('js-mbar')
+  && window.matchMedia('(max-width:880px)').matches;
+function engineNoteHome(){
+  if(phoneLayout()){
+    const panel=document.querySelector('.panel.active');
+    // Above the step's own nav row, so it reads as the reason the CTA below it is waiting.
+    if(panel) return { parent:panel, before:panel.querySelector('.nav-btns') };
+  }
+  const total=document.querySelector('#summary .s-total');
+  if(total && total.parentNode) return { parent:total.parentNode, before:total.nextSibling };
+  const summary=document.getElementById('summary');
+  return summary ? { parent:summary, before:null } : null;
+}
 function ensureEngineRepriceEl(){
   let el=document.getElementById('engine-reprice-note');
-  if(!el){
-    el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note';
-    const total=document.querySelector('#summary .s-total');
-    if(total && total.parentNode) total.parentNode.insertBefore(el, total.nextSibling);
-    else { const summary=document.getElementById('summary'); if(summary) summary.appendChild(el); }
+  if(!el){ el=document.createElement('div'); el.id='engine-reprice-note'; el.className='reprice-note'; }
+  const home=engineNoteHome();
+  // Re-homed on every pass, not just on create: the step (and the viewport) can move under it.
+  // Everything below is gated on the parent actually CHANGING, so an unchanged gate re-rendering
+  // (which happens on nearly every keystroke) never yanks the page around.
+  if(home && el.parentNode!==home.parent){
+    home.parent.insertBefore(el, home.before||null);
+    // In the phone layout the CTA this blocks is the sticky bar — always in view — while the
+    // notice sits at the end of a long panel. Landing it in the flow isn't enough on its own:
+    // bring it to them, or the dead button still has no visible reason beside it.
+    if(phoneLayout()) el.scrollIntoView({ block:'center' });
   }
   return el;
 }
@@ -1267,6 +1322,18 @@ function buildEstimateIntent(){
 // instant a pax/vehicle/route change lands, ahead of the next re-estimate.
 function intentSig(intent){ return JSON.stringify(intent); }
 function currentIntentSig(){ return intentSig(buildEstimateIntent()); }
+function routeInputSig(intent){
+  if(!intent) return 'none';
+  const legs=Array.isArray(intent.legs) ? intent.legs.map(l=>({from:l.from,to:l.to}))
+    : Array.isArray(intent.travelDays) ? intent.travelDays.map(l=>({from:l.from,to:l.to})) : [];
+  return JSON.stringify({product:intent.product,legs});
+}
+function currentRouteInputSig(){ return routeInputSig(buildEstimateIntent()); }
+function routeFingerprint(value){
+  let hash=2166136261;
+  for(const ch of String(value||'')){ hash^=ch.charCodeAt(0); hash=Math.imul(hash,16777619); }
+  return `r${(hash>>>0).toString(36)}`;
+}
 // Called once a live estimate settles (Task 3 wires the fetch); sig is the intent signature it
 // was requested for, so an out-of-order or now-stale response can never silently override the total.
 function adoptEngineEstimate(est, sig){
@@ -1284,6 +1351,42 @@ function adoptEngineEstimate(est, sig){
 // guard calcTotal() applies, exposed so render()/the pay gate don't each re-derive it.
 function currentEngineEst(){
   return (engineEst && engineEst.intentSig===currentIntentSig()) ? engineEst : null;
+}
+
+function announceRouteEstimate(text){
+  if(!text || text===lastRouteAnnouncement) return;
+  lastRouteAnnouncement=text;
+  const live=document.getElementById('route-estimate-status');
+  if(live) live.textContent=text;
+}
+function adoptCustomerRouteEstimate(est, sig){
+  if(!hasExactRouteInputs() || sig!==currentIntentSig()) return;
+  const leg=est && Array.isArray(est.legs) ? est.legs.find(l=>l && (l.distanceKm>0 || l.durationMin>0)) : null;
+  if(!leg){
+    routeEstimateUnavailable=true;
+    announceRouteEstimate(window.CH && CH.routeEstimate
+      ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+      : 'We’ll confirm the journey time after reviewing your locations.');
+    return;
+  }
+  const next={distanceKm:leg.distanceKm,durationMin:leg.durationMin};
+  const material=!!(window.CH && CH.routeEstimate && CH.routeEstimate.isMaterialRouteChange(activeRouteEstimate,next));
+  activeRouteEstimate={
+    distanceKm:next.distanceKm,
+    durationMin:next.durationMin,
+    state:est.estimated===true?'estimated':(material?'exact':'browse'),
+    estimateId:'engine-v2',
+    routeSig:routeInputSig(buildEstimateIntent())
+  };
+  routeEstimateUnavailable=false;
+  if(material){
+    const text=CH.routeEstimate.formatRouteEstimate(activeRouteEstimate);
+    announceRouteEstimate(text);
+    if(typeof window.chTrack==='function') window.chTrack('route_estimate_update',{
+      surface:'booking',estimate_state:activeRouteEstimate.state,material:true,
+      route_fingerprint:routeFingerprint(activeRouteEstimate.routeSig)
+    });
+  }
 }
 
 // True while a fresh estimate is on its way for an itinerary the figure we hold no longer
@@ -1331,12 +1434,27 @@ function requestEstimate(){
   if(sig === lastRequestedSig) return;
   lastRequestedSig = sig;
   estimatePending = true;
+  if(hasExactRouteInputs()) routeEstimateUnavailable=false;
   window.CH_PRICING.estimate(intent, {
     onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
     // Flag off, a network hiccup, or a timeout — the local formula is already what's on
     // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
-    onUnavailable: function(){ estimatePending = false; render(); }
+    onUnavailable: function(reason){
+      estimatePending = false;
+      if(sig===currentIntentSig() && hasExactRouteInputs()){
+        routeEstimateUnavailable=true;
+        const text=window.CH && CH.routeEstimate
+          ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+          : 'We’ll confirm the journey time after reviewing your locations.';
+        announceRouteEstimate(text);
+        if(typeof window.chTrack==='function') window.chTrack('route_estimate_unavailable',{
+          surface:'booking',reason:reason||'unknown',
+          route_fingerprint:routeFingerprint(currentRouteInputSig())
+        });
+      }
+      render();
+    }
   });
 }
 
@@ -1364,6 +1482,7 @@ function handleEngineEstimate(est, sig){
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
+  adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
   if(priorCents!=null && est.totalCents > priorCents && !switchedProductOrVehicle(sig, engineEst.intentSig)){
     state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
@@ -1421,6 +1540,41 @@ const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
+
+/* WhatsApp CTAs on this page opened an EMPTY chat, so an enquiry landed in the inbox with no
+   idea what the customer had been looking at — ops had to ask the route, the date and the
+   party size back before they could say anything useful. quote.html has prefilled its CTAs
+   since 2026-08-07 (waHref, quote.html:91) and search.js does the same for its route cards;
+   booking.html's two were the ones still bare.
+
+   Built entirely from what is already on screen. WhatsApp shows the customer the draft before
+   they send it, so nothing here is hidden from them and nothing leaves the page unless they
+   press send. Deliberately no name, phone or email — the message is about the TRIP; their
+   identity comes with the WhatsApp account itself.
+
+   Every field falls back rather than throwing: this runs on every render, including before a
+   date is picked or a price exists, and a broken href is worse than a vaguer message. */
+function waTripSummary(){
+  const stops = (isTrip && Array.isArray(tripStops) && tripStops.length) ? tripStops
+    : [state.locFrom || (r && r.stops ? r.stops[0] : ''), state.locTo || (r && r.stops ? r.stops[r.stops.length-1] : '')];
+  const route = stops.filter(Boolean).join(' → ');
+  const when = state.flexDate ? 'Date to confirm'
+    : (state.date ? state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}) : 'Date to confirm');
+  const pax = state.ad + state.ch;
+  const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
+  const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
+  let priced = '';
+  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
+    + (route ? route + '\n' : '')
+    + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
+    + priced;
+}
+function waHrefFor(text){ return 'https://wa.me/94779669662?text=' + encodeURIComponent(text); }
+function updateWaLinks(){
+  const s = document.getElementById('s-wa');
+  if (s) s.href = waHrefFor(waTripSummary());
+}
 
 // price of an AC van for this journey (single transfer or whole trip)
 function vanPrice(){
@@ -1481,9 +1635,38 @@ function setNum(el, next){
 function shortPlaceLabel(place){
   return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
 }
+function customerRouteEstimateText(){
+  if(isTrip) return '';
+  if(hasExactRouteInputs()){
+    if(routeEstimateUnavailable){
+      return window.CH && CH.routeEstimate
+        ? CH.routeEstimate.formatRouteEstimate({state:'unavailable'})
+        : 'We’ll confirm the journey time after reviewing your locations.';
+    }
+    const routeChanged=activeRouteEstimate.routeSig!==currentRouteInputSig();
+    if(estimatePending && routeChanged) return 'Updating journey estimate…';
+  }
+  return window.CH && CH.routeEstimate
+    ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
+    : '';
+}
+function paintCustomerRouteEstimate(){
+  const text=customerRouteEstimateText();
+  const summary=document.getElementById('sum-route-estimate');
+  if(summary){ summary.textContent=text; summary.hidden=!text; }
+  const bar=document.getElementById('rm-bar');
+  if(!bar || isTrip) return;
+  const from=shortPlaceLabel(state.locFrom || r.stops[0]);
+  const to=shortPlaceLabel(state.locTo || r.stops[r.stops.length-1]);
+  const clock='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  bar.innerHTML=
+    `<div class="rm-route"><span>${acEsc(from)}</span><span class="ar">→</span><span>${acEsc(to)}</span></div>`+
+    `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
+}
 function render(){
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
+  updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen
   // live route from the actual entered locations
   const _from = state.locFrom || r.stops[0], _to = state.locTo || r.stops[r.stops.length-1];
   const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = shortPlaceLabel(_from);
@@ -1493,6 +1676,7 @@ function render(){
   if(_sn && routeNamePrefix && !isTrip){
     _sn.textContent = `${routeNamePrefix} · ${shortPlaceLabel(_from)} → ${shortPlaceLabel(_to)}`;
   }
+  paintCustomerRouteEstimate();
   document.getElementById('sum-date').textContent = state.flexDate ? 'To confirm (12h before)' : (state.date ? state.date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—');
   document.getElementById('sum-time').textContent = state.flexTime ? 'To confirm (12h before)' : (state.dep ? fmtTime(state.dep) : '—');
   document.getElementById('sum-bags').textContent = state.bags>0 ? (state.bags+' large bag'+(state.bags>1?'s':'')) : 'No large bags';
@@ -1681,7 +1865,23 @@ function render(){
     // Due now sits beside the summary total on this step, so it takes the same treatment — one
     // of the two reading "Calculating…" while the other showed a figure would be its own
     // small lie about which number is current.
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
+    // Display label ONLY, same treatment search.html's h1 got: a Google-picked endpoint lands in
+    // r.name as its full formatted address ("Ratmalana Airport, New Airport Road, Dehiwala-Mount
+    // Lavinia, Sri Lanka"), and this row gives the label only the half the money does not take —
+    // six wrapped lines at 375px. r.name itself is untouched, so the name that reaches the API,
+    // the booking payload and the confirmation email is still the full stored one.
+    //
+    // The service prefix r.name carries ("Private transfer · ") is dropped with it. It is the
+    // customer's own pick from step 3, and the summary panel beside this row already names it
+    // twice on desktop — while on mobile that panel is visibility:hidden, so the word was buying
+    // a wrapped line in the money row and telling nobody anything new. The endpoints come from
+    // r.stops rather than by trimming r.name: they are the very strings r.name was built from, so
+    // this is that name minus its prefix, with no string surgery to drift out of step.
+    const dueRoute = (routeNamePrefix && !isTrip)
+      ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
+      : r.name;
+    const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
@@ -1730,6 +1930,11 @@ window.goStep=function(n){
   });
   document.querySelectorAll('.pline').forEach((l,i)=>l.classList.toggle('done',i<n-1));
   window.scrollTo({top:0,behavior:'smooth'});
+  // An unacknowledged raise blocks EVERY step's CTA, so its notice follows the customer here
+  // rather than staying on the step it fired from (phone layout — see engineNoteHome). It runs
+  // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
+  // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
+  renderRepriceNote();
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
@@ -1871,7 +2076,7 @@ async function runPayment(){
   }, 6000);
   let booking;
   try { booking = await createApiBooking(); }
-  catch(e){ clearTimeout(slow); return phShowEnd('error','We couldn’t start your booking just now — please try again in a moment.'); }
+  catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
   clearTimeout(slow);
   if(!booking){ return simulatePayThenConfirm(null); }
 
@@ -1988,6 +2193,20 @@ function phShowFinalRepriceGate(booking, fromAmt, toAmt){
   };
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
+}
+
+/* Turn a refused POST /bookings/* (the error createApiBooking throws) into words.
+   Returns the phShowEnd(kind, msg, opts) argument list.
+
+   Shows the server's own `message` and nothing else: those 400s carry copy written for the
+   customer where the rule lives — a date in the past, a shared route that doesn't run that
+   day or at that time — and re-writing them here is how the two drift. Everything without
+   one keeps the generic line, which is honest advice for exactly those cases: a 5xx
+   (`internal_error`, no message), an aborted/failed fetch, or a body naming only an internal
+   code (invalid_request's Zod details) can all succeed on a retry. */
+function bookingCreateFailure(err){
+  const msg = err && err.body && err.body.message;
+  return ['error', msg || 'We couldn’t start your booking just now — please try again in a moment.'];
 }
 
 /* Turn a refused POST /bookings/:id/checkout into words + an honest retry button.
@@ -2282,7 +2501,17 @@ async function createApiBooking(){
       method:'POST', headers:{'content-type':'application/json','idempotency-key':idemKey}, body, signal: ctrl.signal
     });
   } finally { clearTimeout(timer); }
-  if(!res.ok) throw new Error('booking_failed_'+res.status);
+  // Carry the refusal, don't discard it: the API answers some 400s with copy written for the
+  // customer (date_in_past, not_a_service_day…), and throwing only the status collapsed every
+  // one of them into "try again in a moment" — advice that can never work for a refusal the
+  // customer has to go back and fix. Same error shape board.js's apiFetch throws (status +
+  // parsed body), read by bookingCreateFailure.
+  if(!res.ok){
+    const err = new Error('booking_failed_'+res.status);
+    err.status = res.status;
+    err.body = await res.json().catch(()=>null);
+    throw err;
+  }
   return await res.json();
 }
 
@@ -2338,6 +2567,13 @@ function finalizeBooking(apiBooking){
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
   const last=document.getElementById('f-last').value||'';
+  /* Past this point a real booking exists, so the confirmation CTA leads with the REFERENCE
+     rather than a trip summary — ops can look that up and see everything, which beats any
+     description. `ref` falls back to a locally minted code when the API booking is missing
+     (see above); that is still the code shown on the customer's pass, so quoting it back is
+     the fastest thing they can tell us either way. */
+  const confWa=document.getElementById('conf-wa');
+  if(confWa) confWa.href=waHrefFor('Hi Ceylon Hop — a question about my booking '+ref+'.');
   const dateText = state.flexDate ? 'To confirm' : (state.date?state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'To confirm');
   const timeText = state.flexTime ? 'To confirm' : (state.dep?fmtTime(state.dep):'To confirm');
   document.getElementById('pass-brand').innerHTML=cmark(26,'var(--accent)')+'<span>Ceylon Hop</span>';

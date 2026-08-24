@@ -10,7 +10,6 @@ const MOBILE = { width: 390, height: 844 };
 // The cookie banner is bottom-fixed above the bar (z 9999) and intercepts taps in fresh
 // sessions; seed a prior "denied" choice so these tests behave like a returning visitor.
 async function gotoMobile(page, opts) {
-  await page.addInitScript(() => { try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) {} });
   await gotoBooking(page, opts);
 }
 

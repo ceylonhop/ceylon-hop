@@ -153,6 +153,19 @@ window.updateSearch = function (e) {
    scheduled corridor in the baked table, and no such service exists for an arbitrary place. */
 let quote = engineRoute ? null : T.privateQuote(fromId, toId);
 const shared = engineRoute ? null : T.sharedOption(fromId, toId);
+const browseEstimateId = `${fromId}>${toId}:${engineRoute ? 'engine-v2' : 'reviewed-v1'}`;
+function routeFingerprint(value) {
+  let hash=2166136261;
+  for(const ch of String(value||'')){ hash^=ch.charCodeAt(0); hash=Math.imul(hash,16777619); }
+  return `r${(hash>>>0).toString(36)}`;
+}
+function tagRouteEstimate(q, state) {
+  if (!q) return q;
+  q.estimateState = state || (q.estimated ? 'estimated' : 'browse');
+  q.estimateId = browseEstimateId;
+  return q;
+}
+tagRouteEstimate(quote);
 const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
 /* Display label ONLY. A Google place arrives as its full formatted address ("Ratmalana
    Airport, New Airport Road, Dehiwala-Mount Lavinia, Sri Lanka") and, set in the h1's
@@ -169,9 +182,16 @@ const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB',
 // 'measuring' only while an estimate is genuinely in flight — once it has failed there is
 // nothing being measured, and leaving the line up reads as a page still working on it.
 function renderMeta(measuring) {
+  const estimateText = quote && window.CH && CH.routeEstimate
+    ? CH.routeEstimate.formatRouteEstimate({
+        distanceKm: quote.km,
+        durationMin: quote.durationMin,
+        state: quote.estimateState,
+      })
+    : '';
   document.getElementById('route-meta').innerHTML =
-    (quote
-      ? `<span>${ICONS.pin} ~${quote.km} km</span><span>${ICONS.clock} approx ${quote.duration} drive</span>`
+    (quote && estimateText
+      ? `<span class="route-estimate">${ICONS.clock} ${estimateText}</span>`
       : measuring ? `<span>${ICONS.pin} Measuring your route…</span>` : '') +
     `<span>${ICONS.cal} ${dateText}</span>` +
     (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
@@ -234,6 +254,12 @@ function bookUrl(extra) {
   // traveller count properly on its own step, so an absent param costs nothing there —
   // whereas a guessed one arrives pre-filled and looks like their answer.
   const base = { from: fromId, to: toId, date };
+  if (quote) {
+    base.estimateKm = String(quote.km);
+    if (quote.durationMin != null) base.estimateMin = String(quote.durationMin);
+    base.estimateState = quote.estimateState || 'browse';
+    base.estimateId = quote.estimateId || browseEstimateId;
+  }
   if (pax != null) base.pax = String(pax);
   const all = Object.assign(base, extra);
   // An engine-priced route has no separate unfinished fare, so rawPrice comes through null —
@@ -320,19 +346,38 @@ if (shared) {
   // of the two). With no count given we show both prices and claim nothing.
   const perPaxPrivate = pax == null ? null : quote.car / Math.min(3, pax);
   const savePct = perPaxPrivate == null ? null : Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
-  const timeStr = shared.times.map(t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; }).join(' & ');
+  const fmtTime = t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; };
+  const timeStr = shared.times.map(fmtTime).join(' & ');
+  /* One marketed product picks up at several places: the Negombo→Sigiriya van leaves CMB at
+     7:00 and Negombo at 7:30. Showing only the boarding time for the leg searched hides the
+     other pickup, so a traveller flying in can't tell the same van collects them at arrivals.
+     List the whole sequence, as the product page does, and mark the stop they searched. */
+  const stops = shared.pickups || [];
+  /* Design A (docs/superpowers/plans/2026-08-16-unified-route-page.md): a shared seat is a
+     DATE WITH NAMES ON IT. The route page says so; this card used to say "a reserved seat on
+     our scheduled service · Runs Wed & Sat", so the same van was described two different ways
+     depending on which URL you landed on. Same words in both places now.
+
+     Most catalogue legs have a route page and will eventually be served from there, but three
+     (weligama→cmb-airport, mirissa→colombo, weligama→colombo) have no page at all, so this
+     card is the only place they are ever described. It has to be right on its own. */
+  const pickupRows = stops.length > 1
+    ? `<div class="sm">${ICONS.departs} Pick-up points:</div>
+       <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
+    : `<div class="sm">${ICONS.departs} Departs ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
   sharedCard = `
   <article class="opt opt-shared">
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">A reserved seat on our scheduled service</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
     </div>
-    <p class="o-desc">Hop a reserved seat on our <b>${shared.corridorLabel}</b> service. Same AC comfort, a friendly Pro&nbsp;Hopper guide on board — for a fraction of the price.</p>
+    <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
+    <p class="shared-runs">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
-      <div class="sm">${ICONS.departs} Departs ${timeStr} · ${shared.freqText}</div>
+      ${pickupRows}
       <div class="sm">${ICONS.avail} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
@@ -342,7 +387,27 @@ if (shared) {
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;
+} else if (engineRoute) {
+  /* We never LOOKED, so we must not report a finding. `shared` is hardcoded null for an engine
+     route (line 155) because a scheduled seat is a directed catalogue entry keyed on two
+     catalogue ids, and an engine route has at least one end we don't have baked — the lookup
+     is skipped, not failed.
+
+     Printing the baked branch's copy here stated as fact something we never checked. On a
+     Google-picked "Sigiriya, Sri Lanka" that told the customer we run no shared service between
+     CMB and Sigiriya — one of the two corridors we actually sell seats on, at $27.49. Same
+     wrong sentence on every Google-picked search, whatever the route. Say what we know. */
+  noShare = `
+  <div class="noshare">
+    <div class="ns-ico">${ICONS.share}</div>
+    <div>
+      <b>Shared seats run on set routes</b>
+      <p>Our shared vans run a fixed set of scheduled routes, and we can only match those automatically. Your private transfer covers you door-to-door at a fixed price, whenever you want to leave.</p>
+    </div>
+  </div>`;
 } else {
+  // A baked pair DID go through the catalogue and came back empty — here the negative is a
+  // real finding, so it can be stated plainly.
   noShare = `
   <div class="noshare">
     <div class="ns-ico">${ICONS.share}</div>
@@ -384,7 +449,29 @@ function trackResults() {
   ];
   if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: qty });
 
-  var searchEvent = { from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search' };
+  /* WHICH ENDS arrived as free text, never the place names themselves.
+     `from`/`to` already carry the names, but GA4 only reports a parameter registered as a
+     custom dimension — and registering `to` would make every hotel and landmark a customer
+     ever picks a dimension value, past GA4's ~500-distinct-values-per-day "(other)" bucket.
+     Four values instead, forever.
+
+     The split is not decoration: a free-text DESTINATION can be matched against the PLACES
+     lat/lng we already ship (scheduled drop areas are >=28km apart), while a free-text ORIGIN
+     needs boarding-point coordinates departureRepo.ts does not store. Which end it is decides
+     whether geo-matching is a cheap job or an expensive one.
+
+     Register this as an event-scoped custom dimension before the traffic arrives — GA4 does
+     not backfill (docs/analytics/gtm-container-checklist.md). */
+  var freetextPlace = !fromPlace && !toPlace ? 'both'
+    : !fromPlace ? 'from'
+    : !toPlace ? 'to'
+    : 'none';
+  var searchEvent = {
+    from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search',
+    estimate_state: quote.estimateState,
+    freetext_place: freetextPlace,
+    route_fingerprint: routeFingerprint(quote.estimateId)
+  };
   if (pax != null) searchEvent.pax = pax;
   window.chTrack('search', searchEvent);
   window.chTrack('view_item_list', { item_list_id: listId, currency: 'USD', items: items });
@@ -415,12 +502,6 @@ if (!engineRoute) trackResults();
    If either call fails there is no fallback price to show — no local formula can price a place
    with no baked distance — so the card becomes an honest "we'll price it by hand" instead. */
 if (engineRoute) (function () {
-  // "3h 21m" / "45 min" — the same shape the baked table's durationText produces.
-  function minutesText(min) {
-    const h = Math.floor(min / 60), m = Math.round(min % 60);
-    if (h <= 0) return `${Math.max(20, m)} min`;
-    return m >= 8 ? `${h}h ${m}m` : `${h}h`;
-  }
   const legs = [{ from: fromP.name, to: toP.name }];
   const base = { product: 'private', pax: 1, bags: 0, legs, extras: [] };
   if (date) base.date = date;
@@ -450,18 +531,17 @@ if (engineRoute) (function () {
       return;
     }
     const leg = (car.legs && car.legs[0]) || {};
-    const km = leg.distanceKm != null ? Math.round(leg.distanceKm) : null;
-    quote = {
+    const km = leg.distanceKm != null ? leg.distanceKm : null;
+    quote = tagRouteEstimate({
       km: km,
-      // Prefer the routed duration that came back with the distance; fall back to the local
-      // km→time curve so the meta line never sits empty next to a real price.
-      duration: leg.durationMin != null ? minutesText(leg.durationMin) : (km != null ? T.durationText(km) : '—'),
+      durationMin: leg.durationMin != null ? leg.durationMin : null,
+      estimated: car.estimated === true,
       car: car.totalCents / 100,
       van: van.totalCents / 100,
       // The engine total IS the final fare — there is no separate unfinished figure to hand on,
       // so booking receives `price` alone and re-prices through the same endpoint on arrival.
       rawCar: null, rawVan: null
-    };
+    }, car.estimated === true ? 'estimated' : 'browse');
     if (quote.km == null) { quote = null; renderMeta(false); renderResults('unpriced'); return; }
     renderMeta(false);
     renderResults('priced');

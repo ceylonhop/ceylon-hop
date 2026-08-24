@@ -4,6 +4,7 @@ import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
 import { FakeTokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
+import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 
 const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-08-08', slot: 'morning',
@@ -37,6 +38,35 @@ const json = (cookie?: string, body?: unknown) => ({
   headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
   ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 });
+
+const paymentDetails = {
+  phone: '+94771234567',
+  address: '12 Galle Road',
+  city: 'Colombo',
+};
+
+function makePayHereApp() {
+  const rideLists = new InMemoryRideListRepo();
+  const paygw = new PayHereTokenizedPaymentAdapter(
+    '1234567',
+    'merchant-secret',
+    { mode: 'sandbox', notifyUrl: 'https://ops.ceylonhop.com/board/payhere/notify' },
+    { appId: 'app-id', appSecret: 'app-secret' },
+  );
+  const verifier: JwtVerifier = async () => ({
+    payload: {
+      iss: 'accounts.google.com', email: 'roshen@x.com', email_verified: true,
+      name: 'Roshen Wijesinghe', sub: 'roshen-sub', picture: 'https://p/r',
+    },
+  });
+  const app = createApp({
+    rideLists,
+    paygw,
+    customerVerifier: verifier,
+    bookingBaseUrl: 'https://ceylonhop.com',
+  });
+  return { app, rideLists, paygw };
+}
 
 describe('POST /board/login', () => {
   it('signs in and returns a public "me"', async () => {
@@ -99,6 +129,90 @@ describe('POST /board/:code/join', () => {
     await rideLists.setStatus(l.id, 'expired');
     const cookie = await loginCookie(app);
     expect((await app.request(`/board/${l.code}/join`, json(cookie, {}))).status).toBe(409);
+  });
+});
+
+describe('Ride Board PayHere card approval', () => {
+  it('does not add the traveller until a signed PayHere callback approves the card', async () => {
+    const { app, rideLists, paygw } = makePayHereApp();
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, {
+      seats: 1,
+      preferredTime: '09:00',
+      payment: paymentDetails,
+    }));
+    expect(started.status).toBe(202);
+    const startBody = await started.json();
+    expect(startBody.status).toBe('payment_required');
+    expect(startBody.payment.checkoutUrl).toBe('https://sandbox.payhere.lk/pay/preapprove');
+    expect((await rideLists.getByCode(list.code))?.members.filter((m) => m.status === 'held')).toHaveLength(0);
+
+    const pending = await app.request(`/board/payments/${startBody.payment.orderId}`, { headers: { cookie } });
+    expect(await pending.json()).toEqual({ status: 'pending' });
+
+    const notify = paygw.simulatePreapprovalNotify({
+      orderId: startBody.payment.orderId,
+      customerToken: 'real-encrypted-card-token',
+    });
+    expect((await app.request('/board/payhere/notify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: notify,
+    })).status).toBe(200);
+
+    const completed = await app.request(`/board/payments/${startBody.payment.orderId}`, { headers: { cookie } });
+    const completedBody = await completed.json();
+    expect(completedBody.status).toBe('succeeded');
+    expect(completedBody.list.committed).toBe(1);
+    expect(completedBody.manageToken).toBeTruthy();
+    expect((await rideLists.getByCode(list.code))?.members[0].preapprovalRef).toBe('real-encrypted-card-token');
+  });
+
+  it('ignores a forged callback and keeps the traveller off the ride', async () => {
+    const { app, rideLists, paygw } = makePayHereApp();
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    const body = await started.json();
+    const genuine = paygw.simulatePreapprovalNotify({ orderId: body.payment.orderId, customerToken: 'token' });
+    const forged = genuine.replace(/md5sig=[^&]+/, 'md5sig=00000000000000000000000000000000');
+
+    expect((await app.request('/board/payhere/notify', { method: 'POST', body: forged })).status).toBe(400);
+    expect((await rideLists.getByCode(list.code))?.members.filter((m) => m.status === 'held')).toHaveLength(0);
+  });
+
+  it('releases a pending seat when the traveller cancels PayHere', async () => {
+    const { app, rideLists } = makePayHereApp();
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    const body = await started.json();
+
+    const cancelled = await app.request(`/board/payments/${body.payment.orderId}/cancel`, json(cookie));
+    expect(cancelled.status).toBe(200);
+    expect((await rideLists.getByCode(list.code))?.members[0].status).toBe('preapproval_failed');
+    expect(await (await app.request(`/board/payments/${body.payment.orderId}`, { headers: { cookie } })).json())
+      .toEqual({ status: 'failed' });
+  });
+
+  it('keeps a newly-created list private until its creator approves a card', async () => {
+    const { app, paygw } = makePayHereApp();
+    const cookie = await loginCookie(app);
+    const started = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
+      payment: paymentDetails,
+    }));
+    expect(started.status).toBe(202);
+    const body = await started.json();
+    expect((await (await app.request('/board')).json()).lists).toHaveLength(0);
+
+    const notify = paygw.simulatePreapprovalNotify({ orderId: body.payment.orderId, customerToken: 'token' });
+    await app.request('/board/payhere/notify', { method: 'POST', body: notify });
+    const board = await (await app.request('/board')).json();
+    expect(board.lists).toHaveLength(1);
+    expect(board.lists[0].committed).toBe(1);
   });
 });
 
@@ -204,6 +318,69 @@ describe('POST /board/:code/scratch', () => {
     const res = await app.request(`/board/${l.code}/scratch?t=${encodeURIComponent(joined.manageToken)}`, { method: 'POST' });
     expect(res.status).toBe(200);
     expect((await res.json()).removed).toBe(true);
+  });
+});
+
+// A pooled van and a scheduled seat on the SAME leg must cost the same, or the search page
+// shows two prices for one journey. On a catalogue leg the board takes the catalogue price;
+// everywhere else it still prices off the road distance.
+describe('POST /board (create) — catalogue legs', () => {
+  const noMaps = {
+    provider: 'outage', places: async () => [], distanceVariants: async () => null,
+    distance: async () => { throw new Error('distance must not be called on a catalogue leg'); },
+  };
+
+  function catalogueApp() {
+    const rideLists = new InMemoryRideListRepo();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    return createApp({
+      rideLists, paygw: new FakeTokenizedPaymentAdapter(), customerVerifier: verifier,
+      maps: noMaps as never,
+    });
+  }
+
+  it('prices a catalogue leg from the catalogue, without asking Google', async () => {
+    const app = catalogueApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    // $27.49 — the scheduled seat price, not seatPriceForDistance(148) = $26.50.
+    expect((await res.json()).list.seatPrice).toBe(2749);
+  });
+
+  it('gives a second catalogue leg on the same corridor its own price', async () => {
+    const app = catalogueApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Sigiriya / Dambulla', to: 'Kandy', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).toBe(1999);
+  });
+
+  it('still prices an off-catalogue leg off the road distance', async () => {
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(164)); // fake maps km
+  });
+
+  it('does not price the REVERSE of a catalogue leg from the catalogue', async () => {
+    // Sigiriya -> Negombo is not sold; pooling it is fine, but at the distance price.
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Sigiriya / Dambulla', to: 'Negombo', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).list.seatPrice).not.toBe(2749);
   });
 });
 

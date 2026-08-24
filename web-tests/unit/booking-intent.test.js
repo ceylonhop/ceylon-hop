@@ -26,7 +26,7 @@ import { futureIsoDate } from '../dates.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..', '..');
 const HTML = readFileSync(path.join(ROOT, 'booking.html'), 'utf8');
-const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js']
+const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js', 'route-estimate.js']
   .map((f) => readFileSync(path.join(ROOT, f), 'utf8'));
 const BOOKING_SRC = readFileSync(path.join(ROOT, 'booking.js'), 'utf8');
 

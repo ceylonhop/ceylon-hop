@@ -104,8 +104,8 @@ async function recordRequest(page, req = 'private') {
 // was removed (2026-07-19): record the request, Submit for review (bounces to the queue), reopen
 // the quote's row (now pending_review), then Approve. Leaves the page on the Quotes queue, with
 // the quote in `ready` — same end state the old one-hop approveReady() produced.
-async function submitReopenApprove(page, custName) {
-  await recordRequest(page);
+async function submitReopenApprove(page, custName, requestedService = 'private') {
+  await recordRequest(page, requestedService);
   await page.locator('[data-action="submitForReview"]').click();
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
@@ -300,7 +300,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   // ends on the Quotes queue, then reopen the quote (which re-prices it) and read the message.
   const custName = 'E2E Stay ' + Date.now();
   await fillCustomerName(page, custName);
-  await submitReopenApprove(page, custName);
+  await submitReopenApprove(page, custName, 'chauffeur');
 
   // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
   const qrow = page.locator('#view .qrow', { hasText: custName });

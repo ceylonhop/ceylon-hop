@@ -8,24 +8,21 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css?v=613012fae4">
+<link rel="stylesheet" href="site.css?v=80d895de52">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
-<link rel="stylesheet" href="quote.css?v=7bce0d9eda">
+<link rel="stylesheet" href="quote.css?v=2d1a764cf3">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
 </script>
-<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='quote';</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<!-- Still no consent.js (owner, 2026-08-06, the same call pay.html made on 2026-08-01): a
-     customer reading a proposal we sent them privately is not the audience for a floating
-     cookie card, and it overlaid the map. But "no banner" had become "no consent" — nothing
-     here ever granted, so we have no replay of anyone reading a quote and no way to see which
-     option they looked at. consent-transactional.js keeps the owner's rule (it reserves its
-     own height rather than covering the map) and asks for analytics ONLY. -->
-<script src="consent-transactional.js?v=9e74d1f96a" defer></script>
+<!-- No consent script at all (owner, 2026-08-16). A customer reading a proposal we sent them
+     privately was never the audience for a floating cookie card, and the strip that replaced
+     it is gone too: the head now defaults analytics_storage to GRANTED site-wide, so replays
+     and option-level interest are collected without asking. See tools/site-chrome.mjs. -->
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -241,7 +238,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // one row per calendar day — .hops rail, ticket.css's dot-and-line down the side, extended
   // here with STAY rows (a night with no journey) so a gap day reads as "you're resting", not
   // as a hole in the itinerary.
-  function dayRowHtml(day, isLast){
+  function dayRowHtml(day, isLast, price){
     var isStay = day.kind === 'stay';
     var dotClass = 'hop-dot' + (isStay ? ' stay' : (isLast ? ' end' : ''));
     var lineHtml = isLast ? '' : '<span class="hop-line' + (isStay ? ' dash' : '') + '"></span>';
@@ -250,17 +247,41 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       : '';
     return '<div class="hop' + (isStay ? ' is-stay' : '') + '">'
       + '<div class="hop-rail"><span class="' + dotClass + '"></span>' + lineHtml + '</div>'
-      + '<div><div class="hop-t">' + esc(day.title) + '</div>'
+      + '<div><div class="hop-t"><span class="hop-title">' + esc(day.title) + '</span>'
+      + (price ? '<span class="hop-p">' + esc(price) + '</span>' : '') + '</div>'
       + '<div class="hop-d">' + esc(day.date) + '</div>'
       + (day.meta ? '<div class="hop-m">' + esc(day.meta) + '</div>' : '')
       + stops
       + '</div></div>';
   }
-  function daysHtml(days){
+  // Per-journey prices (spec 2026-08-16), shown only when ops ticked this quote. Rows are
+  // consumed in itinerary order against the DRIVING days — the projection emits exactly one row
+  // per driving leg, in the same order quoteDays lays them out. A stay day carries NO price
+  // element (owner, 2026-08-16): it renders exactly as it did before this feature existed.
+  function daysHtml(days, legPrices){
     days = days || [];
-    return '<div class="hops">' + days.map(function(day, i){
-      return dayRowHtml(day, i === days.length - 1);
-    }).join('') + '</div>';
+    var rows = (legPrices && legPrices.rows) || [];
+    var next = 0;
+    var html = days.map(function(day, i){
+      var price = (rows.length && day.kind !== 'stay' && next < rows.length) ? rows[next++].amountUsd : null;
+      return dayRowHtml(day, i === days.length - 1, price);
+    }).join('');
+    // Rows beyond the driving-day count are unattributed extras (e.g. sightseeing stops) that
+    // never landed on a leg. They still have to reach the customer or the column stops adding
+    // up to the Total, so they surface in the summary block instead of the rail.
+    var extras = rows.length ? rows.slice(next) : [];
+    return '<div class="hops">' + html + sumHtml(legPrices, extras) + '</div>';
+  }
+
+  function sumHtml(lp, extras){
+    if (!lp) return '';
+    var r = '';
+    (extras || []).forEach(function(row){
+      r += '<div class="r"><span>' + esc(row.label) + '</span><span>' + esc(row.amountUsd) + '</span></div>';
+    });
+    if (lp.discount) r += '<div class="r"><span>' + esc(lp.discount.label) + '</span><span>' + esc(lp.discount.amountUsd) + '</span></div>';
+    r += '<div class="r tot"><span>Total</span><span>' + esc(lp.totalUsd) + '</span></div>';
+    return '<div class="hop-sum">' + r + '</div>';
   }
 
   // Every option's action is WhatsApp, prefilled with the quote reference and the tapped
@@ -290,6 +311,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return base + ' The difference is whether the driver stays with you.';
   }
 
+  // What the money buys, one line per inclusion (owner, 2026-08-16). A `·`-joined sentence made
+  // three separate things read as one paragraph, and this box is where a customer works out what
+  // they are being charged for. `lead` is a sentence ABOUT the list ("Everything in Private
+  // transfers, plus:"), so it sits above the bullets rather than becoming one.
+  // Falls back to the old sentence for a view served by an API that predates the bullets.
+  function includedHtml(opt){
+    var inc = opt.included;
+    var items = inc && Array.isArray(inc.items) ? inc.items : [];
+    if (!items.length) return '<div class="included"><b>Included</b>' + esc(opt.includedText || '') + '</div>';
+    return '<div class="included"><b>Included</b>'
+      + (inc.lead ? '<p class="inc-lead">' + esc(inc.lead) + '</p>' : '')
+      + '<ul class="inc-list">'
+      + items.map(function(it){ return '<li>' + esc(it) + '</li>'; }).join('')
+      + '</ul></div>';
+  }
+
   // IDENTICAL structure on both cards, row for row. No chip (owner critique, 2026-08-06):
   // the teal ring and the solid CTA already say "this is the one we quoted" — a third badge
   // was one signal more than the distinction needed, its label was ambiguous, and it broke
@@ -305,7 +342,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return '<div class="ticket' + (opt.lead ? ' opt-lead' : '') + '"><div class="t-main">'
       + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3></div>'
       + '<p class="opt-d">' + esc(opt.blurb) + '</p>'
-      + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
+      + includedHtml(opt)
       // A negotiated price shows its two ends. These reconcile exactly — finishing runs before the
       // discount — so the customer can check the arithmetic and it holds.
       + (opt.discount
@@ -362,7 +399,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
     html += '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Day by day</span></div>'
-      + daysHtml(v.days)
+      + daysHtml(v.days, (v.options && v.options[0] && v.options[0].legPrices) || null)
       + '</div></div>'
       + '<p class="pp-note">Anything you’d like changed — dates, stops, a bigger vehicle —<br>'
       + '<a href="' + waHref(v.waText) + '">just message us</a> and we’ll update this page.</p>';
