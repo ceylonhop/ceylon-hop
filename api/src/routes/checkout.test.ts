@@ -47,6 +47,7 @@ describe('POST /bookings/:id/checkout', () => {
     const params = await res.json();
     expect(params.amount).toBe(b.total);
     expect(params.orderId).toBe(b.reference);
+    expect(verifyPayReturnToken(params.payReturnToken, SECRET)).toBe(b.id);
     const after = await bookings.get(b.id);
     expect(after!.status).toBe('payment_pending');
   });
