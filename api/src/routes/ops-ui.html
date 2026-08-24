@@ -6171,8 +6171,8 @@ function reopenToDraft() {
   // it from the response) — but mintPayLink()/confirmPayPart() set _payLink and render()
   // immediately on mint, and nothing refetches the quote afterward, so a link minted THIS
   // session and never confirmed dies with no warning if this only read customerTotalVia. _payLink
-  // is cleared on every quote switch (open/reset/list-refresh), so it can never leak onto a
-  // different quote. Scoped to 'ready'/'sent' — the only statuses stateFor() ever calls payable —
+  // is cleared wherever a quote is opened or left (reopenQuote/resetToNew/bookQuote/cancelBook),
+  // so it can never leak onto a different quote. Scoped to 'ready'/'sent' — the only statuses stateFor() ever calls payable —
   // so a pending_review quote, whose link is already 'unavailable' regardless, doesn't get a
   // false "reopening will stop it working" prompt (its own link died at submission already).
   // A quote with no link out at all stays a single, unconfirmed click either way.

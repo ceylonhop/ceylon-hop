@@ -262,13 +262,17 @@ source-string scans and gets rewritten:
 
 - `isEditableNow()` includes `pending_review`; a new `isSavableNow()` does not
 - `transition()`'s flush gate reads `isSavableNow()`, not `isEditableNow()`
-- `saveQuote()` awaits `_pullback` and bails on `!isSavableNow()`
+- `saveQuote()` awaits `pendingPullback()` (this quote's entry) and bails on `!isSavableNow()`
 - `markDirty()` triggers `pullBackFromReview()` on `pending_review`
 - the quote-load path contains no `markDirty()` (the §6 hazard)
 - `applyContentLock` no longer disables the editor in `pending_review`
 - "Reopen to edit" is still on the `pending_review` action bar for both roles
 - "Reopen to edit" is now on the `ready` action bar for the non-approver role too, and is still
   absent from `sent` for that role (the owner's line)
+- the §4.7 pay-link confirm fires for a link minted THIS session (`_payLink`, no server stamp yet)
+  and stays silent on `pending_review`, where the link is already `unavailable` — both pinned
+  behaviourally in `web-tests/e2e/quote-approval.spec.js`, since the source-scan form of this one
+  can be satisfied by the explanatory comment inside `reopenToDraft`
 
 Server tests are unchanged: `POST /save` must still 409 `not_editable` for `pending_review`
 (`internalQuote.test.ts`), and that assertion is now load-bearing — it is the invariant this

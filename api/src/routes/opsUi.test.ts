@@ -994,8 +994,11 @@ describe('ops UI — editing a quote in review', () => {
     // customerTotalVia === null and skip the confirm without this. _payLink alone is sufficient
     // to gate it, ahead of the window.confirm call.
     const rtd = fnBody('reopenToDraft');
-    expect(rtd).toContain('_payLink');
-    expect(rtd.indexOf('_payLink')).toBeLessThan(rtd.indexOf('window.confirm('));
+    // Anchored on the CODE, not the bare identifier: fnBody() returns a raw source slice that
+    // includes the explanatory comment inside the function, and that comment names _payLink — so
+    // toContain('_payLink') passes even with the term deleted from the `if`. Verified by mutant.
+    expect(rtd).toContain("=== 'pay_link' || _payLink)");
+    expect(rtd.indexOf("=== 'pay_link' || _payLink)")).toBeLessThan(rtd.indexOf('window.confirm('));
   });
 
   it('the confirm only fires when stateFor() still considers the link payable — ready or sent (review finding 2)', () => {
