@@ -68,13 +68,13 @@ describe('button fills meet WCAG AA against white text', () => {
   });
 });
 
-// Two more buttons live outside site.css entirely and have already drifted back to
-// bright fills once: the PayHere handoff overlay's retry button (booking.html's inline
-// <style>) and the transactional-consent accept button (consent-transactional.js's
-// injected CSS). Same rule as above: white text, so the fill needs 4.5:1.
+// One button lives outside site.css entirely and has already drifted back to a bright fill
+// once: the PayHere handoff overlay's retry button (booking.html's inline <style>). Same
+// rule as above: white text, so the fill needs 4.5:1.
+// (The transactional-consent accept button was the other case here until 2026-08-16, when
+// the consent banners were removed — see tools/site-chrome.mjs.)
 describe('buttons styled outside site.css meet WCAG AA against white text', () => {
   const BOOKING = readFileSync(path.join(root, 'booking.html'), 'utf8');
-  const CONSENT = readFileSync(path.join(root, 'consent-transactional.js'), 'utf8');
 
   /** Resolve `#hex` or `var(--x,fallback)` against site.css, following var chains. */
   function resolve(value) {
@@ -93,7 +93,6 @@ describe('buttons styled outside site.css meet WCAG AA against white text', () =
   const cases = [
     ['.ph-btn-primary', BOOKING, /\.ph-btn-primary\{[^}]*background:\s*([^;}]+)/],
     ['.ph-btn-primary:hover', BOOKING, /\.ph-btn-primary:hover\{[^}]*background:\s*([^;}]+)/],
-    ['consent accept button', CONSENT, /data-consent="granted"[^{]*\{[^}]*background:\s*([^;}]+)/],
   ];
 
   for (const [label, src, re] of cases) {

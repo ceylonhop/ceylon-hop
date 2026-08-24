@@ -387,7 +387,27 @@ if (shared) {
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;
+} else if (engineRoute) {
+  /* We never LOOKED, so we must not report a finding. `shared` is hardcoded null for an engine
+     route (line 155) because a scheduled seat is a directed catalogue entry keyed on two
+     catalogue ids, and an engine route has at least one end we don't have baked — the lookup
+     is skipped, not failed.
+
+     Printing the baked branch's copy here stated as fact something we never checked. On a
+     Google-picked "Sigiriya, Sri Lanka" that told the customer we run no shared service between
+     CMB and Sigiriya — one of the two corridors we actually sell seats on, at $27.49. Same
+     wrong sentence on every Google-picked search, whatever the route. Say what we know. */
+  noShare = `
+  <div class="noshare">
+    <div class="ns-ico">${ICONS.share}</div>
+    <div>
+      <b>Shared seats run on set routes</b>
+      <p>Our shared vans run a fixed set of scheduled routes, and we can only match those automatically. Your private transfer covers you door-to-door at a fixed price, whenever you want to leave.</p>
+    </div>
+  </div>`;
 } else {
+  // A baked pair DID go through the catalogue and came back empty — here the negative is a
+  // real finding, so it can be stated plainly.
   noShare = `
   <div class="noshare">
     <div class="ns-ico">${ICONS.share}</div>
@@ -429,9 +449,27 @@ function trackResults() {
   ];
   if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: qty });
 
+  /* WHICH ENDS arrived as free text, never the place names themselves.
+     `from`/`to` already carry the names, but GA4 only reports a parameter registered as a
+     custom dimension — and registering `to` would make every hotel and landmark a customer
+     ever picks a dimension value, past GA4's ~500-distinct-values-per-day "(other)" bucket.
+     Four values instead, forever.
+
+     The split is not decoration: a free-text DESTINATION can be matched against the PLACES
+     lat/lng we already ship (scheduled drop areas are >=28km apart), while a free-text ORIGIN
+     needs boarding-point coordinates departureRepo.ts does not store. Which end it is decides
+     whether geo-matching is a cheap job or an expensive one.
+
+     Register this as an event-scoped custom dimension before the traffic arrives — GA4 does
+     not backfill (docs/analytics/gtm-container-checklist.md). */
+  var freetextPlace = !fromPlace && !toPlace ? 'both'
+    : !fromPlace ? 'from'
+    : !toPlace ? 'to'
+    : 'none';
   var searchEvent = {
     from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search',
     estimate_state: quote.estimateState,
+    freetext_place: freetextPlace,
     route_fingerprint: routeFingerprint(quote.estimateId)
   };
   if (pax != null) searchEvent.pax = pax;
