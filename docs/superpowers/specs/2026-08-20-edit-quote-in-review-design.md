@@ -72,14 +72,20 @@ the owner's line.
      back to draft."*
    - ops: **"Submitted — with the founder"** — *"Start editing and it comes back to you as a
      draft to resubmit."*
-3. The first content edit fires the pull-back: `PATCH {status:'draft'}`, then toast
-   **"Pulled back out of review — resubmit when you're done."** The queue row moves, the action
-   bar swaps to *Submit for review*, and the banner becomes the normal draft one.
+3. The first content edit fires the pull-back: it first re-reads the quote's status with the
+   server (a founder can approve or send it from elsewhere while this tab still shows
+   `pending_review`), and only if that confirms it is still `pending_review` does it
+   `PATCH {status:'draft'}` and toast **"Pulled back out of review — resubmit when you're
+   done."** The queue row moves, the action bar swaps to *Submit for review*, and the banner
+   becomes the normal draft one. If the status has already moved on, no PATCH fires at all —
+   see §5.2.
 4. The edit then saves through the usual autosave path.
 5. If the pull-back PATCH fails, the editor **re-locks**, the edit is not saved, and the toast
    names the reason (`"Could not pull this back out of review — <reason>"`).
-6. **"Reopen to edit" stays exactly as it is** — the door for pulling a quote back *without*
-   editing it (e.g. to park it), and the fallback when the automatic pull-back fails.
+6. **"Reopen to edit" keeps the same role** — the door for pulling a quote back *without*
+   editing it (e.g. to park it), and the fallback when the automatic pull-back fails. §4.7 below
+   adds a confirm step in front of it when a pay link is out; that changes what a press of the
+   button does on a `ready`/`sent` quote with a link out, not what the button is for.
 
 This applies to **everyone in the ops app**, ops and founders alike — editability stays keyed on
 status, never on role, as it is everywhere else today. A founder who starts typing mid-review
@@ -92,10 +98,15 @@ reviewing it.
    reopening an approved quote drops its frozen rate card and re-prices at today's rates
    (`internalQuote.ts:1557`), so a stray keystroke silently moving an approved price is a
    different order of consequence from leaving a review queue. Post-review addition (owner
-   decision): if a pay link has already been minted (`state.customerTotalVia === 'pay_link'`)
-   the button confirms before it fires — reopening would make that link `unavailable` mid-checkout
-   (`stateFor()`, `quotePay.ts:175`, serves only `ready`/`sent`) — and aborts on cancel. A `ready`
-   quote with no link out is unaffected and stays a single click.
+   decision): if a pay link is out on the current `ready`/`sent` quote — either because the
+   server has already stamped `state.customerTotalVia === 'pay_link'`, or because one was minted
+   in this session and not yet echoed back (`_payLink` set but no refetch has happened) — the
+   button confirms before it fires, since reopening would make that link `unavailable`
+   mid-checkout (`stateFor()`, `quotePay.ts:175`, serves only `ready`/`sent`), and aborts on
+   cancel. It does not fire on `pending_review` even with `customerTotalVia === 'pay_link'` set:
+   `stateFor()` already returns `unavailable` there, so the link is already dead and the warning
+   would be false. A `ready`/`sent` quote with no link out is unaffected and stays a single
+   click. This gate has a known gap — see §6.
 
 No notification fires to the founder whose queue item was pulled — matching what "Reopen to
 edit" does today.
@@ -144,14 +155,30 @@ claims the slot synchronously before its async work starts, and releases it in `
 promise **identity** (`_pullbacks[id] === p`), not by id alone, so a newer pull-back that has
 since claimed the same id is never evicted by an older one settling late.
 
-Because the PATCH crosses an await, the operator is free to open a different quote before it
-resolves. The resolution captures `var seq = _openSeq;` before the await and checks
-`if (seq !== _openSeq)` after it: on a generation mismatch, `state.status`, `_pullbackFailed`,
-the toast and `render()` are all skipped (they would describe the wrong quote), but the
-queue-level sync (`opsUpsertQuote`/`opsRefreshQuotes`, keyed by `id` not `state`) still runs
-unconditionally, and a failure is still reported via `opsReportError` rather than silently
-dropped. On success it sets `state.status = 'draft'`, toasts, and `render()`s. On failure it sets
-`_pullbackFailed = true` and re-locks (`isEditableNow()` reads the flag).
+Before PATCHing, the resolution re-reads the quote with `apiGetQuote(id)` and checks its status
+is still `pending_review`. Nothing here polls — `state.status` is written only by
+`reopenQuote()`/`saveQuote()`/`transition()` — so a founder approving or sending the quote from
+elsewhere leaves this tab still reading `pending_review`, and PATCHing blind would move it to
+`draft` from wherever it actually is now (dropping the frozen rate card, for `ready`). If the
+re-read finds anything other than `pending_review`, this is **not** a pull-back failure — nothing
+broke, the quote is just no longer in review — so `_pullbackFailed` (which means exactly "the
+pull-back failed") stays untouched; instead `state.status` adopts the real status and the toast
+names it ("...now ready) — use 'Reopen to edit' if you still want to change it"). Only once the
+re-read confirms `pending_review` does the `PATCH {status:'draft'}` fire.
+
+Both the GET and the PATCH cross an await, and the operator is free to open a different quote
+before either resolves. The resolution captures `var seq = _openSeq;` once, before the GET, and
+rechecks `if (seq !== _openSeq)` after each await — not just the PATCH's: on a generation
+mismatch, `state.status`, `_pullbackFailed`, the toast and `render()` are all skipped (they would
+describe the wrong quote). The queue-level sync (`opsUpsertQuote`/`opsRefreshQuotes`, keyed by
+`id` not `state`) still runs unconditionally after the PATCH regardless of `seq`, and a PATCH
+failure is still reported via `opsReportError` rather than silently dropped; a stale-generation
+GET failure or moved-on result has nothing to sync and is beaconed (GET failure) or simply
+dropped (moved-on — nothing failed, nothing to report) instead. On PATCH success it sets
+`state.status = 'draft'`, toasts, and `render()`s. On PATCH failure it sets `_pullbackFailed =
+true` and re-locks (`isEditableNow()` reads the flag). A GET failure (network error, etc.) is
+treated the same as a PATCH failure — `_pullbackFailed = true`, same toast shape, never PATCHes
+blind.
 
 Calling `render()` mid-typing is safe: `render()` diff-renders and already snapshots and
 restores the focused field's in-progress text and caret (`captureEditorFocus` /
@@ -203,6 +230,21 @@ Mitigated after review, not merely accepted: "Reopen to edit" now confirms first
 is out (§4.7), so the operator gets a chance not to make that move by accident. The customer can
 never be charged the *wrong amount* either way — the pay token pins `revision`, so a post-reopen
 save just resolves the link to `revised` — the hazard this closes is availability, not price.
+
+**Known gap, still open — the confirm can be silently defeated by ordering.**
+`customer_total_at` (and with it `customerTotalVia`) is stamped only when the total *differs*
+from the recorded baseline (`internalQuote.ts:1215-1218`) — it is a "did the number change"
+signal, not a "has a customer-facing link gone out" signal, and that mismatch has a real gap in
+it. Minting the **quote** link first (stamps `via:'quote_link'` at total T), then the **payment**
+link at the same T (T === T, no stamp — nothing changed), defeats the confirm even across a page
+reload: `customerTotalVia` never becomes `'pay_link'`, `_payLink` is gone after the reload, and
+"Reopen to edit" fires with no prompt while a live payment link is still out. The same happens
+with "Mark as sent" first, then a pay link minted against the now-`sent` row. `payLinkSeq` is not
+a usable substitute either — it stays `0` for a first, full-total mint, so it can't distinguish
+"never minted" from "minted once." Closing this needs a durable, server-side "a payment link is
+currently live" signal (not a derived-from-total-change flag), which is a schema-touching change
+outside a front-end-only branch's constraints. Left open, deliberately — §4.7's confirm covers
+the common within-session case, not this one.
 
 **Concurrent approval — closed for the stray keystroke, unchanged for the deliberate click.** If
 the founder approves between a keystroke and the pull-back's PATCH, the pull-back (§5.2) now
