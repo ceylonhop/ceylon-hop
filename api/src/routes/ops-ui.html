@@ -6164,19 +6164,26 @@ function renderPayLinkRow() {
 }
 function markOutcome(s)    { return transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
 function reopenToDraft() {
-  // A pay link already out means a number is in the customer's hands right now — stateFor()
-  // (quotePay.ts) only serves 'ready'/'sent' quotes as payable, so the instant this PATCH lands
-  // the link goes 'unavailable' and a customer mid-checkout hits a dead page. customerTotalVia
-  // is set to 'pay_link' once the SERVER has echoed a mint back (reopenQuote()/saveQuote() adopt
-  // it from the response) — but mintPayLink()/confirmPayPart() set _payLink and render()
-  // immediately on mint, and nothing refetches the quote afterward, so a link minted THIS
-  // session and never confirmed dies with no warning if this only read customerTotalVia. _payLink
-  // is cleared wherever a quote is opened or left (reopenQuote/resetToNew/bookQuote/cancelBook),
-  // so it can never leak onto a different quote. Scoped to 'ready'/'sent' — the only statuses stateFor() ever calls payable —
-  // so a pending_review quote, whose link is already 'unavailable' regardless, doesn't get a
-  // false "reopening will stop it working" prompt (its own link died at submission already).
-  // A quote with no link out at all stays a single, unconfirmed click either way.
-  if ((state.customerTotalVia === 'pay_link' || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm('A payment link is already out for this quote. Reopening it will stop that link working. Continue?')) return;
+  // A link already out means a number is in the customer's hands right now. BOTH customer links
+  // die the instant this PATCH lands: stateFor() (quotePay.ts) serves a pay link only for
+  // 'ready'/'sent', and the quote view (quoteView.ts) gates on the same two — so reopening drops
+  // a customer mid-checkout onto a dead page.
+  //
+  // Keyed on customerTotalVia being SET AT ALL, never on 'pay_link' specifically. The mint only
+  // stamps `via` when the total actually MOVED (internalQuote.ts), so Quote link → Payment link
+  // at the same total leaves via as 'quote_link' and a pay-link-only test walks straight past a
+  // live pay link. Any via at all means the customer holds this quote, which is exactly what the
+  // prompt needs to say — and it is the honest wording anyway, since a quote link dies here too.
+  //
+  // _payLink additionally covers a link minted THIS session and never echoed back:
+  // mintPayLink()/confirmPayPart() set it and render() immediately on mint, and nothing refetches
+  // the quote afterward. It is cleared wherever a quote is opened or left
+  // (reopenQuote/resetToNew/bookQuote/cancelBook), so it can never leak onto a different quote.
+  //
+  // Scoped to 'ready'/'sent' — the only statuses either link is ever live in — so a
+  // pending_review quote, whose links are already dead, gets no false prompt. A quote with
+  // nothing out stays a single, unconfirmed click.
+  if ((state.customerTotalVia || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm('You have already sent this quote to the customer. Reopening it will stop any link you sent working. Continue?')) return;
   return transition('draft', { toast: 'Reopened for editing' });
 }
 

@@ -964,16 +964,17 @@ describe('ops UI — editing a quote in review', () => {
   });
 
   it('reopenToDraft confirms before dropping an outstanding pay link (owner decision)', () => {
-    // A 'ready' quote can already have a pay link minted against it — stateFor() (quotePay.ts)
-    // only serves 'ready'/'sent' as payable, so the instant this PATCH lands the link goes
-    // 'unavailable' and a customer mid-checkout hits a dead page. customerTotalVia === 'pay_link'
-    // is how the client knows a link is out (set from reopenQuote()/saveQuote()'s response).
-    // window.confirm is this file's established idiom for exactly this kind of destructive
-    // confirm (see the hot-zone boost/delete confirms), not a new modal.
+    // A 'ready' quote can already have a link out — stateFor() (quotePay.ts) serves a pay link
+    // only for 'ready'/'sent', and quoteView.ts gates the quote link on the same two — so the
+    // instant this PATCH lands both go dead and a customer mid-checkout hits a dead page.
+    // customerTotalVia being set at all is how the client knows the customer holds this quote
+    // (adopted from reopenQuote()/saveQuote()'s response); see the sibling test for why it must
+    // NOT be narrowed to 'pay_link'. window.confirm is this file's established idiom for a
+    // destructive confirm (see the hot-zone boost/delete confirms), not a new modal.
     const rtd = fnBody('reopenToDraft');
-    expect(rtd).toContain("state.customerTotalVia === 'pay_link'");
+    expect(rtd).toContain('(state.customerTotalVia || _payLink)');
     expect(rtd).toContain('window.confirm(');
-    expect(rtd.indexOf("state.customerTotalVia === 'pay_link'")).toBeLessThan(rtd.indexOf('window.confirm('));
+    expect(rtd.indexOf('(state.customerTotalVia || _payLink)')).toBeLessThan(rtd.indexOf('window.confirm('));
     // Declining must abort before the transition — no PATCH at all.
     expect(rtd.indexOf('window.confirm(')).toBeLessThan(rtd.indexOf('return;'));
     expect(rtd.indexOf('return;')).toBeLessThan(rtd.indexOf("return transition('draft'"));
@@ -984,7 +985,7 @@ describe('ops UI — editing a quote in review', () => {
     // status is one stateFor() still calls payable. All of that lives on ONE `if`, short-circuited
     // by `&&`, so window.confirm is never even called for a linkless quote or an already-dead one.
     const rtd = fnBody('reopenToDraft');
-    expect(rtd).toContain("if ((state.customerTotalVia === 'pay_link' || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm(");
+    expect(rtd).toContain("if ((state.customerTotalVia || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm(");
   });
 
   it('a pay link minted THIS session also gates the confirm, not just the server-recorded stamp (review finding 1)', () => {
@@ -997,8 +998,21 @@ describe('ops UI — editing a quote in review', () => {
     // Anchored on the CODE, not the bare identifier: fnBody() returns a raw source slice that
     // includes the explanatory comment inside the function, and that comment names _payLink — so
     // toContain('_payLink') passes even with the term deleted from the `if`. Verified by mutant.
-    expect(rtd).toContain("=== 'pay_link' || _payLink)");
-    expect(rtd.indexOf("=== 'pay_link' || _payLink)")).toBeLessThan(rtd.indexOf('window.confirm('));
+    expect(rtd).toContain("(state.customerTotalVia || _payLink)");
+    expect(rtd.indexOf("(state.customerTotalVia || _payLink)")).toBeLessThan(rtd.indexOf('window.confirm('));
+  });
+
+  it('the confirm is keyed on ANY customer link, not on pay_link specifically', () => {
+    // The reachable hole this closes: POST /quotes/:id/pay-link only stamps customerTotalVia when
+    // the quote total MOVED (internalQuote.ts). So on a 'ready' quote, pressing Quote link (which
+    // stamps via 'quote_link') and THEN Payment link at the same total leaves via === 'quote_link'
+    // with a live pay link out. A test for === 'pay_link' passes while the operator reopens and
+    // silently kills that link. Truthiness is the whole guard — pin that it is not narrowed back.
+    const rtd = fnBody('reopenToDraft');
+    expect(rtd).toContain('(state.customerTotalVia || _payLink)');
+    expect(rtd).not.toContain("customerTotalVia === 'pay_link'");
+    // The copy has to match the widened test: it can no longer promise the link is a PAYMENT one.
+    expect(rtd).toContain('any link you sent working');
   });
 
   it('the confirm only fires when stateFor() still considers the link payable — ready or sent (review finding 2)', () => {
@@ -1013,9 +1027,15 @@ describe('ops UI — editing a quote in review', () => {
   });
 
   it('the message names what actually breaks — the link stops working — not a generic warning', () => {
+    // Same intent as before the gate widened, one word weaker on purpose: the client cannot prove
+    // the outstanding link is a PAYMENT one (see the sibling test — a same-total mint leaves via
+    // as 'quote_link'), so the copy says "any link you sent". It must still name the consequence.
     const rtd = fnBody('reopenToDraft');
-    expect(rtd).toMatch(/payment link.*already out/i);
-    expect(rtd).toMatch(/stop.*working/i);
+    expect(rtd).toMatch(/already sent this quote/i);
+    expect(rtd).toMatch(/stop any link you sent working/i);
+    // Never claim more than we know — "a payment link is already out" is exactly the overclaim
+    // the widening removed, and it read as a lie whenever only a quote link had gone out.
+    expect(rtd).not.toMatch(/a payment link is already out/i);
   });
 
   it('⌘S and the command-palette save both go through the shared shortcut gate, never bare saveQuote()', () => {

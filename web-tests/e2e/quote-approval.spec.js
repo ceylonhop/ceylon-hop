@@ -407,6 +407,29 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
 });
 
+// The gate is keyed on customerTotalVia being SET, never on 'pay_link' — and this is the case that
+// proves why. POST /quotes/:id/pay-link only stamps `via` when the quote total MOVED
+// (internalQuote.ts), so on a 'ready' quote: press Quote link (stamps 'quote_link'), then press
+// Payment link at the same total, and the quote still reads via === 'quote_link' with a LIVE pay
+// link out. A gate testing === 'pay_link' walks straight past it and the reopen kills that link
+// silently. Reopening also kills the quote link itself (quoteView.ts gates on ready/sent too), so
+// confirming here is right whichever link went out.
+test('reopening a ready quote confirms when only a quote link was recorded, not just a pay link', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'quote_link' });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  // Dismissed, so nothing may have been PATCHed.
+  await page.waitForLoadState('networkidle');
+  expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(0);
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready to send');
+});
+
 // Owner decision (post-review): a 'ready' quote can already have a pay link minted against it —
 // stateFor() (quotePay.ts) only serves 'ready'/'sent' as payable, so the instant the reopen PATCH
 // lands the link goes 'unavailable' and a customer mid-checkout hits a dead page. Reopening such
@@ -422,8 +445,8 @@ test('reopening a ready quote WITH a pay link out asks for confirmation, and can
   // The dialog is synchronous from the page's perspective — give Playwright's CDP round-trip a
   // moment to have delivered and dismissed it before asserting on the aftermath.
   await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
-  expect(dialogMessage).toMatch(/payment link/i);
-  expect(dialogMessage).toMatch(/stop.*working/i);
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  expect(dialogMessage).toMatch(/stop any link you sent working/i);
   // A real settle window, not a single sample taken the instant the dialog resolves — matching
   // how the sibling "PATCH precedes /save" test below corroborates its own negative (no 409
   // taken) by waiting for a definite subsequent signal, not a snapshot. window.confirm IS
@@ -470,8 +493,8 @@ test('minting a pay link THIS session also confirms before reopening, even thoug
   });
   await actions(page).locator('[data-action="reopenToDraft"]').click();
   await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
-  expect(dialogMessage).toMatch(/payment link/i);
-  expect(dialogMessage).toMatch(/stop.*working/i);
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  expect(dialogMessage).toMatch(/stop any link you sent working/i);
   // Real settle window before trusting the negative — see the sibling cancel test above.
   await page.waitForLoadState('networkidle');
   await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
