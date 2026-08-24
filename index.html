@@ -486,6 +486,37 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-card .field-bad>select,.hero-card .field-bad>input,.hero-card .field-bad .dp-btn{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.16)!important}
   .hero-card .grp-note:not([hidden]){display:flex;align-items:flex-start;gap:.45rem;margin:0;font-size:.82rem;line-height:1.4;color:var(--ink-soft)}
   .hero-card .grp-note svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--accent-deep)}
+
+  /* One quiet Sri Lankan scene in each otherwise-plain homepage band. These are
+     atmosphere, not content: edge-cropped, below the copy, and faint enough to
+     disappear from the reading order. The site's existing grain supplies texture. */
+  .destination-art{position:relative;isolation:isolate;overflow:hidden;overflow:clip}
+  .destination-art::after{
+    content:"";position:absolute;z-index:0;pointer-events:none;opacity:.08;
+    width:clamp(250px,27vw,430px);aspect-ratio:32/21;
+    background-repeat:no-repeat;background-position:center;background-size:contain;
+  }
+  .destination-art > .wrap{position:relative;z-index:1}
+  .destination-art--sigiriya::after{
+    right:-58px;bottom:-24px;background-image:url("img/section-art/sigiriya.svg")
+  }
+  .destination-art--hiriketiya::after{
+    left:-68px;bottom:-38px;background-image:url("img/section-art/hiriketiya-cove.svg")
+  }
+  .destination-art--hill-country-rail::after{
+    right:-76px;top:28px;background-image:url("img/section-art/hill-country-rail.svg")
+  }
+  .destination-art--mirissa-whale::after{
+    left:-58px;bottom:-32px;background-image:url("img/section-art/mirissa-whale.svg")
+  }
+  @media(max-width:600px){
+    /* destination art: mobile restraint */
+    .destination-art::after{width:42vw;max-width:190px;opacity:.05}
+    .destination-art--sigiriya::after{right:-54px;bottom:-14px}
+    .destination-art--hiriketiya::after{left:-62px;bottom:-20px}
+    .destination-art--hill-country-rail::after{right:-68px;top:22px}
+    .destination-art--mirissa-whale::after{left:-58px;bottom:-18px}
+  }
 </style>
 </head>
 <body data-page="home">
@@ -569,7 +600,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- WHAT IS -->
-<section class="section-tight" id="what">
+<section class="section-tight destination-art destination-art--sigiriya" id="what" data-destination-art="sigiriya">
   <div class="wrap center">
     <span class="eyebrow" style="justify-content:center">What is Ceylon Hop?</span>
     <h2 style="max-width:26ch;margin:0 auto .55rem;font-size:clamp(1.6rem,2.8vw,2.3rem)">Private transfers across Sri Lanka &mdash; share a seat when it suits you</h2>
@@ -619,7 +650,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- READY-MADE ROUTES (tours as planner templates) -->
-<section class="section" data-screen-label="Ready-made routes">
+<section class="section destination-art destination-art--hiriketiya" data-screen-label="Ready-made routes" data-destination-art="hiriketiya">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:12px">
       <div><span class="eyebrow">Skip the spreadsheet</span><h2>Steal a route we already love</h2></div>
@@ -631,7 +662,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- PRO HOPPERS -->
-<section class="section" data-screen-label="Pro Hoppers">
+<section class="section destination-art destination-art--hill-country-rail" data-screen-label="Pro Hoppers" data-destination-art="hill-country-rail">
   <div class="wrap">
     <div class="hoppers-head">
       <div>
@@ -644,7 +675,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="grid cols-3" id="hoppers"></div>
   </div>
 </section>
-<section class="section">
+<section class="section destination-art destination-art--mirissa-whale" data-destination-art="mirissa-whale">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
       <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
