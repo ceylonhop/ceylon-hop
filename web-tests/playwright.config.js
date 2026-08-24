@@ -104,7 +104,13 @@ export default defineConfig({
       url: `http://localhost:${STATIC_PORT}/index.html`,
       reuseExistingServer: true,
       timeout: 30000,
-      env: { ...process.env, CH_STATIC_PORT: String(STATIC_PORT) },
+      // CH_TEST_OFFLINE_API makes the static server re-point /errors/client at its OWN origin
+      // on every page it serves, so the beacon in each page's inline error reporter can never
+      // reach the production API. It has to happen server-side: the reporter prefers
+      // navigator.sendBeacon, which page.route() does not intercept. The API base itself is
+      // left alone on purpose — moving it un-stubs the ride-board specs, which match the API
+      // by hostname. See serve-booking.js.
+      env: { ...process.env, CH_STATIC_PORT: String(STATIC_PORT), CH_TEST_OFFLINE_API: '1' },
     },
     ...(E2E_API ? [
       {
