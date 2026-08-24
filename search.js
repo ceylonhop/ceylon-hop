@@ -449,9 +449,27 @@ function trackResults() {
   ];
   if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: qty });
 
+  /* WHICH ENDS arrived as free text, never the place names themselves.
+     `from`/`to` already carry the names, but GA4 only reports a parameter registered as a
+     custom dimension — and registering `to` would make every hotel and landmark a customer
+     ever picks a dimension value, past GA4's ~500-distinct-values-per-day "(other)" bucket.
+     Four values instead, forever.
+
+     The split is not decoration: a free-text DESTINATION can be matched against the PLACES
+     lat/lng we already ship (scheduled drop areas are >=28km apart), while a free-text ORIGIN
+     needs boarding-point coordinates departureRepo.ts does not store. Which end it is decides
+     whether geo-matching is a cheap job or an expensive one.
+
+     Register this as an event-scoped custom dimension before the traffic arrives — GA4 does
+     not backfill (docs/analytics/gtm-container-checklist.md). */
+  var freetextPlace = !fromPlace && !toPlace ? 'both'
+    : !fromPlace ? 'from'
+    : !toPlace ? 'to'
+    : 'none';
   var searchEvent = {
     from: fromId, to: toId, date: date, pax_set: pax != null, source: 'search',
     estimate_state: quote.estimateState,
+    freetext_place: freetextPlace,
     route_fingerprint: routeFingerprint(quote.estimateId)
   };
   if (pax != null) searchEvent.pax = pax;
