@@ -667,10 +667,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <div data-footer></div>
 
-<script src="site.js?v=4183d938b0"></script>
+<script src="site.js?v=736abbfe52"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
-<script src="transfers-data.js?v=0a8cfb8f1a"></script>
+<script src="transfers-data.js?v=3eb73141e9"></script>
+<script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-map.js?v=4f38c5f4ce"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
@@ -685,17 +686,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // popular transfers — live fixed prices straight from the quote engine
   const POP_TRANSFERS=[['cmb-airport','kandy'],['cmb-airport','sigiriya'],['cmb-airport','galle'],['kandy','ella'],['ella','mirissa'],['colombo','kandy']];
+  const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
   document.getElementById('home-transfers').innerHTML = POP_TRANSFERS.map(([f,t])=>{
     const A=TRANSFERS.place(f), B=TRANSFERS.place(t);
     const q=TRANSFERS.privateQuote(f,t);
     const sh=TRANSFERS.sharedOption(f,t);
     const u=new URLSearchParams({from:f,to:t}).toString();
+    const estimate=CH.routeEstimate.formatRouteEstimate({
+      distanceKm:q.km,
+      durationMin:q.durationMin,
+      state:q.estimated?'estimated':'browse'
+    });
     return `<a class="card tcard reveal" href="search.html?${u}">
       <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
-      <div class="tc-meta">${q.km} km · about ${q.duration} · private, door to door</div>
+      <div class="tc-meta">${estimate}</div>
       <div class="tc-foot">
-        <span class="tc-price">from <b>$${q.car}</b> fixed</span>
-        ${sh?`<span class="tc-shared">or shared seat $${sh.seat}</span>`:`<span class="tc-go">See prices ${ICON.arrow}</span>`}
+        <span class="tc-price">from <b>$${displayPrice(q.car)}</b> fixed</span>
+        ${sh?`<span class="tc-shared">or shared seat $${displayPrice(sh.seat)}</span>`:`<span class="tc-go">See prices ${ICON.arrow}</span>`}
       </div></a>`;
   }).join('');
 

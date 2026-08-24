@@ -4733,9 +4733,20 @@ var _dirty = false;
    POST /save runs resolveAndPrice() and cannot persist a payload it can't price. The 24h shell
    sweep is what bounds the queue now, not manual-first creation. */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
+// Content editability (owner, 2026-08-22, superseding the 2026-07-17 review lock). The EDITOR is
+// live for every state before approval, pending_review included. The guarantee that a founder
+// never approves content they did not see is now kept a different way: the first edit PULLS THE
+// QUOTE BACK to draft (pullBackFromReview), so a changed quote is never sitting in the review
+// queue. 'ready' stays locked on purpose — reopening it drops the frozen rate card and re-prices,
+// which must be a deliberate button press and never a stray keystroke.
 function isEditableNow() {
-  // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
-  // the founder approves exactly what they reviewed; reopen-to-draft is the one door back in.
+  if (state.status === 'pending_review') return !_pullbackFailed; // a failed pull-back re-locks
+  return state.status === 'draft' || state.status === 'changes_requested';
+}
+// The states POST /save actually accepts (internalQuote.ts 409s not_editable otherwise). This is
+// deliberately NOT the same set as isEditableNow: pending_review is editable on screen but must
+// reach draft before anything can persist. Every path that talks to /save gates on THIS one.
+function isSavableNow() {
   return state.status === 'draft' || state.status === 'changes_requested';
 }
 /* Review lock: while the quote isn't editable, the EDITOR is inert — every input/chip/button
@@ -4772,9 +4783,26 @@ async function fireAutosave() {
   // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
   // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
   // persisted at all. That window is the only place the beforeunload guard still matters.
-  if (!isEditableNow() || !state.vehicleType) return;
-  if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  //
+  // `seq` is captured BEFORE the pull-back await and reused after it, not re-captured: `_dirty`
+  // above was already checked for whichever quote was open when the timer fired, and if the
+  // operator opens a DIFFERENT quote during this await, the resumed autosave must not re-read
+  // `state` for that new quote and POST /save for something the operator merely opened.
   var seq = _openSeq;
+  var pb = pendingPullback(); // this quote's pull-back, if any — see pendingPullback()
+  if (pb) await pb;
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
+  if (!state.vehicleType) return; // nothing priceable yet — no timer to babysit until there is
+  if (!isSavableNow()) {
+    // A failed pull-back re-locks the editor (isSavableNow() false) but leaves typed content in
+    // _dirty; the manual fix ("Reopen to edit" -> transition('draft')) does not itself re-arm
+    // autosave, so without a re-arm here the typing would sit unsaved until the next keystroke or
+    // Cmd+S. Scoped to exactly that recovery case (not every not-savable status) and bounded, so a
+    // tab left open after an abandoned pull-back does not poll forever.
+    if (_pullbackFailed && _pullbackRetries < 6) { _pullbackRetries++; armAutosave(); }
+    return;
+  }
+  if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok;
@@ -4795,7 +4823,13 @@ async function fireAutosave() {
   updateSaveChip();
 }
 function renderSaveState() {
-  if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
+  // A failed pull-back leaves isEditableNow() false (re-locked) while _dirty can still be true —
+  // the operator's typing never reached the server. Blanking the chip there hides exactly the
+  // moment "Unsaved" matters most. Every OTHER locked state (ready/sent/etc) never carries a true
+  // _pullbackFailed — every path that sets it also clears it on the next successful transition —
+  // so this only reopens the chip for the failed-pull-back case, not for every genuinely locked
+  // quote.
+  if (!isEditableNow() && !_pullbackFailed) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   // Whether anything typed is being written down at all. fireAutosave() returns early while
   // there is no vehicle type (POST /save prices, and an unpriceable payload cannot be
@@ -4828,7 +4862,123 @@ function updateSaveChip() {
   var el = document.getElementById('ch-savestate');
   if (el) el.outerHTML = renderSaveState(); // targeted swap — a full render() would reopen the place menu
 }
-function markDirty() { _dirty = true; _autoState = 'idle'; armAutosave(); updateSaveChip(); }
+/* Pull-back (owner, 2026-08-22). Editing a quote that is with the founder takes it OUT of the
+   review queue — the founder must never be able to approve content that changed after they read
+   it. Idempotent PER QUOTE: a burst of typing on one open quote fires exactly ONE PATCH, because
+   every caller after the first gets the same in-flight promise back. Never reached for 'ready'
+   (markDirty cannot fire there — the editor is locked), which is the point: dropping a rate lock
+   re-prices, and no keystroke should do that. */
+var _pullbacks = {}, _pullbackFailed = false, _pullbackRetries = 0;
+// Exactly what pullBackFromReview() would compute for the CURRENT quote — pulled out so the three
+// ordering guards below (saveQuote/fireAutosave/transition) each await the promise belonging to
+// whatever quote is open NOW, never a global that might still hold some OTHER quote's in-flight
+// pull-back.
+function pendingPullback() {
+  return state.savedId ? _pullbacks[state.savedId] : null;
+}
+function pullBackFromReview() {
+  var id = state.savedId;
+  if (!id) return null; // nothing persisted yet — there is no review to leave
+  // Per-quote idempotence via a MAP keyed by id, not a single (promise, id) slot — a single slot
+  // can only remember ONE quote's pull-back at a time: quote A pending, PATCH in flight (slot = A)
+  // -> operator opens quote B (also pending_review) and types -> the check doesn't match B, falls
+  // through, B claims the slot, evicting A's promise (still in flight) -> operator clicks back to
+  // A before its PATCH lands and types again -> the check falls through AGAIN -> a SECOND PATCH
+  // fires for A. A map gives every quote its own entry, so there is nothing to fall through to.
+  if (_pullbacks[id]) return _pullbacks[id]; // one burst of typing on THIS quote, one PATCH
+  // Generation guard, same pattern as saveQuote/fireAutosave/reopenQuote: the PATCH below is in
+  // flight across an await, and the operator is free to click a different quote in the queue
+  // before it resolves. reopenQuote()/resetToNew() bump _openSeq — if the resolution below then
+  // went ahead and wrote state.status unguarded, it would stamp this quote's outcome onto
+  // whatever quote is open by the time it lands.
+  var seq = _openSeq;
+  var p = (async function () {
+    // Verify the quote is still pending_review before PATCHing it to draft. Nothing here polls
+    // state.status — it's written only by reopenQuote/saveQuote's response/transition — so an
+    // ops tab left open on this quote while the founder approves it ELSEWHERE still reads
+    // pending_review, and the next keystroke would otherwise PATCH ready -> draft: legal,
+    // un-gated, and it silently drops the frozen rate card (internalQuote.ts:1557). One GET,
+    // shared by the whole burst of typing via the _pullbacks[id] map above.
+    var current = await apiGetQuote(id);
+    if (!current || current.error) {
+      // Could not confirm the status — never PATCH blind. Same shape as the failed-PATCH branch
+      // further down: re-lock if this is still the quote on screen, else just beacon the miss.
+      if (seq !== _openSeq) {
+        window.opsReportError && window.opsReportError('pullBackFromReview', 'status check failed for ' + id + ' after a different quote was opened');
+        return false;
+      }
+      _pullbackFailed = true;
+      showToast('Could not pull this back out of review — ' + ((current && current.error) || 'unknown error'), 'error');
+      render();
+      return false;
+    }
+    if (current.status !== 'pending_review') {
+      // Moved on elsewhere since this tab last synced (approved, sent, ...). A deleted quote
+      // never reaches here — apiGetQuote() 404s, which the `!current || current.error` branch
+      // above already handles. Do NOT PATCH — that would move it to draft from wherever it
+      // actually is now, and for 'ready' that means dropping the frozen rate card. This isn't a
+      // pull-back FAILURE — nothing broke, the quote is just no longer in review — so
+      // _pullbackFailed (which means exactly "the pull-back failed") stays untouched. The
+      // operator's typed edits stay in `state` regardless (they cannot be saved from a
+      // non-savable status, but nothing here discards them); adopt the real status and say what
+      // happened and how to keep going.
+      if (seq === _openSeq) {
+        state.status = current.status;
+        showToast('This quote moved on while you were editing (now ' + (STATUS_LABELS[current.status] || current.status) + ') — use "Reopen to edit" if you still want to change it', 'error');
+        render();
+      }
+      return false;
+    }
+    var res = await apiPatch(id, { status: 'draft' });
+    var ok = !!(res && !res.error);
+    // The write really happened for `id` regardless of what's on screen by the time it resolves,
+    // so the queue-level sync (keyed by id, not by `state`) stays unconditional — a stale entry in
+    // the queue list would be its own (smaller) bug. Deliberate choice: everything below this is
+    // gated on `seq`, because it all reads or writes `state`, which may belong to another quote now.
+    if (ok && window.opsUpsertQuote) window.opsUpsertQuote({ id: id, status: 'draft' });
+    if (ok && window.opsRefreshQuotes) window.opsRefreshQuotes();
+    if (seq !== _openSeq) {
+      // A different quote is open now — state/_pullbackFailed/toast/render all describe THIS
+      // quote, not it, so they stay untouched. But a FAILURE here is otherwise reported nowhere:
+      // `id` is stuck in pending_review with an edit the founder hasn't seen. Same beacon pattern
+      // as reopenQuote's/saveQuote's stale-discard reports.
+      if (!ok) window.opsReportError && window.opsReportError('pullBackFromReview', 'pull-back failed for ' + id + ' after a different quote was opened');
+      return ok;
+    }
+    if (!ok) {
+      // Re-lock rather than let the operator keep typing into something that cannot save. The
+      // explicit "Reopen to edit" button is still there as the manual way out.
+      _pullbackFailed = true;
+      showToast('Could not pull this back out of review — ' + ((res && res.error) || 'unknown error'), 'error');
+      render();
+      return false;
+    }
+    state.status = 'draft';
+    showToast('Pulled back out of review — resubmit when you\'re done');
+    // Safe mid-keystroke: render() diff-renders and restores the focused field's in-progress
+    // text and caret (captureEditorFocus / restoreEditorFocus).
+    render();
+    return true;
+  })();
+  // apiPatch itself cannot reject (it wraps its own try/catch), but render(), showToast() and
+  // window.opsUpsertQuote can throw, and that throw would otherwise propagate as an unhandled
+  // rejection to the three `await pb;` sites (saveQuote/fireAutosave/transition) — in
+  // fireAutosave that means no beacon and a dead autosave cycle, silently.
+  p = p.catch(function (e) { window.opsReportError && window.opsReportError('pullBackFromReview', e); return false; });
+  p = p.finally(function () {
+    // Release by IDENTITY, not by id alone: confirm this promise still owns the map entry before
+    // deleting it. Cheap insurance against a stale release dropping a newer pull-back's ownership
+    // out from under its own awaiters, regardless of how a future caller might schedule one.
+    if (_pullbacks[id] === p) delete _pullbacks[id];
+  });
+  _pullbacks[id] = p; // claim the entry synchronously — no other caller can race this assignment
+  return p;
+}
+function markDirty() {
+  // Ahead of the flag on purpose: the autosave this arms must never reach /save before the PATCH.
+  if (state.status === 'pending_review') pullBackFromReview();
+  _dirty = true; _autoState = 'idle'; armAutosave(); updateSaveChip();
+}
 window.addEventListener('beforeunload', function(e) {
   if (_dirty) {
     e.preventDefault();
@@ -5343,7 +5493,15 @@ var _openSeq = 0;
 // Reset the builder to a blank draft (no prompt — callers decide whether to guard).
 function resetToNew() {
   _openSeq++; // an in-flight reopen must not clobber the fresh draft
+  _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
+  _pullbackRetries = 0;
   legSeq = 0;
+  // Leg ids are per-quote (legSeq resets to 0 above), so a deferred auto-distance callback
+  // parked against the quote we're leaving could resume against a same-numbered leg on the
+  // fresh draft. _openSeq guards the resume itself (see resolveSegmentDistance/
+  // runAutoDistanceSingle); clearing here means there is nothing left to resume at all.
+  Object.keys(_distTimers).forEach(function (k) { clearTimeout(_distTimers[k]); delete _distTimers[k]; });
+  _distCache = {};
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
     firstName: '',
@@ -5552,6 +5710,18 @@ function adoptPricedLegs(sent, res) {
 // toast + re-render (used by transition(), which handles its own feedback).
 async function saveQuote(opts) {
   opts = opts || {};
+  // Ordering guarantee (owner, 2026-08-22): an edit made while the quote was still in review must
+  // not reach /save before the pull-back PATCH lands, or the server 409s not_editable and the
+  // operator's typing is silently lost. `seq` is captured HERE, before that await, and reused
+  // below rather than re-captured — a reopen landing during the await must be caught before this
+  // resumes and saves against `state`, which may belong to a different quote by then. This is the
+  // same seq/await/recheck shape as fireAutosave and transition use around their own pull-back
+  // awaits, and the discard below the actual save is what stops a stale result from persisting.
+  var seq = _openSeq;
+  var pb = pendingPullback(); // this quote's pull-back, if any — see pendingPullback()
+  if (pb) await pb;
+  if (seq !== _openSeq) return false; // a different quote is open now — bail before touching state
+  if (!isSavableNow()) return false; // pull-back failed; pullBackFromReview already said why
   if (!state.vehicleType) {
     showToast('Choose a vehicle type first', 'error');
     return false;
@@ -5563,7 +5733,6 @@ async function saveQuote(opts) {
     if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing', 'error'); }
     return false;
   }
-  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var sent = savePayload();
   var res = await apiSave(sent);
   // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
@@ -5617,6 +5786,21 @@ async function saveQuote(opts) {
   return false;
 }
 
+// ⌘S and the command palette's "Save quote" action share this gate. isEditableNow() lets
+// pending_review through — the editor is live there on screen — but saveQuote() only accepts the
+// SAVABLE set (`if (!isSavableNow()) return false;`), silently, with no toast: an untouched
+// pending_review quote (nothing typed yet, no pull-back in flight) would hit that check and the
+// keypress/menu click would do nothing at all with no explanation. A user-pressed shortcut must
+// never be a silent no-op.
+function saveQuoteFromShortcut() {
+  if (!isEditableNow() || !state.vehicleType) return;
+  if (state.status === 'pending_review' && !pendingPullback()) {
+    showToast('Nothing to save yet — start typing to pull this quote out of review first');
+    return;
+  }
+  saveQuote();
+}
+
 // ── Maker-checker transitions ─────────────────────────────────────────────────
 // Persist current edits (in place), then move the quote to `toStatus`. An optional
 // note (the send-back reason) rides on the PATCH. On success, optionally bounce back
@@ -5624,10 +5808,38 @@ async function saveQuote(opts) {
 async function transition(toStatus, opts) {
   opts = opts || {};
   // Flush pending edits first — but ONLY while the quote is still editable. A ready/sent quote is
-  // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
-  // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
-  // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
-  var editable = isEditableNow(); // review lock: pending_review no longer flushes a save (it would 409)
+  // content-locked server-side (/save -> 409 not_editable) and has no unsaved edits to flush, so
+  // saving first would spuriously abort the move — the /save maker-checker lock (commit 3d93b56)
+  // broke "Mark as sent" and "Reopen to edit" this way before that fix.
+  //
+  // A pull-back PATCH in flight on this quote must land before this reads state.status, or a
+  // concurrent status PATCH from here (e.g. Approve) can race it to the server in either order,
+  // leaving `state` disagreeing with whichever won and possibly dropping the edit that triggered
+  // the pull-back — the same ordering guarantee saveQuote/fireAutosave keep on the /save path.
+  // `seq` guards JUST this await: reopenQuote() can re-point `state` at a different quote while
+  // this is parked here, and without the check below the resumed transition would PATCH whatever
+  // quote is open BY THEN, not the one the operator actually pressed the button on. The flush-save
+  // a few lines below (the one that calls saveQuote) opens the identical kind of window and is
+  // deliberately left unguarded — that hole predates this change and is out of its scope.
+  var seq = _openSeq;
+  var pb = pendingPullback(); // this quote's pull-back, if any — see pendingPullback()
+  if (pb) await pb;
+  if (seq !== _openSeq) return; // a different quote is open now — bail before reading/writing state
+  // Scoped to the pull-back race, not every same-status press: "Reopen to edit" can land while
+  // this same quote's pull-back to draft (just awaited above) is still settling, and that pull-
+  // back already moved state.status to toStatus itself — PATCHing draft -> draft again is not a
+  // transition the server accepts (illegal_transition), and the pull-back's own toast/render/
+  // queue-sync already covered the outcome, so bail silently. Gated on `pb` so an unrelated
+  // same-status press (e.g. a stale double click with no pull-back involved) still reaches the
+  // server and opts.toast/opts.goQueue below, rather than becoming a silent no-op for every
+  // transition.
+  if (pb && state.status === toStatus) return;
+  // Must read the SAVABLE set, not the editable one: pending_review is editable on screen, and
+  // flushing a save there POSTs to /save, takes a 409 and aborts the transition — the same
+  // commit-3d93b56 bug, which widening this to isEditableNow() would silently reintroduce. There
+  // is nothing to flush anyway once pending_review: any edit has already moved the quote to draft
+  // via the pull-back.
+  var editable = isSavableNow();
   /* The transition owns the queue refresh. Letting saveQuote refresh too starts a list request
      before the status PATCH, then another after it, then a third on queue entry. Those responses
      can land out of order and repeatedly move/replace the row under the operator's pointer. */
@@ -5647,13 +5859,28 @@ async function transition(toStatus, opts) {
     return;
   }
   state.status = toStatus;
+  // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
+  // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
+  // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
+  // editor the banner just told the operator to "just start editing" — silently, with no new
+  // failure to explain it. The reset sites in resetToNew/reopenQuote only cover a DIFFERENT quote
+  // being opened; this covers the same one moving on. _pullbackRetries rides along: left nonzero,
+  // a second future failure on this quote would hit its cap early and fireAutosave would stop
+  // re-arming — quietly making "Reopen to edit" the only way out sooner than it should be.
+  _pullbackFailed = false;
+  _pullbackRetries = 0;
   // Mark-sent stamps the price-drift baseline server-side; take it on so the indicator clears
   // immediately rather than lingering until the next reload.
   if (res && res.customerTotalCents !== undefined) {
     state.customerTotalCents = (res.customerTotalCents == null) ? null : Number(res.customerTotalCents);
     state.customerTotalVia = res.customerTotalVia || null;
   }
-  _dirty = false;
+  // Only clear dirty when a flush actually ran. pending_review is editable but not always savable:
+  // a failed pull-back re-locks the editor (isEditableNow() false) but leaves already-typed
+  // content in memory, so `editable` here is false, saveQuote above never ran, and an
+  // unconditional clear would tell the save chip "Saved" over data that never reached the server —
+  // discarding it the moment the operator navigates away.
+  if (editable) _dirty = false;
   if (window.opsUpsertQuote) window.opsUpsertQuote({ id: state.savedId, status: toStatus });
   if (opts.toast) showToast(opts.toast);
   if (opts.goQueue && window.opsGoQuotes) window.opsGoQuotes();
@@ -5954,7 +6181,29 @@ function renderPayLinkRow() {
     + '</div>';
 }
 function markOutcome(s)    { return transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
-function reopenToDraft()   { return transition('draft', { toast: 'Reopened for editing' }); }
+function reopenToDraft() {
+  // A link already out means a number is in the customer's hands right now. BOTH customer links
+  // die the instant this PATCH lands: stateFor() (quotePay.ts) serves a pay link only for
+  // 'ready'/'sent', and the quote view (quoteView.ts) gates on the same two — so reopening drops
+  // a customer mid-checkout onto a dead page.
+  //
+  // Keyed on customerTotalVia being SET AT ALL, never on 'pay_link' specifically. The mint only
+  // stamps `via` when the total actually MOVED (internalQuote.ts), so Quote link → Payment link
+  // at the same total leaves via as 'quote_link' and a pay-link-only test walks straight past a
+  // live pay link. Any via at all means the customer holds this quote, which is exactly what the
+  // prompt needs to say — and it is the honest wording anyway, since a quote link dies here too.
+  //
+  // _payLink additionally covers a link minted THIS session and never echoed back:
+  // mintPayLink()/confirmPayPart() set it and render() immediately on mint, and nothing refetches
+  // the quote afterward. It is cleared wherever a quote is opened or left
+  // (reopenQuote/resetToNew/bookQuote/cancelBook), so it can never leak onto a different quote.
+  //
+  // Scoped to 'ready'/'sent' — the only statuses either link is ever live in — so a
+  // pending_review quote, whose links are already dead, gets no false prompt. A quote with
+  // nothing out stays a single, unconfirmed click.
+  if ((state.customerTotalVia || _payLink) && (state.status === 'ready' || state.status === 'sent') && !window.confirm('You have already sent this quote to the customer. Reopening it will stop any link you sent working. Continue?')) return;
+  return transition('draft', { toast: 'Reopened for editing' });
+}
 
 // Delete (spec 2026-07-22): soft delete + back to the queue. The button only shows for the
 // states/roles the server allows, but the server is authoritative — so map its refusals to
@@ -6132,6 +6381,15 @@ async function pickConfirmPlace(idx) {
 async function reopenQuote(id) {
   if (!id) return;
   var seq = ++_openSeq;
+  _pullbackFailed = false; // per-quote: a failed pull-back must not lock the next one
+  _pullbackRetries = 0;
+  // Leg ids are per-quote (legSeq resets to 0 below once the fetch lands), so a leg id can
+  // collide across quotes. A deferred auto-distance callback parked against the quote we're
+  // LEAVING could otherwise resume against a same-numbered leg on the one we're opening.
+  // _openSeq (just bumped above) guards the resume itself (see resolveSegmentDistance/
+  // runAutoDistanceSingle); clearing here means there is nothing left to resume at all.
+  Object.keys(_distTimers).forEach(function (k) { clearTimeout(_distTimers[k]); delete _distTimers[k]; });
+  _distCache = {};
   var q = await apiGetQuote(id);
   // Superseded while in flight (a newer open, + New quote, or logout): this response is
   // stale — drop it entirely. The error path below is gated too, so a stale failure can't
@@ -6311,8 +6569,8 @@ async function reopenQuote(id) {
     refreshEstimate();
   }
   // D7: this just loads a quote into the builder for viewing/editing — it is NOT the
-  // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" on a locked
-  // in-review quote contradicts its own "In review — locked" banner. "Opened" is honest.
+  // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" here would be
+  // misleading for a quote that hasn't actually left the review queue yet. "Opened" is honest.
   showToast('Opened ' + (q.reference || q.id));
 }
 
@@ -8181,7 +8439,12 @@ function renderActionBar() {
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
+    /* Reopen on 'ready' for ops too (owner, 2026-08-22): anything the customer has not been sent
+       is theirs to pull back. The server already accepted this — only `sent` is founder-gated —
+       so hiding the button was cosmetic. Deliberately the BUTTON and not the type-and-pull-back
+       of pending_review: reopening drops the frozen rate card and re-prices. One line on purpose,
+       like the pending_review row: the action-bar tests scan this bar line-by-line. */
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
@@ -8327,11 +8590,11 @@ function renderSubmitBlockers() {
     '  <p class="ch-blockers-sub">' + (blockers.length === 1 ? 'One thing is' : blockers.length + ' things are')
       + ' still missing. Click one to jump to it.</p>',
     '  <ul class="ch-blockers-list">' + rows + '</ul>',
-    /* A quote already in review is content-LOCKED (isEditableNow), so every field the rows point
-       at is disabled — which reads as a dead list unless we name the one door back in. Reachable
-       for a quote submitted before this gate existed, or one whose price later fell out. */
+    /* A content-LOCKED quote has every field these rows point at disabled — which reads as a dead
+       list unless we name the door back in. Since 2026-08-22 this no longer covers pending_review
+       (that edits in place), so it must not say "while in review" any more. */
     (isEditableNow() ? '' :
-      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked while in review — '
+      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked — '
       + '<b>Reopen to edit</b> to fix these, then resubmit.</p>'),
     '</div>',
   ].join('');
@@ -8373,9 +8636,19 @@ function renderReviewBanner() {
       '<b>' + esc(title) + '</b>' + (body ? '<span>' + esc(body) + '</span>' : '') + '</div>';
   }
   if (s === 'pending_review') {
+    // A failed pull-back re-locks the editor (isEditableNow() reads _pullbackFailed) but leaves
+    // state.status still 'pending_review', so without this branch the banner keeps telling the
+    // operator to "just start editing" over an editor that no longer responds to typing — the
+    // only explanation left is a toast that has already faded. Same flag, same exemption pattern
+    // as the save chip (renderSaveState) and the ⌘S/palette save gate.
+    if (_pullbackFailed) {
+      return banner('amber', 'Could not pull this back out of review', 'Your edit was not saved. Use "Reopen to edit" to try again.');
+    }
+    // States the consequence BEFORE anything is touched — this banner is the whole warning the
+    // pull-back gets, and it has to be readable before the first keystroke, not after it.
     return isApprover()
-      ? banner('amber', 'In review — locked', 'Approve, send back, or reopen to edit.')
-      : banner('amber', 'Submitted — locked', 'With the founder. Reopen to edit if you need to change it.');
+      ? banner('amber', 'In review', 'Approve, send back, or just start editing — editing pulls it back to draft.')
+      : banner('amber', 'Submitted — with the founder', 'Start editing and it comes back to you as a draft to resubmit.');
   }
   if (s === 'changes_requested') {
     return isApprover()
@@ -9728,7 +10001,7 @@ function attachEventListeners() {
   app.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
-      if (isEditableNow() && state.vehicleType) saveQuote();
+      saveQuoteFromShortcut();
       return;
     }
     if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
@@ -9817,7 +10090,13 @@ async function resolveSegmentDistance(legId, i) {
   if (cached[i] === cacheKey) return; // already fetched this exact pair
   cached[i] = cacheKey;
 
+  // legId is a per-QUOTE sequence number (legSeq resets on reopenQuote/resetToNew), so the
+  // same legId can exist on two different quotes. The leg-identity checks below only prove
+  // "a leg that still looks like this one exists" — they can't tell whether it's still the
+  // SAME QUOTE's leg. _openSeq (bumped on every reopen/reset) closes that gap.
+  var seq = _openSeq;
   var seg = await apiDistance(from, to);
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
 
   // Guard: leg/stops may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
@@ -9846,7 +10125,13 @@ async function runAutoDistanceSingle(legId) {
   if (cached[0] === cacheKey) return; // already fetched this exact from/to
   cached[0] = cacheKey;
 
+  // legId is a per-QUOTE sequence number (legSeq resets on reopenQuote/resetToNew), so the
+  // same legId can exist on two different quotes. The leg-identity checks below only prove
+  // "a leg that still looks like this one exists" — they can't tell whether it's still the
+  // SAME QUOTE's leg. _openSeq (bumped on every reopen/reset) closes that gap.
+  var seq = _openSeq;
   var seg = await apiDistance(from, to);
+  if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
 
   // Guard: leg may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
@@ -9861,6 +10146,7 @@ async function runAutoDistanceSingle(legId) {
     // auto-open the modal once (guarded). One compare call per resolved leg; maps.ts caches
     // variants 24h so re-renders/edits don't re-bill.
     var v = await apiDistance(from, to, true);
+    if (seq !== _openSeq) return; // a different quote is open now — bail before touching state
     var live = state.legs.find(function (l) { return l.id === legId; });
     if (live && live.stops.length === 2 && legFrom(live).trim() === from && legTo(live).trim() === to && !live.segments[0].manual) {
       if (v && v.variants) { live.routeOptions = v.variants; live._sameRoute = false; }
@@ -10882,7 +11168,7 @@ window.opsQuoteKbar = function() {
   var root = document.getElementById('quoteRoot');
   if (!root || root.hidden || !root.querySelector('.ch-app')) return [];
   var acts = [];
-  if (isEditableNow() && state.vehicleType) acts.push({ label: 'Save quote', hint: '\u2318S', run: function() { saveQuote(); } });
+  if (isEditableNow() && state.vehicleType) acts.push({ label: 'Save quote', hint: '\u2318S', run: function() { saveQuoteFromShortcut(); } });
   if (isEditableNow()) acts.push({ label: 'Add leg', hint: '\u21B5 in a leg', run: function() { addLeg('transfer'); } });
   return acts;
 };

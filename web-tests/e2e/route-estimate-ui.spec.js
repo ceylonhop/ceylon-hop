@@ -13,6 +13,24 @@ const BROWSE_QUERY = [
   'estimateId=cmb-airport%3Ehikkaduwa%3Areviewed-v1',
 ].join('&');
 
+test('homepage popular transfers use the shared compact estimate and money format', async ({ page }) => {
+  await page.goto('/index.html');
+
+  const kandyElla = page.locator('#home-transfers .tcard', { hasText: 'Kandy' })
+    .filter({ hasText: 'Ella' });
+  await expect(kandyElla.locator('.tc-meta')).toHaveText('Approx. 135 km · 3h 45m');
+  await expect(kandyElla.locator('.tc-meta')).not.toContainText('about 3h 47m');
+  await expect(kandyElla.locator('.tc-meta')).not.toContainText('private, door to door');
+
+  const airportKandy = page.locator('#home-transfers .tcard', { hasText: 'Colombo Airport' })
+    .filter({ hasText: 'Kandy' });
+  await expect(airportKandy.locator('.tc-price')).toContainText('from $52.50 fixed');
+
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(kandyElla.locator('.tc-meta')).toHaveText('Approx. 135 km · 3h 45m');
+  expect(await page.locator('body').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
 test('search and booking show the same rounded browse estimate', async ({ page }) => {
   await gotoBooking(page, {
     path: '/search.html',

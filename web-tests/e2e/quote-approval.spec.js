@@ -35,6 +35,9 @@ function summary(over) {
     // Same plumbing for the per-quote approve flag: not part of the real summary shape (the queue
     // renders no approve affordance), carried here only so the GET /:id stub can reflect it.
     ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
+    // Same plumbing again, for "does this quote already have a pay link out" (owner decision,
+    // reopen-with-live-link confirm). Not part of the real summary shape either.
+    ...('customerTotalVia' in over ? { customerTotalVia: over.customerTotalVia } : {}),
     ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
@@ -77,6 +80,9 @@ function fullQuote(over) {
     // approve THIS quote". Absent on most fixtures, which is the honest default — the client must
     // treat a missing flag as "no", never fall back to the capability.
     ...('mayApprove' in over ? { mayApprove: over.mayApprove } : {}),
+    // 'pay_link' means a link was minted against this quote and a number is with the customer —
+    // reopenToDraft() reads this to decide whether to confirm before PATCHing (owner decision).
+    customerTotalVia: over.customerTotalVia || null,
     // Phase 3b: the real GET /:id ships the quote priced against its locked card. Mirror that so
     // reopening a ready/sent quote renders this frozen estimate instead of the live /estimate.
     estimate: over.estimate || {
@@ -116,7 +122,10 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     // flag is the gate; this cap being present here is what makes that distinction testable.
     ops: ['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read'],
   };
-  const store = { patches: [], saves: [], list: quotes.slice() };
+  // `events` interleaves saves and patches in the order the server actually received them —
+  // `patches`/`saves` alone can't prove ORDERING between the two request types, only what each
+  // contained. See "the pull-back PATCH always precedes any /save for that quote" below.
+  const store = { patches: [], saves: [], events: [], list: quotes.slice() };
 
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
@@ -142,13 +151,16 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
           // Mirror the real API's maker-checker lock: a content re-save is only allowed while the
           // quote is still editable; a ready/sent/decided quote 409s (internalQuote /save guard).
           if (!['draft', 'pending_review', 'changes_requested'].includes(existing.status)) {
+            store.events.push({ type: 'save', id: body.id, statusCode: 409 });
             return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_editable', status: existing.status }) });
           }
+          store.events.push({ type: 'save', id: body.id, statusCode: 200 });
           const bodyName = customerNameFromBody(body);
           if (bodyName) existing.customerName = bodyName;
           return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
         }
       }
+      store.events.push({ type: 'save', id: body.id || null, statusCode: 200 });
       const bodyName = customerNameFromBody(body);
       const saved = fullQuote({ id: 'new1', status: 'draft', customerName: bodyName });
       store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: bodyName }));
@@ -159,6 +171,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
       const id = m[1];
       const body = JSON.parse(req.postData() || '{}');
       store.patches.push({ id, ...body });
+      store.events.push({ type: 'patch', id, status: body.status });
       const existing = store.list.find((q) => q.id === id);
       if (existing && body.status) existing.status = body.status;
       return r.fulfill(json(fullQuote({ id, status: body.status || 'draft' })));
@@ -166,7 +179,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}), ...('mayApprove' in existing ? { mayApprove: existing.mayApprove } : {}) })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}), ...('mayApprove' in existing ? { mayApprove: existing.mayApprove } : {}), ...('customerTotalVia' in existing ? { customerTotalVia: existing.customerTotalVia } : {}) })));
     }
     return r.fulfill(json({}));
   });
@@ -285,12 +298,14 @@ test('founder on a pending_review quote gets Approve + Send back + the reopen do
   await expect(page.locator('.ch-status-pill')).toContainText('In review');
   await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
   await expect(actions(page).locator('[data-action="sendBack"]')).toBeVisible();
-  // Review lock (owner, 2026-07-17): submission freezes content — the banner names the lock,
-  // the action bar offers the one door back in, and the editor renders inert.
+  // The founder's review powers are unchanged; what changed (2026-08-22) is that the editor
+  // underneath them is live, and touching it pulls the quote back out of review.
   await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
-  await expect(page.locator('.ch-review-banner')).toContainText(/locked/i);
-  await expect(page.locator('#quoteRoot .ch-app')).toHaveClass(/ch-locked/);
-  await expect(page.locator('#f-firstName')).toBeDisabled();
+  // Owner, 2026-08-22: review no longer freezes content. The banner warns that editing pulls the
+  // quote back, and the editor is live — the guarantee is kept by the pull-back, not by a lock.
+  await expect(page.locator('.ch-review-banner')).toContainText(/pulls it back to draft/i);
+  await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeEnabled();
 });
 
 // ── Ops self-approval (plan 2026-08-11) ──────────────────────────────────────
@@ -390,6 +405,184 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
   await actions(page).locator('[data-action="reopenToDraft"]').click();
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// The gate is keyed on customerTotalVia being SET, never on 'pay_link' — and this is the case that
+// proves why. POST /quotes/:id/pay-link only stamps `via` when the quote total MOVED
+// (internalQuote.ts), so on a 'ready' quote: press Quote link (stamps 'quote_link'), then press
+// Payment link at the same total, and the quote still reads via === 'quote_link' with a LIVE pay
+// link out. A gate testing === 'pay_link' walks straight past it and the reopen kills that link
+// silently. Reopening also kills the quote link itself (quoteView.ts gates on ready/sent too), so
+// confirming here is right whichever link went out.
+test('reopening a ready quote confirms when only a quote link was recorded, not just a pay link', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'quote_link' });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  // Dismissed, so nothing may have been PATCHed.
+  await page.waitForLoadState('networkidle');
+  expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(0);
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready to send');
+});
+
+// Owner decision (post-review): a 'ready' quote can already have a pay link minted against it —
+// stateFor() (quotePay.ts) only serves 'ready'/'sent' as payable, so the instant the reopen PATCH
+// lands the link goes 'unavailable' and a customer mid-checkout hits a dead page. Reopening such
+// a quote must confirm first; a linkless ready quote must stay a single click.
+test('reopening a ready quote WITH a pay link out asks for confirmation, and cancelling sends no PATCH', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'pay_link' });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  // The dialog is synchronous from the page's perspective — give Playwright's CDP round-trip a
+  // moment to have delivered and dismissed it before asserting on the aftermath.
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  expect(dialogMessage).toMatch(/stop any link you sent working/i);
+  // A real settle window, not a single sample taken the instant the dialog resolves — matching
+  // how the sibling "PATCH precedes /save" test below corroborates its own negative (no 409
+  // taken) by waiting for a definite subsequent signal, not a snapshot. window.confirm IS
+  // synchronous and the `return` precedes any await, so a racing PATCH shouldn't be possible by
+  // construction — this proves it instead of assuming it.
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
+});
+
+test('reopening a ready quote WITH a pay link out and confirming proceeds to PATCH', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready', customerTotalVia: 'pay_link' });
+  page.on('dialog', (dialog) => dialog.accept());
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+test('reopening a ready quote with NO pay link out never prompts', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' }); // no customerTotalVia
+  let dialogFired = false;
+  page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(dialogFired).toBe(false);
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Review finding 1 (critical): mintPayLink()/confirmPayPart() set _payLink and render() on mint,
+// but neither sets customerTotalVia and nothing refetches the quote afterward — so gating the
+// confirm on customerTotalVia alone misses the exact adjacency the confirm exists for: mint a
+// link, then immediately press the "Reopen to edit" button right beside it, in the same session.
+test('minting a pay link THIS session also confirms before reopening, even though customerTotalVia is not stamped yet', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' }); // no customerTotalVia
+  await page.route('**/admin/quote/q1/pay-link', (r) => r.fulfill(json({ url: 'https://pay.example.test/q1', payhereMode: 'off', amountCents: 12100 })));
+  await actions(page).locator('[data-action="mintPayLink"]').click();
+  // payLinkPress() mints then copies synchronously — the button flips to "Link copied ✓" once
+  // _payLink is set, which is what the confirm below is actually gated on.
+  await expect(actions(page).locator('[data-action="mintPayLink"]')).toContainText('Link copied', { timeout: 10000 });
+  let dialogMessage = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.dismiss();
+  });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect.poll(() => dialogMessage, { timeout: 10000 }).not.toBeNull();
+  expect(dialogMessage).toMatch(/already sent this quote/i);
+  expect(dialogMessage).toMatch(/stop any link you sent working/i);
+  // Real settle window before trusting the negative — see the sibling cancel test above.
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('.ch-status-pill')).toContainText('Ready'); // nothing moved
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(false);
+});
+
+// Review finding 2 (minor): stateFor() (quotePay.ts) already returns 'unavailable' for
+// pending_review, so a link stamped BEFORE the quote was sent back into review is already dead —
+// warning "reopening will stop it working" there would be false, and pure friction.
+test('a pending_review quote with a stamped pay link does not prompt — the link is already dead per stateFor()', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'pending_review', customerTotalVia: 'pay_link' });
+  let dialogFired = false;
+  page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(dialogFired).toBe(false);
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Editing in review (owner, 2026-08-22). Ops does not have to find the reopen button first —
+// typing is the gesture, and it takes the quote out of the founder's queue on the way.
+test('ops typing on a pending_review quote pulls it back to draft, once', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'pending_review' });
+  // With a 0ms mocked round-trip, if the PATCH resolves between keystrokes then state.status is
+  // already 'draft' by the second keystroke and markDirty() never re-enters pullBackFromReview()
+  // at all — toHaveLength(1) below would pass with NO idempotence guard present. Hold the PATCH so
+  // every one of the 5 keystrokes is guaranteed to fire while the pull-back is still in flight.
+  //
+  // The hold is also what makes the ordering assertions below actually exercise the guarantee they
+  // name, rather than passing on debounce timing alone: the autosave debounce is 2.5s
+  // (ops-ui.html:4760), so the hold must clear that bar. At 300ms the PATCH always resolved (and
+  // its map entry cleared) well before the debounce ever fired, so saveQuote's/fireAutosave's own
+  // `if (pb) await pb;` guards were never actually awaiting anything by the time either ran — the
+  // PATCH-before-/save order held by coincidence of timing, not because a guard enforced it, and
+  // deleting either guard left both assertions green. At 4000ms the debounce fires FIRST, while the
+  // pull-back is still genuinely in flight, so the guard is what makes the /save wait for the PATCH
+  // — without it the assertions below would go red.
+  //
+  // Registered after openDetail() so it wins (Playwright matches routes in reverse registration
+  // order); falls back to the harness's own handler for everything else, including the PATCH
+  // itself once the delay has elapsed.
+  await page.route('**/admin/quote/**', async (route) => {
+    if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 4000));
+    await route.fallback();
+  });
+  await expect(page.locator('#quoteRoot .ch-app')).not.toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeEnabled();
+  // page.fill sets the value and dispatches exactly ONE input event — markDirty() would fire once
+  // no matter what, so it can't tell an idempotence guard from no guard at all. pressSequentially
+  // types character-by-character (5 input events for "Nimal"), which actually exercises the
+  // `if (_pullbacks[id]) return _pullbacks[id];` early-return in pullBackFromReview().
+  await page.locator('#f-firstName').pressSequentially('Nimal');
+  // Idempotence alone doesn't prove the ORDERING guarantee — that no POST /save for this quote is
+  // ever issued before the PATCH {status:'draft'} that pulls it back, and that it never takes a
+  // 409 (not_editable) on the way. That guarantee is the whole reason the pull-back design exists
+  // (the server keeps refusing /save for pending_review).
+  //
+  // Pressing Cmd/Ctrl+S HERE — immediately, while the PATCH above is still held — exercises the
+  // MANUAL-save entry point directly: ops-ui.html's keydown handler routes through
+  // saveQuoteFromShortcut(), which (since a pull-back is already in flight for this quote) calls
+  // saveQuote() itself, not through fireAutosave, which has its own independent
+  // `if (pb) await pb;` guard on the debounced path. Relying on the debounce alone would only ever
+  // prove fireAutosave's copy of the guard; this proves the invariant holds from BOTH entry points
+  // a real operator can trigger a save from.
+  await page.keyboard.press('Control+s');
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 15000 });
+  // Idempotent: a whole name typed in is still exactly one status PATCH, not one per keystroke.
+  expect(store.patches.filter((p) => p.id === 'q1' && p.status === 'draft')).toHaveLength(1);
+
+  // The held PATCH (300ms -> 4000ms, above the 2.5s autosave debounce) is what makes this able to
+  // fail at all, rather than passing on timing coincidence: at 300ms the PATCH always resolved
+  // before either save path could race it, so the order held regardless of any guard. Verified by
+  // deliberately breaking it: stripping BOTH `if (pb) await pb;` lines (saveQuote's and
+  // fireAutosave's) times this test out — no /save is ever sent,
+  // because saveQuote's own isSavableNow() check blocks it while pending_review and nothing retries
+  // once the pull-back lands. Stripping only ONE of the two still passes, because they are
+  // deliberately redundant: fireAutosave's guard covers the debounced path end to end, saveQuote's
+  // covers the manual Cmd+S path end to end, and this test drives both paths. That redundancy is
+  // correct — do not read "removing one guard alone doesn't fail this test" as the guard being
+  // unnecessary.
+  await expect.poll(() => store.events.some((e) => e.type === 'save' && e.id === 'q1'), { timeout: 15000 })
+    .toBe(true);
+  const q1Events = store.events.filter((e) => e.id === 'q1');
+  const patchIdx = q1Events.findIndex((e) => e.type === 'patch' && e.status === 'draft');
+  const saveIdx = q1Events.findIndex((e) => e.type === 'save');
+  expect(patchIdx).toBeGreaterThanOrEqual(0);
+  expect(saveIdx).toBeGreaterThan(patchIdx); // the PATCH must precede any /save, not just exist
+  expect(q1Events.some((e) => e.type === 'save' && e.statusCode === 409)).toBe(false); // no 409 taken
 });
 
 // Phase 3b: opening a ready/sent quote must show the FROZEN price the server priced against the
@@ -522,4 +715,20 @@ test('no console errors while opening the detail view and switching output tabs'
   await page.locator('[data-action="backToQueue"]').click();
   await expect(page.locator('#view .qhead')).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+// Owner, 2026-08-22: "as long as it's not sent to customer an ops person should be able to
+// reopen." The server already allows ready → draft for ops (only `sent` is founder-gated), so
+// this is the UI catching up with the rule, not a new permission.
+test('ops on a ready quote gets the reopen door', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'ready' });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+test('ops on a SENT quote still has no reopen door', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'sent' });
+  await expect(actions(page).locator('[data-action="markWon"]')).toBeVisible(); // bar did render
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toHaveCount(0);
 });
