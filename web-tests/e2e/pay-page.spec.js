@@ -188,23 +188,41 @@ test('paid: cells the quote never stated are omitted, not filled with "To confir
   await expect(page.locator('.pass-info')).toContainText('Paid'); // the ones we DO have still show
 });
 
-test('revised and unavailable share the sailed-off screen: facts, WhatsApp, no leak', async ({ page }) => {
-  for (const state of ['revised', 'unavailable']) {
-    await page.unrouteAll();
-    await stubView(page, { state });
-    await page.goto(PAGE);
-    // The 404-sibling screen (spec 2026-07-31): eyebrow → pun headline → lead → WhatsApp.
-    await expect(page.locator('.de-eyebrow')).toContainText('no longer active');
-    await expect(page.locator('h1.de-title')).toContainText('This quote has sailed off somewhere sunny');
-    await expect(page.locator('.de-lead')).toContainText('Nothing has been charged');
-    await expect(page.locator('a.btn-wa')).toHaveAttribute('href', 'https://wa.me/94779669662');
-    await expect(page.locator('svg.de-art')).toBeVisible(); // the boat scene
-    await expect(page.locator('#paybtn')).toHaveCount(0);   // never re-offer Pay
-    // Privacy: a dead-end must not leak quote data the API deliberately withholds.
-    const body = await page.locator('body').innerText();
-    expect(body).not.toContain('$');
-    expect(body).not.toContain('LKR');
-  }
+test('unavailable gets the sailed-off screen: facts, WhatsApp, no leak', async ({ page }) => {
+  await stubView(page, { state: 'unavailable' });
+  await page.goto(PAGE);
+  // The 404-sibling screen (spec 2026-07-31): eyebrow → pun headline → lead → WhatsApp.
+  await expect(page.locator('.de-eyebrow')).toContainText('no longer active');
+  await expect(page.locator('h1.de-title')).toContainText('This quote has sailed off somewhere sunny');
+  await expect(page.locator('.de-lead')).toContainText('Nothing has been charged');
+  await expect(page.locator('a.btn-wa')).toHaveAttribute('href', 'https://wa.me/94779669662');
+  await expect(page.locator('svg.de-art')).toBeVisible(); // the boat scene
+  await expect(page.locator('#paybtn')).toHaveCount(0);   // never re-offer Pay
+  // Privacy: a dead-end must not leak quote data the API deliberately withholds.
+  const body = await page.locator('body').innerText();
+  expect(body).not.toContain('$');
+  expect(body).not.toContain('LKR');
+});
+
+// A revised link is NOT the same event as an expired one: we changed the quote after sending it,
+// so the customer did nothing wrong and a new link is coming. Sending them the sailed-off dead end
+// at the moment they decided to pay reads as "your link is dead, good luck" — these assertions
+// exist to stop the two screens being quietly collapsed back together.
+test('revised gets its own screen: says it was updated, promises a new link, never says sailed off', async ({ page }) => {
+  await stubView(page, { state: 'revised' });
+  await page.goto(PAGE);
+  await expect(page.locator('.de-eyebrow')).toContainText('updated');
+  await expect(page.locator('h1.de-title')).toContainText('This quote has been updated');
+  await expect(page.locator('h1.de-title')).not.toContainText('sailed off');
+  // Leads with the money question, then says something is coming.
+  await expect(page.locator('.de-lead')).toContainText('Nothing has been charged');
+  await expect(page.locator('.de-lead')).toContainText('A fresh link is on its way');
+  await expect(page.locator('a.btn-wa')).toHaveAttribute('href', 'https://wa.me/94779669662');
+  await expect(page.locator('#paybtn')).toHaveCount(0); // never re-offer Pay at a stale price
+  // Same privacy rule as the dead end: the API withholds the quote, so the page cannot name one.
+  const body = await page.locator('body').innerText();
+  expect(body).not.toContain('$');
+  expect(body).not.toContain('LKR');
 });
 
 test('sailed-off screen animation is guarded for reduced motion', async ({ page }) => {
