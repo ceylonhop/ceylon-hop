@@ -205,6 +205,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .lcard-new p{font-size:.92rem;color:var(--ink-soft);max-width:26ch;margin:0 auto}
 .lcard-new .hand{display:block;margin-top:10px;font-size:1.25rem;color:var(--teal-deep)}
 
+/* ---------- phones: an always-there way to start a list ----------
+   The tile above is the last cell of the grid, which on a phone is several screen-tall
+   cards away — a tester never scrolled to it. The filter strip is already sticky, but at
+   375px it has no room for a labelled button beside the two place dropdowns: a <select>
+   needs ~54px of chrome (padding + arrow) on top of its text, and "Nuwara Eliya" alone
+   measures 160px. So the action gets its own bar, same fixed + safe-area pattern as
+   booking.html's .mbar. Ghost, not solid: joining a list is still the board's primary
+   action and the teal card buttons must stay louder than this one. */
+.start-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:80;
+  padding:10px 20px calc(10px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg,rgba(255,253,248,.85),var(--paper) 40%);
+  box-shadow:0 -1px 0 rgba(44,42,43,.1),0 -10px 24px rgba(44,42,43,.07)}
+.start-bar .btn{gap:.5rem}
+.start-bar .btn svg{width:17px;height:17px;flex:none}
+
 /* ---------- below: honest details + founder note ---------- */
 .below-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(30px,4vw,60px);align-items:start}
 @media(max-width:880px){.below-grid{grid-template-columns:1fr}}
@@ -566,6 +581,12 @@ body.detail-open .detail{display:block}
 
 /* ---------- phones: compact card + capped board ---------- */
 @media(max-width:640px){
+  /* the fixed start bar, and the two things it would otherwise sit on top of */
+  .start-bar{display:block}
+  body{padding-bottom:calc(70px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+  /* a ride's own page already asks you to add your name — don't compete with it */
+  body.detail-open .start-bar{display:none}
   .frow{grid-template-columns:1fr}
   /* the sign-up list is most of the card's height — swap it for the one-line roster */
   .lcard-list{display:none}
@@ -842,9 +863,17 @@ body.detail-open .detail{display:block}
 
 
 <!-- ================= TOAST ================= -->
+<!-- Phones only (see .start-bar). The create tile is the grid's last cell, so on a phone
+     the same action also lives in a bar that never scrolls away. -->
+<div class="start-bar" id="start-bar">
+  <button class="btn btn-ghost btn-block" id="start-bar-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    Start your own list
+  </button>
+</div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=664cba7583" defer></script>
+<script src="board.js?v=88f2caa43c" defer></script>
 </body>
 </html>
