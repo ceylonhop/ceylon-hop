@@ -1132,8 +1132,11 @@ window.step=function(which,d){
 };
 window.toggleAddon=function(el){
   const a=el.dataset.addon;
-  if(state.addons.has(a)){state.addons.delete(a);el.classList.remove('on');}
-  else{state.addons.add(a);el.classList.add('on');}
+  const selected=!state.addons.has(a);
+  if(selected)state.addons.add(a);
+  else state.addons.delete(a);
+  el.classList.toggle('on',selected);
+  el.setAttribute('aria-pressed',String(selected));
   render();
 };
 // Add-on prices come from the generated EXTRAS table (transfers-data.js, sourced from
@@ -1865,7 +1868,23 @@ function render(){
     // Due now sits beside the summary total on this step, so it takes the same treatment — one
     // of the two reading "Calculating…" while the other showed a figure would be its own
     // small lie about which number is current.
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
+    // Display label ONLY, same treatment search.html's h1 got: a Google-picked endpoint lands in
+    // r.name as its full formatted address ("Ratmalana Airport, New Airport Road, Dehiwala-Mount
+    // Lavinia, Sri Lanka"), and this row gives the label only the half the money does not take —
+    // six wrapped lines at 375px. r.name itself is untouched, so the name that reaches the API,
+    // the booking payload and the confirmation email is still the full stored one.
+    //
+    // The service prefix r.name carries ("Private transfer · ") is dropped with it. It is the
+    // customer's own pick from step 3, and the summary panel beside this row already names it
+    // twice on desktop — while on mobile that panel is visibility:hidden, so the word was buying
+    // a wrapped line in the money row and telling nobody anything new. The endpoints come from
+    // r.stops rather than by trimming r.name: they are the very strings r.name was built from, so
+    // this is that name minus its prefix, with no string surgery to drift out of step.
+    const dueRoute = (routeNamePrefix && !isTrip)
+      ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
+      : r.name;
+    const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
@@ -2284,11 +2303,55 @@ function simulatePayThenConfirm(booking){
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(booking); }, 3400);
 }
 
+function phShowSettlementPending(){
+  document.getElementById('ph-spin').style.display='none';
+  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  const ico=document.getElementById('ph-ico');
+  if(ico){
+    ico.hidden=false; ico.className='ph-ico warn';
+    ico.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  }
+  const m=document.getElementById('ph-msg');
+  m.className='ph-msg ph-msg-big';
+  m.textContent='Payment is still being confirmed. Don’t try again—we’ll email you when it lands.';
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=true;
+  document.getElementById('ph-actions').hidden=false;
+  document.getElementById('ph-overlay').classList.add('show');
+}
+
+async function waitForPaymentConfirmation(checkout, booking){
+  const token=checkout && checkout.payReturnToken;
+  if(!token) return phShowSettlementPending();
+  phShowLoading('Confirming your payment…');
+  const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  const url=API+'/bookings/pay-return?rt='+encodeURIComponent(token);
+  for(let attempt=0; attempt<15; attempt++){
+    try{
+      const res=await fetch(url,{method:'GET',cache:'no-store'});
+      if(res.ok){
+        const result=await res.json();
+        if(result.status==='paid'){
+          document.getElementById('ph-overlay').classList.remove('show');
+          return finalizeBooking(booking);
+        }
+        if(result.status==='failed'){
+          return phShowEnd('error','Your payment wasn’t confirmed. No booking has been completed — please try again or message us on WhatsApp.');
+        }
+      }
+    }catch(e){ /* transient network failure — settlement may still arrive */ }
+    if(attempt<14) await new Promise(resolve=>setTimeout(resolve,1200));
+  }
+  return phShowSettlementPending();
+}
+
 // Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
-// truth for "paid"; onCompleted just shows the customer their confirmation.
+// truth for "paid"; onCompleted starts a short poll of that server-owned state.
 function startPayHere(checkout, booking){
   const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-  payhere.onCompleted = function(){ document.getElementById('ph-overlay').classList.remove('show'); finalizeBooking(booking); };
+  payhere.onCompleted = function(){ waitForPaymentConfirmation(checkout, booking); };
   payhere.onDismissed = function(){ showPayDismissed(); };
   payhere.onError = function(){ showPayFailed(); };
   payhere.startPayment(payment);
@@ -2574,7 +2637,7 @@ function finalizeBooking(apiBooking){
   if(cc){
     let extra='';
     if(state.flexDate||state.flexTime) extra=' Just let us know your exact date & time any time up to 12 hours before — a quick WhatsApp is all it takes.';
-    cc.innerHTML=`A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You’ll hear from us first thing in the morning.${extra}`;
+    cc.innerHTML=`Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.${extra}`;
   }
   // "Your seat is booked! ... See you on board" was shown for every product, including a
   // multi-day private trip where there is no seat and no "board".
@@ -2583,8 +2646,8 @@ function finalizeBooking(apiBooking){
   if(ct) ct.textContent = isShared ? 'Your seat is booked!' : (isTrip ? 'Your trip is booked!' : 'Your transfer is booked!');
   if(cl){
     const base = isShared
-      ? 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up. See you on board \ud83c\udf34'
-      : 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.';
+      ? 'Payment received. Your confirmation and trip summary have been emailed. See you on board \ud83c\udf34'
+      : 'Payment received. Your confirmation and trip summary have been emailed.';
     cl.textContent = base;
   }
   document.getElementById('main-layout').style.display='none';

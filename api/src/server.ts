@@ -30,6 +30,7 @@ import { initTracking } from './observability/track';
 import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './db/postgresRefundRepo';
+import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -142,6 +143,7 @@ const app = createApp({
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),
+  shortLinks: new PostgresCustomerShortLinkRepo(db),
   adapter,
   paygw: ridePaygw,
   maps,

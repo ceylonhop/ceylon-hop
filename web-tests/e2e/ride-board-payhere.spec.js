@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isApiRequest } from './_api-host.js';
 
 const list = {
   code: 'GM-2468', corridorId: 'south-coast', from: 'Galle', to: 'Mirissa',
@@ -8,13 +9,9 @@ const list = {
   members: [{ position: 1, firstName: 'Ana', country: 'DE', photoUrl: null, seats: 1, isStarter: true, isYou: false }],
 };
 
-const isApi = (url) => {
-  const u = new URL(url);
-  return /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
-};
 
 async function stubSignedInBoard(page, joinHandler) {
-  await page.route((u) => isApi(u.href), async (route) => {
+  await page.route((u) => isApiRequest(new URL(u.href)), async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
     if (path === '/board/me') {
@@ -94,7 +91,7 @@ test('the PayHere return shows success only after the API reports signed approva
     ],
   };
   let polls = 0;
-  await page.route((u) => isApi(u.href), async (route) => {
+  await page.route((u) => isApiRequest(new URL(u.href)), async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/board/me') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ me: { firstName: 'Roshen', country: 'LK', photo: null } }) });
     if (path === '/board') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [list] }) });

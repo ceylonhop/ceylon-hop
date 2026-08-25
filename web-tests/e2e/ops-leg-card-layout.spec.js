@@ -53,10 +53,12 @@ async function stubOps(page) {
     chauffeurDayRateCents: 3500, fxUsdToLkr: 330, bufferPct: 10,
   })));
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 152, durationMin: 190 })));
-  // A quote that has left draft: status pending_review drives isEditableNow() false,
-  // which is what puts .ch-locked on the editor. Pattern from ops-approve-first-press.
+  // A quote that is content-locked: status 'ready' drives isEditableNow() false, which is what
+  // puts .ch-locked on the editor. Pattern from ops-approve-first-press.
+  // 'ready' rather than 'pending_review' since 2026-08-22: review no longer locks content, so
+  // an in-review fixture would no longer be locked and this spec would stop testing anything.
   await page.route('**/admin/quote/q_locked', (r) => r.fulfill(json({
-    id: 'q_locked', reference: 'Q-LOCK', status: 'pending_review',
+    id: 'q_locked', reference: 'Q-LOCK', status: 'ready',
     customerName: 'Maya Silva', customerContact: '+94770000000',
     totalCents: 6000, currency: 'USD', requestedService: 'private',
     assignedTo: 'founder@e2e.test', createdBy: 'founder@e2e.test',

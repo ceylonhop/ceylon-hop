@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isApiRequest } from './_api-host.js';
 
 // Share links used to be built as https://ceylonhop.com/board/<code> — the old WordPress
 // apex, which 404s, on a path nothing serves. Every link a starter sent was dead, and the
@@ -17,13 +18,14 @@ const LIST = {
   ],
 };
 
-const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
+// The API, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically, and
+// SAME-ORIGIN under the offline test server, which rewrites every live-API request to its own
+// origin with the path intact (serve-booking.js). Both forms are matched, so these stay
+// stubbed whether or not that rewrite is in play.
+//
 
 async function stubApi(page) {
-  await page.addInitScript(() => {
-    try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) { /* ignore */ }
-  });
-  await page.route((u) => isApiHost(u), (route) => {
+  await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [LIST] }) });

@@ -1269,6 +1269,11 @@
     document.body.style.overflow = 'hidden';
   }
   function closeModal() { overlay.classList.remove('open'); document.body.style.overflow = ''; creating = false; }
+  // The phones-only bar at the bottom of the screen (board.html .start-bar). Same target as
+  // the tile at the end of the grid — that one is several screen-heights down on a phone.
+  var startBar = document.getElementById('start-bar-btn');
+  if (startBar) startBar.addEventListener('click', function () { openModal(null); });
+
   document.getElementById('modal-close').addEventListener('click', closeModal);
   overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
 

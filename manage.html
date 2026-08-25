@@ -8,17 +8,16 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css?v=8bf6f8423a">
+<link rel="stylesheet" href="site.css?v=80d895de52">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='manage';</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<script src="consent.js?v=c2f4a12415" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -63,7 +62,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
-  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — our team replies during Sri Lanka service hours.</div>';}
 
   // Clarity masks form INPUTS by default, not rendered text — and the greeting carries the
   // customer's first name. The booking reference stays legible on purpose: it is the join key
