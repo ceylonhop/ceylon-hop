@@ -90,6 +90,13 @@ const Env = z.object({
     .enum(['0', '1', 'false', 'true'])
     .default('false')
     .transform((value) => value === '1' || value === 'true'),
+  // Branded customer short links (spec 2026-08-24 §7.5). Gates MINTING only — GET /s/:code stays
+  // enabled unconditionally, so aliases already sent keep resolving after this is turned off.
+  // An enum, not a truthy string: production must not activate because a value was non-empty.
+  CUSTOMER_SHORT_LINKS_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   QUOTE_V2_ENABLED: z
     .enum(['0', '1', 'false', 'true'])
     .default('false')

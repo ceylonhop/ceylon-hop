@@ -26,3 +26,11 @@ export function customerShortCodeDigest(code: string): string {
 export function isCustomerShortCode(code: string): boolean {
   return CODE_PATTERN.test(code);
 }
+
+/**
+ * The public alias URL for a code. `base` is the kind-correct customer origin — pay codes on the
+ * pay host, quote codes on the quote host — so the link a customer reads matches what it does.
+ */
+export function customerShortUrl(base: string, code: string): string {
+  return `${base.replace(/\/+$/, '')}/s/${code}`;
+}
