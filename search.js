@@ -560,7 +560,7 @@ if(help){
     <div class="help-ico">${ICON.wa}</div>
     <div class="help-txt">
       <b>Not sure which to pick, or need a custom route?</b>
-      <p>Message a real Hop planner — we usually reply in minutes during Sri Lanka hours.</p>
+      <p>Message a real Hop planner — our team replies during Sri Lanka service hours.</p>
     </div>
     <a class="btn btn-wa" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! I have a question about '+fromP.name+' → '+toP.name+'.')}" target="_blank" rel="noopener">${ICON.wa} Chat on WhatsApp</a>`;
 }

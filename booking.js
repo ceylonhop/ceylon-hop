@@ -1132,8 +1132,11 @@ window.step=function(which,d){
 };
 window.toggleAddon=function(el){
   const a=el.dataset.addon;
-  if(state.addons.has(a)){state.addons.delete(a);el.classList.remove('on');}
-  else{state.addons.add(a);el.classList.add('on');}
+  const selected=!state.addons.has(a);
+  if(selected)state.addons.add(a);
+  else state.addons.delete(a);
+  el.classList.toggle('on',selected);
+  el.setAttribute('aria-pressed',String(selected));
   render();
 };
 // Add-on prices come from the generated EXTRAS table (transfers-data.js, sourced from
@@ -2300,11 +2303,55 @@ function simulatePayThenConfirm(booking){
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(booking); }, 3400);
 }
 
+function phShowSettlementPending(){
+  document.getElementById('ph-spin').style.display='none';
+  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  const ico=document.getElementById('ph-ico');
+  if(ico){
+    ico.hidden=false; ico.className='ph-ico warn';
+    ico.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  }
+  const m=document.getElementById('ph-msg');
+  m.className='ph-msg ph-msg-big';
+  m.textContent='Payment is still being confirmed. Don’t try again—we’ll email you when it lands.';
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=true;
+  document.getElementById('ph-actions').hidden=false;
+  document.getElementById('ph-overlay').classList.add('show');
+}
+
+async function waitForPaymentConfirmation(checkout, booking){
+  const token=checkout && checkout.payReturnToken;
+  if(!token) return phShowSettlementPending();
+  phShowLoading('Confirming your payment…');
+  const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  const url=API+'/bookings/pay-return?rt='+encodeURIComponent(token);
+  for(let attempt=0; attempt<15; attempt++){
+    try{
+      const res=await fetch(url,{method:'GET',cache:'no-store'});
+      if(res.ok){
+        const result=await res.json();
+        if(result.status==='paid'){
+          document.getElementById('ph-overlay').classList.remove('show');
+          return finalizeBooking(booking);
+        }
+        if(result.status==='failed'){
+          return phShowEnd('error','Your payment wasn’t confirmed. No booking has been completed — please try again or message us on WhatsApp.');
+        }
+      }
+    }catch(e){ /* transient network failure — settlement may still arrive */ }
+    if(attempt<14) await new Promise(resolve=>setTimeout(resolve,1200));
+  }
+  return phShowSettlementPending();
+}
+
 // Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
-// truth for "paid"; onCompleted just shows the customer their confirmation.
+// truth for "paid"; onCompleted starts a short poll of that server-owned state.
 function startPayHere(checkout, booking){
   const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-  payhere.onCompleted = function(){ document.getElementById('ph-overlay').classList.remove('show'); finalizeBooking(booking); };
+  payhere.onCompleted = function(){ waitForPaymentConfirmation(checkout, booking); };
   payhere.onDismissed = function(){ showPayDismissed(); };
   payhere.onError = function(){ showPayFailed(); };
   payhere.startPayment(payment);
@@ -2590,7 +2637,7 @@ function finalizeBooking(apiBooking){
   if(cc){
     let extra='';
     if(state.flexDate||state.flexTime) extra=' Just let us know your exact date & time any time up to 12 hours before — a quick WhatsApp is all it takes.';
-    cc.innerHTML=`A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You’ll hear from us first thing in the morning.${extra}`;
+    cc.innerHTML=`Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.${extra}`;
   }
   // "Your seat is booked! ... See you on board" was shown for every product, including a
   // multi-day private trip where there is no seat and no "board".
@@ -2599,8 +2646,8 @@ function finalizeBooking(apiBooking){
   if(ct) ct.textContent = isShared ? 'Your seat is booked!' : (isTrip ? 'Your trip is booked!' : 'Your transfer is booked!');
   if(cl){
     const base = isShared
-      ? 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up. See you on board \ud83c\udf34'
-      : 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.';
+      ? 'Payment received. Your confirmation and trip summary have been emailed. See you on board \ud83c\udf34'
+      : 'Payment received. Your confirmation and trip summary have been emailed.';
     cl.textContent = base;
   }
   document.getElementById('main-layout').style.display='none';

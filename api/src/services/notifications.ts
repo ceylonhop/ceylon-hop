@@ -443,7 +443,7 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
         'What happens next',
-        'Our team will message you on WhatsApp to confirm your exact pickup time and place. Reply there any time if something changes.',
+        'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -456,7 +456,7 @@ function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
-    'What happens next: our team will message you on WhatsApp to confirm your exact pickup time and place.',
+    'What happens next: our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
     cancellationPolicy(booking),
     ...(manageLink ? ['', `View your booking: ${manageLink}`] : []),
   ]);
@@ -567,14 +567,14 @@ export async function sendTripReminder(
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Before you travel',
-        "Our team will share your driver&rsquo;s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us.",
+        'Your driver and vehicle details will be sent on WhatsApp before pickup. Anything changed? Just reply or message us.',
       ) +
       footer(),
   );
   const text = textShell('your trip is coming up', 'A quick reminder about your upcoming journey:', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    "We'll share your driver's details on WhatsApp shortly before pickup.",
+    'Your driver and vehicle details will be sent on WhatsApp before pickup.',
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
   await email.send({
@@ -771,7 +771,7 @@ export async function sendBookingConfirmed(
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Your driver details',
-        'We’ll send your driver’s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us there.',
+        'Your driver and vehicle details will be sent on WhatsApp before pickup. Anything changed? Just reply or message us there.',
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -779,7 +779,7 @@ export async function sendBookingConfirmed(
   const text = textShell('your booking is confirmed', 'Your driver is arranged — you’re all set.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    'We’ll share your driver’s name and vehicle on WhatsApp shortly before pickup.',
+    'Your driver and vehicle details will be sent on WhatsApp before pickup.',
     cancellationPolicy(booking),
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
