@@ -50,6 +50,11 @@ import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
 import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
+import {
+  InMemoryCustomerShortLinkRepo,
+  type CustomerShortLinkRepo,
+} from './db/customerShortLinkRepo';
+import { customerShortLinkRoutes } from './routes/customerShortLink';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -72,6 +77,7 @@ export interface AppDeps {
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
   placeResolutions?: PlaceResolutionRepo;
+  shortLinks?: CustomerShortLinkRepo;
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
@@ -159,6 +165,7 @@ export function createApp(deps: AppDeps = {}) {
   // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
+  const shortLinks = deps.shortLinks ?? new InMemoryCustomerShortLinkRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -272,6 +279,9 @@ export function createApp(deps: AppDeps = {}) {
   // Quote pay links (spec 2026-07-31): public bearer-token routes; same per-IP budget as
   // the other public write surfaces.
   app.use('/quotes/pay/*', rateLimit(rl));
+  // Branded quote/payment aliases are public bearer reads. Enumeration is infeasible at 96 bits;
+  // the standard per-IP budget is defence in depth and prevents a noisy scanner owning the process.
+  app.use('/s/*', rateLimit({ ...rl, methods: ['GET'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -423,6 +433,12 @@ export function createApp(deps: AppDeps = {}) {
   // READS ONLY — no route in it can start a payment (spec D6).
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+  }));
+  app.route('/s', customerShortLinkRoutes({
+    shortLinks,
+    linkSecret: bookingLinkSecret,
+    payBaseUrl,
+    quoteBaseUrl,
   }));
   app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
