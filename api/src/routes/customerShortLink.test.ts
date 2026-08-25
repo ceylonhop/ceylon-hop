@@ -158,4 +158,49 @@ describe('GET /s/:code — customer short-link resolver', () => {
     expect((await app.request(`https://quote.example/s/${code}`, { headers })).status).toBe(302);
     expect((await app.request(`https://quote.example/s/${code}`, { headers })).status).toBe(429);
   });
+
+  // Hono serves HEAD through the GET handler, so a HEAD resolves the code — DB lookup and all —
+  // exactly like a GET. It has to be counted, or a scanner just switches method to skip the budget.
+  it('counts HEAD against the same per-IP budget as GET', async () => {
+    const target = { kind: 'quote_view' as const, quoteId: QUOTE_ID };
+    const shortLinks = new InMemoryCustomerShortLinkRepo();
+    const code = customerShortCode(target, SECRET);
+    await shortLinks.put(customerShortCodeDigest(code), target);
+    const app = createApp({
+      shortLinks,
+      bookingLinkSecret: SECRET,
+      rateLimit: { max: 1, windowMs: 60_000 },
+      ...BASES,
+    });
+    const headers = { 'x-forwarded-for': '203.0.113.7' };
+    const head = () => app.request(`https://quote.example/s/${code}`, { method: 'HEAD', headers });
+
+    expect((await head()).status).toBe(302);
+    expect((await head()).status).toBe(429);
+    // A spent HEAD budget must also close the GET path for that IP.
+    expect((await app.request(`https://quote.example/s/${code}`, { headers })).status).toBe(429);
+  });
+
+  // Base URLs are plain strings in config with no scheme requirement, and staging has shipped a
+  // scheme-less one before (customerPages.absoluteOrigin exists for exactly that). Parsing it raw
+  // threw at construction time, which took down every route in the app, not just this one.
+  it('tolerates a scheme-less configured base url', async () => {
+    const target = { kind: 'quote_view' as const, quoteId: QUOTE_ID };
+    const shortLinks = new InMemoryCustomerShortLinkRepo();
+    const code = customerShortCode(target, SECRET);
+    await shortLinks.put(customerShortCodeDigest(code), target);
+    const app = createApp({
+      shortLinks,
+      bookingLinkSecret: SECRET,
+      quoteBaseUrl: 'quote.example',
+      payBaseUrl: 'pay.example',
+    });
+
+    const res = await app.request(`https://quote.example/s/${code}`);
+    expect(res.status).toBe(302);
+    const location = new URL(res.headers.get('location')!);
+    expect(`${location.origin}${location.pathname}`).toBe('https://quote.example/q');
+    expect(verifyQuoteViewToken(location.searchParams.get('t') ?? undefined, SECRET))
+      .toEqual({ quoteId: QUOTE_ID });
+  });
 });

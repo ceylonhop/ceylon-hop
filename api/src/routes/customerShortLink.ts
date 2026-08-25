@@ -11,8 +11,12 @@ export interface CustomerShortLinkDeps {
   reportError: (err: unknown) => void;
 }
 
+// Base URLs are plain strings in config with no scheme requirement, and a scheme-less value has
+// reached staging before (see customerPages.absoluteOrigin). Normalise here rather than parsing
+// raw: host() runs at construction time, so an unparseable base took down all of createApp.
 function base(url: string): string {
-  return url.replace(/\/+$/, '');
+  const trimmed = url.replace(/\/+$/, '');
+  return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function host(url: string): string {

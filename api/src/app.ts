@@ -302,7 +302,9 @@ export function createApp(deps: AppDeps = {}) {
   app.use('/quotes/pay/*', rateLimit(rl));
   // Branded quote/payment aliases are public bearer reads. Enumeration is infeasible at 96 bits;
   // the standard per-IP budget is defence in depth and prevents a noisy scanner owning the process.
-  app.use('/s/*', rateLimit({ ...rl, methods: ['GET'] }));
+  // HEAD too: Hono dispatches it to the GET handler, so it resolves a code and costs a DB read
+  // exactly like a GET. Listing only GET let a scanner spend an unlimited budget by switching method.
+  app.use('/s/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
