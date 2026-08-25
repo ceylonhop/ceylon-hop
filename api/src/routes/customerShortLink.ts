@@ -8,6 +8,7 @@ export interface CustomerShortLinkDeps {
   linkSecret: string;
   payBaseUrl: string;
   quoteBaseUrl: string;
+  reportError: (err: unknown) => void;
 }
 
 function base(url: string): string {
@@ -32,6 +33,10 @@ export function customerShortLinkRoutes(deps: CustomerShortLinkDeps) {
   function unavailable(c: Context) {
     noStore(c);
     const requestHost = new URL(c.req.url).hostname.toLowerCase();
+    // With one shared customer hostname there is no target kind to select a generic page from.
+    if (quoteHost === payHost && requestHost === quoteHost) {
+      return c.json({ error: 'not_found' }, 404);
+    }
     if (requestHost === quoteHost) return c.redirect(`${quoteBase}/q?t=invalid`, 302);
     if (requestHost === payHost) return c.redirect(`${payBase}/p?t=invalid`, 302);
     return c.json({ error: 'not_found' }, 404);
@@ -59,7 +64,7 @@ export function customerShortLinkRoutes(deps: CustomerShortLinkDeps) {
       return c.redirect(`${payBase}/p?t=${encodeURIComponent(token)}`, 302);
     } catch (err) {
       // Never include the bearer code in logs or let the global path-aware error reporter see it.
-      console.error('Customer short-link resolution failed', err);
+      deps.reportError(err);
       noStore(c);
       return c.json({ error: 'temporarily_unavailable' }, 503);
     }

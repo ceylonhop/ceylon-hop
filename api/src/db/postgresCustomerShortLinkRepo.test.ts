@@ -79,6 +79,26 @@ describe.skipIf(!TEST_URL)('PostgresCustomerShortLinkRepo (integration)', () => 
         (code_digest, kind, quote_id, quote_revision, pay_link_seq)
       values (${digest('missing-pay-revision')}, 'quote_pay', ${quoteId}, null, 0)
     `).rejects.toBeTruthy();
+    await expect(sql`
+      insert into customer_short_links
+        (code_digest, kind, quote_id, quote_revision, pay_link_seq)
+      values (${digest('invalid-kind')}, 'quote_other', ${quoteId}, null, null)
+    `).rejects.toBeTruthy();
+    await expect(sql`
+      insert into customer_short_links
+        (code_digest, kind, quote_id, quote_revision, pay_link_seq)
+      values (${digest('zero-revision')}, 'quote_pay', ${quoteId}, 0, 0)
+    `).rejects.toBeTruthy();
+    await expect(sql`
+      insert into customer_short_links
+        (code_digest, kind, quote_id, quote_revision, pay_link_seq)
+      values (${digest('negative-revision')}, 'quote_pay', ${quoteId}, -1, 0)
+    `).rejects.toBeTruthy();
+    await expect(sql`
+      insert into customer_short_links
+        (code_digest, kind, quote_id, quote_revision, pay_link_seq)
+      values (${digest('negative-sequence')}, 'quote_pay', ${quoteId}, 1, -1)
+    `).rejects.toBeTruthy();
   });
 
   it('cascades aliases when a quote is hard-deleted', async () => {

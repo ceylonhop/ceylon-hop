@@ -284,6 +284,10 @@ hostname, because there is no stored target to identify their kind:
 - every other hostname, including the Render and Ops hosts -> generic `404` with
   `Cache-Control: no-store`.
 
+If the configured quote and pay origins use the same hostname, an unknown or malformed code returns
+the same generic `404` with `Cache-Control: no-store`: without a stored target, its kind cannot be
+inferred safely. A valid stored target still redirects according to its stored kind.
+
 A database outage is different from an invalid link: return a generic retryable `503` rather than
 telling a customer that a valid quote has expired.
 
@@ -425,6 +429,8 @@ All tests are network-free and use the in-memory repository or the existing test
 - Cross-host open redirects to the host dictated by kind.
 - Unknown/malformed codes leak no quote data and follow the exact quote-host, pay-host and other-host
   responses defined in §7.4.
+- When quote and pay share a hostname, unknown/malformed codes return the §7.4 generic `404`, while
+  valid codes still redirect according to stored kind.
 - Database failure returns retryable `503`.
 - Resolver response carries `Cache-Control: no-store`.
 - Existing long-link compatibility suites remain green.

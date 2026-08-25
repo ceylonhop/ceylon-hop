@@ -129,6 +129,12 @@ export interface AppDeps {
   now?: () => number;
 }
 
+// Customer short codes are bearer credentials. Any failure that reaches the shared reporter must
+// use the route pattern, never the concrete path that contains the credential.
+export function redactedErrorRoute(path: string): string {
+  return path.startsWith('/s/') ? '/s/:code' : path;
+}
+
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
@@ -205,6 +211,21 @@ export function createApp(deps: AppDeps = {}) {
     ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
+
+  const reportApiError = (failure: unknown, method: string, route: string): void => {
+    const err = failure instanceof Error ? failure : new Error(String(failure));
+    console.error(err);
+    // M17: report to Sentry (dormant without SENTRY_DSN) + alert the founder. Both are
+    // fire-and-forget so reporting can never change the customer response.
+    track(err, { route });
+    void alerts.send({
+      severity: 'critical',
+      kind: 'api_error',
+      title: `API error on ${route}: ${err.name}`,
+      body: `${method} ${route}\n${err.message}`,
+      dedupeKey: `${err.name}:${route}`,
+    });
+  };
 
   // Security headers on every response — most importantly X-Frame-Options + nosniff, so the
   // cookie-authenticated /ops app can't be framed (clickjacking) or MIME-sniffed. No CSP here:
@@ -300,17 +321,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
-    console.error(err);
-    // M17: report to Sentry (dormant without SENTRY_DSN) + alert the founder. Both are
-    // fire-and-forget — the 500 response is identical to before.
-    track(err, { route: c.req.path });
-    void alerts.send({
-      severity: 'critical',
-      kind: 'api_error',
-      title: `API error on ${c.req.path}: ${err.name}`,
-      body: `${c.req.method} ${c.req.path}\n${err.message}`,
-      dedupeKey: `${err.name}:${c.req.path}`,
-    });
+    reportApiError(err, c.req.method, redactedErrorRoute(c.req.path));
     return c.json({ error: 'internal_error' }, 500);
   });
 
@@ -439,6 +450,7 @@ export function createApp(deps: AppDeps = {}) {
     linkSecret: bookingLinkSecret,
     payBaseUrl,
     quoteBaseUrl,
+    reportError: (err) => reportApiError(err, 'GET', '/s/:code'),
   }));
   app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
