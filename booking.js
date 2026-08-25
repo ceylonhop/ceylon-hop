@@ -1132,8 +1132,11 @@ window.step=function(which,d){
 };
 window.toggleAddon=function(el){
   const a=el.dataset.addon;
-  if(state.addons.has(a)){state.addons.delete(a);el.classList.remove('on');}
-  else{state.addons.add(a);el.classList.add('on');}
+  const selected=!state.addons.has(a);
+  if(selected)state.addons.add(a);
+  else state.addons.delete(a);
+  el.classList.toggle('on',selected);
+  el.setAttribute('aria-pressed',String(selected));
   render();
 };
 // Add-on prices come from the generated EXTRAS table (transfers-data.js, sourced from

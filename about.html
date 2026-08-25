@@ -52,7 +52,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .team span{font-size:.82rem;color:var(--ink-soft)}
   .faq{max-width:760px;margin:0 auto}
   .faq-item{border-bottom:1px solid var(--line)}
-  .faq-q{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0;cursor:pointer;font-weight:600;font-size:1.05rem}
+  .faq-q{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;border:0;background:transparent;color:inherit;padding:20px 0;cursor:pointer;font-family:inherit;font-weight:600;font-size:1.05rem;text-align:left}
   .faq-q .pm{flex:none;width:26px;height:26px;border-radius:50%;background:var(--cream-deep);display:grid;place-items:center;font-size:1.2rem;transition:.2s}
   .faq-item.open .pm{background:var(--accent);color:#fff;transform:rotate(45deg)}
   .faq-a{display:none;padding:0 0 20px;color:var(--ink-soft);max-width:64ch}
@@ -166,8 +166,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     ['How do I get picked up?','After payment, our team checks your exact pickup point over WhatsApp &mdash; usually your hotel or a central café in town. Your driver and vehicle details will be sent on WhatsApp before pickup.'],
     ['Are the vehicles air-conditioned?','Yes &mdash; every Ceylon Hop vehicle is a fully insured, air-conditioned and well-maintained car or van, never overcrowded.']
   ];
-  document.getElementById('faq').innerHTML=faqs.map(([q,a])=>`
-    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">${q}<span class="pm">+</span></div><div class="faq-a">${a}</div></div>`).join('');
+  const faq=document.getElementById('faq');
+  faq.innerHTML=faqs.map(([q,a],i)=>`
+    <div class="faq-item"><button type="button" class="faq-q" id="faq-question-${i}" aria-expanded="false" aria-controls="faq-answer-${i}">${q}<span class="pm" aria-hidden="true">+</span></button><div class="faq-a" id="faq-answer-${i}" role="region" aria-labelledby="faq-question-${i}">${a}</div></div>`).join('');
+  faq.addEventListener('click',event=>{
+    const button=event.target.closest('.faq-q');
+    if(!button)return;
+    const open=button.getAttribute('aria-expanded')==='true';
+    button.setAttribute('aria-expanded',String(!open));
+    button.closest('.faq-item').classList.toggle('open',!open);
+  });
 </script>
 </body>
 </html>
