@@ -489,34 +489,34 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-card .grp-note svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--accent-deep)}
 
   /* One quiet Sri Lankan scene in each otherwise-plain homepage band. These are
-     atmosphere, not content: edge-cropped, below the copy, and faint enough to
-     disappear from the reading order. The site's existing grain supplies texture. */
+     atmosphere, not content: editorial ink-and-watercolour vignettes that stay
+     edge-cropped, below the copy, and out of the reading order. */
   .destination-art{position:relative;isolation:isolate;overflow:hidden;overflow:clip}
   .destination-art::after{
-    content:"";position:absolute;z-index:0;pointer-events:none;opacity:.08;
-    width:clamp(250px,27vw,430px);aspect-ratio:32/21;
+    content:"";position:absolute;z-index:0;pointer-events:none;opacity:.30;
+    width:clamp(360px,38vw,620px);aspect-ratio:1200/667;
     background-repeat:no-repeat;background-position:center;background-size:contain;
   }
   .destination-art > .wrap{position:relative;z-index:1}
   .destination-art--sigiriya::after{
-    right:-58px;bottom:-24px;background-image:url("img/section-art/sigiriya.svg")
+    right:-62px;bottom:-42px;background-image:url("img/section-art/sigiriya-watercolor.webp")
   }
   .destination-art--hiriketiya::after{
-    left:-68px;bottom:-38px;background-image:url("img/section-art/hiriketiya-cove.svg")
+    left:-78px;bottom:-54px;background-image:url("img/section-art/hiriketiya-cove-watercolor.webp")
   }
   .destination-art--hill-country-rail::after{
-    right:-76px;top:28px;background-image:url("img/section-art/hill-country-rail.svg")
+    right:-72px;top:24px;background-image:url("img/section-art/hill-country-rail-watercolor.webp")
   }
   .destination-art--mirissa-whale::after{
-    left:-58px;bottom:-32px;background-image:url("img/section-art/mirissa-whale.svg")
+    left:-76px;bottom:-48px;background-image:url("img/section-art/mirissa-whale-watercolor.webp")
   }
   @media(max-width:600px){
     /* destination art: mobile restraint */
-    .destination-art::after{width:42vw;max-width:190px;opacity:.05}
-    .destination-art--sigiriya::after{right:-54px;bottom:-14px}
-    .destination-art--hiriketiya::after{left:-62px;bottom:-20px}
-    .destination-art--hill-country-rail::after{right:-68px;top:22px}
-    .destination-art--mirissa-whale::after{left:-58px;bottom:-18px}
+    .destination-art::after{width:68vw;max-width:260px;opacity:.18}
+    .destination-art--sigiriya::after{right:-64px;bottom:-18px}
+    .destination-art--hiriketiya::after{left:-72px;bottom:-24px}
+    .destination-art--hill-country-rail::after{right:-72px;top:20px}
+    .destination-art--mirissa-whale::after{left:-72px;bottom:-22px}
   }
 </style>
 </head>
