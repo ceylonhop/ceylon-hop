@@ -459,13 +459,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rev .qmark{font-family:var(--display);font-weight:700;font-size:3.2rem;line-height:.6;color:var(--saffron);height:.5em}
   .rev p{font-size:1rem;line-height:1.55;margin:0}
   .rev .stars{margin-top:auto}
-  .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
+  .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;outline-offset:4px}
   .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1.05rem;flex:none}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
   /* the attribution has to read as a real link back to the listing, not as body text —
      it is what lets a reader check the quote, so it must not disappear into the muted line */
-  .rev .who span a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
-  .rev .who span a:hover{color:var(--accent-deep);text-decoration-color:currentColor}
+  .rev .review-source{text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
+  .rev .who:hover b,.rev .who:hover .review-source{color:var(--accent-deep);text-decoration-color:currentColor}
+  .rev .who:focus-visible{outline:3px solid var(--accent-deep)}
   .rev .post-stamp{position:absolute;top:16px;right:16px}
 
   /* refined glass trust badge over the photo */
@@ -783,7 +784,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="qmark">&ldquo;</div>
       <p>&ldquo;${r.text}&rdquo;</p>
       <div class="stars">${STAR.repeat(5)}</div>
-      <div class="who"><div class="av" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><a href="${TA.url}" target="_blank" rel="noopener">Review on Tripadvisor</a> · ${r.written}</span></div></div>
+      <a class="who" href="${TA.url}" target="_blank" rel="noopener"><div class="av" aria-hidden="true" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><span class="review-source">Review on Tripadvisor</span> · ${r.written}</span></div></a>
     </div>`).join('');
 
   // blog
