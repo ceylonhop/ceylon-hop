@@ -788,12 +788,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // blog
   const posts=[
-    ['Why we started Ceylon Hop','Story · 4 min'],
-    ['The ultimate tuk-tuk guide to Sri Lanka','Guide · 6 min'],
-    ['Best time to visit Sri Lanka: month-by-month','Planning · 8 min']
+    ['Why we started Ceylon Hop','why-we-started-ceylon-hop','Story · 4 min'],
+    ['The ultimate tuk-tuk guide to Sri Lanka','ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka','Guide · 6 min'],
+    ['Best time to visit Sri Lanka: month-by-month','best-time-to-visit-sri-lanka-a-month-by-month-guide','Planning · 8 min']
   ];
-  document.getElementById('blog').innerHTML = posts.map(([t,m],i)=>`
-    <a class="bcard reveal" href="blog.html">
+  document.getElementById('blog').innerHTML = posts.map(([t,slug,m],i)=>`
+    <a class="bcard reveal" href="${slug}/">
       <image-slot id="blog-post-${i}" shape="rounded" radius="16" src="img/blog-post-${i}.jpg" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
       <div class="meta" style="margin-top:14px">${m}</div>
       <h3>${t}</h3>
