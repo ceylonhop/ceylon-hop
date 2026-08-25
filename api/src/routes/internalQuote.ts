@@ -39,6 +39,15 @@ import {
 import { changedFields } from '../quote/quoteDiff';
 import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
 import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+import {
+  customerShortCode,
+  customerShortCodeDigest,
+  customerShortUrl,
+} from '../lib/customerShortLink';
+import type {
+  CustomerShortLinkRepo,
+  CustomerShortLinkTarget,
+} from '../db/customerShortLinkRepo';
 // CATEGORIES/drives moved to quote/legCategory.ts so quoteView.ts shares one definition —
 // a second copy here is how the customer page and the ops chooser drift on which legs drive.
 import { drives } from '../quote/legCategory';
@@ -647,8 +656,34 @@ export function internalQuoteRoutes(deps: {
   // is no resolver, and every distance takes the legacy name path exactly as before — so this
   // router keeps working unchanged in tests and keyless dev.
   placeResolutions?: PlaceResolutionRepo;
+  // Branded customer aliases (spec 2026-08-24 §7.3). Absent repo or flag-off ⇒ these routes
+  // return the long URL byte-for-byte as before; only `url` ever changes.
+  shortLinks?: CustomerShortLinkRepo;
+  shortLinksEnabled?: boolean;
 }) {
   const r = new Hono();
+
+  // Spec 2026-08-24 §7.3: derive the alias only AFTER every side effect (customer-total stamping,
+  // selection persistence, payLinkSeq) has completed, so the code pins what was actually minted.
+  // A failure here must never cost ops a working link — a dead alias in a customer's WhatsApp
+  // thread is worse than a long URL, so we fall back to the URL that has always worked.
+  async function aliasOr(
+    longUrl: string,
+    base: string,
+    target: CustomerShortLinkTarget,
+  ): Promise<string> {
+    const secret = deps.linkSecret;
+    if (!deps.shortLinksEnabled || !deps.shortLinks || !secret) return longUrl;
+    try {
+      const code = customerShortCode(target, secret);
+      await deps.shortLinks.put(customerShortCodeDigest(code), target);
+      return customerShortUrl(base, code);
+    } catch (err) {
+      // Never log the code itself; it is a bearer credential.
+      console.error('customer short link mint failed, served long url', err);
+      return longUrl;
+    }
+  }
   const resolver = deps.placeResolutions
     ? new PlaceResolver(deps.placeResolutions, deps.maps)
     : undefined;
@@ -1232,10 +1267,13 @@ export function internalQuoteRoutes(deps: {
     }
 
     const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret, seq);
+    // `/p`, not `/pay.html` — see customerPages.ts. Eight characters off a link that a
+    // customer reads immediately before being asked for money.
+    const longUrl = `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${token}`;
     return c.json({
-      // `/p`, not `/pay.html` — see customerPages.ts. Eight characters off a link that a
-      // customer reads immediately before being asked for money.
-      url: `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${token}`,
+      url: await aliasOr(longUrl, deps.payBaseUrl, {
+        kind: 'quote_pay', quoteId: quote.id, revision: quote.revision, seq,
+      }),
       payhereMode: deps.payhereMode ?? 'off',
       amountCents,
       coverage,
@@ -1262,7 +1300,8 @@ export function internalQuoteRoutes(deps: {
         customerTotal: { cents: quote.totalCents, at: new Date(), via: 'quote_link' as const },
       });
     }
-    return c.json({ url: `${base.replace(/\/$/, '')}/q?t=${signQuoteViewToken(quote.id, deps.linkSecret)}` });
+    const longUrl = `${base.replace(/\/$/, '')}/q?t=${signQuoteViewToken(quote.id, deps.linkSecret)}`;
+    return c.json({ url: await aliasOr(longUrl, base, { kind: 'quote_view', quoteId: quote.id }) });
   });
 
   // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as

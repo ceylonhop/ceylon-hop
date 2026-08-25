@@ -78,6 +78,8 @@ export interface AppDeps {
   zones?: ZonesRepo;
   placeResolutions?: PlaceResolutionRepo;
   shortLinks?: CustomerShortLinkRepo;
+  /** Gates short-link MINTING only; GET /s/:code resolves regardless (spec 2026-08-24 §7.5). */
+  customerShortLinksEnabled?: boolean;
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
@@ -485,6 +487,9 @@ export function createApp(deps: AppDeps = {}) {
     discounts: quoteDiscounts,
     // Gates CREATION only; an already-applied discount keeps pricing its quote regardless.
     discountsEnabled: deps.opsManualDiscountsEnabled ?? config.OPS_MANUAL_DISCOUNTS_ENABLED,
+    // Same repo the /s resolver reads, so a link minted here is resolvable immediately.
+    shortLinks,
+    shortLinksEnabled: deps.customerShortLinksEnabled ?? config.CUSTOMER_SHORT_LINKS_ENABLED,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay
