@@ -344,6 +344,13 @@
       "when": 1786923720000,
       "tag": "0048_enable_rls_public",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787616000000,
+      "tag": "0049_customer_short_links",
+      "breakpoints": true
     }
   ]
 }

@@ -50,6 +50,11 @@ import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
 import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
+import {
+  InMemoryCustomerShortLinkRepo,
+  type CustomerShortLinkRepo,
+} from './db/customerShortLinkRepo';
+import { customerShortLinkRoutes } from './routes/customerShortLink';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -72,6 +77,7 @@ export interface AppDeps {
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
   placeResolutions?: PlaceResolutionRepo;
+  shortLinks?: CustomerShortLinkRepo;
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
@@ -123,6 +129,12 @@ export interface AppDeps {
   now?: () => number;
 }
 
+// Customer short codes are bearer credentials. Any failure that reaches the shared reporter must
+// use the route pattern, never the concrete path that contains the credential.
+export function redactedErrorRoute(path: string): string {
+  return path.startsWith('/s/') ? '/s/:code' : path;
+}
+
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
@@ -159,6 +171,7 @@ export function createApp(deps: AppDeps = {}) {
   // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
+  const shortLinks = deps.shortLinks ?? new InMemoryCustomerShortLinkRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -198,6 +211,21 @@ export function createApp(deps: AppDeps = {}) {
     ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
+
+  const reportApiError = (failure: unknown, method: string, route: string): void => {
+    const err = failure instanceof Error ? failure : new Error(String(failure));
+    console.error(err);
+    // M17: report to Sentry (dormant without SENTRY_DSN) + alert the founder. Both are
+    // fire-and-forget so reporting can never change the customer response.
+    track(err, { route });
+    void alerts.send({
+      severity: 'critical',
+      kind: 'api_error',
+      title: `API error on ${route}: ${err.name}`,
+      body: `${method} ${route}\n${err.message}`,
+      dedupeKey: `${err.name}:${route}`,
+    });
+  };
 
   // Security headers on every response — most importantly X-Frame-Options + nosniff, so the
   // cookie-authenticated /ops app can't be framed (clickjacking) or MIME-sniffed. No CSP here:
@@ -272,6 +300,11 @@ export function createApp(deps: AppDeps = {}) {
   // Quote pay links (spec 2026-07-31): public bearer-token routes; same per-IP budget as
   // the other public write surfaces.
   app.use('/quotes/pay/*', rateLimit(rl));
+  // Branded quote/payment aliases are public bearer reads. Enumeration is infeasible at 96 bits;
+  // the standard per-IP budget is defence in depth and prevents a noisy scanner owning the process.
+  // HEAD too: Hono dispatches it to the GET handler, so it resolves a code and costs a DB read
+  // exactly like a GET. Listing only GET let a scanner spend an unlimited budget by switching method.
+  app.use('/s/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -290,17 +323,7 @@ export function createApp(deps: AppDeps = {}) {
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
-    console.error(err);
-    // M17: report to Sentry (dormant without SENTRY_DSN) + alert the founder. Both are
-    // fire-and-forget — the 500 response is identical to before.
-    track(err, { route: c.req.path });
-    void alerts.send({
-      severity: 'critical',
-      kind: 'api_error',
-      title: `API error on ${c.req.path}: ${err.name}`,
-      body: `${c.req.method} ${c.req.path}\n${err.message}`,
-      dedupeKey: `${err.name}:${c.req.path}`,
-    });
+    reportApiError(err, c.req.method, redactedErrorRoute(c.req.path));
     return c.json({ error: 'internal_error' }, 500);
   });
 
@@ -423,6 +446,13 @@ export function createApp(deps: AppDeps = {}) {
   // READS ONLY — no route in it can start a payment (spec D6).
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+  }));
+  app.route('/s', customerShortLinkRoutes({
+    shortLinks,
+    linkSecret: bookingLinkSecret,
+    payBaseUrl,
+    quoteBaseUrl,
+    reportError: (err) => reportApiError(err, 'GET', '/s/:code'),
   }));
   app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
