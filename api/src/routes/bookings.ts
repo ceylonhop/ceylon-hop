@@ -757,7 +757,14 @@ function billingFrom(body: unknown): BillingParse {
     if (params.amount !== dueNow) {
       return c.json({ error: 'amount_mismatch' }, 409);
     }
-    return c.json(params, 200);
+    // The PayHere popup callback only means the hosted checkout finished. The browser must
+    // still ask our server whether the webhook settled this booking before it can say
+    // "booked". This purpose-scoped token exposes no booking data and cannot authorize a
+    // second checkout; it is accepted only by GET /bookings/pay-return.
+    return c.json(
+      { ...params, payReturnToken: signPayReturnToken(booking.id, deps.linkSecret) },
+      200,
+    );
   });
 
   return r;

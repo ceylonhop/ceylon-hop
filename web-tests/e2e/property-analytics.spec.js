@@ -1,24 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { blockLiveApi } from './_stubs.js';
 
 // index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
 test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
-
-/* This file OWNS consent behaviour — grant on arrival, a stored refusal, the ASK_FIRST strip,
-   the choice carrying across properties. playwright.config.js seeds `ceylonhop_consent` for the
-   whole suite so the bar cannot intercept clicks in the ~70 specs that care about something
-   else; inheriting that here would mean every test starting from a decided state, which is the
-   one thing these tests must not do. So the file clears it and each test sets what it needs.
-
-   Registered before the tests' own addInitScript calls, and init scripts run in registration
-   order, so a test that seeds its own choice still wins. */
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => { try { localStorage.removeItem('ceylonhop_consent'); } catch (e) {} });
-});
-
 
 // ─────────────────────────────────────────────────────────────────────────────────────────
 //  Analytics on the properties that shipped after Phase 0 — pay, quote, manage (2026-08-07).
@@ -63,12 +47,6 @@ const layer = (page) =>
 const eventNames = async (page) => (await layer(page)).map((e) => e.event);
 const find = async (page, name) => (await layer(page)).find((e) => e.event === name);
 
-// Consent is remembered per origin; grant it up front so the pages behave as they do for a
-// customer who has already accepted, and the strip is out of the way of the clicks below.
-async function preConsented(page) {
-  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'granted'));
-}
-
 // Pretend we are on a revenue host. chIsProd() is correctly false on localhost, and it gates
 // `purchase` — so a test about purchase has to say so out loud rather than quietly passing
 // because nothing fired. Installed before any page script; the no-op setter absorbs
@@ -87,7 +65,6 @@ async function forceProdHost(page) {
 
 test('every property announces itself before anything else', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   for (const [url, property] of [
     ['/pay.html?t=tok', 'pay'],
     ['/quote.html?q=tok', 'quote'],
@@ -115,7 +92,6 @@ test('every property announces itself before anything else', async ({ page }) =>
 
 async function payable(page) {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'payable', copy: COPY, totals: TOTALS, prefill: PREFILL }) }));
 }
@@ -134,7 +110,6 @@ test('opening a live pay link reports the state and the amount on the line', asy
 
 test('a pay link that has already been paid is counted, and never as a purchase', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } }) }));
   await page.goto('/pay.html?t=test-token');
@@ -148,7 +123,6 @@ test('a pay link that has already been paid is counted, and never as a purchase'
 
 test('a dead API is reported rather than disguised as an expired link', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   const beacons = [];
   await page.route('**/errors/client', (r) => { beacons.push(r.request().postDataJSON()); return r.fulfill({ status: 204 }); });
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{}' }));
@@ -233,7 +207,6 @@ test('a refusal at our own door names itself instead of counting as a decline', 
 
 test('a real settlement reports a purchase once, with the amount it actually cost', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } }) }));
   await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
@@ -259,7 +232,6 @@ test('a real settlement reports a purchase once, with the amount it actually cos
 
 test('a sandbox settlement never becomes revenue', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'paid', paid: { reference: 'CH-SBX', firstName: 'Nimal', facts: [] } }) }));
   await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
@@ -330,7 +302,6 @@ const QVIEW = (options) => ({
 
 async function stubQuote(page, body) {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quote-view*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
 }
@@ -380,7 +351,6 @@ test('an expired price is reported as expired, not as an ordinary view', async (
 
 test('a broken quote API is reported, not disguised as a dead link', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   const beacons = [];
   await page.route('**/errors/client', (r) => { beacons.push(r.request().postDataJSON()); return r.fulfill({ status: 204 }); });
   await page.route('**/quote-view*', (r) => r.fulfill({ status: 500, contentType: 'text/plain', body: 'boom' }));
@@ -403,7 +373,6 @@ const BOOKING = {
 
 test('opening a booking reports its status and whether money is still owed', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/bookings/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(BOOKING) }));
   await page.route('https://www.payhere.lk/**', (r) =>
     r.fulfill({ status: 200, contentType: 'application/javascript', body: 'window.payhere={startPayment:function(){}};' }));
@@ -419,7 +388,6 @@ test('opening a booking reports its status and whether money is still owed', asy
 
 test('an expired booking link is counted with the reason it failed', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/bookings/view*', (r) => r.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
   await page.goto('/manage.html?t=stale-token');
   await expect(page.locator('#app')).toContainText('isn’t valid');
@@ -444,7 +412,6 @@ test('the customer’s name is masked from replays; the trip is not', async ({ p
 
 test('the paid keepsake masks the guest, not the booking reference', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'paid', paid: {
       reference: 'CH-TEST1', firstName: 'Nimal', leadName: 'Nimal Perera', amountUsd: '$498.85', facts: [],
@@ -461,7 +428,6 @@ test('the paid keepsake masks the guest, not the booking reference', async ({ pa
 
 test('the manage and quote greetings are masked too', async ({ page }) => {
   await offline(page);
-  await preConsented(page);
   await page.route('**/bookings/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(BOOKING) }));
   await page.route('https://www.payhere.lk/**', (r) =>
     r.fulfill({ status: 200, contentType: 'application/javascript', body: 'window.payhere={startPayment:function(){}};' }));
@@ -474,35 +440,11 @@ test('the manage and quote greetings are masked too', async ({ page }) => {
   await expect(page.locator('.pp-hello')).toHaveAttribute('data-clarity-mask', 'true');
 });
 
-// ── consent: the fix that makes all of the above collectable ─────────────────────────────
-
-// Reads the real module off the static server and flips the owner switch, so the strip's
-// tests exercise the SHIPPED file rather than a second copy that could drift from it.
-// Read the real file once, at module load, and assert the switch is there. Doing it here rather
-// than inside the route handler means a missing switch fails loudly at collection time instead of
-// as a mystery "element(s) not found" for the strip — a throw inside a route handler aborts the
-// request, so the script simply never loads and the symptom points at the wrong thing entirely.
-const CONSENT_SRC = readFileSync(
-  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../consent-transactional.js'),
-  'utf8',
-);
-const CONSENT_ASKING = CONSENT_SRC.replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
-if (!CONSENT_ASKING.includes('var ASK_FIRST = true;')) {
-  throw new Error('consent-transactional.js: ASK_FIRST switch not found — update forceAsk()');
-}
-
-async function forceAsk(page) {
-  // RegExp, not a glob: the script is referenced with a cache-busting ?v=<hash> (#464),
-  // and '**/consent-transactional.js' does not match the query-stringed URL.
-  //
-  // Served from the string above rather than route.fetch(): that fetch went back over HTTP to
-  // the same static server every other worker is loading, and when it lost that race the handler
-  // threw, the script never arrived, and the strip these tests look for was never rendered. It
-  // passed 100/100 stressed in isolation and failed in the full suite, which is exactly the
-  // shape of a contended round-trip. The file is on disk; there is nothing to fetch.
-  await page.route(/\/consent-transactional\.js(\?|$)/, (route) =>
-    route.fulfill({ status: 200, contentType: 'text/javascript', body: CONSENT_ASKING }));
-}
+// ── consent: granted in the head, with nothing left to ask ────────────────────────────────
+//
+// Owner decision 2026-08-16: no banner anywhere. consent.js and consent-transactional.js are
+// deleted, so there is no longer any consent 'update' to observe — the head's 'default' IS
+// the shipped state. These read that default instead.
 
 async function payablePage(page) {
   await offline(page);
@@ -510,98 +452,48 @@ async function payablePage(page) {
     body: JSON.stringify({ state: 'payable', copy: COPY, totals: TOTALS, prefill: PREFILL }) }));
 }
 
-const consentUpdates = (page) =>
-  page.evaluate(() =>
+const consentCalls = (page, kind) =>
+  page.evaluate((k) =>
     (window.dataLayer || [])
       .map((e) => Array.from(e && e.length !== undefined ? e : []))
-      .filter((a) => a[0] === 'consent' && a[1] === 'update')
-      .map((a) => a[2]));
+      .filter((a) => a[0] === 'consent' && a[1] === k)
+      .map((a) => a[2]), kind);
 
 test('the pay page measures on arrival, and shows the payer nothing at all', async ({ page }) => {
-  // Owner call 2026-08-07: ASK_FIRST = false. This is the SHIPPED behaviour — no floating
-  // card (the 2026-08-01 objection), no strip either, and analytics granted so Clarity can
-  // finally record a payment. The old test here asserted only that consent.js's card was
-  // absent, which was true while nothing was being measured at all.
   await payablePage(page);
   await page.setViewportSize({ width: 390, height: 720 });
   await page.goto('/pay.html?t=test-token');
   await expect(page.locator('#paybtn')).toBeVisible();
 
-  await expect(page.locator('#ch-consent')).toHaveCount(0);     // consent.js's card stays gone
-  await expect(page.locator('.ch-tconsent')).toHaveCount(0);    // ...and nothing replaced it
+  await expect(page.locator('#ch-consent')).toHaveCount(0);     // consent.js's card is gone
+  await expect(page.locator('.ch-tconsent')).toHaveCount(0);    // ...and so is the strip
   // Nothing rendered means nothing reserved space either.
   expect(await page.evaluate(() => document.body.style.paddingBottom)).toBe('');
 
-  const consent = await consentUpdates(page);
-  expect(consent).toHaveLength(1);
-  expect(consent[0].analytics_storage).toBe('granted');
-  // The entire basis for not asking is that this is first-party measurement with no
-  // advertising attached. An ad key here would remove that argument.
-  expect(consent[0].ad_storage).toBeUndefined();
-  expect(consent[0].ad_user_data).toBeUndefined();
-  expect(consent[0].ad_personalization).toBeUndefined();
+  const defaults = await consentCalls(page, 'default');
+  expect(defaults).toHaveLength(1);
+  expect(defaults[0].analytics_storage).toBe('granted');
+  // The basis for not asking is that this is first-party measurement with no advertising
+  // attached. An ad grant here would remove that argument.
+  expect(defaults[0].ad_storage).toBe('denied');
+  expect(defaults[0].ad_user_data).toBe('denied');
+  expect(defaults[0].ad_personalization).toBe('denied');
+
+  // Nothing updates the default any more, because nothing is left to ask.
+  expect(await consentCalls(page, 'update')).toHaveLength(0);
 });
 
-test('a customer who already refused is still not measured', async ({ page }) => {
-  // manage.html shares this storage key on the apex via consent.js, so a stored refusal is a
-  // real person's answer. The switch may skip ASKING; it must never overrule a decision.
+/* The deliberate consequence of removing the banner. 'ceylonhop_consent' was a real answer
+   from a real person, and with consent.js deleted nothing reads it — so a visitor who once
+   pressed Reject is measured on their next visit. Pinned as a test because it is the part of
+   this change most likely to be mistaken for a bug later. */
+test('a stored refusal no longer suppresses measurement', async ({ page }) => {
   await payablePage(page);
   await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
   await page.goto('/pay.html?t=test-token');
   await expect(page.locator('#paybtn')).toBeVisible();
-  expect(await consentUpdates(page)).toHaveLength(0);
-});
 
-// ── the strip, kept green for the day the owner flips the switch ──────────────────────────
-// "False, revisit when we're larger" — so these run against the real file with ASK_FIRST
-// rewritten to true. Without them the flip becomes a rediscovery instead of a one-word change.
-
-test('[ASK_FIRST] the strip asks without ever covering the CTA', async ({ page }) => {
-  // The owner's original objection was the OVERLAY: consent.js floats a card that landed on
-  // "Pay with PayHere" on a phone. This strip reserves its own height instead, and that —
-  // not the presence of an ask — is the invariant under test.
-  await payablePage(page);
-  await forceAsk(page);
-  await page.setViewportSize({ width: 390, height: 720 });
-  await page.goto('/pay.html?t=test-token');
-
-  await expect(page.locator('#ch-consent')).toHaveCount(0);
-  const strip = page.locator('.ch-tconsent');
-  await expect(strip).toBeVisible();
-
-  const cta = page.locator('#paybtn');
-  await cta.scrollIntoViewIfNeeded();
-  const [c, s] = [await cta.boundingBox(), await strip.boundingBox()];
-  const overlaps = c.y < s.y + s.height && s.y < c.y + c.height;
-  expect(overlaps, 'the consent strip is sitting on the pay button').toBe(false);
-  await expect(cta).toBeInViewport();
-
-  // ...and nothing is granted until they answer.
-  expect(await consentUpdates(page)).toHaveLength(0);
-});
-
-test('[ASK_FIRST] accepting grants analytics and nothing else', async ({ page }) => {
-  await payablePage(page);
-  await forceAsk(page);
-  await page.goto('/pay.html?t=test-token');
-  await page.locator('.ch-tconsent [data-consent="granted"]').click();
-
-  await expect(page.locator('.ch-tconsent')).toHaveCount(0);
-  const consent = await consentUpdates(page);
-  expect(consent).toHaveLength(1);
-  expect(consent[0].analytics_storage).toBe('granted');
-  expect(consent[0].ad_storage).toBeUndefined();
-  expect(consent[0].ad_personalization).toBeUndefined();
-});
-
-test('[ASK_FIRST] the choice carries across properties, so a quote and its payment are one session', async ({ page }) => {
-  // Separate ORIGINS, so localStorage does not travel. Without the hand-off a customer is
-  // asked twice and the two hops look like two cold sessions with a referral in between.
-  await payablePage(page);
-  await forceAsk(page);
-  await page.goto('/pay.html?t=test-token&chc=1');
-  await expect(page.locator('#paybtn')).toBeVisible();
-  await expect(page.locator('.ch-tconsent')).toHaveCount(0);
-  const consent = await consentUpdates(page);
-  expect(consent[0]?.analytics_storage).toBe('granted');
+  const defaults = await consentCalls(page, 'default');
+  expect(defaults[0].analytics_storage).toBe('granted');
+  expect(await consentCalls(page, 'update')).toHaveLength(0);
 });

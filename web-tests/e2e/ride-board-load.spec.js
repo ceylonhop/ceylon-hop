@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isApiRequest } from './_api-host.js';
 
 // board.js used to chain its two boot requests: /board did not even start until /board/me
 // had come back. On Render's free tier the instance sleeps, so the first request wakes it
@@ -23,11 +24,11 @@ const LISTS = {
 
 const isMe = (u) => new URL(u).pathname === '/board/me';
 const isBoard = (u) => new URL(u).pathname === '/board';
-// The API host, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically.
-// Deliberately NOT "anything non-local": fonts, GTM and the GIS script must keep loading
-// as they did before. Kept broad across both hosts so moving the API can never silently
-// un-stub these tests onto the live backend.
-const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
+// The API, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically, and
+// SAME-ORIGIN under the offline test server, which rewrites every live-API request to its own
+// origin with the path intact (serve-booking.js). Both forms are matched, so these stay
+// stubbed whether or not that rewrite is in play.
+//
 
 /** Stub the board API, holding /board/me open for ME_DELAY_MS. Returns a timing log. */
 async function stubApi(page) {
@@ -50,7 +51,7 @@ async function stubApi(page) {
   // subject here and must not slow the page down. Matched by predicate, not a hostname
   // glob: board.html points at ops.ceylonhop.com (same-site, for the ch_cust cookie), and
   // a glob that misses the real host would let these tests hit the live API.
-  await page.route((u) => isApiHost(u), (route) => {
+  await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board' || p === '/board/me') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -89,7 +90,7 @@ test('the grid shows a skeleton while the board is loading', async ({ page }) =>
     await held;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LISTS) });
   });
-  await page.route((u) => isApiHost(u), (route) => {
+  await page.route((u) => isApiRequest(u), (route) => {
     if (new URL(route.request().url()).pathname === '/board') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ me: null }) });
   });

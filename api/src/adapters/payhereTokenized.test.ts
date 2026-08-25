@@ -29,6 +29,19 @@ function adapter(fetchImpl: typeof fetch = vi.fn() as unknown as typeof fetch) {
   );
 }
 
+function liveAdapter(fetchImpl: typeof fetch = vi.fn() as unknown as typeof fetch) {
+  return new PayHereTokenizedPaymentAdapter(
+    MID,
+    SECRET,
+    {
+      mode: 'live',
+      notifyUrl: 'https://ops.ceylonhop.com/board/payhere/notify',
+    },
+    { appId: 'app-id', appSecret: 'app-secret' },
+    fetchImpl,
+  );
+}
+
 describe('PayHereTokenizedPaymentAdapter — preapproval', () => {
   it('creates a hosted PayHere preapproval without charging the ride fare', async () => {
     const result = await adapter().preapprove({
@@ -58,6 +71,45 @@ describe('PayHereTokenizedPaymentAdapter — preapproval', () => {
     expect(result.checkout.fields.amount).toBeUndefined();
     expect(result.checkout.fields.hash).toBe(
       md5(`${MID}RBPA-1231.01USD${md5(SECRET)}`),
+    );
+  });
+
+  // PROD: every live preapproval died at `PH-0014 Unauthorized payment request`.
+  // PayHere support, 2026-08-24: "Please use 0.51 as the authorization amount for other
+  // currencies when generating the hash value... the authorization amount has been changed
+  // in the PayHere Live environment. This change will be reflected in the PayHere
+  // documentation soon." Their published docs still say 1.01, and sandbox still expects it —
+  // so this is deliberately a LIVE-only value, and the sandbox test above still pins 1.01.
+  it('hashes a non-LKR live preapproval over 0.51, not the documented 1.01', async () => {
+    const result = await liveAdapter().preapprove({
+      customerRef: 'google-sub',
+      orderId: 'RBPA-123',
+      items: 'Ceylon Hop shared ride Kandy to Ella',
+      currency: 'USD',
+      returnUrl: 'https://prod.ceylonhop.com/board.html?ridePayment=RBPA-123',
+      cancelUrl: 'https://prod.ceylonhop.com/board.html?ridePayment=RBPA-123&cancelled=1',
+      customer,
+    });
+    if (result.status !== 'requires_action') throw new Error('expected hosted checkout');
+    expect(result.checkout.checkoutUrl).toBe('https://www.payhere.lk/pay/preapprove');
+    expect(result.checkout.fields.amount).toBeUndefined();
+    expect(result.checkout.fields.hash).toBe(
+      md5(`${MID}RBPA-1230.51USD${md5(SECRET)}`),
+    );
+  });
+
+  it('still hashes a live LKR preapproval over 10.00 — the change was other currencies only', async () => {
+    const result = await liveAdapter().preapprove({
+      customerRef: 'google-sub',
+      orderId: 'RBPA-124',
+      currency: 'LKR',
+      returnUrl: 'https://prod.ceylonhop.com/board.html',
+      cancelUrl: 'https://prod.ceylonhop.com/board.html?cancelled=1',
+      customer,
+    });
+    if (result.status !== 'requires_action') throw new Error('expected hosted checkout');
+    expect(result.checkout.fields.hash).toBe(
+      md5(`${MID}RBPA-12410.00LKR${md5(SECRET)}`),
     );
   });
 

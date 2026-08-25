@@ -12,7 +12,13 @@ below to `dataLayer`; these steps turn them into tags. Reuse the EXISTING contai
 - [ ] GA4 Configuration tag → Measurement ID `G-XEW62ZD7B3`, trigger: Consent Initialization.
 - [ ] Mark `purchase` as a **key event** (Admin → Events).
 - [ ] Register custom dimensions (event-scoped): `payment_type`, `name` (checkout step),
-      `item_category`, `source`, `mode`.
+      `item_category`, `source`, `mode`, `freetext_place`.
+      `freetext_place` (on `search`) is `none` / `from` / `to` / `both` — which ENDS of the
+      search arrived as a free-text place rather than a catalogue id. It answers "is it worth
+      geo-matching a pin to a scheduled stop?", and it is deliberately not the place name:
+      `to` itself would blow past GA4's ~500-distinct-values-per-day `(other)` bucket. **GA4
+      does not backfill** — every day this is unregistered is a day that question stays
+      unanswerable.
 
 ## GA4 event tags (one per dataLayer event; Custom Event trigger on the event name)
 - [ ] `search`, `view_item_list`, `select_item`, `begin_checkout`, `checkout_step`,
