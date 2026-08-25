@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { isApiRequest } from './_api-host.js';
 
 // A full van you are not on: the only action worth offering is "Start another van".
 // The card used to carry a second "See who's on" button beside it — the generic
@@ -24,10 +25,14 @@ const FULL_VAN = {
   ],
 };
 
-const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
+// The API, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically, and
+// SAME-ORIGIN under the offline test server, which rewrites every live-API request to its own
+// origin with the path intact (serve-booking.js). Both forms are matched, so these stay
+// stubbed whether or not that rewrite is in play.
+//
 
 async function stubApi(page) {
-  await page.route((u) => isApiHost(u), (route) => {
+  await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FULL_VAN) });

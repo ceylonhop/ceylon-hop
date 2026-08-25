@@ -200,6 +200,16 @@ test('clicking a gap jumps to the leg it names, flags the card and focuses its d
 test('leg cards are quiet at rest and reveal their tools on hover and focus', async ({ page }) => {
   test.slow();
   await buildTrip(page);
+  // The reveal is a .18s opacity fade, and toHaveCSS samples it. Under heavy parallel load
+  // the runner got only TWO samples across the whole 5s poll and both landed mid-fade
+  // (0.084, 0.102), so the assertion timed out on a transition that was working perfectly.
+  // Drop the fade for this spec: every sample then reads the settled 0/1 target however
+  // rarely it lands. The contract here is WHICH controls are visible WHEN, not how they
+  // travel, so the values asserted below are unchanged (this mirrors the app's own
+  // prefers-reduced-motion rule, which likewise only removes the transition).
+  await page.addStyleTag({
+    content: '.qv .ch-leg-quiet .ch-leg-reorder, .qv .ch-leg-quiet .ch-leg-actions { transition: none !important; }',
+  });
   const leg2 = page.locator('.ch-leg').nth(1);
   const reorder = leg2.locator('.ch-leg-reorder');
   const actions = leg2.locator('.ch-leg-actions');
@@ -207,10 +217,14 @@ test('leg cards are quiet at rest and reveal their tools on hover and focus', as
   await expect(reorder).toHaveCount(1);
   await expect(reorder).toHaveCSS('opacity', '0');
   await expect(actions).toHaveCSS('opacity', '0');
-  // Hovering the card brings them back…
-  await leg2.hover();
-  await expect(reorder).toHaveCSS('opacity', '1');
-  await expect(actions).toHaveCSS('opacity', '1');
+  // Hovering the card brings them back… Re-hovering inside toPass because this builder
+  // re-renders constantly: a diff-render or layout shift can slide the card out from under
+  // a stationary pointer, which drops :hover. That should cost a retry, not the test.
+  await expect(async () => {
+    await leg2.hover();
+    await expect(reorder).toHaveCSS('opacity', '1', { timeout: 1000 });
+    await expect(actions).toHaveCSS('opacity', '1', { timeout: 1000 });
+  }).toPass({ timeout: 15000 });
   // …and so does keyboard focus landing anywhere inside it, so tab users are never locked out.
   await page.locator('.ch-leg').nth(0).hover(); // move the pointer away
   await expect(reorder).toHaveCSS('opacity', '0');
