@@ -163,6 +163,7 @@ export async function installEstimateStub(page, opts = {}) {
  *   bookingStatus- HTTP status for POST /bookings/* (default 201)
  *   checkout     - 'fake' (default, simulate path) | 'payhere'
  *   payhere      - 'completed' (default) | 'dismissed' | 'error'
+ *   settlementStatuses - server payment states returned after PayHere completes
  */
 export async function gotoBooking(page, opts = {}) {
   const {
@@ -178,6 +179,7 @@ export async function gotoBooking(page, opts = {}) {
     pickGeo = null,                  // {lat,lng}: pin Google picks inside a drop-off area
     checkoutError = null,            // {status, body}: make POST /bookings/:id/checkout refuse
     estimate = null,                 // installEstimateStub opts: switches this spec into the engine-priced world
+    settlementStatuses = ['paid'],   // webhook-owned state polled after the PayHere popup finishes
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -247,9 +249,16 @@ export async function gotoBooking(page, opts = {}) {
       });
     }
     if (checkout === 'payhere') {
-      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { merchant_id: 'TEST', order_id: 'CH-E2E01', amount: '121.00', currency: 'USD', hash: 'X' } }));
+      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', payReturnToken: 'e2e-pay-return-token', fields: { merchant_id: 'TEST', order_id: 'CH-E2E01', amount: '121.00', currency: 'USD', hash: 'X' } }));
     }
     return r.fulfill(json({ checkoutUrl: 'https://example.test/fake-gateway', fields: {} }));
+  });
+
+  let settlementCall = 0;
+  await page.route('**/bookings/pay-return?rt=*', (r) => {
+    const status = settlementStatuses[Math.min(settlementCall, settlementStatuses.length - 1)] || 'pending';
+    settlementCall += 1;
+    return r.fulfill(json({ status, reference: 'CH-E2E01' }));
   });
 
   await page.goto(`${path}?${query}`);
