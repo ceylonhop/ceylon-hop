@@ -489,7 +489,9 @@ function syncPlanUrl(){
     p.set('nights', seq.map(s=>s.nights).join(','));
     p.set('dates', dates.join(','));
     if(gaps.length) p.set('gaps', gaps.join(',')); else p.delete('gaps');
-    p.set('pax', String(state.pax));
+    // pax stays out of the URL until it's actually picked — String(null) wrote the literal
+    // "null", which booking.js would later parse as 1 traveller.
+    if(state.pax!=null) p.set('pax', String(state.pax)); else p.delete('pax');
     p.set('vehicle', state.vehicle);
     const datesWrap=document.getElementById('dates-wrap');
     if(datesWrap && !datesWrap.hidden) p.set('step','dates');
@@ -1087,11 +1089,17 @@ function showRouteHint(msg){
   hint.scrollIntoView({block:'center',behavior:'smooth'});
 }
 
+// A route handed in from the homepage, search or a template arrives without a traveller
+// count (the board itself is only pax-gated when FRESH), and trip-mode booking parks its
+// Travellers step — so this is the last moment anyone asks. Without it a family of five
+// books as 1 traveller in a 3-seat car.
+const PAX_HINT='Pick how many are travelling — choose your travellers above to continue.';
 function showDatesStep(){
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
   const seq=routeSeq();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
+  if(state.pax==null){ showRouteHint(PAX_HINT); return; }
   document.querySelector('.board-wrap').style.display='none';
   // the “Build your route” hero belongs to step 1 — hide it on the dates step, which has its own header
   const head=document.querySelector('.plan-head'); if(head) head.style.display='none';
@@ -1128,6 +1136,9 @@ function goToBooking(){
   if(driveIssue && driveIssue.level==='block') return;
   const { seq, dates, kms, gaps } = routeSeqDetailed();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
+  // Backstop for the showDatesStep gate (?step=dates deep-links land here too): never hand
+  // booking pax=null — it parses "null" as 1 traveller and there is no later step to fix it.
+  if(state.pax==null){ backToRoute(); showRouteHint(PAX_HINT); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
   // kms comes from routeSeqDetailed so it is index-aligned per wire with stops/dates —

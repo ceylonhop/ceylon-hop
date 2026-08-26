@@ -132,7 +132,7 @@ test('booking calendar disables dates more than 12 months out', async ({ page })
 
 test('planner date handoff keeps the selected local date in the booking URL', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
-  await page.goto('/plan.html?step=dates&stops=Colombo%20Airport%20(CMB)%7CKandy');
+  await page.goto('/plan.html?step=dates&stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2');
 
   await page.$eval(
     '.date-row[data-i="0"] input',
