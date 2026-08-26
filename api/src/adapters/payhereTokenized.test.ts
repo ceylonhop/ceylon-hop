@@ -189,6 +189,67 @@ describe('PayHereTokenizedPaymentAdapter — Automated Charging API', () => {
     });
   });
 
+  // A charge that was SENT and whose reply was lost is not a failure — PayHere may well have
+  // taken the money. Reporting it as 'failed' is what let the cutoff sweep mark the traveller
+  // charge_failed, call the van off, and email them "you weren't charged" while their card was
+  // debited. The refund side already models this as a tri-state; the charge side must too.
+  //
+  // The distinction is worth drawing precisely: a request that never left this process (DNS
+  // failure, connection refused) definitely charged nobody, and calling THAT unknown would
+  // manufacture critical alerts and, under the sweep's optimistic policy, count a certainly-
+  // unpaid seat as paid.
+  describe('an indeterminate charge is reported as unknown, not failed', () => {
+    const oauthOk = () => new Response(JSON.stringify({ access_token: 'oauth-token', expires_in: 599 }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+    const chargeThrowing = (err: Error) =>
+      vi.fn().mockResolvedValueOnce(oauthOk()).mockRejectedValueOnce(err);
+
+    it('reports a request that timed out in flight as unknown', async () => {
+      const timeout = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+      const result = await adapter(chargeThrowing(timeout) as unknown as typeof fetch).charge({
+        ref: 'token', amountCents: 2950, currency: 'USD', orderId: 'EM-4821-sub',
+      });
+      expect(result.status).toBe('unknown');
+      // The order id is the reconciliation handle — it has to survive into the alert.
+      expect(result.failureReason).toContain('timeout');
+    });
+
+    it('reports a socket that hung up mid-request as unknown', async () => {
+      const hangup = Object.assign(new Error('fetch failed'), {
+        cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+      });
+      const result = await adapter(chargeThrowing(hangup) as unknown as typeof fetch).charge({
+        ref: 'token', amountCents: 2950, currency: 'USD', orderId: 'EM-4821-sub',
+      });
+      expect(result.status).toBe('unknown');
+    });
+
+    it('still reports a request that never left the box as failed', async () => {
+      for (const code of ['ENOTFOUND', 'ECONNREFUSED']) {
+        const never = Object.assign(new Error('fetch failed'), {
+          cause: Object.assign(new Error(`${code} sandbox.payhere.lk`), { code }),
+        });
+        const result = await adapter(chargeThrowing(never) as unknown as typeof fetch).charge({
+          ref: 'token', amountCents: 2950, currency: 'USD', orderId: 'EM-4821-sub',
+        });
+        expect(result.status, `${code} never reached PayHere, so nothing was charged`).toBe('failed');
+      }
+    });
+
+    it('still reports a PayHere decline as failed, not unknown', async () => {
+      const declined = vi.fn()
+        .mockResolvedValueOnce(oauthOk())
+        .mockResolvedValueOnce(new Response(JSON.stringify({ status: -1, msg: 'Card declined' }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        }));
+      const result = await adapter(declined as unknown as typeof fetch).charge({
+        ref: 'token', amountCents: 2950, currency: 'USD', orderId: 'EM-4821-sub',
+      });
+      expect(result).toMatchObject({ status: 'failed', failureReason: 'Card declined' });
+    });
+  });
+
   it('fails closed before contacting PayHere for an invalid token or amount', async () => {
     const fetchImpl = vi.fn();
     const payhere = adapter(fetchImpl as unknown as typeof fetch);

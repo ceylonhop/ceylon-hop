@@ -90,6 +90,42 @@ test('the route bar appears once the itinerary has stops', async ({ page }) => {
   await expect(page.locator('#sum-route')).toContainText('Ella');
 });
 
+test('a handed-in route cannot reach booking without a traveller count', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  // The homepage multi-stop hero and search's "Add stops to this trip" hand in stops with
+  // no pax. The board opens ungated (hideTemplates), and trip-mode booking parks its
+  // Travellers step — so nothing downstream ever asks, and a family of five would book
+  // and pay as 1 traveller in a 3-seat car.
+  await page.goto('/plan.html?stops=Kandy%7CElla');
+
+  await page.locator('#request-btn').click();
+
+  // Blocked on the route step with a prompt — not silently on to dates.
+  await expect(page.locator('#dates-wrap')).toBeHidden();
+  await expect(page.locator('#route-incomplete-hint')).toBeVisible();
+  await expect(page.locator('#route-incomplete-hint')).toContainText(/travelling/i);
+
+  // Picking a count unblocks the flow, and booking receives the real number.
+  await page.locator('.pax-pill[data-pax="5"]').click();
+  await page.locator('#request-btn').click();
+  await expect(page.locator('#dates-wrap')).toBeVisible();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+  const q = new URL(page.url()).searchParams;
+  expect(q.get('pax')).toBe('5');
+  expect(q.get('vehicle')).toBe('van'); // 5 travellers auto-locked the van on the planner
+});
+
+test('an unpicked traveller count is never serialised as pax=null', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla');
+
+  // render() re-syncs the plan URL on load; String(null) used to land in it verbatim,
+  // and booking.js parses "null" to 1 traveller.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+  expect(page.url()).not.toContain('pax=null');
+});
+
 test('a booking/template hand-off pre-lights the matching pill', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=4&vehicle=van');

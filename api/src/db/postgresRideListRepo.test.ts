@@ -34,6 +34,10 @@ describe.skipIf(!TEST_URL)('PostgresRideListRepo (integration)', () => {
     ...over,
   });
 
+  const member = (sub: string, seats: number) => ({
+    sub, firstName: sub, country: 'LK', email: `${sub}@x.com`, seats,
+  });
+
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
     sql = conn.sql;
@@ -71,5 +75,30 @@ describe.skipIf(!TEST_URL)('PostgresRideListRepo (integration)', () => {
   it('defaults status to gathering when the caller does not set one', async () => {
     const list = await lists.createList(args());
     expect(list.status).toBe('gathering');
+  });
+
+  // The ON CONFLICT branch of addMember is the re-join / seat-change upsert. It used to set
+  // status = 'held' unconditionally, so a CHARGED member's own harmless re-tap erased the only
+  // record that their money was taken. Only a real Postgres can prove the CASE in that upsert
+  // does what the in-memory repo does.
+  describe('addMember never downgrades a charged member', () => {
+    it('keeps charged across a re-join, while still applying the seat change', async () => {
+      const list = await lists.createList(args());
+      await lists.addMember(list.id, member('paid-sub', 1));
+      await lists.setMemberStatus(list.id, 'paid-sub', 'charged');
+
+      const again = await lists.addMember(list.id, member('paid-sub', 2));
+
+      expect(again?.status).toBe('charged');
+      expect(again?.seats).toBe(2);
+    });
+
+    it('still reactivates a scratched member as held', async () => {
+      const list = await lists.createList(args());
+      await lists.addMember(list.id, member('gone-sub', 1));
+      await lists.removeMember(list.id, 'gone-sub');
+
+      expect((await lists.addMember(list.id, member('gone-sub', 1)))?.status).toBe('held');
+    });
   });
 });

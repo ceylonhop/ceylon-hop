@@ -61,6 +61,24 @@ describe('cutoff sweep telemetry', () => {
     expect(typeof confirmed!.lockedTime).toBe('string');
   });
 
+  // The sweep counts an indeterminate charge toward the van running, so its seats land in
+  // `revenueCents` — money we are not actually sure we hold. Without a count beside it the
+  // revenue line silently overstates, and nobody reading it can tell.
+  it('marks how much of a confirmed van\'s revenue is still unconfirmed', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const list = await seedList(repo);
+    await addName(repo, list.id, 'a');
+    await addName(repo, list.id, 'b');
+    await addName(repo, list.id, 'c');
+    paygw.markRefWillBeUnknown('pre-c');
+
+    const fired = await events(() => runRideBoardCutoff(PAST_CUTOFF, deps(repo, paygw)));
+    const confirmed = fired.find((e) => e.event === 'ride_board.confirmed');
+    expect(confirmed!.revenueCents).toBe(2450 * 3);
+    expect(confirmed!.chargeUnknown).toBe(1);
+  });
+
   it('records a van called off for want of names, and says so', async () => {
     const repo = new InMemoryRideListRepo();
     const list = await seedList(repo);

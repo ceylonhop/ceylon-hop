@@ -201,3 +201,44 @@ describe('InMemoryRideListRepo — lock & cutoff', () => {
     expect(due[0].list.fromPlace).toBe('Ella');
   });
 });
+
+// addMember doubles as the re-join / seat-change upsert, and its ON CONFLICT branch used to set
+// status = 'held' unconditionally. A member the cutoff sweep had already CHARGED could therefore
+// be flipped back to 'held' by their own harmless re-tap, destroying the only record that money
+// had been taken: ops sees an unpaid traveller who insists they paid, and a re-sweep no longer
+// skips them (rideBoardCutoff skips on status === 'charged'), so they are a double-charge
+// candidate. A repo must never silently un-take money, whoever calls it.
+describe('InMemoryRideListRepo — a charged member is never downgraded', () => {
+  it('keeps status charged when a charged member re-joins', async () => {
+    const repo = new InMemoryRideListRepo();
+    const list = await repo.createList(baseList());
+    await repo.addMember(list.id, joiner('paid'));
+    await repo.setMemberStatus(list.id, 'paid', 'charged');
+
+    const again = await repo.addMember(list.id, joiner('paid'));
+
+    expect(again?.status).toBe('charged');
+    expect((await repo.getById(list.id))?.members.find((m) => m.sub === 'paid')?.status).toBe('charged');
+  });
+
+  it('applies the seat change but still keeps them charged', async () => {
+    const repo = new InMemoryRideListRepo();
+    const list = await repo.createList(baseList());
+    await repo.addMember(list.id, joiner('paid', 1));
+    await repo.setMemberStatus(list.id, 'paid', 'charged');
+
+    const again = await repo.addMember(list.id, joiner('paid', 2));
+
+    expect(again?.seats).toBe(2);
+    expect(again?.status).toBe('charged');
+  });
+
+  it('still reactivates a scratched member as held', async () => {
+    const repo = new InMemoryRideListRepo();
+    const list = await repo.createList(baseList());
+    await repo.addMember(list.id, joiner('gone'));
+    await repo.removeMember(list.id, 'gone');
+
+    expect((await repo.addMember(list.id, joiner('gone')))?.status).toBe('held');
+  });
+});

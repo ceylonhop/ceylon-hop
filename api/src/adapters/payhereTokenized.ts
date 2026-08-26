@@ -14,6 +14,17 @@ const TOKEN_MARGIN_MS = 60_000;
 const API_TIMEOUT_MS = 10_000;
 const API_USER_AGENT = 'CeylonHop-API/1.0 (+https://ceylonhop.com)';
 
+// Errors proving the request never reached PayHere, so no card can have been touched. Anything
+// else thrown by fetch (a timeout, a socket dropped mid-flight) leaves the outcome genuinely
+// unknown. We enumerate the safe side and treat the rest as indeterminate — guessing wrong in
+// this direction only costs a needless alert, guessing wrong in the other loses a customer's money.
+const NEVER_SENT_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function neverLeftTheBox(error: unknown): boolean {
+  const code = (error as { cause?: { code?: unknown } })?.cause?.code;
+  return typeof code === 'string' && NEVER_SENT_CODES.has(code);
+}
+
 const md5Upper = (value: string): string =>
   createHash('md5').update(value).digest('hex').toUpperCase();
 
@@ -247,9 +258,16 @@ export class PayHereTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
       }
       return { status: 'succeeded', providerTxnId: String(paymentId) };
     } catch (error) {
-      // Do not retry automatically: PayHere may have charged before a timeout. The stable order
-      // id is retained for dashboard reconciliation.
-      return { status: 'failed', failureReason: `charge_result_unknown:${(error as Error).message}` };
+      // Do not retry automatically: PayHere may have charged before a timeout, and this API has
+      // no idempotency key. The stable order id is retained for dashboard reconciliation.
+      //
+      // Which of the two it is matters to the money. A request that never left this process
+      // charged nobody and is a plain failure; one that went out and lost its reply is
+      // genuinely indeterminate and must say so.
+      const reason = (error as Error).message;
+      return neverLeftTheBox(error)
+        ? { status: 'failed', failureReason: `charge_not_sent:${reason}` }
+        : { status: 'unknown', failureReason: `charge_result_unknown:${reason}` };
     }
   }
 }

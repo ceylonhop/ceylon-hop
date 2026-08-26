@@ -232,3 +232,99 @@ describe('the cutoff is wired to alerts in production', () => {
     expect(call![0], 'the sweep must be given alerts, or a refund-due call-off is silent').toContain('alerts');
   });
 });
+
+// A charge whose reply was lost is NOT a failure — PayHere may have taken the money. Treating
+// it as one is how a traveller gets emailed "the ride is off, you weren't charged" while their
+// card is debited, with no alert and no place on the refund list.
+//
+// The policy is deliberately OPTIMISTIC: an unknown outcome counts toward the van running.
+// Compare the two ways of being wrong. Optimistic and PayHere did not charge → we carry one
+// unpaid seat on a van that runs: bounded, alerted, chaseable. Pessimistic and PayHere DID
+// charge → we cancel a viable van and tell a debited customer they weren't charged. The
+// optimistic branch is also the only one whose customer-facing email is true either way,
+// because that traveller is on the van in both worlds.
+describe('a charge with an unknown outcome', () => {
+  const withUnknown = async (over: Partial<CreateListArgs>, unknownRefs: string[], failRefs: string[] = []) => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const list = await repo.createList(listArgs(over));
+    await fill(repo, list.id, (over.capacity ?? 6) >= 5 ? 5 : 4);
+    unknownRefs.forEach((r) => paygw.markRefWillBeUnknown(r));
+    failRefs.forEach((r) => paygw.markRefWillFail(r));
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, alerts });
+    return { repo, paygw, email, alerts, list, res };
+  };
+
+  it('counts toward the van running rather than sinking it', async () => {
+    // 4 seats needed, 4 held: three charge cleanly and one is indeterminate. Pessimism here
+    // would call off a van that is very probably paid for.
+    const { repo, email, res, list } = await withUnknown({ minSeats: 4, capacity: 4 }, ['pa_u3']);
+
+    expect(res).toMatchObject({ confirmed: 1, expired: 0, charged: 3, chargeUnknown: 1 });
+    expect((await repo.getByCode(list.code))?.list.status).toBe('confirmed');
+    expect(email.sent.filter((e) => /called off/i.test(e.subject))).toHaveLength(0);
+  });
+
+  it('never tells the traveller they were not charged', async () => {
+    // The van is called off for other reasons; the indeterminate traveller must not receive
+    // the "you weren't charged" email, because they may well have been.
+    const { email } = await withUnknown({ minSeats: 5, capacity: 6 }, ['pa_u0'], ['pa_u1', 'pa_u2', 'pa_u3']);
+
+    const theirs = email.sent.filter((e) => e.to === 'u0@x.com');
+    expect(theirs.length).toBeGreaterThan(0);
+    for (const e of theirs) {
+      expect(`${e.subject} ${e.text}`).not.toMatch(/n't charged|not charged|hold is released/i);
+    }
+    expect(theirs.some((e) => /refund/i.test(`${e.subject} ${e.text}`))).toBe(true);
+  });
+
+  it('raises a critical alert naming the order id a human must reconcile', async () => {
+    const { alerts, list } = await withUnknown({ minSeats: 4, capacity: 4 }, ['pa_u3']);
+
+    const alert = alerts.sent.find((a) => /unknown|indeterminate/i.test(a.kind));
+    expect(alert, 'expected an indeterminate-charge alert').toBeTruthy();
+    expect(alert!.severity).toBe('critical');
+    // Without the order id nobody can find the payment in the PayHere dashboard.
+    expect(`${alert!.title} ${alert!.body}`).toContain(`${list.code}-u3`);
+    expect(alert!.body).toMatch(/do not retry|don't retry/i);
+  });
+
+  // The alert tells ops what the traveller was told, so it must describe THIS list's outcome.
+  // A per-sweep accumulator would let a confirmed list earlier in the batch put "the ride is
+  // confirmed" into the alert for a list that was actually called off.
+  it('describes the outcome of its own list, not of one earlier in the sweep', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+
+    const runs = await repo.createList(listArgs({ minSeats: 2, capacity: 6 }));
+    await fill(repo, runs.id, 2); // both charge cleanly → confirmed
+
+    // Distinct refs: the fake keys its outcomes by token, so reusing pa_u0 would also break
+    // the list above and prove nothing about the alert.
+    const calledOff = await repo.createList(listArgs({ fromPlace: 'Kandy', minSeats: 4, capacity: 6 }));
+    for (let i = 0; i < 4; i++) await repo.addMember(calledOff.id, joiner(`k${i}`, `pa_k${i}`));
+    paygw.markRefWillBeUnknown('pa_k0');
+    ['pa_k1', 'pa_k2', 'pa_k3'].forEach((r) => paygw.markRefWillFail(r));
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, alerts });
+    expect(res).toMatchObject({ confirmed: 1, expired: 1 });
+
+    const alert = alerts.sent.find((a) => a.kind === 'ride_board_charge_indeterminate');
+    expect(alert!.body).toContain(calledOff.code);
+    expect(alert!.body).toMatch(/called off/i);
+    expect(alert!.body).not.toMatch(/ride is confirmed/i);
+  });
+
+  it('leaves no traveller in a state the sweep would charge a second time', async () => {
+    const { repo, paygw, list } = await withUnknown({ minSeats: 4, capacity: 4 }, ['pa_u3']);
+
+    const them = (await repo.getByCode(list.code))?.members.find((m) => m.sub === 'u3');
+    expect(them?.status).not.toBe('held'); // 'held' is precisely what a re-sweep would charge
+    const chargesForThem = paygw.charges.filter((c) => c.orderId === `${list.code}-u3`);
+    expect(chargesForThem).toHaveLength(1);
+  });
+});
