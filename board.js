@@ -540,7 +540,12 @@
         ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
         : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
-          (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
+          // `conf` is `L.confirmed || need === 0`, which conflates two states. A list only
+          // reaches status 'confirmed' in the cutoff sweep, and a seat on one can no longer be
+          // joined — so inviting a hop-on there is an action that can only 409. A list that has
+          // merely hit its minimum is still gathering with the cutoff ahead: it takes joiners,
+          // and keeps the invitation.
+          (mine ? 'View your ride' : L.confirmed ? "See who's going" : conf ? 'See ride · hop on' : 'See ride & join') +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
       '</div>' +
       (L.note
