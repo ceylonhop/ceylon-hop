@@ -722,13 +722,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     const A=TRANSFERS.place(f), B=TRANSFERS.place(t);
     const q=TRANSFERS.privateQuote(f,t);
     const sh=TRANSFERS.sharedOption(f,t);
-    const u=new URLSearchParams({from:f,to:t}).toString();
+    // Send these to the route page, not search. The route page IS the product page for a known
+    // pair (both options, price, and a Book CTA that carries the quote), and it is static, so it
+    // renders without waiting on the engine. It also gives the 44 /trip/ pages the only internal
+    // links they have from anywhere on the site — nothing else links to them, and an orphaned
+    // page does not rank. Guarded by web-tests/unit/home-transfer-links.test.js, which fails if a
+    // pair here has no generated page (that would ship a 404 on the homepage's main cards).
     const estimate=CH.routeEstimate.formatRouteEstimate({
       distanceKm:q.km,
       durationMin:q.durationMin,
       state:q.estimated?'estimated':'browse'
     });
-    return `<a class="card tcard reveal" href="search.html?${u}">
+    return `<a class="card tcard reveal" href="trip/${f}-to-${t}/">
       <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
       <div class="tc-meta">${estimate}</div>
       <div class="tc-foot">
