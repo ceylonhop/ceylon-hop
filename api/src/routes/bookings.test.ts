@@ -8,7 +8,7 @@ import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { isoToday } from '../domain/dateRules';
-import { futureIsoDate } from '../testSupport/dates';
+import { futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { signBookingToken } from '../lib/bookingToken';
 
 async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
@@ -104,8 +104,8 @@ describe('POST /bookings/single', () => {
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.total).toBe(7850); // raw 7849¢ → nearest-50¢ final price
-    expect(b.amountDueNow).toBe(7850);
+    expect(b.total).toBe(7800); // raw 7849¢ → no threshold in reach, cents dropped
+    expect(b.amountDueNow).toBe(7800);
   });
 
   // ── Rate-lock (spec 2026-07-11 §4): a booking carrying a live web quote id is priced against
@@ -130,20 +130,20 @@ describe('POST /bookings/single', () => {
   it('an EXPIRED locked quote id falls back to the live card (the 7-day hold has lapsed)', async () => {
     const { app, quoteId } = await withLockedQuote(new Date(Date.now() - 86_400_000), 20); // expired yesterday
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
-    expect(b.total).toBe(7850); // live card raw 7849¢ → nearest-50¢ final price
+    expect(b.total).toBe(7800); // live card raw 7849¢ → no threshold in reach, cents dropped
   });
 
   it('an unknown quote id is ignored — prices on the live card, never crashes', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId: 'no-such-quote' })).json();
-    expect(b.total).toBe(7850);
+    expect(b.total).toBe(7800);
   });
 
   it('prices payload extras through the engine (GL-3)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['luggage', 'front'] });
     const b = await res.json();
-    expect(b.total).toBe(9150); // raw 9149¢ incl. extras → nearest-50¢ final price
+    expect(b.total).toBe(8999); // raw 9149¢ incl. extras → crosses the $90 threshold
   });
 
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
@@ -312,6 +312,104 @@ describe('POST /bookings — no past dates (trip + shared)', () => {
   });
 });
 
+// Minimum notice (owner rule, 2026-08-16): a private transfer needs 12 hours, a chauffeur-guide
+// trip needs 7 days. Distinct from the past-date guard above — these dates are all in the future.
+describe('POST /bookings — minimum notice', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  const trip = (over: Record<string, unknown>) => ({
+    stops: ['Colombo Airport (CMB)', 'Kandy'], nights: [1, 0],
+    pax: 2, vehicleType: 'car', customer: valid.customer, ...over,
+  });
+
+  it('single rejects a pickup less than 12 hours away', async () => {
+    const app = createApp();
+    const soon = colomboDateTimeIn(6);
+    const res = await post(app, { ...valid, date: soon.date, time: soon.time });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('lead_time_too_short');
+    expect(body.message).toContain('12 hours');
+  });
+
+  it('single accepts a pickup beyond 12 hours', async () => {
+    const app = createApp();
+    const later = colomboDateTimeIn(20);
+    const res = await post(app, { ...valid, date: later.date, time: later.time });
+    expect(res.status).toBe(201);
+  });
+
+  it('single rejects a flexi-time booking for today, and accepts one for a later day', async () => {
+    const app = createApp();
+    const today = isoToday('Asia/Colombo');
+    expect((await post(app, { ...valid, date: today })).status).toBe(400);
+    // No time at all is still fine on a future day — ops confirm the hour later.
+    const ok = await post(app, { ...valid, date: colomboDateTimeIn(40).date });
+    expect(ok.status).toBe(201);
+  });
+
+  it('chauffeur trip rejects a start inside 7 days and accepts one beyond it', async () => {
+    const app = createApp();
+    const near = await jpost(app, '/bookings/trip', trip({ serviceType: 'chauffeur', dates: [futureIsoDate(6)], days: 2, driverNights: 1 }));
+    expect(near.status).toBe(400);
+    const body = await near.json();
+    expect(body.error).toBe('lead_time_too_short');
+    expect(body.message).toContain('7 days');
+
+    const far = await jpost(app, '/bookings/trip', trip({ serviceType: 'chauffeur', dates: [futureIsoDate(9)], days: 2, driverNights: 1 }));
+    expect(far.status).toBe(201);
+  });
+
+  it('a PRIVATE trip keeps the 12-hour rule, not the chauffeur one — 3 days out is fine', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', trip({ serviceType: 'private', dates: [futureIsoDate(3)] }));
+    expect(res.status).toBe(201);
+  });
+
+  it('a private trip starting today is too soon (no per-leg time to measure against)', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', trip({ serviceType: 'private', dates: [isoToday('Asia/Colombo')] }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('lead_time_too_short');
+  });
+
+  it('an undated trip is unaffected — flexible dates are not "too soon"', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', trip({ serviceType: 'chauffeur', days: 2, driverNights: 1 }));
+    expect(res.status).toBe(201);
+  });
+
+  it('shared seats are deliberately untouched — the next departure is still bookable', async () => {
+    const app = createApp();
+    // Shared runs Wed & Sat, so there is always a service day within the next 6 days — well
+    // inside both notice windows. It must still book.
+    let date: string | null = null;
+    for (let i = 1; i <= 6 && !date; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) date = iso;
+    }
+    // The fixture must name a real catalogue product. It was `hill-line` with no from/to,
+    // which #535 broke twice over: hill-line is no longer a catalogued shared route, and the
+    // endpoint now resolves the product from from/to rather than corridorId (one corridor
+    // holds several products at different prices). Either fault alone returns
+    // not_a_shared_route BEFORE any notice rule is consulted -- so this assertion would have
+    // passed for the wrong reason, proving nothing about shared seats being exempt.
+    const res = await jpost(app, '/bookings/shared', {
+      corridorId: 'ella-east', from: 'Ella', to: 'Yala',
+      date, time: '09:00', seats: 2, customer: valid.customer,
+    });
+    // Assert the CLAIM, not just the happy path: whatever else may refuse a shared booking,
+    // the notice rules must never be what does it. A bare toBe(201) would go quiet the day an
+    // unrelated gate starts returning 400, and the date picked above is only sometimes inside
+    // the 12h window, so the 201 alone does not pin this down.
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.error).not.toBe('lead_time_too_short');
+  });
+});
+
 describe('POST /bookings/shared — seat-hold compensation', () => {
   const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -466,7 +564,7 @@ describe('a Maps outage must not silently reprice', () => {
     const app = createApp(); // fake adapter: its estimate is its normal output, never flagged
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     const b = await res.json();
-    expect(b.total).toBe(7850);
+    expect(b.total).toBe(7800);
     const checkout = await app.request(`/bookings/${b.id}/checkout`, {
       method: 'POST',
       headers: { authorization: `Bearer ${b.checkoutToken}` },

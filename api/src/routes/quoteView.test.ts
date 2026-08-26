@@ -175,8 +175,8 @@ describe('GET /quote-view', () => {
       // 22750 = quote/engine.ts's quote() run directly against RATE_CARD for the equivalent
       // chauffeur request (same two legs, dated 2026-08-20 and 2026-08-22) — verified by running
       // the engine, not guessed.
-      expect(body.view.options[1].totalCents).toBe(22_750);
-      expect(body.view.options[1].totalUsd).toBe('$227.50');
+      expect(body.view.options[1].totalCents).toBe(22_700);
+      expect(body.view.options[1].totalUsd).toBe('$227');
     });
 
     it('a quote whose legs are all on one date returns one option — chauffeur is not offerable', async () => {

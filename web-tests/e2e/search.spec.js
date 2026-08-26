@@ -20,15 +20,16 @@ test('search prices on real distance and carries that price into booking', async
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
 
   // CMB -> Ella private car on real distance (335km):
-  // Exact core fare is $140.88 after the clamped per-leg buffer; finishing gives $139.
-  const selectLink = page.locator('a[href*="price=139"][href*="rawPrice=140.88"][href*="vehicle=car"]').first();
+  // Exact core fare is $140.88 after the clamped per-leg buffer; finishing drops the cents ($99.99
+  // is far out of reach), giving $140.
+  const selectLink = page.locator('a[href*="price=140"][href*="rawPrice=140.88"][href*="vehicle=car"]').first();
   await expect(selectLink).toBeVisible();
-  await expect(page.getByText('$139').first()).toBeVisible();
+  await expect(page.getByText('$140').first()).toBeVisible();
 
   await selectLink.click();
   await page.waitForURL('**/booking.html**');
   // booking holds the quoted price on load
-  await expect(page.locator('#sum-total')).toHaveText('$139');
+  await expect(page.locator('#sum-total')).toHaveText('$140');
 });
 
 test('search choices stay locked until Edit, then Update applies (Kayak/Expedia pattern)', async ({ page }) => {
@@ -365,7 +366,7 @@ test('a party size the customer DID choose is still honoured end to end', async 
   await expect(page.getByText('2 travellers').first()).toBeVisible();
   await expect(page.locator('.shared-save')).toBeVisible();
   // two sharing a $65.50 car pay $32.75 each against a $27.49 seat — ~16%
-  await expect(page.locator('.shared-save')).toHaveText(/Save ~16%/);
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~15%/);
   await expect(page.locator('a[href*="booking.html"][href*="pax=2"]').first()).toBeVisible();
 });
 

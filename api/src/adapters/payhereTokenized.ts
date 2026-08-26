@@ -66,9 +66,21 @@ export class PayHereTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
       throw new Error('payment_details_required');
     }
     const currency = args.currency.toUpperCase();
-    // PayHere's Preapproval API says to hash 1.01 for non-LKR when no optional amount is sent.
     // Deliberately omit `amount`: including it would capture a payment in addition to approval.
-    const hashAmount = currency === 'LKR' ? '10.00' : '1.01';
+    // The hash still has to be built over the amount PayHere will authorize, and that value is
+    // NOT what their documentation says for non-LKR on live. Every live preapproval failed with
+    // `PH-0014 Unauthorized payment request`; PayHere support, 2026-08-24:
+    //   "Please use 0.51 as the authorization amount for other currencies when generating the
+    //    hash value. For the PayHere Preapproval API, the authorization amount has been changed
+    //    in the PayHere Live environment. This change will be reflected in the PayHere
+    //    documentation soon."
+    // Their live preapproval page had been quoting USD 0.51 while we hashed 1.01, which is the
+    // mismatch. Sandbox still expects 1.01 and their published docs still say 1.01, so this is
+    // deliberately mode-dependent — do not collapse the branch to a single constant until the
+    // documentation catches up and sandbox is confirmed to have moved too. LKR is unchanged.
+    const hashAmount = currency === 'LKR'
+      ? '10.00'
+      : this.opts.mode === 'live' ? '0.51' : '1.01';
     const hash = md5Upper(
       this.merchantId + args.orderId + hashAmount + currency + md5Upper(this.merchantSecret),
     );

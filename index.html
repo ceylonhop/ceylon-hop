@@ -702,9 +702,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=736abbfe52"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
-<script src="transfers-data.js?v=3eb73141e9"></script>
+<script src="transfers-data.js?v=03450f3d13"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
-<script src="ch-map.js?v=4f38c5f4ce"></script>
+<script src="ch-map.js?v=9ccbce517b"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   const __heroV=(window.__tweaks&&window.__tweaks.read().hero)||'postcard';
@@ -723,13 +723,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     const A=TRANSFERS.place(f), B=TRANSFERS.place(t);
     const q=TRANSFERS.privateQuote(f,t);
     const sh=TRANSFERS.sharedOption(f,t);
-    const u=new URLSearchParams({from:f,to:t}).toString();
+    // Send these to the route page, not search. The route page IS the product page for a known
+    // pair (both options, price, and a Book CTA that carries the quote), and it is static, so it
+    // renders without waiting on the engine. It also gives the 44 /trip/ pages the only internal
+    // links they have from anywhere on the site — nothing else links to them, and an orphaned
+    // page does not rank. Guarded by web-tests/unit/home-transfer-links.test.js, which fails if a
+    // pair here has no generated page (that would ship a 404 on the homepage's main cards).
     const estimate=CH.routeEstimate.formatRouteEstimate({
       distanceKm:q.km,
       durationMin:q.durationMin,
       state:q.estimated?'estimated':'browse'
     });
-    return `<a class="card tcard reveal" href="search.html?${u}">
+    return `<a class="card tcard reveal" href="trip/${f}-to-${t}/">
       <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
       <div class="tc-meta">${estimate}</div>
       <div class="tc-foot">
@@ -789,12 +794,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // blog
   const posts=[
-    ['Why we started Ceylon Hop','Story · 4 min'],
-    ['The ultimate tuk-tuk guide to Sri Lanka','Guide · 6 min'],
-    ['Best time to visit Sri Lanka: month-by-month','Planning · 8 min']
+    ['Why we started Ceylon Hop','why-we-started-ceylon-hop','Story · 4 min'],
+    ['The ultimate tuk-tuk guide to Sri Lanka','ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka','Guide · 6 min'],
+    ['Best time to visit Sri Lanka: month-by-month','best-time-to-visit-sri-lanka-a-month-by-month-guide','Planning · 8 min']
   ];
-  document.getElementById('blog').innerHTML = posts.map(([t,m],i)=>`
-    <a class="bcard reveal" href="blog.html">
+  document.getElementById('blog').innerHTML = posts.map(([t,slug,m],i)=>`
+    <a class="bcard reveal" href="${slug}/">
       <image-slot id="blog-post-${i}" shape="rounded" radius="16" src="img/blog-post-${i}.jpg" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
       <div class="meta" style="margin-top:14px">${m}</div>
       <h3>${t}</h3>

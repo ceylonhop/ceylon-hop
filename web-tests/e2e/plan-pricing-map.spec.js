@@ -26,9 +26,9 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   const legMeta = page.locator('#rail [data-dist]');
   await expect(legMeta).toContainText('Approx. 135 km · 3h 45m');
   await expect(legMeta).toContainText('Reviewed route');
-  await expect(legMeta).toContainText('from $59');
+  await expect(legMeta).toContainText('from $59.99');
   await expect(legMeta.locator('.lm-src')).toHaveText('Reviewed route');
-  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $59');
+  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $59.99');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#st-drive')).toHaveText('Approx. 135 km · 3h 45m');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
@@ -42,15 +42,35 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await expect(mapSvg).toBeVisible();
   await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $59.99');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 
   await page.locator('.veh-btn[data-veh="van"]').click();
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $81');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $79.99');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$80[-\u2013]\$95/); // guide range = ceil(finished+10) & a $25/$15 band
+  await expect(page.locator('#sum-amt')).toHaveText(/\$75[-\u2013]\$90/); // guide range = ceil(finished+10) & a $25/$15 band
+  await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
+});
+
+// The party size cannot change the ROUTE — same stops, same order — so the map has no reason to
+// be torn down and rebuilt. It was: the pax pills call render(), which ends in updateSummary(),
+// whose refreshMap defaults to true, so every click discarded the map host and built a fresh
+// google.maps.Map — a visible reload and a second billable dynamic-map load for an identical
+// route (owner-reported, 2026-08-19). The vehicle switch above was already guarded; pax was not.
+test('changing the party size leaves the route map alone', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
+
+  const mapSvg = page.locator('#trip-map svg').first();
+  await expect(mapSvg).toBeVisible();
+  await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
+
+  await page.locator('[data-pax="3"]').click();
+
+  // The pax change still has to do its own job — 3 travellers still fit a car.
+  await expect(page.locator('[data-pax="3"]')).toHaveClass(/on|is-on|selected/);
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
@@ -139,7 +159,7 @@ test('search add-stops handoff preserves the equivalent base route price', async
   await page.waitForURL('**/plan.html?**');
 
   await expect(page.locator('#rail [data-dist]')).toContainText('Approx. 135 km · 3h 45m');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $59.99');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking } from './_stubs.js';
+import { futureIsoDate } from '../dates.js';
 
 // Chauffeur distance is billed from the sum of buffered travel legs plus idle-day min km × per-km rate,
 // with NO per-leg minimum fares — mirroring api/src/quote/chauffeur.ts. booking.js floored the
@@ -17,11 +18,11 @@ const TRIP = [
   'mode=trip',
   'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
   'nights=0,0,0',
-  'dates=2026-08-10,2026-08-11',
+  `dates=${futureIsoDate(30)},${futureIsoDate(31)}`,
   'kms=20,20',
   'pax=2',
   'vehicle=car',
-  'start=2026-08-10',
+  `start=${futureIsoDate(30)}`,
 ].join('&');
 
 test('chauffeur distance charge has no per-leg minimum floor (backend parity)', async ({ page }) => {
@@ -29,10 +30,11 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
   await page.locator('[data-svc="chauffeur"]').click();
 
   // distance charge = the bulk km charge, NOT floored at the $58 private per-leg total ($20.13 raw).
-  // The whole-trip row carries day rate + distance + finishing, so it equals Total: $82.
+  // The whole-trip row carries day rate + distance + finishing, so it equals Total: $79.99.
+  // (Threshold finishing, 2026-08-19: this raw total is in reach of the $80 barrier.)
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
-  await expect(page.locator('#sum-adamt')).toHaveText('$82');
-  await expect(page.locator('#sum-total')).toHaveText('$82');
+  await expect(page.locator('#sum-adamt')).toHaveText('$79.99');
+  await expect(page.locator('#sum-total')).toHaveText('$79.99');
   await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });
 
@@ -40,14 +42,14 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
 // CAR minimum of 50 km/day (vans stay at 100) — mirrors RATE_CARD.chauffeur.idleMinKm:
 //   buffered travel 25 + 25 = 50, + 1 idle × 50 = 100 km → distance round(100 × 40.25¢) = $40.25
 //   day rate $31.05 × 3 days = $93.15 → raw total $133.40 → finished $133.50 (nearest 50¢).
-const TRIP_IDLE = TRIP.replace('dates=2026-08-10,2026-08-11', 'dates=2026-08-10,2026-08-12');
+const TRIP_IDLE = TRIP.replace(`dates=${futureIsoDate(30)},${futureIsoDate(31)}`, `dates=${futureIsoDate(30)},${futureIsoDate(32)}`);
 
 test('car idle day bills the 50 km car minimum, not the 100 km van minimum', async ({ page }) => {
   await gotoBooking(page, { query: TRIP_IDLE });
   await page.locator('[data-svc="chauffeur"]').click();
 
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
-  await expect(page.locator('#sum-adamt')).toHaveText('$133.50');
-  await expect(page.locator('#sum-total')).toHaveText('$133.50');
+  await expect(page.locator('#sum-adamt')).toHaveText('$133');
+  await expect(page.locator('#sum-total')).toHaveText('$133');
   await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });

@@ -371,6 +371,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .cx-inline.ok .cx-h{color:var(--accent-deep)}
   .trip-route .cx-inline.warn .cx-h{color:#b13b22}
   .trip-route .cx-inline p{margin:6px 0 0;color:var(--ink-soft);line-height:1.45}
+  /* The notice window is a website rule, not a capacity one — ops can still take a chauffeur
+     booking inside it. This line is the way out, so the link has to read as a link. */
+  .trip-route .cx-inline p.cx-alt a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
   .trip-route .cx-inline .cx-btn{margin-top:12px;background:var(--ink);color:#fff;border:none;border-radius:999px;padding:.6rem 1.1rem;font:inherit;font-weight:700;cursor:pointer}
   .trip-route .cx-inline .cx-btn:hover{background:var(--accent-deep)}
 
@@ -467,7 +470,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .stepper .ctrls{display:flex;align-items:center;gap:16px}
   .stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:1.15rem;color:var(--ink)}
   .stepper button:hover{border-color:var(--accent);color:var(--accent-deep)}
-  .addon{display:flex;align-items:center;gap:.8rem;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s}
+  .addon{display:flex;align-items:center;gap:.8rem;width:100%;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s;background:var(--white);color:inherit;font:inherit;text-align:left;appearance:none}
   .addon.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .addon .box{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
   .addon.on .box{background:var(--accent);border-color:var(--accent)}
@@ -869,7 +872,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="cap-note" id="cap-note"></div>
       <div id="extras-block">
         <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
-        <div class="addon" data-addon="sightseeing" data-price="10" onclick="toggleAddon(this)"><span class="box"></span><div><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></div><span class="pr">+$10</span></div>
+        <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></span><span class="pr">+$10</span></button>
       </div>
       <div class="nav-btns"><button class="back-link" onclick="goStep(2)">← Back</button><button class="btn btn-primary btn-lg" id="n4" onclick="goStep(4)">Continue</button></div>
     </div>
@@ -1062,16 +1065,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=736abbfe52"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=3eb73141e9"></script>
+<script src="transfers-data.js?v=03450f3d13"></script>
 <!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
      it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
-<script src="ch-map.js?v=4f38c5f4ce"></script>
+<script src="ch-map.js?v=9ccbce517b"></script>
 <script src="ch-pricing.js?v=a2511d67e7"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=697a61160c"></script>
+<script src="booking.js?v=36437e8e0b"></script>
 </body>
 </html>

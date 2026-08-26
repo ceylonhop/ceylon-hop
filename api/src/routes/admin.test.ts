@@ -8,7 +8,7 @@ import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { issueSessionCookie } from '../lib/opsMiddleware';
-import { nextIsoWeekday, futureIsoDate } from '../testSupport/dates';
+import { nextIsoWeekday, futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
 import { Hono } from 'hono';
 
@@ -155,6 +155,10 @@ describe('POST /admin/bookings/:id/cancel', () => {
     });
     return res.json();
   };
+  // The nearest trip the booking routes will still accept: inside the 24-hour reversal window,
+  // but clear of the 12-hour minimum notice (domain/dateRules.isTooSoonPrivate). Anchored to the
+  // clock rather than a calendar day, or it would pass only when the suite runs early enough.
+  const imminent = () => colomboDateTimeIn(13);
   const cancelAs = async (app: ReturnType<typeof createApp>, id: string, who: string, reason = 'Customer called it off') =>
     app.request(`/admin/bookings/${id}/cancel`, {
       method: 'POST',
@@ -174,7 +178,7 @@ describe('POST /admin/bookings/:id/cancel', () => {
   // combination is exactly the same-day intake case the grace exists for.
   it('an OPS agent may cancel an imminent trip it just took', async () => {
     const { app, bookings } = makeApp();
-    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    const b = await bookOn(app, imminent().date, imminent().time);
     expect((await cancelAs(app, b.id, 'op@x.com')).status).toBe(200);
     expect((await bookings.get(b.id))!.status).toBe('cancelled');
   });
@@ -189,7 +193,7 @@ describe('POST /admin/bookings/:id/cancel', () => {
 
   it('a FOUNDER may cancel inside 24 hours — never time-limited', async () => {
     const { app, bookings } = makeApp();
-    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    const b = await bookOn(app, imminent().date, imminent().time);
     expect((await cancelAs(app, b.id, 'f@x.com')).status).toBe(200);
     expect((await bookings.get(b.id))!.status).toBe('cancelled');
   });
@@ -226,7 +230,7 @@ describe('POST /admin/bookings/:id/cancel', () => {
 
   it('the ops time window applies to refunds too, not just cancellation', async () => {
     const { app } = makeApp();
-    const near = await bookOn(app, futureIsoDate(1), '00:00');
+    const near = await bookOn(app, imminent().date, imminent().time);
     const far = await bookOn(app, futureIsoDate(30));
     const refund = (id: string, who: string) => cookie(who).then((ck) =>
       app.request(`/admin/bookings/${id}/refunds`, {
