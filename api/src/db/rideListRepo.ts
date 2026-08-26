@@ -200,8 +200,10 @@ export class InMemoryRideListRepo implements RideListRepo {
 
     if (existing) {
       // Re-adding a live member is a seat change, and re-adding a scratched one puts them
-      // back — either way they keep their original position in the line.
-      existing.status = 'held';
+      // back — either way they keep their original position in the line. A member who has
+      // already been CHARGED keeps that status: 'held' would erase the record that their
+      // money was taken. Mirrors the guarded ON CONFLICT in the Postgres repo.
+      if (existing.status !== 'charged') existing.status = 'held';
       existing.seats = args.seats;
       existing.preferredTime = args.preferredTime ?? existing.preferredTime;
       existing.preapprovalRef = args.preapprovalRef ?? existing.preapprovalRef;
