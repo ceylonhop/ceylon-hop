@@ -81,7 +81,7 @@ async function installGooglePlacesStub(page) {
 
 test('out-of-order leg dates raise a flag and never reorder the itinerary', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
-  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
+  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}&pax=2`);
 
   const rows = page.locator('#dates-list .date-row');
   await expect(rows).toHaveCount(2);
@@ -116,7 +116,7 @@ test('out-of-order leg dates raise a flag and never reorder the itinerary', asyn
 
 test('an out-of-order date blocks "Continue to booking" until it is fixed', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
-  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
+  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}&pax=2`);
 
   const cont = page.locator('#dates-continue');
   const hint = page.locator('#dates-order-hint');
@@ -338,7 +338,7 @@ test('planner place search ignores delayed Google results after a popular place 
 
 test('planner dates step keeps a durable URL for browser back', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
-  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
+  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}&pax=2`);
 
   await setLegDate(page, 0, D_B);
   await setLegDate(page, 1, D_C);
