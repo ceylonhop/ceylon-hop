@@ -14,9 +14,9 @@
 //    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts --clear  # remove
 //    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts --list   # show
 //
-//  Every seeded row is tagged (members carry a `seed-` sub prefix and lists a
-//  seeded note marker), so --clear removes exactly what this wrote and nothing
-//  a real customer created. Run --clear before real traffic.
+//  Every seeded row is tagged INTERNALLY — members carry a `seed-` sub prefix and lists a
+//  `seed-rideboard` created_by — so --clear removes exactly what this wrote and nothing a real
+//  customer created, without any of it showing on the board. Run --clear before real traffic.
 // ════════════════════════════════════════════════════════════════════════════
 import postgres from 'postgres';
 import { PostgresRideListRepo } from '../src/db/postgresRideListRepo';
@@ -30,7 +30,14 @@ if (!url) {
 
 // Marks every row this script creates, so --clear can be exact.
 const SEED_SUB = 'seed-rideboard:';
-const SEED_NOTE = '[seed]';
+// Lists are marked by created_by, NOT by their note. The note is customer-visible copy on the
+// board — tagging it printed "Boards welcome, we have roof space. [seed]" to real visitors
+// (owner-caught, 2026-08-18). created_by is internal, already on the table, and unused by the
+// board UI, so it marks the row without saying anything to anyone.
+const SEED_CREATED_BY = 'seed-rideboard';
+// The pre-2026-08-18 marker. Kept ONLY so --clear can still remove lists seeded before the
+// change; nothing writes it any more. Safe to delete once no environment holds those rows.
+const LEGACY_SEED_NOTE = '[seed]';
 
 // Managed Postgres (Supabase/Render) needs TLS; a local scratch DB refuses it.
 const host = (() => {
@@ -129,7 +136,9 @@ const SPECS: Spec[] = [
 
 async function clear(): Promise<void> {
   const lists = await sql<{ id: string; code: string }[]>`
-    select id, code from ride_list where note like ${'%' + SEED_NOTE + '%'}`;
+    select id, code from ride_list
+     where created_by = ${SEED_CREATED_BY}
+        or note like ${'%' + LEGACY_SEED_NOTE + '%'}`;
   const members = await sql<{ list_id: string }[]>`
     delete from ride_list_member where sub like ${SEED_SUB + '%'} returning list_id`;
   if (lists.length) {
@@ -140,13 +149,14 @@ async function clear(): Promise<void> {
 }
 
 async function show(): Promise<void> {
-  const rows = await sql<{ code: string; from_place: string; to_place: string; date: string; status: string; note: string | null; n: number }[]>`
-    select l.code, l.from_place, l.to_place, l.date, l.status, l.note,
+  const rows = await sql<{ code: string; from_place: string; to_place: string; date: string; status: string; note: string | null; created_by: string | null; n: number }[]>`
+    select l.code, l.from_place, l.to_place, l.date, l.status, l.note, l.created_by,
            (select count(*) from ride_list_member m where m.list_id = l.id and m.status <> 'scratched') as n
     from ride_list l order by l.date asc`;
   if (!rows.length) return console.log('the board is empty');
   for (const r of rows) {
-    const seeded = (r.note ?? '').includes(SEED_NOTE) ? ' [seed]' : '';
+    // Operator-facing console output — the one place the word still belongs.
+    const seeded = r.created_by === SEED_CREATED_BY || (r.note ?? '').includes(LEGACY_SEED_NOTE) ? ' [seed]' : '';
     console.log(`  ${r.code}  ${r.from_place} → ${r.to_place}  ${r.date}  ${r.status}  ${r.n} name(s)${seeded}`);
   }
 }
@@ -165,9 +175,9 @@ async function seed(): Promise<void> {
       minSeats: 4,
       capacity: 6,
       seatPrice,
-      note: `${s.note ? s.note + ' ' : ''}${SEED_NOTE}`,
+      note: s.note ?? null,
       cutoffAt: daysBefore(date, 2),
-      createdBy: null,
+      createdBy: SEED_CREATED_BY,
     });
 
     for (let j = 0; j < s.joiners; j++) {
