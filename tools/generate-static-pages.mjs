@@ -104,7 +104,7 @@ const BLOG_POSTS = [
     crumb: 'How to use buses in Sri Lanka',
     kicker: 'Guide',
     published: '2025-03-03',
-    modified: '2025-05-06',
+    modified: '2026-08-26',
     related: [
       ['ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka/', 'Ultimate tuk-tuk guide to getting around in Sri Lanka'],
       ['trip/colombo-to-kandy/', 'Colombo to Kandy — the same trip by private transfer'],
@@ -120,7 +120,7 @@ const BLOG_POSTS = [
     crumb: 'Ultimate tuk-tuk guide',
     kicker: 'Guide',
     published: '2025-05-06',
-    modified: '2025-05-06',
+    modified: '2026-08-26',
     related: [
       ['how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers/', 'How to use buses in Sri Lanka'],
       ['search.html', 'Fixed prices for the longer hops between towns'],
@@ -135,7 +135,7 @@ const BLOG_POSTS = [
     crumb: 'Best time to visit Sri Lanka',
     kicker: 'Planning',
     published: '2025-03-03',
-    modified: '2025-05-06',
+    modified: '2026-08-26',
     related: [
       ['plan.html', 'Plan a multi-stop trip around the island'],
       ['trip/', 'All Sri Lanka transfer routes'],
@@ -150,7 +150,7 @@ const BLOG_POSTS = [
     crumb: '9 must-visit places',
     kicker: 'List',
     published: '2025-03-03',
-    modified: '2025-05-06',
+    modified: '2026-08-26',
     related: [
       ['trip/cmb-airport-to-sigiriya/', 'Colombo Airport to Sigiriya — start at stop one'],
       ['trip/ella-to-mirissa/', 'Ella to Mirissa — hill country down to the whales'],
@@ -166,7 +166,7 @@ const BLOG_POSTS = [
     crumb: 'Discover Sri Lanka with Ceylon Hop',
     kicker: 'Story',
     published: '2025-02-24',
-    modified: '2025-05-07',
+    modified: '2026-08-26',
     related: [
       ['tours.html', 'Ready-made tours'],
       ['plan.html', 'Build your own multi-stop trip'],
@@ -183,7 +183,7 @@ const BLOG_POSTS = [
     crumb: 'Why we started Ceylon Hop',
     kicker: 'Story',
     published: '2025-05-06',
-    modified: '2025-05-12',
+    modified: '2026-08-26',
     related: [
       ['about.html', 'About Ceylon Hop'],
       ['why.html', 'Why hop with us'],

@@ -54,7 +54,12 @@ export interface ChargeArgs {
 }
 
 export interface ChargeResult {
-  status: 'succeeded' | 'failed';
+  // Tri-state on purpose, matching the refund path (adapters/payhere.ts). 'failed' is a
+  // POSITIVE statement — we know no money moved (a decline, or a request that never left
+  // this process). 'unknown' means the charge was sent and the reply was lost, so the card
+  // may well have been debited: callers must not tell the traveller they weren't charged,
+  // and must not silently retry (there is no idempotency key on this API).
+  status: 'succeeded' | 'failed' | 'unknown';
   providerTxnId?: string;
   failureReason?: string;
 }
@@ -74,6 +79,7 @@ export class FakeTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
   readonly preapprovals: PreapproveArgs[] = [];
   readonly charges: ChargeArgs[] = [];
   private readonly failRefs = new Set<string>();
+  private readonly unknownRefs = new Set<string>();
   private seq = 0;
 
   constructor() {
@@ -101,10 +107,19 @@ export class FakeTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
     this.failRefs.add(ref);
   }
 
+  // Test helper: mark a token so the next charge on it comes back indeterminate — the request
+  // reached the gateway and the reply was lost, so the card may or may not have been debited.
+  markRefWillBeUnknown(ref: string): void {
+    this.unknownRefs.add(ref);
+  }
+
   async charge(args: ChargeArgs): Promise<ChargeResult> {
     this.charges.push(args);
     if (this.failRefs.has(args.ref)) {
       return { status: 'failed', failureReason: 'card_declined' };
+    }
+    if (this.unknownRefs.has(args.ref)) {
+      return { status: 'unknown', failureReason: 'charge_result_unknown:simulated timeout' };
     }
     return { status: 'succeeded', providerTxnId: `txn_${args.orderId}_${this.charges.length}` };
   }

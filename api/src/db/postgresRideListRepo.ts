@@ -171,7 +171,10 @@ export class PostgresRideListRepo implements RideListRepo {
         where list_id = ${listId} and status in ('held', 'charged') and sub <> ${args.sub}
       ) + ${args.seats} <= (select capacity from ride_list where id = ${listId})
       on conflict (list_id, sub) do update set
-        status = 'held',
+        -- A member the sweep has already CHARGED keeps that status: 'held' would erase the
+        -- only record that their money was taken (and make them a double-charge candidate,
+        -- since the sweep skips on status = 'charged'). Everyone else reactivates as held.
+        status = case when ride_list_member.status = 'charged' then 'charged' else 'held' end,
         seats = excluded.seats,
         preferred_time = coalesce(excluded.preferred_time, ride_list_member.preferred_time),
         preapproval_ref = coalesce(excluded.preapproval_ref, ride_list_member.preapproval_ref),

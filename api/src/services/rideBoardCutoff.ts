@@ -39,6 +39,9 @@ export interface RideBoardCutoffResult {
   expired: number;
   charged: number;
   chargeFailed: number;
+  // Charges that were sent and whose outcome we never learned. Counted apart from `charged`
+  // because these are the ones a human still has to reconcile against the PayHere dashboard.
+  chargeUnknown: number;
 }
 
 const liveSeats = (members: RideMember[]) => committedSeats(members);
@@ -46,7 +49,9 @@ const liveSeats = (members: RideMember[]) => committedSeats(members);
 export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): Promise<RideBoardCutoffResult> {
   const currency = deps.currency ?? 'USD';
   const due = await deps.rideLists.dueForCutoff(now);
-  const res: RideBoardCutoffResult = { processed: 0, confirmed: 0, expired: 0, charged: 0, chargeFailed: 0 };
+  const res: RideBoardCutoffResult = {
+    processed: 0, confirmed: 0, expired: 0, charged: 0, chargeFailed: 0, chargeUnknown: 0,
+  };
 
   for (const { list, members } of due) {
     const held = members.filter((m) => m.status === 'held' || m.status === 'charged');
@@ -78,21 +83,35 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
 
     const chargedOk: RideMember[] = [];
     const failed: RideMember[] = [];
+    // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
+    // can be told; for every decision below these count as charged (see the alert further down).
+    const indeterminate: { member: RideMember; orderId: string; reason?: string }[] = [];
     for (const m of held) {
       if (m.status === 'charged') {
         chargedOk.push(m);
         continue;
       }
+      const orderId = `${list.code}-${m.sub}`;
       const charge = await deps.paygw.charge({
         ref: m.preapprovalRef ?? '',
         amountCents: list.seatPrice * m.seats,
         currency,
-        orderId: `${list.code}-${m.sub}`,
+        orderId,
       });
       if (charge.status === 'succeeded') {
         await deps.rideLists.setMemberStatus(list.id, m.sub, 'charged');
         res.charged++;
         chargedOk.push(m);
+      } else if (charge.status === 'unknown') {
+        // Optimistic, deliberately. Being wrong this way carries one possibly-unpaid seat on a
+        // van that runs — bounded, alerted, chaseable. Being wrong the other way cancels a
+        // probably-paid-for van and tells a debited traveller they weren't charged. Marking
+        // them 'charged' also keeps a later sweep from charging the same card twice, since
+        // this API has no idempotency key.
+        await deps.rideLists.setMemberStatus(list.id, m.sub, 'charged');
+        res.chargeUnknown++;
+        chargedOk.push(m);
+        indeterminate.push({ member: m, orderId, reason: charge.failureReason });
       } else {
         await deps.rideLists.setMemberStatus(list.id, m.sub, 'charge_failed');
         res.chargeFailed++;
@@ -100,7 +119,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       }
     }
 
-    if (chargedOk.reduce((n, m) => n + m.seats, 0) >= list.minSeats) {
+    const ranThisList = chargedOk.reduce((n, m) => n + m.seats, 0) >= list.minSeats;
+    if (ranThisList) {
       // Confirmed with the successfully-charged travellers.
       await deps.rideLists.setStatus(list.id, 'confirmed');
       res.confirmed++;
@@ -109,6 +129,9 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         seats: chargedOk.reduce((n, m) => n + m.seats, 0), minSeats: list.minSeats,
         capacity: list.capacity, chargeFailures: failed.length,
         revenueCents: chargedOk.reduce((n, m) => n + m.seats, 0) * list.seatPrice,
+        // Part of revenueCents above is money we only PROBABLY hold — an indeterminate charge
+        // counts toward the van running, so the revenue figure means little without this.
+        chargeUnknown: indeterminate.length,
       });
       for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
       for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
@@ -123,8 +146,10 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         code: list.code, corridorId: list.corridorId, date: list.date,
         reason: 'charge_failures', chargeFailures: failed.length,
         chargedSeats: chargedOk.reduce((n, m) => n + m.seats, 0), minSeats: list.minSeats,
-        // these cards are charged with the van cancelled — the manual-refund case
+        // these cards are charged with the van cancelled — the manual-refund case. Includes
+        // the indeterminate ones: a card that MIGHT have been debited still needs a human.
         needsRefund: chargedOk.length,
+        chargeUnknown: indeterminate.length,
       });
       // Two different emails, because these travellers are in two different situations.
       // sendRideCancelled says "you weren't charged" — true for everyone whose card declined
@@ -157,6 +182,38 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
           });
         } catch { /* the alert is the backstop, not the product */ }
       }
+    }
+
+    // Fires whether the van ran or not: an indeterminate charge is money in doubt either way,
+    // and nothing else in the system will ever revisit it. Last, and best-effort, so it cannot
+    // cost the travellers their emails.
+    if (indeterminate.length > 0 && deps.alerts) {
+      const atRisk = indeterminate.reduce((n, i) => n + list.seatPrice * i.member.seats, 0);
+      try {
+        await deps.alerts.send({
+          severity: 'critical',
+          kind: 'ride_board_charge_indeterminate',
+          title: `Charge outcome unknown for ${indeterminate.length} traveller(s) on ${list.code}`,
+          body: [
+            `Ride ${list.code} — ${list.fromPlace} → ${list.toPlace} on ${list.date}`,
+            `These charges were SENT to PayHere and the reply was lost. The cards MAY have been`,
+            `debited, totalling ${(atRisk / 100).toFixed(2)} ${currency}:`,
+            ...indeterminate.map(
+              (i) => `  ${i.member.firstName} <${i.member.email}> — order ${i.orderId}` +
+                `, ${i.member.seats} seat(s)${i.reason ? ` (${i.reason})` : ''}`,
+            ),
+            '',
+            `Do NOT retry the charge — this API has no idempotency key, so a retry is how a`,
+            `traveller gets billed twice. Open PayHere > Payments, search the order id, and:`,
+            `  • payment found → nothing to do, they are on the van and paid.`,
+            `  • no payment    → take it from them another way, or refund the seat.`,
+            ranThisList
+              ? `They have been emailed that the ride is confirmed, which is true either way.`
+              : `The ride was called off; they have been emailed that a refund is coming.`,
+          ].join('\n'),
+          dedupeKey: `ride_board_charge_indeterminate:${list.code}`,
+        });
+      } catch { /* the alert is the backstop, not the product */ }
     }
   }
 
