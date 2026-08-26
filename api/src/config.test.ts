@@ -58,6 +58,33 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow(/PAYHERE_/);
   });
 
+  it('the main checkout notify URL fails closed in production', () => {
+    // PayHere reports a completed payment by POSTing to notify_url. Sent empty, the gateway has
+    // nowhere to report to: the customer's money is captured and the booking never leaves
+    // payment_pending, with no confirmation email. The ride board already fails closed on its
+    // own notify URL — the checkout that takes every public booking must too.
+    const base = {
+      NODE_ENV: 'production',
+      OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+      BOOKING_LINK_SECRET: 'another-real-32char-secret',
+      CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+      PAYHERE_MERCHANT_ID: '1226',
+      PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+      PAYHERE_APP_ID: 'app-id',
+      PAYHERE_APP_SECRET: 'app-secret',
+      PAYHERE_RIDE_NOTIFY_URL: 'https://ops.ceylonhop.com/board/payhere/notify',
+    };
+    expect(() => buildConfig(base)).toThrow(/PAYHERE_NOTIFY_URL/);
+    // an empty string is the same failure mode as unset — that is exactly what reaches
+    // the checkout form as notify_url=""
+    expect(() => buildConfig({ ...base, PAYHERE_NOTIFY_URL: '' })).toThrow(/PAYHERE_NOTIFY_URL/);
+    expect(() =>
+      buildConfig({ ...base, PAYHERE_NOTIFY_URL: 'https://ceylon-hop-api.onrender.com/webhooks/payments' }),
+    ).not.toThrow();
+    // a deployment on fake payments has no gateway to report anything, so the guard lifts
+    expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: '1' })).not.toThrow();
+  });
+
   // Staging on Render runs NODE_ENV=production but deliberately uses the fake payment adapter,
   // so it needs an explicit way out. It must stay explicit: anything falsy leaves the guard armed.
   it('lets a deployment opt out of the PayHere requirement, but only deliberately', () => {
@@ -84,6 +111,7 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
         CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
         PAYHERE_MERCHANT_ID: '1226',
         PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+        PAYHERE_NOTIFY_URL: 'https://ceylon-hop-api.onrender.com/webhooks/payments',
         PAYHERE_APP_ID: 'app-id',
         PAYHERE_APP_SECRET: 'app-secret',
         PAYHERE_RIDE_NOTIFY_URL: 'https://ops.ceylonhop.com/board/payhere/notify',

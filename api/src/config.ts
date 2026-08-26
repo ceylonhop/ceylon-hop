@@ -210,6 +210,22 @@ export function buildConfig(env: Record<string, string | undefined>) {
         'deployment that runs on fake payments, set ALLOW_FAKE_PAYMENTS=1 there.',
     );
   }
+  // PayHere reports a completed payment by POSTing to notify_url, and that webhook is the ONLY
+  // thing that moves a booking to paid. Unset, `server.ts` passes notifyUrl: '' and every
+  // checkout form carries notify_url="" — the customer is charged, the booking strands in
+  // payment_pending, and no confirmation is ever sent. The ride-board notify URL below already
+  // fails closed; the checkout that takes every public booking must too.
+  if (
+    cfg.NODE_ENV === 'production' &&
+    !allowFakePayments(cfg.ALLOW_FAKE_PAYMENTS) &&
+    !cfg.PAYHERE_NOTIFY_URL
+  ) {
+    throw new Error(
+      'PAYHERE_NOTIFY_URL must be set in production — without it PayHere has nowhere to report a ' +
+        'completed payment, so money is captured and the booking never leaves payment_pending. ' +
+        'Refusing to boot.',
+    );
+  }
   if (
     cfg.NODE_ENV === 'production' &&
     !allowFakePayments(cfg.ALLOW_FAKE_PAYMENTS) &&
