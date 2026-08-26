@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 import { sampleBooking, sampleVariants, sampleQuote, type SampleMode } from '../services/__fixtures__/sampleBookings';
-import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from '../services/rideBoardEmails';
+import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideCalledOffRefundDue } from '../services/rideBoardEmails';
 import type { RideList } from '../domain/rideList';
 import {
   sendBookingConfirmation,
@@ -74,6 +74,7 @@ const EMAILS: EmailDef[] = [
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
   { name: 'ride-confirmed', label: 'Ride Board: ride confirmed', run: (_b, e) => sendRideConfirmed(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE, lockedTime: '08:00' }) },
   { name: 'ride-cancelled', label: 'Ride Board: called off', run: (_b, e) => sendRideCancelled(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
+  { name: 'ride-refund-due', label: 'Ride Board: called off, refund due', run: (_b, e) => sendRideCalledOffRefundDue(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
   { name: 'ride-at-risk', label: 'Ride Board: charge failed', run: (_b, e) => sendRideAtRisk(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
 ];
 

@@ -51,11 +51,21 @@ describe('customer final-price finishing matches the backend', () => {
   });
 
   // The owner's rule holds on the customer side too — the website must not quote a price the
-  // backend would then have to raise.
-  it('never reduces a customer-facing price by more than $10', () => {
+  // backend would then have to raise. The cap moved from $10 to $20.99 with threshold finishing
+  // (owner 2026-08-19): a $20 budget measured from the cents-floored price, plus those 99c.
+  it('never reduces a customer-facing price by more than $20 plus its cents', () => {
     for (let raw = 100; raw <= 2_000_000; raw += 97) {
       const off = raw - Math.round(T.finishPrice(raw / 100) * 100);
-      if (off > 1000) throw new Error(`finishPrice(${raw}) cut ${off} cents`);
+      if (off > 2099) throw new Error(`finishPrice(${raw}) cut ${off} cents`);
+    }
+  });
+
+  // Threshold finishing must never quote ABOVE the engine's number (owner 2026-08-19). The old
+  // nearest-50c pass could round up; nothing may now.
+  it('never raises a customer-facing price', () => {
+    for (let raw = 100; raw <= 2_000_000; raw += 97) {
+      const web = Math.round(T.finishPrice(raw / 100) * 100);
+      if (web > raw) throw new Error(`finishPrice(${raw}) raised it to ${web}`);
     }
   });
 

@@ -30,10 +30,11 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
   await page.locator('[data-svc="chauffeur"]').click();
 
   // distance charge = the bulk km charge, NOT floored at the $58 private per-leg total ($20.13 raw).
-  // The whole-trip row carries day rate + distance + finishing, so it equals Total: $82.
+  // The whole-trip row carries day rate + distance + finishing, so it equals Total: $79.99.
+  // (Threshold finishing, 2026-08-19: this raw total is in reach of the $80 barrier.)
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
-  await expect(page.locator('#sum-adamt')).toHaveText('$82');
-  await expect(page.locator('#sum-total')).toHaveText('$82');
+  await expect(page.locator('#sum-adamt')).toHaveText('$79.99');
+  await expect(page.locator('#sum-total')).toHaveText('$79.99');
   await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });
 
@@ -48,7 +49,7 @@ test('car idle day bills the 50 km car minimum, not the 100 km van minimum', asy
   await page.locator('[data-svc="chauffeur"]').click();
 
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
-  await expect(page.locator('#sum-adamt')).toHaveText('$133.50');
-  await expect(page.locator('#sum-total')).toHaveText('$133.50');
+  await expect(page.locator('#sum-adamt')).toHaveText('$133');
+  await expect(page.locator('#sum-total')).toHaveText('$133');
   await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
 });

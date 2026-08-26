@@ -90,20 +90,52 @@ describe('renderRoute framing', () => {
     sized(272, 137); // plan.html's sticky summary at a typical laptop height
     await CH_MAP.renderRoute(host(), ['Colombo', 'Polonnaruwa', 'Ratnapura']);
     expect(stub.fits).toHaveLength(1);
-    expect(stub.fits[0]).toBeLessThanOrEqual(12);
-    expect(stub.fits[0]).toBeGreaterThanOrEqual(6);
+    // Sides and bottom are what must stay proportional; `top` carries the pin headroom now.
+    expect(stub.fits[0].bottom).toBeLessThanOrEqual(12);
+    expect(stub.fits[0].bottom).toBeGreaterThanOrEqual(6);
+    expect(stub.fits[0].left).toBe(stub.fits[0].bottom);
+  });
+
+  // The pin is a 24x24 teardrop anchored at its TIP — Point(12,22) — so it is drawn ~20 path
+  // units ABOVE the coordinate it marks: 22px at the inline scale of 1.1, 30px at the modal's
+  // 1.5. fitBounds pads the COORDINATE bounds, so a symmetric pad smaller than that clips the
+  // top pin's head clean off (owner-reported on a 338px card, 2026-08-19).
+  //
+  // It cannot be fixed by raising the floor — that is what the comment above is about: a flat
+  // 36px ate more than half of plan.html's 104px summary map and Google zoomed out past the
+  // island. The clipping is DIRECTIONAL, so the padding has to be too.
+  it('leaves headroom for the pin head without eating a short card', async () => {
+    sized(499, 338);
+    await CH_MAP.renderRoute(host(), ['Colombo', 'Sigiriya']);
+    expect(stub.fits[0].top).toBeGreaterThanOrEqual(22);
+    expect(stub.fits[0].bottom).toBeLessThanOrEqual(20);
+  });
+
+  it('gives the bigger modal pin its bigger headroom', async () => {
+    sized(1040, 700);
+    await CH_MAP.renderRoute(host(), ['Colombo', 'Ella'], { greedy: true });
+    expect(stub.fits[0].top).toBeGreaterThanOrEqual(30);
+  });
+
+  // plan.html's summary map at its clamp floor: the two requirements actually fight here, so
+  // pin both at once rather than trusting one of them not to regress the other.
+  it("keeps plan.html's shortest summary map from being swallowed by its own padding", async () => {
+    sized(272, 104);
+    await CH_MAP.renderRoute(host(), ['Colombo', 'Polonnaruwa', 'Ratnapura']);
+    expect(stub.fits[0].top + stub.fits[0].bottom).toBeLessThan(104 / 2);
+    expect(stub.fits[0].top).toBeGreaterThanOrEqual(22);
   });
 
   it('still pads generously in the expanded modal', async () => {
     sized(1040, 700);
     await CH_MAP.renderRoute(host(), ['Colombo', 'Ella'], { greedy: true });
-    expect(stub.fits[0]).toBe(36);
+    expect(stub.fits[0]).toMatchObject({ top: 36, right: 36, bottom: 36, left: 36 });
   });
 
   it('falls back to the old padding when the container has no size yet', async () => {
     sized(0, 0); // created inside a collapsed step panel; the ResizeObserver re-fits later
     await CH_MAP.renderRoute(host(), ['Colombo', 'Ella']);
-    expect(stub.fits[0]).toBe(36);
+    expect(stub.fits[0]).toMatchObject({ top: 36, right: 36, bottom: 36, left: 36 });
   });
 
   // Every inline caller (plan, booking, quote) passes expandable:true, so the small card has
