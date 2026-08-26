@@ -93,6 +93,29 @@ export async function sendRideCancelled(
   });
 }
 
+// The van was called off AFTER this traveller's card had already been charged: enough seats
+// were held to start charging, then enough of those charges failed to drop the list below its
+// minimum. sendRideCancelled is wrong for them — its subject is "you weren't charged" — so
+// they get this instead. Says the charge happened, that the refund is ours to make and not
+// theirs to chase, and how long it takes to appear.
+export async function sendRideCalledOffRefundDue(
+  email: EmailAdapter,
+  args: { to: string; firstName: string; list: RideList },
+): Promise<void> {
+  const { list } = args;
+  await email.send({
+    to: args.to,
+    subject: `Your ${route(list)} ride was called off — your refund is on the way`,
+    html: shell(
+      `Called off — we're refunding you`,
+      `<p>Hi ${esc(args.firstName)}, not enough travellers made it onto your <b>${routeHtml(list)}</b> ride on ${esc(list.date)}, so it's been <b>called off</b>.</p>
+       <p><b>Your card was charged before that happened, and we are refunding it in full.</b> You don't need to do anything — the money goes back to the card you paid with, and it usually appears within 5–10 working days depending on your bank.</p>
+       <p>We're sorry — this isn't how it's meant to go. If you'd like a hand finding another way to travel that day, just reply to this email and we'll sort you out.</p>`,
+    ),
+    text: `Hi ${args.firstName}, not enough travellers made it onto your ${route(list)} ride on ${list.date}, so it's been called off. Your card was charged before that happened and we are refunding it in full — you don't need to do anything. It usually appears within 5-10 working days. Reply to this email if you'd like help travelling that day another way.`,
+  });
+}
+
 export async function sendRideAtRisk(
   email: EmailAdapter,
   args: { to: string; firstName: string; list: RideList },
