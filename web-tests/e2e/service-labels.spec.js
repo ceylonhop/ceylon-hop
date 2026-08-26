@@ -94,7 +94,7 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('52 km');
   await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('236 km');
   await expect(page.locator('#trip-route')).not.toContainText('Distance on request');
-  await expect(page.locator('#sum-total')).toHaveText('$129');
+  await expect(page.locator('#sum-total')).toHaveText('$130');
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
@@ -117,13 +117,14 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
   ].join('&');
 
   await gotoBooking(page, { query });
-  await expect(page.locator('#sum-total')).toHaveText('$109');
+  await expect(page.locator('#sum-total')).toHaveText('$110');
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#trip-route')).toContainText('Distance on request');
   await expect(page.locator('#sum-adlabel')).toHaveText('Private AC car · whole trip');
   // The whole-trip row absorbs the finishing adjustment so it equals Total: raw distance $110 +
-  // day-rate $62.10 = $172.10 raw, finished to $169.
-  await expect(page.locator('#sum-adamt')).toHaveText('$169');
-  await expect(page.locator('#sum-total')).toHaveText('$169'); // raw $172.10 → eligible $169 charm price
+  // day-rate $62.10 = $172.10 raw, finished to $172 — $149 is far out of reach from $172.10, so
+  // threshold finishing just drops the cents (2026-08-19).
+  await expect(page.locator('#sum-adamt')).toHaveText('$172');
+  await expect(page.locator('#sum-total')).toHaveText('$172');
 });

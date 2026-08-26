@@ -24,7 +24,7 @@ test('homepage popular transfers use the shared compact estimate and money forma
 
   const airportKandy = page.locator('#home-transfers .tcard', { hasText: 'Colombo Airport' })
     .filter({ hasText: 'Kandy' });
-  await expect(airportKandy.locator('.tc-price')).toContainText('from $52.50 fixed');
+  await expect(airportKandy.locator('.tc-price')).toContainText('from $49.99 fixed');
 
   await page.setViewportSize({ width: 320, height: 844 });
   await expect(kandyElla.locator('.tc-meta')).toHaveText('Approx. 135 km · 3h 45m');
