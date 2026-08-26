@@ -190,10 +190,22 @@
      6% of the smaller dimension, floored at 6px so a pin never sits flush against an edge and
      capped at the old 36 so the modal is unchanged. A container with no size yet (created
      inside a collapsed step panel) keeps 36; the ResizeObserver re-fits once it has one. */
-  function fitPadding(w, h) {
+  /* The pad is DIRECTIONAL. The pin below is a 24x24 teardrop anchored at its TIP —
+     Point(12,22) — so it is drawn ~20 path units ABOVE the coordinate it marks: 22px at the
+     inline scale of 1.1, 30px at the modal's 1.5. fitBounds pads the COORDINATE bounds, so a
+     symmetric pad smaller than that clips the top pin's head clean off — which every map
+     shorter than ~367px was doing, plan.html's summary card worst of all at 6-12px against a
+     22px pin (owner-reported, 2026-08-19). Only `top` needs the headroom; raising the floor for
+     all four sides would walk straight back into the zoom-out described above. */
+  const PIN_PATH_UNITS_ABOVE_ANCHOR = 20;
+  const PIN_STROKE_PX = 2;
+  function pinHeadroom(greedy) {
+    return Math.ceil(PIN_PATH_UNITS_ABOVE_ANCHOR * (greedy ? 1.5 : 1.1)) + PIN_STROKE_PX;
+  }
+  function fitPadding(w, h, greedy) {
     const min = Math.min(w || 0, h || 0);
-    if (!min) return 36;
-    return Math.max(6, Math.min(36, Math.round(min * 0.06)));
+    const base = !min ? 36 : Math.max(6, Math.min(36, Math.round(min * 0.06)));
+    return { top: Math.max(base, pinHeadroom(greedy)), right: base, bottom: base, left: base };
   }
 
   function pinLabelsVisible(zoom) {
@@ -474,7 +486,7 @@
       // Measured at fit time, not once: the ResizeObserver below re-fits when the container
       // finally gains its size, and the padding must be re-derived from the new box.
       const fit = () => {
-        if (fitTo) map.fitBounds(fitTo, fitPadding(mapDiv.offsetWidth, mapDiv.offsetHeight));
+        if (fitTo) map.fitBounds(fitTo, fitPadding(mapDiv.offsetWidth, mapDiv.offsetHeight, opts.greedy));
       };
       fit();
       if (window.ResizeObserver) {
