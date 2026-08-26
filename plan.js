@@ -901,6 +901,11 @@ function updateSummary(opts={}){
 }
 
 // ---- route map: pins plotted from each point's coordinates ----
+// What the drawn map actually depends on: the ordered stops and where the route BREAKS. Party
+// size, vehicle, dates and nights are not in it — they cannot move a line between two places.
+let lastMapKey=null;
+function mapKey(names,gapSet){ return JSON.stringify([names,[...gapSet].sort()]); }
+
 function renderMap(){
   const host=document.getElementById('trip-map'); if(!host) return;
   const W=344, H=250, padX=80, padY=44;
@@ -913,6 +918,15 @@ function renderMap(){
   }).filter(Boolean);
   // Wires the traveller arranges themselves — the route line must BREAK here, not draw across.
   const gapSet=new Set(routeSeqDetailed().gaps);
+  // Redrawing an unchanged route is not free: CH_MAP.renderRoute() tears the host down and builds
+  // a fresh google.maps.Map, which flashes the map back through its spinner and costs another
+  // billable dynamic-map load. updateSummary()'s refreshMap defaults to true, so every pax click
+  // was paying both for a route that had not moved (owner-reported, 2026-08-19). Guarding here
+  // rather than at the call sites covers pax, vehicle, dates and nights in one place — and the
+  // host still has to be populated at least once, hence the firstRender check.
+  const key=mapKey(names,gapSet);
+  if(key===lastMapKey && host.firstElementChild) return;
+  lastMapKey=key;
   const gapBetween=(a,b)=>{ for(let w=a;w<b;w++) if(gapSet.has(w)) return true; return false; };
   const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
   if(pts.length<2 && !(window.CH_MAP && names.length>=2)){
