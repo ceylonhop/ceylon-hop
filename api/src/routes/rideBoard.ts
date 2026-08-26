@@ -386,7 +386,13 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
     const found = await deps.rideLists.getByCode(c.req.param('code'));
     if (!found) return c.json({ error: 'not_found' }, 404);
-    if (found.list.status !== 'gathering' && found.list.status !== 'confirmed') {
+    // A seat is only sellable while the cutoff sweep can still charge for it. The sweep takes
+    // `status = 'gathering'` lists past their cutoff and charges the members it read at the
+    // start — so admitting anyone outside that window creates a traveller who holds a seat on
+    // the manifest that nothing will ever bill. Both halves matter: 'confirmed' is never
+    // revisited, and a list stays 'gathering' throughout the sweep's charge loop (lockDeparture
+    // writes only locked_time), by which point its member list is already snapshotted.
+    if (found.list.status !== 'gathering' || found.list.cutoffAt.getTime() <= Date.now()) {
       return c.json({ error: 'closed' }, 409);
     }
     // Already a live member? Then this is a seat change, not a second join: the card stays
