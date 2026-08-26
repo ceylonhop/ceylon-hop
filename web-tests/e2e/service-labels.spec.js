@@ -1,11 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking } from './_stubs.js';
+import { futureIsoDate } from '../dates.js';
+
+// Trip dates are anchored to now, never literals: chauffeur-guide needs 7 days' notice
+// (booking.js chauffeurTooSoon / api domain/dateRules.ts), so a hard-coded date eventually
+// falls inside the window and the service goes unavailable mid-suite.
 
 const TRIP_QUERY = [
   'mode=trip',
   'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
   'nights=0,1,0',
-  'dates=2026-08-08,2026-08-10',
+  `dates=${futureIsoDate(30)},${futureIsoDate(32)}`,
   'pax=2',
   'vehicle=car',
 ].join('&');
@@ -25,7 +30,13 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Leg 1');
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Colombo Airport (CMB)');
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Kandy');
-  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Sat 8 Aug');
+  // The leg's date label, formatted by the PAGE's own Intl (booking.js fmtLeg) so the expected
+  // string can't drift from the renderer — 'Sept' vs 'Sep' differs between engines.
+  const legDate = await page.evaluate(
+    (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+    futureIsoDate(30),
+  );
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText(legDate);
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('km');
 
   await expect(page.locator('#pvt-note-tx')).toContainText('Each leg is priced as its own private transfer');
@@ -45,7 +56,7 @@ test('chauffeur service is unavailable until every trip leg has a date', async (
     'mode=trip',
     'stops=Negombo%7CSigiriya%7CKandy%7CElla',
     'nights=0,0,0,0',
-    'dates=2026-08-08,,',
+    `dates=${futureIsoDate(30)},,`,
     'pax=4',
     'vehicle=van',
   ].join('&');
@@ -71,7 +82,7 @@ test('trip booking review shows planner-provided Google distances for exact-plac
     'mode=trip',
     'stops=Yatiyanthota%2C%20Sri%20Lanka%7CRatnapura%2C%20Sri%20Lanka%7CKankesanturai',
     'nights=0,0,0',
-    'dates=2026-07-10,2026-07-11',
+    `dates=${futureIsoDate(30)},${futureIsoDate(31)}`,
     'kms=52,236',
     'pax=2',
     'vehicle=car',
@@ -99,7 +110,7 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
     'mode=trip',
     'stops=Yatiyanthota%2C%20Sri%20Lanka%7CRatnapura%2C%20Sri%20Lanka%7CKankesanturai',
     'nights=0,0,0',
-    'dates=2026-07-10,2026-07-11',
+    `dates=${futureIsoDate(30)},${futureIsoDate(31)}`,
     'price=110',
     'pax=2',
     'vehicle=car',

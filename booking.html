@@ -371,6 +371,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .cx-inline.ok .cx-h{color:var(--accent-deep)}
   .trip-route .cx-inline.warn .cx-h{color:#b13b22}
   .trip-route .cx-inline p{margin:6px 0 0;color:var(--ink-soft);line-height:1.45}
+  /* The notice window is a website rule, not a capacity one — ops can still take a chauffeur
+     booking inside it. This line is the way out, so the link has to read as a link. */
+  .trip-route .cx-inline p.cx-alt a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
   .trip-route .cx-inline .cx-btn{margin-top:12px;background:var(--ink);color:#fff;border:none;border-radius:999px;padding:.6rem 1.1rem;font:inherit;font-weight:700;cursor:pointer}
   .trip-route .cx-inline .cx-btn:hover{background:var(--accent-deep)}
 
@@ -1072,6 +1075,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=ec33385426"></script>
+<script src="booking.js?v=36437e8e0b"></script>
 </body>
 </html>
