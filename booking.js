@@ -879,10 +879,22 @@ function departuresFor(){
   const base = (r.times&&r.times.length) ? r.times : (r.type==='shared' ? ['07:30'] : ['07:00','08:30','10:00']);
   return base.map((t,i)=>({time:t, label:i===0?'Morning hop':(i===1?'Midday hop':'Late hop')}));
 }
+// A private pick-up inside the 12-hour notice window is refused by the API, so it must not be
+// offered. Only private pickups are filtered: shared seats run on scheduled departures with
+// their own service-day rules and are deliberately exempt.
+function tooSoonToPickUp(time){
+  if(!perVehicle || !state.date) return false;
+  const at = colomboInstant(fmtISO(state.date), time);
+  return !!at && (at.getTime() - Date.now()) < PRIVATE_MIN_LEAD_HOURS*3600000;
+}
 function renderDeps(){
   const sel=document.getElementById('dep-select');
   const hint=document.getElementById('dep-hint');
-  const deps=departuresFor();
+  const all=departuresFor();
+  const deps=all.filter(dp=>!tooSoonToPickUp(dp.time));
+  const trimmed=deps.length<all.length;
+  // A time carried over from the URL or an earlier date may now be inside the window.
+  if(state.dep && !deps.some(dp=>dp.time===state.dep)) state.dep=null;
 
   // Shared ride with a single fixed departure — show a read-only card, no picker needed
   if(isShared && deps.length===1){
@@ -910,8 +922,12 @@ function renderDeps(){
   sel.style.opacity = state.flexTime ? '.45' : '1';
   hint.style.display='block';
   hint.textContent = perVehicle
-    ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.' : 'Choose any time of day — your private vehicle leaves when you do.')
+    ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.'
+      : (deps.length===0 ? `We need ${PRIVATE_MIN_LEAD_HOURS} hours to arrange a driver — please pick a later date.`
+        : (trimmed ? `Earlier pick-ups are gone — we need ${PRIVATE_MIN_LEAD_HOURS} hours’ notice to arrange your driver.`
+          : 'Choose any time of day — your private vehicle leaves when you do.')))
     : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a scheduled departure.');
+  if(deps.length===0) { sel.disabled=true; sel.style.opacity='.45'; }
   let opts=`<option value="" ${!state.dep?'selected':''} disabled>Choose a ${perVehicle?'pick-up time':'departure'}…</option>`;
   opts+=deps.map(dp=>`<option value="${dp.time}" ${state.dep===dp.time?'selected':''}>${fmtTime(dp.time)} · ${dp.label}</option>`).join('');
   sel.innerHTML=opts;
@@ -1132,8 +1148,11 @@ window.step=function(which,d){
 };
 window.toggleAddon=function(el){
   const a=el.dataset.addon;
-  if(state.addons.has(a)){state.addons.delete(a);el.classList.remove('on');}
-  else{state.addons.add(a);el.classList.add('on');}
+  const selected=!state.addons.has(a);
+  if(selected)state.addons.add(a);
+  else state.addons.delete(a);
+  el.classList.toggle('on',selected);
+  el.setAttribute('aria-pressed',String(selected));
   render();
 };
 // Add-on prices come from the generated EXTRAS table (transfers-data.js, sourced from
@@ -1202,6 +1221,34 @@ function tripDatesComplete(){
   }
   return true;
 }
+// ── Minimum notice ────────────────────────────────────────────────────────────────────────
+// Mirrors api/src/domain/dateRules.ts (PRIVATE_MIN_LEAD_HOURS / CHAUFFEUR_MIN_LEAD_DAYS). The
+// API is the real gate — these only keep the wizard from offering what it will reject with
+// `lead_time_too_short`. Sri Lanka is a fixed UTC+05:30 with no DST, so a literal offset gives
+// the exact pick-up instant no matter which timezone the traveller is browsing from.
+const PRIVATE_MIN_LEAD_HOURS = 12;
+const CHAUFFEUR_MIN_LEAD_DAYS = 7;
+function colomboInstant(iso, time){
+  const d = new Date(iso+'T'+(time||'00:00')+':00+05:30');
+  return isNaN(d.getTime()) ? null : d;
+}
+// Today in Colombo, plus the chauffeur notice — the earliest date a chauffeur trip may start.
+function earliestChauffeurISO(){
+  const d = new Date(Date.now() + 5.5*3600000);
+  d.setUTCDate(d.getUTCDate() + CHAUFFEUR_MIN_LEAD_DAYS);
+  return d.toISOString().slice(0,10);
+}
+function fmtNoticeDate(iso){
+  const d = new Date(iso+'T00:00:00');
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+}
+// Does this trip start inside the chauffeur notice window? Judged on the EARLIEST date — the
+// car is committed from the first day, wherever that date sits in the list.
+function chauffeurTooSoon(){
+  const dated = tripDates.filter(d=>(d||'').trim()).sort();
+  return !!dated.length && dated[0] < earliestChauffeurISO();
+}
+
 // Chauffeur duration from the trip dates: nights on the road = (last date − first date),
 // days the car is kept = nights + 1. Driver accommodation = one night per night away.
 function chauffeurDuration(){
@@ -1686,22 +1733,36 @@ function render(){
     const pvt=document.getElementById('svc-private-tag'), chf=document.getElementById('svc-chauffeur-tag');
     if(pvt) pvt.textContent='Priced per leg · pay in full';
 
-    // chauffeur is billed per day, so it needs every leg dated before we can quote it
+    // chauffeur is billed per day, so it needs every leg dated before we can quote it — and it
+    // holds one car and driver for the whole journey, so it also needs 7 days' notice
     const cx=document.getElementById('chauffeur-extra');
     const datesOK=tripDatesComplete();
+    const tooSoon=chauffeurTooSoon();
+    const chOK=datesOK && !tooSoon;
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
-    if(chf) chf.textContent=datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote';
+    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
     if(chBtn && chBtn.style.display!=='none'){
-      chBtn.disabled=!datesOK;
-      chBtn.setAttribute('aria-disabled', datesOK?'false':'true');
-      chBtn.classList.toggle('disabled', !datesOK);
+      chBtn.disabled=!chOK;
+      chBtn.setAttribute('aria-disabled', chOK?'false':'true');
+      chBtn.classList.toggle('disabled', !chOK);
     }
-    if(!datesOK && state.svc==='chauffeur'){
+    if(!chOK && state.svc==='chauffeur'){
       state.svc='private';
       document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
     }
     if(cx){
-      if(!datesOK){
+      if(datesOK && tooSoon){
+        cx.className='cx-inline warn'; cx.style.display='block';
+        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Chauffeur-guide trips need '+CHAUFFEUR_MIN_LEAD_DAYS+' days’ notice</b></div>'+
+          '<p>Your driver-guide stays with you for the whole journey, so we need time to assign one. The earliest chauffeur start is <b>'+fmtNoticeDate(earliestChauffeurISO())+'</b> — your private transfers are unaffected.</p>'+
+          // The notice window is a WEBSITE rule, not a capacity one: ops can still take a
+          // chauffeur booking inside it by hand (the API exempts staff bookings on purpose).
+          // Ending on "no" would turn away a trip we are actually able to run, so offer the
+          // one route that still works. waTripSummary() carries the itinerary, so the
+          // traveller does not retype what they just entered.
+          '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we\u2019ll see what we can do.</p>'+
+          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
+      } else if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
@@ -1714,7 +1775,8 @@ function render(){
       } else { cx.style.display='none'; cx.innerHTML=''; }
     }
     // can't proceed on a chauffeur trip until it's fully dated (no per-day rate without the days)
-    const n1=document.getElementById('n1'); if(n1) n1.disabled = (state.svc==='chauffeur' && !datesOK);
+    // and outside the notice window
+    const n1=document.getElementById('n1'); if(n1) n1.disabled = (state.svc==='chauffeur' && !chOK);
   }
 
   // luggage capacity controls + note (step 2)
@@ -2300,11 +2362,55 @@ function simulatePayThenConfirm(booking){
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(booking); }, 3400);
 }
 
+function phShowSettlementPending(){
+  document.getElementById('ph-spin').style.display='none';
+  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  const ico=document.getElementById('ph-ico');
+  if(ico){
+    ico.hidden=false; ico.className='ph-ico warn';
+    ico.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  }
+  const m=document.getElementById('ph-msg');
+  m.className='ph-msg ph-msg-big';
+  m.textContent='Payment is still being confirmed. Don’t try again—we’ll email you when it lands.';
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=true;
+  document.getElementById('ph-actions').hidden=false;
+  document.getElementById('ph-overlay').classList.add('show');
+}
+
+async function waitForPaymentConfirmation(checkout, booking){
+  const token=checkout && checkout.payReturnToken;
+  if(!token) return phShowSettlementPending();
+  phShowLoading('Confirming your payment…');
+  const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  const url=API+'/bookings/pay-return?rt='+encodeURIComponent(token);
+  for(let attempt=0; attempt<15; attempt++){
+    try{
+      const res=await fetch(url,{method:'GET',cache:'no-store'});
+      if(res.ok){
+        const result=await res.json();
+        if(result.status==='paid'){
+          document.getElementById('ph-overlay').classList.remove('show');
+          return finalizeBooking(booking);
+        }
+        if(result.status==='failed'){
+          return phShowEnd('error','Your payment wasn’t confirmed. No booking has been completed — please try again or message us on WhatsApp.');
+        }
+      }
+    }catch(e){ /* transient network failure — settlement may still arrive */ }
+    if(attempt<14) await new Promise(resolve=>setTimeout(resolve,1200));
+  }
+  return phShowSettlementPending();
+}
+
 // Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
-// truth for "paid"; onCompleted just shows the customer their confirmation.
+// truth for "paid"; onCompleted starts a short poll of that server-owned state.
 function startPayHere(checkout, booking){
   const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-  payhere.onCompleted = function(){ document.getElementById('ph-overlay').classList.remove('show'); finalizeBooking(booking); };
+  payhere.onCompleted = function(){ waitForPaymentConfirmation(checkout, booking); };
   payhere.onDismissed = function(){ showPayDismissed(); };
   payhere.onError = function(){ showPayFailed(); };
   payhere.startPayment(payment);
@@ -2590,7 +2696,7 @@ function finalizeBooking(apiBooking){
   if(cc){
     let extra='';
     if(state.flexDate||state.flexTime) extra=' Just let us know your exact date & time any time up to 12 hours before — a quick WhatsApp is all it takes.';
-    cc.innerHTML=`A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You’ll hear from us first thing in the morning.${extra}`;
+    cc.innerHTML=`Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.${extra}`;
   }
   // "Your seat is booked! ... See you on board" was shown for every product, including a
   // multi-day private trip where there is no seat and no "board".
@@ -2599,8 +2705,8 @@ function finalizeBooking(apiBooking){
   if(ct) ct.textContent = isShared ? 'Your seat is booked!' : (isTrip ? 'Your trip is booked!' : 'Your transfer is booked!');
   if(cl){
     const base = isShared
-      ? 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up. See you on board \ud83c\udf34'
-      : 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.';
+      ? 'Payment received. Your confirmation and trip summary have been emailed. See you on board \ud83c\udf34'
+      : 'Payment received. Your confirmation and trip summary have been emailed.';
     cl.textContent = base;
   }
   document.getElementById('main-layout').style.display='none';

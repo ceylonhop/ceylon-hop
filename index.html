@@ -463,13 +463,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rev .qmark{font-family:var(--display);font-weight:700;font-size:3.2rem;line-height:.6;color:var(--saffron);height:.5em}
   .rev p{font-size:1rem;line-height:1.55;margin:0}
   .rev .stars{margin-top:auto}
-  .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
+  .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;outline-offset:4px}
   .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1.05rem;flex:none}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
   /* the attribution has to read as a real link back to the listing, not as body text —
      it is what lets a reader check the quote, so it must not disappear into the muted line */
-  .rev .who span a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
-  .rev .who span a:hover{color:var(--accent-deep);text-decoration-color:currentColor}
+  .rev .review-source{text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
+  .rev .who:hover b,.rev .who:hover .review-source{color:var(--accent-deep);text-decoration-color:currentColor}
+  .rev .who:focus-visible{outline:3px solid var(--accent-deep)}
   .rev .post-stamp{position:absolute;top:16px;right:16px}
 
   /* refined glass trust badge over the photo */
@@ -490,6 +491,37 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-card .field-bad>select,.hero-card .field-bad>input,.hero-card .field-bad .dp-btn{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.16)!important}
   .hero-card .grp-note:not([hidden]){display:flex;align-items:flex-start;gap:.45rem;margin:0;font-size:.82rem;line-height:1.4;color:var(--ink-soft)}
   .hero-card .grp-note svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--accent-deep)}
+
+  /* One quiet Sri Lankan scene in each otherwise-plain homepage band. These are
+     atmosphere, not content: editorial ink-and-watercolour vignettes that stay
+     edge-cropped, below the copy, and out of the reading order. */
+  .destination-art{position:relative;isolation:isolate;overflow:hidden;overflow:clip}
+  .destination-art::after{
+    content:"";position:absolute;z-index:0;pointer-events:none;opacity:.30;
+    width:clamp(360px,38vw,620px);aspect-ratio:1200/667;
+    background-repeat:no-repeat;background-position:center;background-size:contain;
+  }
+  .destination-art > .wrap{position:relative;z-index:1}
+  .destination-art--sigiriya::after{
+    right:-62px;bottom:-42px;background-image:url("img/section-art/sigiriya-watercolor.webp")
+  }
+  .destination-art--hiriketiya::after{
+    left:-78px;bottom:-54px;background-image:url("img/section-art/hiriketiya-cove-watercolor.webp")
+  }
+  .destination-art--hill-country-rail::after{
+    right:-72px;top:24px;background-image:url("img/section-art/hill-country-rail-watercolor.webp")
+  }
+  .destination-art--mirissa-whale::after{
+    left:-76px;bottom:-48px;background-image:url("img/section-art/mirissa-whale-watercolor.webp")
+  }
+  @media(max-width:600px){
+    /* destination art: mobile restraint */
+    .destination-art::after{width:68vw;max-width:260px;opacity:.18}
+    .destination-art--sigiriya::after{right:-64px;bottom:-18px}
+    .destination-art--hiriketiya::after{left:-72px;bottom:-24px}
+    .destination-art--hill-country-rail::after{right:-72px;top:20px}
+    .destination-art--mirissa-whale::after{left:-72px;bottom:-22px}
+  }
 </style>
 </head>
 <body data-page="home">
@@ -573,7 +605,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- WHAT IS -->
-<section class="section-tight" id="what">
+<section class="section-tight destination-art destination-art--sigiriya" id="what" data-destination-art="sigiriya">
   <div class="wrap center">
     <span class="eyebrow" style="justify-content:center">What is Ceylon Hop?</span>
     <h2 style="max-width:26ch;margin:0 auto .55rem;font-size:clamp(1.6rem,2.8vw,2.3rem)">Private transfers across Sri Lanka &mdash; share a seat when it suits you</h2>
@@ -623,7 +655,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- READY-MADE ROUTES (tours as planner templates) -->
-<section class="section" data-screen-label="Ready-made routes">
+<section class="section destination-art destination-art--hiriketiya" data-screen-label="Ready-made routes" data-destination-art="hiriketiya">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:12px">
       <div><span class="eyebrow">Skip the spreadsheet</span><h2>Steal a route we already love</h2></div>
@@ -635,7 +667,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- PRO HOPPERS -->
-<section class="section" data-screen-label="Pro Hoppers">
+<section class="section destination-art destination-art--hill-country-rail" data-screen-label="Pro Hoppers" data-destination-art="hill-country-rail">
   <div class="wrap">
     <div class="hoppers-head">
       <div>
@@ -648,7 +680,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="grid cols-3" id="hoppers"></div>
   </div>
 </section>
-<section class="section">
+<section class="section destination-art destination-art--mirissa-whale" data-destination-art="mirissa-whale">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
       <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
@@ -674,9 +706,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=736abbfe52"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
-<script src="transfers-data.js?v=3eb73141e9"></script>
+<script src="transfers-data.js?v=03450f3d13"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
-<script src="ch-map.js?v=4f38c5f4ce"></script>
+<script src="ch-map.js?v=9ccbce517b"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   const __heroV=(window.__tweaks&&window.__tweaks.read().hero)||'postcard';
@@ -695,13 +727,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     const A=TRANSFERS.place(f), B=TRANSFERS.place(t);
     const q=TRANSFERS.privateQuote(f,t);
     const sh=TRANSFERS.sharedOption(f,t);
-    const u=new URLSearchParams({from:f,to:t}).toString();
+    // Send these to the route page, not search. The route page IS the product page for a known
+    // pair (both options, price, and a Book CTA that carries the quote), and it is static, so it
+    // renders without waiting on the engine. It also gives the 44 /trip/ pages the only internal
+    // links they have from anywhere on the site — nothing else links to them, and an orphaned
+    // page does not rank. Guarded by web-tests/unit/home-transfer-links.test.js, which fails if a
+    // pair here has no generated page (that would ship a 404 on the homepage's main cards).
     const estimate=CH.routeEstimate.formatRouteEstimate({
       distanceKm:q.km,
       durationMin:q.durationMin,
       state:q.estimated?'estimated':'browse'
     });
-    return `<a class="card tcard reveal" href="search.html?${u}">
+    return `<a class="card tcard reveal" href="trip/${f}-to-${t}/">
       <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
       <div class="tc-meta">${estimate}</div>
       <div class="tc-foot">
@@ -756,17 +793,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="qmark">&ldquo;</div>
       <p>&ldquo;${r.text}&rdquo;</p>
       <div class="stars">${STAR.repeat(5)}</div>
-      <div class="who"><div class="av" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><a href="${TA.url}" target="_blank" rel="noopener">Review on Tripadvisor</a> · ${r.written}</span></div></div>
+      <a class="who" href="${TA.url}" target="_blank" rel="noopener"><div class="av" aria-hidden="true" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><span class="review-source">Review on Tripadvisor</span> · ${r.written}</span></div></a>
     </div>`).join('');
 
   // blog
   const posts=[
-    ['Why we started Ceylon Hop','Story · 4 min'],
-    ['The ultimate tuk-tuk guide to Sri Lanka','Guide · 6 min'],
-    ['Best time to visit Sri Lanka: month-by-month','Planning · 8 min']
+    ['Why we started Ceylon Hop','why-we-started-ceylon-hop','Story · 4 min'],
+    ['The ultimate tuk-tuk guide to Sri Lanka','ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka','Guide · 6 min'],
+    ['Best time to visit Sri Lanka: month-by-month','best-time-to-visit-sri-lanka-a-month-by-month-guide','Planning · 8 min']
   ];
-  document.getElementById('blog').innerHTML = posts.map(([t,m],i)=>`
-    <a class="bcard reveal" href="blog.html">
+  document.getElementById('blog').innerHTML = posts.map(([t,slug,m],i)=>`
+    <a class="bcard reveal" href="${slug}/">
       <image-slot id="blog-post-${i}" shape="rounded" radius="16" src="img/blog-post-${i}.jpg" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
       <div class="meta" style="margin-top:14px">${m}</div>
       <h3>${t}</h3>

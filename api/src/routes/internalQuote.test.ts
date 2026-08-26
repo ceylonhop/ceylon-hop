@@ -79,19 +79,19 @@ describe('internal quoting tool route', () => {
     });
     expect(res.status).toBe(200);
     const d = await res.json();
-    expect(d.total.cents).toBe(3550);
-    expect(d.amountDueNow.cents).toBe(3550); // private → full
+    expect(d.total.cents).toBe(3500);
+    expect(d.amountDueNow.cents).toBe(3500); // private → full
     expect(d.drafts).toBeUndefined(); // V15: dead drafts removed
     expect(Number.isInteger(d.lineItems[0].amountCents)).toBe(true); // Fix 7: cents on line items
     expect(d.lineItems[0].meta.billableKm).toBe(88); // meta passthrough — client zips travel items with legs
     expect(d.lineItems.at(-1)).toMatchObject({
       label: 'Final price adjustment',
-      amountCents: 8,
-      meta: { kind: 'price_adjustment', strategy: 'nearest_50_cents' },
+      amountCents: -42,
+      meta: { kind: 'price_adjustment', strategy: 'floor_cents' },
     });
     expect(d.comparison).toBeUndefined(); // reflow: car/van comparison removed
     // reflow: services chooser replaces comparison. Single undated leg → chauffeur infeasible.
-    expect(d.services.pointToPoint.total.cents).toBe(3550);
+    expect(d.services.pointToPoint.total.cents).toBe(3500);
     expect(d.services.chauffeur.error).toBeTruthy();
   });
 
@@ -222,7 +222,7 @@ describe('internal quoting tool route', () => {
     });
     const saved = await res.json();
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
-    expect(got.totalCents).toBe(3550); // finished engine price, not the bogus client total
+    expect(got.totalCents).toBe(3500); // finished engine price, not the bogus client total
   });
 
   /* The builder prices only the READY legs when one still has no distance (Defect A partial
@@ -571,7 +571,7 @@ describe('internal quoting tool route', () => {
     });
     const d = await res.json();
     expect(d.product).toBe('private');
-    expect(d.total.cents).toBe(8300); // raw van price 8324¢ → nearest-50¢ final price
+    expect(d.total.cents).toBe(7999); // raw van price 8324¢ → crosses the $80 threshold
   });
 
   it('sightseeing/waiting/safari-wait toggles add engine extras on a private trip', async () => {
@@ -582,9 +582,9 @@ describe('internal quoting tool route', () => {
 
   it('van_9/van_14/custom are no longer gated — they price correctly (200, total > 0)', async () => {
     const cases: Array<{ vehicle: string; pax: number; expectedCents: number }> = [
-      { vehicle: 'van_9',  pax: 8,  expectedCents: 8300 }, // raw 8324¢ → nearest-50¢
-      { vehicle: 'van_14', pax: 12, expectedCents: 8500 }, // raw 8501¢ → nearest-50¢
-      { vehicle: 'custom', pax: 20, expectedCents: 30900 }, // raw 30993¢ → eligible $309 charm price
+      { vehicle: 'van_9',  pax: 8,  expectedCents: 7999 },  // raw 8324¢ → crosses the $80 threshold
+      { vehicle: 'van_14', pax: 12, expectedCents: 8500 },  // raw 8501¢ → cents dropped, $85 out of reach
+      { vehicle: 'custom', pax: 20, expectedCents: 30900 }, // raw 30993¢ → cents dropped
     ];
     for (const { vehicle, pax, expectedCents } of cases) {
       const res = await post(createApp(), '/admin/quote/estimate', {
@@ -790,7 +790,7 @@ describe('internal quoting tool route', () => {
       legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, stopovers: ['Old Data'] }],
     });
     expect(res.status).toBe(200);
-    expect((await res.json()).total.cents).toBe(3550);
+    expect((await res.json()).total.cents).toBe(3500);
   });
 });
 
@@ -960,7 +960,7 @@ describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
     });
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j.total.cents).toBe(13850); // raw 154km × 90¢ = 13860¢, then nearest-50¢
+    expect(j.total.cents).toBe(13800); // raw 154km × 90¢ = 13860¢, then cents dropped
   });
 
   it('400s a custom rate on a non-custom tier (car)', async () => {
@@ -2201,8 +2201,8 @@ describe('multi-stop rides — ops wire (stops + segmentKms)', () => {
     const d = await (await post(createApp(), '/admin/quote/estimate', {
       vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ from: 'A', to: 'B', distanceKm: 80 })],
     })).json();
-    expect(d.total.cents).toBe(3550);
-    expect(d.amountDueNow.cents).toBe(3550);
+    expect(d.total.cents).toBe(3500);
+    expect(d.amountDueNow.cents).toBe(3500);
     expect(d.lineItems[0].label).toBe('A → B (car)');
     expect(d.lineItems[0].meta.billableKm).toBe(88);
     expect(d.lineItems[0].meta.stops).toBeUndefined(); // 2-stop leg never carries a stops array

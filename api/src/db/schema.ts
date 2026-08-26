@@ -586,6 +586,29 @@ export const quotes = pgTable('quotes', {
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
 ]);
 
+// Branded customer-link aliases (spec 2026-08-24). code_digest is SHA-256(code): the bearer
+// itself never rests in Postgres. The target carries only what is needed to rebuild the existing
+// signed quote-view or quote-pay token; those routes remain the liveness and payment authority.
+export const customerShortLinks = pgTable('customer_short_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  codeDigest: text('code_digest').notNull().unique(),
+  kind: text('kind').notNull(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id, { onDelete: 'cascade' }),
+  quoteRevision: integer('quote_revision'),
+  payLinkSeq: integer('pay_link_seq'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  check('customer_short_links_digest_shape', sql`${t.codeDigest} ~ '^[0-9a-f]{64}$'`),
+  check('customer_short_links_target_shape', sql`
+    (${t.kind} = 'quote_view' AND ${t.quoteRevision} IS NULL AND ${t.payLinkSeq} IS NULL)
+    OR
+    (${t.kind} = 'quote_pay'
+      AND ${t.quoteRevision} IS NOT NULL AND ${t.quoteRevision} >= 1
+      AND ${t.payLinkSeq} IS NOT NULL AND ${t.payLinkSeq} >= 0)
+  `),
+  index('customer_short_links_quote_idx').on(t.quoteId),
+]);
+
 // Founder manual discounts (spec 2026-08-09 §4.1) — migration 0044. One row per DECISION, never
 // mutated in place: apply inserts, replace/remove supersedes. `quote_revision` is a stamp, NOT a
 // foreign key — quote_revisions holds only superseded states, so the live revision has no row

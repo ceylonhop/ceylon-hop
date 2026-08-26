@@ -12,9 +12,9 @@ import { createDb } from './client';
   migration arrives with RLS off and nothing would say so. That is precisely how the schema got
   into this state in the first place.
 
-  No policies are asserted on purpose. RLS with no policy denies every row to every role subject
-  to it, which is what we want for a surface we never use. The API is unaffected: it connects as
-  `postgres`, which has rolbypassrls (verified on staging, 2026-08-19) and owns the tables.
+  Customer short links additionally assert the intended deny-by-default posture: no policy and
+  no direct CRUD grant to a public-facing role. The API is unaffected: it connects as `postgres`,
+  which has rolbypassrls (verified on staging, 2026-08-19) and owns the tables.
 */
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -58,5 +58,24 @@ describe.skipIf(!TEST_URL)('every public table has RLS enabled', () => {
     } finally {
       await sql`DROP TABLE IF EXISTS public.rls_guard_probe`;
     }
+  });
+
+  it('keeps customer short links private from PostgREST-facing roles', async () => {
+    const policies = await sql<{ policyname: string }[]>`
+      SELECT policyname
+      FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'customer_short_links'
+      ORDER BY policyname`;
+    expect(policies).toEqual([]);
+
+    const grants = await sql<{ grantee: string; privilege_type: string }[]>`
+      SELECT grantee, privilege_type
+      FROM information_schema.table_privileges
+      WHERE table_schema = 'public'
+        AND table_name = 'customer_short_links'
+        AND grantee IN ('PUBLIC', 'anon', 'authenticated')
+        AND privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE')
+      ORDER BY grantee, privilege_type`;
+    expect(grants).toEqual([]);
   });
 });

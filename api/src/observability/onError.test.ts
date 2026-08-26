@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createApp } from '../app';
+import { createApp, redactedErrorRoute } from '../app';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
@@ -31,6 +31,11 @@ describe('app.onError alerting', () => {
       method: 'POST',
       headers: { authorization: `Bearer ${signCheckoutToken(id, SECRET)}` },
     });
+
+  it('redacts customer bearer codes before error reporting', () => {
+    expect(redactedErrorRoute(`/s/${'secret-code-value'}`)).toBe('/s/:code');
+    expect(redactedErrorRoute('/bookings/a/checkout')).toBe('/bookings/a/checkout');
+  });
 
   it('returns the unchanged 500 body and sends one critical alert', async () => {
     const inner = new FakeAlertAdapter();

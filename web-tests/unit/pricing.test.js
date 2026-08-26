@@ -36,7 +36,7 @@ describe('privateQuote (the fare customers see)', () => {
     // van = max(50, round(350 × 54.05¢)) = 189.18
     expect(q.rawCar).toBe(140.88);
     expect(q.rawVan).toBe(189.18);
-    expect(q.car).toBe(139);
+    expect(q.car).toBe(140); // $99.99 is way out of reach from $140.88, so the cents drop
     expect(q.van).toBe(189);
   });
 
@@ -85,23 +85,24 @@ describe('legPrice', () => {
 
 describe('finishPrice (psychological final-price parity)', () => {
   it.each([
-    [80.99, 79],
+    [80.99, 79.99], // a cent under $81 reaches the $80 threshold for 1c
     [401.48, 399],
-    // Four-figure totals used to fall to the nearest $100 charm target ($1020 → $999), giving
-    // away tens of dollars. The grid is $10 at every size now (owner, 2026-07-26).
-    [1020, 1019],
-    [1125, 1119],
+    // Threshold finishing (owner, 2026-08-19). The old $10 grid manufactured a nine at every
+    // size — $1020 → $1019, a dollar spent on a digit nobody reads. Nothing is in reach of any
+    // of these now, so they simply lose their cents.
+    [1020, 1020],   // $21 to reach $999 is over the $20 ceiling — the owner's own call
+    [1125, 1125],
     [1129.36, 1129],
-    [1842.77, 1839], // the reported quote: −$3.77, where it used to lose $43.77
-    [81.1, 81],
+    [1842.77, 1842], // the reported quote: −77c, where the original design lost $43.77
+    [81.1, 79.99],
     [399.88, 399],
   ])('finishes $%s as $%s', (raw, expected) => {
     expect(T.finishPrice(raw)).toBe(expected);
   });
 
-  it('never cuts more than $10 off a customer-facing price', () => {
+  it('never cuts more than $20 off a customer-facing price', () => {
     for (const raw of [1020, 1125, 1842.77, 4999.99, 12345.67, 19999.99]) {
-      expect(raw - T.finishPrice(raw)).toBeLessThanOrEqual(10);
+      expect(raw - T.finishPrice(raw)).toBeLessThanOrEqual(20.99);
     }
   });
 

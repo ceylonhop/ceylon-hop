@@ -158,6 +158,22 @@ test.describe('a declined card gets something to do about it', () => {
   });
 });
 
+test.describe('a completed PayHere popup is not treated as a paid booking', () => {
+  test('the booked screen waits for the server webhook state', async ({ page }) => {
+    await gotoBooking(page, {
+      checkout: 'payhere',
+      payhere: 'completed',
+      settlementStatuses: ['pending', 'paid'],
+    });
+    await fillContact(page);
+    await page.click('#pay-btn');
+
+    await expect(page.locator('#ph-msg')).toContainText('Confirming your payment');
+    await expect(page.locator('#confirm')).toBeHidden();
+    await expect(page.locator('#confirm')).toBeVisible({ timeout: 5000 });
+  });
+});
+
 test.describe('a refused checkout says why', () => {
   test('an unpriced booking shows the server’s hand-pricing message, not "try again"', async ({ page }) => {
     await gotoBooking(page, {

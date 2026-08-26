@@ -178,30 +178,40 @@
 
   // Mirrors api/src/quote/priceFinish.ts in integer cents. This is display parity only; the
   // backend repeats the policy authoritatively before a booking or ops quote is persisted.
+  // Kept byte-for-byte equivalent by web-tests/unit/backend-price-parity.test.js, which sweeps
+  // the whole range rather than spot values — the two last diverged only at large totals.
   function finishPrice(amount, minimumAllowed) {
     if(!Number.isFinite(amount) || amount < 0) return amount;
     const rawCents = Math.round(amount * 100);
     const minimumAllowedCents = Math.round((minimumAllowed || 0) * 100);
     if(rawCents === 0) return 0;
-    // A price that IS the protected minimum is already final — mirrors api/src/quote/priceFinish.ts.
-    // The nearest-increment pass rounds to the NEAREST multiple, upward when that is closer, so a
-    // $49.99 floor was rounded back to $50.00 and the floor became decorative (owner, 2026-08-07).
+    // A price that IS the protected minimum is already final — a $49.99 floor is a FINAL price.
     if(rawCents === minimumAllowedCents) return rawCents / 100;
-    // $10 charm grid at EVERY size, and a hard $10 floor under any reduction (owner 2026-07-26).
-    // The interval used to widen with the magnitude, which cost a $1,842.77 quote $43.77.
-    const CHARM_INTERVAL_CENTS = 1000, MAX_REDUCTION_CENTS = 1000;
-    const charm = Math.floor((rawCents + 100) / CHARM_INTERVAL_CENTS) * CHARM_INTERVAL_CENTS - 100;
-    const withinLimit = candidate => candidate >= rawCents ||
-      ((rawCents - candidate) <= MAX_REDUCTION_CENTS &&
-       (rawCents - candidate) * 10000 <= rawCents * PRICE_FINISHING.maxReductionBps);
-    if(charm === rawCents) return rawCents / 100;
-    if(charm > 0 && charm < rawCents && charm >= minimumAllowedCents && withinLimit(charm)) return charm / 100;
 
-    const increment = PRICE_FINISHING.roundToCents;
-    const lower = Math.floor(rawCents / increment) * increment;
-    const upper = lower + increment;
-    const rounded = rawCents - lower <= upper - rawCents ? lower : upper;
-    return rounded >= minimumAllowedCents && withinLimit(rounded) ? rounded / 100 : rawCents / 100;
+    // Threshold finishing (owner 2026-08-19). The barriers get coarser as the number grows, and
+    // the nine sits in the cents up to $100 ($49.99) and in the dollars above it ($149, $999).
+    const stepFor = c => (c < 10000 ? 1000 : c < 100000 ? 5000 : 10000);
+    const targetFor = a => (a <= 10000 ? a - 1 : a - 100);
+    const isPow10 = c => { let n = c; while(n >= 10 && n % 10 === 0) n /= 10; return n === 1; };
+    const isThreshold = c => {
+      const step = stepFor(c), below = Math.floor(c / step) * step;
+      return c === targetFor(below) || c === targetFor(below + step);
+    };
+    if(isThreshold(rawCents)) return rawCents / 100;
+
+    // Drop the cents first and decide everything from that number, or the rule is not idempotent.
+    const floored = Math.floor(rawCents / 100) * 100;
+    const base = floored >= minimumAllowedCents ? floored : rawCents;
+
+    if(base <= 500000) {
+      const step = stepFor(base), anchor = Math.floor(base / step) * step;
+      const target = targetFor(anchor);
+      // 1% of the price, doubled when the barrier drops a digit, floored at $3.50, capped at $20.
+      const budget = Math.min(Math.max(
+        Math.round(base * 100 / 10000) * (isPow10(anchor) ? 2 : 1), 350), 2000);
+      if(target >= minimumAllowedCents && target < base && base - target <= budget) return target / 100;
+    }
+    return base / 100;
   }
 
   // ---- Two different questions, deliberately two functions ----
