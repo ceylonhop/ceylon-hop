@@ -106,6 +106,20 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     expect(buildConfig({ NODE_ENV: 'test', QUOTE_V2_ENABLED: '1' }).QUOTE_V2_ENABLED).toBe(true);
   });
 
+  it('keeps customer short links default-off and refuses an ambiguous value', () => {
+    expect(buildConfig({ NODE_ENV: 'test' }).CUSTOMER_SHORT_LINKS_ENABLED).toBe(false);
+    expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: 'false' })
+      .CUSTOMER_SHORT_LINKS_ENABLED).toBe(false);
+    expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: '0' })
+      .CUSTOMER_SHORT_LINKS_ENABLED).toBe(false);
+    expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: '1' })
+      .CUSTOMER_SHORT_LINKS_ENABLED).toBe(true);
+    expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: 'true' })
+      .CUSTOMER_SHORT_LINKS_ENABLED).toBe(true);
+    // Spec 7.5: production must not activate because some arbitrary string was truthy.
+    expect(() => buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: 'yes' })).toThrow();
+  });
+
   it('keeps legacy tokenless checkout default-off and refuses it in live production', () => {
     expect(buildConfig({ NODE_ENV: 'test' }).CHECKOUT_TOKEN_COMPATIBILITY).toBe(false);
     expect(

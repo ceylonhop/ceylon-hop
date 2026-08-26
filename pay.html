@@ -8,11 +8,11 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css?v=8bf6f8423a">
+<link rel="stylesheet" href="site.css?v=80d895de52">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js: it tags every event, the Clarity session and
@@ -20,13 +20,11 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
      blog post. See docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='pay';</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<!-- Still no consent.js (owner, 2026-08-01): a customer mid-payment is not the audience for a
-     floating cookie card, and it overlaid the CTA. But "no banner" had become "no consent" —
-     nothing here ever granted, so Clarity never recorded a single payment and GA4 saw only
-     cookieless pings. consent-transactional.js keeps the owner's rule (it reserves its own
-     height instead of covering anything) and asks for analytics ONLY; ads stay denied here
-     permanently. -->
-<script src="consent-transactional.js?v=9e74d1f96a" defer></script>
+<!-- No consent script at all (owner, 2026-08-16). A customer mid-payment was never the
+     audience for a floating cookie card, and the strip that replaced it is gone too: the
+     head now defaults analytics_storage to GRANTED site-wide, so this page collects without
+     asking. Ads stay denied here for the same reason as everywhere else — see
+     tools/site-chrome.mjs. -->
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -348,13 +346,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       function(){ clearTimeout(timer); throw new Error('The connection timed out — no charge was made. Please try again.'); }
     );
   }
-  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — our team replies during Sri Lanka service hours.</div>';}
 
   // ── states ──────────────────────────────────────────────────────────────────────────
-  // One dead-end screen for both states (spec 2026-07-31, owner: "one option for now").
-  // Sibling of 404.html's island scene. Two functions kept so a later revised-specific
-  // screen ("a fresh link is on its way") is a copy change, not a refactor. No quote data
-  // renders here — the API returns a bare {state} for dead ends, on purpose.
+  // Sibling of 404.html's island scene. 'unavailable' (expired, deleted, not yet approved)
+  // gets the sailed-off dead end; 'revised' now gets its own copy — the deferral the previous
+  // comment here promised. They are NOT the same event to the person reading them: a revised
+  // link means we changed the quote after sending it, so the customer did nothing wrong and
+  // something IS coming. Telling them "sailed off" at the moment they decided to pay reads as
+  // "your link is dead, good luck". No quote data renders in either — the API returns a bare
+  // {state} for dead ends, on purpose, so neither screen can name a price.
   var SAILED_OFF_ART = `<svg class="de-art" viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A little paper boat sailing away from the shore while the coral map pin watches">
     <defs>
       <radialGradient id="deSky" cx="50%" cy="30%" r="80%"><stop offset="0%" stop-color="#fdfbf3"/><stop offset="100%" stop-color="#e7f4f0"/></radialGradient>
@@ -420,7 +421,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div>' + waLine();
   }
   function renderUnavailable(){ renderSailedOff(); }
-  function renderRevised(){ renderSailedOff(); }
+  // Deliberately NOT a dead end. "Nothing has been charged" leads, because that is the
+  // customer's first question when a payment link stops working. The wording holds whether or
+  // not ops has already sent the new link — "on its way" is true from the moment the quote was
+  // revised, and the WhatsApp line is the escape hatch if they want it now.
+  function renderRevised(){
+    app.innerHTML = '<div class="de-wrap">'
+      + SAILED_OFF_ART
+      + '<p class="de-eyebrow">quote &middot; updated</p>'
+      + '<h1 class="de-title">This quote has been updated</h1>'
+      + '<p class="de-lead"><strong>Nothing has been charged.</strong> We changed something after sending this link, so it no longer works. A fresh link is on its way &mdash; message us on <strong>WhatsApp</strong> if you would like it now.</p>'
+      + '<div class="de-cta"><a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a></div>'
+      + '</div>' + waLine();
+  }
   // The keepsake is booking.html's boarding pass (owner, 2026-08-02) — the same CSS, now shared
   // from site.css, and the same markup, rebuilt here as a template string because booking.js
   // drives its copy from wizard globals this page does not have.
@@ -486,8 +499,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +   '</div>'
       + '</div>'
       + '<div class="next"><b>What happens next</b><ul>'
-      + '<li>We confirm your driver &amp; vehicle and send their details.</li>'
-      + '<li>A reminder arrives 2 days before pick-up.</li>'
+      + '<li>Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details.</li>'
+      + '<li>Your driver and vehicle details will be sent on WhatsApp before pickup.</li>'
       + '<li>Need anything? Just reply on WhatsApp.</li></ul></div>'
       + '</div>' + waLine();
   }

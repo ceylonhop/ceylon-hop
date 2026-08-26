@@ -17,14 +17,13 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=8bf6f8423a">
+<link rel="stylesheet" href="site.css?v=80d895de52">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js?v=a1d10c14f3"></script>
-<script src="consent.js?v=c2f4a12415" defer></script>
 <script src="beta-notice.js?v=5a5356a2c2" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
@@ -53,7 +52,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .team span{font-size:.82rem;color:var(--ink-soft)}
   .faq{max-width:760px;margin:0 auto}
   .faq-item{border-bottom:1px solid var(--line)}
-  .faq-q{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0;cursor:pointer;font-weight:600;font-size:1.05rem}
+  .faq-q{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;border:0;background:transparent;color:inherit;padding:20px 0;cursor:pointer;font-family:inherit;font-weight:600;font-size:1.05rem;text-align:left}
   .faq-q .pm{flex:none;width:26px;height:26px;border-radius:50%;background:var(--cream-deep);display:grid;place-items:center;font-size:1.2rem;transition:.2s}
   .faq-item.open .pm{background:var(--accent);color:#fff;transform:rotate(45deg)}
   .faq-a{display:none;padding:0 0 20px;color:var(--ink-soft);max-width:64ch}
@@ -152,7 +151,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <div data-footer></div>
 
-<script src="site.js?v=4183d938b0"></script>
+<script src="site.js?v=736abbfe52"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   initChrome({active:'about.html', onDark:true});
@@ -164,11 +163,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     ['What is the cancellation &amp; refund policy?','It depends on how you travel. Point-to-point transfers (even multi-leg) have free cancellation and unlimited changes up to 24 hours before travel — a full refund. Chauffeur-guide trips can be cancelled free up to 10 days before the start date; inside that window a tiered refund applies (80% within 10 days, 60% within 7, 40% within 2, none within 24 hours). Our concierge will always help you reschedule wherever possible.'],
     ['Can I change my stops or how long I stay?','Absolutely — the route is yours. Set as many nights as you like at each stop in the planner, and add, drop or reorder stops any time before you travel with a quick WhatsApp message.'],
     ['Are there any luggage restrictions?','One standard bag and one carry-on per traveler are included. Surfboards or oversized bags can be added during booking for a small fee so we reserve the right space.'],
-    ['How do I get picked up?','After you book, our team confirms your exact pickup point over WhatsApp &mdash; usually your hotel or a central café in town. You&rsquo;ll get the driver&rsquo;s details the evening before.'],
+    ['How do I get picked up?','After payment, our team checks your exact pickup point over WhatsApp &mdash; usually your hotel or a central café in town. Your driver and vehicle details will be sent on WhatsApp before pickup.'],
     ['Are the vehicles air-conditioned?','Yes &mdash; every Ceylon Hop vehicle is a fully insured, air-conditioned and well-maintained car or van, never overcrowded.']
   ];
-  document.getElementById('faq').innerHTML=faqs.map(([q,a])=>`
-    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">${q}<span class="pm">+</span></div><div class="faq-a">${a}</div></div>`).join('');
+  const faq=document.getElementById('faq');
+  faq.innerHTML=faqs.map(([q,a],i)=>`
+    <div class="faq-item"><button type="button" class="faq-q" id="faq-question-${i}" aria-expanded="false" aria-controls="faq-answer-${i}">${q}<span class="pm" aria-hidden="true">+</span></button><div class="faq-a" id="faq-answer-${i}" role="region" aria-labelledby="faq-question-${i}">${a}</div></div>`).join('');
+  faq.addEventListener('click',event=>{
+    const button=event.target.closest('.faq-q');
+    if(!button)return;
+    const open=button.getAttribute('aria-expanded')==='true';
+    button.setAttribute('aria-expanded',String(!open));
+    button.closest('.faq-item').classList.toggle('open',!open);
+  });
 </script>
 </body>
 </html>

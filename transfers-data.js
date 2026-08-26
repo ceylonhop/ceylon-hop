@@ -368,6 +368,35 @@
   // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
   // then popular extras. Google exact-place suggestions can be appended later by a
   // backend adapter without changing the ranking contract below.
+  /* "Is this free-text label one of OUR places?" — the identity question the name path could
+     not answer. Google states a place in Google's vocabulary ("Sigiriya, Sri Lanka") while the
+     catalogue states the same place in ours ("Sigiriya / Dambulla"), so the picker offered both
+     and the id came down to which row got clicked. That id is not cosmetic: it decides baked
+     vs engine pricing AND whether `sharedOption` is consulted at all (search.js), so the two
+     rows sold different products.
+
+     EXACT after stripping the country suffix — never a substring. ch-shortplace.js records why
+     ("Umbrella Cafe" contains "ella"), and the failure direction is asymmetric: a miss just
+     leaves the engine to price the route as it does today, while a false hit would swap a named
+     pickup for an area centroid. Aliases are the place's own vocabulary only — its name, that
+     name without the parenthetical, and its id. Deliberately NOT the halves of a slash-joined
+     name: "Dambulla" is ~17km from Sigiriya, and folding it in is an owner call, not a freebie. */
+  const COUNTRY_SUFFIX = /,\s*sri lanka\s*$/;
+  function aliasKey(s){
+    return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ').replace(COUNTRY_SUFFIX, '').trim();
+  }
+  const ALIAS_ID = {};
+  PLACES.forEach(p => {
+    [p.name, p.name.replace(/\(.*?\)/g, ''), p.id.replace(/-/g, ' ')].forEach(a => {
+      const k = aliasKey(a);
+      if(k && !(k in ALIAS_ID)) ALIAS_ID[k] = p.id;
+    });
+  });
+  /** The catalogue id this label names, or null. Exact match only — see above. */
+  function placeAliasId(text){
+    const k = aliasKey(text);
+    return k ? (ALIAS_ID[k] || null) : null;
+  }
   function suggestionAliases(label, id){
     const aliases = [label, id || '', label.replace(/\(.*?\)/g, '')];
     if(id === 'cmb-airport') aliases.push('cmb', 'airport', 'colombo airport', 'bandaranaike');
@@ -443,7 +472,7 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption, corridorFor, boardSeatPrice,
-    resolvePlace, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
+    resolvePlace, placeAliasId, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
