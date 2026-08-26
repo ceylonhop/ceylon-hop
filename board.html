@@ -258,6 +258,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .sheet-head .x:hover{border-color:var(--ink);color:var(--ink)}
 .sheet-body{padding:18px 28px 28px}
 .steps{display:flex;gap:6px;margin:0 0 18px}
+/* display:flex above beats the `hidden` attribute, so the PayHere hand-off could not hide
+   the step rail without this — a redirect is not a step the payer is part-way through. */
+.steps[hidden]{display:none}
+/* The reversal line is reassurance, not the offer — it must not compete with the two
+   sentences above it that say what is actually charged. */
+.deal .deal-fine{font-size:.86rem;opacity:.82;margin-top:6px}
 .step-dot{height:4px;border-radius:2px;flex:1;background:var(--cream-deep);transition:.3s}
 .step-dot.on{background:var(--teal)}
 /* create-a-list form */
@@ -610,6 +616,37 @@ body.detail-open .detail{display:block}
     font-family:inherit;font-weight:700;font-size:.95rem;color:var(--teal-deep)}
   .board-more:active{background:var(--paper)}
 }
+
+/* ---- PayHere hand-off (2026-08-18) ----
+   Ported from pay.html, which has shown this since 2026-08-05. The board used to POST straight
+   to PayHere from the Continue button, so the first thing a payer saw was a teal page branded
+   PayHere with an amount they did not recognise. Naming the merchant line they will actually
+   land on turns that surprise into a confirmation.
+   Copied rather than shared: the base .pp-loading lives in ticket.css, which this page does not
+   load — the same reason pay.html copies quote.css's rows into its own style block. */
+.pp-loading{text-align:center;padding:34px 0 16px}
+.pp-loading h2{font-size:1.5rem;margin-bottom:2px}
+.pp-loading .lead{font-size:.92rem;color:var(--ink-soft);max-width:38ch;margin:8px auto 0;line-height:1.55}
+/* The hand-off drawn rather than described: us -> them, with something travelling the gap.
+   Motion standard: the dot travels, it does not blink. */
+.pp-hop{display:flex;align-items:center;justify-content:center;gap:13px;margin:2px 0 20px}
+.pp-hop .chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--paper);font-weight:700;font-size:.82rem;
+  color:var(--ink);white-space:nowrap;box-shadow:var(--shadow-s)}
+.pp-hop .chip img{width:19px;height:19px;border-radius:5px;display:block}
+.pp-hop .track{position:relative;width:64px;height:2px;background:var(--line);border-radius:2px;overflow:hidden;flex:none}
+.pp-hop .track:after{content:'';position:absolute;top:0;left:-26px;width:26px;height:2px;
+  background:var(--accent);animation:pphop 1.25s cubic-bezier(.45,0,.35,1) infinite}
+@keyframes pphop{0%{left:-26px}100%{left:64px}}
+@media (prefers-reduced-motion:reduce){ .pp-hop .track:after{animation:none;left:19px} }
+.pp-expect{margin:22px auto 0;max-width:340px;border:1px solid var(--line);border-radius:12px;
+  background:var(--wash,#faf8f5);padding:12px 14px;text-align:left}
+.pp-expect b{display:block;font-size:.63rem;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+.pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
+/* The amount PayHere shows on a preapproval is a card-approval figure, NOT the fare. A payer
+   who reads "$32.50" here and meets a different number there assumes something is wrong. */
+.pp-expect .amt-note{display:block;margin-top:4px;font-size:.82rem;color:var(--ink-soft);line-height:1.45}
 </style>
 </head>
 <body>
@@ -795,17 +832,31 @@ body.detail-open .detail{display:block}
         </div>
         <div class="deal">
           <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          No ride fare today</h4>
-          <p>Approve your card securely with PayHere. We charge <b id="m-cost">$24.00</b><span id="m-cost-break"></span> <b>only if this list reaches <span id="m-min">3</span> seats</b> by the cutoff. PayHere may briefly show a small card-verification charge and reverse it. If the ride does not run, no ride fare is charged.</p>
+          You're not paying today</h4>
+          <!-- Rewritten 2026-08-18: the old copy made four money statements in one paragraph
+               ("No ride fare today", "We charge $X", "a small card-verification charge", "no ride
+               fare is charged") and a reader could not tell which applied to them. One sentence
+               per outcome now: what happens now, if it fills, if it doesn't. -->
+          <p>We only take your card details now — nothing is charged yet.</p>
+          <p><b>If this list reaches <span id="m-min">3</span> seats</b> by the cutoff, we charge
+            <b id="m-cost">$24.00</b><span id="m-cost-break"></span>. If it doesn't, you pay nothing.</p>
+          <p class="deal-fine">While PayHere approves your card you may see a small temporary
+            charge from them. It is reversed automatically and is not your ride fare.</p>
         </div>
         <div class="frow" style="margin-bottom:10px">
+          <div class="fld"><label for="pay-cc">Country code</label>
+            <select id="pay-cc" autocomplete="tel-country-code"></select></div>
           <div class="fld"><label for="pay-phone">Phone</label>
-            <input id="pay-phone" type="tel" autocomplete="tel" placeholder="+44 7700 900123"></div>
+            <input id="pay-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="7700 900123"></div>
+        </div>
+        <!-- City pairs with address rather than with the phone: .frow is a 2-up grid, and the
+             dial code took the phone's old partner, which left city alone beside a gap. -->
+        <div class="frow" style="margin-bottom:12px">
           <div class="fld"><label for="pay-city">Billing city</label>
             <input id="pay-city" autocomplete="address-level2" placeholder="London"></div>
+          <div class="fld"><label for="pay-address">Billing address</label>
+            <input id="pay-address" autocomplete="street-address" placeholder="Street and number"></div>
         </div>
-        <div class="fld" style="margin-bottom:12px"><label for="pay-address">Billing address</label>
-          <input id="pay-address" autocomplete="street-address" placeholder="Street and number"></div>
         <div class="preftime">
           <span class="pref-lbl">Your preferred departure time?</span>
           <div class="pref-opts" id="pref-opts"></div>
@@ -857,6 +908,25 @@ body.detail-open .detail{display:block}
         <button class="btn btn-ghost btn-block" id="see-list" hidden style="margin-top:10px">See your list on the board</button>
         <p class="whisper" style="margin-top:.85rem">We'll email you the second someone signs under you.</p>
       </div>
+
+      <!-- PayHere hand-off. An OVERLAY, deliberately not a fifth mstep: setStep() hardcodes the
+           four panel ids and drives the step dots off panels(), so a fifth would miscount the
+           dots and make a redirect look like a step the payer has to complete. -->
+      <div class="pp-loading" id="pay-handoff" hidden>
+        <div class="pp-hop">
+          <span class="chip"><img src="img/brand-c.svg" alt="" width="19" height="19">Ceylon Hop</span>
+          <span class="track"></span>
+          <span class="chip">🔒 PayHere</span>
+        </div>
+        <h2>Taking you to PayHere…</h2>
+        <p class="lead">You’ll approve your card on PayHere’s own secure page, then come straight
+          back here. We never see your card number.</p>
+        <div class="pp-expect"><b>On the next screen you should see</b>
+          <span class="who">Ceylon Hop (PVT) LTD</span>
+          <span class="amt-note">A small card-approval amount — this is not your ride fare.
+            Nothing is charged unless the list fills.</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -873,7 +943,8 @@ body.detail-open .detail{display:block}
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+<script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=88f2caa43c" defer></script>
+<script src="board.js?v=f6048c45ef" defer></script>
 </body>
 </html>
