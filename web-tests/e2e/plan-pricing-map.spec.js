@@ -54,6 +54,26 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
+// The party size cannot change the ROUTE — same stops, same order — so the map has no reason to
+// be torn down and rebuilt. It was: the pax pills call render(), which ends in updateSummary(),
+// whose refreshMap defaults to true, so every click discarded the map host and built a fresh
+// google.maps.Map — a visible reload and a second billable dynamic-map load for an identical
+// route (owner-reported, 2026-08-19). The vehicle switch above was already guarded; pax was not.
+test('changing the party size leaves the route map alone', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
+
+  const mapSvg = page.locator('#trip-map svg').first();
+  await expect(mapSvg).toBeVisible();
+  await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
+
+  await page.locator('[data-pax="3"]').click();
+
+  // The pax change still has to do its own job — 3 travellers still fit a car.
+  await expect(page.locator('[data-pax="3"]')).toHaveClass(/on|is-on|selected/);
+  await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
+});
+
 test('mobile planner keeps unselected vehicle option text readable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
