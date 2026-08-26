@@ -80,7 +80,7 @@ test('mobile progress steps keep descriptive labels visible', async ({ page }) =
     await expect(labels.nth(i)).toBeVisible();
   }
 
-  await page.goto('/plan.html?step=dates&stops=Colombo%20Airport%20(CMB)%7CKandy');
+  await page.goto('/plan.html?step=dates&stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2');
   const plannerLabels = page.locator('#journey .jlbl');
   await expect(plannerLabels).toHaveText(['Route', 'Dates', 'Service', 'Payment']);
   for (let i = 0; i < 4; i += 1) {
