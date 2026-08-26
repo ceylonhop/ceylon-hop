@@ -6,10 +6,15 @@ import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
+import { futureIsoDate } from '../testSupport/dates';
 
+// Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
+// free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
+// A hardcoded calendar date here rots into the past and turns the whole suite red at a
+// midnight rollover, on a commit that never changed.
 const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
-  corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-08-08', slot: 'morning',
-  minSeats: 4, capacity: 6, seatPrice: 2400, note: null, cutoffAt: new Date('2026-08-06T01:30:00Z'),
+  corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: futureIsoDate(30), slot: 'morning',
+  minSeats: 4, capacity: 6, seatPrice: 2400, note: null, cutoffAt: new Date(Date.now() + 2 * 86_400_000),
   createdBy: null, ...over,
 });
 
@@ -132,6 +137,45 @@ describe('POST /board/:code/join', () => {
     await rideLists.setStatus(l.id, 'expired');
     const cookie = await loginCookie(app);
     expect((await app.request(`/board/${l.code}/join`, json(cookie, {}))).status).toBe(409);
+  });
+});
+
+// The cutoff sweep is the ONLY thing in this codebase that calls paygw.charge(), and it
+// selects `status = 'gathering'` lists whose cutoff has passed. So a traveller admitted to a
+// list the sweep will not (or no longer will) look at preapproves their card, takes a seat on
+// the manifest, and is never billed — a free rider with no failure anywhere to alert on.
+//
+// Two doors led to that state, and closing only the obvious one leaves the bug reachable:
+//   1. the list is already 'confirmed' — the sweep never revisits a confirmed list;
+//   2. the list is still 'gathering' but the sweep is mid-flight — lockDeparture() sets only
+//      locked_time, so the list stays 'gathering' across the whole charge loop (N PayHere
+//      round trips), and the members it will charge were snapshotted before that loop began.
+// Guarding on the cutoff INSTANT closes both with one condition, and needs no new status.
+describe('POST /board/:code/join — never admit a traveller the sweep will not charge', () => {
+  it('409s a confirmed list (the sweep never revisits one, so a joiner rides free)', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.setStatus(l.id, 'confirmed');
+    const cookie = await loginCookie(app);
+
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('closed');
+    // Nothing was taken from them either: no seat, and no card approval to strand.
+    expect(paygw.preapprovals).toHaveLength(0);
+    expect((await rideLists.getByCode(l.code))?.members).toHaveLength(0);
+  });
+
+  it('409s a gathering list whose cutoff has passed — the sweep already has its member list', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs({ cutoffAt: new Date(Date.now() - 60_000) }));
+    expect(l.status).toBe('gathering'); // exactly the state the sweep leaves it in while charging
+    const cookie = await loginCookie(app);
+
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('closed');
+    expect(paygw.preapprovals).toHaveLength(0);
   });
 });
 
