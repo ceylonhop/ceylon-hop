@@ -110,9 +110,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <div>
       <div class="cmp">
-        <div class="row bad"><div class="who">Curbside taxi quote<small>Colombo Airport → Kandy · "special price, my friend"</small></div><div class="amt" id="cmp-taxi">$120?</div></div>
+        <div class="row bad"><div class="who">Curbside taxi quote<small>Colombo Airport → Kandy · "special price, my friend"</small></div><div class="amt" id="cmp-taxi">$80?</div></div>
         <div class="row bad"><div class="who">Public bus + tuk-tuks<small>4–6 hours, three changes, bags on your lap</small></div><div class="amt">your day</div></div>
-        <div class="row hop"><div class="who">Ceylon Hop, private AC car<small id="cmp-meta">Door to door · about 3 h drive</small></div><div class="amt" id="cmp-car">$75 fixed</div><span class="tagp" id="cmp-seat">or shared seat $19</span></div>
+        <div class="row hop"><div class="who">Ceylon Hop, private AC car<small id="cmp-meta">Door to door · about 3 h drive</small></div><div class="amt" id="cmp-car">$49.99 fixed</div><span class="tagp" id="cmp-seat" hidden></span></div>
       </div>
       <p class="hand-note saffron" style="margin:14px 6px 0">the price you see is the price you pay</p>
     </div>
@@ -193,8 +193,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     document.getElementById('cmp-car').textContent='$'+q.car+' fixed';
     document.getElementById('cmp-meta').textContent='Door to door · about '+q.duration+' drive';
     document.getElementById('cmp-taxi').textContent='$'+Math.round(q.car*1.6/5)*5+'?';
+    // Starts empty + hidden so a reader without JS is never promised a shared seat that does
+    // not run on this corridor; JS reveals it only when sharedOption() actually returns one.
     const seatEl=document.getElementById('cmp-seat');
-    if(sh) seatEl.textContent='or shared seat $'+sh.seat; else seatEl.remove();
+    if(seatEl){ if(sh){ seatEl.textContent='or shared seat $'+sh.seat; seatEl.hidden=false; } else seatEl.remove(); }
   })();
 </script>
 </body>
