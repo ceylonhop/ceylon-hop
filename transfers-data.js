@@ -16,7 +16,7 @@
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
   const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30};
   const SEAT_PRICING = {"perKmCentsVan":54.05,"floorCentsVan":4999,"seatsCoveringVan":3};
-  const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo city","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo city","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"}];
+  const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Mirissa","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Weligama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Ahangama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"}];
   /* @end:pricing */
 
   // ---- Places (approx lat/lng for distance) ----
@@ -67,7 +67,7 @@
       id: 'ella-east',
       label: 'Ella → Yala → East Coast',
       stops: ['ella', 'yala', 'arugam-bay'],
-      seat: CORRIDOR_SEAT['ella-east'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
+      seat: CORRIDOR_SEAT['ella-east'], times: ['09:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'south-coast',
@@ -84,8 +84,8 @@
     {
       id: 'ella-south',
       label: 'Ella → South Coast',
-      stops: ['ella', 'mirissa', 'weligama'],
-      seat: CORRIDOR_SEAT['ella-south'], times: ['08:30'], days: SHARED_DAYS, freqText: 'Wed & Sat'
+      stops: ['ella', 'mirissa', 'weligama', 'ahangama'],
+      seat: CORRIDOR_SEAT['ella-south'], times: ['09:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       // The southbound airport run. No other corridor joins the south coast to CMB, so

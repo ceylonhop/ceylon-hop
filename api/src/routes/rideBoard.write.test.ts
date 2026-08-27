@@ -459,14 +459,37 @@ describe('POST /board (create) — catalogue legs', () => {
     expect((await res.json()).list.seatPrice).toBe(1999);
   });
 
+  // Added with the five-product narrowing (2026-08-27). This leg was previously priced off
+  // the road distance at $29.50, because `ella-south` carried a corridor but no sellable
+  // legs; the product it belongs to had been selling on WordPress the whole time. Now that
+  // it is in the catalogue the board quotes the scheduled $24, so a pooled van and a
+  // scheduled seat on this leg agree — which is the rule this whole suite exists to hold.
+  it('prices the Ella south-coast run from the catalogue, at every drop-off', async () => {
+    for (const to of ['Mirissa', 'Weligama', 'Ahangama']) {
+      const app = catalogueApp();
+      const cookie = await loginCookie(app);
+      const res = await app.request('/board', json(cookie, {
+        from: 'Ella', to, date: '2999-08-08', slot: 'morning',
+      }));
+      expect(res.status, `Ella -> ${to}`).toBe(201);
+      expect((await res.json()).list.seatPrice, `Ella -> ${to}`).toBe(2400);
+    }
+  });
+
   it('still prices an off-catalogue leg off the road distance', async () => {
+    // CMB -> Kandy rides the airport-cultural corridor (the board only pools pairs a
+    // corridor carries) but is not a product we schedule, so it prices off the road
+    // distance. (Ella -> Mirissa used to stand here; it became a catalogue leg on
+    // 2026-08-27 and now takes the $24 catalogue price.) At 113 km the fare clears the van
+    // floor, so this assertion still moves if the distance maths breaks — a short leg like
+    // Kandy -> Ella pins to the floor and would pass on any wrong distance.
     const { app } = makeApp();
     const cookie = await loginCookie(app);
     const res = await app.request('/board', json(cookie, {
-      from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning',
     }));
     expect(res.status).toBe(201);
-    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(164)); // fake maps km
+    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(113)); // fake maps km
   });
 
   it('does not price the REVERSE of a catalogue leg from the catalogue', async () => {
@@ -496,7 +519,9 @@ describe('POST /board (create) — pricing', () => {
       maps: { ...outage, distance: async () => null } as never,
     });
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    // Must be an OFF-catalogue leg: a catalogue leg is priced without asking Google at all,
+    // so it would never reach the outage path this test exists to cover.
+    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
     expect((await res.json()).error).toBe('cannot_price_route');
   });
@@ -511,7 +536,7 @@ describe('POST /board (create) — pricing', () => {
       maps: { ...outage, distance: async () => ({ km: 164, durationMin: 240, estimated: true }) } as never,
     });
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
   });
 });
@@ -520,15 +545,17 @@ describe('POST /board (create)', () => {
   it('creates a list and auto-joins the creator as name #1', async () => {
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
+    const res = await app.request('/board', json(cookie, { from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.list.from).toBe('Ella');
-    expect(body.list.to).toBe('Mirissa');
+    expect(body.list.from).toBe('Colombo Airport (CMB)');
+    expect(body.list.to).toBe('Kandy');
     // Priced off the road distance via the engine (van fare / 3, to the nearest 50c) rather than
-    // the corridor's old hand-set rate — Ella → Mirissa is 164 km, so $88.64 van → $29.50 a seat.
-    expect(body.list.seatPrice).toBe(seatPriceForDistance(164));
-    expect(body.list.seatPrice).toBe(2950);
+    // the corridor's own hand-set rate — the fake maps return 113 km, so $61.08 van → $20.50 a
+    // seat. CMB → Kandy is deliberately an OFF-catalogue leg: a leg we schedule takes its
+    // catalogue price instead, which is what the 'catalogue legs' suite above covers.
+    expect(body.list.seatPrice).toBe(seatPriceForDistance(113));
+    expect(body.list.seatPrice).toBe(2050);
     expect(body.list.members[0].firstName).toBe('Roshen');
     expect(body.list.committed).toBe(1);
   });
