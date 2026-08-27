@@ -608,7 +608,7 @@ function render(){
     wrap.className='leg'+(isStay?' is-stay':'');
     wrap.dataset.i=i;
     wrap.innerHTML=`
-      <div class="leg-card" draggable="true" data-i="${i}">
+      <div class="leg-card" draggable="false" data-i="${i}">
         <div class="leg-head">
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
@@ -669,8 +669,19 @@ function render(){
     });
 
     // drag to reorder
+    /* The card is draggable only for the gesture that means "move this card". A draggable
+       ANCESTOR beats text selection inside a descendant <input> in Chrome, so while the whole
+       card was permanently draggable="true", dragging across the pick-up field you had just
+       typed into picked the card up and dropped it elsewhere in the itinerary instead of
+       selecting the word (friend-reported 2026-08-27).
+       Draggability is therefore decided per mousedown, from what is under the pointer: the
+       fields and buttons opt out, everything else — the ⠿ handle, the badge, the card's own
+       padding — still starts a drag, so "drag a card to reorder" stays true. */
+    card.addEventListener('mousedown',e=>{
+      card.draggable = !e.target.closest('input,textarea,select,button,a,[contenteditable]');
+    });
     card.addEventListener('dragstart',e=>{ markRouteCustomized(); dragEl=wrap; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
-    card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); commitOrder(); dragEl=null; });
+    card.addEventListener('dragend',()=>{ card.draggable=false; card.classList.remove('dragging'); commitOrder(); dragEl=null; });
 
     // connector between cards
     if(i<n-1){
