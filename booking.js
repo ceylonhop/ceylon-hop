@@ -600,7 +600,20 @@ if(isTrip){
   // render the route summary with an edit link back to the planner
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
-  const fmtLeg=(iso)=>{ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); };
+  /* A leg outside the current year prints its year. A 5-leg trip whose last leg had been dated a
+     year past the first showed "Sat 29 Aug" and "Fri 27 Aug" — the one fact that would have caught
+     the slip was the one the chip omitted (friend-reported 2026-08-27). Everything else on this
+     page that prints a date already carries the year; only these chips did not. Conditional, so a
+     trip inside this year keeps the short chip. */
+  const _thisYear=new Date().getFullYear();
+  const fmtLeg=(iso)=>{
+    if(!iso) return '';
+    const d=new Date(iso+'T00:00:00');
+    if(isNaN(d)) return '';
+    const opts={weekday:'short',day:'numeric',month:'short'};
+    if(d.getFullYear()!==_thisYear) opts.year='numeric';
+    return d.toLocaleDateString('en-GB',opts);
+  };
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
