@@ -423,6 +423,7 @@ function attachAC(input, menu, which){
     if(window.TRANSFERS && window.TRANSFERS.placeSuggestions){
       const local = window.TRANSFERS.placeSuggestions(qs, 6).map(p=>({
         kind:'local',
+        source:p.source,
         label:p.label,
         main:p.label,
         secondary:p.source==='known' ? 'Popular Route' : 'Popular place'
@@ -435,7 +436,16 @@ function attachAC(input, menu, which){
   }
   function shouldAskGoogle(qs, local){
     if(!window.CH_MAP || !window.CH_MAP.suggest || !window.CEYLON_MAPS_KEY || qs.length<2) return false;
-    const exactLocal = local.some(p => (p.label||'').toLowerCase() === qs.toLowerCase());
+    /* Only a CATALOGUE place short-circuits Google — the same test site.js and plan.js apply
+       (`source==='known'`). This used to accept any local row, which caught the "Popular places"
+       too: type "jaffn" and the menu offered Jaffna, Jaffna Town West and Jaffna International
+       Airport; type the final "a" and it collapsed to one row, because "Jaffna" matched an
+       {source:'extra', id:null} row exactly. Finishing the word took the airport away.
+       A known place is safe to short-circuit on — it carries an id, baked pricing and coordinates,
+       so there is nothing left for Google to tell us. An `extra` has none of those, which is
+       exactly when we need the lookup most: without it the booking keeps the raw typed string
+       and no geo at all. (Friend-reported 2026-08-27.) */
+    const exactLocal = local.some(p => p.source==='known' && (p.label||'').toLowerCase() === qs.toLowerCase());
     const oneWord = !/\s/.test(qs.trim());
     return !exactLocal && !(oneWord && local.length>=3);
   }
