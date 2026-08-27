@@ -1528,19 +1528,30 @@ function requestEstimate(){
   });
 }
 
-// True when the only thing that moved between two priced intents is the product or the vehicle —
-// i.e. the customer pressed "Chauffeur-guide" or "Switch to AC van". A raise they DROVE that way
-// is not a surprise to acknowledge: the press is the acknowledgement, and both the service
-// chooser and the upsell CTA name their price before it happens. Gating these announced "your
-// price has been updated" about the very change just asked for, and held the summary at the
-// figure for the service they'd just left — invisible on a trip, where private and chauffeur
-// carry identically labelled rows (:1546-1551), so the card read as the old price for the new
-// service with nothing on screen to tell them apart.
-function switchedProductOrVehicle(sig, priorSig){
+// True when the raise between two priced intents came from a control that PRINTS ITS OWN PRICE —
+// the customer pressed "Chauffeur-guide", "Switch to AC van", or ticked an extra. A raise they
+// drove that way is not a surprise to acknowledge: the press is the acknowledgement, and each of
+// those controls names its price before it happens. Gating these announced "your price has been
+// updated" about the very change just asked for, and held the summary at the figure for the
+// service they'd just left — invisible on a trip, where private and chauffeur carry identically
+// labelled rows (:1546-1551), so the card read as the old price for the new service with nothing
+// on screen to tell them apart.
+function customerDroveTheRaise(sig, priorSig){
   let now, prior;
   try { now = JSON.parse(sig); prior = JSON.parse(priorSig); } catch(e){ return false; }
   if(!now || !prior) return false;
-  return now.product !== prior.product || now.vehicle !== prior.vehicle;
+  return now.product !== prior.product || now.vehicle !== prior.vehicle || changedExtras(now, prior);
+}
+// An extra belongs in the same list, for the same reason: the button that adds it prints its own
+// price ("+$10") right next to the label, so ticking it IS the acknowledgement. Left out, ticking
+// the $10 sightseeing extra parked the raise — and because the vehicle row is derived as
+// `calcTotal() − extras` so the rows always sum to the HELD total, the car line then dropped by
+// exactly $10: the price of the car appeared to fall because the customer had added something,
+// while a warning announced a third figure they had not agreed to. (Friend-reported 2026-08-27.)
+function changedExtras(now, prior){
+  const a=(now.extras||[]).slice().sort().join('|');
+  const b=(prior.extras||[]).slice().sort().join('|');
+  return a!==b;
 }
 // Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
 // must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
@@ -1554,7 +1565,7 @@ function handleEngineEstimate(est, sig){
   if(sig !== currentIntentSig()){ render(); return; }
   adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents && !switchedProductOrVehicle(sig, engineEst.intentSig)){
+  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
     state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
     render();
     checkWhere();
