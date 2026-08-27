@@ -95,3 +95,24 @@ test('the stop count appears on every card, direct transfers included', async ({
   // Same-day trip: the end row says so instead of silently repeating the start date.
   await expect(page.locator('.fact', { hasText: 'Trip end' })).toContainText('same day');
 });
+
+/* The ?t= link token authorises viewing this booking AND minting a checkout token for it
+   (POST /bookings/view/checkout-token). While it sits in the URL it flows into GA4's
+   page_location, Clarity's session recording and this page's own error beacon, which posts
+   location.href — so anyone with analytics access can open a customer's booking and start
+   its payment flow. It must leave the address bar as soon as it has been read, WITHOUT
+   costing the customer a reload. */
+test('takes the link token out of the URL but survives a reload', async ({ page }) => {
+  await serve(page, VIEW);
+  await page.goto('/manage.html?t=fake-token');
+  await expect(page.locator('body')).toContainText('CH-ABC12');
+
+  // Gone from the address bar — nothing downstream of location.href can capture it.
+  expect(page.url()).not.toContain('fake-token');
+  expect(page.url()).not.toContain('t=');
+
+  // …and the booking still renders when the customer hits reload on that stripped URL.
+  await page.reload();
+  await expect(page.locator('body')).toContainText('CH-ABC12');
+  await expect(page.locator('body')).not.toContainText('isn’t valid');
+});

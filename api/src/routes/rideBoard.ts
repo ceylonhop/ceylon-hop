@@ -26,6 +26,7 @@ import {
   committedSeats,
 } from '../domain/rideList';
 import { isPastIsoDate, isoToday } from '../domain/dateRules';
+import type { AlertAdapter } from '../adapters/alerts';
 
 // ============================================================================
 // Ride Board routes — public reads + customer-authenticated writes.
@@ -118,6 +119,7 @@ export interface RideBoardDeps {
   currency?: string;
   allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
   boardBaseUrl?: string; // browser return/cancel origin for PayHere preapproval
+  alerts?: AlertAdapter; // paged when a gateway callback cannot be verified
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -192,7 +194,23 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   // browser's return_url carries no trustworthy result and merely polls /payments/:orderId.
   r.post('/payhere/notify', async (c) => {
     const event = deps.paygw.parsePreapprovalWebhook(await c.req.text());
-    if (!event) return c.json({ error: 'invalid_signature' }, 400);
+    if (!event) {
+      // A silent 400 here is indistinguishable from "no traffic". A wrong merchant secret (the
+      // PH-0014 class of failure this flow already hit once) would kill every join on the board
+      // and nobody would know. /webhooks/payments pages the founder on a rejected notify; so
+      // does this. Dedupe per day so a scanner cannot storm the inbox.
+      void deps.alerts?.send({
+        severity: 'critical',
+        kind: 'ride_board_notify_rejected',
+        title: 'Ride Board PayHere callback rejected',
+        body:
+          'A preapproval callback failed verification, so the traveller was never added to the ' +
+          'ride. If this repeats, suspect the PayHere merchant secret for this domain — the ' +
+          'callback is the only delivery of the reusable customer token.',
+        dedupeKey: `${new Date().toISOString().slice(0, 10)}:ride_board_notify_rejected`,
+      });
+      return c.json({ error: 'invalid_signature' }, 400);
+    }
     if (event.status === 'succeeded' && event.ref) {
       await deps.rideLists.approveMemberPreapproval(event.orderId, event.ref);
     } else if (event.status === 'failed' || event.status === 'cancelled') {
