@@ -39,6 +39,23 @@
 }
 
 :root{
+  /* This site is light-only — there is not one prefers-color-scheme rule in it — and until now it
+     never SAID so, which left every browser free to invent a dark rendering of it. A friend's
+     screenshots (2026-08-27) came back with the blog's --paper card (#fffdf8) rendered near-black
+     under cream Bodoni, and the planner's schematic map island stripped of its #cfe7da fill down
+     to a bare outline: a design nobody drew, reviewed as if we had.
+
+     `only` is the half that does the work. Plain `color-scheme: light` merely declares which
+     schemes we support — Chrome's Auto Dark Theme force-darkens light-only pages precisely
+     BECAUSE they are light-only. `only` forbids the UA from overriding the scheme at all, and is
+     the documented opt-out from that behaviour. It also pins UA-rendered chrome — scrollbars,
+     autofill, the native controls behind our custom pickers — to their light rendering, the same
+     class of undeclared-default problem as the iOS blue buttons (PR #507).
+
+     Extensions (Dark Reader) ignore this; they are not a user agent making the choice for the
+     user, they ARE the user's choice. Nothing here should try to defeat one. */
+  color-scheme: only light;
+
   /* Brand palette — docs/brand-book.md p4. Hexes are the book's, verbatim. */
   --blue:#63BFD6;        /* Bachelor Button — THE PRIMARY. Owns brand surfaces, the
                             hero and section washes, chrome and identity accents. */
