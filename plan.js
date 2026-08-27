@@ -527,6 +527,27 @@ function distHtml(route, price){
 
 // remove any portaled date popovers left over from the previous render
 function clearLegDatePops(){ document.querySelectorAll('.leg-dp-pop').forEach(p=>p.remove()); }
+/* The earliest date a leg may take: the latest date already set on a leg ABOVE it, so the trip
+   can only ever run forward. Mirrors the ops quote tool's legDateFloor (ops-ui.html), shipped
+   2026-07-26 for the same reason — a later leg dated before an earlier one was, until then, only
+   a warning after the fact. The customer planner kept the warning and never grew the floor, so
+   the mistake stayed one click away (friend-reported 2026-08-27: "instead can make any past
+   dates not selectable").
+
+   The RUNNING MAX, not simply the nearest dated leg above, because that is exactly what
+   outOfOrderFlags() measures against — anything the picker still allows must not trip the flag
+   that then blocks Continue. Same-day is deliberately still allowed: the flag fires on strictly
+   earlier, and consecutive legs on one day are a real itinerary (sameDayDrivingIssue warns about
+   the driving, it does not forbid it). Returns null when nothing above is dated, which leaves the
+   datepicker on its own floor of tomorrow. */
+function legDateFloor(i){
+  let max=null;
+  for(let k=0;k<i;k++){
+    const d=state.legs[k] && state.legs[k].date;
+    if(d && (!max || d>max)) max=d;
+  }
+  return max;
+}
 function enhanceLegDate(input){
   if(window.enhanceDate){
     window.enhanceDate(input);
@@ -1008,6 +1029,10 @@ function renderDatesStep(){
     list.appendChild(row);
     const inp=row.querySelector('input');
     if(leg.date) inp.value=fmtISO(leg.date);
+    // set BEFORE enhancing: the picker reads data-min once, when it wraps the input. Every date
+    // change re-renders this whole list, so each leg's floor is recomputed from scratch.
+    const floor=legDateFloor(i);
+    if(floor) inp.dataset.min=fmtISO(floor);
     enhanceLegDate(inp);
     inp.addEventListener('change',()=>{ state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null; renderDatesStep(); });
   });
