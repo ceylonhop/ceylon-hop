@@ -600,20 +600,7 @@ if(isTrip){
   // render the route summary with an edit link back to the planner
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
-  /* A leg outside the current year prints its year. A 5-leg trip whose last leg had been dated a
-     year past the first showed "Sat 29 Aug" and "Fri 27 Aug" — the one fact that would have caught
-     the slip was the one the chip omitted (friend-reported 2026-08-27). Everything else on this
-     page that prints a date already carries the year; only these chips did not. Conditional, so a
-     trip inside this year keeps the short chip. */
-  const _thisYear=new Date().getFullYear();
-  const fmtLeg=(iso)=>{
-    if(!iso) return '';
-    const d=new Date(iso+'T00:00:00');
-    if(isNaN(d)) return '';
-    const opts={weekday:'short',day:'numeric',month:'short'};
-    if(d.getFullYear()!==_thisYear) opts.year='numeric';
-    return d.toLocaleDateString('en-GB',opts);
-  };
+  const fmtLeg=(iso)=>{ if(!iso) return ''; return shortDate(new Date(iso+'T00:00:00')); };
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
@@ -1289,7 +1276,7 @@ function chauffeurDayList(){
   const n=Math.max(1,tripDays), days=[];
   for(let i=0;i<n;i++){
     const d = base ? new Date(base.getFullYear(),base.getMonth(),base.getDate()+i) : null;
-    days.push({ n:i+1, label: d&&!isNaN(d) ? d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}) : ('Day '+(i+1)) });
+    days.push({ n:i+1, label: d&&!isNaN(d) ? shortDate(d) : ('Day '+(i+1)) });
   }
   return days;
 }
@@ -1621,6 +1608,21 @@ const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
+/* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
+   whenever the date is NOT in the current year.
+
+   #604 fixed this for the trip review chips, where two legs a year apart both read "27 Aug" and
+   nothing on screen told them apart. The same year-less format was in two more places found while
+   fixing that one, and one of them is the worst of the three: pass-date, the confirmation the
+   customer keeps. A booking is a document about a specific day, so on any date that is not in the
+   year the reader is standing in, the year is not optional. Conditional rather than always-on so
+   the ordinary trip — booked this year, travelled this year — keeps the short chip it had. */
+function shortDate(d){
+  if(!d || isNaN(d)) return '';
+  const opts={weekday:'short',day:'numeric',month:'short'};
+  if(d.getFullYear()!==new Date().getFullYear()) opts.year='numeric';
+  return d.toLocaleDateString('en-GB',opts);
+}
 
 /* WhatsApp CTAs on this page opened an EMPTY chat, so an enquiry landed in the inbox with no
    idea what the customer had been looking at — ops had to ask the route, the date and the
@@ -2714,7 +2716,7 @@ function finalizeBooking(apiBooking){
      the fastest thing they can tell us either way. */
   const confWa=document.getElementById('conf-wa');
   if(confWa) confWa.href=waHrefFor('Hi Ceylon Hop — a question about my booking '+ref+'.');
-  const dateText = state.flexDate ? 'To confirm' : (state.date?state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'To confirm');
+  const dateText = state.flexDate ? 'To confirm' : (state.date?shortDate(state.date):'To confirm');
   const timeText = state.flexTime ? 'To confirm' : (state.dep?fmtTime(state.dep):'To confirm');
   document.getElementById('pass-brand').innerHTML=cmark(26,'var(--accent)')+'<span>Ceylon Hop</span>';
   renderPassRoute(r.stops, isTrip);
