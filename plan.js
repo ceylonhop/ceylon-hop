@@ -527,6 +527,27 @@ function distHtml(route, price){
 
 // remove any portaled date popovers left over from the previous render
 function clearLegDatePops(){ document.querySelectorAll('.leg-dp-pop').forEach(p=>p.remove()); }
+/* The earliest date a leg may take: the latest date already set on a leg ABOVE it, so the trip
+   can only ever run forward. Mirrors the ops quote tool's legDateFloor (ops-ui.html), shipped
+   2026-07-26 for the same reason — a later leg dated before an earlier one was, until then, only
+   a warning after the fact. The customer planner kept the warning and never grew the floor, so
+   the mistake stayed one click away (friend-reported 2026-08-27: "instead can make any past
+   dates not selectable").
+
+   The RUNNING MAX, not simply the nearest dated leg above, because that is exactly what
+   outOfOrderFlags() measures against — anything the picker still allows must not trip the flag
+   that then blocks Continue. Same-day is deliberately still allowed: the flag fires on strictly
+   earlier, and consecutive legs on one day are a real itinerary (sameDayDrivingIssue warns about
+   the driving, it does not forbid it). Returns null when nothing above is dated, which leaves the
+   datepicker on its own floor of tomorrow. */
+function legDateFloor(i){
+  let max=null;
+  for(let k=0;k<i;k++){
+    const d=state.legs[k] && state.legs[k].date;
+    if(d && (!max || d>max)) max=d;
+  }
+  return max;
+}
 function enhanceLegDate(input){
   if(window.enhanceDate){
     window.enhanceDate(input);
@@ -608,7 +629,7 @@ function render(){
     wrap.className='leg'+(isStay?' is-stay':'');
     wrap.dataset.i=i;
     wrap.innerHTML=`
-      <div class="leg-card" draggable="true" data-i="${i}">
+      <div class="leg-card" draggable="false" data-i="${i}">
         <div class="leg-head">
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
@@ -669,8 +690,19 @@ function render(){
     });
 
     // drag to reorder
+    /* The card is draggable only for the gesture that means "move this card". A draggable
+       ANCESTOR beats text selection inside a descendant <input> in Chrome, so while the whole
+       card was permanently draggable="true", dragging across the pick-up field you had just
+       typed into picked the card up and dropped it elsewhere in the itinerary instead of
+       selecting the word (friend-reported 2026-08-27).
+       Draggability is therefore decided per mousedown, from what is under the pointer: the
+       fields and buttons opt out, everything else — the ⠿ handle, the badge, the card's own
+       padding — still starts a drag, so "drag a card to reorder" stays true. */
+    card.addEventListener('mousedown',e=>{
+      card.draggable = !e.target.closest('input,textarea,select,button,a,[contenteditable]');
+    });
     card.addEventListener('dragstart',e=>{ markRouteCustomized(); dragEl=wrap; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
-    card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); commitOrder(); dragEl=null; });
+    card.addEventListener('dragend',()=>{ card.draggable=false; card.classList.remove('dragging'); commitOrder(); dragEl=null; });
 
     // connector between cards
     if(i<n-1){
@@ -997,6 +1029,10 @@ function renderDatesStep(){
     list.appendChild(row);
     const inp=row.querySelector('input');
     if(leg.date) inp.value=fmtISO(leg.date);
+    // set BEFORE enhancing: the picker reads data-min once, when it wraps the input. Every date
+    // change re-renders this whole list, so each leg's floor is recomputed from scratch.
+    const floor=legDateFloor(i);
+    if(floor) inp.dataset.min=fmtISO(floor);
     enhanceLegDate(inp);
     inp.addEventListener('change',()=>{ state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null; renderDatesStep(); });
   });
