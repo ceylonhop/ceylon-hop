@@ -99,7 +99,8 @@ export const SHARED_PRODUCTS: SharedProduct[] = [
   // Ella -> south coast: ONE vehicle out of Ella at 09:00, dropping Mirissa 14:30,
   // Weligama 14:45, Ahangama 15:15 (owner's operating table, 2026-08-27). The seat is $24
   // to every stop, so these three legs differ only in where the traveller gets out.
-  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  // Ella -> Mirissa is deliberately NOT sold as a shared seat (owner, 2026-08-27). The van
+  // still runs the road to Weligama and Ahangama; Mirissa is simply not an offer on it.
   { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Weligama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
   { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Ahangama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
   // Southbound: Mirissa 14:45 -> Weligama 15:00 -> Colombo 18:30 -> CMB 19:00-20:00.

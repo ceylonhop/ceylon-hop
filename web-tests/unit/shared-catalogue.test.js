@@ -33,7 +33,6 @@ const CATALOGUE = [
   ['negombo', 'sigiriya', 27.49, '07:30'],
   ['sigiriya', 'kandy', 19.99, '11:30'],
   ['ella', 'yala', 22.99, '09:00'],
-  ['ella', 'mirissa', 24, '09:00'],
   ['ella', 'weligama', 24, '09:00'],
   ['ella', 'ahangama', 24, '09:00'],
   ['mirissa', 'cmb-airport', 29.99, '14:45'],
@@ -80,13 +79,16 @@ describe('shared catalogue — what we actually sell', () => {
   // taken a booking — the van's marketed product ends at the airport. Dropped 2026-08-27.
   it('does not sell the south-coast van to Colombo city', () => {
     expect(T.sharedOption('mirissa', 'colombo')).toBeNull();
+    // The van runs Ella -> the south coast, but Mirissa is not an offer on it
+    // (owner, 2026-08-27) — Weligama and Ahangama are.
+    expect(T.sharedOption('ella', 'mirissa')).toBeNull();
     expect(T.sharedOption('weligama', 'colombo')).toBeNull();
   });
 
   // The reverse regression: a product with real sales that the catalogue could not sell,
   // because `ella-south` had a corridor and a $24 seat but no directed legs on it.
-  it('sells the Ella south-coast run to all three of its drop-offs', () => {
-    for (const to of ['mirissa', 'weligama', 'ahangama']) {
+  it('sells the Ella south-coast run to the drop-offs we offer', () => {
+    for (const to of ['weligama', 'ahangama']) {
       const opt = T.sharedOption('ella', to);
       expect(opt, `ella -> ${to} must be offered`).toBeTruthy();
       expect(opt.seat, `ella -> ${to} price`).toBe(24);
@@ -157,7 +159,7 @@ describe('pickup sequence', () => {
   it('groups by destination, not just product id', () => {
     // ella-south-coast sells three destinations off ONE boarding in Ella, so a leg must not
     // inherit its siblings' stops — each shows Ella alone, not Ella three times.
-    for (const to of ['mirissa', 'weligama', 'ahangama']) {
+    for (const to of ['weligama', 'ahangama']) {
       const p = T.sharedOption('ella', to).pickups;
       expect(p.map(x => x.place), `ella -> ${to}`).toEqual(['Ella']);
     }

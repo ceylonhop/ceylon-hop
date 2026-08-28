@@ -464,8 +464,11 @@ describe('POST /board (create) — catalogue legs', () => {
   // legs; the product it belongs to had been selling on WordPress the whole time. Now that
   // it is in the catalogue the board quotes the scheduled $24, so a pooled van and a
   // scheduled seat on this leg agree — which is the rule this whole suite exists to hold.
-  it('prices the Ella south-coast run from the catalogue, at every drop-off', async () => {
-    for (const to of ['Mirissa', 'Weligama', 'Ahangama']) {
+  // Mirissa is deliberately NOT on this list: the van runs that road, but Ella -> Mirissa is
+  // not sold as a shared seat (owner, 2026-08-27), so it must price off the road distance like
+  // any other non-catalogue leg rather than taking the $24 seat fare.
+  it('prices the Ella south-coast run from the catalogue, at every drop-off we sell', async () => {
+    for (const to of ['Weligama', 'Ahangama']) {
       const app = catalogueApp();
       const cookie = await loginCookie(app);
       const res = await app.request('/board', json(cookie, {
@@ -474,6 +477,17 @@ describe('POST /board (create) — catalogue legs', () => {
       expect(res.status, `Ella -> ${to}`).toBe(201);
       expect((await res.json()).list.seatPrice, `Ella -> ${to}`).toBe(2400);
     }
+  });
+
+  it('does NOT sell Ella -> Mirissa as a catalogue seat', async () => {
+    const app = catalogueApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
+    }));
+    // The road is still a corridor, so a list can exist — it just must not take the $24
+    // catalogue fare that Weligama and Ahangama do.
+    if (res.status === 201) expect((await res.json()).list.seatPrice).not.toBe(2400);
   });
 
   it('still prices an off-catalogue leg off the road distance', async () => {
