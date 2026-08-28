@@ -307,6 +307,27 @@ function hasExactRouteInputs(){
   return !isTrip && !isShared && (state.locFrom!==AREA_FROM || state.locTo!==AREA_TO);
 }
 
+/* Has each exact-spot field settled on something the customer actually means?
+
+   The map lookup below sends its stops to Google to be RESOLVED and MEASURED, and the distance
+   that comes back can park a repriceDecision (see renderRouteMap's onRoute). Feeding it a field
+   mid-keystroke therefore asked Google to find the place "jaffn", printed that back in the map
+   legend, and let a half-finished word touch the price. plan.js has always drawn this line — a
+   live distance is "resolved only once a place is COMMITTED — on 'change' (a dropdown pick or a
+   blur onto a real place) ... never here on raw keystrokes". This is the same rule.
+
+   Both fields start committed: empty means "no exact spot", which is a settled answer, not an
+   unfinished one — the map falls back to the area and must still draw on load. */
+const locCommitted = { from:true, to:true };
+function setLocCommitted(which, yes){ locCommitted[which] = yes; }
+/* Emptying a field programmatically — "Clear this spot", "I'll decide the exact spot later" — fires
+   no input event, so it has to settle the field itself. Missing this left a field stuck
+   un-settled after a clear, which meant the map lookup never re-ran and a parked re-price notice
+   was never withdrawn (pricing-flow's "outside its area is blocked" spec caught it). */
+const locSettle = {};
+// The lookup runs only once BOTH ends have settled — a route needs two committed points.
+function maybeScheduleRouteMap(){ if(locCommitted.from && locCommitted.to) scheduleRouteMap(); }
+
 function onLoc(){
   // exact spot when given; otherwise the settled area (payload, summary, map and the
   // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
@@ -317,7 +338,10 @@ function onLoc(){
     routeEstimateUnavailable=false;
   }
   checkExactRadius();
-  render(); checkWhere(); scheduleRouteMap();
+  // The summary and the radius guard still follow every keystroke — they read what is on screen
+  // and cost nothing. Only the Google lookup waits for both ends to be committed; until then the
+  // map simply keeps showing the last route the customer actually chose.
+  render(); checkWhere(); maybeScheduleRouteMap();
 }
 
 // The exact spot must stay within its area — a hotel/landmark, not a new route.
@@ -354,7 +378,9 @@ function checkExactRadius(){
 }
 window.clearExactSpot=function(which){
   const input = which==='from' ? locFrom : locTo;
-  input.value=''; setGeo(which,null); onLoc(); input.focus();
+  input.value=''; setGeo(which,null);
+  if(locSettle[which]) locSettle[which]();   // an emptied field is a settled "no exact spot"
+  onLoc(); input.focus();
 };
 
 // "Decide later" — a legitimate answer: collapse the input into a friendly note and
@@ -365,7 +391,9 @@ function wireDecideLater(which){
   const undo=document.getElementById('loc-undo-'+which);
   if(!field||!later||!note||!undo) return;
   later.addEventListener('click',()=>{
-    input.value=''; setGeo(which,null); onLoc();
+    input.value=''; setGeo(which,null);
+    if(locSettle[which]) locSettle[which]();
+    onLoc();
     field.classList.add('decided-later'); note.hidden=false;
     if(typeof window.chTrack==='function') window.chTrack('exact_location_deferred',{which});
   });
@@ -381,6 +409,14 @@ wireDecideLater('from'); wireDecideLater('to');
 // built-in list of known places so the field still works offline.
 function attachAC(input, menu, which){
   let active=-1, els=[], data=[], seq=0, committed=false, openedAt=0;
+  /* The value this field last SETTLED on. Committing is not free — it re-runs the map lookup, and
+     that lookup's measured distance drives the re-price notice — so re-committing a value that was
+     already settled is not a no-op, it perturbs a state machine mid-decision. (Five reprice specs
+     went red on exactly that: a blur after the customer had picked fired a second render on top of
+     a parked notice.) A commit therefore only counts when the text has actually moved. */
+  let settledValue = input.value.trim();
+  function markSettled(){ setLocCommitted(which, true); settledValue = input.value.trim(); }
+  locSettle[which] = markSettled;
   const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>';
   function close(invalidate=true){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; if(invalidate) seq++; }
   function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
@@ -390,11 +426,12 @@ function attachAC(input, menu, which){
     committed=true;
     seq++;
     userSetLocation=true; // a deliberate selection — now the price may re-price
-    input.value=d.label; onLoc(); close();
+    input.value=d.label; markSettled(); onLoc(); close();
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
       if(geo && geo.name) input.value=geo.name;
+      markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
     } else {
@@ -476,7 +513,12 @@ function attachAC(input, menu, which){
     renderMenu();
   }
 
-  input.addEventListener('input',()=>{ setGeo(which, null); onLoc(); build(); });
+  input.addEventListener('input',()=>{
+    // An emptied box is a settled answer ("no exact spot"), so it settles immediately and the map
+    // returns to the area. Anything else is a word in progress until the customer says otherwise.
+    if(input.value.trim()) setLocCommitted(which, false); else markSettled();
+    setGeo(which, null); onLoc(); build();
+  });
   input.addEventListener('focus',build);
   input.addEventListener('keydown',e=>{
     if(!menu.classList.contains('open')) return;
@@ -485,7 +527,21 @@ function attachAC(input, menu, which){
     else if(e.key==='Enter'){ if(active>=0){ e.preventDefault(); choose(active); } }
     else if(e.key==='Escape'){ close(); }
   });
-  input.addEventListener('blur',()=>setTimeout(close,150));
+  input.addEventListener('blur',()=>{
+    setTimeout(close,150);
+    // Leaving the field is the other way to settle — plan.js's "a blur onto a real place". This
+    // catches a name typed out in full and left without touching the menu. A pick has already
+    // settled the field via choose(), so that blur falls through the guard and changes nothing.
+    if(locCommitted[which] && input.value.trim()===settledValue) return;
+    markSettled();
+    /* Only the LOOKUP is released here — deliberately not onLoc(). Blur changes nothing the
+       summary shows: state.locFrom/locTo and the radius guard already followed every keystroke.
+       All that has changed is that the text is now settled enough to send to Google.
+       onLoc() would also re-render, and a blur happens BETWEEN a button's mousedown and its
+       click — so re-rendering here tore the "Clear this spot" button out of the DOM under the
+       customer's own finger and the press did nothing (pricing-flow's out-of-area spec). */
+    maybeScheduleRouteMap();
+  });
   window.addEventListener('scroll',()=>{ if(Date.now()-openedAt>250) close(); },true);
   window.addEventListener('wheel',()=>close(),{passive:true});
   window.addEventListener('touchmove',()=>close(),{passive:true});
