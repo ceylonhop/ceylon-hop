@@ -423,6 +423,7 @@ function attachAC(input, menu, which){
     if(window.TRANSFERS && window.TRANSFERS.placeSuggestions){
       const local = window.TRANSFERS.placeSuggestions(qs, 6).map(p=>({
         kind:'local',
+        source:p.source,
         label:p.label,
         main:p.label,
         secondary:p.source==='known' ? 'Popular Route' : 'Popular place'
@@ -435,7 +436,16 @@ function attachAC(input, menu, which){
   }
   function shouldAskGoogle(qs, local){
     if(!window.CH_MAP || !window.CH_MAP.suggest || !window.CEYLON_MAPS_KEY || qs.length<2) return false;
-    const exactLocal = local.some(p => (p.label||'').toLowerCase() === qs.toLowerCase());
+    /* Only a CATALOGUE place short-circuits Google — the same test site.js and plan.js apply
+       (`source==='known'`). This used to accept any local row, which caught the "Popular places"
+       too: type "jaffn" and the menu offered Jaffna, Jaffna Town West and Jaffna International
+       Airport; type the final "a" and it collapsed to one row, because "Jaffna" matched an
+       {source:'extra', id:null} row exactly. Finishing the word took the airport away.
+       A known place is safe to short-circuit on — it carries an id, baked pricing and coordinates,
+       so there is nothing left for Google to tell us. An `extra` has none of those, which is
+       exactly when we need the lookup most: without it the booking keeps the raw typed string
+       and no geo at all. (Friend-reported 2026-08-27.) */
+    const exactLocal = local.some(p => p.source==='known' && (p.label||'').toLowerCase() === qs.toLowerCase());
     const oneWord = !/\s/.test(qs.trim());
     return !exactLocal && !(oneWord && local.length>=3);
   }
@@ -590,7 +600,20 @@ if(isTrip){
   // render the route summary with an edit link back to the planner
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
-  const fmtLeg=(iso)=>{ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); };
+  /* A leg outside the current year prints its year. A 5-leg trip whose last leg had been dated a
+     year past the first showed "Sat 29 Aug" and "Fri 27 Aug" — the one fact that would have caught
+     the slip was the one the chip omitted (friend-reported 2026-08-27). Everything else on this
+     page that prints a date already carries the year; only these chips did not. Conditional, so a
+     trip inside this year keeps the short chip. */
+  const _thisYear=new Date().getFullYear();
+  const fmtLeg=(iso)=>{
+    if(!iso) return '';
+    const d=new Date(iso+'T00:00:00');
+    if(isNaN(d)) return '';
+    const opts={weekday:'short',day:'numeric',month:'short'};
+    if(d.getFullYear()!==_thisYear) opts.year='numeric';
+    return d.toLocaleDateString('en-GB',opts);
+  };
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
@@ -1505,19 +1528,30 @@ function requestEstimate(){
   });
 }
 
-// True when the only thing that moved between two priced intents is the product or the vehicle —
-// i.e. the customer pressed "Chauffeur-guide" or "Switch to AC van". A raise they DROVE that way
-// is not a surprise to acknowledge: the press is the acknowledgement, and both the service
-// chooser and the upsell CTA name their price before it happens. Gating these announced "your
-// price has been updated" about the very change just asked for, and held the summary at the
-// figure for the service they'd just left — invisible on a trip, where private and chauffeur
-// carry identically labelled rows (:1546-1551), so the card read as the old price for the new
-// service with nothing on screen to tell them apart.
-function switchedProductOrVehicle(sig, priorSig){
+// True when the raise between two priced intents came from a control that PRINTS ITS OWN PRICE —
+// the customer pressed "Chauffeur-guide", "Switch to AC van", or ticked an extra. A raise they
+// drove that way is not a surprise to acknowledge: the press is the acknowledgement, and each of
+// those controls names its price before it happens. Gating these announced "your price has been
+// updated" about the very change just asked for, and held the summary at the figure for the
+// service they'd just left — invisible on a trip, where private and chauffeur carry identically
+// labelled rows (:1546-1551), so the card read as the old price for the new service with nothing
+// on screen to tell them apart.
+function customerDroveTheRaise(sig, priorSig){
   let now, prior;
   try { now = JSON.parse(sig); prior = JSON.parse(priorSig); } catch(e){ return false; }
   if(!now || !prior) return false;
-  return now.product !== prior.product || now.vehicle !== prior.vehicle;
+  return now.product !== prior.product || now.vehicle !== prior.vehicle || changedExtras(now, prior);
+}
+// An extra belongs in the same list, for the same reason: the button that adds it prints its own
+// price ("+$10") right next to the label, so ticking it IS the acknowledgement. Left out, ticking
+// the $10 sightseeing extra parked the raise — and because the vehicle row is derived as
+// `calcTotal() − extras` so the rows always sum to the HELD total, the car line then dropped by
+// exactly $10: the price of the car appeared to fall because the customer had added something,
+// while a warning announced a third figure they had not agreed to. (Friend-reported 2026-08-27.)
+function changedExtras(now, prior){
+  const a=(now.extras||[]).slice().sort().join('|');
+  const b=(prior.extras||[]).slice().sort().join('|');
+  return a!==b;
 }
 // Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
 // must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
@@ -1531,7 +1565,7 @@ function handleEngineEstimate(est, sig){
   if(sig !== currentIntentSig()){ render(); return; }
   adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents && !switchedProductOrVehicle(sig, engineEst.intentSig)){
+  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
     state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
     render();
     checkWhere();

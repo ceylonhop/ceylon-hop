@@ -5,6 +5,7 @@ import { FakeTokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { futureIsoDate } from '../testSupport/dates';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
@@ -50,7 +51,7 @@ const paymentDetails = {
   city: 'Colombo',
 };
 
-function makePayHereApp() {
+function makePayHereApp(over: { rateLimit?: { max: number; windowMs: number }; alerts?: FakeAlertAdapter } = {}) {
   const rideLists = new InMemoryRideListRepo();
   const paygw = new PayHereTokenizedPaymentAdapter(
     '1234567',
@@ -69,6 +70,8 @@ function makePayHereApp() {
     paygw,
     customerVerifier: verifier,
     bookingBaseUrl: 'https://ceylonhop.com',
+    ...(over.rateLimit ? { rateLimit: over.rateLimit } : {}),
+    ...(over.alerts ? { alerts: over.alerts } : {}),
   });
   return { app, rideLists, paygw };
 }
@@ -212,6 +215,56 @@ describe('Ride Board PayHere card approval', () => {
     expect(completedBody.list.committed).toBe(1);
     expect(completedBody.manageToken).toBeTruthy();
     expect((await rideLists.getByCode(list.code))?.members[0].preapprovalRef).toBe('real-encrypted-card-token');
+  });
+
+  // PayHere's preapproval callback is the ONLY delivery of the reusable customer token. Every
+  // notify arrives from a handful of PayHere egress IPs, so they all share one per-IP bucket:
+  // a busy signup hour 429s a genuine callback, the token is lost for good, and the traveller's
+  // preapproval expires as "failed" 30 minutes later even though they completed it. The main
+  // /webhooks/payments mount is already exempt for exactly this reason (app.ts) — this gateway
+  // callback was not.
+  it('never rate-limits the PayHere preapproval callback', async () => {
+    const { app, rideLists, paygw } = makePayHereApp({ rateLimit: { max: 1, windowMs: 60_000 } });
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    const body = await started.json();
+    const notify = paygw.simulatePreapprovalNotify({
+      orderId: body.payment.orderId,
+      customerToken: 'real-encrypted-card-token',
+    });
+    const post = () =>
+      app.request('/board/payhere/notify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: notify,
+      });
+
+    // The budget is already spent by the join above; PayHere's callback must still get through.
+    for (let i = 0; i < 5; i++) {
+      expect((await post()).status).not.toBe(429);
+    }
+    expect((await rideLists.getByCode(list.code))?.members[0].preapprovalRef).toBe('real-encrypted-card-token');
+  });
+
+  // A wrong per-domain merchant secret is exactly the PH-0014 class of failure this flow already
+  // hit once. It fails as a silent 400: every traveller's join dies and nothing tells anyone.
+  // /webhooks/payments pages the founder on a rejected notify; this one must too.
+  it('alerts when a PayHere callback cannot be verified', async () => {
+    const alerts = new FakeAlertAdapter();
+    const { app, rideLists, paygw } = makePayHereApp({ alerts });
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    const body = await started.json();
+    const genuine = paygw.simulatePreapprovalNotify({ orderId: body.payment.orderId, customerToken: 'token' });
+    const forged = genuine.replace(/md5sig=[^&]+/, 'md5sig=00000000000000000000000000000000');
+
+    expect((await app.request('/board/payhere/notify', { method: 'POST', body: forged })).status).toBe(400);
+
+    const alert = alerts.sent.find((a) => a.kind === 'ride_board_notify_rejected');
+    expect(alert, 'a rejected board callback must page a human').toBeTruthy();
+    expect(alert?.severity).toBe('critical');
   });
 
   it('ignores a forged callback and keeps the traveller off the ride', async () => {

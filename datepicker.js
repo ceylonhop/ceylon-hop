@@ -28,7 +28,13 @@
     input.max = iso(maxDate);
     const placeholder = input.getAttribute('data-placeholder') || 'Select a date';
     let sel = parseISO(input.value);
-    let view = monthStart(sel||today);
+    /* Open on the first month that HAS a selectable day. With no value the view used to start on
+       today's month, which is right whenever the floor is today or tomorrow — but a per-leg floor
+       (plan.js legDateFloor) can sit months out, and then the calendar opened on a month where
+       every single day was disabled. Month-granular so the ordinary tomorrow-floor case is
+       untouched, except on the last day of a month, where next month is the only one with a
+       selectable day anyway. */
+    let view = monthStart(sel || (monthStart(minDate) > monthStart(today) ? minDate : today));
 
     const wrap=document.createElement('div'); wrap.className='dp';
     const btn=document.createElement('button'); btn.type='button'; btn.className='dp-btn';

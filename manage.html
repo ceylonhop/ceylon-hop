@@ -58,7 +58,31 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // a customer following either link should not be able to tell they landed on a different
   // system. Everything here is derived from the booking; nothing is typed on this page.
   var app = document.getElementById('app');
+  // The ?t= link token authorises viewing this booking AND minting a checkout token for it.
+  // Left in the address bar it flows into GA4's page_location, Clarity's recording and this
+  // page's own error beacon (which posts location.href), so anyone with analytics access could
+  // open a customer's booking and start its payment flow. Read it once, hand it to
+  // sessionStorage, and take it out of the URL.
+  //
+  // sessionStorage is what keeps reload working after the strip — and it can throw (private
+  // mode, storage disabled). If it does, we DON'T strip: a token in the URL is a privacy
+  // problem, but a customer who cannot reload their own booking is a broken page. Function
+  // first, privacy wherever it is free.
+  var TOKEN_KEY = 'chManageToken';
   var t = new URLSearchParams(location.search).get('t');
+  if (t) {
+    var stashed = false;
+    try { sessionStorage.setItem(TOKEN_KEY, t); stashed = true; } catch (e) {}
+    if (stashed) {
+      try {
+        var url = new URL(location.href);
+        url.searchParams.delete('t');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch (e) {}
+    }
+  } else {
+    try { t = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
+  }
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}

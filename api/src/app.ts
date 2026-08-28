@@ -311,7 +311,15 @@ export function createApp(deps: AppDeps = {}) {
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
   // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
-  app.use('/board/*', rateLimit({ ...rl, methods: ['POST'] }));
+  // POST /board/payhere/notify is excluded for the same reason /webhooks/payments is: it is a
+  // gateway callback, not user traffic. Every notify arrives from a handful of PayHere egress
+  // IPs sharing one per-IP bucket, and that callback is the ONLY delivery of the reusable
+  // customer token — a 429 loses it for good and the traveller's preapproval later expires as
+  // "failed" despite them having completed it.
+  app.use('/board/*', async (c, next) => {
+    if (new URL(c.req.url).pathname === '/board/payhere/notify') return next();
+    return rateLimit({ ...rl, methods: ['POST'] })(c, next);
+  });
   // M17: public front-end error beacon — same per-IP write limit as other public endpoints.
   app.use('/errors/*', rateLimit(rl));
   // /admin/quote/* fronts billed Google APIs (GET /places, POST /distance), 2-3 pricing
@@ -391,6 +399,7 @@ export function createApp(deps: AppDeps = {}) {
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+      alerts,
     }),
   );
   // Share links for the Ride Board. Its own mount, not /board/:code — that one answers
