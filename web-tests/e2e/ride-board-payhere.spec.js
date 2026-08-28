@@ -16,7 +16,7 @@ async function stubSignedInBoard(page, joinHandler) {
     const path = new URL(req.url()).pathname;
     if (path === '/board/me') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        me: { firstName: 'Roshen', country: 'LK', photo: null },
+        me: { firstName: 'Roshen', country: 'GB', photo: null },
       }) });
     }
     if (path === '/board' && req.method() === 'GET') {
@@ -63,8 +63,14 @@ test('a self-service join requires billing details and posts the approval to Pay
   await page.locator('[data-detail-join]').last().click();
   await expect(page.locator('#sign-btn')).toBeVisible();
 
+  // Dial code prefills from the signed-in profile country (GB above) — never a hardcoded
+  // default. A regression back to preselected Sri Lanka fails here.
+  await expect(page.locator('#pay-cc')).toHaveValue('+44');
+
   await page.locator('#sign-btn').click();
-  await expect(page.locator('#toast')).toContainText('Add your billing details');
+  // Errors fired while the sheet is open render inside it — the toast sits behind the
+  // overlay's backdrop blur.
+  await expect(page.locator('#sheet-err')).toContainText('Add your billing details');
   expect(joins).toBe(0);
 
   await page.selectOption('#pay-cc', '+44');
@@ -225,7 +231,7 @@ test('a failed join restores the form instead of stranding the payer on the hand
   await page.fill('#pay-address', '12 River Street');
   await page.locator('#sign-btn').click();
 
-  await expect(page.locator('#toast')).toContainText("Couldn't add your name");
+  await expect(page.locator('#sheet-err')).toContainText("Couldn't add your name");
   // toBeAttached first: toBeHidden() alone passes for an element that does not exist, so
   // without it this test would go green on a build that never had the hand-off screen.
   await expect(page.locator('#pay-handoff')).toBeAttached();

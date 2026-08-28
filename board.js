@@ -395,6 +395,32 @@
     });
   }
 
+  /* ---------------- inline sheet errors ----------------
+     The toast sits at z-index 90; the join sheet's overlay is z-index 100 WITH a backdrop
+     blur, so any toast fired while the sheet was open showed up blurred behind it. Errors
+     that belong to the sheet render inside it instead — the #sheet-err strip is moved next
+     to the visible step's primary button, where the eye already is. Board-level notices
+     (sheet closed) keep using toast(). */
+  function sheetError(title, sub) {
+    var el = document.getElementById('sheet-err');
+    if (!el) { toast(title, sub); return; }
+    var step = document.querySelector('.mstep:not([hidden])');
+    if (step) {
+      // Last VISIBLE primary button: mstep-1 keeps a hidden sub-panel whose button would
+      // swallow the strip. offsetParent is null for anything inside a hidden container.
+      var btn = null, cands = step.querySelectorAll('.btn-primary.btn-block');
+      for (var i = cands.length - 1; i >= 0; i--) { if (cands[i].offsetParent) { btn = cands[i]; break; } }
+      if (btn) step.insertBefore(el, btn); else step.appendChild(el);
+    }
+    el.innerHTML = '<b>' + esc(title) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '');
+    el.hidden = false;
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+  function clearSheetError() {
+    var el = document.getElementById('sheet-err');
+    if (el) el.hidden = true;
+  }
+
   /* ---------------- toast ---------------- */
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
@@ -1083,6 +1109,7 @@
   }
   function setStep(i) {
     stepIdx = i;
+    clearSheetError();
     var seq = panels();
     ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) { document.getElementById(id).hidden = (id !== seq[i]); });
     document.getElementById('steps').innerHTML = seq.map(function (_, k) { return '<span class="step-dot ' + (k <= i ? 'on' : '') + '"></span>'; }).join('');
@@ -1232,7 +1259,7 @@
   });
   document.getElementById('c-continue').addEventListener('click', function () {
     var c = pairCorridor(cFrom.value, cTo.value);
-    if (!c) { toast('Pick two stops on one route'); return; }
+    if (!c) { sheetError('Pick two stops on one route'); return; }
     var d = new Date(cDate.value + 'T00:00:00');
     var slot = (cTime.querySelector('.sel') || {}).dataset ? cTime.querySelector('.sel').dataset.t : 'morning';
     document.getElementById('m-route').textContent =
@@ -1252,6 +1279,15 @@
         (state.me.country ? '<span class="flag">' + flagOf(state.me.country) + '</span>' : '');
       document.getElementById('m-signed-name').textContent = 'Signed in as ' + (state.me.firstName || 'you');
       document.getElementById('m-signed-email').textContent = state.me.country ? flagOf(state.me.country) + ' ' + state.me.country : '';
+      // Prefill the dial code from their own profile country — never a hardcoded default,
+      // and never stomping a pick they already made. By INDEX, not value: dial codes
+      // collide (+1 is a dozen countries) and value-set selects the first match.
+      var cc = document.getElementById('pay-cc');
+      if (cc && !cc.value && state.me.country && window.PHONE_COUNTRIES) {
+        for (var ci = 0; ci < window.PHONE_COUNTRIES.length; ci++) {
+          if (window.PHONE_COUNTRIES[ci][0] === state.me.country) { cc.selectedIndex = ci + 1; break; } // +1: option 0 is the placeholder
+        }
+      }
     }
     populateSeats(current);
     updateCost();
@@ -1307,7 +1343,7 @@
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
-  function closeModal() { overlay.classList.remove('open'); document.body.style.overflow = ''; creating = false; }
+  function closeModal() { clearSheetError(); overlay.classList.remove('open'); document.body.style.overflow = ''; creating = false; }
   // The phones-only bar at the bottom of the screen (board.html .start-bar). Same target as
   // the tile at the end of the grid — that one is several screen-heights down on a phone.
   var startBar = document.getElementById('start-bar-btn');
@@ -1368,8 +1404,8 @@
   document.getElementById('auth-country-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
   function doLogin() {
     var country = (document.getElementById('auth-country-in').value || '').trim().toUpperCase();
-    if (!/^[A-Za-z]{2,4}$/.test(country)) { toast('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
-    if (!state.pendingCredential) { toast('Please sign in again'); setStep(panels().indexOf('mstep-1')); return; }
+    if (!/^[A-Za-z]{2,4}$/.test(country)) { sheetError('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
+    if (!state.pendingCredential) { setStep(panels().indexOf('mstep-1')); sheetError('Please sign in again'); return; }
     var btn = document.getElementById('auth-country-go');
     btn.disabled = true; btn.textContent = 'Signing in…';
     apiPost('/board/login', { credential: state.pendingCredential, country: country }).then(function (data) {
@@ -1385,8 +1421,8 @@
       setStep(seq.indexOf('mstep-2'));
     }).catch(function (e) {
       btn.disabled = false; btn.textContent = 'Continue';
-      if (e.status === 400) toast('Sign-in failed', 'Please try again.');
-      else toast("Couldn't sign you in", 'Try again in a moment.');
+      if (e.status === 400) sheetError('Sign-in failed', 'Please try again.');
+      else sheetError("Couldn't sign you in", 'Try again in a moment.');
       report(e, 'signIn');
     });
   }
@@ -1401,11 +1437,12 @@
     var sel = document.getElementById('pay-cc');
     var list = window.PHONE_COUNTRIES;
     if (!sel || !list) return;
-    sel.innerHTML = list.map(function (c) {
+    // No hardcoded default (it used to preselect Sri Lanka, which read as "we guessed
+    // for you" — most travellers' cards aren't Lankan). The signed-in traveller's own
+    // profile country prefills it in fillConfirmStep; otherwise they pick.
+    sel.innerHTML = '<option value="" disabled selected>Country</option>' + list.map(function (c) {
       return '<option value="' + esc(c[2]) + '">' + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
     }).join('');
-    var lk = list.find(function (c) { return c[1] === 'Sri Lanka'; });
-    if (lk) sel.value = lk[2];
   })();
 
   // Joins the two fields into one E.164-ish string for the API. Borrows the two rules booking.js
@@ -1416,19 +1453,23 @@
     var raw = (document.getElementById('pay-phone').value || '').trim();
     var digits = raw.replace(/[^\d]/g, '');
     if (/^\s*\+/.test(raw)) return digits ? '+' + digits : '';
-    var code = ((sel && sel.value) || '+94').replace(/[^\d]/g, '');
+    var code = ((sel && sel.value) || '').replace(/[^\d]/g, '');
+    if (!code) return ''; // no country picked and no + typed: not a dialable number
     var number = digits.replace(/^0+/, '');
     if (code && number.indexOf(code) === 0 && number.length > code.length) number = number.slice(code.length);
     return number ? '+' + code + number : '';
   }
 
   function paymentDetails() {
+    var sel = document.getElementById('pay-cc');
+    var rawPhone = (document.getElementById('pay-phone').value || '').trim();
+    var needsCode = !/^\+/.test(rawPhone) && !(sel && sel.value);
     var phone = joinedPhone();
     var city = (document.getElementById('pay-city').value || '').trim();
     var address = (document.getElementById('pay-address').value || '').trim();
     if (!phone || !city || !address) {
-      toast('Add your billing details', 'PayHere needs these to approve your card securely.');
-      var missing = !phone ? 'pay-phone' : !city ? 'pay-city' : 'pay-address';
+      sheetError('Add your billing details', 'PayHere needs these to approve your card securely.');
+      var missing = needsCode ? 'pay-cc' : !phone ? 'pay-phone' : !city ? 'pay-city' : 'pay-address';
       document.getElementById(missing).focus();
       return null;
     }
@@ -1542,12 +1583,12 @@
       // Before any per-status handling: those branches call setStep()/toast() and assume the
       // steps are on screen.
       hideHandoff();
-      if (e.status === 401) { toast('Please sign in to continue'); state.me = null; setStep(panels().indexOf('mstep-1')); }
-      else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
-      else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
-      else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { toast('That route isn\'t served yet'); setStep(0); }
-      else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { toast('Check your billing details', 'Phone, address and city are required by PayHere.'); }
-      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
+      if (e.status === 401) { state.me = null; setStep(panels().indexOf('mstep-1')); sheetError('Please sign in to continue'); }
+      else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
+      else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
+      else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { setStep(0); sheetError('That route isn\'t served yet'); }
+      else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
+      else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
 
