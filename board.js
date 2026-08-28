@@ -265,6 +265,38 @@
     return wanted.some(function (c) { return !marked[c]; });
   }
 
+  /* Both filter selects, derived from the (from,to) pairs the board has actually returned.
+     They used to be two independent sets — every origin ever seen in one, every destination in
+     the other — with nothing relating them. Ella is an origin on Ella→Mirissa and a destination
+     on Kandy→Ella, so it sat in both lists and "Ella to Ella" was selectable: a combination that
+     cannot exist, returning an empty board. It was not only the silly case either — with four
+     origins and three destinations, twelve combinations were reachable and only four matched a
+     real ride.
+
+     Deriving both lists from the pairs narrows each select to what the other one leaves possible,
+     and rules out a place as its own destination for free: a list from a place to itself is not
+     a thing, so no such pair is ever in the data. This is what the old state.fromOptions comment
+     always claimed ("the two selects narrow to one corridor") and never actually did.
+
+     `active` is kept even when it matches nothing: a filter carried in from a route page can
+     legitimately match zero rides, and dropping it renders the select BLANK next to a Clear
+     button, with no clue why the board is empty. */
+  function filterOptions(pairs, filter) {
+    var f = (filter && filter.from) || 'all';
+    var t = (filter && filter.to) || 'all';
+    var from = [], to = [], seenF = {}, seenT = {};
+    (pairs || []).forEach(function (p) {
+      var a = p[0], b = p[1];
+      if (!a || !b) return;
+      if ((t === 'all' || b === t) && !seenF[a]) { seenF[a] = true; from.push(a); }
+      if ((f === 'all' || a === f) && !seenT[b]) { seenT[b] = true; to.push(b); }
+    });
+    if (f !== 'all' && !seenF[f]) from.push(f);
+    if (t !== 'all' && !seenT[t]) to.push(t);
+    var abc = function (x, y) { return x.localeCompare(y); };
+    return { from: from.sort(abc), to: to.sort(abc) };
+  }
+
   var RideBoard = {
     shouldReport: shouldReport,
     errorPayload: errorPayload,
@@ -282,6 +314,7 @@
     flagOf: flagOf,
     fmtDate: fmtDate,
     resolvePlaceId: resolvePlaceId,
+    filterOptions: filterOptions,
     SLOTS: SLOTS,
     MIN_DEFAULT: MIN_DEFAULT,
     CAP_DEFAULT: CAP_DEFAULT
@@ -315,8 +348,7 @@
     byCode: {},           // code → normalized list (detail cache)
     mineCodes: new Set(), // lists the signed-in user is on
     manageTokens: {},     // code → manageToken (from create/join)
-    fromOptions: [],      // union of from-names seen (filter select, never shrinks)
-    toOptions: [],        // ditto for drop-offs — the two selects narrow to one corridor
+    pairs: [],            // [from,to] pairs seen (never shrinks); both filter selects derive from these
     /* Pre-filtered by ?from=&to= so a route page can hand a traveller straight to their
        own route. Without this, "See who's going" landed on the unfiltered board and they
        had to find the route again — the page knew what they wanted and threw it away.
@@ -662,17 +694,17 @@
     if (mc) mc.textContent = n;
   }
 
+  // Accumulate the (from,to) PAIRS, not two loose sets — filterOptions() derives both selects
+  // from them, which is what stops the two filters offering a combination no ride matches.
+  // A place name contains spaces, slashes and brackets ("Colombo Airport (CMB)",
+  // "Sigiriya / Dambulla"), so the dedupe key joins on \u0000 — a character that cannot occur
+  // in one — rather than punctuation that could split a name in half.
+  var PAIR_SEP = '\u0000';
   function rememberPlaceOptions(lists) {
-    var seenFrom = {}, seenTo = {};
-    state.fromOptions.forEach(function (n) { seenFrom[n] = true; });
-    state.toOptions.forEach(function (n) { seenTo[n] = true; });
-    lists.forEach(function (L) {
-      if (L.from) seenFrom[L.from] = true;
-      if (L.to) seenTo[L.to] = true;
-    });
-    var abc = function (a, b) { return a.localeCompare(b); };
-    state.fromOptions = Object.keys(seenFrom).sort(abc);
-    state.toOptions = Object.keys(seenTo).sort(abc);
+    var seen = {};
+    state.pairs.forEach(function (p) { seen[p[0] + PAIR_SEP + p[1]] = true; });
+    lists.forEach(function (L) { if (L.from && L.to) seen[L.from + PAIR_SEP + L.to] = true; });
+    state.pairs = Object.keys(seen).map(function (k) { return k.split(PAIR_SEP); });
   }
 
   function renderFilters() {
@@ -686,21 +718,24 @@
     var countHtml = state.loadFailed
       ? '<span class="count count-unknown">rides unavailable</span>'
       : '<span class="count"><b>' + open + '</b> gathering now</span>';
-    /* The options come from the lists we got back, so a filter that matches nothing has no
-       option to select and the dropdown renders BLANK next to a Clear button — the traveller
+    /* Each select is narrowed by what the other one leaves possible, so every combination the
+       traveller can reach matches a real ride — and a place is never offered as its own
+       destination. filterOptions() also keeps an active value that currently matches nothing,
+       because dropping it renders the select BLANK next to a Clear button: the traveller
        arriving from a route page would see an empty filter and no rides, with no clue the two
-       were related. Always include the active value, even when it returned nothing. */
-    var withActive = function (opts, active) {
-      return active !== 'all' && opts.indexOf(active) === -1 ? opts.concat([active]) : opts;
+       were related. */
+    var opts = filterOptions(state.pairs, f);
+    var optionsHtml = function (list) {
+      return list.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
     };
     filtersEl.innerHTML =
       '<label class="fsel"><span>Leaving from</span>' +
       '<select id="f-from"><option value="all">Anywhere</option>' +
-      withActive(state.fromOptions, f.from).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      optionsHtml(opts.from) +
       '</select></label>' +
       '<label class="fsel"><span>Going to</span>' +
       '<select id="f-to"><option value="all">Anywhere</option>' +
-      withActive(state.toOptions, f.to).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      optionsHtml(opts.to) +
       '</select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
       ((f.from !== 'all' || f.to !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
@@ -756,10 +791,9 @@
       });
     }).catch(function (e) {
       state.lists = [];
-      // state.fromOptions / state.toOptions are deliberately NOT cleared: they accumulate across
-      // loads, and wiping them here collapsed the place dropdowns back to "Anywhere" on a failed
-      // refresh — so a traveller who had filtered to their town silently lost the option to
-      // filter at all.
+      // state.pairs is deliberately NOT cleared: it accumulates across loads, and wiping it
+      // here collapsed the place dropdowns back to "Anywhere" on a failed refresh — so a
+      // traveller who had filtered to their town silently lost the option to filter at all.
       state.loadFailed = true;
       renderFilters();
       grid.removeAttribute('aria-busy');
