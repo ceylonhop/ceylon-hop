@@ -988,10 +988,36 @@ function renderMap(){
   }).join('');
   const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
   // Clean Google map (JS API: route line + waypoints, no panel/markers) with a loading state.
-  // A gapped route can't be one continuous Google road route without implying we drive the gap,
-  // so show the schematic SVG (line already broken at the gap) instead of the Google route.
-  if(!gapSet.size && window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { expandable:true, onFail(){ host.innerHTML=svg; } }); }
+  //
+  // A gapped route can't be ONE continuous Google road route without implying we drive the gap —
+  // but it doesn't have to be one route. ch-map's `runs` draws a stretch per query (built for
+  // quote.html's per-leg road choices), so the journey is split at each gap and the stretch nobody
+  // drives is simply never drawn. This used to bail to the schematic instead, which meant any trip
+  // with a self-arranged stretch lost its map and got a hand-drawn oval standing in for the island.
+  // The SVG stays as the honest FAILURE path: no key, or Google unreachable.
+  const runs = gapSet.size ? routeRuns(names, gapSet) : null;
+  if(window.CH_MAP && names.length>=2 && (!runs || runs.length)){
+    const opts = { expandable:true, onFail(){ host.innerHTML=svg; } };
+    if(runs) opts.runs = runs;   // omitted entirely on an unbroken route: same single query as ever
+    window.CH_MAP.renderRoute(host, names, opts);
+  }
   else { host.innerHTML=svg; }
+}
+/* Split the stop list into the stretches we actually drive. `gapSet` holds the index of each wire
+   the traveller arranges themselves, so a gap at i breaks the route between names[i] and
+   names[i+1]. Each stretch is its own run: `continues:false`, because a run after a gap starts at a
+   genuinely different place and needs its own pin (unlike quote.html's road-choice splits, which
+   share a stop with the run before them).
+   A stretch of one stop can't be routed and is dropped — ch-map requires two — so an isolated stop
+   between two gaps has no line, though the legend still numbers it. */
+function routeRuns(names, gapSet){
+  const runs=[]; let cur=[];
+  for(let i=0;i<names.length;i++){
+    cur.push(names[i]);
+    if(gapSet.has(i)){ runs.push(cur); cur=[]; }
+  }
+  if(cur.length) runs.push(cur);
+  return runs.filter(r=>r.length>=2).map(stops=>({ stops, avoidTolls:false, continues:false }));
 }
 
 // ---- continue into the booking flow ----
