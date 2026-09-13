@@ -14,6 +14,13 @@ name: keep-alive
 # (208 min). concurrency cancels any older run so the newest trigger takes over rather than
 # stacking runs on top of each other.
 #
+# IT ALSO DETECTS OUTAGES, AND FAILS FAST
+# It pings /health/deep (which runs SELECT 1) instead of the static /health, and requires
+# HTTP 200 AND {"status":"ok","db":"ok"}. A failed check is retried once after 30 s; if that
+# fails too the run exits 1 immediately. Fast matters: newer triggers cancel older runs, and a
+# CANCELLED run sends no failure email, so a run that logged the error and kept looping would
+# almost always be cancelled before it could go red.
+#
 # THIS IS A MITIGATION, NOT THE FIX. It still depends on GitHub triggering the workflow at
 # all, and the schedule pauses entirely after 60 days of repo inactivity. The real fixes are
 # an external pinger (cron-job.org -> /health every ~10 min) or moving off the Render free
@@ -35,12 +42,39 @@ jobs:
     steps:
       - name: Ping API health every 5 minutes
         run: |
+          URL=https://ceylon-hop-api.onrender.com/health/deep
+          BODY=$(mktemp)
+          ERR=$(mktemp)
+          # One check. Healthy = HTTP 200 AND {"status":"ok","db":"ok"}: a DB outage answers
+          # 503 {"status":"degraded","db":"down"}, and a server started without a DB ping answers
+          # 200 db:"skipped" — both must fail, so check the status code AND the body.
+          check() {
+            : > "$BODY"; : > "$ERR"   # never read a previous attempt's body
+            code=$(curl -sS --max-time 90 -o "$BODY" -w '%{http_code}' "$URL" 2>"$ERR") || true
+            code=${code:-000}
+            db=$(jq -r '.db // empty' "$BODY" 2>/dev/null) || db=""
+            db=${db:-?}
+            [ "$code" = "200" ] && jq -e '.status == "ok" and .db == "ok"' "$BODY" >/dev/null 2>&1
+          }
           END=$(( $(date +%s) + 3*3600 + 1800 ))   # 3.5 h from now
           n=0
           while [ "$(date +%s)" -lt "$END" ]; do
             n=$((n+1))
-            code=$(curl -fsS --max-time 90 -o /dev/null -w '%{http_code}' \
-              https://ceylon-hop-api.onrender.com/health || echo "ERR")
-            echo "$(date -u +%H:%M:%S)  ping #$n -> $code"
+            if check; then
+              echo "$(date -u +%H:%M:%S)  ping #$n -> $code  db=$db"
+            else
+              echo "$(date -u +%H:%M:%S)  ping #$n -> $code  db=$db  (unhealthy, retrying in 30s)"
+              sleep 30
+              if check; then
+                echo "$(date -u +%H:%M:%S)  retry #$n -> $code  db=$db  (recovered)"
+              else
+                echo "$(date -u +%H:%M:%S)  retry #$n -> $code  db=$db  (still unhealthy)"
+                detail=$(head -c 300 "$BODY" | tr '\r\n' '  ')
+                [ -n "$detail" ] || detail=$(head -c 300 "$ERR" | tr '\r\n' '  ')
+                detail=${detail//%/%25}
+                echo "::error title=API health check failed::$URL failed twice 30s apart - HTTP $code, body: ${detail:-<empty>}"
+                exit 1
+              fi
+            fi
             sleep 300
           done
