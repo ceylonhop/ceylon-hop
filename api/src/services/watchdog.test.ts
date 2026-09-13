@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { runWatchdog } from './watchdog';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
-import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
+import { InMemoryNotificationLogRepo, type NotificationKind } from '../db/notificationLogRepo';
+import { InMemoryRefundRepo } from '../db/refundRepo';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -258,5 +259,118 @@ describe('runWatchdog — burst cap', () => {
     expect(res.stuckPending).toBe(5);
     expect(alerts.sent).toHaveLength(5); // all five still paged
     expect(res.recoveryEmails).toBe(0); // but no customer mail left the building
+  });
+});
+
+// ── Dry run ────────────────────────────────────────────────────────────────
+// Before the watchdog is scheduled against prod, the owner needs to see what its FIRST run
+// would page about — historical paid bookings with no confirmation row would otherwise alert
+// forever. So a dry run must report the plan and touch nothing: no alert, no customer email,
+// no notification-log claim (a claim WRITES a row), no budget.
+class RecordingLog extends InMemoryNotificationLogRepo {
+  writes: string[] = [];
+  override async markSent(bookingId: string, kind: NotificationKind) {
+    this.writes.push(`markSent:${kind}`);
+    return super.markSent(bookingId, kind);
+  }
+  override async claim(bookingId: string, kind: NotificationKind) {
+    this.writes.push(`claim:${kind}`);
+    return super.claim(bookingId, kind);
+  }
+  override async release(bookingId: string, kind: NotificationKind) {
+    this.writes.push(`release:${kind}`);
+    return super.release(bookingId, kind);
+  }
+}
+
+describe('runWatchdog — dry run', () => {
+  async function seedAll() {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const refunds = new InMemoryRefundRepo(bookings, payments);
+    const log = new RecordingLog();
+
+    const stuck = await bookings.create(sample);
+    await bookings.setStatus(stuck.id, 'payment_pending');
+    // A second abandoned checkout that was already chased: still stuck, but no second email.
+    const chased = await bookings.create(sample);
+    await bookings.setStatus(chased.id, 'payment_pending');
+    await log.markSent(chased.id, 'payment_recovery');
+
+    const paid = await bookings.create(sample);
+    await bookings.setStatus(paid.id, 'payment_pending');
+    await bookings.setStatus(paid.id, 'paid');
+    const p = await payments.create({
+      bookingId: paid.id, provider: 'payhere', orderId: paid.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `web:${paid.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    const refund = await refunds.request({
+      bookingId: paid.id, amountCents: 1200, currency: 'USD', reason: 'Customer cancelled', requestedBy: 'founder@test',
+    });
+    const apiAttemptedAt = new Date(Date.now() - 3600_000);
+    (refunds as unknown as { rows: Map<string, unknown> }).rows.set(refund.id, {
+      ...refund, status: 'api_processing', apiAttemptedAt,
+    });
+    log.writes.length = 0; // only the sweep's own writes count
+
+    return { bookings, payments, refunds, log, stuck, chased, paid, refund, apiAttemptedAt };
+  }
+
+  it('reports what WOULD happen per category, with zero side effects', async () => {
+    const s = await seedAll();
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const budget = new SendBudget(10);
+
+    const res = await runWatchdog(later(31), {
+      bookings: s.bookings, log: s.log, alerts, email, baseUrl: 'https://ceylonhop.com', linkSecret: 'sek',
+      payments: s.payments, refunds: s.refunds, budget, dryRun: true,
+    });
+
+    expect(res).toMatchObject({ stuckPending: 2, paidUnconfirmed: 1, recoveryEmails: 1, stuckRefunds: 1 });
+    expect(res.plan?.stuckPending).toHaveLength(2);
+    expect(res.plan?.stuckPending).toEqual(expect.arrayContaining([
+      { reference: s.stuck.reference, createdAt: s.stuck.createdAt },
+      { reference: s.chased.reference, createdAt: s.chased.createdAt },
+    ]));
+    expect(res.plan?.recoveryEmails).toEqual([{ reference: s.stuck.reference, createdAt: s.stuck.createdAt }]);
+    expect(res.plan?.paidUnconfirmed).toEqual([{ reference: s.paid.reference, createdAt: s.paid.createdAt }]);
+    expect(res.plan?.stuckRefunds).toEqual([{
+      id: s.refund.id, bookingReference: s.paid.reference, amountCents: 1200, currency: 'USD',
+      apiAttemptedAt: s.apiAttemptedAt.toISOString(),
+    }]);
+
+    // Nothing left the building, nothing was written, nothing was spent.
+    expect(alerts.sent).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+    expect(s.log.writes).toEqual([]);
+    expect(await s.log.wasSent(s.stuck.id, 'payment_recovery')).toBe(false);
+    expect(budget.sent).toBe(0);
+    expect(budget.report().suppressed).toBe(0);
+
+    // No customer PII in the report.
+    const json = JSON.stringify(res);
+    expect(json).not.toContain('maya@example.com');
+    expect(json).not.toContain('+34600000000');
+    expect(json).not.toContain('Silva');
+  });
+
+  it('consumes nothing — a real sweep afterwards still alerts and emails, with its shape unchanged', async () => {
+    const s = await seedAll();
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const deps = {
+      bookings: s.bookings, log: s.log, alerts, email, baseUrl: 'https://ceylonhop.com', linkSecret: 'sek',
+      payments: s.payments, refunds: s.refunds,
+    };
+
+    await runWatchdog(later(31), { ...deps, dryRun: true });
+    const real = await runWatchdog(later(31), deps);
+
+    expect(real).toEqual({ stuckPending: 2, paidUnconfirmed: 1, recoveryEmails: 1, stuckRefunds: 1 });
+    expect(real).not.toHaveProperty('plan');
+    expect(alerts.sent).toHaveLength(4);
+    expect(email.sent).toHaveLength(1);
   });
 });

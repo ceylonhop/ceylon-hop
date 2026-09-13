@@ -5,6 +5,8 @@ import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { InMemoryRefundRepo } from '../db/refundRepo';
+import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { issueSessionCookie } from '../lib/opsMiddleware';
@@ -374,6 +376,90 @@ describe('POST /admin/jobs/watchdog', () => {
     const { app } = makeApp();
     const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(res.status).toBe(200);
+  });
+});
+
+// Dry run — lets the owner see, against prod, what the watchdog's first scheduled run would
+// page about before it is switched on. Must be read-only end to end.
+describe('POST /admin/jobs/watchdog?dryRun=1', () => {
+  const ago = (min: number) => new Date(Date.now() - min * 60_000);
+
+  async function seeded() {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const refunds = new InMemoryRefundRepo(bookings, payments);
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({
+      adminApiKey: KEY, auth, bookings, payments, refunds, notificationLog, email, alerts,
+      bookingBaseUrl: 'https://ceylonhop.com', bookingLinkSecret: 'sek',
+    });
+    const base = { mode: 'single' as const, input: { ...valid, vehicleType: 'car' as const }, total: 5000, amountDueNow: 5000, currency: 'USD' };
+
+    const stuck = await bookings.create(base);
+    await bookings.setStatus(stuck.id, 'payment_pending');
+    (await bookings.get(stuck.id))!.createdAt = ago(45).toISOString();
+
+    const paid = await bookings.create(base);
+    await bookings.setStatus(paid.id, 'payment_pending');
+    await bookings.setStatus(paid.id, 'paid');
+    (await bookings.get(paid.id))!.createdAt = ago(60).toISOString();
+    const p = await payments.create({
+      bookingId: paid.id, provider: 'payhere', orderId: paid.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `web:${paid.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    const refund = await refunds.request({
+      bookingId: paid.id, amountCents: 1200, currency: 'USD', reason: 'Customer cancelled', requestedBy: 'founder@test',
+    });
+    const apiAttemptedAt = ago(60);
+    (refunds as unknown as { rows: Map<string, unknown> }).rows.set(refund.id, {
+      ...refund, status: 'api_processing', apiAttemptedAt,
+    });
+
+    return {
+      app, notificationLog, email, alerts, refund, apiAttemptedAt,
+      stuck: (await bookings.get(stuck.id))!, paid: (await bookings.get(paid.id))!,
+    };
+  }
+
+  it('lists the stuck-pending, paid-unconfirmed and stuck-refund items and sends nothing', async () => {
+    const s = await seeded();
+    const res = await s.app.request('/admin/jobs/watchdog?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body).toMatchObject({ dryRun: true, stuckPending: 1, paidUnconfirmed: 1, recoveryEmails: 1, stuckRefunds: 1 });
+    expect(body.plan).toEqual({
+      stuckPending: [{ reference: s.stuck.reference, createdAt: s.stuck.createdAt }],
+      recoveryEmails: [{ reference: s.stuck.reference, createdAt: s.stuck.createdAt }],
+      paidUnconfirmed: [{ reference: s.paid.reference, createdAt: s.paid.createdAt }],
+      stuckRefunds: [{
+        id: s.refund.id, bookingReference: s.paid.reference, amountCents: 1200, currency: 'USD',
+        apiAttemptedAt: s.apiAttemptedAt.toISOString(),
+      }],
+    });
+
+    expect(s.alerts.sent).toHaveLength(0);
+    expect(s.email.sent).toHaveLength(0);
+    expect(await s.notificationLog.wasSent(s.stuck.id, 'payment_recovery')).toBe(false);
+    expect(JSON.stringify(body)).not.toContain('maya@example.com');
+  });
+
+  it('403 for a finance session (no admin:jobs)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/watchdog?dryRun=1', {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('200 for the system key', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/watchdog?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).dryRun).toBe(true);
   });
 });
 

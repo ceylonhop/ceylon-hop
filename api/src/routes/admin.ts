@@ -582,6 +582,16 @@ export function adminRoutes(deps: {
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
+    // Dry run: report what a real sweep WOULD alert on and email, and return. No budget (nothing
+    // is spent) and so no burst alert — read-only has to mean the whole tick, same as the
+    // notifications dry run above. Lets the owner see prod's first run before scheduling it.
+    if (c.req.query('dryRun')) {
+      const preview = await runWatchdog(new Date(), {
+        bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, dryRun: true,
+      });
+      return c.json({ ...preview, dryRun: true }, 200);
+    }
+
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
     const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget });
     const burst = budget && burstAlert(budget, 'watchdog');

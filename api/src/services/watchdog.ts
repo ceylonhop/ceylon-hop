@@ -49,14 +49,20 @@ export async function runWatchdog(
     // are never capped: they are how a human finds out anything is wrong, so throttling
     // them would hide the very burst this budget exists to surface.
     budget?: SendBudget;
+    // Report what a real sweep WOULD do and do none of it: no alert, no customer email, no
+    // notification-log claim (claim writes a row), no budget spend. Read-only repo calls only.
+    // The counts then mean "would alert / would email", and `plan` names the items.
+    dryRun?: boolean;
   },
 ): Promise<{
   stuckPending: number;
   paidUnconfirmed: number;
   recoveryEmails: number;
   stuckRefunds: number;
+  plan?: WatchdogPlan;
 }> {
-  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget } = deps;
+  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, dryRun } = deps;
+  const plan: WatchdogPlan = { stuckPending: [], paidUnconfirmed: [], recoveryEmails: [], stuckRefunds: [] };
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
@@ -80,6 +86,15 @@ export async function runWatchdog(
   }
   let recoveryEmails = 0;
   for (const b of stuck) {
+    if (dryRun) {
+      plan.stuckPending.push({ reference: b.reference, createdAt: b.createdAt });
+      // wasSent, not claim: a dry run must not reserve the send.
+      if (email && baseUrl && linkSecret && !(await log.wasSent(b.id, 'payment_recovery'))) {
+        plan.recoveryEmails.push({ reference: b.reference, createdAt: b.createdAt });
+        recoveryEmails += 1;
+      }
+      continue;
+    }
     await alerts.send({
       severity: 'critical',
       kind: 'watchdog_stuck_pending',
@@ -125,6 +140,10 @@ export async function runWatchdog(
     // assert an email that never went out, and the same key gates the real send later.
     if (payments && (await payments.hasManualSettlement(b.id))) continue;
     paidUnconfirmed += 1;
+    if (dryRun) {
+      plan.paidUnconfirmed.push({ reference: b.reference, createdAt: b.createdAt });
+      continue;
+    }
     await alerts.send({
       severity: 'critical',
       kind: 'watchdog_paid_unconfirmed',
@@ -141,6 +160,16 @@ export async function runWatchdog(
     for (const refund of await refunds.listStuckApi(new Date(now.getTime() - STUCK_REFUND_MS))) {
       stuckRefunds += 1;
       const booking = await bookings.get(refund.bookingId);
+      if (dryRun) {
+        plan.stuckRefunds.push({
+          id: refund.id,
+          bookingReference: booking?.reference ?? refund.bookingId,
+          amountCents: refund.amountCents,
+          currency: refund.currency,
+          apiAttemptedAt: refund.apiAttemptedAt?.toISOString() ?? null,
+        });
+        continue;
+      }
       await alerts.send({
         severity: 'critical',
         kind: 'refund_stuck_processing',
@@ -156,5 +185,27 @@ export async function runWatchdog(
     }
   }
 
-  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
+  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds, ...(dryRun ? { plan } : {}) };
+}
+
+// Dry-run report. Identifiers only — deliberately no customer name, email or phone, since the
+// owner runs this against prod and pastes the output around to decide what to exclude.
+export interface WatchdogBookingItem {
+  reference: string;
+  createdAt: string;
+}
+
+export interface WatchdogRefundItem {
+  id: string;
+  bookingReference: string;
+  amountCents: number;
+  currency: string;
+  apiAttemptedAt: string | null;
+}
+
+export interface WatchdogPlan {
+  stuckPending: WatchdogBookingItem[];
+  paidUnconfirmed: WatchdogBookingItem[];
+  recoveryEmails: WatchdogBookingItem[];
+  stuckRefunds: WatchdogRefundItem[];
 }
