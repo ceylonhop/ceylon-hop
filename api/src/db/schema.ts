@@ -72,6 +72,10 @@ export const bookings = pgTable(
     // The engine could not price this booking, so `total` is a placeholder and checkout must
     // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
     needsPricing: boolean('needs_pricing'),
+    // Promo codes (spec 2026-09-14 §8.1, migration 0050). Both null unless the booking was made with
+    // a code. Uses are COUNTED from these plus payments — never stored as a counter.
+    promoCodeId: uuid('promo_code_id').references(() => promoCodes.id),
+    promoHoldUntil: timestamp('promo_hold_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -86,6 +90,7 @@ export const bookings = pgTable(
       'bookings_status_valid',
       sql`${t.status} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
     ),
+    index('bookings_promo_code_idx').on(t.promoCodeId),
   ],
 );
 
@@ -715,3 +720,28 @@ export const distanceCache = pgTable(
   },
   (t) => [unique('distance_cache_pair').on(t.fromKey, t.toKey)],
 );
+
+// Promo codes for website bookings (spec 2026-09-14 §8.1) — migration 0050. `code` is stored
+// normalised (upper-case) and is unique forever, including switched-off codes.
+export const promoCodes = pgTable('promo_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: text('code').notNull(),
+  method: text('method').notNull(),
+  value: integer('value').notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  maxUses: integer('max_uses').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => [
+  unique('promo_codes_code_unique').on(t.code),
+  check('promo_codes_code_shape', sql`${t.code} ~ '^[A-Z0-9-]{3,32}$'`),
+  check('promo_codes_method_valid', sql`${t.method} in ('fixed', 'percentage')`),
+  check('promo_codes_value_valid', sql`(${t.method} = 'percentage' AND ${t.value} BETWEEN 100 AND 3000) OR (${t.method} = 'fixed' AND ${t.value} > 0)`),
+  check('promo_codes_max_uses_positive', sql`${t.maxUses} >= 1`),
+  check('promo_codes_window_valid', sql`${t.startsAt} IS NULL OR ${t.startsAt} < ${t.expiresAt}`),
+  check('promo_codes_created_by_present', sql`btrim(${t.createdBy}) <> ''`),
+]);

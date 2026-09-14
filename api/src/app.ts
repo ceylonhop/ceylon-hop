@@ -55,6 +55,7 @@ import {
   type CustomerShortLinkRepo,
 } from './db/customerShortLinkRepo';
 import { customerShortLinkRoutes } from './routes/customerShortLink';
+import type { PromoCodeRepo } from './db/promoCodeRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -82,6 +83,7 @@ export interface AppDeps {
   customerShortLinksEnabled?: boolean;
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
+  promoCodes?: PromoCodeRepo;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).

@@ -106,3 +106,61 @@ undefined
    Start at  17:49:01
    Duration  10.39s (transform 5.97s, setup 0ms, import 41.44s, tests 8.46s, environment 22ms)
 ```
+
+## Task 3: promo_codes table and code storage
+
+**Deviation (wiring moved forward from Task 5).** The first gate run failed an existing guard,
+`src/serverWiring.test.ts`: *"not constructed in server.ts: PostgresPromoCodeRepo"*. That test
+requires every `Postgres*Repo` under `src/db` to be constructed in `server.ts` as soon as it
+exists, while the plan only wires it in Task 5. Smallest fix, no behaviour change: this task
+also adds `promoCodes?: PromoCodeRepo` to `AppDeps` (type import only) and the plan's Task 5
+`server.ts` line `promoCodes: new PostgresPromoCodeRepo(db)`. `app.ts` does not read the dep
+until Task 5, so nothing routes through it yet. Task 5 therefore skips its Step 5 (already done)
+and only adds the rest of the `AppDeps` fields.
+
+**Postgres:** ran locally against `postgres://localhost:5432/ceylonhop_test`. Migration 0050
+applied from the database's prior 0049 state, the `PostgresPromoCodeRepo` contract passed, and
+`rlsEnabled.test.ts` passed (so `promo_codes` has RLS on). The gate was run twice: plain
+`npm run check` (Postgres suites skipped, as in CI-less dev) and with `DATABASE_URL_TEST` set.
+The Postgres-backed gate also exited 0: 168 files passed, 2631 tests passed, 1 expected fail.
+The green run below is the Postgres-backed run of the three files the plan names.
+
+**Red** (`npx vitest run src/db/promoCodeRepo.test.ts`):
+
+```
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/db/promoCodeRepo.test.ts [ src/db/promoCodeRepo.test.ts ]
+Error: Cannot find module './promoCodeRepo' imported from /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api/src/db/promoCodeRepo.test.ts
+ ❯ src/db/promoCodeRepo.test.ts:5:1
+      3| import { describe, it, expect } from 'vitest';
+      4| import { randomUUID } from 'node:crypto';
+      5| import {
+       | ^
+      6|   InMemoryPromoCodeRepo,
+      7|   PromoCodeTakenError,
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  17:49:58
+   Duration  113ms (transform 19ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+```
+
+**Green** (`DATABASE_URL_TEST=postgres://localhost:5432/ceylonhop_test npx vitest run src/db/promoCodeRepo.test.ts src/db/postgres.test.ts src/db/rlsEnabled.test.ts`):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  3 passed (3)
+      Tests  77 passed (77)
+   Start at  17:51:22
+   Duration  1.68s (transform 274ms, setup 0ms, import 952ms, tests 1.17s, environment 0ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  165 passed | 3 skipped (168)
+      Tests  2567 passed | 1 expected fail | 64 skipped (2632)
+   Start at  17:52:50
+   Duration  10.57s (transform 6.33s, setup 0ms, import 41.51s, tests 8.94s, environment 11ms)
+```
