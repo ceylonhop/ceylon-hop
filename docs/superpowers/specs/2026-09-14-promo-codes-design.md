@@ -267,13 +267,21 @@ pass it to `quote()`, and add `discountCents` and `totalBeforeDiscountCents` to 
 
 ### 8.2 Repositories
 
-- `PromoCodeRepo` — `create`, `get`, `getByCode`, `list`, `update`, `usage(codeId, now)`.
-  In-memory and Postgres implementations satisfy **one shared contract test**, as in
-  `quoteDiscountRepo.test.ts`. The in-memory implementation is given the in-memory bookings and
-  payments repos so it can apply §5.1 exactly.
-- `BookingRepo.create` accepts an optional `promo: { codeId, discountCents, holdUntil }`; the lock,
-  recount and refusal happen inside its transaction. A new `BookingRepo.reholdPromo(bookingId, now)`
-  performs §6.3. Both are additive changes to an existing interface.
+- `PromoCodeRepo` — `create`, `get`, `getByCode`, `list`, `update`. Storage of codes only; it
+  never counts uses. In-memory and Postgres implementations satisfy **one shared contract test**, as
+  in `quoteDiscountRepo.test.ts`.
+- **Counting lives on `BookingRepo`** (amended while planning, 2026-09-14), because the count must
+  run inside the booking transaction and needs both `bookings` and `payments`:
+  - `create(b, { idempotencyKey?, promo?: { code, now } })` — locks the code row, re-checks §4.2
+    and the count, then inserts with `promo_code_id` and `promo_hold_until`.
+  - `promoUsage(codeId, now)` → `{ paid, held }`.
+  - `promoBookings(codeId, now)` → every booking that carried the code, classified
+    `paid` / `held` / `released`.
+  - `reholdPromo(bookingId, code, now)` — performs §6.3.
+  All additive. The in-memory repo mirrors §5.1 exactly: it is handed the in-memory payments repo
+  (`attachPayments`) so "a succeeded payment" means the same thing in both, and it serialises
+  concurrent takers of one code with a per-code lock in place of `FOR UPDATE`. One contract test
+  runs against both implementations.
 
 ## 9. Testing
 
