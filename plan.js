@@ -201,7 +201,10 @@ const state = {
   pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
   legs: buildLegs(startStops, nightsParam, gapsParam),
-  hideTemplates: params.has('stops') || params.has('nights') || params.has('dates')
+  hideTemplates: params.has('stops') || params.has('nights') || params.has('dates'),
+  // The WHEN step's first question: null = not answered yet (show the fork alone),
+  // 'known' = show the per-leg list, 'later' = every leg flexible. See renderDatesStep.
+  datesMode: null
 };
 // Restore the travel dates the customer already chose: the booking step passes them back
 // as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
@@ -1027,9 +1030,44 @@ document.querySelector('#sum-wa .ic').innerHTML=ICON.wa;
 // route step. Reordering legs whose pick-up/drop-off are fixed would unchain the itinerary
 // (a leg's drop-off ≠ the next leg's pick-up), which corrupts the stop list handed to booking.
 // Reordering lives on the route step; here you only assign dates.
+/* Switching to "later" must not leave dates behind the customer's back: booking would then be
+   handed a date by someone who has just been told nothing is locked in. The dates are stashed
+   rather than destroyed, so changing their mind back doesn't cost them the work they did. */
+let datesStash=null;
+function setDatesMode(mode){
+  if(mode==='later'){
+    if(state.legs.some(l=>l.date)){
+      datesStash=state.legs.map(l=>l.date);
+      state.legs.forEach(l=>{ l.date=null; });
+    }
+  } else if(mode==='known'){
+    // Only restore onto the same itinerary it was taken from — a trip back to the route step
+    // can add or remove legs, and index k would then mean a different journey.
+    if(datesStash && datesStash.length===state.legs.length){
+      state.legs.forEach((l,i)=>{ l.date=datesStash[i]||null; });
+    }
+    datesStash=null;
+  }
+  state.datesMode=mode;
+  renderDatesStep();
+}
+const FLEX_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
 function renderDatesStep(){
   clearLegDatePops();
+  // A leg that already carries a date has answered the fork on the customer's behalf — a
+  // deep-link back from booking, a restored URL, or a date set before the fork was touched.
+  if(state.datesMode==null && state.legs.some(l=>l.date)) state.datesMode='known';
+  const mode=state.datesMode;
+  const forkKnown=document.getElementById('fork-known');
+  const forkLater=document.getElementById('fork-later');
+  if(forkKnown) forkKnown.setAttribute('aria-pressed', String(mode==='known'));
+  if(forkLater) forkLater.setAttribute('aria-pressed', String(mode==='later'));
+  const flexNote=document.getElementById('dates-flex-note');
+  if(flexNote) flexNote.hidden = mode!=='later';
   const list=document.getElementById('dates-list');
+  // The rows are always BUILT, only hidden: they carry the per-leg inputs the rest of the step
+  // reads, and a date restored from the URL must land in one whichever way the fork is set.
+  list.hidden = mode!=='known';
   list.innerHTML='';
   const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
   const flags=outOfOrderFlags();
@@ -1049,7 +1087,10 @@ function renderDatesStep(){
         <span class="dr-route">${routeTxt}</span>
       </div>
       <div class="dr-date">
-        <input type="date" class="dates-step-input" data-placeholder="${isStay?'Arrival date':'Travel date'}" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
+        <input type="date" class="dates-step-input" data-placeholder="Add a date" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
+        ${leg.date
+          ? '<button type="button" class="dr-clear">✕ Make flexible</button>'
+          : `<span class="dr-flex">${FLEX_ICO} Flexible for now</span>`}
       </div>
       ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
     list.appendChild(row);
@@ -1061,6 +1102,10 @@ function renderDatesStep(){
     if(floor) inp.dataset.min=fmtISO(floor);
     enhanceLegDate(inp);
     inp.addEventListener('change',()=>{ state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null; renderDatesStep(); });
+    // Until this existed a picked date could not be unpicked: the datepicker replaces the native
+    // input with a hidden one and its popover has no clear action, so a mis-tap was permanent.
+    const clear=row.querySelector('.dr-clear');
+    if(clear) clear.addEventListener('click',()=>{ state.legs[i].date=null; renderDatesStep(); });
   });
   // gate the "Continue to booking" CTA while any leg is dated out of order — the customer
   // must fix the dates (or reorder on the route step) before we hand the route to booking
@@ -1223,6 +1268,8 @@ document.getElementById('request-btn').addEventListener('click',showDatesStep);
 const backRouteBtn=document.getElementById('back-route'); if(backRouteBtn) backRouteBtn.addEventListener('click',backToRoute);
 const datesBack2=document.getElementById('dates-back2'); if(datesBack2) datesBack2.addEventListener('click',backToRoute);
 const datesContinue=document.getElementById('dates-continue'); if(datesContinue) datesContinue.addEventListener('click',goToBooking);
+const forkKnownBtn=document.getElementById('fork-known'); if(forkKnownBtn) forkKnownBtn.addEventListener('click',()=>setDatesMode('known'));
+const forkLaterBtn=document.getElementById('fork-later'); if(forkLaterBtn) forkLaterBtn.addEventListener('click',()=>setDatesMode('later'));
 
 // ---- ready-made route templates: load a tour's stops as legs ----
 (function(){
@@ -1272,4 +1319,6 @@ const datesContinue=document.getElementById('dates-continue'); if(datesContinue)
 render();
 // deep-link: arriving with ?step=dates (e.g. “Add your dates” / Back from the booking page)
 // jumps straight to the When step instead of the route-building view
-if((params.get('step')||'').toLowerCase()==='dates') showDatesStep();
+// Arriving this way IS the answer to the fork: booking's "Add your dates →" and "Back to
+// planner" both land here, and that customer came back to work on dates.
+if((params.get('step')||'').toLowerCase()==='dates'){ state.datesMode='known'; showDatesStep(); }

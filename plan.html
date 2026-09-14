@@ -323,7 +323,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dates-head{max-width:640px;margin:0 0 26px}
   .dates-head h2{margin:.3rem 0 .4rem}
   .dates-head p{color:var(--ink-soft);margin:0}
+  /* the know/later fork — the step's first question, above the list it reveals */
+  .dates-fork{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:720px;margin:0 0 14px}
+  .fork-btn{display:flex;align-items:flex-start;gap:11px;text-align:left;cursor:pointer;background:var(--white);border:1.5px solid var(--line);border-radius:var(--r);padding:16px 17px;font-family:inherit;box-shadow:var(--shadow-s);transition:border-color .15s,box-shadow .15s,transform .15s}
+  .fork-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .fork-btn[aria-pressed="true"]{border-color:var(--accent-deep);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2)}
+  .fork-btn:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.3)}
+  .fork-btn svg{width:22px;height:22px;flex:none;color:var(--accent-deep);margin-top:1px}
+  .fork-btn svg .wp{fill:var(--saffron);stroke:none}
+  .fork-btn .fk-t{display:block;font-weight:700;font-size:.98rem;color:var(--ink);line-height:1.25}
+  .fork-btn .fk-d{display:block;font-size:.79rem;color:var(--ink-soft);line-height:1.4;margin-top:3px}
+  .dates-flexnote{display:flex;gap:12px;align-items:flex-start;max-width:720px;margin:0;background:var(--pc-teal);border:1px solid #bfe6df;border-radius:var(--r);padding:17px 19px;font-size:.88rem;line-height:1.5;color:#0c5b57}
+  .dates-flexnote[hidden]{display:none}
+  .dates-flexnote svg{width:21px;height:21px;color:var(--teal-deep);flex:none;margin-top:1px}
+  .dates-flexnote b{color:#08403e;font-weight:700}
+  @media(max-width:560px){.dates-fork{grid-template-columns:1fr}}
   .dates-list{display:grid;gap:10px;max-width:720px}
+  .dates-list[hidden]{display:none}
   .date-row{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:14px 18px}
   .date-row.stay{background:#fffdf6;border-color:color-mix(in srgb,var(--saffron) 32%,var(--line))}
   .date-row{position:relative}
@@ -333,8 +349,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
   .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;line-height:1.22;color:var(--ink);min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
-  .dr-date{flex:none}
+  .dr-date{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
   .dr-date .dp-btn{min-width:190px}
+  /* what a blank leg actually means, said on the row itself — and the way back out of a date */
+  .dr-flex{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;font-weight:600;color:var(--teal-deep);background:var(--pc-teal);border-radius:999px;padding:2px 9px}
+  .dr-flex svg{width:12px;height:12px;flex:none}
+  .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
+  .dr-clear:hover{color:var(--accent-deep)}
   /* out-of-order date caution — same amber "note" theme as the hotels/stay notes */
   .dr-warn{flex:1 1 100%;display:flex;gap:.5rem;align-items:flex-start;margin-top:2px;padding:9px 12px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;font-size:.79rem;line-height:1.4;color:#7a5512}
   .dr-warn .dr-warn-ic{display:grid;place-items:center;flex:none;margin-top:1px}
@@ -602,10 +623,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <button class="back-to-route" id="back-route"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Back to route</button>
     <div class="dates-head">
       <span class="eyebrow">Step 2 · When</span>
-      <h2>Add your dates</h2>
-      <p>Pop a date on any transfer — or leave them flexible and we’ll confirm with you on WhatsApp. Transfers don’t need dates; a chauffeur-guide trip does, since it’s priced per day.</p>
+      <h2>When are you travelling?</h2>
+      <p>Transfers don’t need dates — a chauffeur-guide trip does, since it’s priced per day.</p>
     </div>
-    <div class="dates-list" id="dates-list"></div>
+    <!-- Ask the answerable question before showing a single date field: someone who has no dates
+         yet used to face a list of empty inputs that read as mandatory, with nothing saying a
+         blank leg has always MEANT flexible. Never a gate — Continue works whether or not this
+         is answered (see plan.js: datesMode). -->
+    <div class="dates-fork" id="dates-fork">
+      <button type="button" class="fork-btn" id="fork-known" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>
+        <span><span class="fk-t">I know my dates</span><span class="fk-d">Put a date on each transfer</span></span>
+      </button>
+      <button type="button" class="fork-btn" id="fork-later" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>
+        <span><span class="fk-t">I’ll decide my dates later</span><span class="fk-d">We’ll confirm with you on WhatsApp</span></span>
+      </button>
+    </div>
+    <div class="dates-flexnote" id="dates-flex-note" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+      <span><b>Nothing locked in — that’s fine.</b> We’ll confirm every leg with you on WhatsApp before you travel, and you can add dates any time after you book.</span>
+    </div>
+    <div class="dates-list" id="dates-list" hidden></div>
     <div class="dates-actions">
       <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
       <button class="btn btn-primary btn-lg" id="dates-continue">Continue to select service →</button>
@@ -624,6 +663,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=f8efcf9014"></script>
+<script src="plan.js?v=6b66b95c38"></script>
 </body>
 </html>
