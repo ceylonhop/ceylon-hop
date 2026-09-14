@@ -345,3 +345,56 @@ undefined
    Start at  18:05:21
    Duration  10.63s (transform 5.99s, setup 0ms, import 41.81s, tests 8.71s, environment 12ms)
 ```
+
+## Task 7: Founder API for managing codes
+
+Plan followed as written; no deviations. The capability `promo_codes:manage` is added to the
+`OpsAction` union and the founder set only; `ops.roles.test.ts` and `opsUi.test.ts` derive their
+expectations from the matrix and pass unchanged. The routes are mounted before
+`/admin/quote`, with their own rate limiter.
+
+Red run: 7 of 8 fail with **404** (no route mounted). The one that already passed is "answers 404
+for an unknown or malformed id", which holds vacuously before the router exists.
+
+**Postgres:** the Postgres-backed gate also exited 0 (172 files passed, 2703 tests passed,
+1 expected fail).
+
+**Red** (`npx vitest run src/routes/promoCodes.test.ts`):
+
+```
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+ FAIL  src/routes/promoCodes.test.ts > /admin/promo-codes > with the flag off: creating is refused, switching a code off still works
+SyntaxError: Unexpected non-whitespace character after JSON at position 4 (line 1 column 5)
+ ❯ src/routes/promoCodes.test.ts:107:21
+    105|   it('with the flag off: creating is refused, switching a code off sti…
+    106|     const on = world();
+    107|     const created = await (await on.call('POST', '', NEW)).json();
+       |                     ^
+    108|     const offApp = createApp({ auth: AUTH, adminApiKey: 'k', bookingLi…
+    109|     const req = (method: string, path: string, body: unknown) => offAp…
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+ Test Files  1 failed (1)
+      Tests  7 failed | 1 passed (8)
+   Start at  18:06:45
+   Duration  738ms (transform 364ms, setup 0ms, import 630ms, tests 26ms, environment 0ms)
+```
+
+**Green** (`npx vitest run src/routes/promoCodes.test.ts src/routes/ops.roles.test.ts src/routes/opsUi.test.ts`):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  3 passed (3)
+      Tests  155 passed (155)
+   Start at  18:07:46
+   Duration  1.28s (transform 1.27s, setup 0ms, import 2.40s, tests 466ms, environment 0ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  169 passed | 3 skipped (172)
+      Tests  2626 passed | 1 expected fail | 77 skipped (2704)
+   Start at  18:07:56
+   Duration  10.76s (transform 6.07s, setup 0ms, import 42.33s, tests 8.88s, environment 12ms)
+```

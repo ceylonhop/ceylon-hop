@@ -9,6 +9,7 @@ import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import { shareCardRoutes } from './routes/shareCard';
+import { promoCodeRoutes } from './routes/promoCodes';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -343,6 +344,9 @@ export function createApp(deps: AppDeps = {}) {
   // GET /admin/quote (now a bare 302 redirect to /ops — T2) unthrottled, intentionally.
   const adminQuoteLimiter = rateLimit({ ...rl, max: rl.max * 4, methods: ['POST', 'GET'] });
   app.use('/admin/quote/*', (c, next) => (c.req.path === '/admin/quote' ? next() : adminQuoteLimiter(c, next)));
+  // Founder promo-code API (spec 2026-09-14 §6.5). Session-gated, but still throttled like the other
+  // admin surfaces. Hono's '/admin/promo-codes/*' also matches the bare parent path.
+  app.use('/admin/promo-codes/*', rateLimit({ ...rl, methods: ['POST', 'GET', 'PATCH'] }));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
@@ -503,6 +507,14 @@ export function createApp(deps: AppDeps = {}) {
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
+  app.route('/admin/promo-codes', promoCodeRoutes({
+    promoCodes,
+    bookings,
+    auth: opsAuthCfg,
+    allowedOrigins,
+    enabled: promoCodesEnabled,
+    now: deps.promoNow,
+  }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, bookings, placeResolutions,
     auth: opsAuthCfg,
