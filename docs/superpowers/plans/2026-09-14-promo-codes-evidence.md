@@ -286,3 +286,62 @@ other checkout cases pin the hold and the 409s.
    Start at  18:01:40
    Duration  10.33s (transform 5.75s, setup 0ms, import 40.97s, tests 8.71s, environment 10ms)
 ```
+
+## Task 6: Estimate previews a code
+
+Implementation follows the plan as written (`quote.ts` deps, `previewPromo`, the `/v2/estimate`
+handler, and the `quoteRoutes` mount in `app.ts`). Red run: 3 of 5 fail — the strict intent
+schema answers **400** for the `promoCode` field, as the plan predicted; "adds nothing when no code
+is sent" and "still rejects any other unknown field" already pass, as they should.
+
+**Deviation (test fixture only).** After implementing, "previews the discount next to the
+unchanged price" still failed: the preview answered `{ error: 'promo_code_not_eligible' }`
+instead of a discount. Cause: the plan's fixture, Kandy → Nanu Oya on the fake maps adapter,
+prices at **exactly $29.00, the car minimum** (`totalBeforeDiscountCents: 2900`), so the vehicle
+floor leaves no headroom and a 10% code resolves to $0 — which is precisely the spec's
+owner-approved §4.3 row 3 ("$29.00 at 10% → `promo_code_not_eligible`"). The implementation was
+right; changing it to make the test pass would have broken the spec. Fix: the fixture now uses
+Kandy → Ella (`routeId` is identity only and does not feed pricing), and the test asserts a
+precondition that the undiscounted price is above the level where the floor could bind, so a
+future fixture change fails loudly rather than misleadingly. The red evidence below predates the
+fixture change; its failure (the 400 from the strict schema) does not depend on the route.
+
+**Red** (`npx vitest run src/routes/promoCodeEstimate.test.ts`):
+
+```
+}
++ Received:
+undefined
+ ❯ src/routes/promoCodeEstimate.test.ts:81:93
+     79|
+     80|     await w.bookings.create(booking, { promo: { code, now: NOW } });
+     81|     expect((await (await w.send({ ...V2_PRIVATE, promoCode: 'SAVE10' }…
+       |                                                                                             ^
+     82|   });
+     83|
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed (5)
+   Start at  18:02:47
+   Duration  237ms (transform 97ms, setup 0ms, import 138ms, tests 23ms, environment 0ms)
+```
+
+**Green** (`npx vitest run src/routes/promoCodeEstimate.test.ts src/routes/quote.test.ts`):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  2 passed (2)
+      Tests  40 passed (40)
+   Start at  18:05:11
+   Duration  789ms (transform 463ms, setup 0ms, import 822ms, tests 80ms, environment 0ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  168 passed | 3 skipped (171)
+      Tests  2618 passed | 1 expected fail | 77 skipped (2696)
+   Start at  18:05:21
+   Duration  10.63s (transform 5.99s, setup 0ms, import 41.81s, tests 8.71s, environment 12ms)
+```

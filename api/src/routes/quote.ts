@@ -18,6 +18,15 @@ import {
   type WebQuoteIntent,
 } from '../quote/webQuoteV2';
 import { randomBytes } from 'node:crypto';
+import type { BookingRepo } from '../db/bookingRepo';
+import type { PromoCodeRepo } from '../db/promoCodeRepo';
+import {
+  normalizePromoCode,
+  promoCodeAvailability,
+  promoDiscountRequest,
+  type PromoCode,
+  type PromoCodeErrorCode,
+} from '../domain/promoCode';
 
 const ExtraCode = z.enum(EXTRA_CODES);
 const ENGINE_ERRORS = new Set(['TOO_BIG', 'UNKNOWN_EXTRA', 'NO_LEGS']);
@@ -142,10 +151,31 @@ export function quoteRoutes(deps: {
   v2Enabled?: boolean;
   now?: () => Date;
   zones?: ZonesRepo;
+  promoCodes?: PromoCodeRepo;
+  bookings?: BookingRepo; // read-only here: the preview counts uses, it never takes one
+  promoCodesEnabled?: boolean;
+  promoNow?: () => Date;
 } = {}) {
   // No repo injected => an empty in-memory one => zero active zones => pricing identical to today.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+
+  // §6.4 — resolve a code for a PREVIEW. A plain read with no lock: it can say "used up", but a code
+  // that previews fine can still be taken by someone else before the customer books.
+  async function previewPromo(raw: unknown): Promise<{ code: PromoCode } | { error: PromoCodeErrorCode }> {
+    const normalized = normalizePromoCode(raw);
+    if (!deps.promoCodesEnabled || !deps.promoCodes || !normalized) return { error: 'promo_code_invalid' };
+    const code = await deps.promoCodes.getByCode(normalized);
+    if (!code) return { error: 'promo_code_invalid' };
+    const now = (deps.promoNow ?? (() => new Date()))();
+    const unavailable = promoCodeAvailability(code, now);
+    if (unavailable) return { error: unavailable };
+    if (deps.bookings) {
+      const { paid, held } = await deps.bookings.promoUsage(code.id, now);
+      if (paid + held >= code.maxUses) return { error: 'promo_code_used_up' };
+    }
+    return { code };
+  }
 
   const r = new Hono();
   r.post('/', async (c) => {
@@ -207,17 +237,52 @@ export function quoteRoutes(deps: {
   r.post('/v2/estimate', async (c) => {
     if (!deps.v2Enabled) return c.notFound();
     if (!deps.maps) return c.json({ error: 'not_available' }, 501);
-    const parsed = WebQuoteIntentSchema.safeParse(await c.req.json().catch(() => null));
+    const raw = await c.req.json().catch(() => null);
+    // WebQuoteIntentSchema is .strict(), so a promo code is lifted off the body before the intent is
+    // parsed (spec 2026-09-14 §6.4). Every other unknown field is still refused.
+    let rawPromo: unknown;
+    let intentBody: unknown = raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const { promoCode, ...rest } = raw as Record<string, unknown>;
+      rawPromo = promoCode;
+      intentBody = rest;
+    }
+    const parsed = WebQuoteIntentSchema.safeParse(intentBody);
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
     const resolved = await engineRequestFor(parsed.data, deps.maps);
     if (!resolved) return c.json({ error: 'quote_unpriced' }, 422);
     try {
-      const result = quote(resolved.request, await liveCard());
+      const card = await liveCard();
+      const result = quote(resolved.request, card);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
-      return c.json({ ...pub, lineItems: publicLineItems(pub.lineItems), estimated: resolved.estimated, legs: resolved.legs }, 200);
+      let promoCode: Record<string, unknown> | undefined;
+      if (rawPromo !== undefined && rawPromo !== null && rawPromo !== '') {
+        const promo = await previewPromo(rawPromo);
+        if ('error' in promo) {
+          promoCode = { error: promo.error };
+        } else {
+          const discounted = quote(resolved.request, card, promoDiscountRequest(promo.code));
+          // A booking refuses an estimated distance, so a preview on one must not promise a discount.
+          promoCode = !resolved.estimated && (discounted.discountCents ?? 0) > 0
+            ? {
+                code: promo.code.code,
+                discountCents: discounted.discountCents,
+                totalBeforeDiscountCents: discounted.totalBeforeDiscountCents,
+                totalCents: discounted.totalCents,
+              }
+            : { error: 'promo_code_not_eligible' };
+        }
+      }
+      return c.json({
+        ...pub,
+        lineItems: publicLineItems(pub.lineItems),
+        estimated: resolved.estimated,
+        legs: resolved.legs,
+        ...(promoCode ? { promoCode } : {}),
+      }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);

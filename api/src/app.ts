@@ -432,6 +432,10 @@ export function createApp(deps: AppDeps = {}) {
     maps,
     v2Enabled: quoteV2Enabled,
     zones,
+    promoCodes,
+    bookings,
+    promoCodesEnabled,
+    promoNow: deps.promoNow,
   }));
   app.route(
     '/webhooks',
