@@ -230,3 +230,59 @@ TypeError: bookings.attachPayments is not a function
    Start at  17:58:26
    Duration  10.16s (transform 5.37s, setup 0ms, import 38.99s, tests 8.50s, environment 12ms)
 ```
+
+## Task 5: Booking routes accept a code; checkout re-checks the hold
+
+Implementation follows the plan as written, with one carry-over from Task 3: the plan's Step 5
+(`server.ts` wiring `promoCodes: new PostgresPromoCodeRepo(db)`) and the `AppDeps.promoCodes` field
+already landed in Task 3, so this task adds only `promoCodesEnabled` and `promoNow` to `AppDeps`,
+switches the `promoCodeRepo` import from type-only to a value import (for the in-memory default),
+and wires the three deps into `bookingRoutes`. `tsc` exits 0.
+
+The plan's fixture precondition held: a 5 km car hop prices at exactly the $29.00 car minimum, so
+the "limits reduce it to $0 → `promo_code_not_eligible`, no use taken" case is a real test.
+
+Red run: 14 of 15 fail (the code is ignored, so totals are undiscounted and no error is raised).
+The one that already passed is "honours a valid hold even though the code has expired since",
+which only asserts a 200 from checkout and so holds vacuously before the feature exists; the
+other checkout cases pin the hold and the 409s.
+
+**Red** (`npx vitest run src/routes/promoCodeBookings.test.ts`):
+
+```
++ Received
+- 7020
++ 7800
+ ❯ src/routes/promoCodeBookings.test.ts:214:39
+    212|     const res = await w.checkout(w.make(false), b);
+    213|     expect(res.status).toBe(200);
+    214|     expect((await res.json()).amount).toBe(7020);
+       |                                       ^
+    215|   });
+    216| });
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+ Test Files  1 failed (1)
+      Tests  14 failed | 1 passed (15)
+   Start at  17:59:47
+   Duration  850ms (transform 374ms, setup 0ms, import 696ms, tests 65ms, environment 0ms)
+```
+
+**Green** (`npx vitest run src/routes/promoCodeBookings.test.ts src/routes/bookings.test.ts src/routes/checkout.test.ts src/routes/discountReachesBooking.test.ts`):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  4 passed (4)
+      Tests  68 passed (68)
+   Start at  18:01:17
+   Duration  1.05s (transform 1.67s, setup 0ms, import 3.38s, tests 264ms, environment 0ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  167 passed | 3 skipped (170)
+      Tests  2613 passed | 1 expected fail | 77 skipped (2691)
+   Start at  18:01:40
+   Duration  10.33s (transform 5.75s, setup 0ms, import 40.97s, tests 8.71s, environment 10ms)
+```

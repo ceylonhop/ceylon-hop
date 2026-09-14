@@ -55,7 +55,7 @@ import {
   type CustomerShortLinkRepo,
 } from './db/customerShortLinkRepo';
 import { customerShortLinkRoutes } from './routes/customerShortLink';
-import type { PromoCodeRepo } from './db/promoCodeRepo';
+import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -84,6 +84,10 @@ export interface AppDeps {
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
   promoCodes?: PromoCodeRepo;
+  /** Gates accepting and creating codes; a held code is honoured regardless (spec 2026-09-14 §11). */
+  promoCodesEnabled?: boolean;
+  /** Promo-code clock (holds, expiry). Separate from checkoutNow, which signs checkout tokens. */
+  promoNow?: () => Date;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
@@ -181,6 +185,8 @@ export function createApp(deps: AppDeps = {}) {
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
   const shortLinks = deps.shortLinks ?? new InMemoryCustomerShortLinkRepo();
+  const promoCodes = deps.promoCodes ?? new InMemoryPromoCodeRepo();
+  const promoCodesEnabled = deps.promoCodesEnabled ?? config.PROMO_CODES_ENABLED;
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -377,6 +383,9 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       checkoutNow: deps.checkoutNow,
+      promoCodes,
+      promoCodesEnabled,
+      promoNow: deps.promoNow,
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
     }),
