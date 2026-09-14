@@ -398,3 +398,30 @@ SyntaxError: Unexpected non-whitespace character after JSON at position 4 (line 
    Start at  18:07:56
    Duration  10.76s (transform 6.07s, setup 0ms, import 42.33s, tests 8.88s, environment 12ms)
 ```
+
+## Task 8: Full verification
+
+- `cd api && npm run check`: exit 0 after Task 7 (169 files passed, 3 skipped; 2626 tests passed,
+  1 expected fail, 77 skipped). The Postgres suites were skipped in that plain run.
+- Postgres-backed suites: ran locally against `postgres://localhost:5432/ceylonhop_test` during
+  Tasks 3, 4 and 7. Migration 0050 applied cleanly from 0049, the `PostgresPromoCodeRepo` and
+  booking-promo contracts passed (including the concurrent last-use test), and `rlsEnabled.test.ts`
+  passed. The last Postgres-backed gate after Task 7 exited 0 (172 files, 2703 tests passed).
+- `web-tests` `npm run test:all` (vitest, then Playwright): passed. Playwright `.last-run.json`
+  reads `{"status":"passed","failedTests":[]}` (run ended 18:12:49 local time).
+- Runtime caveat: everything above ran on Node v22.17.1 locally; CI runs Node 20 and is the
+  authority for that version.
+
+## Task 8: Full verification
+
+- **`cd api && npm run check`** on the final code (after Task 7): exit 0 — 169 files passed,
+  3 skipped; 2626 tests passed, 1 expected fail, 77 skipped. With
+  `DATABASE_URL_TEST=postgres://localhost:5432/ceylonhop_test`: exit 0 — 172 files passed,
+  2703 tests passed, 1 expected fail.
+- **Postgres suites** (`DATABASE_URL_TEST=postgres://localhost:5432/ceylonhop_test npx vitest run
+  src/db/postgres.test.ts src/db/rlsEnabled.test.ts`): exit 0 — 2 files, 98 tests passed. These ran
+  locally against Postgres 16; CI runs them again on the PR.
+- **web-tests** (`cd web-tests && npm ci && npm run test:all`): exit 0. Vitest: 90 files, 1258
+  tests passed. Playwright (Chromium, already cached locally, so nothing was downloaded): 582
+  passed, 33 skipped, 0 failed (3.4 min). No front-end file changed on this branch.
+- Local Node was v22.17.1 throughout (see Environment); CI pins Node 20.
