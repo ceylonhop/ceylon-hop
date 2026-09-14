@@ -23,6 +23,7 @@ import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
 import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
+import { bookingPromoContract } from './bookingPromo.test';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -1042,5 +1043,17 @@ describe.skipIf(!TEST_URL)('PostgresPromoCodeRepo (integration)', () => {
     const conn = createDb(TEST_URL as string);
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     return new PostgresPromoCodeRepo(conn.db);
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres promo code uses (integration)', () => {
+  bookingPromoContract('contract', async () => {
+    const conn = createDb(TEST_URL as string);
+    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    return {
+      bookings: new PostgresBookingRepo(conn.db),
+      payments: new PostgresPaymentRepo(conn.db),
+      promoCodes: new PostgresPromoCodeRepo(conn.db),
+    };
   });
 });

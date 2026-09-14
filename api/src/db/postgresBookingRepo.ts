@@ -1,22 +1,35 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, exists, gt, inArray, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs } from './schema';
+import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs, payments, promoCodes } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
   type Booking,
   type BookingChannel,
   type StatusAudit,
+  type PromoHold,
+  type PromoBookingUse,
   BookingNotFoundError,
   generateReference,
   PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
+import { toPromoCode } from './promoCodeRow';
+import {
+  PROMO_HELD_STATUSES,
+  PROMO_HOLD_MS,
+  PROMO_PAID_STATUSES,
+  PromoCodeRefusedError,
+  promoCodeAvailability,
+  promoUseState,
+  type PromoCode,
+} from '../domain/promoCode';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 import { track } from '../observability/track';
 
 type BookingRow = typeof bookings.$inferSelect;
+type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 // A Postgres unique-violation (23505). Drizzle wraps the driver error as `Error: Failed
 // query…` with the real PostgresError on `.cause`; the raw postgres.js error carries
@@ -89,6 +102,41 @@ export function safeLegRowsForBooking(bookingId: string, b: NewBooking): NewLegR
 export class PostgresBookingRepo implements BookingRepo {
   constructor(private readonly db: Db) {}
 
+  // SQL twin of promoUseState() (domain/promoCode.ts); bookingPromo.test.ts holds both to the same cases.
+  private succeededPayment() {
+    return exists(
+      this.db
+        .select({ one: sql`1` })
+        .from(payments)
+        .where(and(eq(payments.bookingId, bookings.id), eq(payments.status, 'succeeded'))),
+    );
+  }
+
+  private async countUses(tx: Transaction, codeId: string, now: Date): Promise<{ paid: number; held: number }> {
+    const paid = or(inArray(bookings.status, [...PROMO_PAID_STATUSES]), this.succeededPayment());
+    const held = and(inArray(bookings.status, [...PROMO_HELD_STATUSES]), gt(bookings.promoHoldUntil, now));
+    const [row] = await tx
+      .select({
+        paid: sql<number>`count(*) filter (where ${paid})`.mapWith(Number),
+        held: sql<number>`count(*) filter (where not (${paid}) and ${held})`.mapWith(Number),
+      })
+      .from(bookings)
+      .where(eq(bookings.promoCodeId, codeId));
+    return { paid: row?.paid ?? 0, held: row?.held ?? 0 };
+  }
+
+  /** Lock the code row and prove a use can be taken at `now` (§5.3). */
+  private async takeUse(tx: Transaction, codeId: string, now: Date): Promise<PromoCode> {
+    const [locked] = await tx.select().from(promoCodes).where(eq(promoCodes.id, codeId)).for('update');
+    if (!locked) throw new PromoCodeRefusedError('promo_code_invalid');
+    const code = toPromoCode(locked);
+    const unavailable = promoCodeAvailability(code, now);
+    if (unavailable) throw new PromoCodeRefusedError(unavailable);
+    const { paid, held } = await this.countUses(tx, code.id, now);
+    if (paid + held >= code.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
+    return code;
+  }
+
   private async assemble(row: BookingRow): Promise<Booking> {
     const [cust] = await this.db.select().from(customers).where(eq(customers.id, row.customerId));
     const customer = {
@@ -131,6 +179,14 @@ export class PostgresBookingRepo implements BookingRepo {
           }
         : null,
       termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
+      // Only bookings made with a code carry these, so every other booking's shape is unchanged.
+      ...(row.promoCodeId
+        ? {
+            promoCodeId: row.promoCodeId,
+            promoHoldUntil: row.promoHoldUntil ? row.promoHoldUntil.toISOString() : null,
+            discountTotal: row.discountTotal ?? 0,
+          }
+        : {}),
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -193,7 +249,7 @@ export class PostgresBookingRepo implements BookingRepo {
     };
   }
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking> {
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
     if (opts?.idempotencyKey) {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
@@ -219,9 +275,11 @@ export class PostgresBookingRepo implements BookingRepo {
     throw lastErr;
   }
 
-  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<BookingRow> {
+  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<BookingRow> {
     const c = b.input.customer;
     return this.db.transaction(async (tx) => {
+      // Re-reads the code under FOR UPDATE: a code switched off or filled mid-request is not honoured.
+      if (opts?.promo) await this.takeUse(tx, opts.promo.code.id, opts.promo.now);
       const [cust] = await tx
         .insert(customers)
         .values({
@@ -258,6 +316,9 @@ export class PostgresBookingRepo implements BookingRepo {
           billingPostcode: b.billing?.postcode ?? null,
           billingState: b.billing?.state ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
+          discountTotal: b.mode !== 'shared' && b.discountTotal !== undefined ? b.discountTotal : null,
+          promoCodeId: opts?.promo ? opts.promo.code.id : null,
+          promoHoldUntil: opts?.promo ? new Date(opts.promo.now.getTime() + PROMO_HOLD_MS) : null,
         })
         .returning();
       if (b.mode === 'trip') {
@@ -307,6 +368,62 @@ export class PostgresBookingRepo implements BookingRepo {
   async get(id: string): Promise<Booking | null> {
     const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
     return row ? this.assemble(row) : null;
+  }
+
+  async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {
+    return this.db.transaction((tx) => this.countUses(tx, codeId, now));
+  }
+
+  async promoBookings(codeId: string, now: Date): Promise<PromoBookingUse[]> {
+    const rows = await this.db
+      .select({
+        id: bookings.id,
+        reference: bookings.reference,
+        status: bookings.status,
+        discountTotal: bookings.discountTotal,
+        createdAt: bookings.createdAt,
+        promoHoldUntil: bookings.promoHoldUntil,
+        hasSucceededPayment: sql<boolean>`${this.succeededPayment()}`,
+      })
+      .from(bookings)
+      .where(eq(bookings.promoCodeId, codeId))
+      .orderBy(desc(bookings.createdAt));
+    return rows.map((r) => ({
+      bookingId: r.id,
+      reference: r.reference,
+      status: r.status as BookingStatus,
+      discountCents: r.discountTotal ?? 0,
+      createdAt: r.createdAt.toISOString(),
+      use: promoUseState(
+        { status: r.status as BookingStatus, promoHoldUntil: r.promoHoldUntil, hasSucceededPayment: r.hasSucceededPayment === true },
+        now,
+      ),
+    }));
+  }
+
+  async reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [locked] = await tx.select().from(promoCodes).where(eq(promoCodes.id, code.id)).for('update');
+      if (!locked) throw new PromoCodeRefusedError('promo_code_invalid');
+      const [bk] = await tx
+        .select({ promoCodeId: bookings.promoCodeId, promoHoldUntil: bookings.promoHoldUntil })
+        .from(bookings)
+        .where(eq(bookings.id, bookingId));
+      if (!bk) throw new BookingNotFoundError(bookingId);
+      if (bk.promoCodeId !== code.id) throw new Error('PROMO_CODE_MISMATCH');
+      const holdValid = bk.promoHoldUntil !== null && bk.promoHoldUntil.getTime() > now.getTime();
+      if (!holdValid) {
+        const fresh = toPromoCode(locked);
+        const unavailable = promoCodeAvailability(fresh, now);
+        if (unavailable) throw new PromoCodeRefusedError(unavailable);
+        const { paid, held } = await this.countUses(tx, fresh.id, now);
+        if (paid + held >= fresh.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
+      }
+      await tx
+        .update(bookings)
+        .set({ promoHoldUntil: new Date(now.getTime() + PROMO_HOLD_MS) })
+        .where(eq(bookings.id, bookingId));
+    });
   }
 
   async findByIdempotencyKey(key: string): Promise<Booking | null> {

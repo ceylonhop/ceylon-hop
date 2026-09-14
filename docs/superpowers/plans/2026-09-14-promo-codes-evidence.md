@@ -164,3 +164,69 @@ Error: Cannot find module './promoCodeRepo' imported from /Users/roshenw/claude_
    Start at  17:52:50
    Duration  10.57s (transform 6.33s, setup 0ms, import 41.51s, tests 8.94s, environment 11ms)
 ```
+
+## Task 4: Bookings hold, count and re-hold a code
+
+Implementation follows the plan as written. `tsc` exits 0; the only `BookingRepo` implementers are
+`InMemoryBookingRepo` and `PostgresBookingRepo`, so the widened interface broke nothing else.
+
+**Deviation (test fixture only).** The first Postgres-backed gate failed *"counts a succeeded
+payment even before the status catches up (manual mark-paid)"* with
+`duplicate key value violates unique constraint "payments_provider_gateway_payment_id_unique"`
+(`Key (provider, gateway_payment_id)=(fake, bank-123) already exists`). The plan's fixture passed a
+fixed manual reference `'bank-123'`; `payments` has `UNIQUE (provider, gateway_payment_id)`, so
+the case fails on any second run against the same database. It passed on the first local run and
+would pass on CI's fresh database, but it is not re-runnable. Fix: the reference is now
+`bank-<random>`. No production code or behaviour changed.
+
+**Postgres:** ran locally against `ceylonhop_test`. The Postgres contract (every §5.1 counting
+case, every §6.3 re-hold case, and the 10-concurrent-bookings-for-3-uses "never oversells" case)
+passed, as did `bookings.test.ts` and `checkout.test.ts`. The red run below is the in-memory
+contract before the implementation (`bookings.attachPayments is not a function`).
+
+**Red** (`npx vitest run src/db/bookingPromo.test.ts`):
+
+```
+TypeError: bookings.attachPayments is not a function
+ ❯ src/db/bookingPromo.test.ts:185:12
+    183|   const bookings = new InMemoryBookingRepo();
+    184|   const payments = new InMemoryPaymentRepo();
+    185|   bookings.attachPayments(payments);
+       |            ^
+    186|   return { bookings, payments, promoCodes: new InMemoryPromoCodeRepo()…
+    187| });
+ ❯ setup src/db/bookingPromo.test.ts:43:25
+ ❯ src/db/bookingPromo.test.ts:169:41
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+ Test Files  1 failed (1)
+      Tests  13 failed | 5 passed (18)
+   Start at  17:54:34
+   Duration  185ms (transform 52ms, setup 0ms, import 76ms, tests 9ms, environment 0ms)
+```
+
+**Green** (`DATABASE_URL_TEST=postgres://localhost:5432/ceylonhop_test npm run check (after the fixture fix)`):
+
+```
+> eslint .
+/Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api/src/routes/opsUi.test.ts
+  413:5  warning  Unused eslint-disable directive (no problems were reported from 'no-new-func')
+✖ 1 problem (0 errors, 1 warning)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+> ceylon-hop-api@0.0.0 test
+> vitest run
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  169 passed (169)
+      Tests  2675 passed | 1 expected fail (2676)
+   Start at  17:58:07
+   Duration  10.70s (transform 5.89s, setup 0ms, import 38.77s, tests 12.83s, environment 10ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  166 passed | 3 skipped (169)
+      Tests  2598 passed | 1 expected fail | 77 skipped (2676)
+   Start at  17:58:26
+   Duration  10.16s (transform 5.37s, setup 0ms, import 38.99s, tests 8.50s, environment 12ms)
+```

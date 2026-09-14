@@ -143,6 +143,11 @@ export function redactedErrorRoute(path: string): string {
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  // Promo code counts treat a succeeded payment as "paid" (spec 2026-09-14 §5.1); the in-memory
+  // booking repo needs the payments to see that, exactly as the Postgres query joins them.
+  if (bookings instanceof InMemoryBookingRepo && payments instanceof InMemoryPaymentRepo) {
+    bookings.attachPayments(payments);
+  }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
   const settlements =
     deps.settlements ??
