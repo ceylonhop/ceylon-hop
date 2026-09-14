@@ -59,3 +59,50 @@ Error: Cannot find module './promoCode' imported from /Users/roshenw/claude_code
    Start at  17:46:56
    Duration  9.98s (transform 5.53s, setup 0ms, import 39.10s, tests 8.49s, environment 10ms)
 ```
+
+## Task 2: Pricing accepts a code discount
+
+Plan followed as written; no deviations. The red run fails the two tests that read the new
+fields (single and trip: `expected undefined to be 780`); the "no discount fields" and "unpriced"
+tests already pass before the change, as they should. The green run is the whole
+`pricing.test.ts` (all 28 existing + new tests).
+
+**Red** (`npx vitest run src/services/pricing.test.ts -t "promo code discount"`):
+
+```
+780
++ Received:
+undefined
+ ❯ src/services/pricing.test.ts:237:31
+    235|     const off = await priceTrip(t, maps, RATE_CARD, tenPercent);
+    236|     if (!plain.priced || !off.priced) throw new Error('expected both t…
+    237|     expect(off.discountCents).toBe(Math.floor((plain.totalCents * 1000…
+       |                               ^
+    238|     expect(off.totalCents).toBe(plain.totalCents - off.discountCents!);
+    239|   });
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed | 24 skipped (28)
+   Start at  17:48:18
+   Duration  187ms (transform 78ms, setup 0ms, import 98ms, tests 6ms, environment 0ms)
+```
+
+**Green** (`npx vitest run src/services/pricing.test.ts`):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  17:48:52
+   Duration  201ms (transform 81ms, setup 0ms, import 104ms, tests 9ms, environment 0ms)
+```
+
+**Gate** (`cd api && npm run check`, exit 0):
+
+```
+ RUN  v4.1.9 /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/agent-a68aff99abec92738/api
+ Test Files  164 passed | 3 skipped (167)
+      Tests  2557 passed | 1 expected fail | 59 skipped (2617)
+   Start at  17:49:01
+   Duration  10.39s (transform 5.97s, setup 0ms, import 41.44s, tests 8.46s, environment 22ms)
+```
