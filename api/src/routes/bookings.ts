@@ -41,6 +41,15 @@ import {
   verifyPayReturnToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
+import {
+  normalizePromoCode,
+  promoCodeAvailability,
+  promoDiscountRequest,
+  PromoCodeRefusedError,
+  type PromoCode,
+  type PromoCodeErrorCode,
+} from '../domain/promoCode';
+import type { PromoCodeRepo } from '../db/promoCodeRepo';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -82,8 +91,13 @@ function resolveTotals(
   placeholderTotal: number,
 ): { total: number; amountDueNow: number; mismatch: boolean; unpriced: boolean; reason?: string } {
   if (outcome.priced) {
+    const differs = (cents: number) =>
+      quotedTotal !== undefined && Math.abs(quotedTotal - cents) > MISMATCH_TOLERANCE_CENTS;
+    // A promo-code booking matches the site's figure at EITHER total (spec 2026-09-14 §6.1): today's
+    // site sends the undiscounted price; the code-aware site will send the discounted one.
     const mismatch =
-      quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
+      differs(outcome.totalCents) &&
+      (outcome.totalBeforeDiscountCents === undefined || differs(outcome.totalBeforeDiscountCents));
     return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
   }
   // The client's figure is a display value, not an authority. When the engine cannot price, the
@@ -208,11 +222,30 @@ export function bookingRoutes(deps: {
    * return leg; unset simply means a pay-link checkout keeps the adapter's default URLs.
    */
   payBaseUrl?: string;
+  promoCodes?: PromoCodeRepo;
+  promoCodesEnabled?: boolean;
+  promoNow?: () => Date;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
+  const promoNow = deps.promoNow ?? (() => new Date());
+
+  // §6.1 step 1 — a sent code resolved to a working PromoCode, or the error to answer with. Runs
+  // before any Maps call, so a bad code costs nothing. The use count is taken later, under the lock.
+  async function lookupPromo(
+    body: unknown,
+    now: Date,
+  ): Promise<{ ok: true; code: PromoCode | null } | { ok: false; error: PromoCodeErrorCode }> {
+    const sent = promoCodeFrom(body);
+    if (!sent.sent) return { ok: true, code: null };
+    if (!deps.promoCodesEnabled || !deps.promoCodes || !sent.code) return { ok: false, error: 'promo_code_invalid' };
+    const code = await deps.promoCodes.getByCode(sent.code);
+    if (!code) return { ok: false, error: 'promo_code_invalid' };
+    const unavailable = promoCodeAvailability(code, now);
+    return unavailable ? { ok: false, error: unavailable } : { ok: true, code };
+  }
 
   function withCheckoutToken(booking: Booking) {
     return {
@@ -315,6 +348,14 @@ function billingFrom(body: unknown): BillingParse {
   return parsed.success ? { ok: true, billing: parsed.data } : { ok: false };
 }
 
+// Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
+// above: the shared domain input schemas stay untouched. Blank counts as not sent.
+function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
+  const raw = (body as { promoCode?: unknown } | null)?.promoCode;
+  if (raw === undefined || raw === null || raw === '') return { sent: false };
+  return { sent: true, code: normalizePromoCode(raw) };
+}
+
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -339,17 +380,24 @@ function billingFrom(body: unknown): BillingParse {
       if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
+    const now = promoNow();
+    const promo = await lookupPromo(body, now);
+    if (!promo.ok) return c.json({ error: promo.error }, 422);
+
     // The engine is the pricing truth; a client quotedTotal is never adopted — an unpriced
     // booking takes the server placeholder and is flagged for ops.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
     let outcome;
     try {
-      outcome = await priceSingle(parsed.data, legMaps, rateCard);
+      outcome = await priceSingle(parsed.data, legMaps, rateCard, promo.code ? promoDiscountRequest(promo.code) : undefined);
     } catch (err) {
       if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
       throw err;
     }
+    // §4.3 — a code that cannot price, or that the limits reduce to $0, does not apply.
+    const discountTotal = promo.code && outcome.priced ? (outcome.discountCents ?? 0) : 0;
+    if (promo.code && discountTotal <= 0) return c.json({ error: 'promo_code_not_eligible' }, 422);
     const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
@@ -358,21 +406,28 @@ function billingFrom(body: unknown): BillingParse {
     } catch {
       distance = null;
     }
-    const booking = await bookings.create(
-      {
-        mode: 'single',
-        input: parsed.data,
-        total: resolved.total,
-        amountDueNow: resolved.amountDueNow,
-        needsPricing: resolved.unpriced,
-        currency: 'USD',
-        distanceKm: distance?.km ?? null,
-        durationMin: distance?.durationMin ?? null,
-        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
-        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
-      },
-      { idempotencyKey: key },
-    );
+    let booking: Booking;
+    try {
+      booking = await bookings.create(
+        {
+          mode: 'single',
+          input: parsed.data,
+          total: resolved.total,
+          amountDueNow: resolved.amountDueNow,
+          needsPricing: resolved.unpriced,
+          currency: 'USD',
+          distanceKm: distance?.km ?? null,
+          durationMin: distance?.durationMin ?? null,
+          billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
+          termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          ...(promo.code ? { discountTotal } : {}),
+        },
+        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+      );
+    } catch (err) {
+      if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);
+      throw err;
+    }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
     return c.json(withCheckoutToken(booking), 201);
   });
@@ -409,16 +464,22 @@ function billingFrom(body: unknown): BillingParse {
       if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
+    const now = promoNow();
+    const promo = await lookupPromo(body, now);
+    if (!promo.ok) return c.json({ error: promo.error }, 422);
+
     // Engine-first; customer bookings currently collect the full amount now.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
     let outcome;
     try {
-      outcome = await priceTrip(parsed.data, legMaps, rateCard);
+      outcome = await priceTrip(parsed.data, legMaps, rateCard, promo.code ? promoDiscountRequest(promo.code) : undefined);
     } catch (err) {
       if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
       throw err;
     }
+    const discountTotal = promo.code && outcome.priced ? (outcome.discountCents ?? 0) : 0;
+    if (promo.code && discountTotal <= 0) return c.json({ error: 'promo_code_not_eligible' }, 422);
     const resolved = resolveTotals(
       outcome,
       parsed.data.quotedTotal,
@@ -444,21 +505,28 @@ function billingFrom(body: unknown): BillingParse {
       tripKm = null;
       tripMin = null;
     }
-    const booking = await bookings.create(
-      {
-        mode: 'trip',
-        input: parsed.data,
-        total: resolved.total,
-        amountDueNow: resolved.amountDueNow,
-        needsPricing: resolved.unpriced,
-        currency: 'USD',
-        distanceKm: tripKm === null ? null : Math.round(tripKm),
-        durationMin: tripMin === null ? null : Math.round(tripMin),
-        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
-        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
-      },
-      { idempotencyKey: key },
-    );
+    let booking: Booking;
+    try {
+      booking = await bookings.create(
+        {
+          mode: 'trip',
+          input: parsed.data,
+          total: resolved.total,
+          amountDueNow: resolved.amountDueNow,
+          needsPricing: resolved.unpriced,
+          currency: 'USD',
+          distanceKm: tripKm === null ? null : Math.round(tripKm),
+          durationMin: tripMin === null ? null : Math.round(tripMin),
+          billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
+          termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          ...(promo.code ? { discountTotal } : {}),
+        },
+        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+      );
+    } catch (err) {
+      if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);
+      throw err;
+    }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
     return c.json(withCheckoutToken(booking), 201);
   });
@@ -467,6 +535,8 @@ function billingFrom(body: unknown): BillingParse {
   // seats on the departure (409 if sold out), then create the booking.
   r.post('/shared', async (c) => {
     const body = await c.req.json().catch(() => null);
+    // §6.2 — shared seats are per-seat corridor prices with no vehicle minimum to protect.
+    if (promoCodeFrom(body).sent) return c.json({ error: 'promo_code_not_eligible' }, 422);
     const parsed = SharedBookingRequest.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
@@ -686,6 +756,18 @@ function billingFrom(body: unknown): BillingParse {
     // booking somehow lags in a chargeable status.
     if (payment && payment.status === 'succeeded') {
       return c.json({ error: 'already_paid', status: booking.status }, 409);
+    }
+    // §6.3 — a booking made with a code re-checks its hold before a payment starts. Runs whatever
+    // PROMO_CODES_ENABLED says: the flag gates accepting codes, never honouring one already held.
+    if (booking.promoCodeId && deps.promoCodes) {
+      const code = await deps.promoCodes.get(booking.promoCodeId);
+      if (!code) return c.json({ error: 'promo_code_invalid' }, 409);
+      try {
+        await bookings.reholdPromo(booking.id, code, promoNow());
+      } catch (err) {
+        if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 409);
+        throw err;
+      }
     }
     if (!payment) {
       payment = await payments.create({

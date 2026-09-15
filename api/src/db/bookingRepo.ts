@@ -3,6 +3,15 @@ import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
+import type { PaymentRepo } from './paymentRepo';
+import {
+  PROMO_HOLD_MS,
+  PromoCodeRefusedError,
+  promoCodeAvailability,
+  promoUseState,
+  type PromoCode,
+  type PromoUseState,
+} from '../domain/promoCode';
 
 /**
  * Groups bookings belonging to one human. MUST match the `person_key` generated column on
@@ -41,6 +50,8 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
+      discountTotal?: number;
     }
   | {
       mode: 'trip';
@@ -55,6 +66,8 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
+      discountTotal?: number;
     }
   | {
       mode: 'shared';
@@ -93,6 +106,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   cancellationReason?: string | null;
   cancelledBy?: string | null;
   cancelledAt?: string | null;
+  // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
+  promoCodeId?: string | null;
+  promoHoldUntil?: string | null; // ISO
 };
 
 /** Who reversed a booking and why. Written only on a cancellation. */
@@ -100,6 +116,22 @@ export interface StatusAudit {
   reason: string;
   by: string;
   at?: Date;
+}
+
+/** A booking taking one use of a code (spec 2026-09-14 §5.3). */
+export interface PromoHold {
+  code: PromoCode;
+  now: Date;
+}
+
+/** One booking that carried a code, for the founder's detail view (§6.5). */
+export interface PromoBookingUse {
+  bookingId: string;
+  reference: string;
+  status: BookingStatus;
+  discountCents: number;
+  createdAt: string;
+  use: PromoUseState;
 }
 
 export interface BookingPricingSnapshot {
@@ -126,7 +158,15 @@ export class BookingNotFoundError extends Error {
 }
 
 export interface BookingRepo {
-  create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking>;
+  // `promo` takes one use of a code inside the same write; throws PromoCodeRefusedError when the
+  // code no longer works or every use is paid or held (spec 2026-09-14 §5.3).
+  create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking>;
+  /** Paid and held uses of a code at `now` (§5.1). */
+  promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }>;
+  /** Every booking that carried the code, newest first (§6.5). */
+  promoBookings(codeId: string, now: Date): Promise<PromoBookingUse[]>;
+  /** §6.3 — refresh a valid hold, or re-take a lapsed one; throws PromoCodeRefusedError. */
+  reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
   // `audit` records WHY, for the transitions where that matters. Optional so the many
@@ -172,8 +212,42 @@ export class InMemoryBookingRepo implements BookingRepo {
   private refs = new Set<string>();
   private byKey = new Map<string, string>();
   private pricingSnapshots = new Map<string, BookingPricingSnapshot>();
+  private payments?: PaymentRepo;
+  // Per-code queue standing in for Postgres's FOR UPDATE: the count and the insert are separated by
+  // awaits, so without it two concurrent bookings could both see the last use as free.
+  private promoLocks = new Map<string, Promise<void>>();
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking> {
+  /** Lets the count see succeeded payments exactly as the Postgres query does (§5.1). */
+  attachPayments(payments: PaymentRepo): void {
+    this.payments = payments;
+  }
+
+  private async withPromoLock<T>(codeId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.promoLocks.get(codeId) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.promoLocks.set(codeId, tail);
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this.promoLocks.get(codeId) === tail) this.promoLocks.delete(codeId);
+    }
+  }
+
+  private async useOf(b: Booking, now: Date): Promise<PromoUseState> {
+    const hasSucceededPayment = this.payments
+      ? (await this.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded')
+      : false;
+    return promoUseState(
+      { status: b.status, promoHoldUntil: b.promoHoldUntil ? new Date(b.promoHoldUntil) : null, hasSucceededPayment },
+      now,
+    );
+  }
+
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
     const key = opts?.idempotencyKey;
     if (key) {
       // Synchronous check (no await before the insert below) so two concurrent create()
@@ -184,6 +258,26 @@ export class InMemoryBookingRepo implements BookingRepo {
       // always resolves to a row — the non-null assertion holds.
       if (existingId) return this.byId.get(existingId)!;
     }
+    const promo = opts?.promo;
+    if (!promo) return this.insert(b, key);
+    return this.withPromoLock(promo.code.id, async () => {
+      // Re-check under the lock: a concurrent retry with the same key may have inserted meanwhile.
+      if (key) {
+        const existingId = this.byKey.get(key);
+        if (existingId) return this.byId.get(existingId)!;
+      }
+      const unavailable = promoCodeAvailability(promo.code, promo.now);
+      if (unavailable) throw new PromoCodeRefusedError(unavailable);
+      const { paid, held } = await this.promoUsage(promo.code.id, promo.now);
+      if (paid + held >= promo.code.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
+      return this.insert(b, key, {
+        promoCodeId: promo.code.id,
+        promoHoldUntil: new Date(promo.now.getTime() + PROMO_HOLD_MS).toISOString(),
+      });
+    });
+  }
+
+  private insert(b: NewBooking, key: string | undefined, promo?: { promoCodeId: string; promoHoldUntil: string }): Booking {
     let reference = generateReference();
     while (this.refs.has(reference)) reference = generateReference();
     const booking: Booking = {
@@ -195,6 +289,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       channel: b.channel ?? 'website',
       billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
       termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
+      ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
     this.refs.add(reference);
@@ -253,6 +348,48 @@ export class InMemoryBookingRepo implements BookingRepo {
     if (!filter?.status) return all;
     const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
     return all.filter((b) => statuses.includes(b.status));
+  }
+
+  async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {
+    let paid = 0;
+    let held = 0;
+    for (const b of [...this.byId.values()]) {
+      if (b.promoCodeId !== codeId) continue;
+      const use = await this.useOf(b, now);
+      if (use === 'paid') paid++;
+      else if (use === 'held') held++;
+    }
+    return { paid, held };
+  }
+
+  async promoBookings(codeId: string, now: Date): Promise<PromoBookingUse[]> {
+    const carrying = [...this.byId.values()]
+      .filter((b) => b.promoCodeId === codeId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return Promise.all(carrying.map(async (b) => ({
+      bookingId: b.id,
+      reference: b.reference,
+      status: b.status,
+      discountCents: b.mode === 'shared' ? 0 : b.discountTotal ?? 0,
+      createdAt: b.createdAt,
+      use: await this.useOf(b, now),
+    })));
+  }
+
+  async reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void> {
+    if (!this.byId.has(bookingId)) throw new BookingNotFoundError(bookingId);
+    await this.withPromoLock(code.id, async () => {
+      const b = this.byId.get(bookingId)!;
+      if (b.promoCodeId !== code.id) throw new Error('PROMO_CODE_MISMATCH');
+      const holdValid = !!b.promoHoldUntil && new Date(b.promoHoldUntil).getTime() > now.getTime();
+      if (!holdValid) {
+        const unavailable = promoCodeAvailability(code, now);
+        if (unavailable) throw new PromoCodeRefusedError(unavailable);
+        const { paid, held } = await this.promoUsage(code.id, now); // this booking's lapsed hold is not counted
+        if (paid + held >= code.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
+      }
+      this.byId.set(bookingId, { ...b, promoHoldUntil: new Date(now.getTime() + PROMO_HOLD_MS).toISOString() });
+    });
   }
 
   snapshotForSettlement(): Map<string, Booking> {

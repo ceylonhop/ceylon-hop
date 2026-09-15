@@ -9,6 +9,7 @@ import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import { shareCardRoutes } from './routes/shareCard';
+import { promoCodeRoutes } from './routes/promoCodes';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -55,6 +56,7 @@ import {
   type CustomerShortLinkRepo,
 } from './db/customerShortLinkRepo';
 import { customerShortLinkRoutes } from './routes/customerShortLink';
+import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -82,6 +84,11 @@ export interface AppDeps {
   customerShortLinksEnabled?: boolean;
   quoteV2Enabled?: boolean;
   opsManualDiscountsEnabled?: boolean;
+  promoCodes?: PromoCodeRepo;
+  /** Gates accepting and creating codes; a held code is honoured regardless (spec 2026-09-14 §11). */
+  promoCodesEnabled?: boolean;
+  /** Promo-code clock (holds, expiry). Separate from checkoutNow, which signs checkout tokens. */
+  promoNow?: () => Date;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
@@ -141,6 +148,11 @@ export function redactedErrorRoute(path: string): string {
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  // Promo code counts treat a succeeded payment as "paid" (spec 2026-09-14 §5.1); the in-memory
+  // booking repo needs the payments to see that, exactly as the Postgres query joins them.
+  if (bookings instanceof InMemoryBookingRepo && payments instanceof InMemoryPaymentRepo) {
+    bookings.attachPayments(payments);
+  }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
   const settlements =
     deps.settlements ??
@@ -174,6 +186,8 @@ export function createApp(deps: AppDeps = {}) {
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
   const shortLinks = deps.shortLinks ?? new InMemoryCustomerShortLinkRepo();
+  const promoCodes = deps.promoCodes ?? new InMemoryPromoCodeRepo();
+  const promoCodesEnabled = deps.promoCodesEnabled ?? config.PROMO_CODES_ENABLED;
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -330,6 +344,9 @@ export function createApp(deps: AppDeps = {}) {
   // GET /admin/quote (now a bare 302 redirect to /ops — T2) unthrottled, intentionally.
   const adminQuoteLimiter = rateLimit({ ...rl, max: rl.max * 4, methods: ['POST', 'GET'] });
   app.use('/admin/quote/*', (c, next) => (c.req.path === '/admin/quote' ? next() : adminQuoteLimiter(c, next)));
+  // Founder promo-code API (spec 2026-09-14 §6.5). Session-gated, but still throttled like the other
+  // admin surfaces. Hono's '/admin/promo-codes/*' also matches the bare parent path.
+  app.use('/admin/promo-codes/*', rateLimit({ ...rl, methods: ['POST', 'GET', 'PATCH'] }));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
@@ -370,6 +387,9 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       checkoutNow: deps.checkoutNow,
+      promoCodes,
+      promoCodesEnabled,
+      promoNow: deps.promoNow,
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
     }),
@@ -416,6 +436,10 @@ export function createApp(deps: AppDeps = {}) {
     maps,
     v2Enabled: quoteV2Enabled,
     zones,
+    promoCodes,
+    bookings,
+    promoCodesEnabled,
+    promoNow: deps.promoNow,
   }));
   app.route(
     '/webhooks',
@@ -483,6 +507,14 @@ export function createApp(deps: AppDeps = {}) {
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
+  app.route('/admin/promo-codes', promoCodeRoutes({
+    promoCodes,
+    bookings,
+    auth: opsAuthCfg,
+    allowedOrigins,
+    enabled: promoCodesEnabled,
+    now: deps.promoNow,
+  }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, bookings, placeResolutions,
     auth: opsAuthCfg,

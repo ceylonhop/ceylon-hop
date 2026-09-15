@@ -4,9 +4,11 @@ export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'quote:approve_simple' | 'margin:view' | 'bookings:operate'
   | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view'
-  | 'discount:apply_manual';
+  | 'discount:apply_manual' | 'promo_codes:manage';
 
 // The capability matrix as data (spec §3). Adding a capability is one row here.
+// promo_codes:manage — creating and changing customer promo codes (spec 2026-09-14 §6.5). Founder
+// only: a code gives money away to anyone who types it, the same class as discount:apply_manual.
 // quote:approve — the maker-checker gate: only the founder can mark a quote ready to send.
 // discount:apply_manual — reducing a price the customer will be charged. Founder only: it is the
 // same class of authority as quote:approve and payments:reverse, and no other role may give money
@@ -23,7 +25,7 @@ export type OpsAction =
 // the per-quote flag, never on `caps.includes('quote:approve_simple')`, which would offer the
 // button on every quote including the ones the predicate refuses.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual', 'promo_codes:manage']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
   ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read']),
   system: new Set(['admin:jobs']),
