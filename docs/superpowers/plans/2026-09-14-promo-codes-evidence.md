@@ -401,19 +401,6 @@ SyntaxError: Unexpected non-whitespace character after JSON at position 4 (line 
 
 ## Task 8: Full verification
 
-- `cd api && npm run check`: exit 0 after Task 7 (169 files passed, 3 skipped; 2626 tests passed,
-  1 expected fail, 77 skipped). The Postgres suites were skipped in that plain run.
-- Postgres-backed suites: ran locally against `postgres://localhost:5432/ceylonhop_test` during
-  Tasks 3, 4 and 7. Migration 0050 applied cleanly from 0049, the `PostgresPromoCodeRepo` and
-  booking-promo contracts passed (including the concurrent last-use test), and `rlsEnabled.test.ts`
-  passed. The last Postgres-backed gate after Task 7 exited 0 (172 files, 2703 tests passed).
-- `web-tests` `npm run test:all` (vitest, then Playwright): passed. Playwright `.last-run.json`
-  reads `{"status":"passed","failedTests":[]}` (run ended 18:12:49 local time).
-- Runtime caveat: everything above ran on Node v22.17.1 locally; CI runs Node 20 and is the
-  authority for that version.
-
-## Task 8: Full verification
-
 - **`cd api && npm run check`** on the final code (after Task 7): exit 0 — 169 files passed,
   3 skipped; 2626 tests passed, 1 expected fail, 77 skipped. With
   `DATABASE_URL_TEST=postgres://localhost:5432/ceylonhop_test`: exit 0 — 172 files passed,
