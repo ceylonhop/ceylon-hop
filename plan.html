@@ -338,6 +338,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dates-flexnote svg{width:21px;height:21px;color:var(--teal-deep);flex:none;margin-top:1px}
   .dates-flexnote b{color:#08403e;font-weight:700}
   @media(max-width:560px){.dates-fork{grid-template-columns:1fr}}
+  /* the trip-start anchor that dates the whole itinerary from the planned nights */
+  .trip-start-bar{max-width:720px;margin:0 0 14px;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:17px 19px}
+  .trip-start-bar[hidden]{display:none}
+  .trip-start-bar .ts-q{font-family:var(--display);font-weight:700;font-size:1.15rem;line-height:1.2;margin:0 0 3px;color:var(--ink)}
+  .trip-start-bar .ts-d{font-size:.81rem;color:var(--ink-soft);margin:0 0 13px;line-height:1.45}
+  .ts-field[hidden]{display:none}
+  .ts-field .dp-btn{min-width:230px}
   .dates-list{display:grid;gap:10px;max-width:720px}
   .dates-list[hidden]{display:none}
   .date-row{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:14px 18px}
@@ -356,6 +363,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-flex svg{width:12px;height:12px;flex:none}
   .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
   .dr-clear:hover{color:var(--accent-deep)}
+  /* where a date came from, so a cascaded one is never mistaken for one they typed */
+  .dr-tag{font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
+  .dr-tag.edited{color:#a96b04}
   /* out-of-order date caution — same amber "note" theme as the hotels/stay notes */
   .dr-warn{flex:1 1 100%;display:flex;gap:.5rem;align-items:flex-start;margin-top:2px;padding:9px 12px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;font-size:.79rem;line-height:1.4;color:#7a5512}
   .dr-warn .dr-warn-ic{display:grid;place-items:center;flex:none;margin-top:1px}
@@ -644,6 +654,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
       <span><b>Nothing locked in — that’s fine.</b> We’ll confirm every leg with you on WhatsApp before you travel, and you can add dates any time after you book.</span>
     </div>
+    <!-- One date instead of eight: an itinerary carrying nights already says how long each stop
+         lasts, so the rest of the dates follow from the trip's start. Hidden entirely on a route
+         with no nights, which has nothing to cascade from (plan.js: canCascade). -->
+    <div class="trip-start-bar" id="trip-start-hint" hidden>
+      <p class="ts-q">When does your trip start?</p>
+      <p class="ts-d">We’ll date the rest of your itinerary from the nights you’ve planned — change any leg afterwards and the ones after it follow.</p>
+      <div class="ts-field" id="trip-start" hidden></div>
+    </div>
     <div class="dates-list" id="dates-list" hidden></div>
     <div class="dates-actions">
       <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
@@ -663,6 +681,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=6b66b95c38"></script>
+<script src="plan.js?v=630fad89ba"></script>
 </body>
 </html>

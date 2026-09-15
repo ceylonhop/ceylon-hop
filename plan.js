@@ -209,13 +209,16 @@ const state = {
 // Restore the travel dates the customer already chose: the booking step passes them back
 // as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
 // auto-fill from `start` — a tour hand-off carries a default start the customer never
-// picked, so legs stay blank and "Add your dates" means what it says (fixes tour auto-dates).
+// picked, so legs stay blank and the WHEN step's question is genuinely open (fixes tour
+// auto-dates). The trip-start anchor below is the customer answering it, never a default.
 const datesParam = (params.get('dates')||'').split(',');
 let _tIdx = 0;
 state.legs.forEach(l=>{
   if(l.type!=='transfer') return;
   const ds = (datesParam[_tIdx++]||'').trim();
-  if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())) l.date=d; }
+  // dateAuto:false — a restored date was chosen by the customer on an earlier pass, so a later
+  // cascade anchors to it rather than overwriting it (see cascadeFrom).
+  if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())){ l.date=d; l.dateAuto=false; } }
 });
 if(state.pax>3) state.vehicle='van';
 
@@ -1052,6 +1055,66 @@ function setDatesMode(mode){
   renderDatesStep();
 }
 const FLEX_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
+
+/* ── one date instead of eight ────────────────────────────────────────────────────────────
+   An itinerary that carries nights already says how long each stop lasts, so every leg's date
+   follows from a single answer: when does the trip start? Asking once and reading the rest off
+   the nights beats putting a separate calendar in front of each leg.
+
+   It only works where there ARE nights: buildLegs only creates stay legs when the route carries
+   them, and a transfer-only itinerary has nothing to cascade from. There the anchor is hidden
+   entirely (owner decision, 2026-09-15) rather than shown setting the first leg and no more —
+   a control that under-delivers on most of the trip reads as broken.
+
+   `dateAuto` marks where a date came from: true = this cascade filled it, false = the customer
+   set (or cleared) it by hand and it is theirs to keep, undefined = untouched. */
+function canCascade(){
+  return state.legs.some(l => l.type==='stay' && (l.nights||0) > 0);
+}
+function addDays(d, n){
+  const x=new Date(d.getTime()); x.setDate(x.getDate()+n); return x;
+}
+// The date the leg AFTER this one inherits: a stay pushes the trip on by its nights, a transfer
+// lands and stays put (the stop it arrives at begins the same day).
+function advance(leg){
+  return leg.type==='stay' ? addDays(leg.date, leg.nights||0) : leg.date;
+}
+/* Re-date every leg from `start` onwards, leaving the ones above it alone. A leg the customer
+   set by hand anchors the rest rather than being overwritten (owner decision, 2026-09-15:
+   editing a middle leg moves the legs after it), and one they deliberately cleared stays blank
+   with the running date passing straight through it. */
+function cascadeFrom(start){
+  let cursor=null;
+  for(let k=0;k<start;k++){
+    const l=state.legs[k];
+    if(l.date) cursor=advance(l);
+  }
+  if(!cursor) return;
+  for(let i=start;i<state.legs.length;i++){
+    const leg=state.legs[i];
+    if(leg.dateAuto===false){            // theirs: never overwritten, and it re-anchors the rest
+      if(leg.date) cursor=advance(leg);
+      continue;
+    }
+    leg.date=cursor; leg.dateAuto=true;
+    cursor=advance(leg);
+  }
+}
+// The anchor IS the first leg's date — no second source of truth to keep in step, and it
+// round-trips through the URL with the rest of the itinerary for free.
+function tripStartDate(){
+  return state.legs.length ? state.legs[0].date : null;
+}
+function setTripStart(d){
+  if(!state.legs.length) return;
+  state.legs[0].date=d;
+  // Came from the anchor, not from editing the row — so it reads "From your start date" like the
+  // legs it feeds, rather than "Edited by you" directly under an anchor showing the same date.
+  // Safe because the cascade starts at 1 and never reaches back to overwrite it.
+  state.legs[0].dateAuto=true;
+  cascadeFrom(1);
+  renderDatesStep();
+}
 function renderDatesStep(){
   clearLegDatePops();
   // A leg that already carries a date has answered the fork on the customer's behalf — a
@@ -1069,6 +1132,28 @@ function renderDatesStep(){
   // reads, and a date restored from the URL must land in one whichever way the fork is set.
   list.hidden = mode!=='known';
   list.innerHTML='';
+  // the "when does your trip start?" anchor — only where there are nights to cascade through
+  const cascades=canCascade();
+  const startWrap=document.getElementById('trip-start');
+  if(startWrap){
+    startWrap.hidden = !cascades || mode!=='known';
+    startWrap.innerHTML='';
+    if(cascades && mode==='known'){
+      const sInp=document.createElement('input');
+      sInp.type='date'; sInp.className='dates-step-input';
+      sInp.setAttribute('data-placeholder','Pick your start date');
+      sInp.setAttribute('aria-label','Date your trip starts');
+      startWrap.appendChild(sInp);
+      const start=tripStartDate();
+      if(start) sInp.value=fmtISO(start);
+      enhanceLegDate(sInp);
+      sInp.addEventListener('change',()=>{
+        if(sInp.value) setTripStart(new Date(sInp.value+'T00:00:00'));
+      });
+    }
+  }
+  const startHint=document.getElementById('trip-start-hint');
+  if(startHint) startHint.hidden = !cascades || mode!=='known';
   const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
   const flags=outOfOrderFlags();
   const driveIssue=sameDayDrivingIssue();
@@ -1089,7 +1174,8 @@ function renderDatesStep(){
       <div class="dr-date">
         <input type="date" class="dates-step-input" data-placeholder="Add a date" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
         ${leg.date
-          ? '<button type="button" class="dr-clear">✕ Make flexible</button>'
+          ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
+              cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
           : `<span class="dr-flex">${FLEX_ICO} Flexible for now</span>`}
       </div>
       ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
@@ -1101,11 +1187,22 @@ function renderDatesStep(){
     const floor=legDateFloor(i);
     if(floor) inp.dataset.min=fmtISO(floor);
     enhanceLegDate(inp);
-    inp.addEventListener('change',()=>{ state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null; renderDatesStep(); });
+    inp.addEventListener('change',()=>{
+      state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null;
+      state.legs[i].dateAuto = false;    // hand-set: this leg is theirs, and it anchors the rest
+      cascadeFrom(i+1);
+      renderDatesStep();
+    });
     // Until this existed a picked date could not be unpicked: the datepicker replaces the native
     // input with a hidden one and its popover has no clear action, so a mis-tap was permanent.
+    // Clearing pins the leg blank, so a later cascade passes through instead of re-filling it.
     const clear=row.querySelector('.dr-clear');
-    if(clear) clear.addEventListener('click',()=>{ state.legs[i].date=null; renderDatesStep(); });
+    if(clear) clear.addEventListener('click',()=>{
+      state.legs[i].date=null;
+      state.legs[i].dateAuto=false;
+      cascadeFrom(i+1);
+      renderDatesStep();
+    });
   });
   // gate the "Continue to booking" CTA while any leg is dated out of order — the customer
   // must fix the dates (or reorder on the route step) before we hand the route to booking
