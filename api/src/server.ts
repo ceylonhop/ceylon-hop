@@ -31,6 +31,7 @@ import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRep
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './db/postgresRefundRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
+import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -144,6 +145,9 @@ const app = createApp({
   zones: new PostgresZonesRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),
   shortLinks: new PostgresCustomerShortLinkRepo(db),
+  // Promo codes. WITHOUT this line app.ts falls back to an empty in-memory repo: every code a founder
+  // creates vanishes on restart and no customer code ever resolves — the same trap quoteDiscounts hit.
+  promoCodes: new PostgresPromoCodeRepo(db),
   adapter,
   paygw: ridePaygw,
   maps,

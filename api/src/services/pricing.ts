@@ -4,12 +4,21 @@ import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import type { QuoteRequest, ChauffeurTravelDay } from '../quote/types';
+import type { DiscountRequest } from '../quote/discount';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
 // 2026-07-02). Distances come from the maps adapter; anything unresolvable comes back as
 // priced:false so the route can fall back + flag, never as a thrown error.
 export type PriceOutcome =
-  | { currency: 'USD'; totalCents: number; amountDueNowCents: number; priced: true }
+  | {
+      currency: 'USD';
+      totalCents: number;
+      amountDueNowCents: number;
+      priced: true;
+      /** Present only when a discount was requested (spec 2026-09-14 §7). 0 = limits removed it all. */
+      discountCents?: number;
+      totalBeforeDiscountCents?: number;
+    }
   | { priced: false; reason: string };
 
 // Distinguishes "we could not resolve this route at all" from "Google was unavailable and we
@@ -34,14 +43,20 @@ export class InvalidPricingRequestError extends Error {
 
 // Run the engine, translating a genuine pricing hiccup into an unpriced outcome — that must
 // never take the booking flow down. A malformed request, by contrast, is rejected outright.
-function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PriceOutcome {
+function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD, discount?: DiscountRequest): PriceOutcome {
   try {
-    const result = quote(req, rateCard);
+    const result = quote(req, rateCard, discount);
     return {
       currency: 'USD',
       totalCents: result.totalCents,
       amountDueNowCents: result.totalCents,
       priced: true,
+      ...(discount
+        ? {
+            discountCents: result.discountCents ?? 0,
+            totalBeforeDiscountCents: result.totalBeforeDiscountCents ?? result.totalCents,
+          }
+        : {}),
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -50,7 +65,12 @@ function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PriceOutc
   }
 }
 
-export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
+export async function priceSingle(
+  input: SingleTransferInput,
+  maps: MapsAdapter,
+  rateCard: RateCard = RATE_CARD,
+  discount?: DiscountRequest,
+): Promise<PriceOutcome> {
   let distance = null;
   try {
     distance = await maps.distance(input.from, input.to);
@@ -71,6 +91,7 @@ export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter,
       extras: input.extras,
     },
     rateCard,
+    discount,
   );
 }
 
@@ -110,7 +131,12 @@ function chauffeurDates(input: TripInput, legs: { from: string; to: string; dist
   };
 }
 
-export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
+export async function priceTrip(
+  input: TripInput,
+  maps: MapsAdapter,
+  rateCard: RateCard = RATE_CARD,
+  discount?: DiscountRequest,
+): Promise<PriceOutcome> {
   const legs: { from: string; to: string; distanceKm: number }[] = [];
   for (let i = 0; i < input.stops.length - 1; i++) {
     const from = input.stops[i];
@@ -129,10 +155,10 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: R
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
   if (input.serviceType === 'chauffeur') {
     // Public trips don't collect a bag count — pax alone drives the capacity upgrade.
-    return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) }, rateCard);
+    return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) }, rateCard, discount);
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
-  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, rateCard);
+  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, rateCard, discount);
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —

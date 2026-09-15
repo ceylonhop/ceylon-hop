@@ -13,10 +13,13 @@
 
 export type DiscountMethod = 'fixed' | 'percentage';
 
+/** Who asked: a founder on an ops quote, or a customer's promo code (spec 2026-09-14 §7). */
+export type DiscountSource = 'manual' | 'code';
+
 /** What a founder asks for. Clients submit this; they never submit applied cents. */
 export type DiscountRequest =
-  | { source: 'manual'; method: 'fixed'; amountCents: number; reason: string }
-  | { source: 'manual'; method: 'percentage'; basisPoints: number; reason: string };
+  | { source: DiscountSource; method: 'fixed'; amountCents: number; reason: string }
+  | { source: DiscountSource; method: 'percentage'; basisPoints: number; reason: string };
 
 /** Which limit reduced the request, when one did. */
 export type DiscountCapReason = 'percentage_cap' | 'vehicle_minimum';
