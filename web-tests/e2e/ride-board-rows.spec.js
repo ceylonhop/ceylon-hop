@@ -160,3 +160,45 @@ test('on a phone the longest route we sell still sits on one line', async ({ pag
   // one line of tags is ~30px; a wrap doubles it
   expect(h, `.rw-places is ${Math.round(h)}px tall — the route wrapped`).toBeLessThan(40);
 });
+
+// #622 shipped tags that clipped to "Colombo Airpo…" at the widths between a phone and a wide
+// laptop — the no-clip check above only ran at 1280px. A place name is never cut; when the
+// pair does not fit, the drop-off tag drops to a second line instead.
+for (const width of [1024, 820]) {
+  test(`at ${width}px no place tag is clipped`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await stubApi(page);
+    await page.goto('/board.html');
+    await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
+    const clipped = await page.$$eval('.rw-pl', (els) =>
+      els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.innerText.replace(/\n/g, ' ')));
+    expect(clipped, `clipped at ${width}px: ${clipped.join(' | ')}`).toEqual([]);
+    // and the qualifiers are gone at these widths — they are what tipped the longest pair over.
+    // (.rw-route small{display:block} outranks a bare .rw-q rule; the hide must be as specific.)
+    await expect(page.locator('.rw[data-code="RW-1"] .rw-q').first()).toBeHidden();
+  });
+}
+
+// The pickup tag was tinted --pc-teal, which is also the wash of a ride you're on and within a
+// hair of the hover wash — so on those rows the pill vanished and the city name floated.
+// A tag must stay a visible pill on paper, on hover, and on a "mine" row.
+const rgb = (s) => { const m = s.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) });
+const dist = (x, y) => Math.abs(x.r - y.r) + Math.abs(x.g - y.g) + Math.abs(x.b - y.b);
+
+test('a place tag stays visible on the hover wash and on your own ride', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html');
+  const row = page.locator('.rw[data-code="RW-1"]');
+  await expect(row).toBeVisible({ timeout: 15000 });
+  for (const state of ['rest', 'hover', 'mine']) {
+    if (state === 'hover') await row.hover();
+    if (state === 'mine') await row.evaluate((r) => r.classList.add('mine'));
+    const rowBg = rgb(await row.evaluate((r) => getComputedStyle(r).backgroundColor));
+    for (const cls of ['a', 'b']) {
+      const tagBg = rgb(await row.locator('.rw-pl.' + cls).evaluate((t) => getComputedStyle(t).backgroundColor));
+      const d = dist(over(tagBg, rowBg), rowBg);
+      expect(d, `${state}: tag .${cls} sits ${Math.round(d)} away from the row (needs 24+)`).toBeGreaterThanOrEqual(24);
+    }
+  }
+});
