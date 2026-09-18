@@ -151,10 +151,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
 .rw-route{min-width:0}
-.rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;align-items:center;gap:8px;min-width:0}
+/* wrap, never clip: when the pair does not fit, the drop-off tag drops to a second line */
+.rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
 /* soft place tags: tint + the ride sheet's markers, no border (a bordered pill here is a filter chip) */
-.rw-pl{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rw-pl{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap}
+/* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column */
+@media(max-width:1180px){.rw-q{display:none}}
 .rw-pl.a{background:var(--pc-teal)}
 .rw-pl.b{background:#fdeee9}
 .rw-dot{width:10px;height:10px;border-radius:50%;flex:none}

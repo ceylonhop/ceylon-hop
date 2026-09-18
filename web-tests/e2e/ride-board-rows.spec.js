@@ -160,3 +160,18 @@ test('on a phone the longest route we sell still sits on one line', async ({ pag
   // one line of tags is ~30px; a wrap doubles it
   expect(h, `.rw-places is ${Math.round(h)}px tall — the route wrapped`).toBeLessThan(40);
 });
+
+// #622 shipped tags that clipped to "Colombo Airpo…" at the widths between a phone and a wide
+// laptop — the no-clip check above only ran at 1280px. A place name is never cut; when the
+// pair does not fit, the drop-off tag drops to a second line instead.
+for (const width of [1024, 820]) {
+  test(`at ${width}px no place tag is clipped`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await stubApi(page);
+    await page.goto('/board.html');
+    await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
+    const clipped = await page.$$eval('.rw-pl', (els) =>
+      els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.innerText.replace(/\n/g, ' ')));
+    expect(clipped, `clipped at ${width}px: ${clipped.join(' | ')}`).toEqual([]);
+  });
+}
