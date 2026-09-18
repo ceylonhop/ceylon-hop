@@ -156,8 +156,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
 /* soft place tags: tint + the ride sheet's markers, no border (a bordered pill here is a filter chip) */
 .rw-pl{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap}
-.rw-pl.a{background:var(--pc-teal)}
-.rw-pl.b{background:#fdeee9}
+/* translucent, not a flat swatch: --pc-teal is also the wash of a ride you're on, and a hair from
+   the hover wash, so a flat tint vanished on exactly those rows */
+.rw-pl.a{background:rgba(10,185,182,.17)}
+.rw-pl.b{background:rgba(236,58,36,.11)}
 .rw-dot{width:10px;height:10px;border-radius:50%;flex:none}
 .rw-pl.a .rw-dot{border:2.5px solid var(--teal);background:#fff}
 .rw-pl.b .rw-dot{background:var(--cta)}

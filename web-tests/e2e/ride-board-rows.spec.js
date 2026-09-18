@@ -178,3 +178,27 @@ for (const width of [1024, 820]) {
     await expect(page.locator('.rw[data-code="RW-1"] .rw-q').first()).toBeHidden();
   });
 }
+
+// The pickup tag was tinted --pc-teal, which is also the wash of a ride you're on and within a
+// hair of the hover wash — so on those rows the pill vanished and the city name floated.
+// A tag must stay a visible pill on paper, on hover, and on a "mine" row.
+const rgb = (s) => { const m = s.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) });
+const dist = (x, y) => Math.abs(x.r - y.r) + Math.abs(x.g - y.g) + Math.abs(x.b - y.b);
+
+test('a place tag stays visible on the hover wash and on your own ride', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html');
+  const row = page.locator('.rw[data-code="RW-1"]');
+  await expect(row).toBeVisible({ timeout: 15000 });
+  for (const state of ['rest', 'hover', 'mine']) {
+    if (state === 'hover') await row.hover();
+    if (state === 'mine') await row.evaluate((r) => r.classList.add('mine'));
+    const rowBg = rgb(await row.evaluate((r) => getComputedStyle(r).backgroundColor));
+    for (const cls of ['a', 'b']) {
+      const tagBg = rgb(await row.locator('.rw-pl.' + cls).evaluate((t) => getComputedStyle(t).backgroundColor));
+      const d = dist(over(tagBg, rowBg), rowBg);
+      expect(d, `${state}: tag .${cls} sits ${Math.round(d)} away from the row (needs 24+)`).toBeGreaterThanOrEqual(24);
+    }
+  }
+});
