@@ -18,14 +18,14 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
   const verifier: JwtVerifier = async () => ({
     payload: { iss: 'accounts.google.com', email: id.email, email_verified: true, name: id.name, sub: id.sub, picture: id.picture },
   });
-  const app = createApp({ rideLists, paygw, customerVerifier: verifier });
+  const app = createApp({ rideLists, paygw, customerVerifier: verifier, ...over });
   return { app, rideLists, paygw };
 }
 
@@ -639,5 +639,56 @@ describe('ride board CSRF', () => {
     });
     expect(res.status).toBe(200);
     expect(await names(app, code)).toHaveLength(0);
+  });
+});
+
+// PayHere sends the payer back to return_url / cancel_url. Those were built from APP_BASE_URL,
+// which on prod is the apex — still the old WordPress site until cutover — so a traveller who
+// approved a card on prod.ceylonhop.com landed on WordPress's 404 (owner, 2026-09-18). The board
+// page IS the return page, so the return goes back to the origin the board was used from. Only
+// an allow-listed origin qualifies: the CSRF guard already refuses others, and the allow-list is
+// what keeps this from being a redirect-anywhere.
+describe('PayHere return_url — back to the board the traveller was on', () => {
+  const ORIGIN = 'https://ceylonhop.github.io'; // on the default allow-list, not the bookingBaseUrl
+  const withOrigin = (cookie: string, body: unknown) => {
+    const r = json(cookie, body);
+    return { ...r, headers: { ...r.headers, origin: ORIGIN } };
+  };
+
+  it('join: returns to the request origin when it is allow-listed', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1 }))).status).toBe(200);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+    expect(paygw.preapprovals[0].cancelUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=.*&cancelled=1$`));
+  });
+
+  it('create: returns to the request origin when it is allow-listed', async () => {
+    const { app, paygw } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', withOrigin(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+  });
+
+  it('falls back to the configured base when the caller sends no Origin', async () => {
+    const { app, rideLists, paygw } = makeApp({}, { bookingBaseUrl: 'https://ceylonhop.com' });
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(paygw.preapprovals[0].returnUrl).toMatch(/^https:\/\/ceylonhop\.com\/board\.html\?ridePayment=/);
+  });
+
+  it('never returns to an origin outside the allow-list', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const r = json(cookie, { seats: 1 });
+    const res = await app.request(`/board/${l.code}/join`, { ...r, headers: { ...r.headers, origin: 'https://evil.example' } });
+    expect(res.status).toBe(403);
+    expect(paygw.preapprovals).toHaveLength(0);
   });
 });

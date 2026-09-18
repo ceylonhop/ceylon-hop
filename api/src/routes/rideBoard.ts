@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor } from '../db/departureRepo';
@@ -124,6 +124,17 @@ export interface RideBoardDeps {
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
   const r = new Hono();
+
+  // Where PayHere sends the payer back. The board page is its own return page, so go back to
+  // the origin the board was used from — prod.ceylonhop.com today, the apex after cutover,
+  // staging on staging — rather than a configured base that goes stale (APP_BASE_URL is the
+  // apex, which is still WordPress: a payer who approved a card landed on its 404). Only an
+  // allow-listed origin qualifies; anything else falls back to the configured base.
+  function returnBase(c: Context): string {
+    const origin = c.req.header('origin');
+    if (origin && (deps.allowedOrigins ?? []).includes(origin)) return origin;
+    return deps.boardBaseUrl ?? 'http://localhost:4173';
+  }
 
   // Populate c.var.customer from the ch_cust cookie on every request (never throws).
   r.use('*', customerIdentity(deps.customer.sessionSecret));
@@ -365,8 +376,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
         orderId,
         items: `Ceylon Hop shared ride ${fromPlace} to ${toPlace}`,
         currency: deps.currency ?? 'USD',
-        returnUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
-        cancelUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
+        returnUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
+        cancelUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
         customer: {
           firstName: firstNameOf(cust.name), lastName: lastNameOf(cust.name), email: cust.email,
           phone: input.payment?.phone, address: input.payment?.address, city: input.payment?.city,
@@ -459,8 +470,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
           orderId,
           items: `Ceylon Hop shared ride ${found.list.fromPlace} to ${found.list.toPlace}`,
           currency: deps.currency ?? 'USD',
-          returnUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
-          cancelUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
+          returnUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
+          cancelUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
           customer: {
             firstName: firstNameOf(cust.name), lastName: lastNameOf(cust.name), email: cust.email,
             phone: parsed.data.payment?.phone, address: parsed.data.payment?.address,
