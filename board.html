@@ -142,7 +142,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-day-h{margin:0;padding:16px 24px 8px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
 /* the action column is a fixed width: sized per row, the widest label ("Start another van")
    pushed that row's price and seats out of line with every other row */
-.rw{display:grid;grid-template-columns:96px minmax(0,1.5fr) minmax(0,1.35fr) 104px 156px;gap:18px;align-items:center;
+/* route gets the lion's share: two tags for the longest pair we sell need ~460px; faces + state ~220px */
+.rw{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
   padding:14px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
@@ -150,8 +151,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
 .rw-route{min-width:0}
-.rw-places{font-family:var(--display);font-weight:700;font-size:1.15rem;line-height:1.25}
-.rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:400}
+.rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;align-items:center;gap:8px;min-width:0}
+.rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
+/* soft place tags: tint + the ride sheet's markers, no border (a bordered pill here is a filter chip) */
+.rw-pl{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rw-pl.a{background:var(--pc-teal)}
+.rw-pl.b{background:#fdeee9}
+.rw-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.rw-pl.a .rw-dot{border:2.5px solid var(--teal);background:#fff}
+.rw-pl.b .rw-dot{background:var(--cta)}
+.rw-q{font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft)}
 .rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
 .rw-seats{display:flex;align-items:center;gap:12px;min-width:0}
 .rw-faces{display:flex;align-items:center;flex:none}
@@ -576,7 +585,11 @@ body.detail-open .detail{display:block}
      The only solid button on a phone is the start bar's; the whole row opens the ride. */
   .filters .f-start{display:none}
   .rw-day-h{padding:14px 16px 6px}
-  .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route price" "when when" "seats cta";gap:6px 12px;padding:13px 16px}
+  /* the route takes the full width so the longest pair stays one line; price sits by the time */
+  .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route route" "when price" "seats cta";gap:6px 12px;padding:13px 16px}
+  .rw-q{display:none}
+  .rw-places{font-size:1rem;gap:6px}
+  .rw-pl{padding:3px 9px 3px 8px}
   .rw-route small{display:none}
   .rw-when{font-weight:500;font-size:.82rem;color:var(--ink-soft)}
   .rw-dur{display:inline}
@@ -925,6 +938,6 @@ body.detail-open .detail{display:block}
 
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=6213dc44ed" defer></script>
+<script src="board.js?v=ea0463c111" defer></script>
 </body>
 </html>
