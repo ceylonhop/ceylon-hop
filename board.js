@@ -161,6 +161,14 @@
     return t ? t.replace(/\s*door to door$/, '') : '';
   }
 
+  // "Colombo Airport (CMB)" → city + "(CMB)"; "Sigiriya / Dambulla" → city + "/ Dambulla". The
+  // city is what a traveller scans for, so the tag sets it large and the qualifier small.
+  function splitPlace(name) {
+    var n = String(name == null ? '' : name).trim();
+    var m = /^(.*?)\s+(\(.*\)|\/\s*.+)$/.exec(n);
+    return m ? { main: m[1], qual: m[2] } : { main: n, qual: '' };
+  }
+
   var SLOT_ORDER = { morning: 0, afternoon: 1 };
   // Day headings in date order; morning before afternoon; a dateless list goes last, not missing.
   function groupByDay(lists) {
@@ -361,6 +369,7 @@
     whenLine: whenLine,
     windowLabel: windowLabel,
     durationOf: durationOf,
+    splitPlace: splitPlace,
     groupByDay: groupByDay,
     rowState: rowState,
     normalizeList: normalizeList,
@@ -541,6 +550,14 @@
     return html;
   }
 
+  // A soft tag per place: the ride sheet's markers (hollow teal = pickup, tomato = drop-off)
+  // on a tint, no border — a bordered pill on this page is a filter chip.
+  function placeTag(name, cls) {
+    var p = splitPlace(name);
+    return '<span class="rw-pl ' + cls + '"><i class="rw-dot"></i>' + esc(p.main) +
+      (p.qual ? ' <small class="rw-q">' + esc(p.qual) + '</small>' : '') + '</span>';
+  }
+
   function rowHtml(L) {
     var mine = iAmOn(L);
     var st = rowState(L, mine);
@@ -551,7 +568,7 @@
     return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
       ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
       '<div class="rw-when">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + '</div>' +
-      '<div class="rw-route"><span class="rw-places">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</span>' +
+      '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
       '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
         '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span></div>' +

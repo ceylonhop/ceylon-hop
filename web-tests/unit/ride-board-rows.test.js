@@ -87,3 +87,16 @@ describe('rowState — one coloured state and one action per row', () => {
     expect(RB.rowState(L({ committed: 6, confirmed: true }), true).cta).toEqual({ kind: 'view', text: 'View your ride' });
   });
 });
+
+describe('splitPlace — the city reads first, the qualifier is small', () => {
+  it('splits a bracketed code off the name', () => {
+    expect(RB.splitPlace('Colombo Airport (CMB)')).toEqual({ main: 'Colombo Airport', qual: '(CMB)' });
+  });
+  it('splits a slashed alias off the name', () => {
+    expect(RB.splitPlace('Sigiriya / Dambulla')).toEqual({ main: 'Sigiriya', qual: '/ Dambulla' });
+  });
+  it('leaves a plain name whole', () => {
+    expect(RB.splitPlace('Ella')).toEqual({ main: 'Ella', qual: '' });
+    expect(RB.splitPlace('')).toEqual({ main: '', qual: '' });
+  });
+});

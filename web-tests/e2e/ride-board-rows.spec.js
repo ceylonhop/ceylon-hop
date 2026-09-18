@@ -98,7 +98,8 @@ test('on a phone a ride stays a compact row, and Start a ride lives in the botto
     const row = page.locator(`.rw[data-code="${code}"]`);
     const h = (await row.boundingBox()).height;
     const route = (await row.locator('.rw-route').boundingBox()).height;
-    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(100);
+    // 110: the price sits on the time line since the route took the full width (#622)
+    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(110);
   }
   await expect(page.locator('#f-start')).toBeHidden();
   await expect(page.locator('#start-bar-btn')).toBeVisible();
@@ -127,4 +128,35 @@ test('with no route chosen there is no invite row in the list', async ({ page })
   await page.goto('/board.html');
   await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
   await expect(page.locator('.rw-invite')).toHaveCount(0);
+});
+
+test('pickup and drop-off are two soft tags with the ride sheet\'s markers, city first', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html');
+  const row = page.locator('.rw[data-code="RW-1"]');
+  await expect(row).toBeVisible({ timeout: 15000 });
+  const from = row.locator('.rw-pl.a'), to = row.locator('.rw-pl.b');
+  await expect(from).toContainText('Colombo Airport');
+  await expect(from.locator('.rw-q')).toHaveText('(CMB)');
+  await expect(to).toContainText('Sigiriya');
+  await expect(to.locator('.rw-q')).toHaveText('/ Dambulla');
+  // the tag is a label, not a chip: tinted, no border
+  const border = await from.evaluate((e) => getComputedStyle(e).borderTopWidth);
+  expect(border).toBe('0px');
+  // and on a laptop the longest pair we sell fits its column — no "Colombo Airport (CM…"
+  for (const tag of [from, to]) {
+    const clipped = await tag.evaluate((e) => e.scrollWidth > e.clientWidth + 1);
+    expect(clipped, `${await tag.innerText()} is clipped`).toBe(false);
+  }
+});
+
+test('on a phone the longest route we sell still sits on one line', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await stubApi(page);
+  await page.goto('/board.html');
+  const places = page.locator('.rw[data-code="RW-1"] .rw-places');
+  await expect(places).toBeVisible({ timeout: 15000 });
+  const h = (await places.boundingBox()).height;
+  // one line of tags is ~30px; a wrap doubles it
+  expect(h, `.rw-places is ${Math.round(h)}px tall — the route wrapped`).toBeLessThan(40);
 });
