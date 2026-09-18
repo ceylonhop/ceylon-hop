@@ -306,6 +306,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .svc.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06);box-shadow:inset 0 0 0 1.5px var(--accent)}
   .svc.disabled,.svc:disabled{cursor:not-allowed;opacity:.62;background:var(--cream)}
   .svc.disabled:hover,.svc:disabled:hover{border-color:var(--line)}
+  /* Inactive but still pressable: the only thing missing is dates, and pressing goes to collect
+     them. Reads as unavailable, invites the press that fixes it. */
+  .svc.needs-dates{cursor:pointer}
+  .svc.needs-dates:hover{border-color:var(--accent);opacity:.78}
+  .svc.needs-dates .svc-tag{text-decoration:underline;text-underline-offset:2px}
   .svc .svc-ico{width:34px;height:34px;border-radius:9px;background:var(--cream-deep);display:grid;place-items:center;color:var(--accent-deep);margin-bottom:9px}
   .svc.on .svc-ico{background:var(--accent);color:#fff}
   .svc .svc-ico svg{width:19px;height:19px}
@@ -1075,6 +1080,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=ecb118e6cb"></script>
+<script src="booking.js?v=3daed01ac4"></script>
 </body>
 </html>
