@@ -943,25 +943,40 @@
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
       (youIn
         ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
-          '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
-      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
-      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
+      // Sharing is what fills a van, so the share block sits right under the actions. It used to
+      // sit below the deadline, reached by an "Invite someone" button whose only job was to
+      // scroll here — the same action twice, in a louder green than the primary.
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
       '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
       '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
+      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
+      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
     detailInner.querySelectorAll('[data-detail-join]').forEach(function (el) { el.addEventListener('click', function () { openModal(L.code); }); });
-    var sh = detailInner.querySelector('[data-detail-share]');
-    if (sh) sh.addEventListener('click', function () { var ds = detailInner.querySelector('.d-share'); if (ds) ds.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    // Scratching used to fire on the first click with no warning (owner, 2026-09-18). It now
+    // asks inline — nothing is sent until "Yes". Inline rather than window.confirm(): the
+    // browser dialog looks foreign to the page and some browsers suppress it.
     var scr = detailInner.querySelector('[data-scratch]');
-    if (scr) scr.addEventListener('click', function () { doScratch(L.code); });
+    if (scr) scr.addEventListener('click', function () {
+      if (detailInner.querySelector('.scratch-ask')) return;
+      var ask = document.createElement('div');
+      ask.className = 'scratch-ask';
+      ask.innerHTML = '<p><b>Scratch your name off?</b> Your card hold is released and the seat frees up. ' +
+        'You can hop back on any time while the list is still gathering.</p>' +
+        '<div class="row"><button class="btn btn-scratch btn-sm" data-scratch-yes>Yes, scratch me off</button>' +
+        '<button class="btn btn-primary btn-sm" data-scratch-keep>Keep my seat</button></div>';
+      scr.style.display = 'none'; // not `hidden`: .btn's own display rule outranks the [hidden] reset
+      scr.insertAdjacentElement('afterend', ask);
+      ask.querySelector('[data-scratch-keep]').addEventListener('click', function () { ask.remove(); scr.style.display = ''; });
+      ask.querySelector('[data-scratch-yes]').addEventListener('click', function () { ask.remove(); doScratch(L.code); });
+    });
     var cp = detailInner.querySelector('[data-copy]');
     if (cp) cp.addEventListener('click', function () {
       var self = this;
