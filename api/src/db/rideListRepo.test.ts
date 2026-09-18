@@ -5,7 +5,7 @@ const baseList = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   corridorId: 'ella-south',
   fromPlace: 'Ella',
   toPlace: 'Mirissa',
-  date: '2026-08-08',
+  date: '2999-08-08', // far future: the board hides rides that have left
   slot: 'morning',
   minSeats: 4,
   capacity: 6,
@@ -123,6 +123,28 @@ describe('InMemoryRideListRepo — what stays on the board', () => {
     expect(codes).toContain(confirmed.code);
     expect(codes).not.toContain(cancelled.code);
     expect(codes).not.toContain(expired.code);
+  });
+});
+
+// A ride that has already left is not an offer. Confirmed lists never change status after they
+// run, so without a date rule a van from last month sat on the public board as "Locked in ·
+// 2 seats left" (seen on prod 2026-09-18). The list stays through its own travel day — Colombo
+// time, because that is the day the traveller is living — and drops the day after.
+describe('InMemoryRideListRepo — a ride that has left drops off the board', () => {
+  it('hides lists dated before today (Colombo), whatever their status', async () => {
+    const repo = new InMemoryRideListRepo();
+    const past = await repo.createList(baseList({ date: '2026-08-08' }));
+    const pastConfirmed = await repo.createList(baseList({ date: '2026-08-09', fromPlace: 'Kandy' }));
+    await repo.setStatus(pastConfirmed.id, 'confirmed');
+    const today = await repo.createList(baseList({ date: '2026-08-10', fromPlace: 'Galle' }));
+    const future = await repo.createList(baseList({ date: '2026-08-11', fromPlace: 'Yala' }));
+
+    // 2026-08-09T19:00Z is already 00:30 on the 10th in Colombo.
+    const codes = (await repo.listOpen({}, new Date('2026-08-09T19:00:00Z'))).map((r) => r.list.code);
+    expect(codes).not.toContain(past.code);
+    expect(codes).not.toContain(pastConfirmed.code);
+    expect(codes).toContain(today.code);
+    expect(codes).toContain(future.code);
   });
 });
 
