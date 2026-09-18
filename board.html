@@ -116,94 +116,75 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   background:repeating-linear-gradient(90deg,var(--pc-line) 0 9px,transparent 9px 18px)}
 .board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:30px}
 .board-head .lead{margin:0}
-.board{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
-@media(max-width:1020px){.board{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:640px){.board{grid-template-columns:1fr}}
+.board{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.board .board-empty{border:0;border-radius:0;background:none}
 
 /* ---------- loading skeleton ----------
-   Mirrors .lcard's shape so the grid doesn't reflow when the real cards land.
+   Mirrors a ride row's shape so the list doesn't jump when the real rows land.
    The API sleeps on Render's free tier, so the wait here can be tens of seconds. */
-.bskel{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);
-  border:1px solid rgba(255,255,255,.6);padding:22px 24px;display:flex;flex-direction:column;gap:14px;
-  min-height:196px}
+.bskel{display:grid;grid-template-columns:96px 1.5fr 1.35fr;gap:18px;align-items:center;padding:18px 24px;border-top:1px solid var(--line)}
+.bskel:first-child{border-top:0}
 .bskel-line,.bskel-dots i{background:linear-gradient(90deg,#e9e5da 25%,#f4f1e8 37%,#e9e5da 63%);
   background-size:400% 100%;animation:bskel 1.4s ease-in-out infinite;border-radius:8px}
 .bskel-line{height:14px}
 .bskel-line.w80{width:80%}
 .bskel-line.w60{width:60%;height:20px}
 .bskel-line.w40{width:40%}
-.bskel-dots{display:flex;gap:8px;margin-top:auto}
-.bskel-dots i{width:34px;height:34px;border-radius:50%}
+.bskel-dots{display:flex;gap:6px}
+.bskel-dots i{width:28px;height:28px;border-radius:50%}
 @keyframes bskel{0%{background-position:100% 50%}100%{background-position:0 50%}}
 @media(prefers-reduced-motion:reduce){.bskel-line,.bskel-dots i{animation:none}}
 
-/* ---------- list card (a ticket with a sign-up list) ---------- */
-.lcard{position:relative;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.6);
-  transition:transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s;display:flex;flex-direction:column;cursor:pointer}
-.lcard:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
-.lcard-top{padding:22px 24px 16px}
-.lcard-route{display:flex;align-items:baseline;gap:.55rem;font-family:var(--display);font-weight:700;font-size:1.42rem;letter-spacing:0;padding-right:8px}
-.lcard-route .arr{color:var(--accent);flex:none;transform:translateY(-1px)}
-.lcard-meta{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:8px;font-size:.86rem;font-weight:600;color:var(--ink-soft)}
-.lcard-meta .m{display:inline-flex;align-items:center;gap:.4rem}
-.lcard-meta svg{width:15px;height:15px;color:var(--accent-deep);flex:none}
-.lcard-status{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+/* ---------- ride rows ----------
+   One ride per line: window · route · who's in · price · action. The day heading carries the
+   date, so a row never repeats it. See docs/superpowers/specs/2026-09-18-ride-board-rows-design.md */
+.rw-group+.rw-group{border-top:1px solid var(--line)}
+.rw-day-h{margin:0;padding:16px 24px 8px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+/* the action column is a fixed width: sized per row, the widest label ("Start another van")
+   pushed that row's price and seats out of line with every other row */
+.rw{display:grid;grid-template-columns:96px minmax(0,1.5fr) minmax(0,1.35fr) 104px 156px;gap:18px;align-items:center;
+  padding:14px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
+.rw:hover{background:var(--pc-sky)}
+.rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
+.rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
+.rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rw-dur{display:none}
+.rw-route{min-width:0}
+.rw-places{font-family:var(--display);font-weight:700;font-size:1.15rem;line-height:1.25}
+.rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:400}
+.rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+.rw-seats{display:flex;align-items:center;gap:12px;min-width:0}
+.rw-faces{display:flex;align-items:center;flex:none}
+/* the stack is tighter than the sheet's roster, so the flags shrink to stay off the initials */
+.rw-faces .avatar.stack{margin-left:-6px}
+.rw-faces .avatar .flag{font-size:.6rem;right:-4px;bottom:-3px}
+.rw-more{background:var(--cream-deep);color:var(--ink-soft)}
+.rw-state{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.rw-state b{font-size:.9rem;font-weight:700}
+.rw-state small{font-size:.76rem;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rw-state.g b{color:var(--warn)}
+.rw-state.l b{color:var(--ok)}
+.rw-state.f b{color:var(--ink-soft)}
+.rw-price{text-align:right;white-space:nowrap;font-size:.8rem;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.rw-price b{font-family:var(--display);font-weight:700;font-size:1.1rem;color:var(--ink)}
+.rw .rw-cta{justify-self:end;white-space:nowrap}
+.rw-invite{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 24px;
+  border-top:1px solid var(--line);background:var(--cream);font-size:.9rem;color:var(--ink-soft)}
+.rw-invite p{margin:0}
+.rw-invite b{color:var(--ink)}
+.filters .f-start{margin-left:4px}
+@media(max-width:1020px){
+  .rw{grid-template-columns:88px minmax(0,1fr) 96px 156px;grid-template-areas:"when route price cta" "when seats price cta";row-gap:8px}
+  .rw-when{grid-area:when}.rw-route{grid-area:route}.rw-seats{grid-area:seats}.rw-price{grid-area:price}.rw .rw-cta{grid-area:cta}
+}
+/* the sign-up avatars and goal dots are also drawn by the ride sheet */
 /* four little dots = the goal */
 .goal-dots{display:inline-flex;align-items:center;gap:5px}
 .goal-dots i{width:9px;height:9px;border-radius:50%;background:var(--cream-deep);box-shadow:inset 0 0 0 1.5px #d9d3c2;transition:.3s}
 .goal-dots i.f{background:var(--teal);box-shadow:none}
 .goal-dots span{font-size:.74rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-left:4px}
-/* perforation divider */
-.tear{position:relative;height:0;border-top:2px dashed var(--line);margin:0 16px}
-.tear::before,.tear::after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;top:50%;transform:translateY(-50%);
-  background:var(--pc-back,#ecf4ee)}
-.tear::before{left:-26px}
-.tear::after{right:-26px}
-/* the list itself */
-.lcard-list{padding:14px 24px 8px;flex:1}
-.lrow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line)}
-.lrow:last-child{border-bottom:none}
-.lrow .num{width:18px;flex:none;font-size:.78rem;font-weight:700;color:#b6b0a2;font-variant-numeric:tabular-nums}
 .avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:800;color:#fff;position:relative;flex:none;box-shadow:var(--shadow-s)}
 .avatar .flag{position:absolute;bottom:-4px;right:-6px;font-size:.78rem;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
-.lrow .who{font-weight:700;font-size:.97rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lrow .who small{font-weight:600;color:var(--ink-soft);margin-left:.45rem;font-size:.78rem}
-.lrow.you .who{color:var(--teal-deep)}
-.lrow.open{cursor:pointer;border-radius:10px;margin:0 -10px;padding:8px 10px;transition:background .15s}
-.lrow.open:hover{background:rgba(10,185,182,.08)}
-.lrow.open .slot{flex:1;display:flex;align-items:center;gap:10px;color:#b6b0a2}
-.lrow.open .slot .dash{flex:1;border-bottom:2px dashed #ddd6c4;transform:translateY(4px)}
-.lrow.open .slot .hand{font-size:1.15rem;color:#b8b2a2;transition:color .15s;white-space:nowrap}
-.lrow.open:hover .slot .hand{color:var(--teal-deep)}
-.lrow.ghost{opacity:.55}
-.lrow.ghost .slot .hand{visibility:hidden}
-/* card foot */
-/* wrap, don't collide: the price block is multi-line and cannot shrink past its longest
-   word, so on a narrow card a no-wrap row drove the buttons straight over the text */
-.lcard-foot{padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.lcard-foot .btn{flex:0 0 auto}
-.lprice{font-size:.86rem;color:var(--ink-soft);line-height:1.35;font-weight:600;flex:1 1 auto;min-width:0}
-.lprice b{color:var(--ink);font-size:1.05rem;font-family:var(--display);font-weight:700}
-.lcard .started{padding:0 24px 18px;display:flex;align-items:center;gap:.55rem;font-size:.82rem;color:var(--ink-soft)}
-.lcard .started .avatar{width:26px;height:26px;font-size:.6rem}
-.lcard .started b{color:var(--ink);font-weight:700}
-/* confirmed */
-.lcard.confirmed{background:linear-gradient(180deg, rgba(10,185,182,.06), var(--paper) 34%)}
-.lcard .stamp{position:absolute;top:-13px;right:18px;z-index:3;
-  font-family:var(--body);font-weight:700;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
-  color:#fff;background:var(--saffron);padding:.5rem .7rem;line-height:1.1;text-align:center;
-  transform:rotate(4deg);box-shadow:var(--shadow-s);border:2px dashed rgba(255,255,255,.85);border-radius:3px;display:inline-grid;gap:1px}
-.lcard .stamp b{font-family:var(--display);font-size:1rem;font-weight:700;letter-spacing:0}
-@media(prefers-reduced-motion:no-preference){.lcard .stamp.play{animation:stampIn .5s cubic-bezier(.2,1.5,.35,1) both}}
-@keyframes stampIn{from{opacity:0;transform:scale(1.7) rotate(14deg)}to{opacity:1;transform:scale(1) rotate(4deg)}}
-/* start-your-own */
-.lcard-new{border:2px dashed var(--line);border-radius:var(--r-lg);background:rgba(255,253,248,.55);display:grid;place-items:center;text-align:center;
-  padding:36px 26px;min-height:300px;transition:.2s;color:var(--ink)}
-.lcard-new:hover{border-color:var(--accent);background:var(--paper);transform:translateY(-4px);box-shadow:var(--shadow)}
-.lcard-new .plus{width:52px;height:52px;border-radius:50%;background:var(--pc-teal);color:var(--teal-deep);display:grid;place-items:center;margin:0 auto 14px;font-size:1.6rem;font-weight:700}
-.lcard-new h3{font-size:1.3rem;margin-bottom:.35rem}
-.lcard-new p{font-size:.92rem;color:var(--ink-soft);max-width:26ch;margin:0 auto}
-.lcard-new .hand{display:block;margin-top:10px;font-size:1.25rem;color:var(--teal-deep)}
 
 /* ---------- phones: an always-there way to start a list ----------
    The tile above is the last cell of the grid, which on a phone is several screen-tall
@@ -448,7 +429,6 @@ body.detail-open .detail{display:block}
 @keyframes cdtick{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:.3;transform:scale(.72)}}
 @media(prefers-reduced-motion:reduce){.countdown.urgent .cd::before{animation:none}}
 /* ---- $0 cues ---- */
-.lprice .free{color:var(--teal-deep);font-weight:800}
 .zero-hero{display:flex;align-items:baseline;gap:.5rem;margin-bottom:3px}
 .zero-hero b{font-family:var(--display);font-weight:700;font-size:2.7rem;color:var(--teal-deep);line-height:.9}
 .zero-hero span{font-size:.9rem;font-weight:700;color:var(--ink-soft)}
@@ -481,12 +461,6 @@ body.detail-open .detail{display:block}
 .g-item{display:flex;gap:.6rem;align-items:flex-start;font-size:.92rem;color:var(--ink-soft);line-height:1.5}
 .g-item svg{width:20px;height:20px;color:var(--teal-deep);flex:none;margin-top:2px}
 .g-item b{color:var(--ink)}
-/* ---- compact roster (phones) ----
-   Desktop keeps the full sign-up list; ≤640px swaps in this one-line strip (see the phone
-   block at the end of this sheet). Both are rendered every time — no viewport branch in JS. */
-.lcard-roster{display:none}
-/* ---- "show N more rides" (phones) ---- */
-.board-more{display:none}
 
 /* ---- filter selects ---- */
 .filters{align-items:flex-end;gap:10px}
@@ -494,14 +468,9 @@ body.detail-open .detail{display:block}
 .fsel select{height:42px;border:1.5px solid var(--line);border-radius:12px;background:var(--paper);padding:0 2.2rem 0 .8rem;font-family:inherit;font-size:.9rem;font-weight:600;color:var(--ink);min-width:150px}
 .chip.ghost{border-style:dashed;color:var(--ink-soft)}
 .mr-count{background:var(--tomato);color:#fff;border-radius:99px;font-size:.72rem;font-weight:800;padding:.05rem .42rem;margin-left:.25rem}
-/* ---- hot / mine / gathering cards ---- */
-.lcard.hot{box-shadow:0 0 0 2px rgba(236,58,36,.38), var(--shadow)}
-.lcard.hot:hover{box-shadow:0 0 0 2px rgba(236,58,36,.6), var(--shadow-lg)}
-.lcard.mine{box-shadow:0 0 0 2px rgba(10,185,182,.55), var(--shadow)}
-.mine-tag{position:absolute;top:-11px;left:20px;z-index:3;background:var(--teal);color:#fff;font-size:.68rem;font-weight:800;padding:.3rem .6rem;border-radius:99px;box-shadow:var(--shadow-s)}
+/* ---- gathering chip ---- */
 .gather-chip{display:inline-flex;align-items:center;gap:.4rem;margin-top:10px;font-size:.78rem;font-weight:700;color:#a96b04;background:rgba(249,164,41,.14);border-radius:99px;padding:.3rem .7rem}
 .gather-chip svg{width:15px;height:15px;flex:none}
-.lprice .vs{font-size:.74rem;color:var(--ink-soft);font-weight:600}
 /* ---- empty state ---- */
 .board-empty{grid-column:1/-1;text-align:center;padding:44px 24px;border:2px dashed var(--line);border-radius:var(--r-lg);background:rgba(255,253,248,.5)}
 .board-empty .plus{font-size:2.2rem;margin-bottom:6px}
@@ -594,7 +563,7 @@ body.detail-open .detail{display:block}
   .filters .count{display:none}
 }
 
-/* ---------- phones: compact card + capped board ---------- */
+/* ---------- phones: two-line rows + the start bar ---------- */
 @media(max-width:640px){
   /* the fixed start bar, and the two things it would otherwise sit on top of */
   .start-bar{display:block}
@@ -603,27 +572,21 @@ body.detail-open .detail{display:block}
   /* a ride's own page already asks you to add your name — don't compete with it */
   body.detail-open .start-bar{display:none}
   .frow{grid-template-columns:1fr}
-  /* the sign-up list is most of the card's height — swap it for the one-line roster */
-  .lcard-list{display:none}
-  .lcard-roster{display:flex;align-items:center;gap:10px;padding:13px 20px;min-height:44px}
-  .rfaces{display:flex;align-items:center;flex:none}
-  .rslot{width:28px;height:28px;border-radius:50%;flex:none;border:2px dashed #d5cfbd;
-    background:var(--paper);margin-left:-8px}
-  .rfaces .avatar:first-child{margin-left:0}
-  .rtxt{font-size:.86rem;font-weight:600;color:var(--ink-soft);line-height:1.25;white-space:nowrap}
-  .rtxt b{color:var(--ink);font-weight:800}
-  .rhand{margin-left:auto;font-family:var(--hand);font-weight:700;font-size:1.1rem;
-    color:var(--teal-deep);white-space:nowrap}
-  .lcard-top{padding:18px 20px 14px}
-  .lcard-foot{padding:10px 20px 16px}
-  .lcard .started{padding:0 20px 14px}
-  .lcard-new{min-height:auto;padding:28px 22px}
-  /* n+5 mirrors MOBILE_CAP in board.js — keep the two in step */
-  .board:not(.expanded)>.lcard:nth-child(n+5){display:none}
-  .board-more{display:block;grid-column:1/-1;width:100%;min-height:50px;padding:.9rem 1rem;
-    border:1.5px dashed var(--line);border-radius:16px;background:rgba(255,253,248,.72);
-    font-family:inherit;font-weight:700;font-size:.95rem;color:var(--teal-deep)}
-  .board-more:active{background:var(--paper)}
+  /* two-line rows: route + price, window + duration, faces + state + a text-link action.
+     The only solid button on a phone is the start bar's; the whole row opens the ride. */
+  .filters .f-start{display:none}
+  .rw-day-h{padding:14px 16px 6px}
+  .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route price" "when when" "seats cta";gap:6px 12px;padding:13px 16px}
+  .rw-route small{display:none}
+  .rw-when{font-weight:500;font-size:.82rem;color:var(--ink-soft)}
+  .rw-dur{display:inline}
+  .rw-places{font-size:1.05rem}
+  .rw-state{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:4px}
+  .rw-state small::before{content:"· "}
+  /* 32px, not 44: the whole row is the tap target and opens the same sheet */
+  .rw .rw-cta,.rw .rw-cta:hover{background:none;border:0;box-shadow:none;color:var(--accent-deep);padding:4px 0;min-height:32px;transform:none}
+  .rw .rw-cta::after{content:" ›"}
+  .rw-invite{padding:14px 16px}
 }
 
 /* ---- PayHere hand-off (2026-08-18) ----
@@ -950,18 +913,18 @@ body.detail-open .detail{display:block}
 
 
 <!-- ================= TOAST ================= -->
-<!-- Phones only (see .start-bar). The create tile is the grid's last cell, so on a phone
-     the same action also lives in a bar that never scrolls away. -->
+<!-- Phones only (see .start-bar). On a phone the filter bar has no room for the Start button,
+     so the action lives in a bar that never scrolls away. -->
 <div class="start-bar" id="start-bar">
   <button class="btn btn-ghost btn-block" id="start-bar-btn">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-    Start your own list
+    Start a ride
   </button>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=51cd08b412" defer></script>
+<script src="board.js?v=6213dc44ed" defer></script>
 </body>
 </html>

@@ -47,7 +47,6 @@
   var MIN_DEFAULT = 3;   // seats needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
   var MAX_SEATS = 3;     // most one traveller may take (mirrors MAX_SEATS_PER_MEMBER on the API)
-  var MOBILE_CAP = 4;    // cards shown on a phone before "Show N more rides" (CSS-enforced)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
   // name → id index (best-effort): prototype short names + transfers-data full names.
@@ -533,65 +532,43 @@
       '<span class="ini">' + esc(ini) + '</span>' + img + flag + '</span>';
   }
 
-  function listRows(L) {
-    var rows = [];
-    var min = L.minSeats;
-    var members = L.members;
-    var over = members.length > min;
-    var shown = over ? members.slice(0, min - 1) : members;
-    var openUsed = false;
-    shown.forEach(function (m, i) {
-      var you = isYouMember(L, m);
-      rows.push('<div class="lrow ' + (you ? 'you' : '') + '">' +
-        '<span class="num">' + (i + 1) + '.</span>' + avatar(m, i) +
-        '<span class="who">' + esc(m.name) + (you ? ' <small>(you)</small>' : '') +
-        (m.isStarter ? ' <small>started this list</small>' : '') + '</span></div>');
-    });
-    if (over) {
-      var rest = members.slice(min - 1);
-      var stack = rest.slice(0, 3).map(function (m, i) { return avatar(m, (min - 1 + i), 'xs' + (i ? ' stack' : '')); }).join('');
-      rows.push('<div class="lrow"><span class="num">' + min + '.</span>' +
-        '<span style="display:flex;align-items:center">' + stack + '</span>' +
-        '<span class="who" style="font-size:.85rem;color:var(--ink-soft)">+' + rest.length + ' also riding</span></div>');
-    } else {
-      for (var i = shown.length; i < min; i++) {
-        if (!openUsed && !L.confirmed) {
-          openUsed = true;
-          rows.push('<div class="lrow open" data-join="' + esc(L.code) + '">' +
-            '<span class="num">' + (i + 1) + '.</span>' +
-            '<span class="slot"><span class="hand">your name here?</span><span class="dash"></span></span></div>');
-        } else {
-          rows.push('<div class="lrow open ghost" data-join="' + esc(L.code) + '">' +
-            '<span class="num">' + (i + 1) + '.</span>' +
-            '<span class="slot"><span class="hand">·</span><span class="dash"></span></span></div>');
-        }
-      }
-    }
-    return rows.join('');
+  /* ---------------- board row ---------------- */
+  // Up to four faces (flags ride on the avatars) and a "+N" for the rest.
+  function faces(L) {
+    var ms = L.members;
+    var html = ms.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('');
+    if (ms.length > 4) html += '<span class="avatar xs stack rw-more">+' + (ms.length - 4) + '</span>';
+    return html;
   }
 
-  // The phone version of listRows(): the same roster in one 44px strip instead of `minSeats`
-  // full rows (~190px). Both are always rendered — CSS swaps them at 640px — so there is no
-  // viewport branch in JS and nothing to re-render on rotate.
-  function rosterStrip(L) {
-    var min = L.minSeats;
-    var need = Math.max(0, min - L.committed);
-    var conf = L.confirmed || need === 0;
-    var faces = L.members.slice(0, 4).map(function (m, i) {
-      return avatar(m, i, 'xs' + (i ? ' stack' : ''));
-    }).join('');
-    // two empty circles max: at 375px the faces, the count and the "your name here?" hand
-    // all have to share one 44px line, and a third circle pushes the count onto two.
-    var slots = '';
-    for (var i = 0; i < Math.min(need, 2); i++) slots += '<span class="rslot"></span>';
-    var txt = conf
-      ? '<b>Van\'s locked</b> · ' + L.committed + ' riding'
-      : '<b>' + L.committed + ' of ' + min + '</b> · ' + need + ' to go';
-    return '<div class="lcard-roster"' + (conf ? '' : ' data-join="' + esc(L.code) + '"') + '>' +
-      '<span class="rfaces">' + faces + slots + '</span>' +
-      '<span class="rtxt">' + txt + '</span>' +
-      (conf ? '' : '<span class="rhand">your name here?</span>') +
-      '</div>';
+  function rowHtml(L) {
+    var mine = iAmOn(L);
+    var st = rowState(L, mine);
+    var dur = durationOf(L);
+    var win = windowLabel(L.slot);
+    var hook = st.cta.kind === 'again' ? 'data-again' : 'data-view';
+    var primary = st.cta.text === 'Hop on';
+    return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
+      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
+      '<div class="rw-when">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + '</div>' +
+      '<div class="rw-route"><span class="rw-places">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</span>' +
+        (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
+      '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
+        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span></div>' +
+      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b> each</div>' +
+      '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
+        esc(st.cta.text) + '</button>' +
+      '</article>';
+  }
+
+  // Only when a route is chosen: the list ends with one way to start a van on it. With no
+  // route there is nothing to prefill, and the filter bar's Start button already covers it.
+  function routeInvite() {
+    var f = state.filter;
+    if (f.mine || f.from === 'all' || f.to === 'all') return '';
+    return '<div class="rw-invite"><p><b>Not your day?</b> Start a van on ' + esc(f.from) + ' → ' + esc(f.to) +
+      ' for your date — $0 to add your name.</p>' +
+      '<button class="btn btn-ghost btn-sm" id="rw-start">Start a ride +</button></div>';
   }
 
   // One source for the review claim: the board previously said "200+ real trips" while the rest
@@ -610,137 +587,65 @@
       '<span class="t">' + esc(caption || '5.0 · loved by travellers') + '</span></a>';
   }
 
-  /* ---------------- board card ---------------- */
-  function card(L) {
-    var min = L.minSeats;
-    var need = Math.max(0, min - L.committed);
-    var conf = L.confirmed || need === 0;
-    var full = conf && Math.max(0, L.capacity - L.committed) === 0;
-    var hot = !conf && need === 1;
-    var mine = iAmOn(L);
-    var sc = scarcityText(L);
-    var alt = ALT[L.corridorId] || { priv: 0, bus: '' };
-    var dots = Array.apply(null, { length: min }).map(function (_, i) {
-      return '<i class="' + (i < Math.min(L.committed, min) ? 'f' : '') + '"></i>';
-    }).join('');
-    var clock = conf
-      ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
-      : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
-    var starter = L.members[0];
-    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal" data-code="' + esc(L.code) + '">' +
-      (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
-      (mine ? '<span class="mine-tag">You\'re on this ✓</span>' : '') +
-      '<div class="lcard-top">' +
-      '<div class="lcard-route">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</div>' +
-      '<div class="lcard-meta">' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(whenLine(L)) + '</span>' +
-      clock +
-      '</div>' +
-      '<div class="lcard-status">' +
-      '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' +
-      '<span class="goal-dots">' + dots + '</span>' +
-      '</div>' +
-      '</div>' +
-      '<div class="tear"></div>' +
-      '<div class="lcard-list">' + listRows(L) + '</div>' +
-      rosterStrip(L) +
-      '<div class="lcard-foot">' +
-      '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
-      (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
-      // A full van you are not on has exactly one action worth offering — start another.
-      // The roster is already on the card, and the whole card opens the detail sheet, so a
-      // second "See who's on" button only competed with the real primary.
-      (full && !mine
-        ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
-        : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
-          // `conf` is `L.confirmed || need === 0`, which conflates two states. A list only
-          // reaches status 'confirmed' in the cutoff sweep, and a seat on one can no longer be
-          // joined — so inviting a hop-on there is an action that can only 409. A list that has
-          // merely hit its minimum is still gathering with the cutoff ahead: it takes joiners,
-          // and keeps the invitation.
-          (mine ? 'View your ride' : L.confirmed ? "See who's going" : conf ? 'See ride · hop on' : 'See ride & join') +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
-      '</div>' +
-      (L.note
-        ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
-        : (starter ? '<div class="started">started by ' + avatar(starter, 0) + ' <b>' + esc(starter.name) + '</b></div>' : '')) +
-      '</article>';
-  }
-
   var grid = document.getElementById('board-grid');
   var filtersEl = document.getElementById('filters');
 
   function render() {
     var shown = state.lists;
-    var empty = shown.length === 0
-      ? '<div class="board-empty"><div class="plus">🗺️</div>' +
+    grid.removeAttribute('aria-busy');
+    if (!shown.length) {
+      grid.innerHTML = '<div class="board-empty"><div class="plus">🗺️</div>' +
         '<h3>No lists match yet' + (state.filter.mine ? " — you haven't joined any" : '') + '.</h3>' +
         '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
-        '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
-      : '';
-    grid.removeAttribute('aria-busy');
-    // Phones only: every card is in the DOM, CSS hides the ones past MOBILE_CAP until the
-    // grid is .expanded. Keeps one render path (and the count honest) on every screen.
-    var more = shown.length > MOBILE_CAP
-      ? '<button class="board-more" id="board-more">Show ' + (shown.length - MOBILE_CAP) +
-        ' more ' + (shown.length - MOBILE_CAP === 1 ? 'ride' : 'rides') + '</button>'
-      : '';
-    grid.classList.remove('expanded');
-    grid.innerHTML = shown.map(card).join('') + empty + more +
-      '<button class="lcard-new reveal" id="new-list"><div>' +
-      '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
-      '<p>Start your own list on any route, any day — we help gather names.</p>' +
-      '<span class="hand">you\'re name #1 ✍️</span></div></button>';
+        '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>';
+    } else {
+      grid.innerHTML = groupByDay(shown).map(function (g) {
+        return '<section class="rw-group"><h3 class="rw-day-h">' + esc(g.label) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
+      }).join('') + routeInvite();
+    }
 
     var es = document.getElementById('empty-start');
     if (es) es.addEventListener('click', function () {
       if (state.filter.mine) { state.filter.mine = false; loadBoard(); }
       else openModal(null);
     });
-    grid.querySelectorAll('[data-join]').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); openDetail(el.getAttribute('data-join'), true); });
-    });
+    var rs = document.getElementById('rw-start');
+    if (rs) rs.addEventListener('click', function () { openModal(null, { from: state.filter.from, to: state.filter.to }); });
     grid.querySelectorAll('[data-view]').forEach(function (el) {
       el.addEventListener('click', function (e) { e.stopPropagation(); openDetail(el.getAttribute('data-view')); });
     });
-    grid.querySelectorAll('.lcard').forEach(function (c) {
-      c.addEventListener('click', function (e) {
-        if (e.target.closest('[data-join],[data-view],a')) return;
-        var again = e.target.closest ? e.target.closest('[data-again]') : null;
-        if (again) { startAnother(again.getAttribute('data-again')); return; }
-        // read the code off the card, not off a [data-view] button — a full van has no
-        // view button, and looking one up there left the whole card dead to a click
-        var code = c.getAttribute('data-code');
-        if (code) openDetail(code);
+    grid.querySelectorAll('[data-again]').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); startAnother(el.getAttribute('data-again')); });
+    });
+    grid.querySelectorAll('.rw').forEach(function (r) {
+      var code = r.getAttribute('data-code');
+      // the whole row opens the ride — read the code off the row, since a full van has no
+      // [data-view] button to read it from
+      r.addEventListener('click', function (e) {
+        if (e.target.closest('button,a')) return;
+        openDetail(code);
+      });
+      r.addEventListener('keydown', function (e) {
+        if (e.target !== r || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        openDetail(code);
       });
     });
-    var bm = document.getElementById('board-more');
-    if (bm) bm.addEventListener('click', function () {
-      grid.classList.add('expanded');
-      bm.remove();
-      observe();
-    });
-    var nl = document.getElementById('new-list');
-    if (nl) nl.addEventListener('click', function () { openModal(null); });
     observe();
     playSeatFills();
   }
 
-  /* A seat filling is the whole point of this board, and it was the one thing that never
-     animated. board.html:.goal-dots i carries `transition:.3s` — written for exactly this —
-     but render() rebuilds every card through innerHTML, so each <i> is a BRAND NEW element
-     with no previous state to transition from. A CSS transition cannot fire on an element
-     that did not exist a frame ago, so that rule has never once run.
+  /* A seat filling is the whole point of this board. render() rebuilds every row through
+     innerHTML, so each element is BRAND NEW with no previous state for a CSS transition to
+     start from — a transition cannot fire on an element that did not exist a frame ago.
 
-     Rather than restructure the render, the newly-filled dots are animated explicitly, and
-     only the ones that actually gained: we remember each list's committed count from the last
-     paint and animate the difference, staggered so two seats arriving read as two events. */
+     So a gain is animated explicitly, and only a real gain: we remember each list's committed
+     count from the last paint and pulse that row's seat state when it went up. */
   var _prevCommitted = Object.create(null);
   function playSeatFills() {
     var reduce = window.CH && CH.motion ? CH.motion.reduce() : false;
-    document.querySelectorAll('.lcard[data-code]').forEach(function (cardEl) {
-      var code = cardEl.getAttribute('data-code');
+    document.querySelectorAll('.rw[data-code]').forEach(function (rowEl) {
+      var code = rowEl.getAttribute('data-code');
       var L = state.byCode[code];
       if (!L) return;
       var prev = _prevCommitted[code];
@@ -748,16 +653,13 @@
       // First sight of this list, or no gain — nothing happened worth pointing at. (A LOSS
       // isn't animated either: someone leaving a ride is not a moment to celebrate.)
       if (reduce || prev == null || L.committed <= prev) return;
-      var dots = cardEl.querySelectorAll('.goal-dots i.f');
-      for (var i = prev; i < Math.min(L.committed, dots.length); i++) {
-        var d = dots[i];
-        if (!d || typeof d.animate !== 'function') continue;
-        d.animate([
-          { transform: 'scale(.2)', opacity: .25 },
-          { transform: 'scale(1.3)', opacity: 1, offset: .55 },
-          { transform: 'scale(1)', opacity: 1 },
-        ], { duration: 460, delay: (i - prev) * 90, easing: 'cubic-bezier(.22,.75,.3,1)', fill: 'backwards' });
-      }
+      var b = rowEl.querySelector('.rw-state b');
+      if (!b || typeof b.animate !== 'function') return;
+      b.animate([
+        { transform: 'scale(.85)', opacity: .4 },
+        { transform: 'scale(1.12)', opacity: 1, offset: .55 },
+        { transform: 'scale(1)', opacity: 1 },
+      ], { duration: 460, easing: 'cubic-bezier(.22,.75,.3,1)', fill: 'backwards' });
     });
   }
 
@@ -821,32 +723,34 @@
       '</select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
       ((f.from !== 'all' || f.to !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
-      countHtml;
+      countHtml +
+      '<button class="btn btn-primary btn-sm f-start" id="f-start">Start a ride +</button>';
     var ff = document.getElementById('f-from'), ft = document.getElementById('f-to');
     ff.value = f.from; ft.value = f.to;
     ff.addEventListener('change', function () { f.from = ff.value; f.mine = false; loadBoard(); });
     ft.addEventListener('change', function () { f.to = ft.value; f.mine = false; loadBoard(); });
     var fm = document.getElementById('f-mine');
     if (fm) fm.addEventListener('click', function () { if (f.mine) { f.mine = false; loadBoard(); } else showMine(); });
+    var fs = document.getElementById('f-start');
+    if (fs) fs.addEventListener('click', function () { openModal(null); });
     var fc = document.getElementById('f-clear');
     if (fc) fc.addEventListener('click', function () { f.from = 'all'; f.to = 'all'; f.mine = false; loadBoard(); });
   }
 
   /* ---------------- board loads ---------------- */
-  // Placeholder cards for the gap before /board answers. Worth having even though the
+  // Placeholder rows for the gap before /board answers. Worth having even though the
   // warm response is ~450ms: the API sleeps on Render's free tier, and a cold wake is
   // tens of seconds staring at an empty grid with no sign anything is happening.
   // Cleared by the first render() / error state, both of which overwrite grid.innerHTML.
   function showSkeleton(n) {
     if (!grid) return;
-    var card =
+    var row =
       '<div class="bskel" aria-hidden="true">' +
-        '<div class="bskel-line w60"></div>' +
         '<div class="bskel-line w40"></div>' +
-        '<div class="bskel-dots"><i></i><i></i><i></i><i></i></div>' +
-        '<div class="bskel-line w80"></div>' +
+        '<div class="bskel-line w60"></div>' +
+        '<div class="bskel-dots"><i></i><i></i><i></i></div>' +
       '</div>';
-    grid.innerHTML = new Array((n || 3) + 1).join(card);
+    grid.innerHTML = new Array((n || 4) + 1).join(row);
     grid.setAttribute('aria-busy', 'true');
   }
 
@@ -909,7 +813,7 @@
     });
   }
 
-  // Best-effort: learn which board cards are mine (for the highlight + badge)
+  // Best-effort: learn which board rows are mine (for the highlight + badge)
   // without changing what's displayed.
   function refreshMineCodes() {
     if (!state.me) { state.mineCodes = new Set(); updateMyRidesButton(); return Promise.resolve(); }
@@ -918,11 +822,11 @@
       state.mineCodes = new Set(lists.map(function (L) { return L.code; }));
       lists.forEach(function (L) { state.byCode[L.code] = L; });
       updateMyRidesButton();
-      // Only repaint if that actually marks (or unmarks) a card that's on screen. This
+      // Only repaint if that actually marks (or unmarks) a row that's on screen. This
       // used to render() unconditionally, one round trip after the board had painted,
       // which rebuilt every node and re-ran the entrance animation for nothing.
       var marked = [];
-      grid.querySelectorAll('.lcard.mine').forEach(function (c) {
+      grid.querySelectorAll('.rw.mine').forEach(function (c) {
         var code = c.getAttribute('data-code');
         if (code) marked.push(code);
       });

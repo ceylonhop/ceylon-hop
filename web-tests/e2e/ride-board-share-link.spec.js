@@ -44,8 +44,8 @@ test('the share link points at the API unfurl path, not the dead apex', async ({
   await stubApi(page);
   await page.goto('/board.html');
 
-  await page.locator('.lcard').first().waitFor({ timeout: 15000 });
-  await page.locator('.lcard [data-view]').first().click();
+  await page.locator('.rw').first().waitFor({ timeout: 15000 });
+  await page.locator('.rw [data-view]').first().click();
   await expect(page.locator('body')).toHaveClass(/detail-open/);
 
   const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
@@ -63,8 +63,8 @@ test('the ride domain, once configured, shortens links to a bare code', async ({
   await stubApi(page);
   await page.goto('/board.html');
 
-  await page.locator('.lcard').first().waitFor({ timeout: 15000 });
-  await page.locator('.lcard [data-view]').first().click();
+  await page.locator('.rw').first().waitFor({ timeout: 15000 });
+  await page.locator('.rw [data-view]').first().click();
   await expect(page.locator('body')).toHaveClass(/detail-open/);
 
   const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
