@@ -31,8 +31,8 @@
   };
   // Departure windows — a list gathers on a slot; the exact time is set when it locks.
   var SLOTS = {
-    morning: { label: 'morning', range: 'departs 7–9 am', opts: ['07:00', '08:00', '09:00'] },
-    afternoon: { label: 'afternoon', range: 'departs 1–3 pm', opts: ['13:00', '14:00', '15:00'] }
+    morning: { label: 'morning', range: 'departs 7–9 am', win: '7–9 am', opts: ['07:00', '08:00', '09:00'] },
+    afternoon: { label: 'afternoon', range: 'departs 1–3 pm', win: '1–3 pm', opts: ['13:00', '14:00', '15:00'] }
   };
   // Private-car fare + rough bus time per corridor — for the shared/private/bus price compare.
   var ALT = {
@@ -149,6 +149,58 @@
     return list.confirmed
       ? list.whenLabel + ' · departs ' + (list.lockedTime || s.opts[1])
       : list.whenLabel + ' · ' + s.label + ' · ' + s.range;
+  }
+
+  /* ---------------- board rows (pure) ---------------- */
+  // A row always shows the 2-hour window, never a pinned clock time: every other row is still
+  // gathering on a window, and a column mixing "08:30" with "7–9 am" stops scanning.
+  function windowLabel(slot) { return slotWindow(slot).win; }
+
+  // "~4h door to door" → "~4h" — duration is the one fact that sits under a route.
+  function durationOf(list) {
+    var t = list && CORRIDOR_TIME[list.corridorId];
+    return t ? t.replace(/\s*door to door$/, '') : '';
+  }
+
+  var SLOT_ORDER = { morning: 0, afternoon: 1 };
+  // Day headings in date order; morning before afternoon; a dateless list goes last, not missing.
+  function groupByDay(lists) {
+    var sorted = (lists || []).map(function (L, i) { return { L: L, i: i }; }).sort(function (a, b) {
+      var da = a.L.date || '￿', db = b.L.date || '￿';
+      if (da !== db) return da < db ? -1 : 1;
+      var sa = SLOT_ORDER[a.L.slot] || 0, sb = SLOT_ORDER[b.L.slot] || 0;
+      return sa !== sb ? sa - sb : a.i - b.i;
+    });
+    var groups = [];
+    sorted.forEach(function (x) {
+      var last = groups[groups.length - 1];
+      var date = x.L.date || null;
+      if (!last || last.date !== date) {
+        last = { date: date, label: date ? fmtDate(date) : 'Date to be set', lists: [] };
+        groups.push(last);
+      }
+      last.lists.push(x.L);
+    });
+    return groups;
+  }
+
+  // One coloured seat state and one action per row. The action rules are #597/#599's: a
+  // confirmed list is past its cutoff and the join route refuses it, so it never says "Hop on";
+  // a list that has only reached its minimum is still gathering and still takes joiners.
+  function rowState(list, mine) {
+    var min = list.minSeats, cap = list.capacity;
+    var need = Math.max(0, min - list.committed);
+    var left = Math.max(0, cap - list.committed);
+    var you = mine ? " · you're on it" : '';
+    var cta = mine ? { kind: 'view', text: 'View your ride' }
+      : left === 0 ? { kind: 'again', text: 'Start another van' }
+      : list.confirmed ? { kind: 'view', text: "See who's going" }
+      : { kind: 'view', text: 'Hop on' };
+    if (left === 0) return { cls: 'f', label: 'Full', sub: list.committed + ' of ' + cap + you, cta: cta };
+    if (list.confirmed || need === 0) {
+      return { cls: 'l', label: 'Locked in', sub: left + ' seat' + (left === 1 ? '' : 's') + ' left' + you, cta: cta };
+    }
+    return { cls: 'g', label: list.committed + ' of ' + min + ' in', sub: 'needs ' + need + ' more' + you, cta: cta };
   }
 
   // PublicList (wire shape) → the internal card model the renderers use.
@@ -308,6 +360,10 @@
     slotWindow: slotWindow,
     scarcityText: scarcityText,
     whenLine: whenLine,
+    windowLabel: windowLabel,
+    durationOf: durationOf,
+    groupByDay: groupByDay,
+    rowState: rowState,
     normalizeList: normalizeList,
     centsToDollars: centsToDollars,
     money: money,
