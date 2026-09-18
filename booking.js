@@ -1908,6 +1908,11 @@ function render(){
   const sharedBagMax = freeBags + 5;            // allow a handful of paid extras
   const bgUp=document.getElementById('bg-up'); if(bgUp) bgUp.disabled = state.bags >= (isShared ? sharedBagMax : ABS_MAX_BAGS);
   const cap=document.getElementById('bag-cap'); if(cap) cap.textContent = isShared ? `One large bag per traveller free · extra bags $10 each` : (perVehicle ? `${vehicleLabel} · up to ${maxBags} bags` : `Up to ${maxBags} bags`);
+  // "40% off" is the per-SEAT child fare (calcTotal: unit*0.6*ch). A private vehicle is one fixed
+  // fare however many ride in it, so the promise was false there: adding a child changed nothing.
+  // What a child does change on a private booking is the seat count that decides car vs van.
+  const chSub=document.querySelector('#ch-step .muted');
+  if(chSub && perVehicle) chSub.textContent='Age 2–11 · counts as a seat';
   const note=document.getElementById('cap-note');
   if(note){
     if(paxOver || bagsOver){
