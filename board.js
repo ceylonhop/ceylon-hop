@@ -1211,7 +1211,7 @@
     if (dests.indexOf(prev) !== -1) cTo.value = prev;
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
-      cEst.innerHTML = '$' + c.seat + ' <small>/ each</small>';
+      cEst.innerHTML = money(c.seat) + ' <small>/ each</small>';
       updateCost();
     }
     if (dupeTimer) clearTimeout(dupeTimer);

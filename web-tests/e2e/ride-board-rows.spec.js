@@ -114,6 +114,17 @@ test('on a laptop Start a ride sits in the filter bar and opens the create form'
   await expect(page.locator('#m-title')).toHaveText('Start a list');
 });
 
+test('the create form prints a seat price as money, not a bare number', async ({ page }) => {
+  // Kandy → Ella is priced by road distance at $24.50; raw concatenation printed "$24.5 / each"
+  // (prod, 2026-09-18). Every other price on the board goes through money().
+  await stubApi(page);
+  await page.goto('/board.html');
+  await page.locator('#f-start').click();
+  await page.locator('#c-from').selectOption('kandy');
+  await page.locator('#c-to').selectOption('ella');
+  await expect(page.locator('#c-est')).toHaveText(/^\$\d+(\.\d{2})? \/ each$/);
+});
+
 test('with a route chosen, the list closes with one invite to start a van on that route', async ({ page }) => {
   await stubApi(page, [LISTS[2]]);
   await page.goto('/board.html?from=' + encodeURIComponent(base.from) + '&to=' + encodeURIComponent(base.to));
