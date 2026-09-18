@@ -74,3 +74,50 @@ test('scratching asks first, and sends nothing until the traveller confirms', as
   await expect.poll(() => scratches.length).toBe(1);
   await expect(page.locator('#toast')).toContainText('Name scratched off');
 });
+
+// The "you've joined" step (owner, 2026-09-18: "too much copy and not encouraging users to
+// share"). Its one job is to get the list shared so the van fills — but it opened with a
+// headline, a sub-line, two more paragraphs and a mock link preview, and the share buttons sat
+// below the fold. The ask and the buttons now come first; the preview is there if wanted.
+async function openDoneStep(page) {
+  await page.route((u) => isApiRequest(new URL(u.href)), (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const j = (body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (path === '/board/me') return j({ me: { firstName: 'Roshen', country: 'US', photo: null } });
+    if (path === '/board') return j({ lists: [list] });
+    if (path === '/board/mine') return j({ lists: [list] });
+    if (path === '/board/payments/RBPA-done') return j({ status: 'succeeded', list, manageToken: 'manage-token' });
+    return j({});
+  });
+  await page.goto('/board.html?ridePayment=RBPA-done');
+  await expect(page.locator('#done-head')).toBeVisible({ timeout: 15000 });
+}
+
+test('after starting a list, the headline is the ask: how many more, and the van runs', async ({ page }) => {
+  await openDoneStep(page);
+  // Roshen STARTED this list, so it is the starter's wording; the joiner's ("You’re in — …") is
+  // pinned by ride-board-payhere.spec.js, where Ana started the list and Roshen joined it.
+  await expect(page.locator('#done-head')).toHaveText('Your list is live — 2 more and the van runs.');
+  // The PayHere-return path jumps straight to this step, so the header has to be set HERE: it
+  // used to keep the markup's defaults — "Add your name" over "Ella → Mirissa · Sat 8 Aug".
+  await expect(page.locator('#m-title')).toHaveText('You’re on the list');
+  await expect(page.locator('#m-route')).toContainText('Colombo Airport (CMB) → Sigiriya / Dambulla');
+  // the line under it is the call to share, tied to what the traveller gets out of it
+  await expect(page.locator('#done-sub')).toHaveText('Spread the word to fill the van and lock in your ≈ $27.49 seat.');
+  // one short line of why, not three paragraphs
+  await expect(page.locator('#mstep-3 .why-share')).toHaveCount(1);
+  await expect(page.locator('#mstep-3 .og-caption')).toHaveCount(0);
+});
+
+test('on a phone the share buttons are on the first screen of the joined step', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDoneStep(page);
+  const wa = page.locator('#wa-share');
+  await expect(wa).toBeVisible();
+  const box = await wa.boundingBox();
+  expect(box.y + box.height, `WhatsApp button ends at ${Math.round(box.y + box.height)}px of an 844px screen`).toBeLessThan(844);
+  await expect(page.locator('#copy-btn')).toBeVisible();
+  // the link preview is still there, but folded away until asked for
+  await expect(page.locator('#mstep-3 details.share-preview')).toHaveCount(1);
+  await expect(page.locator('#mstep-3 .share-card')).toBeHidden();
+});

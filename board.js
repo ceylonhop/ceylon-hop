@@ -1587,6 +1587,12 @@
   function showSuccess(L) {
     var need = Math.max(0, L.minSeats - L.committed);
     setStep(panels().length - 1);
+    // Set the header here, not only in openModal(): the PayHere-return path opens the overlay
+    // and lands on this step directly, so it kept the markup's defaults — "Add your name" over
+    // a placeholder route — on the one screen a returning payer is guaranteed to see.
+    document.getElementById('m-title').textContent = 'You’re on the list';
+    document.getElementById('m-route').textContent =
+      L.from + ' → ' + L.to + ' · ' + L.whenLabel + ' · ' + slotWindow(L.slot).label;
     var lineNo = L.members.length || 1;
     document.getElementById('yl-num').textContent = lineNo + '.';
     // your written-in row avatar
@@ -1604,14 +1610,15 @@
       if (k <= target.length) { el.innerHTML = esc(target.slice(0, k)) + '<span class="caret"></span>'; k++; setTimeout(write, 85); }
       else setTimeout(function () { var c = el.querySelector('.caret'); if (c) c.remove(); }, 900);
     })();
-    document.getElementById('done-head').textContent = creating
-      ? 'Your list is up on the board.'
-      : need === 0 ? 'Enough seats are pledged.' : 'Your name’s on the list.';
-    document.getElementById('done-sub').textContent = creating
-      ? 'You’re name #1 — ' + need + ' more and the van can run. Lists fill when their starter shares them.'
-      : need === 0
-        ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
-        : need + ' more seat' + (need > 1 ? 's' : '') + ' and the van can run.';
+    // This step has one job: get the list shared so the van fills. So the headline IS the ask
+    // (how many more), one line says why, and the share buttons follow straight away — it used
+    // to open with four blocks of copy and the buttons below the fold (owner, 2026-09-18).
+    document.getElementById('done-head').textContent = need === 0
+      ? 'Enough seats are pledged.'
+      : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the van runs.';
+    document.getElementById('done-sub').textContent = need === 0
+      ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
+      : 'Spread the word to fill the van and lock in your ≈ ' + money(L.cost) + ' seat.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
