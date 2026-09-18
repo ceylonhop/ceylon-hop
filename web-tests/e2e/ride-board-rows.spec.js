@@ -173,5 +173,8 @@ for (const width of [1024, 820]) {
     const clipped = await page.$$eval('.rw-pl', (els) =>
       els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.innerText.replace(/\n/g, ' ')));
     expect(clipped, `clipped at ${width}px: ${clipped.join(' | ')}`).toEqual([]);
+    // and the qualifiers are gone at these widths — they are what tipped the longest pair over.
+    // (.rw-route small{display:block} outranks a bare .rw-q rule; the hide must be as specific.)
+    await expect(page.locator('.rw[data-code="RW-1"] .rw-q').first()).toBeHidden();
   });
 }

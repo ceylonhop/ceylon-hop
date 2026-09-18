@@ -156,15 +156,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
 /* soft place tags: tint + the ride sheet's markers, no border (a bordered pill here is a filter chip) */
 .rw-pl{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:4px 10px 4px 8px;border-radius:999px;white-space:nowrap}
-/* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column */
-@media(max-width:1180px){.rw-q{display:none}}
 .rw-pl.a{background:var(--pc-teal)}
 .rw-pl.b{background:#fdeee9}
 .rw-dot{width:10px;height:10px;border-radius:50%;flex:none}
 .rw-pl.a .rw-dot{border:2.5px solid var(--teal);background:#fff}
 .rw-pl.b .rw-dot{background:var(--cta)}
-.rw-q{font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft)}
+/* .rw-route small{display:block} (the duration line) outranks a bare .rw-q — match its specificity */
+.rw-route .rw-q{display:inline;font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft);margin:0}
 .rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+/* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column.
+   Must come AFTER the base .rw-route .rw-q rule — equal specificity, so source order decides. */
+@media(max-width:1180px){.rw-route .rw-q{display:none}}
 .rw-seats{display:flex;align-items:center;gap:12px;min-width:0}
 .rw-faces{display:flex;align-items:center;flex:none}
 /* the stack is tighter than the sheet's roster, so the flags shrink to stay off the initials */
@@ -590,7 +592,7 @@ body.detail-open .detail{display:block}
   .rw-day-h{padding:14px 16px 6px}
   /* the route takes the full width so the longest pair stays one line; price sits by the time */
   .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route route" "when price" "seats cta";gap:6px 12px;padding:13px 16px}
-  .rw-q{display:none}
+  .rw-route .rw-q{display:none}
   .rw-places{font-size:1rem;gap:6px}
   .rw-pl{padding:3px 9px 3px 8px}
   .rw-route small{display:none}
