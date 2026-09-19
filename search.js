@@ -339,6 +339,13 @@ function unpricedHtml() { return `
 
 let sharedCard = '';
 let noShare = '';
+/* The ride board was reachable only from /trip/ pages, so a search that found no scheduled seat
+   dead-ended at "private is the way to go" — on Kandy → Ella, a route the board sells at $24.50.
+   board.html pre-filters on ?from=&to= by place NAME (see board.js `filter`). */
+function boardLink(fromName, toName) {
+  const qs = fromName && toName ? `?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}` : '';
+  return `<a class="ns-board" href="board.html${qs}">See the ride board ${ICON.arrow}</a>`;
+}
 if (shared) {
   // A saving can only be stated against a known party size — the private car is one fixed
   // fare however many ride in it, so "% saved" moves entirely with the head count (on
@@ -348,6 +355,10 @@ if (shared) {
   const savePct = perPaxPrivate == null ? null : Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
   const fmtTime = t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; };
   const timeStr = shared.times.map(fmtTime).join(' & ');
+  /* The days it runs were only discoverable by clicking through to the calendar. A traveller
+     deciding between this and a private car needs to know whether it runs on THEIR day first. */
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const daysStr = (shared.days || []).map(d => DAY_NAMES[d]).filter(Boolean).join(' & ');
   /* One marketed product picks up at several places: the Negombo→Sigiriya van leaves CMB at
      7:00 and Negombo at 7:30. Showing only the boarding time for the leg searched hides the
      other pickup, so a traveller flying in can't tell the same van collects them at arrivals.
@@ -361,12 +372,18 @@ if (shared) {
      Most catalogue legs have a route page and will eventually be served from there, but three
      (weligama→cmb-airport, mirissa→colombo, weligama→colombo) have no page at all, so this
      card is the only place they are ever described. It has to be right on its own. */
+  /* EXCEPT the payment line. The route page's card leads to the ride board, where PayHere only
+     pre-approves the card — "nothing charged until it's confirmed" is true THERE. This card leads
+     to booking.html?mode=shared, an ordinary pay-now checkout (terms §: "a seat is guaranteed
+     only once your booking is paid"), so borrowing that sentence promised something this flow
+     does not do. Owner, 2026-09-18: the scheduled seat charges immediately; pre-approval is the
+     board's. Say what this button does. */
   const pickupRows = stops.length > 1
-    ? `<div class="sm">${ICONS.departs} Pick-up points:</div>
+    ? `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · pick-up points:` : 'Pick-up points:'}</div>
        <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
-    : `<div class="sm">${ICONS.departs} Departs ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
+    : `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · departs` : 'Departs'} ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
   sharedCard = `
-  <article class="opt opt-shared">
+  <article class="opt opt-shared" id="shared-option">
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
@@ -374,14 +391,14 @@ if (shared) {
     </div>
     <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    <p class="shared-runs">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
+    <p class="shared-runs"><b>Scheduled service</b> · pay now to reserve your seat</p>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       ${pickupRows}
       <div class="sm">${ICONS.avail} ${paxText ? `Seats for ${paxText} — we` : 'We'} confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
-      <span class="chip">${ICONS.ck} AC car or van</span>
+      <span class="chip">${ICONS.ck} Air-conditioned</span>
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
       <span class="chip">${ICONS.ck} Meet other travellers</span>
     </div>
@@ -401,8 +418,9 @@ if (shared) {
   <div class="noshare">
     <div class="ns-ico">${ICONS.share}</div>
     <div>
-      <b>Shared seats run on set routes</b>
-      <p>Our shared vans run a fixed set of scheduled routes, and we can only match those automatically. Your private transfer covers you door-to-door at a fixed price, whenever you want to leave.</p>
+      <b>Looking to share the ride?</b>
+      <p>Shared seats are matched by town, not by hotel or address. Search the town itself — “Sigiriya”, “Ella”, “Kandy” — to see a scheduled seat, or find travellers going your way on the ride board.</p>
+      ${boardLink(null, null)}
     </div>
   </div>`;
 } else {
@@ -413,7 +431,8 @@ if (shared) {
     <div class="ns-ico">${ICONS.share}</div>
     <div>
       <b>No shared seats on this route — yet</b>
-      <p>We don't run a scheduled shared service between ${dispFrom} and ${dispTo} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
+      <p>We don't run a scheduled shared service between ${dispFrom} and ${dispTo} right now. Want to split the fare anyway? Start a ride on the board — once 3 travellers are in, the van runs.</p>
+      ${boardLink(fromP && fromP.name, toP && toP.name)}
     </div>
   </div>`;
 }
@@ -426,8 +445,11 @@ function renderResults(state) {
   const left = state === 'priced' ? privateCardHtml()
     : state === 'pending' ? privateSkeletonHtml()
     : unpricedHtml();
+  /* On a phone the grid is one column, so the shared seat sits under two private cards — a solo
+     traveller saw $55 and $75 and never scrolled to $22.99. The jump link is phone-only (CSS). */
+  const jump = shared ? `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared seat from <b>$${shared.seat}</b> ↓</a>` : '';
   document.getElementById('results').innerHTML =
-    `<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
+    `${jump}<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
 }
 renderResults(engineRoute ? 'pending' : 'priced');
 

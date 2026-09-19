@@ -100,3 +100,24 @@ describe('splitPlace — the city reads first, the qualifier is small', () => {
     expect(RB.splitPlace('')).toEqual({ main: '', qual: '' });
   });
 });
+
+// Spec 2026-09-19-shared-ride-by-day: the board must not start a second van on a day the
+// scheduled one already runs. The API enforces it (409 scheduled_day); this is the same rule in
+// the browser, so the start form can say so BEFORE sending the traveller through sign-in.
+describe('scheduledClash — does this route and date belong to the scheduled van?', () => {
+  it('names the clash on a service day, with what the guaranteed seat offers', () => {
+    expect(RB.scheduledClash('negombo', 'sigiriya', '2099-08-15')).toEqual({ weekday: 'Saturdays', time: '07:30', seat: 27.49 });
+    expect(RB.scheduledClash('negombo', 'sigiriya', '2099-08-12').weekday).toBe('Wednesdays');
+  });
+  it('is clear on a day the van does not run', () => {
+    expect(RB.scheduledClash('negombo', 'sigiriya', '2099-08-13')).toBeNull();
+  });
+  it('never claims a leg we do not sell as a scheduled seat', () => {
+    expect(RB.scheduledClash('cmb-airport', 'kandy', '2099-08-15')).toBeNull();
+  });
+  it('says nothing until route and date are all chosen', () => {
+    expect(RB.scheduledClash('', 'sigiriya', '2099-08-15')).toBeNull();
+    expect(RB.scheduledClash('negombo', 'sigiriya', '')).toBeNull();
+    expect(RB.scheduledClash('negombo', 'sigiriya', 'not-a-date')).toBeNull();
+  });
+});
