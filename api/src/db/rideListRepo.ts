@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { colomboDayKey } from '../services/analytics/time';
 import {
   type RideList,
   type RideMember,
@@ -150,11 +151,15 @@ export class InMemoryRideListRepo implements RideListRepo {
     const from = filter.from ? norm(filter.from) : null;
     const to = filter.to ? norm(filter.to) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
+    const today = colomboDayKey(now);
     return [...this.lists.values()]
       // A confirmed van stays on the board: it is proof the mechanism works, it may still have
       // seats, and when it is full it is the prompt to start another van on the same route.
       // Only cancelled/expired lists drop off — there is nothing left to join or copy.
       .filter((l) => l.status === 'gathering' || l.status === 'confirmed')
+      // ...until it has left. A confirmed list never changes status after it runs, so the date
+      // is the only thing that takes it down. It stays through its own travel day (Colombo).
+      .filter((l) => l.date >= today)
       .filter((l) => (from ? norm(l.fromPlace) === from : true))
       .filter((l) => (to ? norm(l.toPlace) === to : true))
       .filter((l) => {

@@ -150,6 +150,23 @@
       : list.whenLabel + ' · ' + s.label + ' · ' + s.range;
   }
 
+  /* ---------------- scheduled-van clash (pure) ---------------- */
+  // The board must not start a second van on a route and day the SCHEDULED one already runs —
+  // it would only split the same travellers across two half-empty vehicles (spec
+  // 2026-09-19-shared-ride-by-day). POST /board enforces it (409 scheduled_day); this is the
+  // same rule in the browser, so the start form can say so before sending anyone through
+  // sign-in. Whole day, like the API: never just the van's slot. Date-only ISO, so the weekday
+  // is the calendar day's — no time zone to get wrong.
+  var WEEKDAYS_PLURAL = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  function scheduledClash(fromId, toId, dateIso) {
+    var TR = (typeof window !== 'undefined') && window.TRANSFERS;
+    if (!fromId || !toId || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso || '') || !TR || !TR.sharedOption) return null;
+    var so = TR.sharedOption(fromId, toId);
+    var d = new Date(dateIso + 'T00:00:00Z');
+    if (!so || isNaN(d.getTime()) || (so.days || []).indexOf(d.getUTCDay()) === -1) return null;
+    return { weekday: WEEKDAYS_PLURAL[d.getUTCDay()], time: (so.times || [])[0] || null, seat: so.seat };
+  }
+
   /* ---------------- board rows (pure) ---------------- */
   // A row always shows the 2-hour window, never a pinned clock time: every other row is still
   // gathering on a window, and a column mixing "08:30" with "7–9 am" stops scanning.
@@ -370,6 +387,7 @@
     windowLabel: windowLabel,
     durationOf: durationOf,
     splitPlace: splitPlace,
+    scheduledClash: scheduledClash,
     groupByDay: groupByDay,
     rowState: rowState,
     normalizeList: normalizeList,
@@ -1190,6 +1208,48 @@
     var c = (T.CORRIDORS || []).find(function (c) { return c.stops.indexOf(a) !== -1 && c.stops.indexOf(b) !== -1; });
     return c ? { id: c.id, seat: c.seat } : null;
   }
+  // "07:30" → "7:30am", the clock style the rest of the site uses.
+  function clock12(hhmm) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); if (!m) return hhmm || '';
+    var h = Number(m[1]);
+    return ((h + 11) % 12 + 1) + ':' + m[2] + (h < 12 ? 'am' : 'pm');
+  }
+  // "We already run this on Saturdays": shown instead of the Continue button when the chosen
+  // route and date belong to the scheduled van. style.display, not `hidden` — .btn's own display
+  // rule outranks the [hidden] reset.
+  function checkSched() {
+    var stop = document.getElementById('sched-stop'), go = document.getElementById('c-continue');
+    if (!stop || !go) return;
+    var clash = scheduledClash(cFrom.value, cTo.value, cDate.value);
+    var whisper = go.parentNode.querySelector('.whisper'), est = go.parentNode.querySelector('.est');
+    stop.hidden = !clash;
+    go.style.display = clash ? 'none' : '';
+    if (whisper) whisper.style.display = clash ? 'none' : '';
+    // the board's own terms ("once 3 seats are up") would contradict an offer of a guaranteed seat
+    if (est) est.style.display = clash ? 'none' : '';
+    if (!clash) { stop.innerHTML = ''; return; }
+    var d = new Date(cDate.value + 'T00:00:00');
+    var when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    stop.innerHTML = '<b>We already run this on ' + esc(clash.weekday) + '</b>' +
+      '<p>A guaranteed seat leaves ' + esc(when) + (clash.time ? ' at ' + esc(clock12(clash.time)) : '') + ' for ' + money(clash.seat) +
+      '. Starting a second van would only split the travellers.</p>' +
+      '<a class="btn btn-primary btn-block" href="search.html?from=' + encodeURIComponent(cFrom.value) +
+      '&to=' + encodeURIComponent(cTo.value) + '&date=' + encodeURIComponent(cDate.value) + '">Book the guaranteed seat →</a>';
+  }
+  // Route + date into the start form. The dropdowns hold place IDS and the To list is only built
+  // once From is chosen, so: resolve names to ids, set From, rebuild To, THEN set To. (The old
+  // prefill wrote place NAMES straight into both before the To list existed — "Start another
+  // van" opened on two blank "Choose…" dropdowns.)
+  function prefillCreate(prefill) {
+    var fid = resolvePlaceId(prefill.from) || prefill.from || '';
+    var tid = resolvePlaceId(prefill.to) || prefill.to || '';
+    cFrom.value = fid; syncCreate();
+    cTo.value = tid; syncCreate();
+    if (prefill.date && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date) && (!cDate.min || prefill.date >= cDate.min)) cDate.value = prefill.date;
+    checkSched();
+    if (dupeTimer) clearTimeout(dupeTimer);
+    dupeTimer = setTimeout(checkDupe, 250);
+  }
   var dupeTimer = null;
   function syncCreate() {
     var from = cFrom.value;
@@ -1211,7 +1271,7 @@
     if (dests.indexOf(prev) !== -1) cTo.value = prev;
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
-      cEst.innerHTML = '$' + c.seat + ' <small>/ each</small>';
+      cEst.innerHTML = money(c.seat) + ' <small>/ each</small>';
       updateCost();
     }
     if (dupeTimer) clearTimeout(dupeTimer);
@@ -1244,7 +1304,9 @@
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
   (function () { var d = new Date(Date.now() + 3 * 864e5); cDate.value = d.toISOString().slice(0, 10); cDate.min = new Date(Date.now() + 864e5).toISOString().slice(0, 10); })();
-  cDate.addEventListener('change', function () { if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cDate.addEventListener('change', function () { checkSched(); if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cFrom.addEventListener('change', checkSched);
+  cTo.addEventListener('change', checkSched);
   cTime.addEventListener('click', function (e) {
     var b = e.target.closest('.chip'); if (!b) return;
     cTime.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('sel', x === b); });
@@ -1315,12 +1377,9 @@
       : 'any route · any day · you set it';
     populatePref(current ? current.slot : (prefill && prefill.slot) || 'morning');
     if (!current && prefill) {
-      var cf = document.getElementById('c-from'), ct = document.getElementById('c-to'), cd = document.getElementById('c-date');
-      if (cf) cf.value = prefill.from || '';
-      if (ct) ct.value = prefill.to || '';
-      if (cd && prefill.date) cd.value = prefill.date;
+      prefillCreate(prefill);
       var mr = document.getElementById('m-route');
-      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + (prefill.fromSearch ? ' · your date' : ' · another van, your date');
     }
     setStep(0);
     // Intent to join (or to start a van). GA4's begin_checkout is the closest
@@ -1579,6 +1638,7 @@
       else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { setStep(0); sheetError('That route isn\'t served yet'); }
+      else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
       else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
@@ -1799,6 +1859,22 @@
   }
 
   /* ---------------- boot ---------------- */
+  // board.html?from=&to=&date=&start=1 — search sends a traveller whose date is not a Wed/Sat
+  // here to start their own ride. from/to already filter the board; `start` opens the form on
+  // top of it, filled in. Consumed once, so a reload lands on the plain filtered board. A ride
+  // sheet or a PayHere return takes precedence — the traveller came back for THAT.
+  function openFromStartLink() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (q.get('start') !== '1') return;
+    var from = q.get('from'), to = q.get('to'), date = q.get('date');
+    q.delete('start');
+    var rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    if (document.body.classList.contains('detail-open') || overlay.classList.contains('open') || !from || !to) return;
+    openModal(null, { from: from, to: to, date: date, fromSearch: true });
+  }
+
   function boot() {
     var ta = document.getElementById('intro-ta');
     if (ta) ta.innerHTML = taBadge(taCaption('Rated 5.0 by ', 'travellers'));
@@ -1825,6 +1901,7 @@
       return resumePaymentFromReturn();
     }).then(function () {
       openFromHash();
+      openFromStartLink();
       window.addEventListener('hashchange', openFromHash);
       startTicker();
     });

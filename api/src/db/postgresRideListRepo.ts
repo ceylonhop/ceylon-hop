@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Sql } from './client';
+import { colomboDayKey } from '../services/analytics/time';
 import {
   makeCode,
   type RideList,
@@ -120,8 +121,11 @@ export class PostgresRideListRepo implements RideListRepo {
     const from = filter.from ? norm(filter.from) : null;
     const to = filter.to ? norm(filter.to) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
+    const today = colomboDayKey(now);
     const lists = rows
       .map(toList)
+      // A ride that has left is not an offer; confirmed lists never change status after they run.
+      .filter((l) => l.date >= today)
       .filter((l) => (from ? norm(l.fromPlace) === from : true))
       .filter((l) => (to ? norm(l.toPlace) === to : true))
       .filter((l) => {
