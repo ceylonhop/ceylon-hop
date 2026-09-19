@@ -199,6 +199,10 @@ test('the shared card says which days it runs, and offers a phone-only jump to i
 
   const card = page.locator('#shared-option');
   await expect(card).toContainText('Runs Wed & Sat');
+  // This card leads to a pay-now checkout. "Nothing charged until it's confirmed" is the ride
+  // board's promise (pre-approval) and must not be borrowed here.
+  await expect(card).toContainText('pay now to reserve your seat');
+  await expect(card).not.toContainText('nothing charged');
   // "One AC van" in the headline and "AC car or van" in the chips was the same card
   // describing two different vehicles.
   await expect(card).not.toContainText('AC car or van');

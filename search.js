@@ -372,6 +372,12 @@ if (shared) {
      Most catalogue legs have a route page and will eventually be served from there, but three
      (weligama→cmb-airport, mirissa→colombo, weligama→colombo) have no page at all, so this
      card is the only place they are ever described. It has to be right on its own. */
+  /* EXCEPT the payment line. The route page's card leads to the ride board, where PayHere only
+     pre-approves the card — "nothing charged until it's confirmed" is true THERE. This card leads
+     to booking.html?mode=shared, an ordinary pay-now checkout (terms §: "a seat is guaranteed
+     only once your booking is paid"), so borrowing that sentence promised something this flow
+     does not do. Owner, 2026-09-18: the scheduled seat charges immediately; pre-approval is the
+     board's. Say what this button does. */
   const pickupRows = stops.length > 1
     ? `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · pick-up points:` : 'Pick-up points:'}</div>
        <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
@@ -385,7 +391,7 @@ if (shared) {
     </div>
     <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    <p class="shared-runs">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
+    <p class="shared-runs"><b>Scheduled service</b> · pay now to reserve your seat</p>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       ${pickupRows}
