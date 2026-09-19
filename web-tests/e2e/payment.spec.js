@@ -86,6 +86,10 @@ test('a double-tap on Pay fires exactly one booking request', async ({ page }) =
   page.on('request', (r) => {
     if (r.url().includes('/bookings/single') && r.method() === 'POST') posts.push(r.url());
   });
+  // Pay is disabled while the price estimate is in flight (render()'s pay gate). page.click()
+  // waits that out on its own; dispatchEvent skips actionability, so under load both taps landed
+  // on the gate and no payment ever started. Wait for the gate, then double-tap.
+  await expect(page.locator('#pay-btn')).toBeEnabled();
   await page.locator('#pay-btn').dispatchEvent('click');
   await page.locator('#pay-btn').dispatchEvent('click');
   await expect(page.locator('#ph-overlay')).toBeVisible();
