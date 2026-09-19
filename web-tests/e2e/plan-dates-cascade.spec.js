@@ -133,6 +133,31 @@ test('a route with no nights hides the anchor and keeps the per-leg list', async
   await expect(page.locator('.date-row[data-i="0"] .dr-tag')).toHaveCount(0);
 });
 
+test('with no nights, dating one leg leaves every other leg alone', async ({ page }) => {
+  /* The bug this pins (shipped by the cascade, owner-spotted 2026-09-19): the re-cascade ran on
+     every hand-set date, guarded by nothing. A transfer does not advance the running date, so on
+     a route with no stays the cursor never moved and each later leg was stamped with the SAME
+     day — three transfers on one date the customer never chose, sent on to booking. */
+  await openStep(page, { stops: 'Negombo|Sigiriya|Kandy|Nuwara Eliya', nights: '' });
+  await expect(page.locator('#dates-list .date-row')).toHaveCount(3);
+
+  await setDate(page, '.date-row[data-i="0"] input', START);
+
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue(START);
+  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('');
+  await expect(page.locator('.date-row[data-i="2"] input')).toHaveValue('');
+
+  // A second leg is likewise its own: dating leg 2 must not disturb leg 3 either.
+  await setDate(page, '.date-row[data-i="1"] input', plusDays(START, 4));
+  await expect(page.locator('.date-row[data-i="2"] input')).toHaveValue('');
+
+  // ...and only the dates the customer actually set reach booking.
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+  const dates = (new URL(page.url()).searchParams.get('dates') || '').split(',');
+  expect(dates).toEqual([START, plusDays(START, 4), '']);
+});
+
 test('cascaded dates reach booking as the real per-leg dates', async ({ page }) => {
   await openStep(page);
   await setDate(page, '#trip-start input', START);
