@@ -1122,6 +1122,14 @@ function renderRepriceNote(){
   if(!p || p.engineRaise){ if(localEl) localEl.remove(); }
   if(!p || !p.engineRaise){ if(engineEl) engineEl.remove(); }
   if(!p) return;
+  // The capacity note is the single control for a vehicle upgrade — nothing to announce here.
+  // (If the party has shrunk back into the car the upgrade no longer applies — same reasoning as
+  // switchToVan: a silent hold must never outlive the control that resolves it.)
+  if(p.engineRaise && p.vehicleUpgrade){
+    if(engineEl) engineEl.remove();
+    if(!carOutgrownVanFits()) state.pendingReprice=null;
+    return;
+  }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
     const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
@@ -1601,6 +1609,18 @@ function changedExtras(now, prior){
   const b=(prior.extras||[]).slice().sort().join('|');
   return a!==b;
 }
+// True while a private CAR is selected for a party only a van can carry — the exact condition
+// under which render() shows the "won't fit · Switch to AC van" capacity note. The engine upgrades
+// the vehicle by itself in that state, so its estimate for a car intent is really the van's price.
+// Left to the generic gate, that produced two controls for one decision ("Switch to AC van" AND
+// "Got it — use $89.99"), and accepting the second printed the van's price on the car's label
+// with the capacity warning still up and Continue still blocked (prod, 2026-09-18).
+function carOutgrownVanFits(){
+  if(!perVehicle || vehicleKey!=='car') return false;
+  const pax=state.ad+state.ch;
+  const over = pax>VEH_CAP.car.pax || state.bags>VEH_CAP.car.bags;
+  return over && pax<=VEH_CAP.van.pax && state.bags<=VEH_CAP.van.bags;
+}
 // Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
 // must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
 // renderRepriceNote already runs for the local repriceDecision path; a same-or-lower figure is
@@ -1614,7 +1634,12 @@ function handleEngineEstimate(est, sig){
   adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
   if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
-    state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+    // `vehicleUpgrade`: the party has outgrown the car, so the engine priced a van on its own.
+    // The capacity note already owns that decision (it blocks Continue until it's resolved) and
+    // is the ONE control for it — see carOutgrownVanFits(). The figure is still held, exactly as
+    // for any undriven raise; it just isn't announced a second time by renderRepriceNote.
+    state.pendingReprice = { engineRaise:true, vehicleUpgrade:carOutgrownVanFits(),
+      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
     render();
     checkWhere();
     return;
@@ -1734,6 +1759,10 @@ function carPrice(){
 }
 // upgrade car → van when the party is over a car's capacity, and re-price
 window.switchToVan=function(){
+  // A held vehicleUpgrade has done its job: the press is the acknowledgement. Drop it here rather
+  // than waiting for the re-estimate — it has no visible control of its own, so if that request
+  // failed it would keep the pay gate shut with nothing on screen to open it.
+  if(state.pendingReprice && state.pendingReprice.vehicleUpgrade) state.pendingReprice=null;
   vehicleKey='van'; vehicleLabel='AC van (up to 6)';
   vehPax=VEH_CAP.van.pax; maxBags=VEH_CAP.van.bags;
   const vp=vanPrice(); if(vp!=null){ unit=vp; if(isTrip) tripBase=vp; }
@@ -1891,6 +1920,11 @@ function render(){
   const sharedBagMax = freeBags + 5;            // allow a handful of paid extras
   const bgUp=document.getElementById('bg-up'); if(bgUp) bgUp.disabled = state.bags >= (isShared ? sharedBagMax : ABS_MAX_BAGS);
   const cap=document.getElementById('bag-cap'); if(cap) cap.textContent = isShared ? `One large bag per traveller free · extra bags $10 each` : (perVehicle ? `${vehicleLabel} · up to ${maxBags} bags` : `Up to ${maxBags} bags`);
+  // "40% off" is the per-SEAT child fare (calcTotal: unit*0.6*ch). A private vehicle is one fixed
+  // fare however many ride in it, so the promise was false there: adding a child changed nothing.
+  // What a child does change on a private booking is the seat count that decides car vs van.
+  const chSub=document.querySelector('#ch-step .muted');
+  if(chSub && perVehicle) chSub.textContent='Age 2–11 · counts as a seat';
   const note=document.getElementById('cap-note');
   if(note){
     if(paxOver || bagsOver){
@@ -1903,14 +1937,17 @@ function render(){
         // for every click would make the capacity warning lag behind the input. It's a comparison
         // figure only ("about this much more"), so it's marked ~ rather than presented as the price
         // the switch will actually charge — switchToVan() itself re-estimates through the engine.
-        const vanP = vanPrice();
+        // ...unless the engine has ALREADY priced the van for this party (a held vehicleUpgrade):
+        // then that is the price the switch will charge, so print it plainly, without the ~.
+        const held = state.pendingReprice && state.pendingReprice.vehicleUpgrade ? state.pendingReprice.toCents/100 : null;
+        const vanP = held!=null ? held : vanPrice();
         const reason = (paxOver && bagsOver)
           ? `${pax} travellers and ${state.bags} bags won’t fit an AC car`
           : (paxOver
               ? `${pax} travellers won’t fit an AC car (up to ${VEH_CAP.car.pax})`
               : `${state.bags} large bags won’t fit an AC car (up to ${VEH_CAP.car.bags})`);
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
-          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ~${money(vanP)}`:''}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${held!=null?'':'~'}${money(vanP)}`:''}</button>`;
       } else {
         const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
         note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;
