@@ -173,9 +173,11 @@ test('an engine route never claims we run no shared service', async ({ page }) =
   await expect(panel).toBeVisible();
   await expect(panel).not.toContainText("We don't run a scheduled shared service");
   await expect(panel).not.toContainText('No shared seats on this route');
-  // States the rule we can actually vouch for, and still lands the private transfer.
-  await expect(panel).toContainText('Shared seats run on set routes');
-  await expect(panel).toContainText('door-to-door at a fixed price');
+  // States the rule we can actually vouch for — and tells the traveller what to DO about it:
+  // search the town, or go to the board. The old copy ("we can only match those
+  // automatically") explained our limitation and left them nowhere to go.
+  await expect(panel).toContainText('matched by town, not by hotel or address');
+  await expect(panel.locator('a.ns-board')).toHaveAttribute('href', 'board.html');
 });
 
 test('a baked pair we truly do not serve still says so plainly', async ({ page }) => {
@@ -186,4 +188,30 @@ test('a baked pair we truly do not serve still says so plainly', async ({ page }
   const panel = page.locator('.noshare');
   await expect(panel).toContainText('No shared seats on this route');
   await expect(panel).toContainText("We don't run a scheduled shared service");
+  // ...but it is not a dead end: the board sells any route once 3 travellers are in, and it
+  // pre-filters on place NAMES (board.js `filter`), so the link carries them.
+  await expect(panel.locator('a.ns-board')).toHaveAttribute(
+    'href', 'board.html?from=Colombo%20Airport%20(CMB)&to=Galle');
+});
+
+test('the shared card says which days it runs, and offers a phone-only jump to it', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya' });
+
+  const card = page.locator('#shared-option');
+  await expect(card).toContainText('Runs Wed & Sat');
+  // This card leads to a pay-now checkout. "Nothing charged until it's confirmed" is the ride
+  // board's promise (pre-approval) and must not be borrowed here.
+  await expect(card).toContainText('pay now to reserve your seat');
+  await expect(card).not.toContainText('nothing charged');
+  // "One AC van" in the headline and "AC car or van" in the chips was the same card
+  // describing two different vehicles.
+  await expect(card).not.toContainText('AC car or van');
+
+  // Desktop is two-up, so the jump link is hidden; at phone width the shared seat sits under
+  // two private cards and the link is the only sign it exists.
+  const jump = page.locator('a.shared-jump');
+  await expect(jump).toBeHidden();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(jump).toBeVisible();
+  await expect(jump).toHaveAttribute('href', '#shared-option');
 });
