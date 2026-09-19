@@ -3,7 +3,7 @@ import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
 
 const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
-  corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-08-08', slot: 'morning',
+  corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2999-08-08', slot: 'morning',
   minSeats: 4, capacity: 6, seatPrice: 2400, note: 'surfboards welcome', cutoffAt: new Date('2026-08-06T01:30:00Z'),
   createdBy: 'creator', ...over,
 });
