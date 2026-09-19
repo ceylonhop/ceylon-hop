@@ -320,6 +320,20 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     // this whole change exists to remove — and the catalogue price is authoritative, so there
     // is nothing to ask Google about (no distance call, and no cannot_price_route to hit).
     const product = sharedProductFor(fromPlace, toPlace);
+
+    // A leg we sell as a scheduled seat, on a day that van runs: decline, and point at the
+    // guaranteed seat. Search sends off-day travellers here to start their own ride; letting
+    // one start on a SERVICE day would only split the same travellers across two half-empty
+    // vans. The whole day, not just the van's slot — a traveller who can flex between 7:30am
+    // and the afternoon is exactly the passenger the scheduled van needs. Date-only ISO, so
+    // the weekday is the calendar day's, with no time zone to get wrong.
+    if (product && corridor.serviceDays.includes(new Date(`${input.date}T00:00:00Z`).getUTCDay())) {
+      return c.json({
+        error: 'scheduled_day',
+        scheduled: { date: input.date, time: product.time, pickup: product.pickup, seatPrice: product.seatPrice },
+      }, 409);
+    }
+
     let seatPrice: number;
     if (product) {
       seatPrice = product.seatPrice;

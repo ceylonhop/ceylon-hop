@@ -6,7 +6,7 @@ import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
-import { futureIsoDate } from '../testSupport/dates';
+import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
 // free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
@@ -690,5 +690,62 @@ describe('PayHere return_url — back to the board the traveller was on', () => 
     const res = await app.request(`/board/${l.code}/join`, { ...r, headers: { ...r.headers, origin: 'https://evil.example' } });
     expect(res.status).toBe(403);
     expect(paygw.preapprovals).toHaveLength(0);
+  });
+});
+
+// Search sends an off-day traveller to the board to start their own ride (spec
+// 2026-09-19-shared-ride-by-day). The other half of that bargain: on a day the SCHEDULED van
+// already runs a leg, the board must not start a second van on it — that only splits the same
+// travellers across two half-empty vehicles. Whole day, not just the van's slot: a traveller
+// who can flex between 7:30am and the afternoon is exactly the one the van needs.
+describe('POST /board (create) — a day the scheduled van already runs', () => {
+  const WED = 3, THU = 4, SAT = 6;
+  function app113km() {
+    const rideLists = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    const maps = {
+      provider: 'stub', places: async () => [], distanceVariants: async () => null,
+      distance: async () => ({ km: 113, minutes: 180, estimated: false }),
+    };
+    return { app: createApp({ rideLists, paygw, customerVerifier: verifier, maps: maps as never }), rideLists, paygw };
+  }
+
+  for (const [name, weekday] of [['Wednesday', WED], ['Saturday', SAT]] as const) {
+    it(`declines a scheduled leg on a ${name} and points at the guaranteed seat`, async () => {
+      const { app, paygw } = app113km();
+      const cookie = await loginCookie(app);
+      const date = nextIsoWeekday(weekday);
+      const res = await app.request('/board', json(cookie, {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date, slot: 'afternoon', payment: paymentDetails,
+      }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'scheduled_day',
+        scheduled: { date, time: '07:30', pickup: 'Zen Cafe, Negombo', seatPrice: 2749 },
+      });
+      expect(paygw.preapprovals).toHaveLength(0); // no card held for a ride we refused
+    });
+  }
+
+  it('still starts that leg on a day the van does not run', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: nextIsoWeekday(THU), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('never blocks a leg we do not sell as a scheduled seat, whatever the day', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    // on the airport-cultural corridor, but CMB → Kandy is not a scheduled product
+    const res = await app.request('/board', json(cookie, {
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: nextIsoWeekday(WED), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
   });
 });
