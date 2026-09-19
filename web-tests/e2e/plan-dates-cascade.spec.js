@@ -105,7 +105,8 @@ test('a leg made flexible stays blank and lets the cascade pass through it', asy
 
   await page.locator('.date-row[data-i="2"] .dr-clear').click();
   await expect(page.locator('.date-row[data-i="2"] input')).toHaveValue('');
-  await expect(page.locator('.date-row[data-i="2"] .dr-flex')).toBeVisible();
+  await expect(page.locator('.date-row[data-i="2"] .dr-clear')).toHaveCount(0);  // blank again
+  await expect(page.locator('.date-row[data-i="2"] .dr-tag')).toHaveCount(0);    // and unattributed
 
   // The legs after it keep the dates the nights imply — one blank leg doesn't derail the trip.
   await expect(page.locator('.date-row[data-i="4"] input')).toHaveValue(plusDays(START, 3));
@@ -127,7 +128,9 @@ test('a route with no nights hides the anchor and keeps the per-leg list', async
 
   await expect(page.locator('#trip-start')).toBeHidden();
   await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
-  await expect(page.locator('.date-row[data-i="0"] .dr-flex')).toBeVisible();
+  // Just the ordinary per-leg date field, undated and unannotated.
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('');
+  await expect(page.locator('.date-row[data-i="0"] .dr-tag')).toHaveCount(0);
 });
 
 test('cascaded dates reach booking as the real per-leg dates', async ({ page }) => {
