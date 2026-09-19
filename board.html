@@ -534,6 +534,10 @@ body.detail-open .detail{display:block}
 .seat-opt.sel small{color:rgba(255,255,255,.72)}
 .seat-opt[disabled]{opacity:.38;cursor:not-allowed}
 .seat-opt[disabled].sel{opacity:1}
+/* ---- "we already run this" stop (start form) ---- */
+.sched-stop{background:var(--err-bg);border:1.5px solid var(--err-line);border-radius:14px;padding:14px 16px;margin-bottom:12px;color:#7a3120}
+.sched-stop b{display:block;color:#5c2416;font-size:.98rem}
+.sched-stop p{margin:.2rem 0 .8rem;font-size:.86rem;line-height:1.45}
 /* ---- dedupe nudge ---- */
 .dupe{background:var(--pc-saffron);border:1.5px solid rgba(249,164,41,.4);border-radius:14px;padding:14px 16px;margin-bottom:12px}
 .dupe-in{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
@@ -786,7 +790,7 @@ body.detail-open .detail{display:block}
           <div class="fld"><label>To</label><select id="c-to"></select></div>
         </div>
         <div class="frow">
-          <div class="fld"><label>Date — any day works</label><input type="date" id="c-date"></div>
+          <div class="fld"><label>Date</label><input type="date" id="c-date"></div>
           <div class="fld"><label>Departure</label>
             <div class="timechips" id="c-time">
               <button class="chip sel" data-t="morning">Morning</button>
@@ -797,6 +801,7 @@ body.detail-open .detail{display:block}
         <div class="fld" style="margin-bottom:12px"><label>A note for the others <span style="opacity:.6">(optional)</span></label>
           <input id="c-note" placeholder="surfboards, tea-factory stop, travelling with a baby…" maxlength="70"></div>
         <div id="dupe-nudge" class="dupe" hidden></div>
+        <div id="sched-stop" class="sched-stop" hidden></div>
         <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 seats are up<br>list closes 48h before</span></div>
         <button class="btn btn-primary btn-block" id="c-continue" style="height:52px">Put it on the board</button>
         <p class="whisper">it goes up instantly — you're name #1 on the list</p>
@@ -957,6 +962,6 @@ body.detail-open .detail{display:block}
 
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=9327ef15ac" defer></script>
+<script src="board.js?v=e2f8669bb9" defer></script>
 </body>
 </html>
