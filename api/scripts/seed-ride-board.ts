@@ -281,6 +281,43 @@ const LIVE_SPECS: LiveSpec[] = [
     daysOut: 12, slot: 'morning', preferredTime: '08:00',
     people: [['Aiko', 'JP'], ['Ren', 'JP']],
   },
+  // The long tail: peak-season trips planned months ahead (owner, 2026-09-19 — seeded in
+  // September these land in November and over Christmas / New Year). Thin on purpose: a list
+  // this far out is one or two planners, not a van.
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 48, slot: 'morning', preferredTime: '08:00',
+    people: [['Clara', 'SE'], ['Erik', 'SE']],
+    note: 'First day of three weeks — straight from the airport.',
+  },
+  {
+    corridorId: 'hill-line', fromPlace: 'Kandy', toPlace: 'Ella',
+    daysOut: 59, slot: 'morning', preferredTime: '08:00',
+    people: [['Isabel', 'CA']],
+  },
+  {
+    corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa',
+    daysOut: 70, slot: 'morning', preferredTime: '09:00',
+    people: [['Felix', 'DE'], ['Nina', 'DE']],
+    note: 'Heading down for whale season.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 93, slot: 'morning', preferredTime: '07:00',
+    people: [['Charlotte', 'GB'], ['James', 'GB'], ['Amelie', 'BE']],
+    note: 'Christmas in Sri Lanka — landing early morning.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy',
+    daysOut: 95, slot: 'morning', preferredTime: '09:00',
+    people: [['Zoe', 'NZ']],
+  },
+  {
+    corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)',
+    daysOut: 101, slot: 'afternoon', preferredTime: '14:00',
+    people: [['Lucas', 'BR'], ['Camila', 'BR']],
+    note: 'Flying home before New Year.',
+  },
 ];
 
 // Colombo's calendar day, not UTC's: between 18:30 and midnight UTC it is already tomorrow
