@@ -328,3 +328,90 @@ describe('a charge with an unknown outcome', () => {
     expect(chargesForThem).toHaveLength(1);
   });
 });
+
+// Seeded members (scripts/seed-ride-board.ts) are placeholders on a live board: no card, and
+// an @example.com address. A real traveller CAN join a seeded list, and joined it because it
+// looked like it would run — so the placeholders' seats still count towards the van, but
+// nothing is ever charged to them or mailed to them. (Owner, 2026-09-19: a seeded list a real
+// traveller joins is a van we run, and then try to fill.)
+describe('seeded placeholder members', () => {
+  const seedMember = (code: string, j: number) => ({
+    sub: `seed-rideboard:${code}:${j}`, firstName: `Seed${j}`, country: 'DE',
+    email: `seed.${code.toLowerCase()}.${j}@example.com`, seats: 1, preapprovalRef: null, preferredTime: '09:00',
+  });
+
+  const seeded = async (seeds: number, real: number, alerts?: FakeAlertAdapter) => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs({ minSeats: 3, capacity: 6, createdBy: 'seed-rideboard' }));
+    for (let j = 0; j < seeds; j++) await repo.addMember(list.id, seedMember(list.code, j));
+    await fill(repo, list.id, real);
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, ...(alerts ? { alerts } : {}) });
+    return { repo, paygw, email, list, res };
+  };
+
+  it('runs the van for a real traveller: their card is the only one charged', async () => {
+    const { repo, paygw, list, res } = await seeded(2, 1);
+
+    expect(res).toMatchObject({ confirmed: 1, expired: 0, charged: 1, chargeFailed: 0 });
+    expect((await repo.getByCode(list.code))?.list.status).toBe('confirmed');
+    expect(paygw.charges.map((c) => c.orderId)).toEqual([`${list.code}-u0`]);
+  });
+
+  it('never emails a placeholder, on a van that runs or one that is called off', async () => {
+    const ran = await seeded(2, 1);
+    expect(ran.email.sent.map((e) => e.to)).toEqual(['u0@x.com']);
+    expect(ran.email.sent[0].subject).toMatch(/confirmed/i);
+
+    const calledOff = await seeded(1, 1); // 2 names < 3
+    expect(calledOff.res).toMatchObject({ expired: 1, charged: 0 });
+    expect(calledOff.email.sent.map((e) => e.to)).toEqual(['u0@x.com']);
+  });
+
+  it('does not record a placeholder as charged — that status means money was taken', async () => {
+    const { repo, list } = await seeded(2, 1);
+    const members = (await repo.getByCode(list.code))!.members;
+    expect(members.filter((m) => m.sub.startsWith('seed-rideboard:')).map((m) => m.status)).toEqual(['held', 'held']);
+  });
+
+  it('tells ops a seeded list is really running, and with how many real travellers', async () => {
+    const alerts = new FakeAlertAdapter();
+    const { list } = await seeded(2, 1, alerts);
+
+    const alert = alerts.sent.find((a) => a.kind === 'ride_board_seeded_list_running');
+    expect(alert).toBeDefined();
+    expect(alert!.title).toContain(list.code);
+    expect(alert!.body).toMatch(/1 real traveller/);
+    expect(alert!.body).toContain('u0@x.com');
+  });
+
+  it('a seeded list nobody real joined goes quietly either way: no charge, no mail, no alert', async () => {
+    const alerts = new FakeAlertAdapter();
+    const locked = await seeded(3, 0, alerts);
+    expect(locked.res).toMatchObject({ confirmed: 1, charged: 0 });
+    const gone = await seeded(2, 0, alerts);
+    expect(gone.res).toMatchObject({ expired: 1, charged: 0 });
+
+    for (const run of [locked, gone]) {
+      expect(run.paygw.charges).toHaveLength(0);
+      expect(run.email.sent).toHaveLength(0);
+    }
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  it('counts only real travellers against the send budget', async () => {
+    const repo = new InMemoryRideListRepo();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs({ minSeats: 3, capacity: 6 }));
+    for (let j = 0; j < 2; j++) await repo.addMember(list.id, seedMember(list.code, j));
+    await fill(repo, list.id, 1);
+
+    // Room for exactly one email: the real traveller's. Claiming for the placeholders too
+    // would refuse the list and leave a real traveller unconfirmed over mail nobody sends.
+    const res = await runRideBoardCutoff(NOW, {
+      rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email, budget: new SendBudget(1),
+    });
+    expect(res).toMatchObject({ processed: 1, confirmed: 1 });
+  });
+});
