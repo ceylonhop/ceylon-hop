@@ -1029,7 +1029,12 @@ window.toggleFlexDate=function(){
 };
 // service chooser (trip mode)
 window.pickSvc=function(svc){
-  if(isTrip && svc==='chauffeur' && !tripDatesComplete()) return;
+  // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
+  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
+  if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
+    if(tripEditUrl) location.href=tripEditUrl;
+    return;
+  }
   if(svc===state.svc) return;                 // re-pressing the active option shouldn't animate
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
@@ -1834,9 +1839,16 @@ function render(){
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
     if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
     if(chBtn && chBtn.style.display!=='none'){
-      chBtn.disabled=!chOK;
-      chBtn.setAttribute('aria-disabled', chOK?'false':'true');
+      // Missing dates are the customer's to fix, so the card stays PRESSABLE and its tag reads
+      // "Add all dates to quote" — pressing it goes and collects them (see pickSvc). It used to
+      // carry `disabled`, which makes every child inert: we told them exactly what to do and gave
+      // them no way to do it (owner-spotted 2026-09-18).
+      // The notice window is the opposite case — nothing they do on this card fixes it today — so
+      // that one stays truly disabled and the panel below explains it.
+      chBtn.disabled=tooSoon;
+      chBtn.setAttribute('aria-disabled', tooSoon?'true':'false');
       chBtn.classList.toggle('disabled', !chOK);
+      chBtn.classList.toggle('needs-dates', !datesOK && !tooSoon);
     }
     if(!chOK && state.svc==='chauffeur'){
       state.svc='private';
