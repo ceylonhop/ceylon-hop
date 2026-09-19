@@ -1065,7 +1065,6 @@ function setDatesMode(mode){
   state.datesMode=mode;
   renderDatesStep();
 }
-const FLEX_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
 
 /* ── one date instead of eight ────────────────────────────────────────────────────────────
    An itinerary that carries nights already says how long each stop lasts, so every leg's date
@@ -1188,7 +1187,7 @@ function renderDatesStep(){
         ${leg.date
           ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
               cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
-          : `<span class="dr-flex">${FLEX_ICO} Flexible for now</span>`}
+          : ''}
       </div>
       ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
     list.appendChild(row);
