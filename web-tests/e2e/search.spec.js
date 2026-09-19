@@ -356,7 +356,8 @@ test('an unasked party size is not invented: no count, no savings claim, no pax 
   for (const h of hrefs) expect(h).not.toMatch(/[?&]pax=/);
 
   // the raw comparison the customer can make for themselves is untouched
-  await expect(page.getByText('$27.49').first()).toBeVisible();      // per seat
+  // (scoped to the card: the phone-only jump link also carries the seat price, hidden on desktop)
+  await expect(page.locator('.opt-shared').getByText('$27.49').first()).toBeVisible(); // per seat
   await expect(page.getByText('total, fixed').first()).toBeVisible(); // per vehicle
 });
 
