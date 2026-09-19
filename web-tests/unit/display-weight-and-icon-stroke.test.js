@@ -96,8 +96,8 @@ describe('route names, place names and money are on the display face', () => {
     ['booking.html', '.shared-route .sr-line b'],     // board-at / drop-off places
     ['booking.html', '.mstrip .ms-route'],
     ['booking.html', '.s-total b'],
-    ['board.html', '.lcard-route'],
-    ['board.html', '.lprice b'],
+    ['board.html', '.rw-places'],
+    ['board.html', '.rw-price b'],
     ['board.html', '.rr-stop b'],
     /* search.html's route name was pinned here as `.srch-locked .sl-route` — a read-only
        copy of the route that sat above the h1 saying the same words. The bar is gone; the
