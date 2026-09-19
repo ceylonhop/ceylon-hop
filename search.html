@@ -176,6 +176,33 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* The one line that explains the whole product, same wording as the route page. */
   .shared-runs{font-size:.9rem;font-weight:600;margin:-.1rem 0 .6rem}
   .shared-runs b{color:var(--accent-deep,#24758A)}
+  /* ---- shared card on a day the van does not run (spec 2026-09-19-shared-ride-by-day) ---- */
+  .opt-shared.is-offday .tag-top{background:#a9a394}
+  .sb-off{background:var(--pc-saffron);border-radius:14px;padding:12px 14px;font-size:.9rem;margin:6px 0 14px}
+  .sb-off b{display:block;font-size:1rem}
+  .sb-off span{color:#6b5a35}
+  .sb-alts{display:grid;gap:8px;margin-bottom:14px}
+  .sb-alt{display:flex;align-items:center;gap:12px;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;background:var(--white);color:inherit;text-decoration:none;transition:border-color .15s}
+  .sb-alt:hover{border-color:var(--accent-deep,#24758A)}
+  .sb-alt b{display:block;font-family:var(--display);font-weight:700;font-size:1.08rem}
+  .sb-alt small{display:inline-flex;align-items:center;gap:.3rem;font-size:.76rem;font-weight:600;color:var(--ok,#0c6b39)}
+  .sb-alt small svg{width:13px;height:13px}
+  .sb-alt .go{margin-left:auto;display:inline-flex;align-items:center;gap:.3rem;font-size:.84rem;font-weight:600;color:var(--accent-deep,#24758A);white-space:nowrap}
+  .sb-alt .go svg{width:15px;height:15px}
+  .sb-or{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:.76rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px}
+  .sb-or::before,.sb-or::after{content:"";flex:1;border-top:1.5px dashed var(--line)}
+  .sb-start-wrap h3{font-family:var(--body);font-size:1rem;font-weight:700;margin:0 0 2px}
+  .sb-start-wrap p{margin:0;font-size:.86rem;color:var(--ink-soft)}
+  .sb-start-wrap p b{color:var(--teal-deep)}
+  .sb-going{display:flex;flex-direction:column;background:var(--pc-teal);border-radius:14px;padding:11px 14px}
+  .sb-going b{font-size:.98rem}
+  .sb-going small{font-size:.8rem;color:var(--ink-soft)}
+  .sb-other{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;margin-top:12px;font-weight:600;font-size:.88rem;color:var(--accent-deep,#24758A);text-decoration:none}
+  .sb-other:hover{text-decoration:underline}
+  .sb-other svg{width:15px;height:15px}
+  /* at phone width "guaranteed · pay at booking" wrapped inside the date row; the payment
+     terms are on the card the traveller lands on after switching */
+  @media(max-width:640px){.sb-alt .pab{display:none}}
   .shared-save{display:inline-flex;align-items:center;gap:.4rem;background:rgba(10,185,182,.12);color:var(--teal-deep);font-weight:700;font-size:.82rem;padding:.35rem .7rem;border-radius:999px;margin-bottom:14px}
   .shared-save svg{width:15px;height:15px;flex:none}
   .shared-meta{display:grid;gap:10px;margin:6px 0 18px}
@@ -291,6 +318,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="search.js?v=fc27b5fd9c"></script>
+<script src="shared-day.js?v=cbcec2fb62"></script>
+<script src="search.js?v=3d456b69b5"></script>
 </body>
 </html>

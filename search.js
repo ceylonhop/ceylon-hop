@@ -378,11 +378,53 @@ if (shared) {
      only once your booking is paid"), so borrowing that sentence promised something this flow
      does not do. Owner, 2026-09-18: the scheduled seat charges immediately; pre-approval is the
      board's. Say what this button does. */
+  /* The van runs on `shared.days` only, and this card used to ignore the date searched: a
+     Thursday search showed the price, the pickup times and "Book a seat" (spec
+     2026-09-19-shared-ride-by-day). Three states now —
+       runs === true   the date is a running day: say so, sell the seat
+       runs === false  it is not: nearest guaranteed dates first, then a ride of their own
+       runs === null   no date yet: running days up front, one quiet way to the board */
+  const SD = window.CHSharedDay;
+  const runs = SD ? SD.runsOn(date, shared.days) : null;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  const fmtDay = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  // The board filters by place NAME (board.js `filter`); `start=1` opens its start form filled in.
+  const boardStart = (withDate) => `board.html?from=${encodeURIComponent(fromP.name)}&to=${encodeURIComponent(toP.name)}${withDate ? `&date=${date}` : ''}&start=1`;
+  // Same search, another date — and back onto this card, not the top of the page.
+  const switchUrl = (iso) => { const p = new URLSearchParams(location.search); p.set('date', iso); return `search.html?${p.toString()}#shared-option`; };
+
   const pickupRows = stops.length > 1
     ? `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · pick-up points:` : 'Pick-up points:'}</div>
        <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
     : `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · departs` : 'Departs'} ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
-  sharedCard = `
+  if (runs === false) {
+    const around = SD.serviceDatesAround(date, shared.days, todayIso);
+    const LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+    const daysLong = (shared.days || []).map(d => LONG[d]).filter(Boolean).join(' and ');
+    const keepDay = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
+    // Guaranteed dates FIRST: a guarantee sells better than a maybe, and many travellers can
+    // move a day. Nothing is bookable on this date, so "Book a seat" is replaced — not disabled.
+    const alts = [around.before, around.after].filter(Boolean).map(iso =>
+      `<a class="sb-alt" href="${switchUrl(iso)}"><span><b>${fmtDay(iso)}</b><small>${ICONS.ck} guaranteed<span class="pab"> · pay at booking</span></small></span><span class="go">Switch date ${ICON.arrow}</span></a>`).join('');
+    sharedCard = `
+  <article class="opt opt-shared is-offday" id="shared-option">
+    <span class="tag-top">Runs ${daysStr}</span>
+    <div class="o-head">
+      <div class="o-ico">${ICONS.share}</div>
+      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
+    </div>
+    <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
+    <div class="sb-off"><b>No shared ride on ${dateText}</b><span>This van runs ${daysLong}. ${alts ? 'Two ways to still share:' : 'You can still share:'}</span></div>
+    ${alts ? `<div class="sb-alts">${alts}</div><div class="sb-or">or keep ${keepDay}</div>` : ''}
+    <div class="sb-start-wrap" id="sb-start-wrap">
+      <h3>Start a ride for ${dateText}</h3>
+      <p><b>$0 now</b> · same $${shared.seat} seat · runs if 3 travellers join</p>
+      <a class="btn btn-ghost o-cta sb-start" href="${boardStart(true)}">Start a ride ${ICON.arrow}</a>
+    </div>
+  </article>`;
+  } else sharedCard = `
   <article class="opt opt-shared" id="shared-option">
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
@@ -391,7 +433,7 @@ if (shared) {
     </div>
     <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    <p class="shared-runs"><b>Scheduled service</b> · pay now to reserve your seat</p>
+    <p class="shared-runs"><b>${runs ? `Runs ${dateText}` : 'Scheduled service'}</b> · guaranteed departure · pay now to reserve your seat</p>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       ${pickupRows}
@@ -403,6 +445,7 @@ if (shared) {
       <span class="chip">${ICONS.ck} Meet other travellers</span>
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
+    ${runs === null ? `<a class="sb-other" href="${boardStart(false)}">Other days? Start a ride ${ICON.arrow}</a>` : ''}
   </article>`;
 } else if (engineRoute) {
   /* We never LOOKED, so we must not report a finding. `shared` is hardcoded null for an engine
@@ -447,9 +490,47 @@ function renderResults(state) {
     : unpricedHtml();
   /* On a phone the grid is one column, so the shared seat sits under two private cards — a solo
      traveller saw $55 and $75 and never scrolled to $22.99. The jump link is phone-only (CSS). */
-  const jump = shared ? `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared seat from <b>$${shared.seat}</b> ↓</a>` : '';
+  // On an off-day the link carries the key fact, so a phone user learns "Wed & Sat" without scrolling.
+  const offDay = shared && window.CHSharedDay && CHSharedDay.runsOn(date, shared.days) === false;
+  const DAY3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const jump = !shared ? ''
+    : offDay ? `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared ride: ${(shared.days || []).map(d => DAY3[d]).join(' & ')} · from <b>$${shared.seat}</b> ↓</a>`
+    : `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared seat from <b>$${shared.seat}</b> ↓</a>`;
   document.getElementById('results').innerHTML =
     `${jump}<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
+  if (offDay) showAlreadyGoing();
+  // "Switch date" comes back with #shared-option, but the card is drawn after load — so the
+  // browser's own jump to the hash finds nothing. Do it once the card exists.
+  if (location.hash === '#shared-option' && !renderResults.jumped) {
+    renderResults.jumped = true;
+    const el = document.getElementById('shared-option');
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
+}
+
+/* Someone may already have started a ride for this route and date. The board's public dupe
+   lookup (built for its own start form) answers that; a hit swaps "Start a ride" for their
+   ride. It only ever UPGRADES the card: a miss, an error, a slow or switched-off API all leave
+   "Start a ride" exactly as it was. Asked once, re-applied on any re-render. */
+let goingList;
+function showAlreadyGoing() {
+  const apply = () => {
+    const wrap = document.getElementById('sb-start-wrap');
+    const L = goingList;
+    if (!wrap || !L || !L.code || L.status !== 'gathering') return;
+    const need = Math.max(0, (L.minSeats || 3) - (L.committed || 0));
+    wrap.innerHTML = `<div class="sb-going"><b>${L.committed} of ${L.minSeats} going ${dateText}</b>
+      <small>${need > 0 ? `needs ${need} more` : 'enough to run'} · $0 until it's confirmed</small></div>
+      <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Hop on ${ICON.arrow}</a>`;
+  };
+  if (goingList !== undefined) { apply(); return; }
+  const api = window.CEYLON_HOP_API;
+  if (!api || typeof fetch !== 'function') return;
+  goingList = null;
+  fetch(`${api}/board/dupe?from=${encodeURIComponent(fromP.name)}&to=${encodeURIComponent(toP.name)}&date=${encodeURIComponent(date)}`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => { goingList = (d && d.list) || null; apply(); })
+    .catch(() => {});
 }
 renderResults(engineRoute ? 'pending' : 'priced');
 
