@@ -63,13 +63,17 @@ function optionCards(T, from, to, q, shared, p) {
     from, to, mode: 'private', vehicle: 'car',
     price: String(q.car), rawPrice: String(q.rawCar),
   })}`;
+  // data-live-fares + data-fare: route-page-fares.js asks the engine for these two figures and
+  // writes them in (hot zones live in the prod DB, so nothing generated here can know them).
+  // The catalogue fare stays in the markup — it is what a crawler, a no-JS browser and an
+  // unreachable API all show.
   const priv = `
-      <article class="opt opt-private">
+      <article class="opt opt-private" data-live-fares data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}">
         <span class="opt-tag">Most flexible</span>
         <h2>Private transfer</h2>
         <p class="opt-sub">Door to door · runs every day · your own vehicle</p>
-        <div class="veh"><span class="veh-n">AC car<small>up to 3 travellers + bags</small></span><span class="veh-p">$${price(q.car)}<small>total, fixed</small></span></div>
-        <div class="veh"><span class="veh-n">AC van<small>up to 6 travellers + bags</small></span><span class="veh-p">$${price(q.van)}<small>total, fixed</small></span></div>
+        <div class="veh"><span class="veh-n">AC car<small>up to 3 travellers + bags</small></span><span class="veh-p"><span data-fare="car">$${price(q.car)}</span><small>total, fixed</small></span></div>
+        <div class="veh"><span class="veh-n">AC van<small>up to 6 travellers + bags</small></span><span class="veh-p"><span data-fare="van">$${price(q.van)}</span><small>total, fixed</small></span></div>
         <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Book private transfer</a>
       </article>`;
 
@@ -216,7 +220,17 @@ function routePage(T, content, from, to, forward) {
     const rq = T.privateQuote(d.from, d.to);
     return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/"><span class="rt-name">${esc(T.byId[d.from].name)} → ${esc(T.byId[d.to].name)}</span><span class="rt-meta">${routeEstimate(rq)} · from $${price(rq.car)}</span></a>`;
   }).join('');
-  const faqHtml = faq.map(([qq, a]) => `<div class="faq-q"><h3>${esc(qq)}</h3><p>${esc(a)}</p></div>`).join('\n        ');
+  // The "how much is a taxi" answer states the same two fares as the card, so it gets the same
+  // live figures — otherwise a boosted route would say $66 on the card and $59.99 a scroll below.
+  // The JSON-LD copy of this answer stays the catalogue's: it is for crawlers, which run no engine.
+  const liveFares = (html) => {
+    const car = `from $${price(q.car)} and`, van = `from $${price(q.van)},`;
+    if (!html.includes(car) || !html.includes(van)) return html;
+    return html.replace(car, `from <span data-fare="car">$${price(q.car)}</span> and`)
+               .replace(van, `from <span data-fare="van">$${price(q.van)}</span>,`);
+  };
+  const faqHtml = faq.map(([qq, a]) => `<div class="faq-q"><h3>${esc(qq)}</h3><p>${liveFares(esc(a))}</p></div>`).join('\n        ');
+  if ((faqHtml.match(/data-fare=/g) || []).length !== 2) throw new Error(`${from}-to-${to}: the FAQ price sentence changed shape — liveFares() no longer finds both fares`);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -238,7 +252,12 @@ ${headAssets}
 <!-- Live ride dates come from here (route-page.js). "?api=off" disables it and
      "?api=ORIGIN" points it elsewhere — the same contract as search.html and
      booking.html, so one local API can be driven from any of them. -->
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
+<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+  /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
+     so the page never shows one price and then another. Set HERE, before first paint, and
+     released HERE on a timer too — if that script never loads, the catalogue fares still appear. */
+  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);}
+})();</script>
 <style>
   /* The route hero is a POSTCARD, not a banner. It used to be a teal gradient block with
      price chips punched into it — but the chips are now real option cards below, so the
@@ -280,6 +299,8 @@ ${headAssets}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  /* A fare the engine has not confirmed yet: same box, no ink. */
+  .fares-pending [data-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
   /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
      unreachable, which is why nothing above depends on it. */
   .ld-datebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
@@ -380,6 +401,8 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<script src="${p}${assetV('ch-pricing.js')}"></script>
+<script src="${p}${assetV('route-page-fares.js')}"></script>
 <script src="${p}${assetV('route-page.js')}"></script>
 </body>
 </html>
