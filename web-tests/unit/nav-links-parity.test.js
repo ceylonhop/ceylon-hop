@@ -45,3 +45,38 @@ describe('header nav — one link set, three copies', () => {
     expect(fromHtml(board, 'mobile-menu')).toEqual(live); // "My rides" is href="#", so it is skipped
   });
 });
+
+/* The footer is written down twice — site.js (every live page) and tools/site-chrome.mjs (every
+   generated page) — and the two drifted the same way the header did. The generated footer gained
+   "All routes" → /trip/; site.js kept a SECOND link to the blog in that slot instead ("Travel
+   guide" in Explore, "Travel blog" in Company). So the 44 route pages were linked from terms,
+   privacy, 404 and the guides, and from none of the pages travellers actually land on: the
+   homepage, search, about, why, tours, plan. Since the apex cutover (2026-09-20) those pages
+   canonical to URLs that resolve, so the missing links are missing ranking. */
+describe('footer — one link set, two copies', () => {
+  /** [label, href] pairs under a footer column's <h4>, with the generator's `${p}` prefix dropped. */
+  const column = (src, heading) => {
+    const block = src.match(new RegExp(`<h4>${heading}</h4><ul>([\\s\\S]*?)</ul>`));
+    if (!block) return [];
+    return [...block[1].matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)]
+      .map(([, h, t]) => [t.trim(), h.replace('${p}', '')]);
+  };
+  const live = read('site.js');
+  const generated = read('tools/site-chrome.mjs');
+
+  it('every live page links the route index from its footer', () => {
+    expect(column(live, 'Explore')).toContainEqual(['All routes', 'trip/']);
+  });
+
+  for (const heading of ['Explore', 'Company']) {
+    it(`"${heading}" is the same on live and generated pages`, () => {
+      expect(column(live, heading).length).toBeGreaterThan(2);
+      expect(column(live, heading)).toEqual(column(generated, heading));
+    });
+  }
+
+  it('links the blog once, not twice', () => {
+    const all = [...column(live, 'Explore'), ...column(live, 'Company')];
+    expect(all.filter(([, h]) => h === 'blog.html')).toHaveLength(1);
+  });
+});

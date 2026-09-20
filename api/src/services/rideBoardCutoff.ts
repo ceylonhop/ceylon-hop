@@ -1,7 +1,7 @@
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { EmailAdapter } from '../adapters/email';
-import { committedSeats, popularTime, type Slot, type RideMember } from '../domain/rideList';
+import { committedSeats, isSeedMember, popularTime, type Slot, type RideMember } from '../domain/rideList';
 import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideCalledOffRefundDue } from './rideBoardEmails';
 import type { AlertAdapter } from '../adapters/alerts';
 import { logEvent } from '../observability/events';
@@ -56,10 +56,17 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
   for (const { list, members } of due) {
     const held = members.filter((m) => m.status === 'held' || m.status === 'charged');
 
-    // Every branch below emails each held traveller exactly once, so held.length is the
+    // Seeded placeholders keep their SEATS — a real traveller who joined this list joined it
+    // because those names made it look like it would run, so the van has to — but they have
+    // no card to charge and no inbox to mail. Seats are counted over `held`; everything that
+    // touches money or email works on `real`.
+    const real = held.filter((m) => !isSeedMember(m));
+    const seedSeats = liveSeats(held) - liveSeats(real);
+
+    // Every branch below emails each real traveller exactly once, so real.length is the
     // true cost of this list. Claim it up front — all-or-nothing (see RideBoardCutoffDeps).
-    if (deps.budget && !deps.budget.tryClaim(held.length)) {
-      deps.budget.suppress('ride_board', list.code, held.length);
+    if (deps.budget && !deps.budget.tryClaim(real.length)) {
+      deps.budget.suppress('ride_board', list.code, real.length);
       continue;
     }
     res.processed++;
@@ -71,9 +78,9 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       logEvent('ride_board.called_off', {
         code: list.code, corridorId: list.corridorId, date: list.date,
         reason: 'below_threshold', committed: liveSeats(held), minSeats: list.minSeats,
-        travellers: held.length,
+        travellers: real.length, seedSeats,
       });
-      for (const m of held) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
+      for (const m of real) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
       continue;
     }
 
@@ -86,7 +93,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
     // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
     // can be told; for every decision below these count as charged (see the alert further down).
     const indeterminate: { member: RideMember; orderId: string; reason?: string }[] = [];
-    for (const m of held) {
+    for (const m of real) {
       if (m.status === 'charged') {
         chargedOk.push(m);
         continue;
@@ -119,7 +126,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       }
     }
 
-    const ranThisList = chargedOk.reduce((n, m) => n + m.seats, 0) >= list.minSeats;
+    const ranThisList = chargedOk.reduce((n, m) => n + m.seats, 0) + seedSeats >= list.minSeats;
     if (ranThisList) {
       // Confirmed with the successfully-charged travellers.
       await deps.rideLists.setStatus(list.id, 'confirmed');
@@ -132,9 +139,37 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // Part of revenueCents above is money we only PROBABLY hold — an indeterminate charge
         // counts toward the van running, so the revenue figure means little without this.
         chargeUnknown: indeterminate.length,
+        // Seats on the manifest that are nobody: `seats` and revenueCents above are real
+        // travellers only, so seats + seedSeats is what cleared minSeats.
+        seedSeats,
       });
       for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
       for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
+      // A seeded list that a real traveller is now confirmed on is a van we have promised to
+      // run — and the board's head-count for it is mostly placeholders. Nothing else tells
+      // ops that; without this the first they hear of it is a traveller waiting at a pickup.
+      if (seedSeats > 0 && real.length > 0 && deps.alerts) {
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'ride_board_seeded_list_running',
+            title: `Seeded ride ${list.code} is really running — ${chargedOk.length} real traveller(s)`,
+            body: [
+              `Ride ${list.code} — ${list.fromPlace} → ${list.toPlace} on ${list.date}, departing ${time}`,
+              `Confirmed with ${chargedOk.length} real traveller(s) and ${seedSeats} seeded placeholder seat(s).`,
+              `The placeholders are not people: this van runs for the traveller(s) below, who have`,
+              `been charged and emailed that it is confirmed.`,
+              ...chargedOk.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s)`),
+              ...(failed.length
+                ? [`Card declined (emailed "at risk", not on the van unless they pay):`,
+                   ...failed.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s)`)]
+                : []),
+              `There are ${list.capacity - chargedOk.reduce((n, m) => n + m.seats, 0)} real seat(s) still free on it.`,
+            ].join('\n'),
+            dedupeKey: `ride_board_seeded_list_running:${list.code}`,
+          });
+        } catch { /* the alert is the backstop, not the product */ }
+      }
     } else {
       // Rare: enough held, but charge failures dropped it below the threshold → call it off.
       // Any card in chargedOk is real money taken for a van that will not run. Refunding is
@@ -155,7 +190,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       // sendRideCancelled says "you weren't charged" — true for everyone whose card declined
       // or was never charged, and a false statement to anyone in chargedOk.
       const chargedSubs = new Set(chargedOk.map((m) => m.sub));
-      for (const m of held) {
+      for (const m of real) {
         if (chargedSubs.has(m.sub)) {
           await sendRideCalledOffRefundDue(deps.email, { to: m.email, firstName: m.firstName, list });
         } else {

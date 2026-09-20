@@ -191,6 +191,14 @@ export function committedSeats(members: RideMember[]): number {
   return members.filter(countsForSeat).reduce((n, m) => n + m.seats, 0);
 }
 
+// A placeholder written by scripts/seed-ride-board.ts (which marks its rows with this same
+// prefix). It holds a seat on the board but has no card and no inbox, so nothing may ever be
+// charged to it or mailed to it.
+export const SEED_MEMBER_SUB_PREFIX = 'seed-rideboard:';
+export function isSeedMember(m: Pick<RideMember, 'sub'>): boolean {
+  return m.sub.startsWith(SEED_MEMBER_SUB_PREFIX);
+}
+
 // ---- Public code generation ------------------------------------------------
 
 const A_Z = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
