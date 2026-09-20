@@ -607,7 +607,8 @@ if (!askEngine) trackResults();
 
    If either call fails on a route with NO baked distance there is no fallback price to show —
    no local formula can price it — so the card becomes an honest "we'll price it by hand". */
-// Two debounced round trips (ch-pricing: 400ms each) land in ~1.5–2.5s on a cold route.
+// Two round trips, one after the other. Measured 2.5s cold on prod WITH ch-pricing's debounce
+// (2 × 400ms of it); the calls below skip it.
 const ENGINE_CAP_MS = 4000;
 if (askEngine) (function () {
   const baked = engineRoute ? null : quote;   // the catalogue fare, kept as the fallback
@@ -638,7 +639,7 @@ if (askEngine) (function () {
       window.CH_PRICING.estimate(Object.assign({ vehicle }, base), {
         onResult: function (est) { resolve(est); },
         onUnavailable: function () { resolve(null); }
-      });
+      }, { immediate: true });   // asked once, on load — the debounce is for a wizard mid-click
     });
   }
 
