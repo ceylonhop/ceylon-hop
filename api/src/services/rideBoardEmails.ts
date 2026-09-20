@@ -1,5 +1,5 @@
 import type { EmailAdapter } from '../adapters/email';
-import type { RideList } from '../domain/rideList';
+import { SLOT_TIMES, type RideList, type Slot } from '../domain/rideList';
 
 // ============================================================================
 // Ride Board customer emails. Self-contained (a small branded shell) so this
@@ -56,6 +56,21 @@ const routeHtml = (l: RideList) => esc(route(l));
 // the old toFixed(2) disagreed with notifications.ts on $1,000+.
 const money = (cents: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+
+// Sri Lanka is where the traveller is standing when the deadline bites, so the
+// cutoff renders in Asia/Colombo — not UTC, and not the server's zone. Date and
+// time are formatted together: a bare time would read as a departure.
+const cutoffLabel = (at: Date) =>
+  `${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric' }).format(at)}`
+  + ` at ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at)}`;
+
+// The window a list is gathering for, before a single time is pinned at lock.
+const slotWindow = (slot: string) => {
+  const times = SLOT_TIMES[slot as Slot];
+  return times ? `${times[0]}–${times[times.length - 1]}` : slot;
+};
+
+const seatsLabel = (seats: number) => (seats > 1 ? `${seats} seats` : '1 seat');
 
 export async function sendRideConfirmed(
   email: EmailAdapter,
@@ -130,5 +145,42 @@ export async function sendRideAtRisk(
        <p>Reply and we'll sort a fresh payment so you keep your spot.</p>`,
     ),
     text: `Hi ${args.firstName}, we couldn't charge your card for your ${route(list)} seat on ${list.date}. Reply to keep your spot.`,
+  });
+}
+
+
+/** The receipt for adding your name. A joiner has a card preapproved against a ride
+ *  that may never run, so this is the only record they hold of what was committed,
+ *  what it will cost, when the decision lands — and how to get back to the page that
+ *  can take their name off again. Sent on join and on starting a list. */
+export async function sendRideJoined(
+  email: EmailAdapter,
+  args: { to: string; firstName: string; list: RideList; seats: number; rideUrl: string },
+): Promise<void> {
+  const { list, seats } = args;
+  const total = list.seatPrice * Math.max(1, seats);
+  const cutoff = cutoffLabel(list.cutoffAt);
+  const url = esc(args.rideUrl);
+  await email.send({
+    to: args.to,
+    subject: `You're on the list — ${route(list)} on ${list.date}`,
+    html: shell(
+      `You're on the list, ${esc(args.firstName)}!`,
+      `<p>Your name is down for <b>${routeHtml(list)}</b> — we're gathering travellers now.</p>
+       <p><b>${routeHtml(list)}</b><br>${esc(list.date)} · departs ${esc(slotWindow(list.slot))}<br>
+       ${esc(seatsLabel(seats))} · ride <b>${esc(list.code)}</b></p>
+       <p><b>You have not been charged.</b> Your card is approved and held, nothing more. We take
+       <b>${money(total)}</b> <b>only if</b> at least ${list.minSeats} seats are pledged by the cutoff and the van runs.
+       If not enough travellers join, the ride is called off and you pay nothing.</p>
+       <p>Names close <b>${esc(cutoff)}</b> (Sri Lanka time).</p>
+       <p>Changed your plans? Open your ride and scratch your name off any time before then —
+       no questions, no charge.</p>
+       <p><a href="${url}" style="display:inline-block;background:${BAND};color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">View your ride</a></p>
+       <p style="font-size:12px;color:${MUTED};word-break:break-all">${url}</p>`,
+    ),
+    text: `You're on the list, ${args.firstName}! ${route(list)} on ${list.date}, departs ${slotWindow(list.slot)}. `
+      + `${seatsLabel(seats)} · ride ${list.code}. You have not been charged — we take ${money(total)} only if `
+      + `at least ${list.minSeats} seats are pledged by the cutoff and the van runs. Names close ${cutoff} (Sri Lanka time). `
+      + `View your ride or scratch your name off: ${args.rideUrl}`,
   });
 }
