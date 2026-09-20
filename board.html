@@ -144,13 +144,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
    pushed that row's price and seats out of line with every other row */
 /* route gets the lion's share: two tags for the longest pair we sell need ~460px; faces + state ~220px */
 .rw{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
-  padding:14px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
+  padding:22px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
 .rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
-.rw-route{min-width:0}
+/* the duration rides on the route's own line; it drops below only when the pair leaves no room */
+.rw-route{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
 /* wrap, never clip: when the pair does not fit, the drop-off tag drops to a second line */
 .rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
@@ -165,7 +166,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-pl.b .rw-dot{background:var(--cta)}
 /* .rw-route small{display:block} (the duration line) outranks a bare .rw-q — match its specificity */
 .rw-route .rw-q{display:inline;font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft);margin:0}
-.rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+.rw-route small{display:block;flex:none;font-size:.76rem;color:var(--ink-soft);white-space:nowrap}
 /* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column.
    Must come AFTER the base .rw-route .rw-q rule — equal specificity, so source order decides. */
 @media(max-width:1180px){.rw-route .rw-q{display:none}}
