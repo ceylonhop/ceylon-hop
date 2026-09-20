@@ -1,8 +1,11 @@
 # Apex cutover runbook — `ceylonhop.com` becomes the new site
 
 Date: 2026-09-20
-Status: **NOT STARTED.** Design agreed with the owner 2026-09-20; every phase below is
-unexecuted. Tick the boxes as they land.
+Status: **CUT OVER 2026-09-20 — Phase 1 and the DNS/certificate half of Phase 2 landed; the
+apex serves the new site from `production`.** Still open: **Bulk Redirects are not live** (§5 — legacy URLs answer 200 with
+the meta-refresh stub, not a 301), the Phase 3 human checks (§6), `staging.ceylonhop.com`
+(§7), and the Phase 5 tidy-up (§8). Boxes ticked "verified from outside" were proven with the
+commands in §6; boxes that need a dashboard to confirm are left unticked rather than assumed.
 
 This is the **one-time** switch that makes the new stack the live customer site, retires
 `prod.ceylonhop.com`, and stands up a login-gated `staging.ceylonhop.com` in its place. It
@@ -32,11 +35,11 @@ the `production` branch so a front-end merge stops being an instant customer rel
 
 ## 1. What changes about shipping
 
-Today GitHub Pages serves `prod.ceylonhop.com` from `main`, so **merging any front-end change
-to `main` ships it to whoever is looking, with no promote and no staging bake.** Only the API
-half waits for a `production` promote.
+Until 2026-09-20 GitHub Pages served `prod.ceylonhop.com` from `main`, so **merging any
+front-end change to `main` shipped it to whoever was looking, with no promote and no staging
+bake.** Only the API half waited for a `production` promote.
 
-After this cutover:
+Since the cutover (the `production` half is live; the `staging.ceylonhop.com` half waits on §7):
 
 - `main` → **staging**, both halves together: Cloudflare Pages rebuilds
   `staging.ceylonhop.com` and Render redeploys `ceylon-hop-staging`. The site and the API a
@@ -55,13 +58,17 @@ customer release.
 
 ## 2. Preconditions — do not start Phase 1 until these are true
 
-- [ ] **Prod `ALLOWED_ORIGINS` includes the apex and www.** Verified **missing** on
+- [x] **Prod `ALLOWED_ORIGINS` includes the apex and www.** Fixed in Phase 0 and re-verified
+      from outside after the cutover (2026-09-20): the preflight answers
+      `access-control-allow-origin` for both the apex and www. History: verified **missing** on
       2026-09-20: a preflight with `Origin: https://ceylonhop.com` came back with no
       `Access-Control-Allow-Origin` header, while `prod.ceylonhop.com` got one. The code
       default in `api/src/config.ts` *does* list the apex — Render's env var overrides it. If
       this is not fixed, every quote, booking and payment call on the new apex fails the
       instant DNS flips. This is Phase 0 work, but it is also a hard gate.
-- [ ] **The six terms facts are filled in.** `terms.html` still renders 6
+- [x] **The six terms facts are filled in.** Done in #662 and promoted; verified 2026-09-20:
+      `https://ceylonhop.com/terms.html` contains 0 `OWNER TO CONFIRM`.
+      History: `terms.html` rendered 6
       `[… OWNER TO CONFIRM]` placeholders in production. Needed: company name + registration
       number, registered address, governing law, jurisdiction, shared-seat cancellation policy,
       effective date. Edit `tools/legal/terms.body.html` and regenerate — never the generated
@@ -104,9 +111,12 @@ be done hours or days ahead, and it should be — Phase 2 is much less tense whe
       three staff out of `/ops`. Origins are exact-match, so every host needs its own line;
       one client covers staff sign-in on prod *and* staging *and* customer sign-in on the
       ride board.
-- [ ] GitHub → repo/org settings → **verify the apex domain** for Pages (add the
+- [x] GitHub → repo/org settings → **verify the apex domain** for Pages. Verified from
+      outside 2026-09-20: the `_github-pages-challenge-ceylonhop` TXT record resolves and the
+      Pages API reports `protected_domain_state: "verified"` with `cname: "ceylonhop.com"`.
+      (The step: add the
       `_github-pages-challenge-…` TXT record). Prevents anyone else claiming `ceylonhop.com`
-      on Pages later. `prod.ceylonhop.com` is already verified; the apex is not.
+      on Pages later. (When this was written only `prod.ceylonhop.com` was verified.)
 - [ ] PayHere dashboard: confirm the apex is an approved domain. Live money currently settles
       on `pay.ceylonhop.com` under the apex registration (2026-08-02), so this is expected to
       be a no-op — confirm, don't assume.
@@ -129,16 +139,19 @@ branch it serves, and repoints the custom domain to whatever that file says. So 
 switch has to happen before the file changes, and the file has to end up correct on `main` as
 well as `production`.
 
-1. [ ] **Pages source branch `main` → `production`.** At this moment `production`'s `CNAME`
+1. [x] **Pages source branch `main` → `production`.** Done 2026-09-20 (~17:00 UTC;
+       `gh api …/pages` → `source.branch: "production"`). At this moment `production`'s `CNAME`
        file still reads `prod.ceylonhop.com`, so the site keeps serving at the old address,
        just built from the `production` branch. `production` may be a few commits behind
        `main`; that brief content regression on a domain that is about to be retired is
        acceptable.
-2. [ ] **Change `CNAME` to `ceylonhop.com` on `main`** (one-line PR) and merge it.
+2. [x] **Change `CNAME` to `ceylonhop.com` on `main`** (one-line PR) and merge it. Done: #656.
        `staging.ceylonhop.com` does not read this file — Cloudflare Pages takes its domain from
        its own project settings — so `main` carrying the apex value is correct and necessary:
        if `main` kept `prod.ceylonhop.com`, the *next* promote would silently revert the apex.
-3. [ ] **Merge the promote PR `main → production`.** Check it for migrations first
+3. [x] **Merge the promote PR `main → production`.** Done 2026-09-20: `CNAME` on
+       `production` reads `ceylonhop.com` and `prod.ceylonhop.com` answers 404.
+       The step: check it for migrations first
        (`git diff --name-only origin/production...origin/main -- api/drizzle`) — a migration in
        the range auto-applies on Render boot and is its own release decision. The instant this
        merges, Pages repoints to `ceylonhop.com` and **`prod.ceylonhop.com` stops serving.**
@@ -153,19 +166,31 @@ Phase 2.
 The apex already sits on Cloudflare (`eve/titan.ns.cloudflare.com`), so this is all in an
 account you own.
 
-- [ ] Point `ceylonhop.com` and `www` at GitHub Pages (apex via CNAME flattening to
+- [x] Point `ceylonhop.com` and `www` at GitHub Pages. Verified from outside 2026-09-20: the
+      apex answers with `x-github-request-id` and the `site.css?v=` stamp, 0 `wp-content`.
+      (The step: apex via CNAME flattening to
       `ceylonhop.github.io`, or the four Pages A records). **Change A/AAAA/CNAME for the apex
       and www only. Do not touch MX or TXT** — those carry your mail and the Resend SPF/DKIM
       for `send.ceylonhop.com`.
-- [ ] Set those records **DNS-only (grey cloud) first.** GitHub issues the Let's Encrypt
+- [x] Set those records **DNS-only (grey cloud) first.** Certificate issued — the Pages API
+      reports it `approved` for `ceylonhop.com` + `www.ceylonhop.com`, expiring 2026-12-19.
+      Why: GitHub issues the Let's Encrypt
       certificate by fetching the domain itself, and that fetch fails while Cloudflare proxies
       it. Wait for the Pages settings page to report the certificate as issued.
 - [ ] **Then turn the proxy back on (orange cloud)** and set Cloudflare SSL mode to **Full
-      (strict)**.
+      (strict)**. Half-verified 2026-09-20: the proxy **is** back on (the apex resolves to
+      Cloudflare addresses and answers `server: cloudflare`). The SSL mode is only visible in
+      the dashboard — tick this once it is confirmed there.
 - [ ] Import [`cloudflare-redirects.csv`](./cloudflare-redirects.csv) (27 rules) as **Bulk
-      Redirects**, 301. Bulk Redirects only run on a *proxied* record — they do nothing until
+      Redirects**, 301. ⚠️ **NOT LIVE as of 2026-09-20** — three legacy URLs from the CSV
+      (`/trip/kandy_to_ella/`, `/trip/shared-ride-sigiri-to-kandy/`,
+      `/trip/private_transfer_sigiriya_to_kandy/`) all answer **200** with the in-repo
+      meta-refresh stub, not a 301. Visitors still land in the right place, but the old URLs'
+      ranking signals are not being passed the way a server-side 301 passes them.
+      Bulk Redirects only run on a *proxied* record — they do nothing until
       the previous step is done.
-- [ ] Add a `www → apex` 301 redirect rule.
+- [x] Add a `www → apex` 301 redirect rule. Verified 2026-09-20:
+      `https://www.ceylonhop.com/` → `301 https://ceylonhop.com/`.
 
 These two requirements pull against each other for a few minutes: the certificate needs the
 proxy off, the redirects need it on. Sequence them; don't try to satisfy both at once.
@@ -261,10 +286,11 @@ whole staged site at production.
       cutover deliberately (owner, 2026-08-15): while WordPress served customers a regression
       cost a bad demo; now it costs bookings. Worth proving `--workers=4` over a few runs first
       so the gate people cannot bypass is also the fast one.
-- [ ] Update the docs that now describe the old release model: `CLAUDE.md` maintenance rule 7,
-      go-live-checklist §3, seo-migration-plan's status header.
-- [ ] Decide what happens to the `prod.ceylonhop.com` DNS record — removing it is cleanest;
-      leaving it pointed at Pages means it serves the apex's content under the wrong hostname.
+- [x] Update the docs that now describe the old release model: `CLAUDE.md` maintenance rule 7
+      (#660), go-live-checklist §3, seo-migration-plan's status header.
+- [ ] Decide what happens to the `prod.ceylonhop.com` DNS record — removing it is cleanest.
+      Observed 2026-09-20: the record still exists (CNAME → `ceylonhop.github.io`) and Pages
+      answers it with a **404**, not the apex's content — so it is harmless but dead weight.
 
 ## 9. Rollback
 
