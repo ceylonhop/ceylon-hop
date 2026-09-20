@@ -1094,6 +1094,12 @@ function advance(leg){
    editing a middle leg moves the legs after it), and one they deliberately cleared stays blank
    with the running date passing straight through it. */
 function cascadeFrom(start){
+  /* Nothing to cascade THROUGH on a route with no stays: a transfer does not advance the running
+     date, so the cursor never moves and every later leg gets stamped with the same day — one
+     hand-set date silently becoming a whole itinerary on one date (owner-spotted 2026-09-19).
+     The guard lives here rather than at each call site so a future caller cannot reintroduce it;
+     canCascade() is also what hides the trip-start anchor, so the two stay in step by construction. */
+  if(!canCascade()) return;
   let cursor=null;
   for(let k=0;k<start;k++){
     const l=state.legs[k];

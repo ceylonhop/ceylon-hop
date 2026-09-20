@@ -138,19 +138,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* ---------- ride rows ----------
    One ride per line: window · route · who's in · price · action. The day heading carries the
    date, so a row never repeats it. See docs/superpowers/specs/2026-09-18-ride-board-rows-design.md */
+/* the hairline belongs BETWEEN days, not under the date: a line under the heading cut the date
+   off from the rows it labels, and read exactly as heavy as a row divider. So the day's first
+   row drops its own line, and the heading gets the room that does the separating. */
 .rw-group+.rw-group{border-top:1px solid var(--line)}
-.rw-day-h{margin:0;padding:16px 24px 8px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h{margin:0;padding:26px 24px 10px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h+.rw{border-top:0}
 /* the action column is a fixed width: sized per row, the widest label ("Start another van")
    pushed that row's price and seats out of line with every other row */
 /* route gets the lion's share: two tags for the longest pair we sell need ~460px; faces + state ~220px */
 .rw{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
-  padding:14px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
+  padding:22px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
 .rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
-.rw-route{min-width:0}
+/* the duration rides on the route's own line; it drops below only when the pair leaves no room */
+.rw-route{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
 /* wrap, never clip: when the pair does not fit, the drop-off tag drops to a second line */
 .rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
@@ -165,7 +170,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-pl.b .rw-dot{background:var(--cta)}
 /* .rw-route small{display:block} (the duration line) outranks a bare .rw-q — match its specificity */
 .rw-route .rw-q{display:inline;font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft);margin:0}
-.rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+.rw-route small{display:block;flex:none;font-size:.76rem;color:var(--ink-soft);white-space:nowrap}
 /* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column.
    Must come AFTER the base .rw-route .rw-q rule — equal specificity, so source order decides. */
 @media(max-width:1180px){.rw-route .rw-q{display:none}}
@@ -606,7 +611,7 @@ body.detail-open .detail{display:block}
   /* two-line rows: route + price, window + duration, faces + state + a text-link action.
      The only solid button on a phone is the start bar's; the whole row opens the ride. */
   .filters .f-start{display:none}
-  .rw-day-h{padding:14px 16px 6px}
+  .rw-day-h{padding:22px 16px 8px}
   /* the route takes the full width so the longest pair stays one line; price sits by the time */
   .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route route" "when price" "seats cta";gap:6px 12px;padding:13px 16px}
   .rw-route .rw-q{display:none}
