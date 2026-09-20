@@ -307,6 +307,27 @@ function hasExactRouteInputs(){
   return !isTrip && !isShared && (state.locFrom!==AREA_FROM || state.locTo!==AREA_TO);
 }
 
+/* Has each exact-spot field settled on something the customer actually means?
+
+   The map lookup below sends its stops to Google to be RESOLVED and MEASURED, and the distance
+   that comes back can park a repriceDecision (see renderRouteMap's onRoute). Feeding it a field
+   mid-keystroke therefore asked Google to find the place "jaffn", printed that back in the map
+   legend, and let a half-finished word touch the price. plan.js has always drawn this line — a
+   live distance is "resolved only once a place is COMMITTED — on 'change' (a dropdown pick or a
+   blur onto a real place) ... never here on raw keystrokes". This is the same rule.
+
+   Both fields start committed: empty means "no exact spot", which is a settled answer, not an
+   unfinished one — the map falls back to the area and must still draw on load. */
+const locCommitted = { from:true, to:true };
+function setLocCommitted(which, yes){ locCommitted[which] = yes; }
+/* Emptying a field programmatically — "Clear this spot", "I'll decide the exact spot later" — fires
+   no input event, so it has to settle the field itself. Missing this left a field stuck
+   un-settled after a clear, which meant the map lookup never re-ran and a parked re-price notice
+   was never withdrawn (pricing-flow's "outside its area is blocked" spec caught it). */
+const locSettle = {};
+// The lookup runs only once BOTH ends have settled — a route needs two committed points.
+function maybeScheduleRouteMap(){ if(locCommitted.from && locCommitted.to) scheduleRouteMap(); }
+
 function onLoc(){
   // exact spot when given; otherwise the settled area (payload, summary, map and the
   // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
@@ -317,7 +338,10 @@ function onLoc(){
     routeEstimateUnavailable=false;
   }
   checkExactRadius();
-  render(); checkWhere(); scheduleRouteMap();
+  // The summary and the radius guard still follow every keystroke — they read what is on screen
+  // and cost nothing. Only the Google lookup waits for both ends to be committed; until then the
+  // map simply keeps showing the last route the customer actually chose.
+  render(); checkWhere(); maybeScheduleRouteMap();
 }
 
 // The exact spot must stay within its area — a hotel/landmark, not a new route.
@@ -354,7 +378,9 @@ function checkExactRadius(){
 }
 window.clearExactSpot=function(which){
   const input = which==='from' ? locFrom : locTo;
-  input.value=''; setGeo(which,null); onLoc(); input.focus();
+  input.value=''; setGeo(which,null);
+  if(locSettle[which]) locSettle[which]();   // an emptied field is a settled "no exact spot"
+  onLoc(); input.focus();
 };
 
 // "Decide later" — a legitimate answer: collapse the input into a friendly note and
@@ -365,7 +391,9 @@ function wireDecideLater(which){
   const undo=document.getElementById('loc-undo-'+which);
   if(!field||!later||!note||!undo) return;
   later.addEventListener('click',()=>{
-    input.value=''; setGeo(which,null); onLoc();
+    input.value=''; setGeo(which,null);
+    if(locSettle[which]) locSettle[which]();
+    onLoc();
     field.classList.add('decided-later'); note.hidden=false;
     if(typeof window.chTrack==='function') window.chTrack('exact_location_deferred',{which});
   });
@@ -381,6 +409,14 @@ wireDecideLater('from'); wireDecideLater('to');
 // built-in list of known places so the field still works offline.
 function attachAC(input, menu, which){
   let active=-1, els=[], data=[], seq=0, committed=false, openedAt=0;
+  /* The value this field last SETTLED on. Committing is not free — it re-runs the map lookup, and
+     that lookup's measured distance drives the re-price notice — so re-committing a value that was
+     already settled is not a no-op, it perturbs a state machine mid-decision. (Five reprice specs
+     went red on exactly that: a blur after the customer had picked fired a second render on top of
+     a parked notice.) A commit therefore only counts when the text has actually moved. */
+  let settledValue = input.value.trim();
+  function markSettled(){ setLocCommitted(which, true); settledValue = input.value.trim(); }
+  locSettle[which] = markSettled;
   const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>';
   function close(invalidate=true){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; if(invalidate) seq++; }
   function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
@@ -390,11 +426,12 @@ function attachAC(input, menu, which){
     committed=true;
     seq++;
     userSetLocation=true; // a deliberate selection — now the price may re-price
-    input.value=d.label; onLoc(); close();
+    input.value=d.label; markSettled(); onLoc(); close();
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
       if(geo && geo.name) input.value=geo.name;
+      markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
     } else {
@@ -476,7 +513,12 @@ function attachAC(input, menu, which){
     renderMenu();
   }
 
-  input.addEventListener('input',()=>{ setGeo(which, null); onLoc(); build(); });
+  input.addEventListener('input',()=>{
+    // An emptied box is a settled answer ("no exact spot"), so it settles immediately and the map
+    // returns to the area. Anything else is a word in progress until the customer says otherwise.
+    if(input.value.trim()) setLocCommitted(which, false); else markSettled();
+    setGeo(which, null); onLoc(); build();
+  });
   input.addEventListener('focus',build);
   input.addEventListener('keydown',e=>{
     if(!menu.classList.contains('open')) return;
@@ -485,7 +527,21 @@ function attachAC(input, menu, which){
     else if(e.key==='Enter'){ if(active>=0){ e.preventDefault(); choose(active); } }
     else if(e.key==='Escape'){ close(); }
   });
-  input.addEventListener('blur',()=>setTimeout(close,150));
+  input.addEventListener('blur',()=>{
+    setTimeout(close,150);
+    // Leaving the field is the other way to settle — plan.js's "a blur onto a real place". This
+    // catches a name typed out in full and left without touching the menu. A pick has already
+    // settled the field via choose(), so that blur falls through the guard and changes nothing.
+    if(locCommitted[which] && input.value.trim()===settledValue) return;
+    markSettled();
+    /* Only the LOOKUP is released here — deliberately not onLoc(). Blur changes nothing the
+       summary shows: state.locFrom/locTo and the radius guard already followed every keystroke.
+       All that has changed is that the text is now settled enough to send to Google.
+       onLoc() would also re-render, and a blur happens BETWEEN a button's mousedown and its
+       click — so re-rendering here tore the "Clear this spot" button out of the DOM under the
+       customer's own finger and the press did nothing (pricing-flow's out-of-area spec). */
+    maybeScheduleRouteMap();
+  });
   window.addEventListener('scroll',()=>{ if(Date.now()-openedAt>250) close(); },true);
   window.addEventListener('wheel',()=>close(),{passive:true});
   window.addEventListener('touchmove',()=>close(),{passive:true});
@@ -973,7 +1029,12 @@ window.toggleFlexDate=function(){
 };
 // service chooser (trip mode)
 window.pickSvc=function(svc){
-  if(isTrip && svc==='chauffeur' && !tripDatesComplete()) return;
+  // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
+  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
+  if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
+    if(tripEditUrl) location.href=tripEditUrl;
+    return;
+  }
   if(svc===state.svc) return;                 // re-pressing the active option shouldn't animate
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
@@ -1061,6 +1122,14 @@ function renderRepriceNote(){
   if(!p || p.engineRaise){ if(localEl) localEl.remove(); }
   if(!p || !p.engineRaise){ if(engineEl) engineEl.remove(); }
   if(!p) return;
+  // The capacity note is the single control for a vehicle upgrade — nothing to announce here.
+  // (If the party has shrunk back into the car the upgrade no longer applies — same reasoning as
+  // switchToVan: a silent hold must never outlive the control that resolves it.)
+  if(p.engineRaise && p.vehicleUpgrade){
+    if(engineEl) engineEl.remove();
+    if(!carOutgrownVanFits()) state.pendingReprice=null;
+    return;
+  }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
     const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
@@ -1540,6 +1609,18 @@ function changedExtras(now, prior){
   const b=(prior.extras||[]).slice().sort().join('|');
   return a!==b;
 }
+// True while a private CAR is selected for a party only a van can carry — the exact condition
+// under which render() shows the "won't fit · Switch to AC van" capacity note. The engine upgrades
+// the vehicle by itself in that state, so its estimate for a car intent is really the van's price.
+// Left to the generic gate, that produced two controls for one decision ("Switch to AC van" AND
+// "Got it — use $89.99"), and accepting the second printed the van's price on the car's label
+// with the capacity warning still up and Continue still blocked (prod, 2026-09-18).
+function carOutgrownVanFits(){
+  if(!perVehicle || vehicleKey!=='car') return false;
+  const pax=state.ad+state.ch;
+  const over = pax>VEH_CAP.car.pax || state.bags>VEH_CAP.car.bags;
+  return over && pax<=VEH_CAP.van.pax && state.bags<=VEH_CAP.van.bags;
+}
 // Settles a live estimate for `sig`. A raise over whatever engine total was already on screen
 // must never apply silently (Global Constraints) — it's parked behind the same acknowledge gate
 // renderRepriceNote already runs for the local repriceDecision path; a same-or-lower figure is
@@ -1553,7 +1634,12 @@ function handleEngineEstimate(est, sig){
   adoptCustomerRouteEstimate(est,sig);
   const priorCents = engineEst ? engineEst.totalCents : null;
   if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
-    state.pendingReprice = { engineRaise:true, fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+    // `vehicleUpgrade`: the party has outgrown the car, so the engine priced a van on its own.
+    // The capacity note already owns that decision (it blocks Continue until it's resolved) and
+    // is the ONE control for it — see carOutgrownVanFits(). The figure is still held, exactly as
+    // for any undriven raise; it just isn't announced a second time by renderRepriceNote.
+    state.pendingReprice = { engineRaise:true, vehicleUpgrade:carOutgrownVanFits(),
+      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
     render();
     checkWhere();
     return;
@@ -1673,6 +1759,10 @@ function carPrice(){
 }
 // upgrade car → van when the party is over a car's capacity, and re-price
 window.switchToVan=function(){
+  // A held vehicleUpgrade has done its job: the press is the acknowledgement. Drop it here rather
+  // than waiting for the re-estimate — it has no visible control of its own, so if that request
+  // failed it would keep the pay gate shut with nothing on screen to open it.
+  if(state.pendingReprice && state.pendingReprice.vehicleUpgrade) state.pendingReprice=null;
   vehicleKey='van'; vehicleLabel='AC van (up to 6)';
   vehPax=VEH_CAP.van.pax; maxBags=VEH_CAP.van.bags;
   const vp=vanPrice(); if(vp!=null){ unit=vp; if(isTrip) tripBase=vp; }
@@ -1778,9 +1868,16 @@ function render(){
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
     if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
     if(chBtn && chBtn.style.display!=='none'){
-      chBtn.disabled=!chOK;
-      chBtn.setAttribute('aria-disabled', chOK?'false':'true');
+      // Missing dates are the customer's to fix, so the card stays PRESSABLE and its tag reads
+      // "Add all dates to quote" — pressing it goes and collects them (see pickSvc). It used to
+      // carry `disabled`, which makes every child inert: we told them exactly what to do and gave
+      // them no way to do it (owner-spotted 2026-09-18).
+      // The notice window is the opposite case — nothing they do on this card fixes it today — so
+      // that one stays truly disabled and the panel below explains it.
+      chBtn.disabled=tooSoon;
+      chBtn.setAttribute('aria-disabled', tooSoon?'true':'false');
       chBtn.classList.toggle('disabled', !chOK);
+      chBtn.classList.toggle('needs-dates', !datesOK && !tooSoon);
     }
     if(!chOK && state.svc==='chauffeur'){
       state.svc='private';
@@ -1823,6 +1920,11 @@ function render(){
   const sharedBagMax = freeBags + 5;            // allow a handful of paid extras
   const bgUp=document.getElementById('bg-up'); if(bgUp) bgUp.disabled = state.bags >= (isShared ? sharedBagMax : ABS_MAX_BAGS);
   const cap=document.getElementById('bag-cap'); if(cap) cap.textContent = isShared ? `One large bag per traveller free · extra bags $10 each` : (perVehicle ? `${vehicleLabel} · up to ${maxBags} bags` : `Up to ${maxBags} bags`);
+  // "40% off" is the per-SEAT child fare (calcTotal: unit*0.6*ch). A private vehicle is one fixed
+  // fare however many ride in it, so the promise was false there: adding a child changed nothing.
+  // What a child does change on a private booking is the seat count that decides car vs van.
+  const chSub=document.querySelector('#ch-step .muted');
+  if(chSub && perVehicle) chSub.textContent='Age 2–11 · counts as a seat';
   const note=document.getElementById('cap-note');
   if(note){
     if(paxOver || bagsOver){
@@ -1835,14 +1937,17 @@ function render(){
         // for every click would make the capacity warning lag behind the input. It's a comparison
         // figure only ("about this much more"), so it's marked ~ rather than presented as the price
         // the switch will actually charge — switchToVan() itself re-estimates through the engine.
-        const vanP = vanPrice();
+        // ...unless the engine has ALREADY priced the van for this party (a held vehicleUpgrade):
+        // then that is the price the switch will charge, so print it plainly, without the ~.
+        const held = state.pendingReprice && state.pendingReprice.vehicleUpgrade ? state.pendingReprice.toCents/100 : null;
+        const vanP = held!=null ? held : vanPrice();
         const reason = (paxOver && bagsOver)
           ? `${pax} travellers and ${state.bags} bags won’t fit an AC car`
           : (paxOver
               ? `${pax} travellers won’t fit an AC car (up to ${VEH_CAP.car.pax})`
               : `${state.bags} large bags won’t fit an AC car (up to ${VEH_CAP.car.bags})`);
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
-          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ~${money(vanP)}`:''}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${held!=null?'':'~'}${money(vanP)}`:''}</button>`;
       } else {
         const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
         note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;

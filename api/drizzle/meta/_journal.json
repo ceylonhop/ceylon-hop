@@ -351,6 +351,13 @@
       "when": 1787616000000,
       "tag": "0049_customer_short_links",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789344000000,
+      "tag": "0050_promo_codes",
+      "breakpoints": true
     }
   ]
 }

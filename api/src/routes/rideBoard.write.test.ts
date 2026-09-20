@@ -6,7 +6,7 @@ import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
-import { futureIsoDate } from '../testSupport/dates';
+import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
 // free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
@@ -18,14 +18,14 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
   const verifier: JwtVerifier = async () => ({
     payload: { iss: 'accounts.google.com', email: id.email, email_verified: true, name: id.name, sub: id.sub, picture: id.picture },
   });
-  const app = createApp({ rideLists, paygw, customerVerifier: verifier });
+  const app = createApp({ rideLists, paygw, customerVerifier: verifier, ...over });
   return { app, rideLists, paygw };
 }
 
@@ -639,5 +639,113 @@ describe('ride board CSRF', () => {
     });
     expect(res.status).toBe(200);
     expect(await names(app, code)).toHaveLength(0);
+  });
+});
+
+// PayHere sends the payer back to return_url / cancel_url. Those were built from APP_BASE_URL,
+// which on prod is the apex — still the old WordPress site until cutover — so a traveller who
+// approved a card on prod.ceylonhop.com landed on WordPress's 404 (owner, 2026-09-18). The board
+// page IS the return page, so the return goes back to the origin the board was used from. Only
+// an allow-listed origin qualifies: the CSRF guard already refuses others, and the allow-list is
+// what keeps this from being a redirect-anywhere.
+describe('PayHere return_url — back to the board the traveller was on', () => {
+  const ORIGIN = 'https://ceylonhop.github.io'; // on the default allow-list, not the bookingBaseUrl
+  const withOrigin = (cookie: string, body: unknown) => {
+    const r = json(cookie, body);
+    return { ...r, headers: { ...r.headers, origin: ORIGIN } };
+  };
+
+  it('join: returns to the request origin when it is allow-listed', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1 }))).status).toBe(200);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+    expect(paygw.preapprovals[0].cancelUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=.*&cancelled=1$`));
+  });
+
+  it('create: returns to the request origin when it is allow-listed', async () => {
+    const { app, paygw } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', withOrigin(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+  });
+
+  it('falls back to the configured base when the caller sends no Origin', async () => {
+    const { app, rideLists, paygw } = makeApp({}, { bookingBaseUrl: 'https://ceylonhop.com' });
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(paygw.preapprovals[0].returnUrl).toMatch(/^https:\/\/ceylonhop\.com\/board\.html\?ridePayment=/);
+  });
+
+  it('never returns to an origin outside the allow-list', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const r = json(cookie, { seats: 1 });
+    const res = await app.request(`/board/${l.code}/join`, { ...r, headers: { ...r.headers, origin: 'https://evil.example' } });
+    expect(res.status).toBe(403);
+    expect(paygw.preapprovals).toHaveLength(0);
+  });
+});
+
+// Search sends an off-day traveller to the board to start their own ride (spec
+// 2026-09-19-shared-ride-by-day). The other half of that bargain: on a day the SCHEDULED van
+// already runs a leg, the board must not start a second van on it — that only splits the same
+// travellers across two half-empty vehicles. Whole day, not just the van's slot: a traveller
+// who can flex between 7:30am and the afternoon is exactly the one the van needs.
+describe('POST /board (create) — a day the scheduled van already runs', () => {
+  const WED = 3, THU = 4, SAT = 6;
+  function app113km() {
+    const rideLists = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    const maps = {
+      provider: 'stub', places: async () => [], distanceVariants: async () => null,
+      distance: async () => ({ km: 113, minutes: 180, estimated: false }),
+    };
+    return { app: createApp({ rideLists, paygw, customerVerifier: verifier, maps: maps as never }), rideLists, paygw };
+  }
+
+  for (const [name, weekday] of [['Wednesday', WED], ['Saturday', SAT]] as const) {
+    it(`declines a scheduled leg on a ${name} and points at the guaranteed seat`, async () => {
+      const { app, paygw } = app113km();
+      const cookie = await loginCookie(app);
+      const date = nextIsoWeekday(weekday);
+      const res = await app.request('/board', json(cookie, {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date, slot: 'afternoon', payment: paymentDetails,
+      }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'scheduled_day',
+        scheduled: { date, time: '07:30', pickup: 'Zen Cafe, Negombo', seatPrice: 2749 },
+      });
+      expect(paygw.preapprovals).toHaveLength(0); // no card held for a ride we refused
+    });
+  }
+
+  it('still starts that leg on a day the van does not run', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: nextIsoWeekday(THU), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('never blocks a leg we do not sell as a scheduled seat, whatever the day', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    // on the airport-cultural corridor, but CMB → Kandy is not a scheduled product
+    const res = await app.request('/board', json(cookie, {
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: nextIsoWeekday(WED), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
   });
 });
