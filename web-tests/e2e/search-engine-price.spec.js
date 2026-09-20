@@ -226,6 +226,33 @@ test('on a phone the fares arriving do not move the shared card underneath them'
   expect(Math.abs((await top()) - before), 'the shared card moved when the fares arrived').toBeLessThanOrEqual(1);
 });
 
+test('the shared saving is measured against the fare actually shown, not the catalogue', async ({ page }) => {
+  // Negombo → Sigiriya: $27.49 a seat against a $65.50 catalogue car. A +10% zone makes the car
+  // $72.05, so two travellers save ~24% by sharing — not the ~15% the catalogue fare implies.
+  await page.route('**/quote/v2/estimate', async (r) => {
+    const intent = JSON.parse(r.request().postData() || '{}');
+    await new Promise((res) => setTimeout(res, 600));
+    await r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        totalCents: intent.vehicle === 'van' ? 9600 : 7205,
+        legs: [{ from: 'a', to: 'b', distanceKm: 148, durationMin: 194 }],
+      }),
+    });
+  });
+  await stubHealth(page);
+  await page.goto('/search.html?from=negombo&to=sigiriya&pax=2');
+
+  // While the fare it is measured against is unknown, the claim is not made — a percentage
+  // that has been shown must not change any more than a price may.
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(1);
+  await expect(page.locator('.shared-save')).toBeHidden();
+
+  await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$72.05');
+  await expect(page.locator('.shared-save')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~24%/);
+});
+
 test('an engine price carries the free-text place through to booking', async ({ page }) => {
   await gotoBooking(page, {
     path: '/search.html',
