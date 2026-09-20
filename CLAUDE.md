@@ -27,9 +27,9 @@ You are building the Ceylon Hop backend. Read these before acting:
 ## Maintenance mode — tweaks & bug-fixing (CURRENT PHASE, from 2026-07-13)
 
 The build phase is largely done. We are now **tweaking and fixing bugs** on a codebase that is
-close to launch (the new stack is **not yet the live customer site** — that is still WordPress —
-but the ops/quoting tool is in internal use). Change management tightens accordingly. These
-refine the Hard rules above for day-to-day changes:
+**live** (since the apex cutover on 2026-09-20 the new stack **is the customer site** at
+`ceylonhop.com`, replacing WordPress, and the ops/quoting tool is in daily use). Change
+management tightens accordingly. These refine the Hard rules above for day-to-day changes:
 
 1. **Propose before you change; wait for an explicit go.** Default for anything ambiguous or
    touching more than one file: say what you'll change and why, then wait.
@@ -73,7 +73,7 @@ never by editing the output.
 **Branch protection (active 2026-07-18):** `main` and `production` both require a PR + green CI
 to merge (the 3 `ci.yml` checks). `production` allows **no admin bypass** (real prod gate); `main`
 keeps an admin escape hatch for hotfixes and the shared-tree sessions. Flow: feature branch → PR →
-`main` (→ staging) → promote PR `main → production` (→ prod).
+`main` (→ staging) → promote PR `main → production` (→ prod: the API **and** the static site).
 
 ## Stack (do not substitute)
 Node 20 · TypeScript (strict) · Hono · Zod · Vitest · Drizzle + Postgres (Supabase) · npm.

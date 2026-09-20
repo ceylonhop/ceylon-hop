@@ -127,11 +127,15 @@ for (const width of [1040, 1000, 900, 800, 600, 375]) {
 }
 
 // The regression this file exists for, stated directly: no width may produce the 3+2 stack.
-test('no width turns the strip into a grid or a second row', async ({ page }) => {
-  for (const width of [1440, 1300, 1200, 1160, 1159, 1100, 1041, 1040, 950, 800, 700, 500, 375]) {
+// One test per width, like the bands above. This was a single test looping all 13 widths —
+// 13 full page loads inside one 30s timeout, which passed alone with ~3s to spare and timed
+// out whenever the machine was busy. Each width still gets its own fresh load (a resize of
+// one loaded page would not prove the first paint at that width), just its own timeout too.
+for (const width of [1440, 1300, 1200, 1160, 1159, 1100, 1041, 1040, 950, 800, 700, 500, 375]) {
+  test(`${width}px does not turn the strip into a grid or a second row`, async ({ page }) => {
     await open(page, width);
     const g = await geometry(page);
     expect(g.display, `grid at ${width}px`).not.toBe('grid');
     expect(g.visualRows, `${g.visualRows} visual rows at ${width}px`).toBe(1);
-  }
-});
+  });
+}
