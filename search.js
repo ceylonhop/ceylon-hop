@@ -80,7 +80,9 @@ if (!hasTo) toId = 'ella';
 const fromPlace = T.place(fromId), toPlace = T.place(toId);
 const fromP = fromPlace || { id: null, name: fromId };
 const toP = toPlace || { id: null, name: toId };
-// Only an unknown END needs the engine. A known pair must never pay for a network round trip.
+// An unknown END has no catalogue price at all, so only the engine can price it. (A known pair
+// asks the engine too — see "engine prices" at the bottom — but it has a catalogue fare to fall
+// back on, which is why the two are still told apart.)
 const engineRoute = !fromPlace || !toPlace;
 // The same place at both ends is a broken link however it was spelled — open the picker.
 const sameEnds = fromP.name === toP.name;
@@ -146,10 +148,10 @@ window.updateSearch = function (e) {
 };
 
 // ---- header / title ----
-/* A baked pair is priced synchronously, exactly as before — no network, no skeleton, nothing
-   to wait for. An engine route starts with no numbers at all and fills them in when the
-   estimate lands, so `quote` is a variable rather than a constant and everything that reads
-   it renders through a function. `shared` stays null for an engine route: a shared seat is a
+/* A baked pair knows its distance and its catalogue fare synchronously; an engine route starts
+   with no numbers at all. Either way the fares the card SHOWS arrive from the engine (bottom of
+   this file), so `quote` is a variable rather than a constant and everything that reads it
+   renders through a function. `shared` stays null for an engine route: a shared seat is a
    scheduled corridor in the baked table, and no such service exists for an arbitrary place. */
 let quote = engineRoute ? null : T.privateQuote(fromId, toId);
 const shared = engineRoute ? null : T.sharedOption(fromId, toId);
@@ -269,27 +271,38 @@ function bookUrl(extra) {
   return 'booking.html?' + new URLSearchParams(all).toString();
 }
 
-function privateCardHtml() { return `
-  <article class="opt opt-private">
+/* One template for both states, because two drifted: the waiting card had no Select buttons and
+   no chips, so it was shorter than the priced one — and on a phone, where it sits ABOVE the
+   shared card, the fares arriving pushed everything below them down the page (it also lost the
+   "Switch date" jump to #shared-option). `pending` swaps only what is genuinely unknown: the
+   two amounts, and a Select that cannot be followed yet. Same shape, so nothing moves.
+
+   The waiting label stays SHORTER than "total, fixed": on a phone the fare column is sized by
+   its widest text, and the longer "working out your price…" widened it enough to wrap the
+   vehicle's capacity line — 27px a row, which moved the shared card just the same.
+
+   A skeleton rather than a spinner because the card's shape is already known and only two
+   numbers are missing. */
+function privateCardHtml(pending) {
+  const row = (vehicle, ico, name, cap, amount, raw) => `
+      <div class="veh-row">
+        <div class="v-ico">${ico}</div>
+        <div class="v-info"><b>${name}</b><small>${cap}</small></div>
+        ${pending
+          ? `<div class="v-price"><div class="amt sk-amt">&nbsp;</div><small>pricing…</small></div>
+        <span class="btn btn-primary btn-sm sk-btn" aria-hidden="true">Select</span>`
+          : `<div class="v-price"><div class="amt">$${displayPrice(amount)}</div><small>total, fixed</small></div>
+        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle, price: amount, rawPrice: raw })}">Select</a>`}
+      </div>`;
+  return `
+  <article class="opt opt-private${pending ? ' is-pending" aria-busy="true' : ''}">
     <span class="tag-top">Most flexible · recommended</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
-    <div class="veh">
-      <div class="veh-row">
-        <div class="v-ico">${ICONS.car}</div>
-        <div class="v-info"><b>AC car</b><small>Up to 3 travellers + bags</small></div>
-        <div class="v-price"><div class="amt">$${displayPrice(quote.car)}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car, rawPrice: quote.rawCar })}">Select</a>
-      </div>
-      <div class="veh-row">
-        <div class="v-ico">${ICONS.van}</div>
-        <div class="v-info"><b>AC van</b><small>Up to 6 travellers + bags</small></div>
-        <div class="v-price"><div class="amt">$${displayPrice(quote.van)}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van, rawPrice: quote.rawVan })}">Select</a>
-      </div>
+    <div class="veh">${row('car', ICONS.car, 'AC car', 'Up to 3 travellers + bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Up to 6 travellers + bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
     </div>
     <div class="incl">
       <span class="chip">${ICONS.seat} Private to your group</span>
@@ -297,32 +310,9 @@ function privateCardHtml() { return `
       <span class="chip">${ICONS.stops} Stops on request</span>
       <span class="chip">${ICONS.lock} Fixed price, no meter</span>
     </div>
-  </article>`; }
-
-/* Engine-priced routes show the card with its prices still arriving. A skeleton rather than a
-   spinner because the card's shape is already known and only two numbers are missing —
-   swapping the whole card in later would move everything under the traveller's cursor. */
-function privateSkeletonHtml() { return `
-  <article class="opt opt-private is-pending" aria-busy="true">
-    <span class="tag-top">Most flexible · recommended</span>
-    <div class="o-head">
-      <div class="o-ico">${ICONS.d2d}</div>
-      <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
-    </div>
-    <p class="o-desc">Leave exactly when you want and stop wherever you like along the way. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
-    <div class="veh">
-      <div class="veh-row">
-        <div class="v-ico">${ICONS.car}</div>
-        <div class="v-info"><b>AC car</b><small>Up to 3 travellers + bags</small></div>
-        <div class="v-price"><div class="amt sk-amt">&nbsp;</div><small>working out your price…</small></div>
-      </div>
-      <div class="veh-row">
-        <div class="v-ico">${ICONS.van}</div>
-        <div class="v-info"><b>AC van</b><small>Up to 6 travellers + bags</small></div>
-        <div class="v-price"><div class="amt sk-amt">&nbsp;</div><small>working out your price…</small></div>
-      </div>
-    </div>
-  </article>`; }
+  </article>`;
+}
+function privateSkeletonHtml() { return privateCardHtml(true); }
 
 /* No price, and no way to get one — the API is unreachable or can't route these two points.
    There is no local formula to fall back on for a place that isn't in the baked table, so the
@@ -483,7 +473,8 @@ if (shared) {
 // When there's no shared service, the "no shared seats" panel takes the shared card's
 // slot in the right column (instead of spanning full-width below) so the two-up layout
 // reads the same whether or not a shared option exists.
-// `state` is 'priced' | 'pending' | 'unpriced'; a baked route is only ever 'priced'.
+// `state` is 'priced' | 'pending' | 'unpriced'; a baked route is never 'unpriced' — it has a
+// catalogue fare to fall back on.
 function renderResults(state) {
   const left = state === 'priced' ? privateCardHtml()
     : state === 'pending' ? privateSkeletonHtml()
@@ -532,7 +523,9 @@ function showAlreadyGoing() {
     .then(d => { goingList = (d && d.list) || null; apply(); })
     .catch(() => {});
 }
-renderResults(engineRoute ? 'pending' : 'priced');
+// Same ends is a broken link with the picker already open over it — nothing to ask the engine.
+const askEngine = engineRoute || (!sameEnds && !!quote);
+renderResults(askEngine ? 'pending' : 'priced');
 
 // ---- funnel: search + results view (Phase 0 analytics) ----
 // Called once prices exist. An engine route reports after its estimate lands, so view_item_list
@@ -588,9 +581,19 @@ function trackResults() {
     window.chTrack('select_item', { item_list_id: listId, mode: q.get('mode') || '', item_variant: q.get('vehicle') || 'seat' });
   }, true); // capture: fires before navigation starts
 }
-if (!engineRoute) trackResults();
+if (!askEngine) trackResults();
 
-/* ---- engine prices for a route that isn't in the baked table ----
+/* ---- engine prices ----
+   EVERY route's fares come from the engine (owner decision 2026-09-20). A baked pair used to
+   show its catalogue fare and never ask — but hot zones are rows in the prod database that the
+   catalogue cannot know, so Kandy → Ella advertised $59.99 here and charged $66 on the booking
+   page. The price we advertise has to be the price we charge.
+
+   For a baked pair the catalogue fare is the FALLBACK: engine switched off, unreachable, or
+   slower than ENGINE_CAP_MS. That is exactly what this page showed before, and booking re-prices
+   on arrival either way. Once a fare has been SHOWN it never changes — a late answer is dropped
+   rather than moving a price under the traveller's cursor.
+
    The catalogue can't price an arbitrary place, so the engine does it: POST /quote/v2/estimate
    resolves the distance server-side and prices it against the live card without persisting
    anything. ch-pricing.js owns the fetch (debounce, dedupe, timeout, and latching off when the
@@ -602,9 +605,29 @@ if (!engineRoute) trackResults();
    that returns the fare for the vehicle actually asked for. The real traveller count is
    collected on the booking step, exactly as it is for a baked route.
 
-   If either call fails there is no fallback price to show — no local formula can price a place
-   with no baked distance — so the card becomes an honest "we'll price it by hand" instead. */
-if (engineRoute) (function () {
+   If either call fails on a route with NO baked distance there is no fallback price to show —
+   no local formula can price it — so the card becomes an honest "we'll price it by hand". */
+// Two debounced round trips (ch-pricing: 400ms each) land in ~1.5–2.5s on a cold route.
+const ENGINE_CAP_MS = 4000;
+if (askEngine) (function () {
+  const baked = engineRoute ? null : quote;   // the catalogue fare, kept as the fallback
+  let settled = false;
+  /* Only the private card is waiting, so only the private card is replaced. Redrawing all of
+     #results would rebuild the shared card too: it drops the "Switch date" jump to
+     #shared-option (made once, on the first render) and wipes whatever showAlreadyGoing() has
+     since written into that card. */
+  function showFares() {
+    const card = document.querySelector('#results .opt-private');
+    if (card) card.outerHTML = privateCardHtml(); else renderResults('priced');
+    trackResults();
+  }
+  function fallBack() {
+    if (settled) return;
+    settled = true;
+    showFares();
+  }
+  if (baked) setTimeout(fallBack, ENGINE_CAP_MS);
+
   const legs = [{ from: fromP.name, to: toP.name }];
   const base = { product: 'private', pax: 1, bags: 0, legs, extras: [] };
   if (date) base.date = date;
@@ -628,7 +651,21 @@ if (engineRoute) (function () {
     return ask('van').then(function (van) { return [car, van]; });
   }).then(function (res) {
     const car = res[0], van = res[1];
-    if (!car || !van || typeof car.totalCents !== 'number' || typeof van.totalCents !== 'number') {
+    const answered = car && van && typeof car.totalCents === 'number' && typeof van.totalCents === 'number';
+    if (baked) {
+      if (settled) return;                     // the cap already showed the catalogue fare
+      if (!answered) return fallBack();
+      settled = true;
+      // Distance and duration stay the catalogue's (the engine measures the same baked road).
+      // rawCar/rawVan go null for the reason below: booking reads rawPrice FIRST, so a stale
+      // catalogue figure left beside an engine fare would win over the price just shown.
+      quote = tagRouteEstimate(Object.assign({}, baked, {
+        car: car.totalCents / 100, van: van.totalCents / 100, rawCar: null, rawVan: null
+      }), baked.estimateState);
+      showFares();
+      return;
+    }
+    if (!answered) {
       renderMeta(false);
       renderResults('unpriced');
       return;
