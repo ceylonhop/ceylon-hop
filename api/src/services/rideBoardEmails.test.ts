@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from './rideBoardEmails';
+import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideJoined } from './rideBoardEmails';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { RideList } from '../domain/rideList';
 
@@ -163,6 +163,132 @@ describe('optional fields', () => {
       expect(m.html).not.toContain('null');
       expect(m.html).not.toContain('undefined');
     }
+  });
+});
+
+// ============================================================================
+// sendRideJoined — the receipt for the one action that previously sent nothing.
+// A traveller who adds their name has a card preapproved against a ride that may
+// not run; until this email they had no record of it, no idea when or what they'd
+// be charged, and — once the tab closed — no route back to the page that can take
+// their name off. That is what these assertions pin: the commitment, the money,
+// the deadline, and the way out.
+// ============================================================================
+
+// A list still gathering names: the state a join actually lands in (the shared
+// `list` fixture above is already confirmed, which is a different email).
+const gathering: RideList = { ...list, status: 'gathering', lockedTime: null };
+
+describe('sendRideJoined', () => {
+  it("emails the traveller their route, date and ride code — once", async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('Ella');
+    expect(m.subject).toContain('Mirissa');
+    expect(m.html).toContain('Maya');
+    // Dated the way every other customer letter is (notifications.ts fmtDate) — a raw
+    // ISO string is a database value, not something you say to a traveller.
+    expect(m.html).toContain('Fri, 14 Aug 2026');
+    expect(m.html).not.toContain('2026-08-14');
+    expect(m.subject).toContain('Fri, 14 Aug 2026');
+    // The gap rideBoardEmails.test.ts flags on the other three: a traveller
+    // replying about their ride needs something ops can match on.
+    expect(m.html).toContain('EM-4821');
+  });
+
+  it('promises no charge unless the ride runs, and names the cutoff', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const m = email.sent[0];
+    // The product's core promise — $0 today, charged only if the van locks in.
+    expect(m.html).toMatch(/only if/i);
+    // cutoffAt is 2026-08-12T01:30Z — 07:00 in Asia/Colombo (+05:30), the tz a
+    // traveller standing in Sri Lanka reads the deadline in. Asserted as one
+    // phrase: a bare '07:00' would also match the morning departure window and
+    // pass while the deadline itself was missing.
+    expect(m.html).toContain('12 Aug 2026 at 07:00');
+    expect(m.text).toMatch(/only if/i);
+  });
+
+  it('is honest about the card: no fare taken, but a verification charge may show', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const m = email.sent[0];
+    // PayHere's preapproval tokenises the card with a small charge it then reverses
+    // (adapters/payhereTokenized.ts). A traveller sees that line on their card minutes
+    // before this email — so a flat "nothing has been charged" reads as a lie.
+    for (const body of [m.html, m.text ?? '']) {
+      expect(body).toMatch(/verification charge/i);
+      expect(body).toMatch(/revers/i);
+      expect(body).not.toMatch(/nothing has been charged/i);
+      // No fare is authorised or held at join — only a token exists.
+      expect(body).not.toMatch(/\bheld\b|\bhold\b|authori[sz]ed/i);
+    }
+    // The amount is deliberately NOT printed: it differs by mode and currency (0.51 live,
+    // 1.01 sandbox, 10.00 LKR) and PayHere has already changed it once without notice.
+    expect(m.html).not.toContain('0.51');
+    expect(m.html).not.toContain('1.01');
+  });
+
+  it('gives a working way back to the ride, which is where a name gets scratched off', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const m = email.sent[0];
+    expect(m.html).toContain('href="https://ceylonhop.com/board.html#/EM-4821"');
+    expect(m.text).toContain('https://ceylonhop.com/board.html#/EM-4821');
+  });
+
+  it('totals the charge across every seat the traveller booked', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'ana@example.com', firstName: 'Ana', list: gathering, seats: 3,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const m = email.sent[0];
+    // 3 seats x $24.00 — the number that will actually hit the card, not the unit price
+    // alone. Major units, never raw cents.
+    expect(m.html).toContain('$72.00');
+    expect(m.html).not.toContain('7200');
+    expect(m.html).toMatch(/3 seats/i);
+  });
+
+  it('renders a hostile first name and place name as text, not markup', async () => {
+    const email = new FakeEmailAdapter();
+    const hostile: RideList = { ...gathering, fromPlace: 'Ella<script>alert(1)</script>' };
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: '<img src=x onerror=alert(1)>Maya', list: hostile, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const html = email.sent[0].html;
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('leaves no null or undefined visible to the traveller', async () => {
+    const email = new FakeEmailAdapter();
+    const bare: RideList = { ...gathering, note: null, lockedTime: null };
+    await sendRideJoined(email, {
+      to: 'x@example.com', firstName: 'Nil', list: bare, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    expect(email.sent[0].html).not.toContain('null');
+    expect(email.sent[0].html).not.toContain('undefined');
   });
 });
 
