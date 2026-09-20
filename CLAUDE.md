@@ -52,8 +52,15 @@ refine the Hard rules above for day-to-day changes:
 7. **No surprises to production.** The API/ops app runs a **Dev → Staging → Prod pipeline**
    (set up 2026-07-18): `main` auto-deploys to **staging** (`ceylon-hop-staging`,
    `ops.staging.ceylonhop.com`); **prod** (`ceylon-hop-api`) deploys from the **`production`**
-   branch — you promote via a reviewed, CI-green PR `main → production`. The static site on
-   GitHub **Pages still deploys from `main`.** Don't ship anything to prod — **especially
+   branch — you promote via a reviewed, CI-green PR `main → production`. **The static site
+   follows the same gate** (since 2026-09-20, Phase 1 of
+   [`docs/apex-cutover-runbook.md`](docs/apex-cutover-runbook.md)): GitHub **Pages builds from
+   `production`, not `main`** — a front-end merge to `main` is **not** live for customers until
+   it is promoted, exactly like the API. Pages currently serves `prod.ceylonhop.com`; the
+   runbook's remaining phases (not done yet) move it to `ceylonhop.com`, retire
+   `prod.ceylonhop.com`, and add a login-gated `staging.ceylonhop.com` on Cloudflare Pages built
+   from `main` — until that exists there is no hosted staging copy of the static site, so verify
+   front-end changes in the local preview. Don't ship anything to prod — **especially
    schema/migrations, pricing, or config** — without the owner's explicit ok. **Merging a
    migration IS its release** (PR #50, 2026-07-16): pending migrations **auto-apply on Render
    boot**, fail-closed — so a migration hits **staging** the moment it merges to `main`, and
@@ -70,7 +77,7 @@ never by editing the output.
 **Branch protection (active 2026-07-18):** `main` and `production` both require a PR + green CI
 to merge (the 3 `ci.yml` checks). `production` allows **no admin bypass** (real prod gate); `main`
 keeps an admin escape hatch for hotfixes and the shared-tree sessions. Flow: feature branch → PR →
-`main` (→ staging) → promote PR `main → production` (→ prod).
+`main` (→ staging) → promote PR `main → production` (→ prod: the API **and** the static site).
 
 ## Stack (do not substitute)
 Node 20 · TypeScript (strict) · Hono · Zod · Vitest · Drizzle + Postgres (Supabase) · npm.
