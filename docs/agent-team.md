@@ -155,6 +155,10 @@ Any need to change a frozen contract → **stop and ask the human** + record an 
 > bootstrap (require the `ci` checks + code-owner review). The CI guard fails any PR that
 > touches frozen front-end files unless it carries the `allow-ui-change` label (used only
 > for the M7 wiring step).
+>
+> **Superseded 2026-07-05:** the front-end freeze was lifted (owner decision — see `CLAUDE.md`
+> Hard rule 3) and the `protect-ui` guard is no longer in `ci.yml`. Front-end files are
+> editable; keep changes scoped and covered by `web-tests/`.
 
 ---
 
@@ -176,7 +180,8 @@ Any need to change a frozen contract → **stop and ask the human** + record an 
 - A step is ambiguous or under-specified.
 - Completing it needs an out-of-scope change, an interface change, or a new dependency.
 - A new external service or secret is required.
-- A front-end / UI file would need to change (outside the sanctioned M7 wiring step).
+- ~~A front-end / UI file would need to change (outside the sanctioned M7 wiring step).~~
+  *(Build-phase rule; the freeze was lifted 2026-07-05 — `CLAUDE.md` Hard rule 3.)*
 - Two build attempts have failed.
 
 Escalation is a feature, not a failure — it is how we trade a few tokens of "ask" for
