@@ -24,7 +24,12 @@ import {
   cutoffAt,
   policyForCorridor,
   committedSeats,
+  isSeedMember,
+  type RideList,
+  type RideMember,
 } from '../domain/rideList';
+import type { EmailAdapter } from '../adapters/email';
+import { sendRideJoined } from '../services/rideBoardEmails';
 import { isPastIsoDate, isoToday } from '../domain/dateRules';
 import type { AlertAdapter } from '../adapters/alerts';
 
@@ -116,6 +121,7 @@ export interface RideBoardDeps {
   customer: { sessionSecret: string; googleClientId: string; verifier?: JwtVerifier };
   maps: MapsAdapter; // road distance for the seat price
   memberLinkSecret: string; // "manage my name" capability token
+  email: EmailAdapter; // the joiner's receipt — see sendJoinReceipt below
   currency?: string;
   allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
   boardBaseUrl?: string; // browser return/cancel origin for PayHere preapproval
@@ -124,6 +130,40 @@ export interface RideBoardDeps {
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
   const r = new Hono();
+
+  // A traveller who adds their name has a card preapproved against a ride that may never
+  // run. Before this they were told nothing: no record of the pledge, no amount, no
+  // deadline, and — once the tab closed — no route back to the page that can scratch the
+  // name off again. That last part is why the receipt carries a link.
+  //
+  // Best-effort by design. A member reaching 'held' means the card is already approved;
+  // failing the request because the mail provider blinked would cost them the seat to fix
+  // nothing. It is keyed off the order id so all three routes into 'held' (create, join,
+  // and PayHere's signed callback — the only one that fires in production, where preapproval
+  // always redirects) send exactly one.
+  async function sendJoinReceipt(orderId: string): Promise<void> {
+    try {
+      const found = await deps.rideLists.getByPreapprovalOrder(orderId);
+      if (!found) return;
+      await mailJoinReceipt(found.list, found.member);
+    } catch {
+      // swallowed: see above
+    }
+  }
+
+  async function mailJoinReceipt(list: RideList, member: RideMember): Promise<void> {
+    // Seeded placeholders hold a seat but have no inbox (domain/rideList.ts).
+    if (isSeedMember(member) || !member.email) return;
+    await sendRideJoined(deps.email, {
+      to: member.email,
+      firstName: member.firstName,
+      list,
+      seats: member.seats,
+      // The hash route board.js already uses to open one ride's detail — where the
+      // "Scratch my name off" button lives.
+      rideUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html#/${list.code}`,
+    });
+  }
 
   // Where PayHere sends the payer back. The board page is its own return page, so go back to
   // the origin the board was used from — prod.ceylonhop.com today, the apex after cutover,
@@ -224,6 +264,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     }
     if (event.status === 'succeeded' && event.ref) {
       await deps.rideLists.approveMemberPreapproval(event.orderId, event.ref);
+      // In production this callback IS the join — the browser only polls afterwards.
+      await sendJoinReceipt(event.orderId);
     } else if (event.status === 'failed' || event.status === 'cancelled') {
       await deps.rideLists.failMemberPreapproval(event.orderId);
     }
@@ -409,6 +451,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
     }
     await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
+    // Starting a list auto-joins you as name #1 — the same commitment, so the same receipt.
+    await sendJoinReceipt(orderId);
     const fresh = await deps.rideLists.getByCode(list.code);
     logEvent('ride_board.list_created', {
       code: list.code, corridorId: list.corridorId, date: list.date, slot: list.slot,
@@ -468,6 +512,16 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     // rejoining. Neither needs to approve the same card again.
     if (alreadyOn || previous?.preapprovalRef) {
       member = await deps.rideLists.addMember(found.list.id, memberArgs);
+      // No new card approval here, so no order id to key off. Mail only when the
+      // commitment actually moved: a rejoin, or a seat count that changed. Re-sending on
+      // an unchanged repeat join would make a refresh look like a second booking.
+      if (member && (!alreadyOn || mine?.seats !== seats)) {
+        try {
+          await mailJoinReceipt(found.list, member);
+        } catch {
+          // best-effort — see sendJoinReceipt
+        }
+      }
     } else {
       const orderId = `RBPA-${randomUUID()}`;
       member = await deps.rideLists.beginMemberPreapproval(
@@ -503,6 +557,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
         return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
       }
       await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
+      await sendJoinReceipt(orderId);
       member = (await deps.rideLists.getByPreapprovalOrder(orderId))?.member ?? null;
     }
     if (!member) return c.json({ error: 'full' }, 409);
