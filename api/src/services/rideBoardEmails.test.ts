@@ -192,7 +192,11 @@ describe('sendRideJoined', () => {
     expect(m.subject).toContain('Ella');
     expect(m.subject).toContain('Mirissa');
     expect(m.html).toContain('Maya');
-    expect(m.html).toContain('2026-08-14');
+    // Dated the way every other customer letter is (notifications.ts fmtDate) — a raw
+    // ISO string is a database value, not something you say to a traveller.
+    expect(m.html).toContain('Fri, 14 Aug 2026');
+    expect(m.html).not.toContain('2026-08-14');
+    expect(m.subject).toContain('Fri, 14 Aug 2026');
     // The gap rideBoardEmails.test.ts flags on the other three: a traveller
     // replying about their ride needs something ops can match on.
     expect(m.html).toContain('EM-4821');

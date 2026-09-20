@@ -149,6 +149,52 @@ export async function sendRideAtRisk(
 }
 
 
+// ----------------------------------------------------------------------------
+// The joiner's receipt wears the customer LETTER (notifications.ts page()), not the
+// band shell above. It is the first thing a traveller ever receives from the board and
+// it sits in their inbox beside the booking letters, so it has to read as the same
+// company: blue rule, monogram masthead, eyebrow + serif headline, reference chip and
+// status pill, the journey line, hairline facts, serif total, cream info box, pill CTA.
+// Values are copied, not imported — this file stays independent of the booking-centric
+// notifications.ts by design (shared design language, no shared code).
+// ----------------------------------------------------------------------------
+const BLUE = '#63BFD6'; // Bachelor Button — the sender-identifying rule
+const TEAL = '#0AB9B6'; // route start marker (graphic only, never type)
+const TOMATO = '#EC3A24'; // route end marker (graphic only)
+const FAINT = '#8a8272'; // --ink-faint
+const ROUTE_LINE = '#dcc9a9';
+const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
+const EYEBROW = `font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:${FAINT};font-weight:600`;
+
+// Same formatter as the letters' fmtDate: "Fri, 14 Aug 2026". Noon anchors the
+// calendar date so no zone can roll it a day either way.
+const fmtDate = (d: string) => {
+  const dt = new Date(`${d}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return d;
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(dt);
+};
+
+function letter(inner: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
+  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
+  </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${CARD};border:1px solid ${LINE};border-radius:18px;overflow:hidden">
+        ${inner}
+      </table>
+    </td></tr>
+  </table></body></html>`;
+}
+
+const dot = (color: string) => `<div style="width:11px;height:11px;border-radius:50%;background:${color}"></div>`;
+
+const factRow = (k: string, v: string) => `<tr>
+  <td style="padding:11px 12px 11px 0;border-top:1px solid ${LINE};color:${MUTED};font-size:14px;white-space:nowrap">${esc(k)}</td>
+  <td align="right" style="padding:11px 0;border-top:1px solid ${LINE};color:${INK};font-size:14px;font-weight:600">${esc(v)}</td>
+</tr>`;
+
 /** The receipt for adding your name. A joiner has a card preapproved against a ride
  *  that may never run, so this is the only record they hold of what was committed,
  *  what it will cost, when the decision lands — and how to get back to the page that
@@ -161,25 +207,105 @@ export async function sendRideJoined(
   const total = list.seatPrice * Math.max(1, seats);
   const cutoff = cutoffLabel(list.cutoffAt);
   const url = esc(args.rideUrl);
+  const date = fmtDate(list.date);
+
+  const html = letter(`
+    <tr><td style="padding:0"><div style="height:5px;line-height:5px;font-size:0;background:${BLUE}">&nbsp;</div></td></tr>
+    <tr><td style="padding:26px 34px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle" style="padding-right:11px">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td width="34" height="34" align="center" valign="middle" style="background:${BAND};border-radius:50%;color:#ffffff;font-family:${SERIF};font-size:19px;font-weight:600">C</td>
+          </tr></table>
+        </td>
+        <td valign="middle">
+          <div style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};letter-spacing:.01em">Ceylon Hop</div>
+          <div style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:${FAINT};margin-top:1px">Ride Board · Shared rides</div>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Your name is down</div>
+      <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">You're on the list, ${esc(args.firstName)}.</h1>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">We're gathering travellers for your shared van now. <b style="color:${INK}">Nothing has been charged</b> — your card is approved, and that's all.</p>
+    </td></tr>
+
+    <tr><td style="padding:18px 34px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle">
+          <span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${BAND};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(list.code)}</span>
+        </td>
+        <td valign="middle" align="right"><span style="display:inline-block;background:#fff6e8;color:#8a5a12;border-radius:999px;padding:5px 12px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Gathering names</span></td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:24px 34px 0">
+      <div style="border-top:1px solid ${LINE};padding-top:22px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="left" style="${EYEBROW}">From</td><td align="right" style="${EYEBROW}">To</td></tr>
+          <tr>
+            <td align="left" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.fromPlace)}</td>
+            <td align="right" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.toPlace)}</td>
+          </tr>
+          <tr><td colspan="2" style="padding-top:13px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr valign="middle">
+              <td width="12">${dot(TEAL)}</td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td align="center" width="1" style="padding:0 2px"><div style="display:inline-block;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${MUTED};background:${CARD};border:1px solid #e7dcc7;border-radius:999px;padding:4px 12px;white-space:nowrap">Shared ride</div></td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td width="12" align="right">${dot(TOMATO)}</td>
+            </tr></table>
+          </td></tr>
+        </table>
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:20px 34px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${factRow('Date', date)}
+        ${factRow('Departs', `Between ${slotWindow(list.slot)}`)}
+        ${factRow('Your seats', seatsLabel(seats))}
+        ${factRow('Runs if', `${list.minSeats} seats are pledged`)}
+        ${factRow('Names close', cutoff)}
+      </table>
+    </td></tr>
+
+    <tr><td style="padding:0 34px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #eadfce">
+        <tr>
+          <td style="padding:15px 0 4px;font-family:${SERIF};font-size:16px;font-weight:600;color:${INK}">Charged only if it runs</td>
+          <td align="right" style="padding:15px 0 4px;font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">${money(total)}</td>
+        </tr>
+      </table>
+      <p style="margin:6px 0 0;color:${FAINT};font-size:13px;line-height:1.6">If not enough travellers join by then, the ride is called off and you pay nothing. The exact departure time is set when the van locks. Times are Sri Lanka time.</p>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:20px 22px">
+        <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">Changed your plans?</div>
+        <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.6">Open your ride and scratch your name off any time before names close — no questions, no charge. It's also where you invite a friend to fill the van faster.</p>
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td bgcolor="${BAND}" style="border-radius:999px">
+            <a href="${url}" style="display:inline-block;padding:12px 24px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">View your ride</a>
+          </td></tr>
+        </table>
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 32px">
+      <div style="border-top:1px solid ${LINE};padding-top:18px;font-size:13px;line-height:1.6;color:${FAINT}">
+        <span style="font-family:${SERIF};color:${MUTED}">Ceylon Hop</span> &middot; Ground transport across Sri Lanka.<br>
+        Just reply to this email, or message us on WhatsApp &mdash; a real person answers.
+      </div>
+    </td></tr>`);
+
   await email.send({
     to: args.to,
-    subject: `You're on the list — ${route(list)} on ${list.date}`,
-    html: shell(
-      `You're on the list, ${esc(args.firstName)}!`,
-      `<p>Your name is down for <b>${routeHtml(list)}</b> — we're gathering travellers now.</p>
-       <p><b>${routeHtml(list)}</b><br>${esc(list.date)} · departs ${esc(slotWindow(list.slot))}<br>
-       ${esc(seatsLabel(seats))} · ride <b>${esc(list.code)}</b></p>
-       <p><b>You have not been charged.</b> Your card is approved and held, nothing more. We take
-       <b>${money(total)}</b> <b>only if</b> at least ${list.minSeats} seats are pledged by the cutoff and the van runs.
-       If not enough travellers join, the ride is called off and you pay nothing.</p>
-       <p>Names close <b>${esc(cutoff)}</b> (Sri Lanka time).</p>
-       <p>Changed your plans? Open your ride and scratch your name off any time before then —
-       no questions, no charge.</p>
-       <p><a href="${url}" style="display:inline-block;background:${BAND};color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px">View your ride</a></p>
-       <p style="font-size:12px;color:${MUTED};word-break:break-all">${url}</p>`,
-    ),
-    text: `You're on the list, ${args.firstName}! ${route(list)} on ${list.date}, departs ${slotWindow(list.slot)}. `
-      + `${seatsLabel(seats)} · ride ${list.code}. You have not been charged — we take ${money(total)} only if `
+    subject: `You're on the list — ${route(list)}, ${date}`,
+    html,
+    text: `You're on the list, ${args.firstName}. ${route(list)} on ${date}, departs ${slotWindow(list.slot)}. `
+      + `${seatsLabel(seats)} · ride ${list.code}. Nothing has been charged — we take ${money(total)} only if `
       + `at least ${list.minSeats} seats are pledged by the cutoff and the van runs. Names close ${cutoff} (Sri Lanka time). `
       + `View your ride or scratch your name off: ${args.rideUrl}`,
   });
