@@ -344,7 +344,8 @@ let noShare = '';
    board.html pre-filters on ?from=&to= by place NAME (see board.js `filter`). */
 function boardLink(fromName, toName) {
   const qs = fromName && toName ? `?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}` : '';
-  return `<a class="ns-board" href="board.html${qs}">See the ride board ${ICON.arrow}</a>`;
+  // The wrap is what showAlreadyGoing() swaps for a ride already gathering on the date searched.
+  return `<div id="ns-board-wrap"><a class="ns-board" href="board.html${qs}">See the ride board ${ICON.arrow}</a></div>`;
 }
 if (shared) {
   // A saving can only be stated against a known party size — the private car is one fixed
@@ -498,7 +499,9 @@ function renderResults(state) {
     : `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared seat from <b>$${shared.seat}</b> ↓</a>`;
   document.getElementById('results').innerHTML =
     `${jump}<div class="opt-grid">${left}${shared ? sharedCard : noShare}</div>`;
-  if (offDay) showAlreadyGoing();
+  // A route with no scheduled van asks too — that is where most board rides live (Kandy → Ella).
+  // No date, nothing to match a ride against.
+  if (offDay || (!shared && date)) showAlreadyGoing();
   // "Switch date" comes back with #shared-option, but the card is drawn after load — so the
   // browser's own jump to the hash finds nothing. Do it once the card exists.
   if (location.hash === '#shared-option' && !renderResults.jumped) {
@@ -509,13 +512,14 @@ function renderResults(state) {
 }
 
 /* Someone may already have started a ride for this route and date. The board's public dupe
-   lookup (built for its own start form) answers that; a hit swaps "Start a ride" for their
-   ride. It only ever UPGRADES the card: a miss, an error, a slow or switched-off API all leave
-   "Start a ride" exactly as it was. Asked once, re-applied on any re-render. */
+   lookup (built for its own start form) answers that; a hit swaps "Start a ride" — or, where no
+   scheduled van runs at all, the no-share panel's "See the ride board" — for their ride. It only
+   ever UPGRADES: a miss, an error, a slow or switched-off API all leave what was there exactly
+   as it was. Asked once, re-applied on any re-render. */
 let goingList;
 function showAlreadyGoing() {
   const apply = () => {
-    const wrap = document.getElementById('sb-start-wrap');
+    const wrap = document.getElementById('sb-start-wrap') || document.getElementById('ns-board-wrap');
     const L = goingList;
     if (!wrap || !L || !L.code || L.status !== 'gathering') return;
     const need = Math.max(0, (L.minSeats || 3) - (L.committed || 0));

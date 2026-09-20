@@ -243,6 +243,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .noshare .ns-board{display:inline-flex;align-items:center;gap:.35rem;margin-top:.7rem;font-weight:600;font-size:.92rem;color:var(--accent-deep,#24758A);text-decoration:none}
   .noshare .ns-board:hover{text-decoration:underline}
   .noshare .ns-board svg{width:16px;height:16px}
+  /* A ride already gathering for the date searched takes the link's place (search.js showAlreadyGoing). */
+  .noshare .sb-going{margin-top:.8rem}
+  .noshare .sb-hop{margin-top:10px}
   /* Pick-up points for a run that boards in more than one place. The stop the traveller
      actually searched is marked, so the list reads as "your van, and where it stops"
      rather than a timetable they have to decode. */
@@ -319,6 +322,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
 <script src="shared-day.js?v=cbcec2fb62"></script>
-<script src="search.js?v=3d456b69b5"></script>
+<script src="search.js?v=91541e11fd"></script>
 </body>
 </html>
