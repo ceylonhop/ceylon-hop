@@ -114,10 +114,10 @@
         </div>
         <div><h4>Explore</h4><ul>
           <li><a href="index.html#book">Get a transfer quote</a></li><li><a href="plan.html">Plan a multi-stop trip</a></li>
-          <li><a href="tours.html">Ready-made tours</a></li><li><a href="blog.html">Travel guide</a></li></ul></div>
+          <li><a href="tours.html">Ready-made tours</a></li><li><a href="trip/">All routes</a></li></ul></div>
         <div><h4>Company</h4><ul>
           <li><a href="why.html">Why Hop With Us</a></li><li><a href="about.html">About</a></li>
-          <li><a href="blog.html">Travel blog</a></li><li><a href="${WA}">Contact</a></li></ul></div>
+          <li><a href="blog.html">Travel guide</a></li><li><a href="${WA}">Contact</a></li></ul></div>
         <div><h4>Get in touch</h4><ul>
           <li><a href="${WA}">WhatsApp +94 77 966 9662</a></li><li><a href="mailto:hello@ceylonhop.com">hello@ceylonhop.com</a></li>
           <li style="margin-top:6px"><span class="pill pill-saffron">★ Tripadvisor — Excellent</span></li></ul></div>
