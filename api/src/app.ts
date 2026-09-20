@@ -354,7 +354,12 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ error: 'internal_error' }, 500);
   });
 
-  app.get('/health', (c) => c.json({ status: 'ok' }));
+  // `commit` is the only outside proof of WHICH build is serving: Render posts no deployment
+  // status, and a 200 here can still be the old instance mid-rollout. Render injects
+  // RENDER_GIT_COMMIT; off Render (local dev, CI) it is null. `status` is what callers key on.
+  app.get('/health', (c) =>
+    c.json({ status: 'ok', commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || null }),
+  );
   // M17: the uptime monitor's target — proves the DB answers, unlike the static /health
   // (which stays fast for keep-warm pings and the booking page's warm-up call).
   app.get('/health/deep', async (c) => {
