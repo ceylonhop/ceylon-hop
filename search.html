@@ -245,9 +245,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .noshare .ns-board{display:inline-flex;align-items:center;gap:.35rem;margin-top:.7rem;font-weight:600;font-size:.92rem;color:var(--accent-deep,#24758A);text-decoration:none}
   .noshare .ns-board:hover{text-decoration:underline}
   .noshare .ns-board svg{width:16px;height:16px}
-  /* A ride already gathering for the date searched takes the link's place (search.js showAlreadyGoing). */
-  .noshare .sb-going{margin-top:.8rem}
-  .noshare .sb-hop{margin-top:10px}
+  /* A ride already gathering for the date searched replaces the no-share panel (search.js
+     boardRideCard). Saffron wash while it still needs people, teal once it has enough. */
+  .br-status{background:var(--pc-saffron);border-radius:14px;padding:12px 14px;margin:14px 0}
+  .br-status.is-go{background:var(--pc-teal)}
+  .br-status b{display:block;font-size:1rem}
+  .br-status small{display:block;font-size:.82rem;color:var(--ink-soft);margin-top:2px}
+  .br-pips{display:flex;gap:6px;margin-bottom:8px}
+  .br-pips i{width:20px;height:20px;border-radius:50%;border:2px dashed #c9a25a;box-sizing:border-box}
+  .br-pips i.on{background:var(--saffron);border:0}
+  .br-status.is-go .br-pips i.on{background:var(--teal-deep)}
+  .br-steps{list-style:none;counter-reset:br;margin:0 0 4px;padding:0;display:flex;flex-direction:column;gap:9px}
+  .br-steps li{counter-increment:br;position:relative;padding-left:32px;font-size:.9rem;line-height:1.45;color:var(--ink-soft)}
+  .br-steps li b{color:var(--ink)}
+  .br-steps li::before{content:counter(br);position:absolute;left:0;top:0;width:22px;height:22px;border-radius:50%;background:var(--cream-deep);color:var(--ink);font-size:.76rem;font-weight:700;display:grid;place-items:center}
   /* Pick-up points for a run that boards in more than one place. The stop the traveller
      actually searched is marked, so the list reads as "your van, and where it stops"
      rather than a timetable they have to decode. */
@@ -319,11 +330,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="transfers-data.js?v=0ef73c634c"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <!-- engine prices for routes that aren't in the baked table (see search.js) -->
-<script src="ch-pricing.js?v=a2511d67e7"></script>
+<script src="ch-pricing.js?v=74a30546ee"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
 <script src="shared-day.js?v=cbcec2fb62"></script>
-<script src="search.js?v=9f0834d2d5"></script>
+<script src="search.js?v=785946f5df"></script>
 </body>
 </html>

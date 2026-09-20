@@ -334,8 +334,7 @@ let noShare = '';
    board.html pre-filters on ?from=&to= by place NAME (see board.js `filter`). */
 function boardLink(fromName, toName) {
   const qs = fromName && toName ? `?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}` : '';
-  // The wrap is what showAlreadyGoing() swaps for a ride already gathering on the date searched.
-  return `<div id="ns-board-wrap"><a class="ns-board" href="board.html${qs}">See the ride board ${ICON.arrow}</a></div>`;
+  return `<a class="ns-board" href="board.html${qs}">See the ride board ${ICON.arrow}</a>`;
 }
 if (shared) {
   // A saving can only be stated against a known party size — the private car is one fixed
@@ -503,16 +502,61 @@ function renderResults(state) {
 }
 
 /* Someone may already have started a ride for this route and date. The board's public dupe
-   lookup (built for its own start form) answers that; a hit swaps "Start a ride" — or, where no
-   scheduled van runs at all, the no-share panel's "See the ride board" — for their ride. It only
-   ever UPGRADES: a miss, an error, a slow or switched-off API all leave what was there exactly
-   as it was. Asked once, re-applied on any re-render. */
+   lookup (built for its own start form) answers that; a hit swaps "Start a ride" for their ride
+   — or, where no scheduled van runs at all, the whole no-share panel for boardRideCard(). It
+   only ever UPGRADES: a miss, an error, a slow or switched-off API all leave what was there
+   exactly as it was. Asked once, re-applied on any re-render. */
 let goingList;
+
+/* A searcher who has never seen the ride board, so the card cannot lean on its vocabulary:
+   "2 of 3 going · Hop on" inside a panel headed "No shared seats" read as a contradiction with
+   no price on it. It has to say, unprompted, the two things that make this NOT a normal booking
+   — it runs only if enough people join, and the card is charged only if it runs (board.js:
+   approve a card now, charged at the cutoff if minSeats are pledged, else called off). */
+function boardRideCard(L) {
+  const min = L.minSeats || 3, taken = L.committed || 0;
+  const room = (L.capacity || 6) - taken;
+  if (room <= 0 || !(L.seatPrice > 0)) return '';   // full, or nothing honest to price it with
+  const seat = (L.seatPrice / 100).toFixed(2);
+  const need = Math.max(0, min - taken);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // The cutoff is a moment in Sri Lanka, whatever timezone the searcher's laptop is in.
+  const checkDay = L.cutoffAt ? new Date(L.cutoffAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Colombo' }) : '';
+  const pips = Array.from({ length: Math.max(min, taken) }, (_, i) => `<i class="${i < taken ? 'on' : ''}"></i>`).join('');
+  // Same rule as the scheduled seat: a saving is only stated against a known party size.
+  const perPaxPrivate = pax == null || !quote || !(quote.car > 0) ? null : quote.car / Math.min(3, pax);
+  const savePct = perPaxPrivate == null ? null : Math.round((1 - (seat / perPaxPrivate)) * 100);
+  return `
+  <article class="opt opt-shared is-board" id="board-ride">
+    <span class="tag-top">Travellers going ${dateText}</span>
+    <div class="o-head">
+      <div class="o-ico">${ICONS.share}</div>
+      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you${L.slot ? ` · ${L.slot}` : ''}</div></div>
+    </div>
+    <div class="shared-price"><span class="amt">$${seat}</span><span class="per">/ seat</span></div>
+    ${savePct != null && savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
+    <div class="br-status${need ? '' : ' is-go'}">
+      <div class="br-pips" aria-hidden="true">${pips}</div>
+      <b>${need ? `Needs ${plural(need, 'more traveller')} to run` : 'Enough travellers to run'}</b>
+      <small>${need ? `${taken} of ${min} seats filled · the van runs at ${min}` : `${plural(taken, 'seat')} taken · ${room} left${checkDay ? ` · confirmed ${checkDay}` : ''}`}</small>
+    </div>
+    <ol class="br-steps">
+      <li>Join today and approve a card. <b>No fare charged now</b></li>
+      <li>${checkDay ? `We check on ${checkDay}` : 'We check before the trip'}: ${min} or more seats filled and the van is confirmed</li>
+      <li>Only then is your card charged $${seat} a seat. <b>Not enough travellers, no charge</b></li>
+    </ol>
+    <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Join this ride · $0 today ${ICON.arrow}</a>
+  </article>`;
+}
+
 function showAlreadyGoing() {
   const apply = () => {
-    const wrap = document.getElementById('sb-start-wrap') || document.getElementById('ns-board-wrap');
     const L = goingList;
-    if (!wrap || !L || !L.code || L.status !== 'gathering') return;
+    if (!L || !L.code || L.status !== 'gathering') return;
+    const panel = document.querySelector('#results .noshare, #board-ride');
+    if (panel) { const html = boardRideCard(L); if (html) panel.outerHTML = html; return; }
+    const wrap = document.getElementById('sb-start-wrap');
+    if (!wrap) return;
     const need = Math.max(0, (L.minSeats || 3) - (L.committed || 0));
     wrap.innerHTML = `<div class="sb-going"><b>${L.committed} of ${L.minSeats} going ${dateText}</b>
       <small>${need > 0 ? `needs ${need} more` : 'enough to run'} · $0 until it's confirmed</small></div>
@@ -611,7 +655,8 @@ if (!askEngine) trackResults();
 
    If either call fails on a route with NO baked distance there is no fallback price to show —
    no local formula can price it — so the card becomes an honest "we'll price it by hand". */
-// Two debounced round trips (ch-pricing: 400ms each) land in ~1.5–2.5s on a cold route.
+// Two round trips, one after the other. Measured 2.5s cold on prod WITH ch-pricing's debounce
+// (2 × 400ms of it); the calls below skip it.
 const ENGINE_CAP_MS = 4000;
 if (askEngine) (function () {
   const baked = engineRoute ? null : quote;   // the catalogue fare, kept as the fallback
@@ -623,6 +668,7 @@ if (askEngine) (function () {
   function showFares() {
     const card = document.querySelector('#results .opt-private');
     if (card) card.outerHTML = privateCardHtml(); else renderResults('priced');
+    if (goingList) showAlreadyGoing();   // its "save ~N%" is stated against the fare that just landed
     trackResults();
   }
   function fallBack() {
@@ -642,7 +688,7 @@ if (askEngine) (function () {
       window.CH_PRICING.estimate(Object.assign({ vehicle }, base), {
         onResult: function (est) { resolve(est); },
         onUnavailable: function () { resolve(null); }
-      });
+      }, { immediate: true });   // asked once, on load — the debounce is for a wizard mid-click
     });
   }
 
