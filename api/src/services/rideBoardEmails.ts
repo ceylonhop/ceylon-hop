@@ -228,7 +228,7 @@ export async function sendRideJoined(
     <tr><td style="padding:26px 34px 0">
       <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Your name is down</div>
       <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">You're on the list, ${esc(args.firstName)}.</h1>
-      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">We're gathering travellers for your shared van now. <b style="color:${INK}">Nothing has been charged</b> — your card is approved, and that's all.</p>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">We're gathering travellers for your shared van now. <b style="color:${INK}">No ride fare has been charged.</b> PayHere may show a small card-verification charge, which is reversed automatically.</p>
     </td></tr>
 
     <tr><td style="padding:18px 34px 0">
@@ -305,7 +305,7 @@ export async function sendRideJoined(
     subject: `You're on the list — ${route(list)}, ${date}`,
     html,
     text: `You're on the list, ${args.firstName}. ${route(list)} on ${date}, departs ${slotWindow(list.slot)}. `
-      + `${seatsLabel(seats)} · ride ${list.code}. Nothing has been charged — we take ${money(total)} only if `
+      + `${seatsLabel(seats)} · ride ${list.code}. No ride fare has been charged (PayHere may show a small card-verification charge, which is reversed automatically) — we take ${money(total)} only if `
       + `at least ${list.minSeats} seats are pledged by the cutoff and the van runs. Names close ${cutoff} (Sri Lanka time). `
       + `View your ride or scratch your name off: ${args.rideUrl}`,
   });

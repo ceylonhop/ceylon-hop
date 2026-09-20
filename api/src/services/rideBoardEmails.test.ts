@@ -219,6 +219,29 @@ describe('sendRideJoined', () => {
     expect(m.text).toMatch(/only if/i);
   });
 
+  it('is honest about the card: no fare taken, but a verification charge may show', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideJoined(email, {
+      to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1,
+      rideUrl: 'https://ceylonhop.com/board.html#/EM-4821',
+    });
+    const m = email.sent[0];
+    // PayHere's preapproval tokenises the card with a small charge it then reverses
+    // (adapters/payhereTokenized.ts). A traveller sees that line on their card minutes
+    // before this email — so a flat "nothing has been charged" reads as a lie.
+    for (const body of [m.html, m.text ?? '']) {
+      expect(body).toMatch(/verification charge/i);
+      expect(body).toMatch(/revers/i);
+      expect(body).not.toMatch(/nothing has been charged/i);
+      // No fare is authorised or held at join — only a token exists.
+      expect(body).not.toMatch(/\bheld\b|\bhold\b|authori[sz]ed/i);
+    }
+    // The amount is deliberately NOT printed: it differs by mode and currency (0.51 live,
+    // 1.01 sandbox, 10.00 LKR) and PayHere has already changed it once without notice.
+    expect(m.html).not.toContain('0.51');
+    expect(m.html).not.toContain('1.01');
+  });
+
   it('gives a working way back to the ride, which is where a name gets scratched off', async () => {
     const email = new FakeEmailAdapter();
     await sendRideJoined(email, {
