@@ -77,6 +77,25 @@ test('a saving is only claimed against a known party size', async ({ page }) => 
   await expect(rideCard(page).locator('.shared-save')).toContainText(/Save ~\d+% vs a private car/);
 });
 
+test('the saving waits for the fare it is measured against (#652: a shown percentage never changes)', async ({ page }) => {
+  // A $24.50 seat, one traveller. The engine answers late, and with a zone-boosted $70 car.
+  await page.route('**/quote/v2/estimate', async (r) => {
+    const intent = JSON.parse(r.request().postData() || '{}');
+    await new Promise((res) => setTimeout(res, 600));
+    await r.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ totalCents: intent.vehicle === 'van' ? 9000 : 7000, legs: [{ from: 'a', to: 'b', distanceKm: 135, durationMin: 225 }] }) });
+  });
+  await page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }));
+  await dupe(page, { list: going });
+  await page.goto(`/search.html?${ROUTE}&date=${THU}&pax=1`);
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(1);
+  await expect(rideCard(page)).toBeVisible();                       // the ride itself does not wait
+  await expect(rideCard(page).locator('.shared-save')).toBeHidden();
+  await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$70');
+  await expect(rideCard(page).locator('.shared-save')).toBeVisible();
+  await expect(rideCard(page).locator('.shared-save')).toHaveText(/Save ~65%/);   // 1 − 24.50/70
+});
+
 test('a full van is not offered: the panel stays', async ({ page }) => {
   await dupe(page, { list: { ...going, committed: 6 } });
   await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=${THU}` });
