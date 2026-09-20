@@ -145,13 +145,18 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .btn.is-pending{position:relative;color:transparent;cursor:progress;transform:none;pointer-events:none}
   .btn.is-pending:hover{transform:none}
   .btn.is-pending::before{content:"";position:absolute;top:50%;left:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--ink);border-top-color:transparent;opacity:.75;animation:ops-btn-spin .62s linear infinite}
-  /* Filled buttons (go/danger) carry white text, so their spinner is white too. */
-  .btn-go.is-pending::before,.btn-noshow.is-pending::before{border-color:#fff;border-top-color:transparent}
+  /* Filled buttons (go) carry white text, so their spinner is white too. */
+  .btn-go.is-pending::before{border-color:#fff;border-top-color:transparent}
+  /* .btn-noshow is NOT filled — it is red text on paper (Cancel booking, Mark no-show, Cancel
+     request). It was grouped with .btn-go above, so its spinner was white on white: the label
+     went transparent and the button just sat there blank for the whole round trip. */
+  .btn-noshow.is-pending::before{border-color:#b23214;border-top-color:transparent}
   .btn.is-pending svg{opacity:0}
   /* Same reasoning as the cockpit's rule: close the ring rather than leaving a frozen arc. */
   @media(prefers-reduced-motion:reduce){
     .btn.is-pending::before{animation:none;border-top-color:var(--ink);opacity:.5}
-    .btn-go.is-pending::before,.btn-noshow.is-pending::before{border-top-color:#fff}
+    .btn-go.is-pending::before{border-top-color:#fff}
+    .btn-noshow.is-pending::before{border-top-color:#b23214}
   }
   @keyframes ops-btn-spin{to{transform:rotate(360deg)}}
   .btn-go{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:var(--teal-deep);color:#fff;box-shadow:0 12px 26px -13px rgba(8,147,143,.85)}
@@ -479,6 +484,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .reverse-actions .btn{flex:1 1 150px;align-self:auto;justify-content:center;background:var(--paper);border:1px solid #e6bcb0;box-shadow:none;font-size:.82rem;padding:10px 12px}
   .reverse-actions .btn:hover:not(:disabled){background:#fbe7e2}
   .reverse-actions .btn:disabled{opacity:.45;cursor:not-allowed}
+  /* The handlers disable the pressed button while it is in flight; without this the spinner
+     inherits the 45% "unavailable" fade and reads as a dead button rather than a working one. */
+  .reverse-actions .btn.is-pending:disabled{opacity:1;cursor:progress}
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}

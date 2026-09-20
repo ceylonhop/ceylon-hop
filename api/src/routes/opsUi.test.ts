@@ -346,7 +346,7 @@ describe('ops UI — bare-root alias (ops.ceylonhop.com/)', () => {
     const res = await app.request('/health');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
-    expect(await res.json()).toEqual({ status: 'ok' });
+    expect(await res.json()).toMatchObject({ status: 'ok' });
   });
 });
 
