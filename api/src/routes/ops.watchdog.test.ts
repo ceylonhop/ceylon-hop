@@ -81,7 +81,7 @@ describe('GET /health/deep (M17)', () => {
     const app = createApp({ pingDb: async () => { throw new Error('must not be called'); } });
     const res = await app.request('/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'ok' });
+    expect(await res.json()).toMatchObject({ status: 'ok' });
   });
 });
 

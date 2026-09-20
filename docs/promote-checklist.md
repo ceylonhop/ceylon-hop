@@ -76,7 +76,9 @@ home, so a promote must be provably non-destructive.
 
 A merged branch is not a running service. Check the deployed thing.
 
-- [ ] `curl -s https://<host>/health` → `{"status":"ok"}`
+- [ ] `curl -s https://<host>/health` → `{"status":"ok","commit":"<short sha>"}` — `commit` must be
+      the promoted commit (`git rev-parse --short=7 origin/production`). An older sha means the old
+      instance is still serving mid-rollout; wait and re-check.
 - [ ] **Pick a marker unique to this release and verify it live.** Not "the site loads" — something
       that could only be true if this deploy landed. Examples that worked:
       `/pay.html` returning 200 (it 404'd before the customer-pages change),
