@@ -26,3 +26,4 @@ playwright-report/
 *.backup
 
 .claude/worktrees/
+.dist-staging/

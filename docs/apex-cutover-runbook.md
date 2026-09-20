@@ -205,14 +205,15 @@ kind, so staging cannot be a second Pages site on this repo. It goes on Cloudfla
 is already where the DNS lives and which can sit behind Cloudflare Access.
 
 - [ ] Create a **Cloudflare Pages** project connected to this repo, production branch = `main`.
-- [ ] Build command `node tools/build-staging.mjs`, output directory `dist-staging/`.
+- [ ] Build command `node tools/build-staging.mjs`, output directory `.dist-staging/`.
 - [ ] Custom domain `staging.ceylonhop.com`.
 - [ ] **Cloudflare Access** policy on that hostname: the three staff Google accounts (free tier
       covers up to 50 users). Without this, staging is a public duplicate of the site — which
       is an SEO problem as well as a privacy one.
 
-`tools/build-staging.mjs` (to be written; not in the repo yet) copies the site into
-`dist-staging/` and injects into every page, **ahead of that page's first script**:
+`tools/build-staging.mjs` copies the site into `.dist-staging/` (dot-prefixed so a local
+build stays invisible to the unit tests that walk the repo root for pages) and injects into
+every page, **ahead of that page's first script**:
 
 ```html
 <script>window.CEYLON_HOP_API='https://ops.staging.ceylonhop.com'</script>
@@ -231,8 +232,12 @@ Two properties this design deliberately preserves:
 - **Analytics needs no work.** `chIsProd()` does not match `staging.ceylonhop.com`, so GA4
   revenue events stay off there by the gate that already exists.
 
-Guard it with a `web-tests` unit test: every built page carries the staging API base, and no
-built page carries the prod one.
+Guarded by `web-tests/unit/build-staging.test.js`. The assertion is **positional, not
+textual**: each page keeps its own `|| 'https://ceylon-hop-api.onrender.com'` fallback in the
+file — unused, because the variable is already set — so "no page mentions prod" would be a
+false invariant. The test requires the staging assignment to appear *before* any prod host the
+page mentions. A build that appended the assignment instead would satisfy a grep and point the
+whole staged site at production.
 
 ## 8. Phase 5 — after it beds in
 
