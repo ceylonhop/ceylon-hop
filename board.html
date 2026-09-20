@@ -138,19 +138,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* ---------- ride rows ----------
    One ride per line: window · route · who's in · price · action. The day heading carries the
    date, so a row never repeats it. See docs/superpowers/specs/2026-09-18-ride-board-rows-design.md */
+/* the hairline belongs BETWEEN days, not under the date: a line under the heading cut the date
+   off from the rows it labels, and read exactly as heavy as a row divider. So the day's first
+   row drops its own line, and the heading gets the room that does the separating. */
 .rw-group+.rw-group{border-top:1px solid var(--line)}
-.rw-day-h{margin:0;padding:16px 24px 8px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h{margin:0;padding:26px 24px 10px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h+.rw{border-top:0}
 /* the action column is a fixed width: sized per row, the widest label ("Start another van")
    pushed that row's price and seats out of line with every other row */
 /* route gets the lion's share: two tags for the longest pair we sell need ~460px; faces + state ~220px */
 .rw{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
-  padding:14px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
+  padding:22px 24px;border-top:1px solid var(--line);cursor:pointer;transition:background .15s}
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
 .rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
-.rw-route{min-width:0}
+/* the duration rides on the route's own line; it drops below only when the pair leaves no room */
+.rw-route{min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
 /* wrap, never clip: when the pair does not fit, the drop-off tag drops to a second line */
 .rw-places{font-family:var(--display);font-weight:700;font-size:1.1rem;line-height:1.2;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
 .rw-places .arr{color:var(--accent-deep);font-family:var(--body);font-weight:600;flex:none}
@@ -165,7 +170,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-pl.b .rw-dot{background:var(--cta)}
 /* .rw-route small{display:block} (the duration line) outranks a bare .rw-q — match its specificity */
 .rw-route .rw-q{display:inline;font-family:var(--body);font-weight:400;font-size:.74rem;color:var(--ink-soft);margin:0}
-.rw-route small{display:block;font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+.rw-route small{display:block;flex:none;font-size:.76rem;color:var(--ink-soft);white-space:nowrap}
 /* below a wide laptop the qualifiers go: "(CMB)" is what tipped the longest pair over its column.
    Must come AFTER the base .rw-route .rw-q rule — equal specificity, so source order decides. */
 @media(max-width:1180px){.rw-route .rw-q{display:none}}
@@ -534,6 +539,10 @@ body.detail-open .detail{display:block}
 .seat-opt.sel small{color:rgba(255,255,255,.72)}
 .seat-opt[disabled]{opacity:.38;cursor:not-allowed}
 .seat-opt[disabled].sel{opacity:1}
+/* ---- "we already run this" stop (start form) ---- */
+.sched-stop{background:var(--err-bg);border:1.5px solid var(--err-line);border-radius:14px;padding:14px 16px;margin-bottom:12px;color:#7a3120}
+.sched-stop b{display:block;color:#5c2416;font-size:.98rem}
+.sched-stop p{margin:.2rem 0 .8rem;font-size:.86rem;line-height:1.45}
 /* ---- dedupe nudge ---- */
 .dupe{background:var(--pc-saffron);border:1.5px solid rgba(249,164,41,.4);border-radius:14px;padding:14px 16px;margin-bottom:12px}
 .dupe-in{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
@@ -602,7 +611,7 @@ body.detail-open .detail{display:block}
   /* two-line rows: route + price, window + duration, faces + state + a text-link action.
      The only solid button on a phone is the start bar's; the whole row opens the ride. */
   .filters .f-start{display:none}
-  .rw-day-h{padding:14px 16px 6px}
+  .rw-day-h{padding:22px 16px 8px}
   /* the route takes the full width so the longest pair stays one line; price sits by the time */
   .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route route" "when price" "seats cta";gap:6px 12px;padding:13px 16px}
   .rw-route .rw-q{display:none}
@@ -663,6 +672,7 @@ body.detail-open .detail{display:block}
   </a>
   <div class="nav-links">
     <a href="plan.html">Plan a trip</a>
+    <a href="board.html" class="active">Share a ride</a>
     <a href="tours.html">Tours</a>
     <a href="blog.html">Travel Guide</a>
     <a href="why.html">Why us</a>
@@ -680,6 +690,7 @@ body.detail-open .detail{display:block}
      phones. board.js keeps this entry in sync with the desktop button. -->
 <div class="mobile-menu" data-mobile>
   <a href="plan.html">Plan a trip</a>
+  <a href="board.html">Share a ride</a>
   <a href="tours.html">Tours</a>
   <a href="blog.html">Travel Guide</a>
   <a href="why.html">Why us</a>
@@ -786,7 +797,7 @@ body.detail-open .detail{display:block}
           <div class="fld"><label>To</label><select id="c-to"></select></div>
         </div>
         <div class="frow">
-          <div class="fld"><label>Date — any day works</label><input type="date" id="c-date"></div>
+          <div class="fld"><label>Date</label><input type="date" id="c-date"></div>
           <div class="fld"><label>Departure</label>
             <div class="timechips" id="c-time">
               <button class="chip sel" data-t="morning">Morning</button>
@@ -797,6 +808,7 @@ body.detail-open .detail{display:block}
         <div class="fld" style="margin-bottom:12px"><label>A note for the others <span style="opacity:.6">(optional)</span></label>
           <input id="c-note" placeholder="surfboards, tea-factory stop, travelling with a baby…" maxlength="70"></div>
         <div id="dupe-nudge" class="dupe" hidden></div>
+        <div id="sched-stop" class="sched-stop" hidden></div>
         <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 seats are up<br>list closes 48h before</span></div>
         <button class="btn btn-primary btn-block" id="c-continue" style="height:52px">Put it on the board</button>
         <p class="whisper">it goes up instantly — you're name #1 on the list</p>
@@ -864,7 +876,7 @@ body.detail-open .detail{display:block}
              dial code took the phone's old partner, which left city alone beside a gap. -->
         <div class="frow" style="margin-bottom:12px">
           <div class="fld"><label for="pay-city">Billing city</label>
-            <input id="pay-city" autocomplete="address-level2" placeholder="London"></div>
+            <input id="pay-city" autocomplete="address-level2" placeholder="e.g. Amsterdam"></div>
           <div class="fld"><label for="pay-address">Billing address</label>
             <input id="pay-address" autocomplete="street-address" placeholder="Street and number"></div>
         </div>
@@ -957,6 +969,6 @@ body.detail-open .detail{display:block}
 
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
-<script src="board.js?v=9327ef15ac" defer></script>
+<script src="board.js?v=8aaa6b95ba" defer></script>
 </body>
 </html>

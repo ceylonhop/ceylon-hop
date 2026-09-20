@@ -64,17 +64,24 @@ test('chauffeur service is unavailable until every trip leg has a date', async (
   await gotoBooking(page, { query });
 
   const chauffeur = page.locator('[data-svc="chauffeur"]');
-  await expect(chauffeur).toBeDisabled();
+  // Reads as unavailable and says why. It is deliberately NOT `disabled`: the tag offers the one
+  // fix there is, and `disabled` made every child inert so the offer could not be taken
+  // (owner-spotted 2026-09-18, see booking-chauffeur-needs-dates.spec.js).
+  await expect(chauffeur).toHaveClass(/disabled/);
   await expect(page.locator('#svc-chauffeur-tag')).toHaveText('Add all dates to quote');
   await expect(page.locator('#chauffeur-extra')).toContainText('Add all leg dates to quote chauffeur-guide');
   await expect(page.locator('#chauffeur-extra')).toContainText('every transfer leg has a date');
 
-  await chauffeur.click({ force: true });
-
-  await expect(chauffeur).not.toHaveClass(/on/);
+  // Undated, it is never the selected service and never priced as one.
+  await expect(chauffeur).not.toHaveClass(/\bon\b/);
   await expect(page.locator('[data-svc="private"]')).toHaveClass(/on/);
   await expect(page.locator('#sum-adlabel')).toHaveText(/Private AC van · whole trip/);
   await expect(page.locator('#sum-addons')).not.toContainText('Chauffeur-guide');
+
+  // Pressing it collects the missing dates rather than selecting a service it cannot quote.
+  await chauffeur.click();
+  await page.waitForURL('**/plan.html?**');
+  expect(new URL(page.url()).searchParams.get('step')).toBe('dates');
 });
 
 test('trip booking review shows planner-provided Google distances for exact-place legs', async ({ page }) => {
