@@ -95,19 +95,20 @@ test('a dated leg can be made flexible again', async ({ page }) => {
   await forwardToDates(page);
   await page.locator('#fork-known').click();
 
+  // Blank is the flexible state and carries no furniture of its own (owner decision 2026-09-19:
+  // the "Flexible for now" chip was removed) — an undated leg is just an undated leg.
   const row = page.locator('.date-row[data-i="0"]');
-  await expect(row.locator('.dr-flex')).toBeVisible();      // says what blank means
-  await expect(row.locator('.dr-clear')).toHaveCount(0);
+  await expect(row.locator('input')).toHaveValue('');
+  await expect(row.locator('.dr-clear')).toHaveCount(0);   // nothing to clear yet
 
   await setLegDate(page, 0, D_A);
   await expect(row.locator('input')).toHaveValue(D_A);
-  await expect(row.locator('.dr-flex')).toHaveCount(0);
 
   // Until now a picked date could not be unpicked: the datepicker hides the native input and
   // its popover has no clear action, so a mis-tap was permanent.
   await row.locator('.dr-clear').click();
   await expect(row.locator('input')).toHaveValue('');
-  await expect(row.locator('.dr-flex')).toBeVisible();
+  await expect(row.locator('.dr-clear')).toHaveCount(0);   // and it is back to flexible
 });
 
 test('switching to "later" clears dates, and switching back restores them', async ({ page }) => {

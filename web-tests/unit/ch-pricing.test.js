@@ -218,4 +218,40 @@ describe('CH_PRICING', () => {
       setSpy.mockRestore();
     }
   });
+
+  /* The debounce exists for a wizard the traveller is still clicking through. A page that asks
+     ONCE, on load, for a route already in its URL (search.html) has nothing to coalesce — the
+     400ms is pure delay, and search asks twice (car, van), so 800ms of every cold search. */
+  it('{immediate:true} fetches at once, with no debounce', async () => {
+    const d = deferred();
+    fetchMock.mockReturnValueOnce(d.promise);
+    const cb = { onResult: vi.fn(), onUnavailable: vi.fn() };
+
+    CH.estimate({ product: 'private', legs: [{ from: 'A', to: 'B' }] }, cb, { immediate: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);          // no timers advanced at all
+
+    d.resolve(jsonResponse(200, { totalCents: 6600 }));
+    await flush();
+    expect(cb.onResult).toHaveBeenCalledWith({ totalCents: 6600 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);          // and no second, debounced fetch behind it
+  });
+
+  it('an immediate call still supersedes a debounced one that has not fired yet', async () => {
+    const d = deferred();
+    fetchMock.mockReturnValueOnce(d.promise);
+    const slow = { onResult: vi.fn(), onUnavailable: vi.fn() };
+    const now = { onResult: vi.fn(), onUnavailable: vi.fn() };
+
+    CH.estimate({ product: 'private', legs: [{ from: 'A', to: 'B' }] }, slow);
+    CH.estimate({ product: 'private', legs: [{ from: 'A', to: 'C' }] }, now, { immediate: true });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).legs[0].to).toBe('C');
+    d.resolve(jsonResponse(200, { totalCents: 1 }));
+    await flush();
+    expect(now.onResult).toHaveBeenCalledTimes(1);
+    expect(slow.onResult).not.toHaveBeenCalled();
+  });
 });

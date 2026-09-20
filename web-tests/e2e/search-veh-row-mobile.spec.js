@@ -45,7 +45,8 @@ const rowBoxes = (page) => page.locator('.opt-private .veh-row').evaluateAll((ro
 test('mobile: the fare sits above its Select button, and neither overruns the row', async ({ page }) => {
   await page.setViewportSize(PHONE);
   await gotoBooking(page, { path: '/search.html', query: ROUTE });
-  await expect(page.locator('.opt-private .veh-row').first()).toBeVisible();
+  // the fares arrive after the card's outline — measure the row once its Select exists
+  await expect(page.locator('.opt-private .veh-row a.btn').first()).toBeVisible();
 
   const rows = await rowBoxes(page);
   expect(rows.length, 'expected both the car and the van row').toBe(2);
@@ -68,7 +69,8 @@ test('mobile: the fare sits above its Select button, and neither overruns the ro
 test('desktop keeps the fare and Select side by side', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await gotoBooking(page, { path: '/search.html', query: ROUTE });
-  await expect(page.locator('.opt-private .veh-row').first()).toBeVisible();
+  // the fares arrive after the card's outline — measure the row once its Select exists
+  await expect(page.locator('.opt-private .veh-row a.btn').first()).toBeVisible();
 
   const rows = await rowBoxes(page);
   for (const [i, r] of rows.entries()) {

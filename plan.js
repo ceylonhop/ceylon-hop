@@ -563,6 +563,16 @@ function enhanceLegDate(input){
 }
 
 // ---- render ----
+/* Card labels for the whole itinerary, legs and stays each counting from 1 in their own
+   sequence. Both planner views took the ARRAY INDEX for both, so a trip with stays read
+   "Leg 1 · Stay 2 · Leg 3 · Stay 4 · Leg 5" — no Leg 2 at all, and "Leg 3" was the second
+   transfer. Booking's review counts legs properly (booking.js: ++_legNo), so the planner and
+   the page the customer pays on disagreed about which leg was which.
+   Computed in ONE place for both views: they drifted precisely because each wrote its own. */
+function legBadges(){
+  let legNo=0, stayNo=0;
+  return state.legs.map(l => l.type==='stay' ? `Stay ${++stayNo}` : `Leg ${++legNo}`);
+}
 let dragEl=null;
 function render(){
   const rail=document.getElementById('rail');
@@ -589,6 +599,7 @@ function render(){
     return;
   }
   const n=state.legs.length;
+  const badges=legBadges();
 
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
@@ -596,7 +607,7 @@ function render(){
     const km=route?route.distanceKm:null;
     if(!isStay && (!route || route.state==='estimated') && leg.from && leg.to) requestLiveRoute(leg.from, leg.to, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
-    const badge = isStay ? `Stay ${i+1}` : `Leg ${i+1}`;
+    const badge = badges[i];
 
     // body differs by type: a transfer has pick-up→drop-off + distance;
     // a stay has one place and a nights count (no intercity travel). Dates
@@ -1054,7 +1065,6 @@ function setDatesMode(mode){
   state.datesMode=mode;
   renderDatesStep();
 }
-const FLEX_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
 
 /* ── one date instead of eight ────────────────────────────────────────────────────────────
    An itinerary that carries nights already says how long each stop lasts, so every leg's date
@@ -1084,6 +1094,12 @@ function advance(leg){
    editing a middle leg moves the legs after it), and one they deliberately cleared stays blank
    with the running date passing straight through it. */
 function cascadeFrom(start){
+  /* Nothing to cascade THROUGH on a route with no stays: a transfer does not advance the running
+     date, so the cursor never moves and every later leg gets stamped with the same day — one
+     hand-set date silently becoming a whole itinerary on one date (owner-spotted 2026-09-19).
+     The guard lives here rather than at each call site so a future caller cannot reintroduce it;
+     canCascade() is also what hides the trip-start anchor, so the two stay in step by construction. */
+  if(!canCascade()) return;
   let cursor=null;
   for(let k=0;k<start;k++){
     const l=state.legs[k];
@@ -1155,6 +1171,7 @@ function renderDatesStep(){
   const startHint=document.getElementById('trip-start-hint');
   if(startHint) startHint.hidden = !cascades || mode!=='known';
   const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+  const badges=legBadges();
   const flags=outOfOrderFlags();
   const driveIssue=sameDayDrivingIssue();
   state.legs.forEach((leg,i)=>{
@@ -1168,7 +1185,7 @@ function renderDatesStep(){
     row.dataset.i=i;
     row.innerHTML=`
       <div class="dr-info">
-        <span class="dr-badge ${isStay?'stay':''}">${isStay?`Stay ${i+1}`:`Leg ${i+1}`}</span>
+        <span class="dr-badge ${isStay?'stay':''}">${badges[i]}</span>
         <span class="dr-route">${routeTxt}</span>
       </div>
       <div class="dr-date">
@@ -1176,7 +1193,7 @@ function renderDatesStep(){
         ${leg.date
           ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
               cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
-          : `<span class="dr-flex">${FLEX_ICO} Flexible for now</span>`}
+          : ''}
       </div>
       ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
     list.appendChild(row);

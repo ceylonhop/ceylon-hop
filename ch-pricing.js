@@ -10,6 +10,9 @@
      intent at a time (whatever the wizard currently shows), so there is a single shared timer
      for the whole module rather than one per call site — a second call before the timer fires
      just replaces what's about to be asked for.
+   - estimate(intent, callbacks, {immediate:true}) skips the debounce. For a page that asks ONCE
+     on load for a route already in its URL (search.html) there is nothing to coalesce, so the
+     400ms is pure delay. Everything else — cache, join, supersede, the 404 latch — is unchanged.
    - A repeat of an intent already answered this session is served from sessionStorage instantly
      (no debounce, no fetch) — keyed on JSON.stringify(intent), so a stepper bounced back to a
      value it already showed doesn't wait another 400ms + round trip.
@@ -88,14 +91,16 @@
     });
   }
 
-  // Starts tracking a brand-new request for `intent` and arms its debounce timer.
-  function track(intent, sig, callbacks){
+  // Starts tracking a brand-new request for `intent` and arms its debounce timer — or, for an
+  // `immediate` caller, fetches at once.
+  function track(intent, sig, callbacks, immediate){
     const record = { sig: sig, intent: intent, callbacks: callbacks, requestId: ++nextRequestId, timer: null };
     pending = record;
+    if(immediate){ doFetch(record); return; }
     record.timer = setTimeout(function(){ record.timer = null; doFetch(record); }, DEBOUNCE_MS);
   }
 
-  function estimate(intent, callbacks){
+  function estimate(intent, callbacks, opts){
     callbacks = callbacks || {};
     if(!window.CEYLON_HOP_API){
       if(callbacks.onUnavailable) callbacks.onUnavailable('no_api');
@@ -128,7 +133,7 @@
     // — its callbacks are simply orphaned; settle()'s requestId guard makes that safe even if
     // that old fetch is already underway and lands later.
     if(pending && pending.timer) clearTimeout(pending.timer);
-    track(intent, sig, [callbacks]);
+    track(intent, sig, [callbacks], !!(opts && opts.immediate));
   }
 
   window.CH_PRICING = {

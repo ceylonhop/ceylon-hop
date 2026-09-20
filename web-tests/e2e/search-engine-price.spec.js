@@ -113,21 +113,144 @@ test('an engine-priced route offers no shared seat', async ({ page }) => {
   await expect(page.locator('.noshare')).toBeVisible();
 });
 
-test('a baked route still prices instantly, with no network round trip', async ({ page }) => {
-  let called = 0;
-  await page.route('**/quote/v2/estimate', (r) => {
-    called += 1;
-    return r.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+/*
+  A baked pair asks the engine too (owner decision 2026-09-20, "Option A").
+
+  It used to price from the catalogue alone and never touch the network. But hot zones are rows
+  in the prod database, so the catalogue cannot know them: Kandy → Ella advertised $59.99 here
+  and charged $66 on the booking page (+10% zone). The advertised price must be the price we
+  charge, so the engine's answer is what the card shows. The catalogue price is the FALLBACK —
+  engine off, unreachable, or slower than the cap — which is exactly what the page showed before.
+*/
+const stubHealth = (page) =>
+  page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+
+test('a baked route advertises the engine price, so a hot-zone boost is never a surprise', async ({ page }) => {
+  const intents = [];
+  await page.route('**/quote/v2/estimate', async (r) => {
+    const intent = JSON.parse(r.request().postData() || '{}');
+    intents.push(intent);
+    await r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        totalCents: intent.vehicle === 'van' ? 8800 : 6600,
+        legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 136, durationMin: 227 }],
+      }),
+    });
   });
-  await page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await stubHealth(page);
+
+  await page.goto('/search.html?from=kandy&to=ella');
+  const rows = page.locator('.opt-private .veh-row');
+  await expect(rows.nth(0)).toContainText('$66');
+  await expect(rows.nth(1)).toContainText('$88');
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(0);
+  // the unboosted catalogue fare is nowhere on the card
+  await expect(page.locator('.opt-private')).not.toContainText('$59.99');
+
+  // asked by catalogue NAME, smallest party — same contract as a free-text route
+  expect(intents.map((i) => i.vehicle)).toEqual(['car', 'van']);
+  expect(intents[0].legs).toEqual([{ from: 'Kandy', to: 'Ella' }]);
+  expect(intents[0].pax).toBe(1);
+
+  // Select hands booking the engine fare, and no unfinished catalogue figure alongside it —
+  // booking reads rawPrice first, so a stale one would win over the price just shown.
+  const href = await rows.nth(0).locator('a').getAttribute('href');
+  const q = new URLSearchParams(href.split('?')[1]);
+  expect(q.get('price')).toBe('66');
+  expect(q.get('rawPrice')).toBeNull();
+  expect(q.get('from')).toBe('kandy');               // still a catalogue route to booking
+});
+
+test('a baked route falls back to its catalogue price when the engine is off', async ({ page }) => {
+  await page.route('**/quote/v2/estimate', (r) =>
+    r.fulfill({ status: 404, contentType: 'application/json', body: '{}' }));
+  await stubHealth(page);
 
   await page.goto('/search.html?from=cmb-airport&to=ella&pax=2');
   await expect(page.getByText('$140').first()).toBeVisible();
   await expect(page.locator('.opt-private.is-pending')).toHaveCount(0);
+  const href = await page.locator('.opt-private .veh-row a').first().getAttribute('href');
+  expect(new URLSearchParams(href.split('?')[1]).get('rawPrice')).not.toBeNull();
+});
 
-  // ch-pricing debounces 400ms; give it more than that to prove nothing was ever asked for
-  await page.waitForTimeout(900);
-  expect(called, 'a baked pair must not pay for an API round trip').toBe(0);
+test('a slow engine never holds a baked route hostage, and a late answer does not move the price', async ({ page }) => {
+  await page.route('**/quote/v2/estimate', async (r) => {
+    await new Promise((res) => setTimeout(res, 5500));
+    await r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ totalCents: 99900, legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 136, durationMin: 227 }] }),
+    }).catch(() => {});
+  });
+  await stubHealth(page);
+
+  await page.goto('/search.html?from=cmb-airport&to=sigiriya');
+  // While the price is out, only the two numbers wait — the shared seat is already there.
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(1);
+  await expect(page.locator('#shared-option')).toBeVisible();
+  await expect(page.locator('#route-meta')).toContainText('Approx.');
+
+  // the cap, then the catalogue fare
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(0, { timeout: 6000 });
+  const shown = await page.locator('.opt-private .veh-row').nth(0).locator('.amt').innerText();
+  expect(shown).toMatch(/^\$\d/);
+
+  // a price that has been SHOWN does not change under the traveller's cursor
+  await page.waitForTimeout(2500);
+  await expect(page.locator('.opt-private .veh-row').nth(0).locator('.amt')).toHaveText(shown);
+  await expect(page.locator('.opt-private')).not.toContainText('$999');
+});
+
+test('on a phone the fares arriving do not move the shared card underneath them', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route('**/quote/v2/estimate', async (r) => {
+    const intent = JSON.parse(r.request().postData() || '{}');
+    await new Promise((res) => setTimeout(res, 600));
+    await r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        totalCents: intent.vehicle === 'van' ? 8999 : 6700,
+        legs: [{ from: 'a', to: 'b', distanceKm: 152, durationMin: 195 }],
+      }),
+    });
+  });
+  await stubHealth(page);
+  await page.goto('/search.html?from=cmb-airport&to=sigiriya');
+
+  // One column on a phone: the private card sits ABOVE the shared one, so any height the
+  // waiting card lacks is height the shared card gets shoved down by when the fares land.
+  const top = () => page.locator('#shared-option').evaluate((el) => Math.round(el.getBoundingClientRect().top + window.scrollY));
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(1);
+  const before = await top();
+  await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$67');
+  expect(Math.abs((await top()) - before), 'the shared card moved when the fares arrived').toBeLessThanOrEqual(1);
+});
+
+test('the shared saving is measured against the fare actually shown, not the catalogue', async ({ page }) => {
+  // Negombo → Sigiriya: $27.49 a seat against a $65.50 catalogue car. A +10% zone makes the car
+  // $72.05, so two travellers save ~24% by sharing — not the ~15% the catalogue fare implies.
+  await page.route('**/quote/v2/estimate', async (r) => {
+    const intent = JSON.parse(r.request().postData() || '{}');
+    await new Promise((res) => setTimeout(res, 600));
+    await r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        totalCents: intent.vehicle === 'van' ? 9600 : 7205,
+        legs: [{ from: 'a', to: 'b', distanceKm: 148, durationMin: 194 }],
+      }),
+    });
+  });
+  await stubHealth(page);
+  await page.goto('/search.html?from=negombo&to=sigiriya&pax=2');
+
+  // While the fare it is measured against is unknown, the claim is not made — a percentage
+  // that has been shown must not change any more than a price may.
+  await expect(page.locator('.opt-private.is-pending')).toHaveCount(1);
+  await expect(page.locator('.shared-save')).toBeHidden();
+
+  await expect(page.locator('.opt-private .veh-row').nth(0)).toContainText('$72.05');
+  await expect(page.locator('.shared-save')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~24%/);
 });
 
 test('an engine price carries the free-text place through to booking', async ({ page }) => {
@@ -173,9 +296,11 @@ test('an engine route never claims we run no shared service', async ({ page }) =
   await expect(panel).toBeVisible();
   await expect(panel).not.toContainText("We don't run a scheduled shared service");
   await expect(panel).not.toContainText('No shared seats on this route');
-  // States the rule we can actually vouch for, and still lands the private transfer.
-  await expect(panel).toContainText('Shared seats run on set routes');
-  await expect(panel).toContainText('door-to-door at a fixed price');
+  // States the rule we can actually vouch for — and tells the traveller what to DO about it:
+  // search the town, or go to the board. The old copy ("we can only match those
+  // automatically") explained our limitation and left them nowhere to go.
+  await expect(panel).toContainText('matched by town, not by hotel or address');
+  await expect(panel.locator('a.ns-board')).toHaveAttribute('href', 'board.html');
 });
 
 test('a baked pair we truly do not serve still says so plainly', async ({ page }) => {
@@ -186,4 +311,30 @@ test('a baked pair we truly do not serve still says so plainly', async ({ page }
   const panel = page.locator('.noshare');
   await expect(panel).toContainText('No shared seats on this route');
   await expect(panel).toContainText("We don't run a scheduled shared service");
+  // ...but it is not a dead end: the board sells any route once 3 travellers are in, and it
+  // pre-filters on place NAMES (board.js `filter`), so the link carries them.
+  await expect(panel.locator('a.ns-board')).toHaveAttribute(
+    'href', 'board.html?from=Colombo%20Airport%20(CMB)&to=Galle');
+});
+
+test('the shared card says which days it runs, and offers a phone-only jump to it', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya' });
+
+  const card = page.locator('#shared-option');
+  await expect(card).toContainText('Runs Wed & Sat');
+  // This card leads to a pay-now checkout. "Nothing charged until it's confirmed" is the ride
+  // board's promise (pre-approval) and must not be borrowed here.
+  await expect(card).toContainText('pay now to reserve your seat');
+  await expect(card).not.toContainText('nothing charged');
+  // "One AC van" in the headline and "AC car or van" in the chips was the same card
+  // describing two different vehicles.
+  await expect(card).not.toContainText('AC car or van');
+
+  // Desktop is two-up, so the jump link is hidden; at phone width the shared seat sits under
+  // two private cards and the link is the only sign it exists.
+  const jump = page.locator('a.shared-jump');
+  await expect(jump).toBeHidden();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(jump).toBeVisible();
+  await expect(jump).toHaveAttribute('href', '#shared-option');
 });
