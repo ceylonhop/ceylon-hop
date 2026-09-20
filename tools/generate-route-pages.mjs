@@ -131,8 +131,11 @@ function faqItems(from, to, q, shared) {
     // Design A: a shared seat is a date with names on it. No fixed timetable is quoted,
     // because there is no date we refuse — the van runs when enough travellers commit.
     shared
-      ? [`How does a shared seat work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the van runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the van is confirmed — if it never fills, you pay nothing.`]
-      : [`Is there a shared option on this route?`, `This route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
+      ? [`How does the ${from} to ${to} shared taxi work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the van runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the van is confirmed — if it never fills, you pay nothing.`]
+      // Asked in the searcher's own words. The old site's best-known page was a Kandy → Ella
+      // "shared taxi" we no longer run; the honest way to stay relevant to that search is to
+      // answer it, not to imply a seat in the title.
+      : [`Is there a shared taxi from ${from} to ${to}?`, `Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
     [`How do I book the ${from} to ${to} transfer?`,
@@ -156,8 +159,8 @@ function jsonLd(from, to, url, q, faq) {
   };
   const service = {
     '@context': 'https://schema.org', '@type': 'Service',
-    serviceType: 'Private airport & intercity transfer',
-    name: `${from} to ${to} private transfer`,
+    serviceType: 'Taxi & private intercity transfer',
+    name: `${from} to ${to} taxi — private transfer`,
     areaServed: 'Sri Lanka',
     provider: { '@type': 'TravelAgency', name: 'Ceylon Hop', url: `${ORIGIN}/`, telephone: '+94779669662' },
     offers: { '@type': 'Offer', priceCurrency: 'USD', price: price(q.car), url },
@@ -208,10 +211,19 @@ function routePage(T, content, from, to, forward) {
 
   // Private-only routes must never promise a seat in the SERP, so the shared half is added ONLY
   // where a shared seat genuinely exists on this corridor — matching the H1 and the price chips.
+  //
+  // "taxi" / "shared taxi" are the words the old WordPress pages ranked for ("Kandy to Ella -
+  // Shared Taxi"), and these pages inherited those rankings at the 2026-09-20 apex cutover. They
+  // go FIRST, straight after the place names, because a search result truncates near 60 chars
+  // and long names ("Sigiriya / Dambulla", "Colombo Airport (CMB)") eat most of that.
+  // "door to door" stays attached to the private option: a shared seat boards at a stop.
+  // Guarded by web-tests/unit/seo-legacy-keywords.test.js.
   const title = shared
-    ? `${fromName} to ${toName} — transfer & shared seat from $${shared.seat} | Ceylon Hop`
-    : `${fromName} to ${toName} — private transfer | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${estimate}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
+    ? `${fromName} to ${toName} shared taxi from $${shared.seat} & private transfer | Ceylon Hop`
+    : `${fromName} to ${toName} taxi — private transfer, fixed price | Ceylon Hop`;
+  const desc = shared
+    ? `Private taxi from ${fromName} to ${toName} at a fixed price — ${estimate}, door to door. Or take the shared taxi from $${shared.seat} a seat.`
+    : `Private taxi from ${fromName} to ${toName} — car or AC van at a fixed price, door to door. ${estimate}. Rated 5.0 on Tripadvisor.`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
