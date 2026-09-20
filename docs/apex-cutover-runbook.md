@@ -67,7 +67,11 @@ customer release.
       effective date. Edit `tools/legal/terms.body.html` and regenerate — never the generated
       `terms.html` directly. On `prod.ceylonhop.com` these are an internal embarrassment; on
       the apex they are the refund contract a paying customer is agreeing to.
-- [ ] **The current apex DNS records are exported and saved outside Cloudflare.** The apex is
+- [x] **The current apex DNS records are exported and saved outside Cloudflare.** Done
+      2026-09-20: BIND export + a screenshot of the records list, because a BIND file carries
+      no proxy status and restoring from it alone would bring every record back unproxied.
+      Keep both out of this repo — it is public, and the export reveals the origin behind
+      Cloudflare. The apex is
       Cloudflare-proxied, so the WordPress origin address is visible only inside the Cloudflare
       dashboard. Without a saved copy, rollback (§9) means hunting for a hosting login under
       time pressure. Export the whole zone file.
@@ -83,14 +87,23 @@ customer release.
 Every item here only *adds* an allowed value. None of it changes what a visitor sees, so it can
 be done hours or days ahead, and it should be — Phase 2 is much less tense when this is done.
 
-- [ ] Render `ceylon-hop-api` → `ALLOWED_ORIGINS` += `https://ceylonhop.com`,
-      `https://www.ceylonhop.com`. Keep the existing values for now; §8 trims them later.
-- [ ] Google Cloud console → **browser** Maps/Places key → Website restrictions +=
-      `ceylonhop.com/*`, `www.ceylonhop.com/*`. (Two Maps keys exist — browser and server. This
-      is the browser one; the server key takes no referrer restriction.)
-- [ ] Google Cloud console → OAuth client → Authorised JavaScript origins +=
-      `https://ceylonhop.com`, `https://www.ceylonhop.com`. Covers both ops sign-in and the
-      ride board's customer sign-in.
+- [x] Render `ceylon-hop-api` → `ALLOWED_ORIGINS` += `https://ceylonhop.com`,
+      `https://www.ceylonhop.com`. **Done 2026-09-20**, verified by preflight: apex, www and
+      `prod.` all answer with their own origin. (`ceylonhop.github.io` was already absent, so
+      the §8 trim is smaller than written there.)
+- [x] **Maps browser key — nothing to do, verified 2026-09-20.** Its website restrictions
+      already carry both `ceylonhop.com/*` and `*.ceylonhop.com/*`. Both entries are needed:
+      Google's `*.` wildcard requires a subdomain label and does not match the apex. The
+      wildcard also covers `staging.ceylonhop.com`, so Phase 4 needs no Maps change either.
+- [x] **OAuth client → Authorised JavaScript origins** += `https://ceylonhop.com`,
+      `https://www.ceylonhop.com`, `https://staging.ceylonhop.com`. **Done 2026-09-20.**
+      The project holds *two* Web clients; the live one is **Web client 2**,
+      `369028158972-46hq…` — confirmed from `board.html`, from live prod `/ops` and from
+      staging `/ops`, all serving that id. **Web client 1** (Mar 2025) is unused: leave it
+      alone, and do not delete it during a cutover — deleting the wrong client locks all
+      three staff out of `/ops`. Origins are exact-match, so every host needs its own line;
+      one client covers staff sign-in on prod *and* staging *and* customer sign-in on the
+      ride board.
 - [ ] GitHub → repo/org settings → **verify the apex domain** for Pages (add the
       `_github-pages-challenge-…` TXT record). Prevents anyone else claiming `ceylonhop.com`
       on Pages later. `prod.ceylonhop.com` is already verified; the apex is not.
