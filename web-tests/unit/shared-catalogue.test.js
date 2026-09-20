@@ -19,16 +19,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let T;
 beforeAll(() => { T = loadTransfers(); });
 
-// The eight directed legs we sell. from, to, seat (USD), departure time.
+// The nine directed legs we sell. from, to, seat (USD), departure time.
+//
+// Narrowed to the five marketed products on 2026-08-27, from the owner's operating table
+// and the WordPress sales export: every product whose `trip_code` starts `single_stop_`
+// and has taken a booking. Two changes came out of that reconciliation —
+//   * Ella -> Mirissa/Weligama/Ahangama ($24) was a real product with sales that the
+//     catalogue could not sell at all: `ella-south` had a corridor but no legs.
+//   * Mirissa/Weligama -> Colombo city was sellable here but has no product page and has
+//     never taken a booking. The van's marketed product ends at the airport.
 const CATALOGUE = [
   ['cmb-airport', 'sigiriya', 27.49, '07:00'],
   ['negombo', 'sigiriya', 27.49, '07:30'],
   ['sigiriya', 'kandy', 19.99, '11:30'],
   ['ella', 'yala', 22.99, '09:00'],
+  ['ella', 'weligama', 24, '09:00'],
+  ['ella', 'ahangama', 24, '09:00'],
   ['mirissa', 'cmb-airport', 29.99, '14:45'],
   ['weligama', 'cmb-airport', 29.99, '15:00'],
-  ['mirissa', 'colombo', 29.99, '14:45'],
-  ['weligama', 'colombo', 29.99, '15:00'],
 ];
 
 describe('shared catalogue — what we actually sell', () => {
@@ -65,6 +73,27 @@ describe('shared catalogue — what we actually sell', () => {
     expect(T.sharedOption('kandy', 'nuwara-eliya')).toBeNull();  // adjacency only
     expect(T.sharedOption('yala', 'mirissa')).toBeNull();        // withdrawn product
     expect(T.sharedOption('ella', 'arugam-bay')).toBeNull();     // withdrawn product
+  });
+
+  // Sellable here for a while, but no product page has ever carried it and it has never
+  // taken a booking — the van's marketed product ends at the airport. Dropped 2026-08-27.
+  it('does not sell the south-coast van to Colombo city', () => {
+    expect(T.sharedOption('mirissa', 'colombo')).toBeNull();
+    // The van runs Ella -> the south coast, but Mirissa is not an offer on it
+    // (owner, 2026-08-27) — Weligama and Ahangama are.
+    expect(T.sharedOption('ella', 'mirissa')).toBeNull();
+    expect(T.sharedOption('weligama', 'colombo')).toBeNull();
+  });
+
+  // The reverse regression: a product with real sales that the catalogue could not sell,
+  // because `ella-south` had a corridor and a $24 seat but no directed legs on it.
+  it('sells the Ella south-coast run to the drop-offs we offer', () => {
+    for (const to of ['weligama', 'ahangama']) {
+      const opt = T.sharedOption('ella', to);
+      expect(opt, `ella -> ${to} must be offered`).toBeTruthy();
+      expect(opt.seat, `ella -> ${to} price`).toBe(24);
+      expect(opt.times, `ella -> ${to} departure`).toContain('09:00');
+    }
   });
 
   // Weligama->Mirissa sat on south-coast ($14), yala-south ($16) and ella-south ($24);
@@ -128,12 +157,15 @@ describe('pickup sequence', () => {
   });
 
   it('groups by destination, not just product id', () => {
-    // south-airport serves BOTH Colombo and the airport; a leg must not inherit the other's
-    // stops. Each destination sees Mirissa 14:45 then Weligama 15:00, and nothing else.
-    for (const to of ['cmb-airport', 'colombo']) {
-      const p = T.sharedOption('mirissa', to).pickups;
-      expect(p.map(x => x.place)).toEqual(['Mirissa', 'Weligama']);
+    // ella-south-coast sells three destinations off ONE boarding in Ella, so a leg must not
+    // inherit its siblings' stops — each shows Ella alone, not Ella three times.
+    for (const to of ['weligama', 'ahangama']) {
+      const p = T.sharedOption('ella', to).pickups;
+      expect(p.map(x => x.place), `ella -> ${to}`).toEqual(['Ella']);
     }
+    // And the airport run still boards twice: Mirissa 14:45, then Weligama 15:00.
+    expect(T.sharedOption('mirissa', 'cmb-airport').pickups.map(x => x.place))
+      .toEqual(['Mirissa', 'Weligama']);
   });
 
   it('leaves a single-boarding leg with one stop', () => {
@@ -167,7 +199,7 @@ describe('boardSeatPrice mirrors POST /board', () => {
   it('takes the distance price everywhere else, matching the server to the cent', () => {
     const pairs = [
       ['kandy', 'ella'], ['weligama', 'mirissa'], ['cmb-airport', 'kandy'],
-      ['galle', 'bentota'], ['ella', 'mirissa'], ['yala', 'galle'], ['sigiriya', 'negombo'],
+      ['galle', 'bentota'], ['yala', 'galle'], ['sigiriya', 'negombo'],
     ];
     for (const [a, b] of pairs) {
       expect(T.boardSeatPrice(a, b), `${a} -> ${b}`).toBe(serverSeat(T.roadKm(a, b)));

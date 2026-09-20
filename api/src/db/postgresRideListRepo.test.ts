@@ -77,6 +77,19 @@ describe.skipIf(!TEST_URL)('PostgresRideListRepo (integration)', () => {
     expect(list.status).toBe('gathering');
   });
 
+  // Same rule as the in-memory repo: a ride that has left drops off the public board, confirmed
+  // or not. `date` is a text column, so the comparison is a plain string compare on YYYY-MM-DD.
+  it('listOpen hides a list dated before today (Colombo) and keeps today\'s', async () => {
+    const left = await lists.createList(args({ date: '2026-08-09', fromPlace: 'Kandy', toPlace: 'Ella', corridorId: 'hill-line' }));
+    await lists.setStatus(left.id, 'confirmed');
+    const today = await lists.createList(args({ date: '2026-08-10' }));
+
+    // 2026-08-09T19:00Z is already 00:30 on the 10th in Colombo.
+    const codes = (await lists.listOpen({}, new Date('2026-08-09T19:00:00Z'))).map((r) => r.list.code);
+    expect(codes).not.toContain(left.code);
+    expect(codes).toContain(today.code);
+  });
+
   // The ON CONFLICT branch of addMember is the re-join / seat-change upsert. It used to set
   // status = 'held' unconditionally, so a CHARGED member's own harmless re-tap erased the only
   // record that their money was taken. Only a real Postgres can prove the CASE in that upsert

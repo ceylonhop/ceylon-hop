@@ -31,8 +31,8 @@
   };
   // Departure windows — a list gathers on a slot; the exact time is set when it locks.
   var SLOTS = {
-    morning: { label: 'morning', range: 'departs 7–9 am', opts: ['07:00', '08:00', '09:00'] },
-    afternoon: { label: 'afternoon', range: 'departs 1–3 pm', opts: ['13:00', '14:00', '15:00'] }
+    morning: { label: 'morning', range: 'departs 7–9 am', win: '7–9 am', opts: ['07:00', '08:00', '09:00'] },
+    afternoon: { label: 'afternoon', range: 'departs 1–3 pm', win: '1–3 pm', opts: ['13:00', '14:00', '15:00'] }
   };
   // Private-car fare + rough bus time per corridor — for the shared/private/bus price compare.
   var ALT = {
@@ -47,7 +47,6 @@
   var MIN_DEFAULT = 3;   // seats needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
   var MAX_SEATS = 3;     // most one traveller may take (mirrors MAX_SEATS_PER_MEMBER on the API)
-  var MOBILE_CAP = 4;    // cards shown on a phone before "Show N more rides" (CSS-enforced)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
   // name → id index (best-effort): prototype short names + transfers-data full names.
@@ -149,6 +148,83 @@
     return list.confirmed
       ? list.whenLabel + ' · departs ' + (list.lockedTime || s.opts[1])
       : list.whenLabel + ' · ' + s.label + ' · ' + s.range;
+  }
+
+  /* ---------------- scheduled-van clash (pure) ---------------- */
+  // The board must not start a second van on a route and day the SCHEDULED one already runs —
+  // it would only split the same travellers across two half-empty vehicles (spec
+  // 2026-09-19-shared-ride-by-day). POST /board enforces it (409 scheduled_day); this is the
+  // same rule in the browser, so the start form can say so before sending anyone through
+  // sign-in. Whole day, like the API: never just the van's slot. Date-only ISO, so the weekday
+  // is the calendar day's — no time zone to get wrong.
+  var WEEKDAYS_PLURAL = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  function scheduledClash(fromId, toId, dateIso) {
+    var TR = (typeof window !== 'undefined') && window.TRANSFERS;
+    if (!fromId || !toId || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso || '') || !TR || !TR.sharedOption) return null;
+    var so = TR.sharedOption(fromId, toId);
+    var d = new Date(dateIso + 'T00:00:00Z');
+    if (!so || isNaN(d.getTime()) || (so.days || []).indexOf(d.getUTCDay()) === -1) return null;
+    return { weekday: WEEKDAYS_PLURAL[d.getUTCDay()], time: (so.times || [])[0] || null, seat: so.seat };
+  }
+
+  /* ---------------- board rows (pure) ---------------- */
+  // A row always shows the 2-hour window, never a pinned clock time: every other row is still
+  // gathering on a window, and a column mixing "08:30" with "7–9 am" stops scanning.
+  function windowLabel(slot) { return slotWindow(slot).win; }
+
+  // "~4h door to door" → "~4h" — duration is the one fact that sits under a route.
+  function durationOf(list) {
+    var t = list && CORRIDOR_TIME[list.corridorId];
+    return t ? t.replace(/\s*door to door$/, '') : '';
+  }
+
+  // "Colombo Airport (CMB)" → city + "(CMB)"; "Sigiriya / Dambulla" → city + "/ Dambulla". The
+  // city is what a traveller scans for, so the tag sets it large and the qualifier small.
+  function splitPlace(name) {
+    var n = String(name == null ? '' : name).trim();
+    var m = /^(.*?)\s+(\(.*\)|\/\s*.+)$/.exec(n);
+    return m ? { main: m[1], qual: m[2] } : { main: n, qual: '' };
+  }
+
+  var SLOT_ORDER = { morning: 0, afternoon: 1 };
+  // Day headings in date order; morning before afternoon; a dateless list goes last, not missing.
+  function groupByDay(lists) {
+    var sorted = (lists || []).map(function (L, i) { return { L: L, i: i }; }).sort(function (a, b) {
+      var da = a.L.date || '￿', db = b.L.date || '￿';
+      if (da !== db) return da < db ? -1 : 1;
+      var sa = SLOT_ORDER[a.L.slot] || 0, sb = SLOT_ORDER[b.L.slot] || 0;
+      return sa !== sb ? sa - sb : a.i - b.i;
+    });
+    var groups = [];
+    sorted.forEach(function (x) {
+      var last = groups[groups.length - 1];
+      var date = x.L.date || null;
+      if (!last || last.date !== date) {
+        last = { date: date, label: date ? fmtDate(date) : 'Date to be set', lists: [] };
+        groups.push(last);
+      }
+      last.lists.push(x.L);
+    });
+    return groups;
+  }
+
+  // One coloured seat state and one action per row. The action rules are #597/#599's: a
+  // confirmed list is past its cutoff and the join route refuses it, so it never says "Hop on";
+  // a list that has only reached its minimum is still gathering and still takes joiners.
+  function rowState(list, mine) {
+    var min = list.minSeats, cap = list.capacity;
+    var need = Math.max(0, min - list.committed);
+    var left = Math.max(0, cap - list.committed);
+    var you = mine ? " · you're on it" : '';
+    var cta = mine ? { kind: 'view', text: 'View your ride' }
+      : left === 0 ? { kind: 'again', text: 'Start another van' }
+      : list.confirmed ? { kind: 'view', text: "See who's going" }
+      : { kind: 'view', text: 'Hop on' };
+    if (left === 0) return { cls: 'f', label: 'Full', sub: list.committed + ' of ' + cap + you, cta: cta };
+    if (list.confirmed || need === 0) {
+      return { cls: 'l', label: 'Locked in', sub: left + ' seat' + (left === 1 ? '' : 's') + ' left' + you, cta: cta };
+    }
+    return { cls: 'g', label: list.committed + ' of ' + min + ' in', sub: 'needs ' + need + ' more' + you, cta: cta };
   }
 
   // PublicList (wire shape) → the internal card model the renderers use.
@@ -265,6 +341,38 @@
     return wanted.some(function (c) { return !marked[c]; });
   }
 
+  /* Both filter selects, derived from the (from,to) pairs the board has actually returned.
+     They used to be two independent sets — every origin ever seen in one, every destination in
+     the other — with nothing relating them. Ella is an origin on Ella→Mirissa and a destination
+     on Kandy→Ella, so it sat in both lists and "Ella to Ella" was selectable: a combination that
+     cannot exist, returning an empty board. It was not only the silly case either — with four
+     origins and three destinations, twelve combinations were reachable and only four matched a
+     real ride.
+
+     Deriving both lists from the pairs narrows each select to what the other one leaves possible,
+     and rules out a place as its own destination for free: a list from a place to itself is not
+     a thing, so no such pair is ever in the data. This is what the old state.fromOptions comment
+     always claimed ("the two selects narrow to one corridor") and never actually did.
+
+     `active` is kept even when it matches nothing: a filter carried in from a route page can
+     legitimately match zero rides, and dropping it renders the select BLANK next to a Clear
+     button, with no clue why the board is empty. */
+  function filterOptions(pairs, filter) {
+    var f = (filter && filter.from) || 'all';
+    var t = (filter && filter.to) || 'all';
+    var from = [], to = [], seenF = {}, seenT = {};
+    (pairs || []).forEach(function (p) {
+      var a = p[0], b = p[1];
+      if (!a || !b) return;
+      if ((t === 'all' || b === t) && !seenF[a]) { seenF[a] = true; from.push(a); }
+      if ((f === 'all' || a === f) && !seenT[b]) { seenT[b] = true; to.push(b); }
+    });
+    if (f !== 'all' && !seenF[f]) from.push(f);
+    if (t !== 'all' && !seenT[t]) to.push(t);
+    var abc = function (x, y) { return x.localeCompare(y); };
+    return { from: from.sort(abc), to: to.sort(abc) };
+  }
+
   var RideBoard = {
     shouldReport: shouldReport,
     errorPayload: errorPayload,
@@ -276,12 +384,19 @@
     slotWindow: slotWindow,
     scarcityText: scarcityText,
     whenLine: whenLine,
+    windowLabel: windowLabel,
+    durationOf: durationOf,
+    splitPlace: splitPlace,
+    scheduledClash: scheduledClash,
+    groupByDay: groupByDay,
+    rowState: rowState,
     normalizeList: normalizeList,
     centsToDollars: centsToDollars,
     money: money,
     flagOf: flagOf,
     fmtDate: fmtDate,
     resolvePlaceId: resolvePlaceId,
+    filterOptions: filterOptions,
     SLOTS: SLOTS,
     MIN_DEFAULT: MIN_DEFAULT,
     CAP_DEFAULT: CAP_DEFAULT
@@ -315,8 +430,7 @@
     byCode: {},           // code → normalized list (detail cache)
     mineCodes: new Set(), // lists the signed-in user is on
     manageTokens: {},     // code → manageToken (from create/join)
-    fromOptions: [],      // union of from-names seen (filter select, never shrinks)
-    toOptions: [],        // ditto for drop-offs — the two selects narrow to one corridor
+    pairs: [],            // [from,to] pairs seen (never shrinks); both filter selects derive from these
     /* Pre-filtered by ?from=&to= so a route page can hand a traveller straight to their
        own route. Without this, "See who's going" landed on the unfiltered board and they
        had to find the route again — the page knew what they wanted and threw it away.
@@ -361,6 +475,32 @@
       headers: { 'content-type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined
     });
+  }
+
+  /* ---------------- inline sheet errors ----------------
+     The toast sits at z-index 90; the join sheet's overlay is z-index 100 WITH a backdrop
+     blur, so any toast fired while the sheet was open showed up blurred behind it. Errors
+     that belong to the sheet render inside it instead — the #sheet-err strip is moved next
+     to the visible step's primary button, where the eye already is. Board-level notices
+     (sheet closed) keep using toast(). */
+  function sheetError(title, sub) {
+    var el = document.getElementById('sheet-err');
+    if (!el) { toast(title, sub); return; }
+    var step = document.querySelector('.mstep:not([hidden])');
+    if (step) {
+      // Last VISIBLE primary button: mstep-1 keeps a hidden sub-panel whose button would
+      // swallow the strip. offsetParent is null for anything inside a hidden container.
+      var btn = null, cands = step.querySelectorAll('.btn-primary.btn-block');
+      for (var i = cands.length - 1; i >= 0; i--) { if (cands[i].offsetParent) { btn = cands[i]; break; } }
+      if (btn) step.insertBefore(el, btn); else step.appendChild(el);
+    }
+    el.innerHTML = '<b>' + esc(title) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '');
+    el.hidden = false;
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  }
+  function clearSheetError() {
+    var el = document.getElementById('sheet-err');
+    if (el) el.hidden = true;
   }
 
   /* ---------------- toast ---------------- */
@@ -419,65 +559,51 @@
       '<span class="ini">' + esc(ini) + '</span>' + img + flag + '</span>';
   }
 
-  function listRows(L) {
-    var rows = [];
-    var min = L.minSeats;
-    var members = L.members;
-    var over = members.length > min;
-    var shown = over ? members.slice(0, min - 1) : members;
-    var openUsed = false;
-    shown.forEach(function (m, i) {
-      var you = isYouMember(L, m);
-      rows.push('<div class="lrow ' + (you ? 'you' : '') + '">' +
-        '<span class="num">' + (i + 1) + '.</span>' + avatar(m, i) +
-        '<span class="who">' + esc(m.name) + (you ? ' <small>(you)</small>' : '') +
-        (m.isStarter ? ' <small>started this list</small>' : '') + '</span></div>');
-    });
-    if (over) {
-      var rest = members.slice(min - 1);
-      var stack = rest.slice(0, 3).map(function (m, i) { return avatar(m, (min - 1 + i), 'xs' + (i ? ' stack' : '')); }).join('');
-      rows.push('<div class="lrow"><span class="num">' + min + '.</span>' +
-        '<span style="display:flex;align-items:center">' + stack + '</span>' +
-        '<span class="who" style="font-size:.85rem;color:var(--ink-soft)">+' + rest.length + ' also riding</span></div>');
-    } else {
-      for (var i = shown.length; i < min; i++) {
-        if (!openUsed && !L.confirmed) {
-          openUsed = true;
-          rows.push('<div class="lrow open" data-join="' + esc(L.code) + '">' +
-            '<span class="num">' + (i + 1) + '.</span>' +
-            '<span class="slot"><span class="hand">your name here?</span><span class="dash"></span></span></div>');
-        } else {
-          rows.push('<div class="lrow open ghost" data-join="' + esc(L.code) + '">' +
-            '<span class="num">' + (i + 1) + '.</span>' +
-            '<span class="slot"><span class="hand">·</span><span class="dash"></span></span></div>');
-        }
-      }
-    }
-    return rows.join('');
+  /* ---------------- board row ---------------- */
+  // Up to four faces (flags ride on the avatars) and a "+N" for the rest.
+  function faces(L) {
+    var ms = L.members;
+    var html = ms.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('');
+    if (ms.length > 4) html += '<span class="avatar xs stack rw-more">+' + (ms.length - 4) + '</span>';
+    return html;
   }
 
-  // The phone version of listRows(): the same roster in one 44px strip instead of `minSeats`
-  // full rows (~190px). Both are always rendered — CSS swaps them at 640px — so there is no
-  // viewport branch in JS and nothing to re-render on rotate.
-  function rosterStrip(L) {
-    var min = L.minSeats;
-    var need = Math.max(0, min - L.committed);
-    var conf = L.confirmed || need === 0;
-    var faces = L.members.slice(0, 4).map(function (m, i) {
-      return avatar(m, i, 'xs' + (i ? ' stack' : ''));
-    }).join('');
-    // two empty circles max: at 375px the faces, the count and the "your name here?" hand
-    // all have to share one 44px line, and a third circle pushes the count onto two.
-    var slots = '';
-    for (var i = 0; i < Math.min(need, 2); i++) slots += '<span class="rslot"></span>';
-    var txt = conf
-      ? '<b>Van\'s locked</b> · ' + L.committed + ' riding'
-      : '<b>' + L.committed + ' of ' + min + '</b> · ' + need + ' to go';
-    return '<div class="lcard-roster"' + (conf ? '' : ' data-join="' + esc(L.code) + '"') + '>' +
-      '<span class="rfaces">' + faces + slots + '</span>' +
-      '<span class="rtxt">' + txt + '</span>' +
-      (conf ? '' : '<span class="rhand">your name here?</span>') +
-      '</div>';
+  // A soft tag per place: the ride sheet's markers (hollow teal = pickup, tomato = drop-off)
+  // on a tint, no border — a bordered pill on this page is a filter chip.
+  function placeTag(name, cls) {
+    var p = splitPlace(name);
+    return '<span class="rw-pl ' + cls + '"><i class="rw-dot"></i>' + esc(p.main) +
+      (p.qual ? ' <small class="rw-q">' + esc(p.qual) + '</small>' : '') + '</span>';
+  }
+
+  function rowHtml(L) {
+    var mine = iAmOn(L);
+    var st = rowState(L, mine);
+    var dur = durationOf(L);
+    var win = windowLabel(L.slot);
+    var hook = st.cta.kind === 'again' ? 'data-again' : 'data-view';
+    var primary = st.cta.text === 'Hop on';
+    return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
+      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
+      '<div class="rw-when">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + '</div>' +
+      '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
+        (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
+      '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
+        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span></div>' +
+      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b> each</div>' +
+      '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
+        esc(st.cta.text) + '</button>' +
+      '</article>';
+  }
+
+  // Only when a route is chosen: the list ends with one way to start a van on it. With no
+  // route there is nothing to prefill, and the filter bar's Start button already covers it.
+  function routeInvite() {
+    var f = state.filter;
+    if (f.mine || f.from === 'all' || f.to === 'all') return '';
+    return '<div class="rw-invite"><p><b>Not your day?</b> Start a van on ' + esc(f.from) + ' → ' + esc(f.to) +
+      ' for your date — $0 to add your name.</p>' +
+      '<button class="btn btn-ghost btn-sm" id="rw-start">Start a ride +</button></div>';
   }
 
   // One source for the review claim: the board previously said "200+ real trips" while the rest
@@ -496,137 +622,65 @@
       '<span class="t">' + esc(caption || '5.0 · loved by travellers') + '</span></a>';
   }
 
-  /* ---------------- board card ---------------- */
-  function card(L) {
-    var min = L.minSeats;
-    var need = Math.max(0, min - L.committed);
-    var conf = L.confirmed || need === 0;
-    var full = conf && Math.max(0, L.capacity - L.committed) === 0;
-    var hot = !conf && need === 1;
-    var mine = iAmOn(L);
-    var sc = scarcityText(L);
-    var alt = ALT[L.corridorId] || { priv: 0, bus: '' };
-    var dots = Array.apply(null, { length: min }).map(function (_, i) {
-      return '<i class="' + (i < Math.min(L.committed, min) ? 'f' : '') + '"></i>';
-    }).join('');
-    var clock = conf
-      ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
-      : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
-    var starter = L.members[0];
-    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal" data-code="' + esc(L.code) + '">' +
-      (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
-      (mine ? '<span class="mine-tag">You\'re on this ✓</span>' : '') +
-      '<div class="lcard-top">' +
-      '<div class="lcard-route">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</div>' +
-      '<div class="lcard-meta">' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(whenLine(L)) + '</span>' +
-      clock +
-      '</div>' +
-      '<div class="lcard-status">' +
-      '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' +
-      '<span class="goal-dots">' + dots + '</span>' +
-      '</div>' +
-      '</div>' +
-      '<div class="tear"></div>' +
-      '<div class="lcard-list">' + listRows(L) + '</div>' +
-      rosterStrip(L) +
-      '<div class="lcard-foot">' +
-      '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
-      (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
-      // A full van you are not on has exactly one action worth offering — start another.
-      // The roster is already on the card, and the whole card opens the detail sheet, so a
-      // second "See who's on" button only competed with the real primary.
-      (full && !mine
-        ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
-        : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
-          // `conf` is `L.confirmed || need === 0`, which conflates two states. A list only
-          // reaches status 'confirmed' in the cutoff sweep, and a seat on one can no longer be
-          // joined — so inviting a hop-on there is an action that can only 409. A list that has
-          // merely hit its minimum is still gathering with the cutoff ahead: it takes joiners,
-          // and keeps the invitation.
-          (mine ? 'View your ride' : L.confirmed ? "See who's going" : conf ? 'See ride · hop on' : 'See ride & join') +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
-      '</div>' +
-      (L.note
-        ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
-        : (starter ? '<div class="started">started by ' + avatar(starter, 0) + ' <b>' + esc(starter.name) + '</b></div>' : '')) +
-      '</article>';
-  }
-
   var grid = document.getElementById('board-grid');
   var filtersEl = document.getElementById('filters');
 
   function render() {
     var shown = state.lists;
-    var empty = shown.length === 0
-      ? '<div class="board-empty"><div class="plus">🗺️</div>' +
+    grid.removeAttribute('aria-busy');
+    if (!shown.length) {
+      grid.innerHTML = '<div class="board-empty"><div class="plus">🗺️</div>' +
         '<h3>No lists match yet' + (state.filter.mine ? " — you haven't joined any" : '') + '.</h3>' +
         '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
-        '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
-      : '';
-    grid.removeAttribute('aria-busy');
-    // Phones only: every card is in the DOM, CSS hides the ones past MOBILE_CAP until the
-    // grid is .expanded. Keeps one render path (and the count honest) on every screen.
-    var more = shown.length > MOBILE_CAP
-      ? '<button class="board-more" id="board-more">Show ' + (shown.length - MOBILE_CAP) +
-        ' more ' + (shown.length - MOBILE_CAP === 1 ? 'ride' : 'rides') + '</button>'
-      : '';
-    grid.classList.remove('expanded');
-    grid.innerHTML = shown.map(card).join('') + empty + more +
-      '<button class="lcard-new reveal" id="new-list"><div>' +
-      '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
-      '<p>Start your own list on any route, any day — we help gather names.</p>' +
-      '<span class="hand">you\'re name #1 ✍️</span></div></button>';
+        '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>';
+    } else {
+      grid.innerHTML = groupByDay(shown).map(function (g) {
+        return '<section class="rw-group"><h3 class="rw-day-h">' + esc(g.label) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
+      }).join('') + routeInvite();
+    }
 
     var es = document.getElementById('empty-start');
     if (es) es.addEventListener('click', function () {
       if (state.filter.mine) { state.filter.mine = false; loadBoard(); }
       else openModal(null);
     });
-    grid.querySelectorAll('[data-join]').forEach(function (el) {
-      el.addEventListener('click', function (e) { e.stopPropagation(); openDetail(el.getAttribute('data-join'), true); });
-    });
+    var rs = document.getElementById('rw-start');
+    if (rs) rs.addEventListener('click', function () { openModal(null, { from: state.filter.from, to: state.filter.to }); });
     grid.querySelectorAll('[data-view]').forEach(function (el) {
       el.addEventListener('click', function (e) { e.stopPropagation(); openDetail(el.getAttribute('data-view')); });
     });
-    grid.querySelectorAll('.lcard').forEach(function (c) {
-      c.addEventListener('click', function (e) {
-        if (e.target.closest('[data-join],[data-view],a')) return;
-        var again = e.target.closest ? e.target.closest('[data-again]') : null;
-        if (again) { startAnother(again.getAttribute('data-again')); return; }
-        // read the code off the card, not off a [data-view] button — a full van has no
-        // view button, and looking one up there left the whole card dead to a click
-        var code = c.getAttribute('data-code');
-        if (code) openDetail(code);
+    grid.querySelectorAll('[data-again]').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); startAnother(el.getAttribute('data-again')); });
+    });
+    grid.querySelectorAll('.rw').forEach(function (r) {
+      var code = r.getAttribute('data-code');
+      // the whole row opens the ride — read the code off the row, since a full van has no
+      // [data-view] button to read it from
+      r.addEventListener('click', function (e) {
+        if (e.target.closest('button,a')) return;
+        openDetail(code);
+      });
+      r.addEventListener('keydown', function (e) {
+        if (e.target !== r || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        openDetail(code);
       });
     });
-    var bm = document.getElementById('board-more');
-    if (bm) bm.addEventListener('click', function () {
-      grid.classList.add('expanded');
-      bm.remove();
-      observe();
-    });
-    var nl = document.getElementById('new-list');
-    if (nl) nl.addEventListener('click', function () { openModal(null); });
     observe();
     playSeatFills();
   }
 
-  /* A seat filling is the whole point of this board, and it was the one thing that never
-     animated. board.html:.goal-dots i carries `transition:.3s` — written for exactly this —
-     but render() rebuilds every card through innerHTML, so each <i> is a BRAND NEW element
-     with no previous state to transition from. A CSS transition cannot fire on an element
-     that did not exist a frame ago, so that rule has never once run.
+  /* A seat filling is the whole point of this board. render() rebuilds every row through
+     innerHTML, so each element is BRAND NEW with no previous state for a CSS transition to
+     start from — a transition cannot fire on an element that did not exist a frame ago.
 
-     Rather than restructure the render, the newly-filled dots are animated explicitly, and
-     only the ones that actually gained: we remember each list's committed count from the last
-     paint and animate the difference, staggered so two seats arriving read as two events. */
+     So a gain is animated explicitly, and only a real gain: we remember each list's committed
+     count from the last paint and pulse that row's seat state when it went up. */
   var _prevCommitted = Object.create(null);
   function playSeatFills() {
     var reduce = window.CH && CH.motion ? CH.motion.reduce() : false;
-    document.querySelectorAll('.lcard[data-code]').forEach(function (cardEl) {
-      var code = cardEl.getAttribute('data-code');
+    document.querySelectorAll('.rw[data-code]').forEach(function (rowEl) {
+      var code = rowEl.getAttribute('data-code');
       var L = state.byCode[code];
       if (!L) return;
       var prev = _prevCommitted[code];
@@ -634,16 +688,13 @@
       // First sight of this list, or no gain — nothing happened worth pointing at. (A LOSS
       // isn't animated either: someone leaving a ride is not a moment to celebrate.)
       if (reduce || prev == null || L.committed <= prev) return;
-      var dots = cardEl.querySelectorAll('.goal-dots i.f');
-      for (var i = prev; i < Math.min(L.committed, dots.length); i++) {
-        var d = dots[i];
-        if (!d || typeof d.animate !== 'function') continue;
-        d.animate([
-          { transform: 'scale(.2)', opacity: .25 },
-          { transform: 'scale(1.3)', opacity: 1, offset: .55 },
-          { transform: 'scale(1)', opacity: 1 },
-        ], { duration: 460, delay: (i - prev) * 90, easing: 'cubic-bezier(.22,.75,.3,1)', fill: 'backwards' });
-      }
+      var b = rowEl.querySelector('.rw-state b');
+      if (!b || typeof b.animate !== 'function') return;
+      b.animate([
+        { transform: 'scale(.85)', opacity: .4 },
+        { transform: 'scale(1.12)', opacity: 1, offset: .55 },
+        { transform: 'scale(1)', opacity: 1 },
+      ], { duration: 460, easing: 'cubic-bezier(.22,.75,.3,1)', fill: 'backwards' });
     });
   }
 
@@ -662,17 +713,17 @@
     if (mc) mc.textContent = n;
   }
 
+  // Accumulate the (from,to) PAIRS, not two loose sets — filterOptions() derives both selects
+  // from them, which is what stops the two filters offering a combination no ride matches.
+  // A place name contains spaces, slashes and brackets ("Colombo Airport (CMB)",
+  // "Sigiriya / Dambulla"), so the dedupe key joins on \u0000 — a character that cannot occur
+  // in one — rather than punctuation that could split a name in half.
+  var PAIR_SEP = '\u0000';
   function rememberPlaceOptions(lists) {
-    var seenFrom = {}, seenTo = {};
-    state.fromOptions.forEach(function (n) { seenFrom[n] = true; });
-    state.toOptions.forEach(function (n) { seenTo[n] = true; });
-    lists.forEach(function (L) {
-      if (L.from) seenFrom[L.from] = true;
-      if (L.to) seenTo[L.to] = true;
-    });
-    var abc = function (a, b) { return a.localeCompare(b); };
-    state.fromOptions = Object.keys(seenFrom).sort(abc);
-    state.toOptions = Object.keys(seenTo).sort(abc);
+    var seen = {};
+    state.pairs.forEach(function (p) { seen[p[0] + PAIR_SEP + p[1]] = true; });
+    lists.forEach(function (L) { if (L.from && L.to) seen[L.from + PAIR_SEP + L.to] = true; });
+    state.pairs = Object.keys(seen).map(function (k) { return k.split(PAIR_SEP); });
   }
 
   function renderFilters() {
@@ -686,50 +737,55 @@
     var countHtml = state.loadFailed
       ? '<span class="count count-unknown">rides unavailable</span>'
       : '<span class="count"><b>' + open + '</b> gathering now</span>';
-    /* The options come from the lists we got back, so a filter that matches nothing has no
-       option to select and the dropdown renders BLANK next to a Clear button — the traveller
+    /* Each select is narrowed by what the other one leaves possible, so every combination the
+       traveller can reach matches a real ride — and a place is never offered as its own
+       destination. filterOptions() also keeps an active value that currently matches nothing,
+       because dropping it renders the select BLANK next to a Clear button: the traveller
        arriving from a route page would see an empty filter and no rides, with no clue the two
-       were related. Always include the active value, even when it returned nothing. */
-    var withActive = function (opts, active) {
-      return active !== 'all' && opts.indexOf(active) === -1 ? opts.concat([active]) : opts;
+       were related. */
+    var opts = filterOptions(state.pairs, f);
+    var optionsHtml = function (list) {
+      return list.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
     };
     filtersEl.innerHTML =
       '<label class="fsel"><span>Leaving from</span>' +
       '<select id="f-from"><option value="all">Anywhere</option>' +
-      withActive(state.fromOptions, f.from).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      optionsHtml(opts.from) +
       '</select></label>' +
       '<label class="fsel"><span>Going to</span>' +
       '<select id="f-to"><option value="all">Anywhere</option>' +
-      withActive(state.toOptions, f.to).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      optionsHtml(opts.to) +
       '</select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
       ((f.from !== 'all' || f.to !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
-      countHtml;
+      countHtml +
+      '<button class="btn btn-primary btn-sm f-start" id="f-start">Start a ride +</button>';
     var ff = document.getElementById('f-from'), ft = document.getElementById('f-to');
     ff.value = f.from; ft.value = f.to;
     ff.addEventListener('change', function () { f.from = ff.value; f.mine = false; loadBoard(); });
     ft.addEventListener('change', function () { f.to = ft.value; f.mine = false; loadBoard(); });
     var fm = document.getElementById('f-mine');
     if (fm) fm.addEventListener('click', function () { if (f.mine) { f.mine = false; loadBoard(); } else showMine(); });
+    var fs = document.getElementById('f-start');
+    if (fs) fs.addEventListener('click', function () { openModal(null); });
     var fc = document.getElementById('f-clear');
     if (fc) fc.addEventListener('click', function () { f.from = 'all'; f.to = 'all'; f.mine = false; loadBoard(); });
   }
 
   /* ---------------- board loads ---------------- */
-  // Placeholder cards for the gap before /board answers. Worth having even though the
+  // Placeholder rows for the gap before /board answers. Worth having even though the
   // warm response is ~450ms: the API sleeps on Render's free tier, and a cold wake is
   // tens of seconds staring at an empty grid with no sign anything is happening.
   // Cleared by the first render() / error state, both of which overwrite grid.innerHTML.
   function showSkeleton(n) {
     if (!grid) return;
-    var card =
+    var row =
       '<div class="bskel" aria-hidden="true">' +
-        '<div class="bskel-line w60"></div>' +
         '<div class="bskel-line w40"></div>' +
-        '<div class="bskel-dots"><i></i><i></i><i></i><i></i></div>' +
-        '<div class="bskel-line w80"></div>' +
+        '<div class="bskel-line w60"></div>' +
+        '<div class="bskel-dots"><i></i><i></i><i></i></div>' +
       '</div>';
-    grid.innerHTML = new Array((n || 3) + 1).join(card);
+    grid.innerHTML = new Array((n || 4) + 1).join(row);
     grid.setAttribute('aria-busy', 'true');
   }
 
@@ -756,10 +812,9 @@
       });
     }).catch(function (e) {
       state.lists = [];
-      // state.fromOptions / state.toOptions are deliberately NOT cleared: they accumulate across
-      // loads, and wiping them here collapsed the place dropdowns back to "Anywhere" on a failed
-      // refresh — so a traveller who had filtered to their town silently lost the option to
-      // filter at all.
+      // state.pairs is deliberately NOT cleared: it accumulates across loads, and wiping it
+      // here collapsed the place dropdowns back to "Anywhere" on a failed refresh — so a
+      // traveller who had filtered to their town silently lost the option to filter at all.
       state.loadFailed = true;
       renderFilters();
       grid.removeAttribute('aria-busy');
@@ -793,7 +848,7 @@
     });
   }
 
-  // Best-effort: learn which board cards are mine (for the highlight + badge)
+  // Best-effort: learn which board rows are mine (for the highlight + badge)
   // without changing what's displayed.
   function refreshMineCodes() {
     if (!state.me) { state.mineCodes = new Set(); updateMyRidesButton(); return Promise.resolve(); }
@@ -802,11 +857,11 @@
       state.mineCodes = new Set(lists.map(function (L) { return L.code; }));
       lists.forEach(function (L) { state.byCode[L.code] = L; });
       updateMyRidesButton();
-      // Only repaint if that actually marks (or unmarks) a card that's on screen. This
+      // Only repaint if that actually marks (or unmarks) a row that's on screen. This
       // used to render() unconditionally, one round trip after the board had painted,
       // which rebuilt every node and re-ran the entrance animation for nothing.
       var marked = [];
-      grid.querySelectorAll('.lcard.mine').forEach(function (c) {
+      grid.querySelectorAll('.rw.mine').forEach(function (c) {
         var code = c.getAttribute('data-code');
         if (code) marked.push(code);
       });
@@ -906,25 +961,40 @@
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
       (youIn
         ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
-          '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
-      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
-      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
+      // Sharing is what fills a van, so the share block sits right under the actions. It used to
+      // sit below the deadline, reached by an "Invite someone" button whose only job was to
+      // scroll here — the same action twice, in a louder green than the primary.
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
       '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
       '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
+      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
+      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
     detailInner.querySelectorAll('[data-detail-join]').forEach(function (el) { el.addEventListener('click', function () { openModal(L.code); }); });
-    var sh = detailInner.querySelector('[data-detail-share]');
-    if (sh) sh.addEventListener('click', function () { var ds = detailInner.querySelector('.d-share'); if (ds) ds.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    // Scratching used to fire on the first click with no warning (owner, 2026-09-18). It now
+    // asks inline — nothing is sent until "Yes". Inline rather than window.confirm(): the
+    // browser dialog looks foreign to the page and some browsers suppress it.
     var scr = detailInner.querySelector('[data-scratch]');
-    if (scr) scr.addEventListener('click', function () { doScratch(L.code); });
+    if (scr) scr.addEventListener('click', function () {
+      if (detailInner.querySelector('.scratch-ask')) return;
+      var ask = document.createElement('div');
+      ask.className = 'scratch-ask';
+      ask.innerHTML = '<p><b>Scratch your name off?</b> Your card hold is released and the seat frees up. ' +
+        'You can hop back on any time while the list is still gathering.</p>' +
+        '<div class="row"><button class="btn btn-scratch btn-sm" data-scratch-yes>Yes, scratch me off</button>' +
+        '<button class="btn btn-primary btn-sm" data-scratch-keep>Keep my seat</button></div>';
+      scr.style.display = 'none'; // not `hidden`: .btn's own display rule outranks the [hidden] reset
+      scr.insertAdjacentElement('afterend', ask);
+      ask.querySelector('[data-scratch-keep]').addEventListener('click', function () { ask.remove(); scr.style.display = ''; });
+      ask.querySelector('[data-scratch-yes]').addEventListener('click', function () { ask.remove(); doScratch(L.code); });
+    });
     var cp = detailInner.querySelector('[data-copy]');
     if (cp) cp.addEventListener('click', function () {
       var self = this;
@@ -1049,6 +1119,7 @@
   }
   function setStep(i) {
     stepIdx = i;
+    clearSheetError();
     var seq = panels();
     ['mstep-0', 'mstep-1', 'mstep-2', 'mstep-3'].forEach(function (id) { document.getElementById(id).hidden = (id !== seq[i]); });
     document.getElementById('steps').innerHTML = seq.map(function (_, k) { return '<span class="step-dot ' + (k <= i ? 'on' : '') + '"></span>'; }).join('');
@@ -1137,6 +1208,48 @@
     var c = (T.CORRIDORS || []).find(function (c) { return c.stops.indexOf(a) !== -1 && c.stops.indexOf(b) !== -1; });
     return c ? { id: c.id, seat: c.seat } : null;
   }
+  // "07:30" → "7:30am", the clock style the rest of the site uses.
+  function clock12(hhmm) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); if (!m) return hhmm || '';
+    var h = Number(m[1]);
+    return ((h + 11) % 12 + 1) + ':' + m[2] + (h < 12 ? 'am' : 'pm');
+  }
+  // "We already run this on Saturdays": shown instead of the Continue button when the chosen
+  // route and date belong to the scheduled van. style.display, not `hidden` — .btn's own display
+  // rule outranks the [hidden] reset.
+  function checkSched() {
+    var stop = document.getElementById('sched-stop'), go = document.getElementById('c-continue');
+    if (!stop || !go) return;
+    var clash = scheduledClash(cFrom.value, cTo.value, cDate.value);
+    var whisper = go.parentNode.querySelector('.whisper'), est = go.parentNode.querySelector('.est');
+    stop.hidden = !clash;
+    go.style.display = clash ? 'none' : '';
+    if (whisper) whisper.style.display = clash ? 'none' : '';
+    // the board's own terms ("once 3 seats are up") would contradict an offer of a guaranteed seat
+    if (est) est.style.display = clash ? 'none' : '';
+    if (!clash) { stop.innerHTML = ''; return; }
+    var d = new Date(cDate.value + 'T00:00:00');
+    var when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    stop.innerHTML = '<b>We already run this on ' + esc(clash.weekday) + '</b>' +
+      '<p>A guaranteed seat leaves ' + esc(when) + (clash.time ? ' at ' + esc(clock12(clash.time)) : '') + ' for ' + money(clash.seat) +
+      '. Starting a second van would only split the travellers.</p>' +
+      '<a class="btn btn-primary btn-block" href="search.html?from=' + encodeURIComponent(cFrom.value) +
+      '&to=' + encodeURIComponent(cTo.value) + '&date=' + encodeURIComponent(cDate.value) + '">Book the guaranteed seat →</a>';
+  }
+  // Route + date into the start form. The dropdowns hold place IDS and the To list is only built
+  // once From is chosen, so: resolve names to ids, set From, rebuild To, THEN set To. (The old
+  // prefill wrote place NAMES straight into both before the To list existed — "Start another
+  // van" opened on two blank "Choose…" dropdowns.)
+  function prefillCreate(prefill) {
+    var fid = resolvePlaceId(prefill.from) || prefill.from || '';
+    var tid = resolvePlaceId(prefill.to) || prefill.to || '';
+    cFrom.value = fid; syncCreate();
+    cTo.value = tid; syncCreate();
+    if (prefill.date && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date) && (!cDate.min || prefill.date >= cDate.min)) cDate.value = prefill.date;
+    checkSched();
+    if (dupeTimer) clearTimeout(dupeTimer);
+    dupeTimer = setTimeout(checkDupe, 250);
+  }
   var dupeTimer = null;
   function syncCreate() {
     var from = cFrom.value;
@@ -1158,7 +1271,7 @@
     if (dests.indexOf(prev) !== -1) cTo.value = prev;
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
-      cEst.innerHTML = '$' + c.seat + ' <small>/ each</small>';
+      cEst.innerHTML = money(c.seat) + ' <small>/ each</small>';
       updateCost();
     }
     if (dupeTimer) clearTimeout(dupeTimer);
@@ -1191,14 +1304,16 @@
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
   (function () { var d = new Date(Date.now() + 3 * 864e5); cDate.value = d.toISOString().slice(0, 10); cDate.min = new Date(Date.now() + 864e5).toISOString().slice(0, 10); })();
-  cDate.addEventListener('change', function () { if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cDate.addEventListener('change', function () { checkSched(); if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cFrom.addEventListener('change', checkSched);
+  cTo.addEventListener('change', checkSched);
   cTime.addEventListener('click', function (e) {
     var b = e.target.closest('.chip'); if (!b) return;
     cTime.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('sel', x === b); });
   });
   document.getElementById('c-continue').addEventListener('click', function () {
     var c = pairCorridor(cFrom.value, cTo.value);
-    if (!c) { toast('Pick two stops on one route'); return; }
+    if (!c) { sheetError('Pick two stops on one route'); return; }
     var d = new Date(cDate.value + 'T00:00:00');
     var slot = (cTime.querySelector('.sel') || {}).dataset ? cTime.querySelector('.sel').dataset.t : 'morning';
     document.getElementById('m-route').textContent =
@@ -1218,6 +1333,15 @@
         (state.me.country ? '<span class="flag">' + flagOf(state.me.country) + '</span>' : '');
       document.getElementById('m-signed-name').textContent = 'Signed in as ' + (state.me.firstName || 'you');
       document.getElementById('m-signed-email').textContent = state.me.country ? flagOf(state.me.country) + ' ' + state.me.country : '';
+      // Prefill the dial code from their own profile country — never a hardcoded default,
+      // and never stomping a pick they already made. By INDEX, not value: dial codes
+      // collide (+1 is a dozen countries) and value-set selects the first match.
+      var cc = document.getElementById('pay-cc');
+      if (cc && !cc.value && state.me.country && window.PHONE_COUNTRIES) {
+        for (var ci = 0; ci < window.PHONE_COUNTRIES.length; ci++) {
+          if (window.PHONE_COUNTRIES[ci][0] === state.me.country) { cc.selectedIndex = ci + 1; break; } // +1: option 0 is the placeholder
+        }
+      }
     }
     populateSeats(current);
     updateCost();
@@ -1253,12 +1377,9 @@
       : 'any route · any day · you set it';
     populatePref(current ? current.slot : (prefill && prefill.slot) || 'morning');
     if (!current && prefill) {
-      var cf = document.getElementById('c-from'), ct = document.getElementById('c-to'), cd = document.getElementById('c-date');
-      if (cf) cf.value = prefill.from || '';
-      if (ct) ct.value = prefill.to || '';
-      if (cd && prefill.date) cd.value = prefill.date;
+      prefillCreate(prefill);
       var mr = document.getElementById('m-route');
-      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + (prefill.fromSearch ? ' · your date' : ' · another van, your date');
     }
     setStep(0);
     // Intent to join (or to start a van). GA4's begin_checkout is the closest
@@ -1273,7 +1394,7 @@
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
-  function closeModal() { overlay.classList.remove('open'); document.body.style.overflow = ''; creating = false; }
+  function closeModal() { clearSheetError(); overlay.classList.remove('open'); document.body.style.overflow = ''; creating = false; }
   // The phones-only bar at the bottom of the screen (board.html .start-bar). Same target as
   // the tile at the end of the grid — that one is several screen-heights down on a phone.
   var startBar = document.getElementById('start-bar-btn');
@@ -1334,8 +1455,8 @@
   document.getElementById('auth-country-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
   function doLogin() {
     var country = (document.getElementById('auth-country-in').value || '').trim().toUpperCase();
-    if (!/^[A-Za-z]{2,4}$/.test(country)) { toast('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
-    if (!state.pendingCredential) { toast('Please sign in again'); setStep(panels().indexOf('mstep-1')); return; }
+    if (!/^[A-Za-z]{2,4}$/.test(country)) { sheetError('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
+    if (!state.pendingCredential) { setStep(panels().indexOf('mstep-1')); sheetError('Please sign in again'); return; }
     var btn = document.getElementById('auth-country-go');
     btn.disabled = true; btn.textContent = 'Signing in…';
     apiPost('/board/login', { credential: state.pendingCredential, country: country }).then(function (data) {
@@ -1351,8 +1472,8 @@
       setStep(seq.indexOf('mstep-2'));
     }).catch(function (e) {
       btn.disabled = false; btn.textContent = 'Continue';
-      if (e.status === 400) toast('Sign-in failed', 'Please try again.');
-      else toast("Couldn't sign you in", 'Try again in a moment.');
+      if (e.status === 400) sheetError('Sign-in failed', 'Please try again.');
+      else sheetError("Couldn't sign you in", 'Try again in a moment.');
       report(e, 'signIn');
     });
   }
@@ -1367,11 +1488,12 @@
     var sel = document.getElementById('pay-cc');
     var list = window.PHONE_COUNTRIES;
     if (!sel || !list) return;
-    sel.innerHTML = list.map(function (c) {
+    // No hardcoded default (it used to preselect Sri Lanka, which read as "we guessed
+    // for you" — most travellers' cards aren't Lankan). The signed-in traveller's own
+    // profile country prefills it in fillConfirmStep; otherwise they pick.
+    sel.innerHTML = '<option value="" disabled selected>Country</option>' + list.map(function (c) {
       return '<option value="' + esc(c[2]) + '">' + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
     }).join('');
-    var lk = list.find(function (c) { return c[1] === 'Sri Lanka'; });
-    if (lk) sel.value = lk[2];
   })();
 
   // Joins the two fields into one E.164-ish string for the API. Borrows the two rules booking.js
@@ -1382,19 +1504,23 @@
     var raw = (document.getElementById('pay-phone').value || '').trim();
     var digits = raw.replace(/[^\d]/g, '');
     if (/^\s*\+/.test(raw)) return digits ? '+' + digits : '';
-    var code = ((sel && sel.value) || '+94').replace(/[^\d]/g, '');
+    var code = ((sel && sel.value) || '').replace(/[^\d]/g, '');
+    if (!code) return ''; // no country picked and no + typed: not a dialable number
     var number = digits.replace(/^0+/, '');
     if (code && number.indexOf(code) === 0 && number.length > code.length) number = number.slice(code.length);
     return number ? '+' + code + number : '';
   }
 
   function paymentDetails() {
+    var sel = document.getElementById('pay-cc');
+    var rawPhone = (document.getElementById('pay-phone').value || '').trim();
+    var needsCode = !/^\+/.test(rawPhone) && !(sel && sel.value);
     var phone = joinedPhone();
     var city = (document.getElementById('pay-city').value || '').trim();
     var address = (document.getElementById('pay-address').value || '').trim();
     if (!phone || !city || !address) {
-      toast('Add your billing details', 'PayHere needs these to approve your card securely.');
-      var missing = !phone ? 'pay-phone' : !city ? 'pay-city' : 'pay-address';
+      sheetError('Add your billing details', 'PayHere needs these to approve your card securely.');
+      var missing = needsCode ? 'pay-cc' : !phone ? 'pay-phone' : !city ? 'pay-city' : 'pay-address';
       document.getElementById(missing).focus();
       return null;
     }
@@ -1508,18 +1634,25 @@
       // Before any per-status handling: those branches call setStep()/toast() and assume the
       // steps are on screen.
       hideHandoff();
-      if (e.status === 401) { toast('Please sign in to continue'); state.me = null; setStep(panels().indexOf('mstep-1')); }
-      else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
-      else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
-      else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { toast('That route isn\'t served yet'); setStep(0); }
-      else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { toast('Check your billing details', 'Phone, address and city are required by PayHere.'); }
-      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
+      if (e.status === 401) { state.me = null; setStep(panels().indexOf('mstep-1')); sheetError('Please sign in to continue'); }
+      else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
+      else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
+      else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { setStep(0); sheetError('That route isn\'t served yet'); }
+      else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
+      else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
+      else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
 
   function showSuccess(L) {
     var need = Math.max(0, L.minSeats - L.committed);
     setStep(panels().length - 1);
+    // Set the header here, not only in openModal(): the PayHere-return path opens the overlay
+    // and lands on this step directly, so it kept the markup's defaults — "Add your name" over
+    // a placeholder route — on the one screen a returning payer is guaranteed to see.
+    document.getElementById('m-title').textContent = 'You’re on the list';
+    document.getElementById('m-route').textContent =
+      L.from + ' → ' + L.to + ' · ' + L.whenLabel + ' · ' + slotWindow(L.slot).label;
     var lineNo = L.members.length || 1;
     document.getElementById('yl-num').textContent = lineNo + '.';
     // your written-in row avatar
@@ -1537,14 +1670,15 @@
       if (k <= target.length) { el.innerHTML = esc(target.slice(0, k)) + '<span class="caret"></span>'; k++; setTimeout(write, 85); }
       else setTimeout(function () { var c = el.querySelector('.caret'); if (c) c.remove(); }, 900);
     })();
-    document.getElementById('done-head').textContent = creating
-      ? 'Your list is up on the board.'
-      : need === 0 ? 'Enough seats are pledged.' : 'Your name’s on the list.';
-    document.getElementById('done-sub').textContent = creating
-      ? 'You’re name #1 — ' + need + ' more and the van can run. Lists fill when their starter shares them.'
-      : need === 0
-        ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
-        : need + ' more seat' + (need > 1 ? 's' : '') + ' and the van can run.';
+    // This step has one job: get the list shared so the van fills. So the headline IS the ask
+    // (how many more), one line says why, and the share buttons follow straight away — it used
+    // to open with four blocks of copy and the buttons below the fold (owner, 2026-09-18).
+    document.getElementById('done-head').textContent = need === 0
+      ? 'Enough seats are pledged.'
+      : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the van runs.';
+    document.getElementById('done-sub').textContent = need === 0
+      ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
+      : 'Spread the word to fill the van and lock in your ≈ ' + money(L.cost) + ' seat.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
@@ -1725,6 +1859,22 @@
   }
 
   /* ---------------- boot ---------------- */
+  // board.html?from=&to=&date=&start=1 — search sends a traveller whose date is not a Wed/Sat
+  // here to start their own ride. from/to already filter the board; `start` opens the form on
+  // top of it, filled in. Consumed once, so a reload lands on the plain filtered board. A ride
+  // sheet or a PayHere return takes precedence — the traveller came back for THAT.
+  function openFromStartLink() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (q.get('start') !== '1') return;
+    var from = q.get('from'), to = q.get('to'), date = q.get('date');
+    q.delete('start');
+    var rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    if (document.body.classList.contains('detail-open') || overlay.classList.contains('open') || !from || !to) return;
+    openModal(null, { from: from, to: to, date: date, fromSearch: true });
+  }
+
   function boot() {
     var ta = document.getElementById('intro-ta');
     if (ta) ta.innerHTML = taBadge(taCaption('Rated 5.0 by ', 'travellers'));
@@ -1751,6 +1901,7 @@
       return resumePaymentFromReturn();
     }).then(function () {
       openFromHash();
+      openFromStartLink();
       window.addEventListener('hashchange', openFromHash);
       startTicker();
     });

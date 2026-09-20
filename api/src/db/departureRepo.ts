@@ -57,10 +57,10 @@ interface CorridorRoute {
 const CORRIDOR_ROUTES: CorridorRoute[] = [
   { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19, days: SHARED_SERVICE_DAYS, times: ['07:30'] },
   { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
-  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
+  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23, days: SHARED_SERVICE_DAYS, times: ['09:00'] },
   { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14, days: SHARED_SERVICE_DAYS, times: ['09:00', '14:00'] },
   { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
-  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24, days: SHARED_SERVICE_DAYS, times: ['08:30'] },
+  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama', 'Ahangama'], seat: 24, days: SHARED_SERVICE_DAYS, times: ['09:00'] },
   // The southbound airport run. Added 2026-08-16 with the catalogue: no existing corridor
   // joined the south coast to CMB, so Mirissa/Weligama -> Airport could not be represented
   // at all. Seeded by seedCorridors() at boot — no migration.
@@ -96,11 +96,18 @@ export const SHARED_PRODUCTS: SharedProduct[] = [
   { id: 'sigiriya-kandy', corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy', seatPrice: 1999, time: '11:30', pickup: 'Barista Cafe, Sigiriya' },
   // Ella run: Ella 09:00 -> Tissamaharama 11:15 (marketed as "Yala")
   { id: 'ella-yala', corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Yala', seatPrice: 2299, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
-  // Southbound: Mirissa 14:45 -> Weligama 15:00 -> Colombo 18:30 -> CMB 19:00-20:00
+  // Ella -> south coast: ONE vehicle out of Ella at 09:00, dropping Mirissa 14:30,
+  // Weligama 14:45, Ahangama 15:15 (owner's operating table, 2026-08-27). The seat is $24
+  // to every stop, so these three legs differ only in where the traveller gets out.
+  // Ella -> Mirissa is deliberately NOT sold as a shared seat (owner, 2026-08-27). The van
+  // still runs the road to Weligama and Ahangama; Mirissa is simply not an offer on it.
+  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Weligama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Ahangama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  // Southbound: Mirissa 14:45 -> Weligama 15:00 -> Colombo 18:30 -> CMB 19:00-20:00.
+  // Colombo city is NOT sold: no product page has ever carried it and it has never taken a
+  // booking. The marketed product on this van is "Mirissa/Weligama to Airport".
   { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '14:45', pickup: 'Barista Cafe, Mirissa' },
   { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '15:00', pickup: 'Nomad Cafe, Weligama' },
-  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo city', seatPrice: 2999, time: '14:45', pickup: 'Barista Cafe, Mirissa' },
-  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo city', seatPrice: 2999, time: '15:00', pickup: 'Nomad Cafe, Weligama' },
 ];
 
 const normPlace = (s: string) => s.trim().toLowerCase();

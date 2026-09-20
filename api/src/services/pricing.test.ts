@@ -205,3 +205,41 @@ describe('priceShared (engine-agnostic — the corridor DB price is already auth
     expect(priceShared(3, 2100)).toEqual({ currency: 'USD', totalCents: 6300, amountDueNowCents: 6300, priced: true });
   });
 });
+
+describe('pricing with a promo code discount (spec 2026-09-14 §7)', () => {
+  const maps = new FakeMapsAdapter();
+  const galle: SingleTransferInput = { ...base, from: 'Colombo Airport (CMB)', to: 'Galle', adults: 2, bags: 2 };
+  const tenPercent = { source: 'code' as const, method: 'percentage' as const, basisPoints: 1000, reason: 'promo code SAVE10' };
+
+  it('takes 10% off the finished single-transfer price and reports both totals', async () => {
+    const plain = await priceSingle(galle, maps);
+    const off = await priceSingle(galle, maps, RATE_CARD, tenPercent);
+    if (!plain.priced || !off.priced) throw new Error('expected both to price');
+    // $78.00 finished → 10% = 780¢ → $70.20. The 30% cap ($23.40) and the $29 floor do not bind.
+    expect(plain.totalCents).toBe(7800);
+    expect(off.discountCents).toBe(780);
+    expect(off.totalBeforeDiscountCents).toBe(7800);
+    expect(off.totalCents).toBe(7020);
+    expect(off.amountDueNowCents).toBe(7020);
+  });
+
+  it('adds no discount fields when no discount is passed', async () => {
+    const plain = await priceSingle(galle, maps);
+    expect('discountCents' in plain).toBe(false);
+    expect('totalBeforeDiscountCents' in plain).toBe(false);
+  });
+
+  it('discounts a trip the same way', async () => {
+    const t: TripInput = { ...trip, stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0], serviceType: 'private' };
+    const plain = await priceTrip(t, maps);
+    const off = await priceTrip(t, maps, RATE_CARD, tenPercent);
+    if (!plain.priced || !off.priced) throw new Error('expected both to price');
+    expect(off.discountCents).toBe(Math.floor((plain.totalCents * 1000 + 5000) / 10000));
+    expect(off.totalCents).toBe(plain.totalCents - off.discountCents!);
+  });
+
+  it('stays unpriced when the route cannot be resolved', async () => {
+    const off = await priceSingle({ ...base, from: 'Nowhere Town', to: 'Elsewhere Village' }, maps, RATE_CARD, tenPercent);
+    expect(off.priced).toBe(false);
+  });
+});

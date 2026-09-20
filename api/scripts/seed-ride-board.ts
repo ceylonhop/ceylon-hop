@@ -10,17 +10,24 @@
 //
 //  USAGE
 //    cd api
-//    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts          # seed
+//    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts          # seed (test fixture)
+//    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts --live   # seed (live board)
 //    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts --clear  # remove
 //    DATABASE_URL=<target> npx tsx scripts/seed-ride-board.ts --list   # show
 //
 //  Every seeded row is tagged INTERNALLY — members carry a `seed-` sub prefix and lists a
 //  `seed-rideboard` created_by — so --clear removes exactly what this wrote and nothing a real
 //  customer created, without any of it showing on the board. Run --clear before real traffic.
+//
+//  --live is the profile for a board real travellers can see (owner, 2026-09-19): no called-off
+//  list, dates that obey the scheduled-day rule, and a status that follows from the date the way
+//  the cutoff sweep would have left it. Its gathering lists are JOINABLE by real travellers, so
+//  it is only safe where the sweep knows not to charge a `seed-rideboard:` member.
 // ════════════════════════════════════════════════════════════════════════════
 import postgres from 'postgres';
 import { PostgresRideListRepo } from '../src/db/postgresRideListRepo';
-import { DEFAULT_CORRIDORS } from '../src/db/departureRepo';
+import { DEFAULT_CORRIDORS, serviceDaysForCorridor, sharedProductFor } from '../src/db/departureRepo';
+import { cutoffAt, policyForCorridor, SLOT_TIMES } from '../src/domain/rideList';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -203,7 +210,199 @@ async function seed(): Promise<void> {
   console.log(`\nseeded ${made} list(s). Remove them with --clear before real traffic.`);
 }
 
-const run = arg === '--clear' ? clear : arg === '--list' ? show : seed;
+// ---- the live profile -------------------------------------------------------------------
+// What a healthy board looks like on an ordinary day. Dated by days-from-today rather than by
+// weekday, because the two profiles want opposite things: the fixture pins the service days,
+// and a live board ride must AVOID them on any leg we sell as a scheduled seat (POST /board
+// answers 409 scheduled_day there, so a seeded list on one would be a list nobody could have
+// started). Status is not written here — it follows from the date, see liveStatus().
+interface LiveSpec {
+  corridorId: string;
+  fromPlace: string;
+  toPlace: string;
+  daysOut: number;
+  slot: 'morning' | 'afternoon';
+  people: ReadonlyArray<readonly [string, string]>;
+  preferredTime: string;
+  note?: string;
+}
+
+const LIVE_SPECS: LiveSpec[] = [
+  // Inside the 48h cutoff, so these are the vans already locked in.
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 1, slot: 'morning', preferredTime: '07:00',
+    people: [['Hannah', 'DE'], ['Lukas', 'DE'], ['Chloe', 'GB'], ['Daan', 'NL'], ['Ines', 'PT']],
+    note: 'Landing 05:50 from Doha — see you at arrivals.',
+  },
+  {
+    corridorId: 'hill-line', fromPlace: 'Kandy', toPlace: 'Ella',
+    daysOut: 2, slot: 'morning', preferredTime: '08:00',
+    people: [['Sophie', 'FR'], ['Julien', 'FR'], ['Emma', 'AU'], ['Jack', 'AU'], ['Marta', 'ES'], ['Noah', 'CH']],
+    note: 'Train was sold out, so a van it is.',
+  },
+  // Still gathering.
+  {
+    corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa',
+    daysOut: 4, slot: 'morning', preferredTime: '09:00',
+    people: [['Freya', 'DK'], ['Oliver', 'GB']],
+    note: 'Two backpacks and one surfboard.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Negombo', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 5, slot: 'morning', preferredTime: '08:00',
+    people: [['Katarzyna', 'PL'], ['Piotr', 'PL']],
+  },
+  {
+    corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Arugam Bay',
+    daysOut: 6, slot: 'morning', preferredTime: '08:00',
+    people: [['Liam', 'IE']],
+    note: 'Surf trip — flexible on timing.',
+  },
+  {
+    corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)',
+    daysOut: 7, slot: 'afternoon', preferredTime: '14:00',
+    people: [['Giulia', 'IT'], ['Matteo', 'IT']],
+    note: 'Flight is 23:55, so no rush on the road.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy',
+    daysOut: 8, slot: 'morning', preferredTime: '09:00',
+    people: [['Anouk', 'NL'], ['Sven', 'NL'], ['Mia', 'AT']],
+    note: 'After the sunrise climb — leaving around 9.',
+  },
+  {
+    corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Yala',
+    daysOut: 10, slot: 'morning', preferredTime: '09:00',
+    people: [['Tomás', 'AR']],
+  },
+  {
+    corridorId: 'hill-line', fromPlace: 'Kandy', toPlace: 'Ella',
+    daysOut: 12, slot: 'morning', preferredTime: '08:00',
+    people: [['Aiko', 'JP'], ['Ren', 'JP']],
+  },
+  // The long tail: peak-season trips planned months ahead (owner, 2026-09-19 — seeded in
+  // September these land in November and over Christmas / New Year). Thin on purpose: a list
+  // this far out is one or two planners, not a van.
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 48, slot: 'morning', preferredTime: '08:00',
+    people: [['Clara', 'SE'], ['Erik', 'SE']],
+    note: 'First day of three weeks — straight from the airport.',
+  },
+  {
+    corridorId: 'hill-line', fromPlace: 'Kandy', toPlace: 'Ella',
+    daysOut: 59, slot: 'morning', preferredTime: '08:00',
+    people: [['Isabel', 'CA']],
+  },
+  {
+    corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa',
+    daysOut: 70, slot: 'morning', preferredTime: '09:00',
+    people: [['Felix', 'DE'], ['Nina', 'DE']],
+    note: 'Heading down for whale season.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    daysOut: 93, slot: 'morning', preferredTime: '07:00',
+    people: [['Charlotte', 'GB'], ['James', 'GB'], ['Amelie', 'BE']],
+    note: 'Christmas in Sri Lanka — landing early morning.',
+  },
+  {
+    corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy',
+    daysOut: 95, slot: 'morning', preferredTime: '09:00',
+    people: [['Zoe', 'NZ']],
+  },
+  {
+    corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)',
+    daysOut: 101, slot: 'afternoon', preferredTime: '14:00',
+    people: [['Lucas', 'BR'], ['Camila', 'BR']],
+    note: 'Flying home before New Year.',
+  },
+];
+
+// Colombo's calendar day, not UTC's: between 18:30 and midnight UTC it is already tomorrow
+// there, and the board hides anything dated before Colombo's today.
+function isoInDays(days: number): string {
+  const d = new Date(Date.now() + 5.5 * 3600_000);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// The first date at or after `daysOut` that the board would actually have accepted.
+function liveDate(s: LiveSpec): string {
+  const scheduled = sharedProductFor(s.fromPlace, s.toPlace) !== null;
+  const serviceDays = serviceDaysForCorridor(s.corridorId);
+  for (let days = s.daysOut; ; days++) {
+    const iso = isoInDays(days);
+    const weekday = new Date(`${iso}T00:00:00Z`).getUTCDay();
+    if (!scheduled || !serviceDays.includes(weekday)) return iso;
+  }
+}
+
+// What the cutoff sweep would have made of this list by now. Past the cutoff a list is
+// either locked in or gone — there is no such thing as a gathering list inside 48 hours —
+// so a spec dated that close has to carry enough names to have run.
+function liveStatus(s: LiveSpec, date: string, minSeats: number): 'gathering' | 'confirmed' {
+  if (cutoffAt(date, s.slot).getTime() > Date.now()) return 'gathering';
+  if (s.people.length < minSeats) {
+    throw new Error(`${s.fromPlace} → ${s.toPlace} on ${date} is past its cutoff with ${s.people.length} name(s): it would have been called off, not shown`);
+  }
+  return 'confirmed';
+}
+
+async function seedLive(): Promise<void> {
+  // Everything that can throw is worked out BEFORE the first write, so a bad spec cannot
+  // leave half a board behind.
+  const plan = LIVE_SPECS.map((s) => {
+    if (!SLOT_TIMES[s.slot].includes(s.preferredTime)) {
+      throw new Error(`${s.preferredTime} is not a ${s.slot} departure time`);
+    }
+    const date = liveDate(s);
+    const policy = policyForCorridor(s.corridorId);
+    // Same rule as POST /board: a leg we sell as a scheduled seat charges that seat's price.
+    const seatPrice = sharedProductFor(s.fromPlace, s.toPlace)?.seatPrice ?? seatPriceFor(s.corridorId);
+    return { s, date, policy, seatPrice, status: liveStatus(s, date, policy.minSeats) };
+  });
+
+  for (const { s, date, policy, seatPrice, status } of plan) {
+    const list = await repo.createList({
+      corridorId: s.corridorId,
+      fromPlace: s.fromPlace,
+      toPlace: s.toPlace,
+      date,
+      slot: s.slot,
+      minSeats: policy.minSeats,
+      capacity: policy.capacity,
+      seatPrice,
+      note: s.note ?? null,
+      cutoffAt: cutoffAt(date, s.slot),
+      createdBy: SEED_CREATED_BY,
+    });
+
+    for (const [j, [firstName, country]] of s.people.entries()) {
+      await repo.addMember(list.id, {
+        sub: `${SEED_SUB}${list.code}:${j}`,
+        firstName,
+        country,
+        email: `seed.${list.code.toLowerCase()}.${j}@example.com`,
+        photoUrl: null,
+        preferredTime: s.preferredTime,
+        seats: 1,
+        preapprovalRef: null,
+      });
+    }
+
+    if (status === 'confirmed') {
+      await repo.setStatus(list.id, 'confirmed');
+      await repo.lockDeparture(list.id, s.preferredTime);
+    }
+
+    console.log(`  ${list.code}  ${s.fromPlace} → ${s.toPlace}  ${date}  ${s.people.length}/${policy.minSeats} names  ${status}`);
+  }
+  console.log(`\nseeded ${plan.length} live list(s). Remove them with --clear.`);
+}
+
+const run = arg === '--clear' ? clear : arg === '--list' ? show : arg === '--live' ? seedLive : seed;
 run()
   .then(() => sql.end())
   .catch(async (err) => {

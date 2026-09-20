@@ -63,7 +63,7 @@ async function stubApi(page) {
 test('/board does not wait for /board/me', async ({ page }) => {
   const marks = await stubApi(page);
   await page.goto('/board.html');
-  await expect(page.locator('.lcard').first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
 
   // Wait for the held request to land so both marks are populated.
   await expect.poll(() => marks.meEnd, { timeout: 10000 }).not.toBeNull();
@@ -101,9 +101,9 @@ test('the grid shows a skeleton while the board is loading', async ({ page }) =>
   await expect(grid.locator('.bskel').first()).toBeVisible();
   await expect(grid).toHaveAttribute('aria-busy', 'true');
 
-  // …and it gives way to the real cards, rather than lingering.
+  // …and it gives way to the real rows, rather than lingering.
   release();
-  await expect(page.locator('.lcard').first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
   await expect(grid.locator('.bskel')).toHaveCount(0);
   await expect(grid).not.toHaveAttribute('aria-busy', 'true');
 });

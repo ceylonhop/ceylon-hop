@@ -6,7 +6,7 @@ import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
-import { futureIsoDate } from '../testSupport/dates';
+import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
 // free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
@@ -18,14 +18,14 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
   const verifier: JwtVerifier = async () => ({
     payload: { iss: 'accounts.google.com', email: id.email, email_verified: true, name: id.name, sub: id.sub, picture: id.picture },
   });
-  const app = createApp({ rideLists, paygw, customerVerifier: verifier });
+  const app = createApp({ rideLists, paygw, customerVerifier: verifier, ...over });
   return { app, rideLists, paygw };
 }
 
@@ -459,14 +459,51 @@ describe('POST /board (create) — catalogue legs', () => {
     expect((await res.json()).list.seatPrice).toBe(1999);
   });
 
-  it('still prices an off-catalogue leg off the road distance', async () => {
-    const { app } = makeApp();
+  // Added with the five-product narrowing (2026-08-27). This leg was previously priced off
+  // the road distance at $29.50, because `ella-south` carried a corridor but no sellable
+  // legs; the product it belongs to had been selling on WordPress the whole time. Now that
+  // it is in the catalogue the board quotes the scheduled $24, so a pooled van and a
+  // scheduled seat on this leg agree — which is the rule this whole suite exists to hold.
+  // Mirissa is deliberately NOT on this list: the van runs that road, but Ella -> Mirissa is
+  // not sold as a shared seat (owner, 2026-08-27), so it must price off the road distance like
+  // any other non-catalogue leg rather than taking the $24 seat fare.
+  it('prices the Ella south-coast run from the catalogue, at every drop-off we sell', async () => {
+    for (const to of ['Weligama', 'Ahangama']) {
+      const app = catalogueApp();
+      const cookie = await loginCookie(app);
+      const res = await app.request('/board', json(cookie, {
+        from: 'Ella', to, date: '2999-08-08', slot: 'morning',
+      }));
+      expect(res.status, `Ella -> ${to}`).toBe(201);
+      expect((await res.json()).list.seatPrice, `Ella -> ${to}`).toBe(2400);
+    }
+  });
+
+  it('does NOT sell Ella -> Mirissa as a catalogue seat', async () => {
+    const app = catalogueApp();
     const cookie = await loginCookie(app);
     const res = await app.request('/board', json(cookie, {
       from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
     }));
+    // The road is still a corridor, so a list can exist — it just must not take the $24
+    // catalogue fare that Weligama and Ahangama do.
+    if (res.status === 201) expect((await res.json()).list.seatPrice).not.toBe(2400);
+  });
+
+  it('still prices an off-catalogue leg off the road distance', async () => {
+    // CMB -> Kandy rides the airport-cultural corridor (the board only pools pairs a
+    // corridor carries) but is not a product we schedule, so it prices off the road
+    // distance. (Ella -> Mirissa used to stand here; it became a catalogue leg on
+    // 2026-08-27 and now takes the $24 catalogue price.) At 113 km the fare clears the van
+    // floor, so this assertion still moves if the distance maths breaks — a short leg like
+    // Kandy -> Ella pins to the floor and would pass on any wrong distance.
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning',
+    }));
     expect(res.status).toBe(201);
-    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(164)); // fake maps km
+    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(113)); // fake maps km
   });
 
   it('does not price the REVERSE of a catalogue leg from the catalogue', async () => {
@@ -496,7 +533,9 @@ describe('POST /board (create) — pricing', () => {
       maps: { ...outage, distance: async () => null } as never,
     });
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    // Must be an OFF-catalogue leg: a catalogue leg is priced without asking Google at all,
+    // so it would never reach the outage path this test exists to cover.
+    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
     expect((await res.json()).error).toBe('cannot_price_route');
   });
@@ -511,7 +550,7 @@ describe('POST /board (create) — pricing', () => {
       maps: { ...outage, distance: async () => ({ km: 164, durationMin: 240, estimated: true }) } as never,
     });
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
   });
 });
@@ -520,15 +559,17 @@ describe('POST /board (create)', () => {
   it('creates a list and auto-joins the creator as name #1', async () => {
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
+    const res = await app.request('/board', json(cookie, { from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.list.from).toBe('Ella');
-    expect(body.list.to).toBe('Mirissa');
+    expect(body.list.from).toBe('Colombo Airport (CMB)');
+    expect(body.list.to).toBe('Kandy');
     // Priced off the road distance via the engine (van fare / 3, to the nearest 50c) rather than
-    // the corridor's old hand-set rate — Ella → Mirissa is 164 km, so $88.64 van → $29.50 a seat.
-    expect(body.list.seatPrice).toBe(seatPriceForDistance(164));
-    expect(body.list.seatPrice).toBe(2950);
+    // the corridor's own hand-set rate — the fake maps return 113 km, so $61.08 van → $20.50 a
+    // seat. CMB → Kandy is deliberately an OFF-catalogue leg: a leg we schedule takes its
+    // catalogue price instead, which is what the 'catalogue legs' suite above covers.
+    expect(body.list.seatPrice).toBe(seatPriceForDistance(113));
+    expect(body.list.seatPrice).toBe(2050);
     expect(body.list.members[0].firstName).toBe('Roshen');
     expect(body.list.committed).toBe(1);
   });
@@ -598,5 +639,113 @@ describe('ride board CSRF', () => {
     });
     expect(res.status).toBe(200);
     expect(await names(app, code)).toHaveLength(0);
+  });
+});
+
+// PayHere sends the payer back to return_url / cancel_url. Those were built from APP_BASE_URL,
+// which on prod is the apex — still the old WordPress site until cutover — so a traveller who
+// approved a card on prod.ceylonhop.com landed on WordPress's 404 (owner, 2026-09-18). The board
+// page IS the return page, so the return goes back to the origin the board was used from. Only
+// an allow-listed origin qualifies: the CSRF guard already refuses others, and the allow-list is
+// what keeps this from being a redirect-anywhere.
+describe('PayHere return_url — back to the board the traveller was on', () => {
+  const ORIGIN = 'https://ceylonhop.github.io'; // on the default allow-list, not the bookingBaseUrl
+  const withOrigin = (cookie: string, body: unknown) => {
+    const r = json(cookie, body);
+    return { ...r, headers: { ...r.headers, origin: ORIGIN } };
+  };
+
+  it('join: returns to the request origin when it is allow-listed', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1 }))).status).toBe(200);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+    expect(paygw.preapprovals[0].cancelUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=.*&cancelled=1$`));
+  });
+
+  it('create: returns to the request origin when it is allow-listed', async () => {
+    const { app, paygw } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', withOrigin(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
+  });
+
+  it('falls back to the configured base when the caller sends no Origin', async () => {
+    const { app, rideLists, paygw } = makeApp({}, { bookingBaseUrl: 'https://ceylonhop.com' });
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(paygw.preapprovals[0].returnUrl).toMatch(/^https:\/\/ceylonhop\.com\/board\.html\?ridePayment=/);
+  });
+
+  it('never returns to an origin outside the allow-list', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const r = json(cookie, { seats: 1 });
+    const res = await app.request(`/board/${l.code}/join`, { ...r, headers: { ...r.headers, origin: 'https://evil.example' } });
+    expect(res.status).toBe(403);
+    expect(paygw.preapprovals).toHaveLength(0);
+  });
+});
+
+// Search sends an off-day traveller to the board to start their own ride (spec
+// 2026-09-19-shared-ride-by-day). The other half of that bargain: on a day the SCHEDULED van
+// already runs a leg, the board must not start a second van on it — that only splits the same
+// travellers across two half-empty vehicles. Whole day, not just the van's slot: a traveller
+// who can flex between 7:30am and the afternoon is exactly the one the van needs.
+describe('POST /board (create) — a day the scheduled van already runs', () => {
+  const WED = 3, THU = 4, SAT = 6;
+  function app113km() {
+    const rideLists = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    const maps = {
+      provider: 'stub', places: async () => [], distanceVariants: async () => null,
+      distance: async () => ({ km: 113, minutes: 180, estimated: false }),
+    };
+    return { app: createApp({ rideLists, paygw, customerVerifier: verifier, maps: maps as never }), rideLists, paygw };
+  }
+
+  for (const [name, weekday] of [['Wednesday', WED], ['Saturday', SAT]] as const) {
+    it(`declines a scheduled leg on a ${name} and points at the guaranteed seat`, async () => {
+      const { app, paygw } = app113km();
+      const cookie = await loginCookie(app);
+      const date = nextIsoWeekday(weekday);
+      const res = await app.request('/board', json(cookie, {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date, slot: 'afternoon', payment: paymentDetails,
+      }));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'scheduled_day',
+        scheduled: { date, time: '07:30', pickup: 'Zen Cafe, Negombo', seatPrice: 2749 },
+      });
+      expect(paygw.preapprovals).toHaveLength(0); // no card held for a ride we refused
+    });
+  }
+
+  it('still starts that leg on a day the van does not run', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: nextIsoWeekday(THU), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('never blocks a leg we do not sell as a scheduled seat, whatever the day', async () => {
+    const { app } = app113km();
+    const cookie = await loginCookie(app);
+    // on the airport-cultural corridor, but CMB → Kandy is not a scheduled product
+    const res = await app.request('/board', json(cookie, {
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: nextIsoWeekday(WED), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBe(201);
   });
 });

@@ -12,7 +12,10 @@ async function events(page) {
 test.describe('search funnel events', () => {
   test('search + view_item_list fire on the results page', async ({ page }) => {
     await page.goto('/search.html?from=kandy&to=ella&pax=2');
-    await page.waitForSelector('#results .opt');
+    // The funnel events fire once the fares are SHOWN, not when the card's outline appears — a
+    // baked route waits on the engine (or its fallback) like any other, so view_item_list never
+    // carries a price the traveller did not see.
+    await page.waitForSelector('#results .opt-private:not(.is-pending) .veh-row a');
     const evs = await events(page);
     expect(evs).toContain('search');
     expect(evs).toContain('view_item_list');
