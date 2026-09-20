@@ -138,8 +138,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* ---------- ride rows ----------
    One ride per line: window · route · who's in · price · action. The day heading carries the
    date, so a row never repeats it. See docs/superpowers/specs/2026-09-18-ride-board-rows-design.md */
+/* the hairline belongs BETWEEN days, not under the date: a line under the heading cut the date
+   off from the rows it labels, and read exactly as heavy as a row divider. So the day's first
+   row drops its own line, and the heading gets the room that does the separating. */
 .rw-group+.rw-group{border-top:1px solid var(--line)}
-.rw-day-h{margin:0;padding:16px 24px 8px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h{margin:0;padding:26px 24px 10px;font-family:var(--display);font-weight:700;font-size:1.08rem;letter-spacing:0}
+.rw-day-h+.rw{border-top:0}
 /* the action column is a fixed width: sized per row, the widest label ("Start another van")
    pushed that row's price and seats out of line with every other row */
 /* route gets the lion's share: two tags for the longest pair we sell need ~460px; faces + state ~220px */
@@ -607,7 +611,7 @@ body.detail-open .detail{display:block}
   /* two-line rows: route + price, window + duration, faces + state + a text-link action.
      The only solid button on a phone is the start bar's; the whole row opens the ride. */
   .filters .f-start{display:none}
-  .rw-day-h{padding:14px 16px 6px}
+  .rw-day-h{padding:22px 16px 8px}
   /* the route takes the full width so the longest pair stays one line; price sits by the time */
   .rw{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"route route" "when price" "seats cta";gap:6px 12px;padding:13px 16px}
   .rw-route .rw-q{display:none}
