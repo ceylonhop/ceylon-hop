@@ -27,9 +27,9 @@ You are building the Ceylon Hop backend. Read these before acting:
 ## Maintenance mode — tweaks & bug-fixing (CURRENT PHASE, from 2026-07-13)
 
 The build phase is largely done. We are now **tweaking and fixing bugs** on a codebase that is
-close to launch (the new stack is **not yet the live customer site** — that is still WordPress —
-but the ops/quoting tool is in internal use). Change management tightens accordingly. These
-refine the Hard rules above for day-to-day changes:
+**live** (since the apex cutover on 2026-09-20 the new stack **is the customer site** at
+`ceylonhop.com`, replacing WordPress, and the ops/quoting tool is in daily use). Change
+management tightens accordingly. These refine the Hard rules above for day-to-day changes:
 
 1. **Propose before you change; wait for an explicit go.** Default for anything ambiguous or
    touching more than one file: say what you'll change and why, then wait.
@@ -53,14 +53,13 @@ refine the Hard rules above for day-to-day changes:
    (set up 2026-07-18): `main` auto-deploys to **staging** (`ceylon-hop-staging`,
    `ops.staging.ceylonhop.com`); **prod** (`ceylon-hop-api`) deploys from the **`production`**
    branch — you promote via a reviewed, CI-green PR `main → production`. **The static site
-   follows the same gate** (since 2026-09-20, Phase 1 of
-   [`docs/apex-cutover-runbook.md`](docs/apex-cutover-runbook.md)): GitHub **Pages builds from
-   `production`, not `main`** — a front-end merge to `main` is **not** live for customers until
-   it is promoted, exactly like the API. Pages currently serves `prod.ceylonhop.com`; the
-   runbook's remaining phases (not done yet) move it to `ceylonhop.com`, retire
-   `prod.ceylonhop.com`, and add a login-gated `staging.ceylonhop.com` on Cloudflare Pages built
-   from `main` — until that exists there is no hosted staging copy of the static site, so verify
-   front-end changes in the local preview. Don't ship anything to prod — **especially
+   follows the same gate** (since the apex cutover, 2026-09-20 —
+   [`docs/apex-cutover-runbook.md`](docs/apex-cutover-runbook.md)): GitHub **Pages serves
+   `ceylonhop.com` from `production`, not `main`** — a front-end merge to `main` is **not** live
+   for customers until it is promoted, exactly like the API. `prod.ceylonhop.com` is retired (it
+   404s). Still to come (runbook §7, not built yet): a login-gated `staging.ceylonhop.com` on
+   Cloudflare Pages built from `main` — until that exists there is no hosted staging copy of the
+   static site, so verify front-end changes in the local preview. Don't ship anything to prod — **especially
    schema/migrations, pricing, or config** — without the owner's explicit ok. **Merging a
    migration IS its release** (PR #50, 2026-07-16): pending migrations **auto-apply on Render
    boot**, fail-closed — so a migration hits **staging** the moment it merges to `main`, and
