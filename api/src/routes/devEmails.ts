@@ -2,7 +2,13 @@ import { Hono } from 'hono';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 import { sampleBooking, sampleVariants, sampleQuote, type SampleMode } from '../services/__fixtures__/sampleBookings';
-import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideCalledOffRefundDue } from '../services/rideBoardEmails';
+import {
+  sendRideConfirmed,
+  sendRideCancelled,
+  sendRideAtRisk,
+  sendRideCalledOffRefundDue,
+  sendRideJoined,
+} from '../services/rideBoardEmails';
 import type { RideList } from '../domain/rideList';
 import {
   sendBookingConfirmation,
@@ -72,6 +78,7 @@ const EMAILS: EmailDef[] = [
   { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
   // Ride Board (self-contained templates in rideBoardEmails.ts). Previously not previewable —
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
+  { name: 'ride-joined', label: 'Ride Board: you\'re on the list', run: (_b, e) => sendRideJoined(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, seats: 2, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' }) },
   { name: 'ride-confirmed', label: 'Ride Board: ride confirmed', run: (_b, e) => sendRideConfirmed(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE, lockedTime: '08:00' }) },
   { name: 'ride-cancelled', label: 'Ride Board: called off', run: (_b, e) => sendRideCancelled(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
   { name: 'ride-refund-due', label: 'Ride Board: called off, refund due', run: (_b, e) => sendRideCalledOffRefundDue(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },

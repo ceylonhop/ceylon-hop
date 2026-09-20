@@ -6,6 +6,7 @@ import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
+import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
@@ -18,16 +19,22 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string } = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
+  const email = over.email ?? new FakeEmailAdapter();
   const verifier: JwtVerifier = async () => ({
     payload: { iss: 'accounts.google.com', email: id.email, email_verified: true, name: id.name, sub: id.sub, picture: id.picture },
   });
-  const app = createApp({ rideLists, paygw, customerVerifier: verifier, ...over });
-  return { app, rideLists, paygw };
+  const app = createApp({ rideLists, paygw, customerVerifier: verifier, ...over, email });
+  return { app, rideLists, paygw, email };
 }
+
+// The joiner's receipt is asserted against a known origin so the link in it can be
+// checked byte-for-byte; makeApp otherwise leaves the base URL to config.
+const mailApp = (identity: Parameters<typeof makeApp>[0] = {}, email?: EmailAdapter) =>
+  makeApp(identity, { bookingBaseUrl: 'https://ceylonhop.com', email });
 
 async function loginCookie(app: ReturnType<typeof makeApp>['app'], country = 'LK'): Promise<string> {
   const res = await app.request('/board/login', {
@@ -421,6 +428,91 @@ describe('POST /board/:code/scratch', () => {
 // A pooled van and a scheduled seat on the SAME leg must cost the same, or the search page
 // shows two prices for one journey. On a catalogue leg the board takes the catalogue price;
 // everywhere else it still prices off the road distance.
+// ============================================================================
+// Joining is the moment a traveller commits a card to a ride that may never run
+// — and until this it sent them nothing at all. No record of what was pledged,
+// no charge amount, no deadline, and (once the tab closed) no way back to the
+// page that can take their name off. These pin the receipt.
+// ============================================================================
+describe('POST /board/:code/join — the traveller gets a receipt', () => {
+  it('emails the joiner their ride, with the code and a link back to it', async () => {
+    const { app, rideLists, email } = mailApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(res.status).toBe(200);
+
+    const sent = (email as FakeEmailAdapter).sent;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe('roshen@x.com');
+    expect(sent[0].html).toContain(l.code);
+    // The way out. Without a link the email is a dead end — which is half the
+    // reason it exists.
+    expect(sent[0].html).toContain(`https://ceylonhop.com/board.html#/${l.code}`);
+  });
+
+  it('does not email again when a repeat join changes nothing', async () => {
+    const { app, rideLists, email } = mailApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+
+    // The route treats a repeat join as a seat change; an unchanged one is not
+    // news, and mailing it would make a refresh look like a second booking.
+    expect((email as FakeEmailAdapter).sent).toHaveLength(1);
+  });
+
+  it('emails an updated total when the traveller changes their seat count', async () => {
+    const { app, rideLists, email } = mailApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+
+    const sent = (email as FakeEmailAdapter).sent;
+    expect(sent).toHaveLength(2);
+    // 2 x $24.00 — the amount that would actually hit the card.
+    expect(sent[1].html).toContain('$48.00');
+    expect(sent[1].html).toMatch(/2 seats/i);
+  });
+
+  it('still joins the traveller when the mail provider is down', async () => {
+    const broken: EmailAdapter = { async send() { throw new Error('provider down'); } };
+    const { app, rideLists } = mailApp({}, broken);
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    // The card is already preapproved by this point. Losing the seat because the
+    // mail provider blinked would be strictly worse than a missing email.
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).list.committed).toBe(1);
+  });
+});
+
+describe('POST /board (create) — the starter gets a receipt too', () => {
+  it('emails the traveller who starts a list', async () => {
+    const { app, email } = mailApp();
+    const cookie = await loginCookie(app);
+
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
+    }));
+    expect(res.status).toBe(201);
+    const code = (await res.json()).list.code;
+
+    // Starting a list auto-joins you as name #1 — the same commitment, so the
+    // same receipt.
+    const sent = (email as FakeEmailAdapter).sent;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].html).toContain(code);
+  });
+});
+
 describe('POST /board (create) — catalogue legs', () => {
   const noMaps = {
     provider: 'outage', places: async () => [], distanceVariants: async () => null,
