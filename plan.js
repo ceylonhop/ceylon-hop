@@ -1065,7 +1065,6 @@ function setDatesMode(mode){
   state.datesMode=mode;
   renderDatesStep();
 }
-const FLEX_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>';
 
 /* ── one date instead of eight ────────────────────────────────────────────────────────────
    An itinerary that carries nights already says how long each stop lasts, so every leg's date
@@ -1095,6 +1094,12 @@ function advance(leg){
    editing a middle leg moves the legs after it), and one they deliberately cleared stays blank
    with the running date passing straight through it. */
 function cascadeFrom(start){
+  /* Nothing to cascade THROUGH on a route with no stays: a transfer does not advance the running
+     date, so the cursor never moves and every later leg gets stamped with the same day — one
+     hand-set date silently becoming a whole itinerary on one date (owner-spotted 2026-09-19).
+     The guard lives here rather than at each call site so a future caller cannot reintroduce it;
+     canCascade() is also what hides the trip-start anchor, so the two stay in step by construction. */
+  if(!canCascade()) return;
   let cursor=null;
   for(let k=0;k<start;k++){
     const l=state.legs[k];
@@ -1188,7 +1193,7 @@ function renderDatesStep(){
         ${leg.date
           ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
               cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
-          : `<span class="dr-flex">${FLEX_ICO} Flexible for now</span>`}
+          : ''}
       </div>
       ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
     list.appendChild(row);

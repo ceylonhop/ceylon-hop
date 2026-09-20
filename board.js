@@ -150,6 +150,23 @@
       : list.whenLabel + ' · ' + s.label + ' · ' + s.range;
   }
 
+  /* ---------------- scheduled-van clash (pure) ---------------- */
+  // The board must not start a second van on a route and day the SCHEDULED one already runs —
+  // it would only split the same travellers across two half-empty vehicles (spec
+  // 2026-09-19-shared-ride-by-day). POST /board enforces it (409 scheduled_day); this is the
+  // same rule in the browser, so the start form can say so before sending anyone through
+  // sign-in. Whole day, like the API: never just the van's slot. Date-only ISO, so the weekday
+  // is the calendar day's — no time zone to get wrong.
+  var WEEKDAYS_PLURAL = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  function scheduledClash(fromId, toId, dateIso) {
+    var TR = (typeof window !== 'undefined') && window.TRANSFERS;
+    if (!fromId || !toId || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso || '') || !TR || !TR.sharedOption) return null;
+    var so = TR.sharedOption(fromId, toId);
+    var d = new Date(dateIso + 'T00:00:00Z');
+    if (!so || isNaN(d.getTime()) || (so.days || []).indexOf(d.getUTCDay()) === -1) return null;
+    return { weekday: WEEKDAYS_PLURAL[d.getUTCDay()], time: (so.times || [])[0] || null, seat: so.seat };
+  }
+
   /* ---------------- board rows (pure) ---------------- */
   // A row always shows the 2-hour window, never a pinned clock time: every other row is still
   // gathering on a window, and a column mixing "08:30" with "7–9 am" stops scanning.
@@ -370,6 +387,7 @@
     windowLabel: windowLabel,
     durationOf: durationOf,
     splitPlace: splitPlace,
+    scheduledClash: scheduledClash,
     groupByDay: groupByDay,
     rowState: rowState,
     normalizeList: normalizeList,
@@ -943,25 +961,40 @@
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
       (youIn
         ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
-          '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
-      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
-      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
+      // Sharing is what fills a van, so the share block sits right under the actions. It used to
+      // sit below the deadline, reached by an "Invite someone" button whose only job was to
+      // scroll here — the same action twice, in a louder green than the primary.
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
       '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
       '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
+      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
+      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
     detailInner.querySelectorAll('[data-detail-join]').forEach(function (el) { el.addEventListener('click', function () { openModal(L.code); }); });
-    var sh = detailInner.querySelector('[data-detail-share]');
-    if (sh) sh.addEventListener('click', function () { var ds = detailInner.querySelector('.d-share'); if (ds) ds.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    // Scratching used to fire on the first click with no warning (owner, 2026-09-18). It now
+    // asks inline — nothing is sent until "Yes". Inline rather than window.confirm(): the
+    // browser dialog looks foreign to the page and some browsers suppress it.
     var scr = detailInner.querySelector('[data-scratch]');
-    if (scr) scr.addEventListener('click', function () { doScratch(L.code); });
+    if (scr) scr.addEventListener('click', function () {
+      if (detailInner.querySelector('.scratch-ask')) return;
+      var ask = document.createElement('div');
+      ask.className = 'scratch-ask';
+      ask.innerHTML = '<p><b>Scratch your name off?</b> Your card hold is released and the seat frees up. ' +
+        'You can hop back on any time while the list is still gathering.</p>' +
+        '<div class="row"><button class="btn btn-scratch btn-sm" data-scratch-yes>Yes, scratch me off</button>' +
+        '<button class="btn btn-primary btn-sm" data-scratch-keep>Keep my seat</button></div>';
+      scr.style.display = 'none'; // not `hidden`: .btn's own display rule outranks the [hidden] reset
+      scr.insertAdjacentElement('afterend', ask);
+      ask.querySelector('[data-scratch-keep]').addEventListener('click', function () { ask.remove(); scr.style.display = ''; });
+      ask.querySelector('[data-scratch-yes]').addEventListener('click', function () { ask.remove(); doScratch(L.code); });
+    });
     var cp = detailInner.querySelector('[data-copy]');
     if (cp) cp.addEventListener('click', function () {
       var self = this;
@@ -1175,6 +1208,48 @@
     var c = (T.CORRIDORS || []).find(function (c) { return c.stops.indexOf(a) !== -1 && c.stops.indexOf(b) !== -1; });
     return c ? { id: c.id, seat: c.seat } : null;
   }
+  // "07:30" → "7:30am", the clock style the rest of the site uses.
+  function clock12(hhmm) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); if (!m) return hhmm || '';
+    var h = Number(m[1]);
+    return ((h + 11) % 12 + 1) + ':' + m[2] + (h < 12 ? 'am' : 'pm');
+  }
+  // "We already run this on Saturdays": shown instead of the Continue button when the chosen
+  // route and date belong to the scheduled van. style.display, not `hidden` — .btn's own display
+  // rule outranks the [hidden] reset.
+  function checkSched() {
+    var stop = document.getElementById('sched-stop'), go = document.getElementById('c-continue');
+    if (!stop || !go) return;
+    var clash = scheduledClash(cFrom.value, cTo.value, cDate.value);
+    var whisper = go.parentNode.querySelector('.whisper'), est = go.parentNode.querySelector('.est');
+    stop.hidden = !clash;
+    go.style.display = clash ? 'none' : '';
+    if (whisper) whisper.style.display = clash ? 'none' : '';
+    // the board's own terms ("once 3 seats are up") would contradict an offer of a guaranteed seat
+    if (est) est.style.display = clash ? 'none' : '';
+    if (!clash) { stop.innerHTML = ''; return; }
+    var d = new Date(cDate.value + 'T00:00:00');
+    var when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    stop.innerHTML = '<b>We already run this on ' + esc(clash.weekday) + '</b>' +
+      '<p>A guaranteed seat leaves ' + esc(when) + (clash.time ? ' at ' + esc(clock12(clash.time)) : '') + ' for ' + money(clash.seat) +
+      '. Starting a second van would only split the travellers.</p>' +
+      '<a class="btn btn-primary btn-block" href="search.html?from=' + encodeURIComponent(cFrom.value) +
+      '&to=' + encodeURIComponent(cTo.value) + '&date=' + encodeURIComponent(cDate.value) + '">Book the guaranteed seat →</a>';
+  }
+  // Route + date into the start form. The dropdowns hold place IDS and the To list is only built
+  // once From is chosen, so: resolve names to ids, set From, rebuild To, THEN set To. (The old
+  // prefill wrote place NAMES straight into both before the To list existed — "Start another
+  // van" opened on two blank "Choose…" dropdowns.)
+  function prefillCreate(prefill) {
+    var fid = resolvePlaceId(prefill.from) || prefill.from || '';
+    var tid = resolvePlaceId(prefill.to) || prefill.to || '';
+    cFrom.value = fid; syncCreate();
+    cTo.value = tid; syncCreate();
+    if (prefill.date && /^\d{4}-\d{2}-\d{2}$/.test(prefill.date) && (!cDate.min || prefill.date >= cDate.min)) cDate.value = prefill.date;
+    checkSched();
+    if (dupeTimer) clearTimeout(dupeTimer);
+    dupeTimer = setTimeout(checkDupe, 250);
+  }
   var dupeTimer = null;
   function syncCreate() {
     var from = cFrom.value;
@@ -1196,7 +1271,7 @@
     if (dests.indexOf(prev) !== -1) cTo.value = prev;
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
-      cEst.innerHTML = '$' + c.seat + ' <small>/ each</small>';
+      cEst.innerHTML = money(c.seat) + ' <small>/ each</small>';
       updateCost();
     }
     if (dupeTimer) clearTimeout(dupeTimer);
@@ -1229,7 +1304,9 @@
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
   (function () { var d = new Date(Date.now() + 3 * 864e5); cDate.value = d.toISOString().slice(0, 10); cDate.min = new Date(Date.now() + 864e5).toISOString().slice(0, 10); })();
-  cDate.addEventListener('change', function () { if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cDate.addEventListener('change', function () { checkSched(); if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
+  cFrom.addEventListener('change', checkSched);
+  cTo.addEventListener('change', checkSched);
   cTime.addEventListener('click', function (e) {
     var b = e.target.closest('.chip'); if (!b) return;
     cTime.querySelectorAll('.chip').forEach(function (x) { x.classList.toggle('sel', x === b); });
@@ -1300,12 +1377,9 @@
       : 'any route · any day · you set it';
     populatePref(current ? current.slot : (prefill && prefill.slot) || 'morning');
     if (!current && prefill) {
-      var cf = document.getElementById('c-from'), ct = document.getElementById('c-to'), cd = document.getElementById('c-date');
-      if (cf) cf.value = prefill.from || '';
-      if (ct) ct.value = prefill.to || '';
-      if (cd && prefill.date) cd.value = prefill.date;
+      prefillCreate(prefill);
       var mr = document.getElementById('m-route');
-      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + (prefill.fromSearch ? ' · your date' : ' · another van, your date');
     }
     setStep(0);
     // Intent to join (or to start a van). GA4's begin_checkout is the closest
@@ -1564,6 +1638,7 @@
       else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { setStep(0); sheetError('That route isn\'t served yet'); }
+      else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
       else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
@@ -1572,6 +1647,12 @@
   function showSuccess(L) {
     var need = Math.max(0, L.minSeats - L.committed);
     setStep(panels().length - 1);
+    // Set the header here, not only in openModal(): the PayHere-return path opens the overlay
+    // and lands on this step directly, so it kept the markup's defaults — "Add your name" over
+    // a placeholder route — on the one screen a returning payer is guaranteed to see.
+    document.getElementById('m-title').textContent = 'You’re on the list';
+    document.getElementById('m-route').textContent =
+      L.from + ' → ' + L.to + ' · ' + L.whenLabel + ' · ' + slotWindow(L.slot).label;
     var lineNo = L.members.length || 1;
     document.getElementById('yl-num').textContent = lineNo + '.';
     // your written-in row avatar
@@ -1589,14 +1670,15 @@
       if (k <= target.length) { el.innerHTML = esc(target.slice(0, k)) + '<span class="caret"></span>'; k++; setTimeout(write, 85); }
       else setTimeout(function () { var c = el.querySelector('.caret'); if (c) c.remove(); }, 900);
     })();
-    document.getElementById('done-head').textContent = creating
-      ? 'Your list is up on the board.'
-      : need === 0 ? 'Enough seats are pledged.' : 'Your name’s on the list.';
-    document.getElementById('done-sub').textContent = creating
-      ? 'You’re name #1 — ' + need + ' more and the van can run. Lists fill when their starter shares them.'
-      : need === 0
-        ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
-        : need + ' more seat' + (need > 1 ? 's' : '') + ' and the van can run.';
+    // This step has one job: get the list shared so the van fills. So the headline IS the ask
+    // (how many more), one line says why, and the share buttons follow straight away — it used
+    // to open with four blocks of copy and the buttons below the fold (owner, 2026-09-18).
+    document.getElementById('done-head').textContent = need === 0
+      ? 'Enough seats are pledged.'
+      : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the van runs.';
+    document.getElementById('done-sub').textContent = need === 0
+      ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
+      : 'Spread the word to fill the van and lock in your ≈ ' + money(L.cost) + ' seat.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
@@ -1777,6 +1859,22 @@
   }
 
   /* ---------------- boot ---------------- */
+  // board.html?from=&to=&date=&start=1 — search sends a traveller whose date is not a Wed/Sat
+  // here to start their own ride. from/to already filter the board; `start` opens the form on
+  // top of it, filled in. Consumed once, so a reload lands on the plain filtered board. A ride
+  // sheet or a PayHere return takes precedence — the traveller came back for THAT.
+  function openFromStartLink() {
+    var q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (q.get('start') !== '1') return;
+    var from = q.get('from'), to = q.get('to'), date = q.get('date');
+    q.delete('start');
+    var rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    if (document.body.classList.contains('detail-open') || overlay.classList.contains('open') || !from || !to) return;
+    openModal(null, { from: from, to: to, date: date, fromSearch: true });
+  }
+
   function boot() {
     var ta = document.getElementById('intro-ta');
     if (ta) ta.innerHTML = taBadge(taCaption('Rated 5.0 by ', 'travellers'));
@@ -1803,6 +1901,7 @@
       return resumePaymentFromReturn();
     }).then(function () {
       openFromHash();
+      openFromStartLink();
       window.addEventListener('hashchange', openFromHash);
       startTicker();
     });

@@ -111,7 +111,7 @@ test('the PayHere return shows success only after the API reports signed approva
   });
 
   await page.goto('/board.html?ridePayment=RBPA-test');
-  await expect(page.locator('#done-head')).toHaveText("Your name’s on the list.", { timeout: 10000 });
+  await expect(page.locator('#done-head')).toHaveText(/^You’re in — \d more and the van runs\.$/, { timeout: 10000 });
   expect(polls).toBeGreaterThanOrEqual(2);
   await expect(page).not.toHaveURL(/ridePayment/);
 });

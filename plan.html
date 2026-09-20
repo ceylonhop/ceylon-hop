@@ -358,9 +358,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
   .dr-date{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
   .dr-date .dp-btn{min-width:190px}
-  /* what a blank leg actually means, said on the row itself — and the way back out of a date */
-  .dr-flex{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;font-weight:600;color:var(--teal-deep);background:var(--pc-teal);border-radius:999px;padding:2px 9px}
-  .dr-flex svg{width:12px;height:12px;flex:none}
+  /* the way back out of a date a leg already has */
   .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
   .dr-clear:hover{color:var(--accent-deep)}
   /* where a date came from, so a cascaded one is never mistaken for one they typed */
@@ -674,13 +672,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <div data-footer></div>
 
-<script src="site.js?v=736abbfe52"></script>
+<script src="site.js?v=8531e3d6d2"></script>
 <script src="transfers-data.js?v=0ef73c634c"></script>
 <script src="tours-data.js?v=953bf693f8"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=8cc5ecdba4"></script>
+<script src="plan.js?v=55d79307cf"></script>
 </body>
 </html>

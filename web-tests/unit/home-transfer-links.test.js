@@ -1,20 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const INDEX = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
-/* The homepage's six "Popular transfers" cards are its main conversion path, and they now point
-   at /trip/<from>-to-<to>/ rather than search.html. Those pages are GENERATED, so the pair list
-   and the generated set can drift apart in either direction — add a pair here, or drop a route
-   from the generator, and the homepage ships a dead link on its most prominent cards. Nothing
-   else would catch it: the pages are built from routes-data, not from this list.
-
-   This also pins the only internal links the /trip/ pages have. Nothing else on the site links
-   to them, and an orphaned page does not rank, so losing these silently would undo the reason
-   they were pointed here. */
+/* The homepage's six "Popular transfers" cards go to search.html — the SAME page the hero search
+   lands on. Owner decision 2026-09-19: a pair has one place on the site, not two. #591 had sent
+   these to /trip/<from>-to-<to>/, so a card and a search for the same pair showed different
+   pages. The /trip/ pages stay as landing pages for visitors arriving from outside; the on-site
+   journey does not route through them. */
 
 const pairs = () => {
   const m = INDEX.match(/const POP_TRANSFERS\s*=\s*\[(.*?)\];/s);
@@ -27,17 +23,12 @@ describe('homepage popular-transfer cards', () => {
     expect(pairs().length).toBeGreaterThanOrEqual(6);
   });
 
-  it('links every pair to a route page that actually exists', () => {
-    for (const [from, to] of pairs()) {
-      const slug = `${from}-to-${to}`;
-      expect(
-        existsSync(path.join(ROOT, 'trip', slug, 'index.html')),
-        `homepage links trip/${slug}/ but no such page is generated`,
-      ).toBe(true);
-    }
+  it('sends every card to search.html, built from the pair', () => {
+    expect(INDEX).toContain('const u=new URLSearchParams({from:f,to:t}).toString();');
+    expect(INDEX).toContain('<a class="card tcard reveal" href="search.html?${u}">');
   });
 
-  it('builds the href from the pair, so it cannot drift from the list', () => {
-    expect(INDEX).toContain('href="trip/${f}-to-${t}/"');
+  it('does not send a card to a /trip/ page — one place per pair', () => {
+    expect(INDEX).not.toMatch(/class="card tcard[^"]*" href="trip\//);
   });
 });
