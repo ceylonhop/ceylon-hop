@@ -1,0 +1,227 @@
+{
+  "exportFormatVersion": 2,
+  "exportTime": "2026-09-20 00:00:00",
+  "containerVersion": {
+    "path": "accounts/0/containers/0/versions/0",
+    "accountId": "0",
+    "containerId": "0",
+    "containerVersionId": "0",
+    "name": "Meta pixel conversions (import)",
+    "container": {
+      "accountId": "0",
+      "containerId": "0",
+      "name": "ceylonhop",
+      "publicId": "GTM-NL6K22CM",
+      "usageContext": [
+        "WEB"
+      ]
+    },
+    "variable": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "1",
+        "name": "DLV - transaction_id",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "transaction_id"
+          }
+        ]
+      }
+    ],
+    "trigger": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "1",
+        "name": "CE - purchase (Meta)",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "purchase"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "2",
+        "name": "CE - begin_checkout (Meta)",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "begin_checkout"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "3",
+        "name": "CE - contact_whatsapp (Meta)",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "contact_whatsapp"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "tag": [
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "1",
+        "name": "Meta - Purchase",
+        "type": "html",
+        "notes": "The booking itself, with its real value — what every Meta ad should be optimised toward. Pixel 656008603498739. Requires ad_storage.",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n  (function () {\n    if (typeof fbq !== 'function') return;\n    var props = {};\n    var value = parseFloat(\"{{DLV - value}}\");\n    if (!isNaN(value)) { props.value = value; props.currency = \"{{DLV - currency}}\" || 'USD'; }\n    props.content_type = 'product';\n    var ref = \"{{DLV - transaction_id}}\";\n    fbq('track', \"Purchase\", props, ref ? {eventID: ref} : undefined);\n  })();\n</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "1"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "2",
+        "name": "Meta - InitiateCheckout",
+        "type": "html",
+        "notes": "Top of the paid funnel. Gives Meta a mid-funnel signal on the many visitors who never reach Purchase. Pixel 656008603498739. Requires ad_storage.",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n  (function () {\n    if (typeof fbq !== 'function') return;\n    var props = {};\n    var value = parseFloat(\"{{DLV - value}}\");\n    if (!isNaN(value)) { props.value = value; props.currency = \"{{DLV - currency}}\" || 'USD'; }\n    fbq('track', \"InitiateCheckout\", props);\n  })();\n</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "2"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "3",
+        "name": "Meta - Lead",
+        "type": "html",
+        "notes": "Most customers reach us on WhatsApp rather than paying online. GA4 counts it as a key event; Meta should too. Pixel 656008603498739. Requires ad_storage.",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n  (function () {\n    if (typeof fbq !== 'function') return;\n    var props = {};\n    props.content_name = 'whatsapp_contact';\n    fbq('track', \"Lead\", props);\n  })();\n</script>"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "3"
+        ]
+      }
+    ]
+  }
+}
