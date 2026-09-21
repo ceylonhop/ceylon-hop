@@ -54,7 +54,7 @@ test('a full van offers only "Start another van" — no second roster button', a
   const card = page.locator('.rw').first();
   await expect(card).toBeVisible({ timeout: 15000 });
 
-  await expect(card.locator('[data-again]')).toHaveText(/Start another van/);
+  await expect(card.locator('[data-again]')).toHaveText(/Start another taxi/);
   await expect(card.locator('[data-view]')).toHaveCount(0);
   await expect(card).not.toContainText("See who's on");
 });
