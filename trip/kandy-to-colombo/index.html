@@ -301,6 +301,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .trip-bookbar .tb-p{font-size:.74rem;color:var(--ink-soft,#6c6a6b);line-height:1.25}
     .trip-bookbar .tb-p b{display:block;font-size:1.2rem;color:var(--ink,#3A3739)}
     .trip-bookbar .btn{padding:13px 26px}
+    /* The bar is position:fixed, so it sits over whatever the page ends on — the footer, on
+       every one of these pages. Scoped to THIS page's own <style> (site.css's .footer is
+       untouched), so only /trip/ pages carry the extra room a fixed bar needs. */
+    .footer{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
   }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Kandy to Colombo city","item":"https://ceylonhop.com/trip/kandy-to-colombo/"}]}</script>
@@ -448,7 +452,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
 <script src="../../ch-pricing.js?v=74a30546ee"></script>
-<script src="../../route-page-fares.js?v=9cd2b7b9e0"></script>
+<script src="../../route-page-fares.js?v=2e89d5aa59"></script>
+<script src="../../route-page-select.js?v=d63c888d71"></script>
 <script src="../../route-page.js?v=1cac31d713"></script>
 </body>
 </html>
