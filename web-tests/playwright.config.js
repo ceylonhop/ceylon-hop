@@ -76,29 +76,10 @@ export default defineConfig({
   workers: E2E_API ? 4 : undefined,
   use: {
     baseURL: `http://localhost:${STATIC_PORT}`,
-    // Every spec runs as a RETURNING visitor, i.e. one who has already dismissed the beta
-    // notice. That notice is a full-screen dialog on the nine browse pages, so a fresh profile
-    // puts a scrim over the whole page and every click lands on it. Playwright's click-retry
-    // absorbed this the first time the suite ran — it went green — but green-by-retry on a
-    // modal race is a flake with a fuse in it, not a passing suite.
-    //
-    // Seeded HERE rather than in _stubs.js because only 17 of the 89 spec files use those
-    // stubs, and a full-screen dialog reaches all of them.
-    // The notice's own behaviour is covered by web-tests/unit/beta-notice.test.js and by
-    // beta-notice.spec.js, which opts back out of this state.
-    //
-    // (A 'ceylonhop_consent' seed sat here too, because the consent bar was position:fixed at
-    // z-index 9999 and intercepted clicks under it. The bar was removed on 2026-08-16 — there
-    // is nothing left to seed away.)
-    storageState: {
-      cookies: [],
-      origins: [{
-        origin: `http://localhost:${STATIC_PORT}`,
-        localStorage: [
-          { name: 'ceylonhop_beta_notice_v2', value: 'dismissed' },
-        ],
-      }],
-    },
+    // (Two localStorage seeds lived here. 'ceylonhop_consent' until the consent bar was
+    // removed 2026-08-16, and 'ceylonhop_beta_notice_v2' until the beta notice was retired
+    // 2026-09-21. Both were full-screen/fixed elements that swallowed clicks on a fresh
+    // profile; with both gone there is nothing left to seed away.)
     trace: 'on-first-retry',
   },
   projects: [
