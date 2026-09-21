@@ -155,7 +155,7 @@ export function renderFooter(p) {
   </div>
   <div class="wrap foot-bottom">
     <span>© ${YEAR} Ceylon Hop. All rights reserved.</span>
-    <span><a href="${p}terms.html">Terms</a> · <a href="${p}privacy.html">Privacy</a></span>
+    <span><a href="${p}terms.html">Terms</a> · <a href="${p}privacy.html">Privacy</a> · <a href="${p}terms.html#refunds">Cancellation policy</a> · <a href="${p}credits.html">Photo credits</a></span>
   </div>
 </footer>`;
 }
