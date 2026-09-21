@@ -726,7 +726,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
   </div>
 </footer></div>
-<script src="site.js?v=8531e3d6d2"></script>
+<script src="site.js?v=15ea8710a4"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=c72bf7be03"></script>
 <script src="transfers-data.js?v=0ef73c634c"></script>
@@ -738,7 +738,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // The hero is the immersive full-bleed photo, so the nav sits on a dark image:
   // detect the actual hero element rather than relying on a tweak default.
   const __onDark = !!document.querySelector('.hero-immersive') || __heroV==='full-bleed';
-  initChrome({active:'', onDark:__onDark});
+  initChrome({active:'', onDark:__onDark, wa:true});
 
   // append arrow to selected ghost/cta buttons
   document.querySelectorAll('.btn').forEach(b=>{ if(/(Plan a multi-stop trip|See all tours|Read the blog|different)$/.test(b.textContent.trim())) b.insertAdjacentHTML('beforeend', ICON.arrow); });
