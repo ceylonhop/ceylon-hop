@@ -144,12 +144,23 @@
     host.innerHTML=`<nav class="breadcrumbs wrap" aria-label="Breadcrumb">${items}</nav>`;
   };
 
-  // ---- WhatsApp FAB (retired) ----
-  // The floating button was removed by request; WhatsApp is still reachable
-  // from the footer, search help card and the booking summary. Kept as a
-  // no-op so existing calls don't error, and we clean up any stray FAB.
-  window.mountWA = function(){
+  // ---- WhatsApp FAB ----
+  // Floating "Chat on WhatsApp" pill, bottom-right. Opt-in per page via
+  // initChrome({wa:true}) — the home page is the only caller today. Everywhere
+  // else WhatsApp is already reachable from the footer, the search help card
+  // and the booking summary, and a FAB there fights the sticky bars, so the
+  // no-arg call every other page makes still just clears any stray button.
+  window.mountWA = function(on){
     document.querySelectorAll('.wa-fab').forEach(el=>el.remove());
+    if(!on) return;
+    const a=document.createElement('a');
+    a.className='wa-fab';
+    a.href=WA;
+    a.target='_blank';
+    a.rel='noopener';
+    a.setAttribute('aria-label','Chat with us on WhatsApp');
+    a.innerHTML=ICON.wa+'<span>Chat on WhatsApp</span>';
+    document.body.appendChild(a);
   };
 
   // ---- Shared place helpers (componentized) ----
@@ -340,7 +351,7 @@
     mountHeader(opts.active||'', opts.onDark||false, opts.navCta!==false);
     mountFooter(opts.footerCta!==false);
     if(opts.breadcrumbs) mountBreadcrumbs(opts.breadcrumbs);
-    mountWA();
+    mountWA(opts.wa===true);
     initReveal();
     // Every page gets animated <details> — the FAQ is the only user today, but this is the
     // right place for it: any page that grows one later is covered without a second thought.
