@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadTransfers } from './load-transfers.mjs';
 import { renderChrome, assetV } from './site-chrome.mjs';
+import { loadPlacePhotos, photoFor, imgTag } from './place-photos.mjs';
 
 const require = createRequire(import.meta.url);
 const { formatRouteEstimate } = require('../route-estimate.js');
@@ -22,13 +23,17 @@ const BASE_PAIRS = [
   ['ella', 'mirissa'], ['yala', 'mirissa'], ['mirissa', 'galle'], ['galle', 'ella'],
 ];
 
-// Hubs for the /trip/ index grouping.
-const HUBS = [
-  { title: 'From Colombo Airport (CMB)', match: k => k.from === 'cmb-airport' },
-  { title: 'From Colombo & Negombo', match: k => ['colombo', 'negombo'].includes(k.from) },
-  { title: 'Hill country', match: k => ['kandy', 'nuwara-eliya', 'sigiriya'].includes(k.from) },
-  { title: 'South coast & east', match: k => ['ella', 'yala', 'mirissa', 'galle', 'arugam-bay'].includes(k.from) },
+// The /trip/ index groups routes by ORIGIN, one section per place, in this fixed order —
+// verified against place-photos.json (task A1) and every BASE_PAIRS id. tripIndex() throws if a
+// generated route's origin is ever missing here, so a new place can't silently vanish from the
+// index instead of failing the build.
+const ORIGIN_ORDER = [
+  'cmb-airport', 'colombo', 'negombo', 'kandy', 'sigiriya',
+  'nuwara-eliya', 'ella', 'galle', 'mirissa', 'yala', 'arugam-bay',
 ];
+
+// The index's "Most booked" shortlist — a fixed editorial pick (brief C1 step 3), not derived.
+const POPULAR_ROUTES = [['cmb-airport', 'kandy'], ['cmb-airport', 'sigiriya'], ['kandy', 'ella'], ['ella', 'mirissa']];
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const slug = (a, b) => `${a}-to-${b}`;
@@ -421,20 +426,97 @@ ${bootScript}
 `;
 }
 
-function tripIndex(T, content) {
+// A handful of small line icons reused across the index's hero chips and trust strip.
+// Kept local (not a shared map) because nothing else on the generated pages needs them.
+const IX_ICON = {
+  pin: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  tag: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12.5V4.5h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.4"/></svg>',
+  star: '<svg viewBox="0 0 24 24" width="15" height="15" fill="#F9A429" stroke="none" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 17.5l-5.9 3.2 1.2-6.6-4.8-4.6 6.6-.9z"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z"/><path d="M9 12l2.2 2.2L15.2 10"/></svg>',
+  snow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h10a5.5 5.5 0 0 1 0 11H9"/><path d="M8 5L4 9l4 4"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.2A8 8 0 1 1 20 11.5z"/></svg>',
+};
+
+/** One row inside an origin's destination list: `a.dest` carrying the live-price hook. */
+function destRow(T, from, to, p) {
+  const q = T.privateQuote(from, to);
+  const shared = T.sharedOption(from, to);
+  const fromName = T.byId[from].name, toName = T.byId[to].name;
+  return `<li><a class="dest" href="${p}trip/${slug(from, to)}/">
+        <span class="to"><em aria-hidden="true">→</em>${esc(toName)}${shared ? `<span class="sh">Shared seat $${price(shared.seat)}</span>` : ''}</span>
+        <span class="mt">${esc(routeEstimate(q))}</span>
+        <span class="pr">from <b data-list-fare data-from-name="${esc(fromName)}" data-to-name="${esc(toName)}">$${price(q.car)}</b></span>
+      </a></li>`;
+}
+
+/** One origin's whole section: its photo, heading and destination list. */
+function originSection(T, photos, allDirs, id, p) {
+  const rs = allDirs.filter(d => d.from === id).sort((a, b) => T.byId[a.to].name.localeCompare(T.byId[b.to].name));
+  const photo = photoFor(photos, id);
+  return `<section class="origin" id="from-${id}" data-origin="${id}">
+      <div class="origin-head">
+        ${imgTag(photo, { p, sizes: '(max-width:900px) 64px, 200px' })}
+        <div><h2>From ${esc(T.byId[id].name)}</h2><span>${rs.length} route${rs.length === 1 ? '' : 's'}</span></div>
+      </div>
+      <ul class="dests">${rs.map(d => destRow(T, d.from, d.to, p)).join('')}</ul>
+    </section>`;
+}
+
+/** A "Most booked" card — `.rt-card.pop`, deliberately not `.dest`, so a route can appear here
+    AND in its origin's list without breaking the "linked exactly once" invariant. */
+function popCard(T, photos, from, to, p) {
+  const q = T.privateQuote(from, to);
+  const shared = T.sharedOption(from, to);
+  const fromName = T.byId[from].name, toName = T.byId[to].name;
+  const photo = photoFor(photos, to);
+  return `<a class="rt-card pop" href="${p}trip/${slug(from, to)}/">
+      ${shared ? `<span class="seatbadge">Shared seat $${price(shared.seat)}</span>` : ''}
+      ${imgTag(photo, { p, sizes: '(max-width:900px) 50vw, 25vw' })}
+      <span class="bd">
+        <span class="nm">${esc(fromName)} → ${esc(toName)}</span>
+        <span class="mt">${esc(routeEstimate(q))}</span>
+        <span class="fr">from <b data-list-fare data-from-name="${esc(fromName)}" data-to-name="${esc(toName)}">$${price(q.car)}</b> fixed</span>
+      </span>
+    </a>`;
+}
+
+/** The "Leaving from" jump-chip row — plain anchors to each origin's #from-<id>, so the filter
+    works before (and without) the JS that a later task adds. */
+function fromChip(T, id) {
+  return `<a class="fchip" href="#from-${id}" data-from="${id}">${esc(T.byId[id].name)}</a>`;
+}
+
+/* Hero picker: NOT a fourth place picker. The home hero's widget is wired by an inline script
+   plus site.js/transfers-data.js/maps and isn't reusable without editing site.js (out of scope
+   for this page), so this is a plain GET form straight to search.html — two text inputs sharing
+   one datalist of every catalogue place NAME (all 19 — not just the 11 this index groups by),
+   with search.html doing exactly what it already does for a Google-picked destination name:
+   T.place(id) fails to match a name, so the route asks the live pricing engine for it instead of
+   the instant catalogue quote (see search.js's own comment on this at its `engineRoute` line) —
+   already a normal, tested state on that page, not a hole this form falls into. */
+function faresForm(T, p) {
+  const options = T.PLACES.map(pl => `<option value="${esc(pl.name)}">`).join('');
+  return `<form class="ix-form" action="${p}search.html" method="get">
+        <div class="pick"><label for="ix-from">Pick-up</label><input id="ix-from" name="from" type="text" list="ix-places" placeholder="Where from?" required autocomplete="off"></div>
+        <div class="pick"><label for="ix-to">Drop-off</label><input id="ix-to" name="to" type="text" list="ix-places" placeholder="Where to?" required autocomplete="off"></div>
+        <datalist id="ix-places">${options}</datalist>
+        <button type="submit" class="btn btn-cta">See prices &amp; book</button>
+      </form>`;
+}
+
+function tripIndex(T, photos) {
   const { header, footer, headAssets, bootScript } = renderChrome({ depth: 1 });
   const p = '../';
-  const dirs = [];
-  for (const [a, b] of BASE_PAIRS) { dirs.push({ from: a, to: b }); dirs.push({ from: b, to: a }); }
-  const card = ({ from, to }) => {
-    const q = T.privateQuote(from, to);
-    return `<a class="rt-card" href="${p}trip/${slug(from, to)}/"><span class="rt-name">${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}</span><span class="rt-meta">${routeEstimate(q)} · from $${price(q.car)}</span></a>`;
-  };
-  const groups = HUBS.map(h => {
-    const inHub = dirs.filter(d => h.match(d)).sort((x, y) => T.byId[x.to].name.localeCompare(T.byId[y.to].name));
-    if (!inHub.length) return '';
-    return `<section class="section"><div class="wrap"><h2>${esc(h.title)}</h2><div class="rt-grid">${inHub.map(card).join('')}</div></div></section>`;
-  }).join('\n');
+  const dirs = allDirections();
+  for (const d of dirs) {
+    if (!ORIGIN_ORDER.includes(d.from)) throw new Error(`tripIndex: origin "${d.from}" is missing from ORIGIN_ORDER — add it or this place's routes vanish from the index`);
+  }
+
+  const heroPhoto = photoFor(photos, '_index');
+  const popHtml = POPULAR_ROUTES.map(([from, to]) => popCard(T, photos, from, to, p)).join('');
+  const chipsHtml = ORIGIN_ORDER.map(id => fromChip(T, id)).join('');
+  const originsHtml = ORIGIN_ORDER.map(id => originSection(T, photos, dirs, id, p)).join('');
 
   const url = `${ORIGIN}/trip/`;
   return `<!DOCTYPE html>
@@ -455,21 +537,161 @@ function tripIndex(T, content) {
 <meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
 <style>
-  .trip-hero{background:linear-gradient(160deg,#1E6273,#24758A 60%,#277F97);color:#fff;padding:104px 0 40px;margin-top:-74px}
-  .trip-hero h1{color:#fff;font-weight:700;max-width:20ch}
-  .trip-hero p{color:rgba(255,255,255,.9);max-width:54ch}
-  .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
-  .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
-  .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
+  /* Approved prototype: docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md,
+     renderIndex() + its "routes index" CSS block. Ported faithfully; classes renamed only where
+     the site already has a name for the thing (.rt → .rt-card, matching routePage()'s related-
+     routes cards and the no-.rt-card-on-index guard in static-chrome-crawlable.test.js). Nothing
+     here overlaps the header: unlike the hand-written pages, a generated page's <header> is a
+     normal in-flow element (no [data-header] sticky wrapper), so the hero sits under it, not
+     behind it. */
+  .hero{position:relative;color:#fff;background:#23302b;isolation:isolate;overflow:hidden}
+  .hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+  .hero::before{content:"";position:absolute;inset:0;z-index:-1;
+    background:linear-gradient(90deg,rgba(20,28,26,.78) 0%,rgba(20,28,26,.5) 48%,rgba(20,28,26,.12) 100%),
+               linear-gradient(0deg,rgba(20,28,26,.55),rgba(20,28,26,0) 45%)}
+  .hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-block:56px 0}
+  .hero-copy{padding-bottom:74px;min-height:340px;display:flex;flex-direction:column;gap:16px}
+  .hero .eyebrow{color:#fff}
+  .hero .eyebrow::before{background:var(--saffron,#F9A429)}
+  .hero h1{color:#fff;font-size:clamp(2.3rem,5.2vw,4.1rem);margin:0}
+  .hero-sub{max-width:34rem;font-size:1.02rem;color:rgba(255,255,255,.92);margin:0}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:4px 0 0;padding:0}
+  .chips li{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;font-size:.8rem;font-weight:500;
+    background:rgba(20,28,26,.55);border:1px solid rgba(255,255,255,.22)}
+  .chips svg{width:15px;height:15px;flex:none}
+
+  .fares{background:var(--paper,#fffdf8);color:var(--ink,#3A3739);border-radius:22px;padding:22px;margin-bottom:-64px;
+    box-shadow:0 24px 60px -18px rgba(30,40,36,.45),0 2px 0 rgba(255,255,255,.6) inset;display:flex;flex-direction:column;gap:12px;position:relative;z-index:2}
+  .fares h2{font-size:1.35rem;margin:0}
+  .fares .kick{font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b)}
+  .ix-form{display:flex;flex-direction:column;gap:12px}
+  .pick{display:flex;flex-direction:column;gap:6px}
+  .pick label{font-size:.66rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b)}
+  .pick input{width:100%;font:inherit;font-size:.95rem;padding:13px 14px;border:1.5px solid var(--line,#e7e3d6);border-radius:12px;background:#fff;color:var(--ink,#3A3739)}
+  .fine{font-size:.76rem;color:var(--ink-soft,#6c6a6b);text-align:center;margin:0}
+
+  .trust{background:#22302F;color:#fff}
+  .trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500}
+  .trust li{display:flex;align-items:center;gap:8px}
+  .trust svg{width:16px;height:16px;color:var(--blue,#63BFD6)}
+
+  .band{padding-block:56px}
+  .sec-head{display:flex;flex-direction:column;gap:12px;margin-bottom:34px}
+  .sec-head h2{font-size:clamp(1.8rem,3.4vw,2.6rem);margin:0}
+
+  .pop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+  .rt-card{position:relative;display:flex;flex-direction:column;background:var(--paper,#fffdf8);border:1px solid var(--line,#e7e3d6);border-radius:18px;overflow:hidden;text-decoration:none;color:inherit;transition:transform .2s,box-shadow .2s}
+  .rt-card:hover{transform:translateY(-3px);box-shadow:0 18px 34px -18px rgba(30,40,36,.45)}
+  .rt-card img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;max-width:100%}
+  .rt-card .bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
+  .rt-card .nm{font-family:var(--display,'Bodoni Moda',Georgia,serif);font-weight:700;font-size:1.12rem;line-height:1.2}
+  .rt-card .mt{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  .rt-card .fr{margin-top:8px;font-size:.84rem}
+  .rt-card .fr b{font-size:1.08rem}
+  .rt-card .seatbadge{position:absolute;top:10px;right:10px;background:var(--saffron,#F9A429);color:#3a2a08;border-radius:999px;padding:4px 10px;font-size:.66rem;font-weight:700}
+
+  .fromsticky{position:sticky;top:0;z-index:20;background:var(--cream,#F0EEE5);border-block:1px solid var(--line,#e7e3d6)}
+  .fromsticky .wrap{display:flex;align-items:center;gap:14px;padding-block:12px}
+  .fromsticky .lbl{font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);white-space:nowrap}
+  .fchips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px}
+  .fchips::-webkit-scrollbar{display:none}
+  .fchips a{flex:none;border:1px solid #d5d0bf;background:var(--paper,#fffdf8);border-radius:999px;padding:8px 15px;font-size:.84rem;font-weight:500;text-decoration:none;color:inherit}
+
+  .origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
+  .origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
+  .origin-head{display:flex;flex-direction:column;gap:6px}
+  .origin-head img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:18px;max-width:100%}
+  .origin-head h2{font-size:1.5rem;margin:8px 0 0}
+  .origin-head span{font-size:.8rem;color:var(--ink-soft,#6c6a6b)}
+  .dests{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 34px;border-top:1px solid #d5d0bf}
+  .dests a{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 14px;padding:14px 4px;border-bottom:1px solid #d5d0bf;text-decoration:none;color:inherit}
+  .dests a:hover .to{color:var(--blue-deep,#24758A)}
+  .dests .to{font-weight:600;font-size:1rem;line-height:1.3}
+  .dests .to em{font-style:normal;color:var(--blue-deep,#24758A);margin-right:6px}
+  .dests .mt{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  .dests .pr{grid-row:1/3;grid-column:2;text-align:right;font-size:.76rem;color:var(--ink-soft,#6c6a6b);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dests .pr b{font-size:1.08rem;color:var(--ink,#3A3739)}
+  .dests .sh{display:inline-block;margin-left:8px;background:#FDF0D6;color:#8A5A06;border-radius:999px;padding:2px 9px;font-size:.68rem;font-weight:700;vertical-align:1px}
+
+  .anywhere{background:#22302F;color:#fff}
+  .anywhere .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:center;padding-block:56px}
+  .anywhere h2{font-size:clamp(1.7rem,3.2vw,2.4rem);margin:0}
+  .anywhere p{color:rgba(255,255,255,.78);margin-top:10px;max-width:36rem}
+  .anywhere .acts{display:flex;flex-wrap:wrap;gap:12px}
+  .btn-line{border:1.5px solid rgba(255,255,255,.4);color:#fff;background:transparent}
+
+  @media(max-width:900px){
+    .hero .wrap{grid-template-columns:1fr;gap:0;padding-block:18px 0}
+    .hero-copy{padding-bottom:56px;gap:12px;min-height:250px}
+    .fares{margin-bottom:22px;margin-top:-36px;padding:18px}
+    .trust ul{gap:8px 18px;font-size:.78rem}
+    .band{padding-block:36px}
+    .pop{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .fromsticky{position:static}
+    .fromsticky .lbl{display:none}
+    .fchips{padding-inline:0}
+    .origins{gap:36px;padding-block:32px 54px}
+    .origin{grid-template-columns:1fr;gap:12px}
+    .origin-head{flex-direction:row;align-items:center;gap:14px}
+    .origin-head img{width:64px;height:64px;aspect-ratio:1;border-radius:14px}
+    .origin-head h2{margin-top:0;font-size:1.35rem}
+    .dests{grid-template-columns:1fr}
+    .anywhere .wrap{grid-template-columns:1fr;padding-block:40px}
+  }
 </style>
 </head>
 <body>
 ${header}
 <main>
-  <section class="trip-hero"><div class="wrap"><h1>Sri Lanka transfer routes</h1><p>Fixed-price private transfers and scheduled shared rides on the island's most popular corridors. Pick a route for prices, distance and what the drive is like.</p></div></section>
-  ${groups}
+  <section class="hero ix-hero">
+    ${imgTag(heroPhoto, { p, sizes: '100vw', eager: true, cls: 'hero-img' })}
+    <div class="wrap">
+      <div class="hero-copy">
+        <span class="eyebrow">Sri Lanka, door to door</span>
+        <h1>Sri Lanka transfer routes</h1>
+        <p class="hero-sub">Fixed-price private transfers on the island's most-travelled roads — and a shared seat where we run one. Pick a route for the price, the distance and what the drive is like.</p>
+        <ul class="chips">
+          <li>${IX_ICON.pin}${dirs.length} routes</li>
+          <li>${IX_ICON.tag}Fixed prices</li>
+          <li>${IX_ICON.star}5.0 on Tripadvisor</li>
+        </ul>
+      </div>
+      <aside class="fares" aria-label="Find a route">
+        <div><div class="kick">Any two points, door to door</div><h2>Where are you going?</h2></div>
+        ${faresForm(T, p)}
+        <p class="fine">Not on the list below? We still drive it.</p>
+      </aside>
+    </div>
+  </section>
+  <div class="trust"><div class="wrap"><ul>
+    <li>${IX_ICON.shield}Fully insured &amp; safe drivers</li>
+    <li>${IX_ICON.snow}AC cars &amp; vans</li>
+    <li>${IX_ICON.undo}Free cancellation 24h before</li>
+    <li>${IX_ICON.chat}WhatsApp support 7 days</li>
+  </ul></div></div>
+
+  <section class="band" style="padding-bottom:24px"><div class="wrap">
+    <div class="sec-head"><span class="eyebrow">Most booked</span><h2>Where most trips start</h2></div>
+    <div class="pop">${popHtml}</div>
+  </div></section>
+
+  <div class="fromsticky"><div class="wrap">
+    <span class="lbl">Leaving from</span>
+    <div class="fchips" role="group" aria-label="Leaving from">
+      <a class="fchip" href="#routes" data-from="">Everywhere</a>
+      ${chipsHtml}
+    </div>
+  </div></div>
+
+  <div class="wrap origins" id="routes">${originsHtml}</div>
+
+  <section class="anywhere"><div class="wrap">
+    <div><h2>Going somewhere that isn't listed?</h2><p>These are the roads we drive most. We price any two points in Sri Lanka, door to door — or string several stops into one trip.</p></div>
+    <div class="acts">
+      <a class="btn btn-cta" href="${p}search.html">Get a fixed price</a>
+      <a class="btn btn-line" href="${p}plan.html">Plan a multi-stop trip</a>
+    </div>
+  </div></section>
 </main>
 ${footer}
 ${bootScript}
@@ -493,12 +715,13 @@ export function loadContent() {
 export function generateAll() {
   const T = loadTransfers();
   const content = loadContent();
+  const photos = loadPlacePhotos();
   const out = new Map();
   for (const [a, b] of BASE_PAIRS) {
     out.set(`trip/${slug(a, b)}/index.html`, routePage(T, content, a, b, true));
     out.set(`trip/${slug(b, a)}/index.html`, routePage(T, content, b, a, false));
   }
-  out.set('trip/index.html', tripIndex(T, content));
+  out.set('trip/index.html', tripIndex(T, photos));
   // terms/privacy are added to the sitemap in Unit 2 (Task 2.4) via SITEMAP_EXTRA.
   out.set('sitemap.xml', sitemap(SITEMAP_EXTRA));
   return out;
