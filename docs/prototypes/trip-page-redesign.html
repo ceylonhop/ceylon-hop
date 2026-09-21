@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<!-- PROTOTYPE, not shipped. Approved 2026-09-21; spec: docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md.
+     Open from the repo root server (photos resolve to ../../img/). The dark "Mockup" bar is not part of the design. -->
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Page Redesign (prototype)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500..800&family=Poppins:wght@400;500;600;700&family=Caveat:wght@600&display=swap">
+<style>
+/* Ceylon Hop is a deliberately light-only brand (site.css: color-scheme: only light),
+   so this mockup commits to one look and paints every colour explicitly. */
+:root{
+  color-scheme: only light;
+  --blue:#63BFD6; --blue-deep:#24758A; --teal:#0AB9B6; --saffron:#F9A429; --tomato:#EC3A24;
+  --cta:#C63A24; --ink:#3A3739; --ink-soft:#6c6a6b; --cream:#F0EEE5; --cream-deep:#E4E0D2;
+  --paper:#fffdf8; --line:#e7e3d6; --wa:#2F7A47;
+  --display:'Bodoni Moda','Didot',Georgia,serif;
+  --body:'Poppins',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --hand:'Caveat','Bradley Hand',cursive;
+  --r:18px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.12;margin:0;text-wrap:balance}
+p{margin:0}
+a{color:inherit}
+button{font-family:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--blue-deep);outline-offset:2px}
+.wrap{max-width:1180px;margin-inline:auto;padding-inline:20px}
+.eyebrow{display:flex;align-items:center;gap:10px;font-size:.72rem;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--blue-deep)}
+.eyebrow::before{content:"";width:26px;height:2px;background:var(--blue)}
+
+/* ── mock switcher (not part of the design) ── */
+.mockbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:var(--ink);color:#fff}
+.mockbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding-block:9px}
+.mockbar b{font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:var(--saffron)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{border:1px solid rgba(255,255,255,.28);background:transparent;color:#fff;border-radius:999px;padding:6px 14px;font-size:.8rem;font-weight:500}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--ink);border-color:#fff;font-weight:600}
+
+/* ── site header (simplified) ── */
+.site-head{background:var(--paper);border-bottom:1px solid var(--line)}
+.site-head .wrap{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-block:14px}
+.logo{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:700;font-size:1.25rem;text-decoration:none}
+.logo img{width:24px;height:30px}
+.nav{display:flex;gap:26px;font-size:.88rem;font-weight:500}
+.nav a{text-decoration:none}
+.burger{display:none;width:26px;height:16px;border-block:2px solid var(--ink);position:relative}
+.burger::after{content:"";position:absolute;inset:5px 0 auto;height:2px;background:var(--ink)}
+
+/* ── hero ── */
+.hero{position:relative;color:#fff;background:#23302b var(--photo) center/cover no-repeat;isolation:isolate}
+.hero::before{content:"";position:absolute;inset:0;z-index:-1;
+  background:linear-gradient(90deg,rgba(20,28,26,.78) 0%,rgba(20,28,26,.5) 48%,rgba(20,28,26,.12) 100%),
+             linear-gradient(0deg,rgba(20,28,26,.55),rgba(20,28,26,0) 45%)}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-block:30px 0}
+.hero-copy{padding-bottom:74px;min-height:430px;display:flex;flex-direction:column;gap:16px}
+.hero-copy .crumb{margin-bottom:auto}
+.crumb{font-size:.8rem;opacity:.85}
+.crumb a{text-decoration:none}
+.hero .eyebrow{color:#fff}
+.hero .eyebrow::before{background:var(--saffron)}
+.hero h1{font-size:clamp(2.3rem,5.2vw,4.1rem);display:flex;flex-wrap:wrap;align-items:center;gap:.05em .32em}
+.hero h1 svg{width:.95em;height:.5em;flex:none}
+.hero-sub{max-width:34rem;font-size:1.02rem;color:rgba(255,255,255,.92)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:4px 0 0;padding:0}
+.chips li{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;font-size:.8rem;font-weight:500;
+  background:rgba(20,28,26,.55);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(6px)}
+.chips svg{width:15px;height:15px;flex:none}
+
+/* fares card — overlaps the hero's bottom edge like the home booking widget */
+.fares{background:var(--paper);color:var(--ink);border-radius:22px;padding:22px;margin-bottom:-64px;
+  box-shadow:0 24px 60px -18px rgba(30,40,36,.45),0 2px 0 rgba(255,255,255,.6) inset;display:flex;flex-direction:column;gap:12px;position:relative;z-index:2}
+.fares h2{font-size:1.35rem}
+.fares .kick{font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+.veh{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;width:100%;text-align:left;
+  background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:12px 14px}
+.veh[aria-pressed="true"]{border-color:var(--blue-deep);box-shadow:0 0 0 3px rgba(99,191,214,.28)}
+.veh svg{width:46px;height:30px;color:var(--blue-deep)}
+.veh .nm{font-weight:600;font-size:.95rem;line-height:1.3}
+.veh .cap{font-size:.78rem;color:var(--ink-soft)}
+.veh .pr{font-weight:700;font-size:1.3rem;line-height:1.1;text-align:right;font-variant-numeric:tabular-nums}
+.veh .pr small{display:block;font-weight:400;font-size:.68rem;color:var(--ink-soft)}
+.btn{display:flex;justify-content:center;align-items:center;gap:8px;border:0;border-radius:999px;padding:15px 22px;
+  font-weight:600;font-size:.98rem;text-decoration:none}
+.btn-cta{background:var(--cta);color:#fff;box-shadow:0 12px 24px -10px rgba(198,58,36,.7)}
+.btn-blue{background:var(--blue-deep);color:#fff}
+.btn-ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+.btn-wa{background:var(--wa);color:#fff}
+.btn svg{width:18px;height:18px}
+.fine{font-size:.76rem;color:var(--ink-soft);text-align:center}
+.share-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FDF0D6;border:1px solid #F3D9A4;
+  border-radius:14px;padding:11px 14px;font-size:.84rem;text-decoration:none}
+.share-strip b{font-size:1.05rem}
+.share-strip span:last-child{font-weight:600;color:var(--blue-deep);white-space:nowrap}
+
+/* ── trust strip (home's) ── */
+.trust{background:#22302F;color:#fff}
+.trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500;max-width:calc(100% - 440px)}
+.trust li{display:flex;align-items:center;gap:8px}
+.trust svg{width:16px;height:16px;color:var(--blue)}
+
+.band{padding-block:84px}
+.band-paper{background:var(--paper)}
+.band-share{padding-top:120px}
+.band-wash{background:linear-gradient(180deg,#E3EFE9,#EEF0E4)}
+.sec-head{display:flex;flex-direction:column;gap:12px;margin-bottom:34px}
+.sec-head h2{font-size:clamp(1.8rem,3.4vw,2.6rem)}
+.lede{font-size:1.04rem;color:var(--ink-soft);max-width:36rem}
+
+/* private-only note — one line, not half the page */
+.note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:36px;padding:14px 18px;border:1px dashed #cfcab8;border-radius:14px;font-size:.9rem;color:var(--ink-soft);max-width:calc(100% - 448px)}
+.note a{font-weight:600;color:var(--blue-deep)}
+
+/* ── shared ride section ── */
+.share{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:48px;align-items:start}
+.seat{display:flex;align-items:baseline;gap:8px;font-weight:700;font-size:2.6rem;line-height:1;font-variant-numeric:tabular-nums}
+.seat small{font-size:.95rem;font-weight:500;color:var(--ink-soft)}
+.tag{align-self:flex-start;background:var(--saffron);color:#3a2a08;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:5px 12px}
+.share-copy{display:flex;flex-direction:column;gap:16px}
+.times{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:.92rem;margin:0}
+.times dt{font-weight:600}
+.times dd{margin:0;color:var(--ink-soft)}
+.rides{background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:10px}
+.rides h3{font-family:var(--body);font-size:1rem;font-weight:600}
+.ride{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;text-decoration:none}
+.avs{display:flex}
+.avs i{width:28px;height:28px;border-radius:50%;border:2px solid #fff;margin-left:-8px;display:grid;place-items:center;font-style:normal;font-size:.68rem;font-weight:700;color:#fff}
+.avs i:first-child{margin-left:0}
+.ride .when{font-weight:600;font-size:.92rem;line-height:1.3}
+.ride .st{font-size:.78rem;color:var(--ink-soft)}
+.pill{font-size:.7rem;font-weight:700;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.pill.go{background:#DDF1E3;color:#1E6B39}
+.pill.need{background:#FDF0D6;color:#8A5A06}
+
+/* ── the drive: a route line with stops ── */
+.drive{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,5fr);gap:56px;align-items:center}
+.stops{list-style:none;margin:26px 0 0;padding:0;position:relative}
+.stops::before{content:"";position:absolute;left:11px;top:12px;bottom:12px;border-left:2px dotted var(--blue-deep);opacity:.55}
+.stops li{position:relative;padding:0 0 16px 40px;font-size:.96rem}
+.stops li::before{content:"";position:absolute;left:6px;top:7px;width:12px;height:12px;border-radius:50%;background:var(--paper);border:2px solid var(--blue-deep)}
+.stops li.end{font-family:var(--display);font-weight:700;font-size:1.15rem;padding-bottom:18px}
+.stops li.end::before{left:2px;top:3px;width:20px;height:20px;background:var(--blue-deep);border-color:var(--paper);box-shadow:0 0 0 2px var(--blue-deep)}
+.stops li.end.to::before{background:var(--cta);box-shadow:0 0 0 2px var(--cta)}
+.stops li:last-child{padding-bottom:0}
+.stops small{display:block;font-family:var(--body);font-weight:400;font-size:.8rem;color:var(--ink-soft)}
+.photo{position:relative;margin:0}
+.photo img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:26px;max-width:100%}
+.photo figcaption{position:absolute;left:18px;bottom:16px;background:var(--paper);border-radius:12px;padding:6px 14px;font-family:var(--hand);font-size:1.3rem;line-height:1.2;transform:rotate(-2deg);box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}
+
+/* ── included + quote ── */
+.inc{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+.inc div{display:flex;flex-direction:column;gap:8px}
+.inc svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep)}
+.inc h3{font-family:var(--body);font-size:.98rem;font-weight:600}
+.inc p{font-size:.86rem;color:var(--ink-soft)}
+.quote{margin:48px 0 0;display:grid;grid-template-columns:auto 1fr auto;gap:22px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:22px;padding:24px 28px}
+.quote img{width:64px;height:64px;border-radius:50%;object-fit:cover}
+.quote blockquote{margin:0;font-family:var(--display);font-style:italic;font-size:1.08rem;line-height:1.45}
+.quote cite{display:block;margin-top:6px;font-family:var(--body);font-style:normal;font-size:.8rem;color:var(--ink-soft)}
+.ta{text-align:center;font-size:.76rem;color:var(--ink-soft);border-left:1px solid var(--line);padding-left:22px}
+.ta b{display:block;font-size:1.7rem;color:var(--ink);line-height:1.1}
+.ta span{color:var(--saffron);letter-spacing:2px}
+
+/* ── FAQ accordion ── */
+.faq{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:56px;align-items:start}
+.faq-side{display:flex;flex-direction:column;gap:16px;align-items:flex-start}
+.faq-side h2{font-size:clamp(1.8rem,3.4vw,2.6rem)}
+.acc{border-top:1px solid #d5d0bf}
+.acc details{border-bottom:1px solid #d5d0bf}
+.acc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 2px;font-weight:600;font-size:1rem}
+.acc summary::-webkit-details-marker{display:none}
+.acc summary::after{content:"+";font-size:1.5rem;font-weight:400;color:var(--blue-deep);line-height:1;flex:none}
+.acc details[open] summary::after{content:"–"}
+.acc p{padding:0 40px 20px 2px;color:var(--ink-soft);font-size:.94rem;max-width:40rem}
+
+/* ── onward routes ── */
+.next{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.rt{position:relative;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;text-decoration:none;transition:transform .2s,box-shadow .2s}
+.rt:hover{transform:translateY(-3px);box-shadow:0 18px 34px -18px rgba(30,40,36,.45)}
+.rt img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;max-width:100%}
+.rt .bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
+.rt .nm{font-family:var(--display);font-weight:700;font-size:1.12rem;line-height:1.2}
+.rt .mt{font-size:.78rem;color:var(--ink-soft)}
+.rt .fr{margin-top:8px;font-size:.84rem}
+.rt .fr b{font-size:1.08rem}
+.rt .ret{position:absolute;top:10px;left:10px;background:var(--paper);border-radius:999px;padding:4px 10px;font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.all{display:inline-block;margin-top:24px;font-weight:600;color:var(--blue-deep)}
+
+.foot{background:var(--ink);color:rgba(255,255,255,.7);font-size:.8rem;padding-block:26px 96px;text-align:center}
+
+/* ── sticky mobile book bar ── */
+.bookbar{display:none}
+
+@media (max-width:900px){
+  .nav{display:none}.burger{display:block}
+  .hero .wrap{grid-template-columns:1fr;gap:0;padding-block:18px 0}
+  .hero-copy{padding-bottom:56px;gap:12px}
+  .hero-copy{min-height:340px}
+  .hero::before{background:linear-gradient(0deg,rgba(20,28,26,.86) 0%,rgba(20,28,26,.35) 60%,rgba(20,28,26,.45) 100%)}
+  .fares{margin-bottom:22px;margin-top:-36px;padding:18px}
+  .band-share{padding-top:54px}
+  .hero{background-color:var(--cream)}
+  .trust ul,.note{max-width:none}
+  .note{margin-top:24px}
+  .trust ul{gap:8px 18px;font-size:.78rem}
+  .band{padding-block:54px}
+  .share,.drive,.faq{grid-template-columns:1fr;gap:30px}
+  .inc{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .quote{grid-template-columns:auto 1fr;padding:20px}
+  .ta{grid-column:1/-1;border-left:0;border-top:1px solid var(--line);padding:14px 0 0}
+  .next{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .photo img{aspect-ratio:4/3}
+  .acc p{padding-right:8px}
+  .bookbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;align-items:center;justify-content:space-between;gap:14px;
+    background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -10px 30px -12px rgba(0,0,0,.25);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+  .bookbar .p{font-size:.74rem;color:var(--ink-soft);line-height:1.25}
+  .bookbar .p b{display:block;font-size:1.2rem;color:var(--ink)}
+  .bookbar .btn{padding:13px 26px}
+}
+/* On phones the fares card must sit on cream, not on the photo: the hero's photo ends where the copy ends. */
+@media (max-width:900px){
+  .hero{background-image:none}
+  .hero::before{display:none}
+  .hero-copy{position:relative;margin-inline:-20px;padding-inline:20px;background:#23302b var(--photo) center/cover no-repeat;isolation:isolate}
+  .hero-copy::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(0deg,rgba(20,28,26,.88) 0%,rgba(20,28,26,.3) 62%,rgba(20,28,26,.5) 100%)}
+  .hero .wrap{padding-top:0}
+  .hero-copy{padding-top:18px}
+}
+
+/* ── routes index ── */
+.ix-hero .wrap{grid-template-columns:minmax(0,1fr) 400px}
+.ix-hero .hero-copy{min-height:340px}
+.pick{display:flex;flex-direction:column;gap:6px}
+.pick label{font-size:.66rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+.pick input{width:100%;font:inherit;font-size:.95rem;padding:13px 14px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+.pop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.rt .seatbadge{position:absolute;top:10px;right:10px;background:var(--saffron);color:#3a2a08;border-radius:999px;padding:4px 10px;font-size:.66rem;font-weight:700}
+.fromsticky{position:sticky;top:calc(env(safe-area-inset-top,0px) + 46px);z-index:20;background:var(--cream);border-block:1px solid var(--line)}
+.fromsticky .wrap{display:flex;align-items:center;gap:14px;padding-block:12px}
+.fromsticky .lbl{font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);white-space:nowrap}
+.fchips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px}
+.fchips::-webkit-scrollbar{display:none}
+.fchips button{flex:none;border:1px solid #d5d0bf;background:var(--paper);border-radius:999px;padding:8px 15px;font-size:.84rem;font-weight:500}
+.fchips button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
+.origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
+.origin-head{display:flex;flex-direction:column;gap:6px;position:relative}
+.origin-head img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:var(--r);max-width:100%}
+.origin-head h2{font-size:1.5rem;margin-top:8px}
+.origin-head span{font-size:.8rem;color:var(--ink-soft)}
+.dests{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 34px;border-top:1px solid #d5d0bf}
+.dests a{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 14px;padding:14px 4px;border-bottom:1px solid #d5d0bf;text-decoration:none}
+.dests a:hover .to{color:var(--blue-deep)}
+.dests .to{font-weight:600;font-size:1rem;line-height:1.3}
+.dests .to em{font-style:normal;color:var(--blue-deep);margin-right:6px}
+.dests .mt{font-size:.78rem;color:var(--ink-soft)}
+.dests .pr{grid-row:1/3;grid-column:2;text-align:right;font-size:.76rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dests .pr b{font-size:1.08rem;color:var(--ink)}
+.dests .sh{display:inline-block;margin-left:8px;background:#FDF0D6;color:#8A5A06;border-radius:999px;padding:2px 9px;font-size:.68rem;font-weight:700;vertical-align:1px}
+.anywhere{background:#22302F;color:#fff}
+.anywhere .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:center;padding-block:64px}
+.anywhere h2{font-size:clamp(1.7rem,3.2vw,2.4rem)}
+.anywhere p{color:rgba(255,255,255,.78);margin-top:10px;max-width:36rem}
+.anywhere .acts{display:flex;flex-wrap:wrap;gap:12px}
+.btn-line{border:1.5px solid rgba(255,255,255,.4);color:#fff;background:transparent}
+@media (max-width:900px){
+  .ix-hero .hero-copy{min-height:250px}
+  .pop{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .fromsticky{top:calc(env(safe-area-inset-top,0px) + 0px);position:static}
+  .fromsticky .lbl{display:none}
+  .fromsticky .wrap{padding-inline:0}
+  .fchips{padding-inline:20px}
+  .origins{gap:36px;padding-block:32px 54px}
+  .origin{grid-template-columns:1fr;gap:12px}
+  .origin-head{flex-direction:row;align-items:center;gap:14px}
+  .origin-head img{width:64px;aspect-ratio:1;border-radius:14px}
+  .origin-head h2{margin-top:0;font-size:1.35rem}
+  .origin-head div{display:flex;flex-direction:column}
+  .dests{grid-template-columns:1fr}
+  .anywhere .wrap{grid-template-columns:1fr;padding-block:48px}
+}
+@media (prefers-reduced-motion:reduce){.rt{transition:none}}
+</style>
+</head><body>
+
+<div class="mockbar"><div class="wrap">
+  <b>Mockup</b>
+  <div class="seg" role="group" aria-label="Route shown">
+    <button type="button" id="pick-ke" data-route="ke" aria-pressed="true">Kandy → Ella · private only</button>
+    <button type="button" id="pick-cs" data-route="cs" aria-pressed="false">Airport → Sigiriya · with shared ride</button>
+    <button type="button" id="pick-ix" data-route="ix" aria-pressed="false">All routes · /trip/</button>
+  </div>
+</div></div>
+
+<header class="site-head"><div class="wrap">
+  <a class="logo" href="#"><img src="../../img/brand-c.svg" alt="">Ceylon Hop</a>
+  <nav class="nav" aria-label="Main"><a href="#">Plan a trip</a><a href="#">Share a ride</a><a href="#">Tours</a><a href="#">Travel Guide</a><a href="#">Why us</a><a href="#">About</a></nav>
+  <span class="burger" aria-hidden="true"></span>
+</div></header>
+
+<main id="page"></main>
+
+<div class="foot">Footer unchanged — the real one ships in the HTML for SEO.</div>
+
+<div class="bookbar" id="bookbar"></div>
+
+<script>
+(function(){
+  var I = {
+    arrow:'<svg viewBox="0 0 38 20" fill="none" stroke="#63BFD6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12c4-7 8-7 12 0s8 7 12 0c1.6-2.6 3.4-4 6-4"/><path d="M28 3l6 5-6 5"/></svg>',
+    pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.500C5 14.800 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/></svg>',
+    star:'<svg viewBox="0 0 24 24" fill="#F9A429" stroke="none"><path d="M12 2.500l2.900 6.100 6.600.900-4.800 4.600 1.200 6.600L12 17.500l-5.900 3.200 1.200-6.600L2.500 9.500l6.600-.900z"/></svg>',
+    cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.500" y="5" width="17" height="15" rx="3"/><path d="M8 3v4M16 3v4M3.500 10.500h17"/></svg>',
+    shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.500c0 4.500-3 8-7 9.500-4-1.500-7-5-7-9.500V6z"/><path d="M9 12l2.200 2.200L15.200 10"/></svg>',
+    snow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M4.200 7.500l15.600 9M19.800 7.500l-15.600 9"/></svg>',
+    undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h10a5.500 5.500 0 0 1 0 11H9"/><path d="M8 5L4 9l4 4"/></svg>',
+    chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.500a8 8 0 0 1-11.800 7L4 20l1.500-4.200A8 8 0 1 1 20 11.500z"/></svg>',
+    tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.500 12.500V4.500h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.400"/></svg>',
+    door:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10l8-6 8 6v10z"/><path d="M10 20v-6h4v6"/></svg>',
+    car:'<svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-4.500l5-1.500 4.500-6.500h14l6 6.500 6.500 1.500c1.500.4 2 1.300 2 2.500V20h-4"/><path d="M13 20h16"/><circle cx="10" cy="21" r="3.500"/><circle cx="33" cy="21" r="3.500"/><path d="M14.500 13.500h17"/></svg>',
+    van:'<svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V8.500C3 7.100 4.100 6 5.500 6H29l8 8 4 1.500c1 .4 2 1.300 2 2.500v2h-3"/><path d="M13.500 20H30"/><circle cx="10" cy="21" r="3.500"/><circle cx="34" cy="21" r="3.500"/><path d="M8 10.500h7v4H8zM19 10.500h8l4 4H19z"/></svg>'
+  };
+
+  var R = {
+    ke:{from:'Kandy',to:'Ella',km:'135 km',time:'3h 45m',car:66,van:89,hero:'../../img/cta-nine-arch.jpg',
+      sub:'The full hill-country traverse — tea, waterfalls and hairpins — in your own AC car or van, door to door.',
+      driveH:'Tea, waterfalls and hairpins',
+      intro:"This is the full hill-country traverse, from Kandy's lake to the Ella Gap. Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg.",
+      stops:[['Ramboda Falls','tumbling beside the A5'],['Tea factory tours','between Pussellawa and Nuwara Eliya'],['The hill train','hop on for part of the way, your bags ride ahead'],['Ella Gap views','on the hill road in']],
+      endNote:'Nine Arch Bridge is a short tuk-tuk ride away',
+      photo:'../../img/tour-classic-hop-2.jpg',cap:'tea country, about halfway',
+      shared:null,
+      faq:[['How long does the drive take?','Plan for approx. 135 km · 3h 45m by road. Your driver takes the fastest safe route and can add stops along the way.'],
+           ['How much is a taxi from Kandy to Ella?','A private car is from $66 and an air-conditioned van (up to 6 people) from $89, fixed and door to door — the price you see is the price you pay.'],
+           ['Is there a shared taxi on this route?','Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you’d like to share, message us and we’ll suggest the nearest route travellers are pooling.'],
+           ['Can we stop along the way?','Of course. A private transfer is yours for the trip — tell your driver where you’d like to stop for photos, lunch or a quick sight and they’ll build it in.'],
+           ['How do I book?','Get an instant fixed price and book online, or message us on WhatsApp and we’ll arrange it. You pay securely online to confirm your booking.']],
+      nextH:'Where next from Ella?',
+      next:[['Ella','Kandy','135 km · 3h 45m',66,'../../img/about-train.jpg',true],['Ella','Nuwara Eliya','55 km · 1h 45m',29,'../../img/tour-tea-and-trains.jpg'],['Ella','Mirissa','175 km · 3h',75,'../../img/tour-coast-honeymoon.jpg'],['Ella','Yala','125 km · 3h 15m',55,'../../img/tour-wild-ceylon.jpg']]},
+    cs:{from:'Colombo Airport',to:'Sigiriya',km:'150 km',time:'3h 15m',car:67,van:89.99,hero:'../../img/tour-classic-hop.jpg',
+      sub:'Straight from arrivals into the Cultural Triangle. Take your own car, or split one van from $27.49 a seat.',
+      driveH:'Coconut country to the rock',
+      intro:"The road runs through Kurunegala's coconut country before opening onto dry-zone plains, with Dambulla's cave temples a natural first stop before Sigiriya rock rises ahead.",
+      stops:[['Kurunegala','coconut-triangle scenery'],['Dambulla cave temples','painted caves, right on the route'],['Minneriya','seasonal elephant gatherings nearby']],
+      endNote:'Pidurangala rock for a sunrise climb',
+      photo:'../../img/tour-cultural-triangle.jpg',cap:'Dambulla caves, on the way',
+      shared:{seat:'27.49',min:3,times:[['7:00am','CMB Airport'],['7:30am','Zen Cafe, Negombo']],going:10,
+        rides:[['Mon 21 Sep · morning','5 going','go','Running',['H','L','C','+2']],['Sun 8 Nov · morning','2 going','need','1 more to run',['C','E']],['Tue 22 Dec · morning','3 going','go','Running',['C','J','A']]]},
+      faq:[['How long does the drive take?','Plan for approx. 150 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way.'],
+           ['How much is a taxi from the airport to Sigiriya?','A private car is from $67 and an air-conditioned van (up to 6 people) from $89.99, fixed and door to door. A shared seat is from $27.49 per person.'],
+           ['How does the shared taxi work?','Pick the date you want to travel. When 3 travellers are going on that date the van runs, and everyone pays $27.49 a seat. Your card is saved when you add your name and is only charged once the van is confirmed — if it never fills, you pay nothing.'],
+           ['Can we stop along the way?','On a private transfer, of course — tell your driver where you’d like to stop. The shared van runs direct.'],
+           ['How do I book?','Get an instant fixed price and book online, or message us on WhatsApp and we’ll arrange it.']],
+      nextH:'Where next from Sigiriya?',
+      next:[['Sigiriya','Colombo Airport','150 km · 3h 15m',67,'../../img/why-viewpoint.jpg',true],['Sigiriya','Kandy','90 km · 2h 30m',39,'../../img/tour-tea-and-trains.jpg'],['Colombo Airport','Kandy','120 km · 3h',49.99,'../../img/about-train.jpg'],['Colombo Airport','Galle','155 km · 2h 15m',67,'../../img/tour-grand-island-loop.jpg']]}
+  };
+
+  var AV = ['#24758A','#F9A429','#2F8F8A','#6c6a6b'];
+  function $(n){return Number.isInteger(n)?String(n):n.toFixed(2)}
+
+  function render(key){
+    var r = R[key], s = r.shared, h = '';
+    h += '<section class="hero" style="--photo:url('+r.hero+')"><div class="wrap">'
+      + '<div class="hero-copy">'
+      + '<div class="crumb"><a href="#">Home</a> · <a href="#">Routes</a> · '+r.from+' to '+r.to+'</div>'
+      + '<h1>'+r.from+' '+I.arrow+' '+r.to+'</h1>'
+      + '<p class="hero-sub">'+r.sub+'</p>'
+      + '<ul class="chips"><li>'+I.pin+r.km+' · '+r.time+'</li><li>'+I.cal+'Runs every day</li><li>'+I.star+'5.0 on Tripadvisor</li></ul>'
+      + '</div>'
+      + '<aside class="fares" aria-label="Fares"><div><div class="kick">Private transfer · door to door</div><h2>Your own car, fixed price</h2></div>'
+      + '<button type="button" class="veh" id="veh-car" data-veh="car" aria-pressed="true">'+I.car+'<span><span class="nm">AC car</span><br><span class="cap">up to 3 travellers + bags</span></span><span class="pr">$'+$(r.car)+'<small>total, fixed</small></span></button>'
+      + '<button type="button" class="veh" id="veh-van" data-veh="van" aria-pressed="false">'+I.van+'<span><span class="nm">AC van</span><br><span class="cap">up to 6 travellers + bags</span></span><span class="pr">$'+$(r.van)+'<small>total, fixed</small></span></button>'
+      + '<a class="btn btn-cta" href="#">Choose date &amp; book</a>'
+      + '<p class="fine">Free cancellation up to 24h before · no change fees</p>'
+      + (s ? '<a class="share-strip" href="#share"><span>Or share the van<br><b>$'+s.seat+'</b> a seat</span><span>See who’s going ↓</span></a>' : '')
+      + '</aside></div></section>';
+
+    h += '<div class="trust"><div class="wrap"><ul><li>'+I.shield+'Fully insured &amp; safe drivers</li><li>'+I.snow+'AC cars &amp; vans</li><li>'+I.undo+'Free cancellation 24h before</li><li>'+I.chat+'WhatsApp support 7 days</li></ul></div></div>';
+
+    if(!s){
+      h += '<div class="wrap"><p class="note"><span>No shared van runs '+r.from+' → '+r.to+'. For three or more, a private car often works out close to a seat price.</span><a href="#">Or start a ride on the board →</a></p></div>';
+    }
+
+    if(s){
+      h += '<section class="band band-share" id="share"><div class="wrap share">'
+        + '<div class="share-copy"><span class="tag">Best value · share &amp; save</span><h2 style="font-size:clamp(1.8rem,3.4vw,2.6rem)">One van, split between you</h2>'
+        + '<div class="seat">$'+s.seat+'<small>/ seat</small></div>'
+        + '<p class="lede">Runs once <b style="color:var(--ink)">'+s.min+' travellers</b> are going. Your card is saved when you add your name and only charged when the van is confirmed.</p>'
+        + '<dl class="times">'+s.times.map(function(t){return '<dt>'+t[0]+'</dt><dd>'+t[1]+'</dd>'}).join('')+'</dl></div>'
+        + '<div class="rides"><h3>'+s.going+' travellers are already going this way</h3>'
+        + s.rides.map(function(d){return '<a class="ride" href="#"><span class="avs">'+d[4].map(function(a,i){return '<i style="background:'+AV[i%4]+'">'+a+'</i>'}).join('')+'</span><span><span class="when">'+d[0]+'</span><br><span class="st">'+d[1]+'</span></span><span class="pill '+d[2]+'">'+d[3]+'</span></a>'}).join('')
+        + '<a class="btn btn-blue" href="#" style="margin-top:6px">Pick a date &amp; add your name</a></div>'
+        + '</div></section>';
+    }
+
+    h += '<section class="band'+(s?' band-paper':'')+'"><div class="wrap drive"><div>'
+      + '<div class="sec-head" style="margin-bottom:0"><span class="eyebrow">The drive</span><h2>'+r.driveH+'</h2><p class="lede">'+r.intro+'</p></div>'
+      + '<ol class="stops"><li class="end">'+r.from+'</li>'
+      + r.stops.map(function(x){return '<li><b>'+x[0]+'</b><small>'+x[1]+'</small></li>'}).join('')
+      + '<li class="end to">'+r.to+'<small>'+r.endNote+'</small></li></ol></div>'
+      + '<figure class="photo"><img src="'+r.photo+'" alt=""><figcaption>'+r.cap+'</figcaption></figure>'
+      + '</div></section>';
+
+    h += '<section class="band band-wash"><div class="wrap"><div class="sec-head"><span class="eyebrow">Every private transfer</span><h2>What’s included</h2></div>'
+      + '<div class="inc"><div>'+I.tag+'<h3>A fixed price</h3><p>The price you see is the price you pay — no haggling at the kerb.</p></div>'
+      + '<div>'+I.door+'<h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you’re staying.</p></div>'
+      + '<div>'+I.pin+'<h3>Stops when you want</h3><p>Photos, lunch, a quick sight — tell your driver and they’ll build it in.</p></div>'
+      + '<div>'+I.undo+'<h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>'
+      + '<figure class="quote"><img src="../../img/team-roshen.jpg" alt=""><blockquote>“Every guest rides with a driver we’d trust with our own family.”<cite>Roshen — Co-founder, Ceylon Hop</cite></blockquote><div class="ta"><b>5.0</b><span>★★★★★</span><br>31 reviews on Tripadvisor</div></figure>'
+      + '</div></section>';
+
+    h += '<section class="band" style="background:var(--cream-deep)"><div class="wrap faq"><div class="faq-side"><span class="eyebrow">Good to know</span><h2>'+r.from+' to '+r.to+', answered</h2><p class="lede">Something we haven’t covered? We reply within minutes, 7 days a week.</p><a class="btn btn-wa" href="#">'+I.chat+'Chat on WhatsApp</a></div>'
+      + '<div class="acc">'+r.faq.map(function(f,i){return '<details'+(i===0?' open':'')+'><summary>'+f[0]+'</summary><p>'+f[1]+'</p></details>'}).join('')+'</div></div></section>';
+
+    h += '<section class="band"><div class="wrap"><div class="sec-head"><span class="eyebrow">Keep hopping</span><h2>'+r.nextH+'</h2></div><div class="next">'
+      + r.next.map(function(n){return '<a class="rt" href="#">'+(n[5]?'<span class="ret">Return trip</span>':'')+'<img src="'+n[4]+'" alt=""><span class="bd"><span class="nm">'+n[0]+' → '+n[1]+'</span><span class="mt">'+n[2]+'</span><span class="fr">from <b>$'+$(n[3])+'</b> fixed</span></span></a>'}).join('')
+      + '</div><a class="all" href="#">See all Sri Lanka transfer routes →</a></div></section>';
+
+    document.getElementById('page').innerHTML = h;
+    setBar(r,'car');
+    Array.prototype.forEach.call(document.querySelectorAll('.veh'),function(b){
+      b.addEventListener('click',function(){
+        Array.prototype.forEach.call(document.querySelectorAll('.veh'),function(o){o.setAttribute('aria-pressed',String(o===b))});
+        setBar(r,b.getAttribute('data-veh'));
+      });
+    });
+  }
+
+  /* ── routes index (/trip/) ── */
+  var P={A:'Colombo Airport',C:'Colombo city',N:'Negombo',K:'Kandy',S:'Sigiriya / Dambulla',U:'Nuwara Eliya',E:'Ella',G:'Galle',M:'Mirissa',Y:'Yala',B:'Arugam Bay'};
+  var PIMG={A:'../../img/tour-grand-island-loop.jpg',C:'../../img/tour-grand-island-loop.jpg',N:'../../img/tour-coast-honeymoon.jpg',K:'../../img/about-train.jpg',S:'../../img/why-viewpoint.jpg',U:'../../img/tour-tea-and-trains.jpg',E:'../../img/cta-nine-arch.jpg',G:'../../img/tour-grand-island-loop.jpg',M:'../../img/tour-coast-honeymoon.jpg',Y:'../../img/tour-wild-ceylon.jpg',B:'../../img/tour-coast-honeymoon.jpg'};
+  var RT='A>C|35 km · 50 min|29;A>E|335 km · 5h|140;A>G|155 km · 2h 15m|67;A>K|120 km · 3h|49.99;A>M|175 km · 2h 30m|77;A>N|7 km · 20 min|29;A>S|150 km · 3h 15m|67|27.49;'
+    +'C>A|35 km · 50 min|29;C>E|315 km · 5h|132;C>G|135 km · 2h 15m|58;C>K|125 km · 3h 30m|54;N>A|7 km · 20 min|29;N>K|115 km · 2h 45m|49.99;N>S|150 km · 3h 15m|65|27.49;'
+    +'K>A|120 km · 3h|49.99;K>C|125 km · 3h 30m|54;K>E|135 km · 3h 45m|59.99;K>N|115 km · 2h 45m|49.99;K>U|75 km · 2h 45m|29.99;K>S|90 km · 2h 30m|39;'
+    +'S>A|150 km · 3h 15m|67;S>K|90 km · 2h 30m|39|19.99;S>N|150 km · 3h 15m|65;U>E|55 km · 1h 45m|29;U>K|75 km · 2h 45m|29.99;'
+    +'E>B|135 km · 3h|59;E>A|335 km · 5h|140;E>C|315 km · 5h|132;E>G|200 km · 3h 15m|85;E>K|135 km · 3h 45m|59.99;E>M|175 km · 3h|75;E>U|55 km · 1h 45m|29;E>Y|125 km · 3h 15m|55|22.99;'
+    +'G>A|155 km · 2h 15m|67;G>C|135 km · 2h 15m|58;G>E|200 km · 3h 15m|85;G>M|40 km · 60 min|29;M>A|175 km · 2h 30m|77|29.99;M>E|175 km · 3h|75;M>G|40 km · 60 min|29;M>Y|155 km · 3h 15m|68;'
+    +'Y>E|125 km · 3h 15m|55;Y>M|155 km · 3h 15m|68;B>E|135 km · 3h|59';
+  var ROUTES=RT.split(';').map(function(x){var a=x.split('|'),ft=a[0].split('>');return {f:ft[0],t:ft[1],m:a[1],p:a[2],s:a[3]}});
+  var ORDER=['A','C','N','K','S','U','E','G','M','Y','B'];
+
+  function renderIndex(){
+    var h='';
+    h+='<section class="hero ix-hero" style="--photo:url(../../img/tour-tea-and-trains.jpg)"><div class="wrap">'
+      +'<div class="hero-copy"><div class="crumb"><a href="#">Home</a> · Routes</div>'
+      +'<h1>Sri Lanka transfer routes</h1>'
+      +'<p class="hero-sub">Fixed-price private transfers on the island’s most-travelled roads — and a shared seat where we run one. Pick a route for the price, the distance and what the drive is like.</p>'
+      +'<ul class="chips"><li>'+I.pin+ROUTES.length+' routes</li><li>'+I.tag+'Fixed prices</li><li>'+I.star+'5.0 on Tripadvisor</li></ul></div>'
+      +'<aside class="fares" aria-label="Find a route"><div><div class="kick">Any two points, door to door</div><h2>Where are you going?</h2></div>'
+      +'<div class="pick"><label for="ix-from">Pick-up</label><input id="ix-from" type="text" placeholder="Where from?"></div>'
+      +'<div class="pick"><label for="ix-to">Drop-off</label><input id="ix-to" type="text" placeholder="Where to?"></div>'
+      +'<a class="btn btn-cta" href="#">See prices &amp; book</a><p class="fine">Not on the list below? We still drive it.</p></aside>'
+      +'</div></section>';
+    h+='<div class="trust"><div class="wrap"><ul><li>'+I.shield+'Fully insured &amp; safe drivers</li><li>'+I.snow+'AC cars &amp; vans</li><li>'+I.undo+'Free cancellation 24h before</li><li>'+I.chat+'WhatsApp support 7 days</li></ul></div></div>';
+
+    var pop=[['A','K','../../img/about-train.jpg'],['A','S','../../img/tour-classic-hop.jpg'],['K','E','../../img/cta-nine-arch.jpg'],['E','M','../../img/tour-coast-honeymoon.jpg']];
+    h+='<section class="band" style="padding-bottom:56px"><div class="wrap"><div class="sec-head"><span class="eyebrow">Most booked</span><h2>Where most trips start</h2></div><div class="pop">'
+      +pop.map(function(x){var r=ROUTES.filter(function(q){return q.f===x[0]&&q.t===x[1]})[0];
+        return '<a class="rt" href="#">'+(r.s?'<span class="seatbadge">Shared seat $'+r.s+'</span>':'')+'<img src="'+x[2]+'" alt=""><span class="bd"><span class="nm">'+P[r.f]+' → '+P[r.t]+'</span><span class="mt">'+r.m+'</span><span class="fr">from <b>$'+r.p+'</b> fixed</span></span></a>'}).join('')
+      +'</div></div></section>';
+
+    h+='<div class="fromsticky"><div class="wrap"><span class="lbl">Leaving from</span><div class="fchips" role="group" aria-label="Leaving from">'
+      +'<button type="button" id="fc-all" data-from="" aria-pressed="true">Everywhere</button>'
+      +ORDER.map(function(k){return '<button type="button" id="fc-'+k+'" data-from="'+k+'" aria-pressed="false">'+P[k]+'</button>'}).join('')
+      +'</div></div></div>';
+
+    h+='<div class="wrap origins">'+ORDER.map(function(k){
+      var rs=ROUTES.filter(function(q){return q.f===k});
+      return '<section class="origin" data-origin="'+k+'"><div class="origin-head"><img src="'+PIMG[k]+'" alt=""><div><h2>From '+P[k]+'</h2><span>'+rs.length+' route'+(rs.length>1?'s':'')+'</span></div></div>'
+        +'<ul class="dests">'+rs.map(function(r){return '<li><a href="#"><span class="to"><em>→</em>'+P[r.t]+(r.s?'<span class="sh">Shared seat $'+r.s+'</span>':'')+'</span><span class="mt">'+r.m+'</span><span class="pr">from <b>$'+r.p+'</b></span></a></li>'}).join('')+'</ul></section>'
+    }).join('')+'</div>';
+
+    h+='<section class="anywhere"><div class="wrap"><div><h2>Going somewhere that isn’t listed?</h2><p>These are the roads we drive most. We price any two points in Sri Lanka, door to door — or string several stops into one trip.</p></div>'
+      +'<div class="acts"><a class="btn btn-cta" href="#">Get a fixed price</a><a class="btn btn-line" href="#">Plan a multi-stop trip</a></div></div></section>';
+
+    document.getElementById('page').innerHTML=h;
+    document.getElementById('bookbar').innerHTML='';
+    document.getElementById('bookbar').hidden=true;
+    Array.prototype.forEach.call(document.querySelectorAll('.fchips button'),function(b){
+      b.addEventListener('click',function(){
+        var k=b.getAttribute('data-from');
+        Array.prototype.forEach.call(document.querySelectorAll('.fchips button'),function(o){o.setAttribute('aria-pressed',String(o===b))});
+        Array.prototype.forEach.call(document.querySelectorAll('.origin'),function(o){o.hidden=!!k&&o.getAttribute('data-origin')!==k});
+      });
+    });
+  }
+  function setBar(r,v){
+    document.getElementById('bookbar').innerHTML='<span class="p">AC '+v+' · total, fixed<b>$'+$(r[v])+'</b></span><a class="btn btn-cta" href="#">Choose date &amp; book</a>';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.seg button'),function(b){
+    b.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.seg button'),function(o){o.setAttribute('aria-pressed',String(o===b))});
+      var k=b.getAttribute('data-route');document.getElementById('bookbar').hidden=false;if(k==='ix'){renderIndex()}else{render(k)}window.scrollTo(0,0);
+    });
+  });
+  render('ke');
+})();
+</script>
+</body></html>
