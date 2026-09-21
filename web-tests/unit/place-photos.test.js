@@ -1,8 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, generateAll } from '../../tools/generate-route-pages.mjs';
 import { loadPlacePhotos, photoFor, imgTag } from '../../tools/place-photos.mjs';
+
+/** Real pixel size from a JPEG's SOF marker — no library, so a stale manifest w/h can't hide. */
+function jpegSize(path) {
+  const buf = readFileSync(path);
+  let offset = 2; // past SOI (0xFFD8)
+  while (offset < buf.length) {
+    if (buf[offset] !== 0xff) throw new Error(`bad JPEG marker at ${offset} in ${path}`);
+    const marker = buf[offset + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+    const len = buf.readUInt16BE(offset + 2);
+    const isSOF = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSOF) return { height: buf.readUInt16BE(offset + 5), width: buf.readUInt16BE(offset + 7) };
+    offset += 2 + len;
+  }
+  throw new Error(`no SOF marker found in ${path}`);
+}
 
 const photos = loadPlacePhotos();
 // Only places a generated trip page names need a photo (the catalogue has 19 places; /trip/ uses 11).
@@ -34,6 +50,18 @@ describe('place photos — every place a trip page can name has one', () => {
     expect(hero).toContain('fetchpriority="high"');
     expect(hero).toContain('../../img/places/ella-900.jpg 900w');
     expect(imgTag(p, { p: '../../', sizes: '25vw' })).toContain('loading="lazy"');
+  });
+  it.each(ids)('%s imgTag reports the intrinsic (1800-file) size, not a rounded 900w guess', (id) => {
+    const p = photoFor(photos, id);
+    const img = imgTag(p, { p: '../../', sizes: '100vw' });
+    expect(img).toContain(`width="${p.w}" height="${p.h}"`);
+  });
+  it.each(ids)('%s -900.jpg is really the same aspect ratio as the manifest', (id) => {
+    const { stem } = photoFor(photos, id);
+    const p = photoFor(photos, id);
+    const real900 = jpegSize(join(ROOT, `img/places/${stem}-900.jpg`));
+    const expectedHeight = (p.h * real900.width) / p.w;
+    expect(Math.abs(real900.height - expectedHeight)).toBeLessThanOrEqual(1);
   });
   it('every Unsplash photo is credited on credits.html', async () => {
     const { readFileSync } = await import('node:fs');

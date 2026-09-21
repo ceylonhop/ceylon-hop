@@ -16,11 +16,13 @@ export function photoFor(photos, id) {
   return p;
 }
 
-/** One <img>. `p` is the page's path back to the site root ('../../' on a route page). */
+/** One <img>. `p` is the page's path back to the site root ('../../' on a route page).
+ * width/height are the intrinsic size of the largest candidate (the -1800 file) — they only
+ * ever set the aspect ratio for the reserved box, so the exact 900w pixel height doesn't matter,
+ * and using it (rounded) was 1px off for any odd `photo.h` and shifted layout. */
 export function imgTag(photo, { p, sizes, eager = false, cls = '' }) {
   const base = `${p}img/places/${photo.stem}`;
-  const h900 = Math.round(photo.h * 900 / photo.w);
   return `<img${cls ? ` class="${cls}"` : ''} src="${base}-900.jpg" srcset="${base}-900.jpg 900w, ${base}-1800.jpg 1800w" sizes="${sizes}" `
-    + `width="900" height="${h900}" alt="${esc(photo.alt)}" style="object-position:${esc(photo.focal)}" `
+    + `width="${photo.w}" height="${photo.h}" alt="${esc(photo.alt)}" style="object-position:${esc(photo.focal)}" `
     + (eager ? 'fetchpriority="high" decoding="async"' : 'loading="lazy" decoding="async"') + '>';
 }
