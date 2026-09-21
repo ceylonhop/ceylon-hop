@@ -407,6 +407,26 @@ describe('public quote v2 estimate-batch', () => {
     expect(results[0]).not.toBeNull();
     expect(results[1]).not.toBeNull();
   });
+
+  // Two intents sharing a (from,to) pair — the same corridor priced for car and for van — must
+  // not each pay for their own billed distance lookup: under Promise.all both fire before either
+  // resolves, so a naive per-intent call races past a cold CachedMapsAdapter miss and bills twice.
+  it('asks the maps adapter at most once per distinct (from,to) pair in the batch', async () => {
+    const inner = new FakeMapsAdapter();
+    const calls: string[] = [];
+    const spy: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: (a: string, b: string) => { calls.push(`${a}|${b}`); return inner.distance(a, b); },
+    });
+    const { app } = batchApp(spy);
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', {
+      intents: [intent('Kandy', 'Ella'), intent('Kandy', 'Ella', 'van'), intent('Galle', 'Mirissa')],
+    })).json();
+    expect(calls).toHaveLength(2); // one for Kandy|Ella (shared by both vehicles), one for Galle|Mirissa
+    expect(results[0]).not.toBeNull();
+    expect(results[1]).not.toBeNull();
+    expect(results[2]).not.toBeNull();
+    expect(results[1].totalCents).not.toBe(results[0].totalCents); // van vs car price still differs
+  });
 });
 
 describe('POST /quote/lock', () => {

@@ -7,6 +7,7 @@ import { rateLockUntil } from '../quote/rateLock';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { MapsAdapter } from '../adapters/maps';
 import { isCatalogTown } from '../adapters/maps';
+import { memoizeDistance } from './bookings';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { liveRateCard } from '../quote/liveCard';
@@ -294,18 +295,24 @@ export function quoteRoutes(deps: {
   // cards advertise the engine's fare, and ch-pricing can only ask one intent at a time.
   // Each intent takes the SAME path as /v2/estimate — engineRequestFor → quote() on the live card —
   // so a list price and the page it links to cannot disagree. Two deliberate differences:
-  //   • only catalogue-town legs are priced. Those are the pairs CachedMapsAdapter persists, so a
-  //     batch costs at most one billed distance call per pair, EVER. Anything else is null — this
-  //     endpoint must not become a way to fan 60 arbitrary addresses out to Google.
+  //   • only catalogue-town legs are priced. Those are the pairs CachedMapsAdapter persists, so
+  //     across requests a catalogue pair costs at most one billed distance call, EVER. Anything
+  //     else is null — this endpoint must not become a way to fan 60 arbitrary addresses out to
+  //     Google.
   //   • an estimated distance is null, not flagged: a list has nowhere to put the caveat.
   // One bad intent never fails the batch; the page keeps its catalogue figure for that row.
+  // WITHIN one request, two intents can share a (from,to) pair (the same corridor priced for
+  // car and for van) — under Promise.all both would otherwise race a cold cache miss and each
+  // bill their own lookup. memoizeDistance (bookings.ts's per-request de-duper, reused as-is)
+  // wraps deps.maps once per batch so every engineRequestFor call below shares one in-flight
+  // lookup per distinct pair, coalescing concurrent — not just sequential — duplicates.
   const BatchSchema = z.object({ intents: z.array(z.unknown()).min(1).max(60) }).strict();
   r.post('/v2/estimate-batch', async (c) => {
     if (!deps.v2Enabled) return c.notFound();
     if (!deps.maps) return c.json({ error: 'not_available' }, 501);
     const envelope = BatchSchema.safeParse(await c.req.json().catch(() => null));
     if (!envelope.success) return c.json({ error: 'invalid_request', details: envelope.error.flatten() }, 400);
-    const maps = deps.maps;
+    const maps = memoizeDistance(deps.maps);
     const card = await liveCard();
     const results = await Promise.all(envelope.data.intents.map(async (raw) => {
       try {
