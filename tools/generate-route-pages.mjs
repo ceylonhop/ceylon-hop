@@ -445,7 +445,7 @@ function destRow(T, from, to, p) {
   const fromName = T.byId[from].name, toName = T.byId[to].name;
   return `<li><a class="dest" href="${p}trip/${slug(from, to)}/">
         <span class="to"><em aria-hidden="true">→</em>${esc(toName)}${shared ? `<span class="sh">Shared seat $${price(shared.seat)}</span>` : ''}</span>
-        <span class="mt">${esc(routeEstimate(q))}</span>
+        <span class="est">${esc(routeEstimate(q))}</span>
         <span class="pr">from <b data-list-fare data-from-name="${esc(fromName)}" data-to-name="${esc(toName)}">$${price(q.car)}</b></span>
       </a></li>`;
 }
@@ -475,7 +475,7 @@ function popCard(T, photos, from, to, p) {
       ${imgTag(photo, { p, sizes: '(max-width:900px) 50vw, 25vw' })}
       <span class="bd">
         <span class="nm">${esc(fromName)} → ${esc(toName)}</span>
-        <span class="mt">${esc(routeEstimate(q))}</span>
+        <span class="est">${esc(routeEstimate(q))}</span>
         <span class="fr">from <b data-list-fare data-from-name="${esc(fromName)}" data-to-name="${esc(toName)}">$${price(q.car)}</b> fixed</span>
       </span>
     </a>`;
@@ -496,7 +496,12 @@ function fromChip(T, id) {
    the instant catalogue quote (see search.js's own comment on this at its `engineRoute` line) —
    already a normal, tested state on that page, not a hole this form falls into. */
 function faresForm(T, p) {
-  const options = T.PLACES.map(pl => `<option value="${esc(pl.name)}">`).join('');
+  // F4 fix: search.js resolves from/to by catalogue ID (T.place(id)); a typed NAME falls to
+  // the engine path where shared=null — the search result then never shows the shared-seat
+  // card, even on a corridor that sells one. data-id lets trip-index.js recover the id behind
+  // an exact-match name at submit time, additively (a free-typed place still submits its text
+  // unchanged, and everything here still works with JS off).
+  const options = T.PLACES.map(pl => `<option value="${esc(pl.name)}" data-id="${esc(pl.id)}">`).join('');
   return `<form class="ix-form" action="${p}search.html" method="get">
         <div class="pick"><label for="ix-from">Pick-up</label><input id="ix-from" name="from" type="text" list="ix-places" placeholder="Where from?" required autocomplete="off"></div>
         <div class="pick"><label for="ix-to">Drop-off</label><input id="ix-to" name="to" type="text" list="ix-places" placeholder="Where to?" required autocomplete="off"></div>
@@ -543,15 +548,24 @@ ${headAssets}
      routes cards and the no-.rt-card-on-index guard in static-chrome-crawlable.test.js). Nothing
      here overlaps the header: unlike the hand-written pages, a generated page's <header> is a
      normal in-flow element (no [data-header] sticky wrapper), so the hero sits under it, not
-     behind it. */
-  /* Fix 1 (coordinator review): .hero itself must NOT clip. The .fares card is designed to
+     behind it — true of the LAYOUT, but the section must never carry the bare 'hero' class to
+     get there (see the F3 note just below: site.css itself reaches in and undoes it). */
+  /* F3 fix: this section used to be class="hero ix-hero", picking up site.css's OWN
+     'body .hero{margin-top:-62px;padding-top:62px}' at <=600px — a rule meant for the HOME
+     hero, which slides behind a transparent, fixed nav. This page's header is plain in-flow
+     (see the note above), so that negative margin just pulled the section up UNDER the header
+     instead, clipping/overlapping it. Fix: the section is 'ix-hero'-only now, and every rule
+     that used to hang off the shared '.hero' selector below is scoped to '.ix-hero' instead.
+     '.hero-copy'/'.hero-sub'/'.hero-media' were left alone — site.css defines none of them. */
+  /* Fix 1 (coordinator review): .ix-hero itself must NOT clip. The .fares card is designed to
      overlap the hero's bottom edge (negative margin, like the prototype and the home booking
-     widget) — overflow:hidden on .hero clipped that overlap along with everything below it (the
-     submit button sliced in half, the fine print invisible). The photo + gradient are the only
-     things that ever need clipping (that's what overflow:hidden was for), so they get their own
-     absolutely-positioned wrapper with its own clip; .hero itself stays overflow:visible. */
-  .hero{position:relative;color:#fff;background:#23302b;isolation:isolate}
-  /* hero-media itself gets a z-index (to sit behind .wrap in .hero's isolated stacking
+     widget) — overflow:hidden on .ix-hero clipped that overlap along with everything below it
+     (the submit button sliced in half, the fine print invisible). The photo + gradient are the
+     only things that ever need clipping (that's what overflow:hidden was for), so they get
+     their own absolutely-positioned wrapper with its own clip; .ix-hero itself stays
+     overflow:visible. */
+  .ix-hero{position:relative;color:#fff;background:#23302b;isolation:isolate}
+  /* hero-media itself gets a z-index (to sit behind .wrap in .ix-hero's isolated stacking
      context), which means it establishes its OWN stacking context for its two children — so
      they need their own explicit order too, or ::before (generated first, so painted first/
      furthest back with an auto z-index) loses to the later <img> in DOM order and the photo
@@ -562,11 +576,11 @@ ${headAssets}
   .hero-media::before{content:"";position:absolute;inset:0;z-index:-1;
     background:linear-gradient(90deg,rgba(20,28,26,.78) 0%,rgba(20,28,26,.5) 48%,rgba(20,28,26,.12) 100%),
                linear-gradient(0deg,rgba(20,28,26,.55),rgba(20,28,26,0) 45%)}
-  .hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-block:56px 0}
+  .ix-hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-block:56px 0}
   .hero-copy{padding-bottom:74px;min-height:340px;display:flex;flex-direction:column;gap:16px}
-  .hero .eyebrow{color:#fff}
-  .hero .eyebrow::before{background:var(--saffron,#F9A429)}
-  .hero h1{color:#fff;font-size:clamp(2.3rem,5.2vw,4.1rem);margin:0}
+  .ix-hero .eyebrow{color:#fff}
+  .ix-hero .eyebrow::before{background:var(--saffron,#F9A429)}
+  .ix-hero h1{color:#fff;font-size:clamp(2.3rem,5.2vw,4.1rem);margin:0}
   .hero-sub{max-width:34rem;font-size:1.02rem;color:rgba(255,255,255,.92);margin:0}
   .chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:4px 0 0;padding:0}
   .chips li{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;font-size:.8rem;font-weight:500;
@@ -587,7 +601,7 @@ ${headAssets}
   /* Fix 2 (review): the .fares card overlaps DOWN into this strip (its whole point — see the
      Fix 1 comment above), so the row needs the prototype's own width reservation for it or the
      last item runs under the card instead of wrapping to a second line. 440px ~= the card's
-     400px column + its 48px gap from .hero .wrap's grid-template-columns above. Restored at
+     400px column + its 48px gap from .ix-hero .wrap's grid-template-columns above. Restored at
      ≤900px, where the card no longer floats beside the strip in a way that needs clearing. */
   .trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500;max-width:calc(100% - 440px)}
   .trust li{display:flex;align-items:center;gap:8px}
@@ -597,13 +611,22 @@ ${headAssets}
   .sec-head{display:flex;flex-direction:column;gap:12px;margin-bottom:34px}
   .sec-head h2{font-size:clamp(1.8rem,3.4vw,2.6rem);margin:0}
 
-  .pop{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+  /* F1 fix: the container needs its OWN class. '.pop' used to be both the grid container
+     AND the card modifier ('a.rt-card.pop') — the container's 'gap:18px' matched every card
+     too (a flex column), inserting an 18px blank band between each card's photo and its text.
+     '.pop-grid' is the container only; '.pop' stays a pure card modifier (still 'a.rt-card.pop',
+     not '.dest' — web-tests/unit/trip-index.test.js relies on that). */
+  .pop-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
   .rt-card{position:relative;display:flex;flex-direction:column;background:var(--paper,#fffdf8);border:1px solid var(--line,#e7e3d6);border-radius:18px;overflow:hidden;text-decoration:none;color:inherit;transition:transform .2s,box-shadow .2s}
   .rt-card:hover{transform:translateY(-3px);box-shadow:0 18px 34px -18px rgba(30,40,36,.45)}
+  @media(prefers-reduced-motion:reduce){.rt-card{transition:none}.rt-card:hover{transform:none}}
   .rt-card img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;max-width:100%}
   .rt-card .bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
   .rt-card .nm{font-family:var(--display,'Bodoni Moda',Georgia,serif);font-weight:700;font-size:1.12rem;line-height:1.2}
-  .rt-card .mt{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  /* F2 fix: was '.mt', which collided with site.css's own '.mt{margin-top:20px}' utility —
+     every estimate span (here and in .dests below) picked up an unwanted 20px top margin.
+     '.est' is free (grepped site.css first). */
+  .rt-card .est{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
   .rt-card .fr{margin-top:8px;font-size:.84rem}
   .rt-card .fr b{font-size:1.08rem}
   .rt-card .seatbadge{position:absolute;top:10px;right:10px;background:var(--saffron,#F9A429);color:#3a2a08;border-radius:999px;padding:4px 10px;font-size:.66rem;font-weight:700}
@@ -623,6 +646,14 @@ ${headAssets}
   .fchips a[aria-pressed="true"]{background:var(--ink,#3A3739);border-color:var(--ink,#3A3739);color:#fff}
 
   .origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
+  /* F5 fix: arriving at #from-<id> (hash link, bookmark, or back/forward) used to land with
+     the block's top ~35px behind .fromsticky (position:sticky;top:0, ~64px tall once it's
+     pinned to the very top of the viewport — the header itself is NOT sticky on a generated
+     page, see the note above). scroll-margin-top makes the browser's own "scroll to fragment"
+     step (which the CSSOM View spec ties to scroll-margin, same as scrollIntoView()) leave
+     room for the sticky row — no JS required, so it fixes the no-JS path too. #routes gets
+     the same treatment for the "Everywhere" chip's plain #routes anchor. */
+  #routes,.origin{scroll-margin-top:76px}
   .origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
   /* trip-index.js's filter sets the hidden attribute on a block. The cascade sorts by
      ORIGIN before specificity: any normal author rule beats a normal user-agent rule
@@ -641,7 +672,7 @@ ${headAssets}
   .dests a:hover .to{color:var(--blue-deep,#24758A)}
   .dests .to{font-weight:600;font-size:1rem;line-height:1.3}
   .dests .to em{font-style:normal;color:var(--blue-deep,#24758A);margin-right:6px}
-  .dests .mt{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  .dests .est{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
   .dests .pr{grid-row:1/3;grid-column:2;text-align:right;font-size:.76rem;color:var(--ink-soft,#6c6a6b);font-variant-numeric:tabular-nums;white-space:nowrap}
   .dests .pr b{font-size:1.08rem;color:var(--ink,#3A3739)}
   .dests .sh{display:inline-block;margin-left:8px;background:#FDF0D6;color:#8A5A06;border-radius:999px;padding:2px 9px;font-size:.68rem;font-weight:700;vertical-align:1px}
@@ -654,15 +685,18 @@ ${headAssets}
   .btn-line{border:1.5px solid rgba(255,255,255,.4);color:#fff;background:transparent}
 
   @media(max-width:900px){
-    .hero .wrap{grid-template-columns:1fr;gap:0;padding-block:18px 0}
+    .ix-hero .wrap{grid-template-columns:1fr;gap:0;padding-block:18px 0}
     .hero-copy{padding-bottom:56px;gap:12px;min-height:250px}
     .fares{margin-bottom:22px;margin-top:-36px;padding:18px}
     .trust ul{gap:8px 18px;font-size:.78rem;max-width:none}
     .band{padding-block:36px}
-    .pop{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .pop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .fromsticky{position:static}
     .fromsticky .lbl{display:none}
     .fchips{padding-inline:0}
+    /* F5: the sticky row is 'position:static' down here, so it can no longer sit over an
+       anchor target — nothing to clear. */
+    #routes,.origin{scroll-margin-top:0}
     .origins{gap:36px;padding-block:32px 54px}
     .origin{grid-template-columns:1fr;gap:12px}
     .origin-head{flex-direction:row;align-items:center;gap:14px}
@@ -676,7 +710,7 @@ ${headAssets}
 <body>
 ${header}
 <main>
-  <section class="hero ix-hero">
+  <section class="ix-hero">
     <div class="hero-media">${imgTag(heroPhoto, { p, sizes: '100vw', eager: true, cls: 'hero-img' })}</div>
     <div class="wrap">
       <div class="hero-copy">
@@ -705,7 +739,7 @@ ${header}
 
   <section class="band" style="padding-bottom:24px"><div class="wrap">
     <div class="sec-head"><span class="eyebrow">Most booked</span><h2>Where most trips start</h2></div>
-    <div class="pop">${popHtml}</div>
+    <div class="pop-grid">${popHtml}</div>
   </div></section>
 
   <div class="fromsticky"><div class="wrap">

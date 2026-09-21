@@ -83,4 +83,28 @@ describe('/trip/ index', () => {
     const eager = imgs.filter(img => img.getAttribute('loading') !== 'lazy');
     expect(eager.length).toBe(1);
   });
+
+  // F4: search.js resolves from/to by catalogue ID (T.place(id)); a typed NAME falls to the
+  // engine path where shared=null, so the hero form must give trip-index.js a way to recover
+  // the id behind a matched name.
+  it('every datalist option carries a real catalogue place id, one per place (F4)', () => {
+    const T = loadTransfers();
+    const options = [...d.querySelectorAll('#ix-places option')];
+    expect(options.length).toBe(T.PLACES.length);
+    const seenIds = new Set();
+    for (const o of options) {
+      const id = o.getAttribute('data-id');
+      expect(id, `option "${o.getAttribute('value')}" is missing data-id`).toBeTruthy();
+      expect(Object.prototype.hasOwnProperty.call(T.byId, id), id).toBe(true);
+      seenIds.add(id);
+    }
+    expect(seenIds.size).toBe(T.PLACES.length);
+  });
+
+  // F6 (spec §8): the "Most booked" cards must not lift on hover for a visitor who has asked
+  // the OS/browser to reduce motion.
+  it('disables the card hover lift under prefers-reduced-motion (F6)', () => {
+    const styleText = [...d.querySelectorAll('style')].map(s => s.textContent).join('\n');
+    expect(styleText).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.rt-card/);
+  });
 });

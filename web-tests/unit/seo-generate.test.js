@@ -28,7 +28,7 @@ describe('generateAll', () => {
     // rt-card.pop now carries the name, the compact estimate and the price as three separate
     // spans rather than one packed rt-meta string — same numbers, new shape.
     const index = out.get('trip/index.html');
-    expect(index).toMatch(/Kandy → Ella<\/span>\s*<span class="mt">Approx\. 135 km · 3h 45m<\/span>\s*<span class="fr">from <b[^>]*>\$59\.99<\/b> fixed<\/span>/);
+    expect(index).toMatch(/Kandy → Ella<\/span>\s*<span class="est">Approx\. 135 km · 3h 45m<\/span>\s*<span class="fr">from <b[^>]*>\$59\.99<\/b> fixed<\/span>/);
   });
   // The route page used to be a signpost: it showed price CHIPS and deep-linked into
   // search.html to do the actual selling. Under design A it IS the product page — the

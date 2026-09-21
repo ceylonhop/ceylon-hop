@@ -225,3 +225,132 @@ test.describe('phone', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });
+
+// F1: `.pop` used to be both the "Most booked" grid container AND the card modifier
+// (`a.rt-card.pop`) — the container's own `gap:18px` matched every card too (a flex column),
+// inserting an 18px blank band between each card's photo and its text block.
+test('every "Most booked" card has no gap between its photo and its text block (F1)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/trip/?api=off');
+  const cards = page.locator('a.rt-card.pop');
+  const n = await cards.count();
+  expect(n).toBeGreaterThan(0);
+  for (let i = 0; i < n; i++) {
+    const card = cards.nth(i);
+    const gap = await card.evaluate((el) => {
+      const img = el.querySelector('img');
+      const bd = el.querySelector('.bd');
+      return Math.abs(bd.getBoundingClientRect().top - img.getBoundingClientRect().bottom);
+    });
+    expect(gap, `card ${i} has a gap between its photo and its text`).toBeLessThanOrEqual(1);
+  }
+});
+
+// F2: site.css's own `.mt{margin-top:20px}` utility collided with the class the generator used
+// for the distance/time estimate span, adding an unwanted 20px on every row and card.
+test('no route estimate span carries a leaked top margin (F2)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/trip/?api=off');
+  const margins = await page.evaluate(() =>
+    [...document.querySelectorAll('.est')].map((el) => getComputedStyle(el).marginTop),
+  );
+  expect(margins.length).toBeGreaterThan(0);
+  for (const m of margins) expect(m).toBe('0px');
+});
+
+// F3: the index used to carry a bare "hero" class alongside "ix-hero", which is also site.css's
+// OWN selector for the home hero (`body .hero{margin-top:-62px;padding-top:62px}` at <=600px).
+// At phone width that pulled the section up under this page's (non-sticky, in-flow) header.
+test('the hero never renders under the header at 375x812 (F3)', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/trip/?api=off');
+  const geo = await page.evaluate(() => {
+    const header = document.querySelector('header.nav');
+    const hero = document.querySelector('.ix-hero');
+    const h1 = document.querySelector('.ix-hero h1');
+    const hr = header.getBoundingClientRect();
+    const heroR = hero.getBoundingClientRect();
+    const h1r = h1.getBoundingClientRect();
+    const cx = h1r.left + h1r.width / 2, cy = h1r.top + h1r.height / 2;
+    const hit = document.elementFromPoint(cx, cy);
+    return {
+      headerBottom: hr.bottom,
+      heroTop: heroR.top,
+      h1Hit: !!hit && (hit === h1 || h1.contains(hit)),
+    };
+  });
+  expect(geo.heroTop, 'hero top sits above the header bottom edge').toBeGreaterThanOrEqual(geo.headerBottom - 0.5);
+  expect(geo.h1Hit, 'H1 is not hit-testable').toBe(true);
+});
+
+// F4: search.js resolves from/to by catalogue ID; a typed NAME falls to its engine path,
+// where `shared` is always null — so a corridor that sells a seat shows no shared-seat card
+// unless the picked text maps back to an id before the form navigates.
+test.describe('hero form id resolution (F4)', () => {
+  test('an exact catalogue name match submits its id for both fields', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    await page.fill('#ix-from', 'Colombo Airport (CMB)');
+    await page.fill('#ix-to', 'Sigiriya / Dambulla');
+    await Promise.all([
+      page.waitForURL(/search\.html\?/),
+      page.click('.ix-form button[type="submit"]'),
+    ]);
+    const u = new URL(page.url());
+    expect(u.searchParams.get('from')).toBe('cmb-airport');
+    expect(u.searchParams.get('to')).toBe('sigiriya');
+  });
+
+  test('a lower-case match still maps to the catalogue id', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    await page.fill('#ix-from', 'colombo airport (cmb)');
+    await page.fill('#ix-to', 'sigiriya / dambulla');
+    await Promise.all([
+      page.waitForURL(/search\.html\?/),
+      page.click('.ix-form button[type="submit"]'),
+    ]);
+    const u = new URL(page.url());
+    expect(u.searchParams.get('from')).toBe('cmb-airport');
+    expect(u.searchParams.get('to')).toBe('sigiriya');
+  });
+
+  test('a free-typed place with no catalogue match submits unchanged', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    await page.fill('#ix-from', 'My Hotel, Weligama Bay');
+    await page.fill('#ix-to', 'Ella');
+    await Promise.all([
+      page.waitForURL(/search\.html\?/),
+      page.click('.ix-form button[type="submit"]'),
+    ]);
+    const u = new URL(page.url());
+    expect(u.searchParams.get('from')).toBe('My Hotel, Weligama Bay');
+    expect(u.searchParams.get('to')).toBe('ella');
+  });
+
+  test('an empty required field does not navigate', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    await page.fill('#ix-from', '');
+    await page.fill('#ix-to', 'Ella');
+    await page.click('.ix-form button[type="submit"]');
+    await page.waitForTimeout(300);
+    expect(page.url()).toMatch(/\/trip\/\?api=off$/);
+  });
+});
+
+// F5: site.css gives "section.origin"/"#routes" scroll-margin-top so a fragment arrival clears
+// the sticky chip row; with JS on, the chip state must catch up too (arriving used to leave
+// "Everywhere" pressed with nothing filtered, even though the hash named an origin).
+test('arriving at #from-kandy activates the Kandy chip and clears the sticky row (F5)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/trip/?api=off#from-kandy');
+  await expect(page.locator('.fchips [data-from="kandy"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('section.origin:visible')).toHaveCount(1);
+  await expect(page.locator('#from-kandy')).toBeVisible();
+  const geo = await page.evaluate(() => {
+    const kandy = document.querySelector('#from-kandy');
+    const sticky = document.querySelector('.fromsticky');
+    const kr = kandy.getBoundingClientRect();
+    const sr = sticky.getBoundingClientRect();
+    return { top: kr.top, stickyBottom: sr.bottom };
+  });
+  expect(geo.top, "kandy block's top is above the sticky row's bottom edge").toBeGreaterThanOrEqual(geo.stickyBottom - 0.5);
+});
