@@ -89,14 +89,17 @@ function legEnds(l: ToolLegLite): [string, string] {
 }
 
 // What a single transfer actually includes. Until 2026-08-07 this sentence was a constant that
-// promised "Airport pickup with a name board" on EVERY one-leg private transfer — so a
+// promised an airport name-board pickup on EVERY one-leg private transfer — so a
 // Sigiriya → Kandy page told the customer we'd meet them at an airport that appears nowhere in
 // their trip (owner-caught on a live pay page). That is exactly the invention this file's header
 // says cannot happen, so the copy now follows the endpoints.
 //
-// Direction matters and is why the name board can't simply be conditioned on "is an airport
-// involved": the board is an ARRIVALS service. On a Kandy → CMB run the airport is the drop-off,
-// and promising a name board there would be a second wrong sentence, not a fix.
+// Direction matters and is why the pickup line can't simply be conditioned on "is an airport
+// involved": it is an ARRIVALS service. On a Kandy → CMB run the airport is the drop-off, and
+// promising to collect them there would be a second wrong sentence, not a fix.
+//
+// It also stays silent on HOW the driver is found. Until 2026-09-21 it promised "a name board" —
+// we run no meet-and-greet, so that sent travellers hunting a sign nobody was holding.
 //
 // The last case is deliberately silent rather than guessing: an operator-set airport category
 // with no airport in either endpoint name tells us a terminal is involved but not which end, and
@@ -104,7 +107,7 @@ function legEnds(l: ToolLegLite): [string, string] {
 function transferIncludedText(l: ToolLegLite): string {
   const base = 'Driver, fuel and highway tolls.';
   const [from, to] = legEnds(l);
-  if (isAirportPlace(from)) return `${base} Airport pickup with a name board.`;
+  if (isAirportPlace(from)) return `${base} Airport pickup included.`;
   if (isAirportPlace(to)) return `${base} Hotel pickup and airport drop-off.`;
   if (l.category === 'airport') return base;
   return `${base} Hotel pickup and drop-off.`;

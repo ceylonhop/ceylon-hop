@@ -38,18 +38,32 @@ describe('payPageCopy — what a single transfer says is included', () => {
   const included = (from: string, to: string, category = 'transfer') =>
     payPageCopy(quoteOf({ legs: [leg(from, to, '2026-08-08', category)] })).includedText;
 
-  it('promises the name board only when the customer is COLLECTED from an airport', () => {
+  it('promises the pickup only when the customer is COLLECTED from an airport', () => {
     expect(included('Colombo Airport (CMB)', 'Galle')).toBe(
-      'Driver, fuel and highway tolls. Airport pickup with a name board.',
+      'Driver, fuel and highway tolls. Airport pickup included.',
     );
   });
 
+  // We do not run a meet-and-greet: no one stands in arrivals holding a board. Saying we do
+  // strands the traveller looking for a sign that was never there (owner-caught 2026-09-21),
+  // so no endpoint combination may describe HOW the driver is found.
+  it('never promises a name board or a sign', () => {
+    for (const [from, to] of [
+      ['Colombo Airport (CMB)', 'Galle'],
+      ['Kandy', 'Colombo Airport (CMB)'],
+      ['Katunayake', 'Kandy'],
+      ['Sigiriya / Dambulla', 'Kandy'],
+    ]) {
+      expect(included(from, to)).not.toMatch(/name ?board|sign|placard|meet you/i);
+    }
+  });
+
   // The board is an arrivals service. Flying home, the airport is where they are dropped —
-  // promising to meet them there with a sign would be a second wrong sentence, not a fix.
-  it('does not promise a name board when the airport is the DROP-OFF', () => {
+  // promising to collect them there would be a second wrong sentence, not a fix.
+  it('makes no airport pickup promise when the airport is the DROP-OFF', () => {
     const text = included('Kandy', 'Colombo Airport (CMB)');
     expect(text).toBe('Driver, fuel and highway tolls. Hotel pickup and airport drop-off.');
-    expect(text).not.toMatch(/name board/i);
+    expect(text).not.toMatch(/airport pickup/i);
   });
 
   it('says hotel pickup and drop-off when no airport is involved', () => {
@@ -60,14 +74,14 @@ describe('payPageCopy — what a single transfer says is included', () => {
 
   it('never mentions an airport on a trip that has none', () => {
     for (const [from, to] of [['Sigiriya / Dambulla', 'Kandy'], ['Galle', 'Mirissa'], ['Kandy', 'Ella']]) {
-      expect(included(from, to)).not.toMatch(/airport|name board/i);
+      expect(included(from, to)).not.toMatch(/airport/i);
     }
   });
 
   // Katunayake is the airport's town and how operators often type it; CMB is the code.
   it('recognises the airport however the operator wrote it', () => {
     for (const spelling of ['Colombo Airport (CMB)', 'CMB', 'Katunayake', 'Bandaranaike Airport']) {
-      expect(included(spelling, 'Kandy')).toMatch(/name board/i);
+      expect(included(spelling, 'Kandy')).toMatch(/Airport pickup included/i);
     }
   });
 
@@ -76,7 +90,7 @@ describe('payPageCopy — what a single transfer says is included', () => {
   it('makes no pickup promise when the category says airport but the endpoints do not', () => {
     const text = included('Some Hotel', 'Another Hotel', 'airport');
     expect(text).toBe('Driver, fuel and highway tolls.');
-    expect(text).not.toMatch(/name board|hotel pickup/i);
+    expect(text).not.toMatch(/airport pickup|hotel pickup/i);
   });
 });
 

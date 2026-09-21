@@ -76,7 +76,7 @@ test('scratching asks first, and sends nothing until the traveller confirms', as
 });
 
 // The "you've joined" step (owner, 2026-09-18: "too much copy and not encouraging users to
-// share"). Its one job is to get the list shared so the van fills — but it opened with a
+// share"). Its one job is to get the list shared so the taxi fills — but it opened with a
 // headline, a sub-line, two more paragraphs and a mock link preview, and the share buttons sat
 // below the fold. The ask and the buttons now come first; the preview is there if wanted.
 async function openDoneStep(page) {
@@ -93,17 +93,17 @@ async function openDoneStep(page) {
   await expect(page.locator('#done-head')).toBeVisible({ timeout: 15000 });
 }
 
-test('after starting a list, the headline is the ask: how many more, and the van runs', async ({ page }) => {
+test('after starting a list, the headline is the ask: how many more, and the taxi runs', async ({ page }) => {
   await openDoneStep(page);
   // Roshen STARTED this list, so it is the starter's wording; the joiner's ("You’re in — …") is
   // pinned by ride-board-payhere.spec.js, where Ana started the list and Roshen joined it.
-  await expect(page.locator('#done-head')).toHaveText('Your list is live — 2 more and the van runs.');
+  await expect(page.locator('#done-head')).toHaveText('Your list is live — 2 more and the taxi runs.');
   // The PayHere-return path jumps straight to this step, so the header has to be set HERE: it
   // used to keep the markup's defaults — "Add your name" over "Ella → Mirissa · Sat 8 Aug".
   await expect(page.locator('#m-title')).toHaveText('You’re on the list');
   await expect(page.locator('#m-route')).toContainText('Colombo Airport (CMB) → Sigiriya / Dambulla');
   // the line under it is the call to share, tied to what the traveller gets out of it
-  await expect(page.locator('#done-sub')).toHaveText('Spread the word to fill the van and lock in your ≈ $27.49 seat.');
+  await expect(page.locator('#done-sub')).toHaveText('Spread the word to fill the taxi and lock in your ≈ $27.49 seat.');
   // one short line of why, not three paragraphs
   await expect(page.locator('#mstep-3 .why-share')).toHaveCount(1);
   await expect(page.locator('#mstep-3 .og-caption')).toHaveCount(0);

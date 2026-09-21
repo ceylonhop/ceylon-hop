@@ -136,7 +136,7 @@
     var need = Math.max(0, min - committed);
     var conf = confirmed || need === 0;
     var left = Math.max(0, cap - committed);
-    if (conf && left === 0) return { cls: 'pill-teal pill-dot', txt: 'Full 🚐 · van locked in' };
+    if (conf && left === 0) return { cls: 'pill-teal pill-dot', txt: 'Full 🚐 · taxi locked in' };
     if (conf) return { cls: 'pill-teal pill-dot', txt: 'Locked in 🚐 · ' + left + ' seat' + (left === 1 ? '' : 's') + ' left' };
     if (need === 1) return { cls: 'pill-tomato pill-dot pill-pulse', txt: '1 seat to lock it in — almost there' };
     return { cls: 'pill-saffron pill-dot', txt: need + ' seats to lock it in' };
@@ -217,7 +217,7 @@
     var left = Math.max(0, cap - list.committed);
     var you = mine ? " · you're on it" : '';
     var cta = mine ? { kind: 'view', text: 'View your ride' }
-      : left === 0 ? { kind: 'again', text: 'Start another van' }
+      : left === 0 ? { kind: 'again', text: 'Start another taxi' }
       : list.confirmed ? { kind: 'view', text: "See who's going" }
       : { kind: 'view', text: 'Hop on' };
     if (left === 0) return { cls: 'f', label: 'Full', sub: list.committed + ' of ' + cap + you, cta: cta };
@@ -601,7 +601,7 @@
   function routeInvite() {
     var f = state.filter;
     if (f.mine || f.from === 'all' || f.to === 'all') return '';
-    return '<div class="rw-invite"><p><b>Not your day?</b> Start a van on ' + esc(f.from) + ' → ' + esc(f.to) +
+    return '<div class="rw-invite"><p><b>Not your day?</b> Start a taxi on ' + esc(f.from) + ' → ' + esc(f.to) +
       ' for your date — $0 to add your name.</p>' +
       '<button class="btn btn-ghost btn-sm" id="rw-start">Start a ride +</button></div>';
   }
@@ -904,11 +904,11 @@
       : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>';
     var timeChips = conf
       ? '<span class="tset locked">Departure locked: <b>' + esc(L.lockedTime || s.opts[1]) + '</b></span>'
-      : '<div class="tset"><span class="tlbl">Likely departure — set when the van locks:</span><div class="topts">' +
+      : '<div class="tset"><span class="tlbl">Likely departure — set when the taxi locks:</span><div class="topts">' +
         s.opts.map(function (t, i) { return '<span class="topt ' + (i === 1 ? 'lead' : '') + '">' + t + '</span>'; }).join('') +
         '</div><span class="tnote">Everyone\'s asked their preferred time when they join; the group\'s most popular wins.</span></div>';
     var shareUrl = shareUrlFor(L.code);
-    var waText = 'shared van ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' — ≈' + money(L.cost) + ' each, $0 unless it runs: ' + shareUrl;
+    var waText = 'shared taxi ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' — ≈' + money(L.cost) + ' each, $0 unless it runs: ' + shareUrl;
     var starterName = L.members[0] ? L.members[0].name : 'Someone';
 
     detailInner.innerHTML =
@@ -918,7 +918,7 @@
       '<div class="d-meta">' +
       '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(L.whenLabel) + ' · ' + esc(s.label) + '</span>' +
       '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + clock + '</span>' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ' + cap + ' seats</span>' +
+      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con shared taxi · up to ' + cap + ' seats</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge(taCaption('5.0 · ', 'reviews')) + '</div>' +
@@ -936,12 +936,12 @@
       '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
       '<div><h4>Now — approve your card</h4><p>PayHere stores an encrypted card token for this ride; Ceylon Hop never sees your card number. A small verification charge may appear and be reversed. Scratch off before the cutoff and we will not charge the ride fare.</p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
-      '<div><h4>When the list closes</h4><p>At the cutoff, if at least <b>' + min + ' seats</b> are pledged, we charge each approved card its share (≈ <b>' + money(L.cost) + '</b>) and confirm the van. <b>If not enough join, the ride is called off and no ride fare is charged.</b></p></div></div>' +
+      '<div><h4>When the list closes</h4><p>At the cutoff, if at least <b>' + min + ' seats</b> are pledged, we charge each approved card its share (≈ <b>' + money(L.cost) + '</b>) and confirm the taxi. <b>If not enough join, the ride is called off and no ride fare is charged.</b></p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
-      '<div><h4>' + esc(L.whenLabel) + ' — the van rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
+      '<div><h4>' + esc(L.whenLabel) + ' — the taxi rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
       '</div></div>' +
       '<div class="d-block"><h2>Who\'s driving</h2><div class="d-trust">' +
-      '<div class="t"><span class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span><div><b>Ceylon Hop — a real operator</b><span>Licensed drivers, insured AC vans. The same fleet as our private transfers.</span></div></div>' +
+      '<div class="t"><span class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span><div><b>Ceylon Hop — a real operator</b><span>Licensed drivers, insured AC cars and vans. The same fleet as our private transfers.</span></div></div>' +
       '<div class="t"><span class="ico" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17l-6.2 3.9 1.6-7L2 9.2l7.1-.6L12 2z"/></svg></span><div><b>5.0 on Tripadvisor</b><span>Every review is from a real trip across the island.</span></div></div>' +
       '<div class="t"><span class="ico" style="background:#25D366"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2z"/></svg></span><div><b>Humans on WhatsApp</b><span>Question at 6am from a train platform? We answer.</span></div></div>' +
       '<div class="t"><span class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><div><b>Verified travellers only</b><span>Everyone signs in with Google. First name + country is all anyone sees.</span></div></div>' +
@@ -954,8 +954,8 @@
       // ---- sticky join card ----
       '<aside class="d-join">' +
       (youIn
-        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.') + '</span></div></div>'
-        : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the van locks in. Never a cent before.</div>') +
+        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The taxi is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.') + '</span></div></div>'
+        : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the taxi locks in. Never a cent before.</div>') +
       '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>' +
       '<div class="who-row">' + whoRow + '<span class="lbl">' + L.committed + ' of ' + min + ' in</span></div>' +
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
@@ -973,7 +973,7 @@
       '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
+      (conf ? 'taxi locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
@@ -1159,7 +1159,7 @@
     });
     var note = document.getElementById('seat-note');
     if (held) note.textContent = 'You have ' + held + (held === 1 ? ' seat' : ' seats') + ' on this ride. Change it here — we only ever charge for what you keep.';
-    else if (most < MAX_SEATS) note.textContent = 'Only ' + most + (most === 1 ? ' seat' : ' seats') + ' left on this van.';
+    else if (most < MAX_SEATS) note.textContent = 'Only ' + most + (most === 1 ? ' seat' : ' seats') + ' left on this taxi.';
     else note.textContent = 'Travelling with someone? Take their seat now — you\'re charged together, or not at all.';
   }
   document.getElementById('seat-opts').addEventListener('click', function (e) {
@@ -1232,7 +1232,7 @@
     var when = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
     stop.innerHTML = '<b>We already run this on ' + esc(clash.weekday) + '</b>' +
       '<p>A guaranteed seat leaves ' + esc(when) + (clash.time ? ' at ' + esc(clock12(clash.time)) : '') + ' for ' + money(clash.seat) +
-      '. Starting a second van would only split the travellers.</p>' +
+      '. Starting a second taxi would only split the travellers.</p>' +
       '<a class="btn btn-primary btn-block" href="search.html?from=' + encodeURIComponent(cFrom.value) +
       '&to=' + encodeURIComponent(cTo.value) + '&date=' + encodeURIComponent(cDate.value) + '">Book the guaranteed seat →</a>';
   }
@@ -1379,7 +1379,7 @@
     if (!current && prefill) {
       prefillCreate(prefill);
       var mr = document.getElementById('m-route');
-      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + (prefill.fromSearch ? ' · your date' : ' · another van, your date');
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + (prefill.fromSearch ? ' · your date' : ' · another taxi, your date');
     }
     setStep(0);
     // Intent to join (or to start a van). GA4's begin_checkout is the closest
@@ -1675,10 +1675,10 @@
     // to open with four blocks of copy and the buttons below the fold (owner, 2026-09-18).
     document.getElementById('done-head').textContent = need === 0
       ? 'Enough seats are pledged.'
-      : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the van runs.';
+      : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the taxi runs.';
     document.getElementById('done-sub').textContent = need === 0
       ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
-      : 'Spread the word to fill the van and lock in your ≈ ' + money(L.cost) + ' seat.';
+      : 'Spread the word to fill the taxi and lock in your ≈ ' + money(L.cost) + ' seat.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
@@ -1694,9 +1694,9 @@
     document.getElementById('sc-dots').innerHTML = Array.apply(null, { length: L.minSeats }).map(function (_, i) { return '<i class="' + (i < L.committed ? 'f' : '') + '"></i>'; }).join('');
     document.getElementById('sc-msg').textContent = need > 0
       ? need + ' seat' + (need > 1 ? 's' : '') + ' to lock it in — you pay $0 unless it runs.'
-      : 'The van\'s locked in — seats still open.';
+      : 'The taxi\'s locked in — seats still open.';
     document.getElementById('share-url').value = url;
-    var msg = 'hey — I put my name on a shared van list, ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' · ' + s + '. ≈' + money(L.cost) + ' each, runs when ' + (need > 0 ? need + ' more sign' : 'you grab a seat') + ', $0 if it doesn\'t happen. add your name: ' + url;
+    var msg = 'hey — I put my name on a shared taxi list, ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' · ' + s + '. ≈' + money(L.cost) + ' each, runs when ' + (need > 0 ? need + ' more sign' : 'you grab a seat') + ', $0 if it doesn\'t happen. add your name: ' + url;
     document.getElementById('wa-share').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
     document.getElementById('fb-share').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
   }
