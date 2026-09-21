@@ -99,6 +99,54 @@ for (const p of PAGES) {
     });
   }
 
+  /* The BODY sections (task B2). Each one is a two-column grid or a 4-up card row that
+     collapses on a phone, and every one of them can fail the same two ways: a column that
+     does not shrink pushes the page sideways, and a card whose image is sized by its
+     INTRINSIC height attribute instead of its box grows a gap between the photo and the
+     text under it. Neither shows in a unit test. */
+  for (const vp of [{ width: 1280, height: 900 }, { width: 375, height: 812 }]) {
+    test(`${p.name} @ ${vp.width}x${vp.height}: the body sections fit and the FAQ opens`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      await page.goto(p.url);
+      await expect(page.locator('.drive ol.stops')).toBeVisible();
+
+      // every section renders, and renders INSIDE the viewport
+      const boxes = await page.evaluate(() => {
+        const out = {};
+        for (const sel of ['.drive', '.included', '.proof', '.faq', '.next']) {
+          const el = document.querySelector(sel);
+          if (!el) { out[sel] = null; continue; }
+          const r = el.getBoundingClientRect();
+          out[sel] = { left: Math.round(r.left), right: Math.round(r.right), w: window.innerWidth };
+        }
+        return out;
+      });
+      for (const [sel, box] of Object.entries(boxes)) {
+        expect(box, `${sel} rendered nothing`).not.toBeNull();
+        expect(box.left, `${sel} starts left of the viewport`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${sel} runs past the right edge (${box.right} > ${box.w})`).toBeLessThanOrEqual(box.w + 1);
+      }
+
+      // a where-next card's photo and its text block touch — no inherited grid gap between them
+      const gaps = await page.evaluate(() => [...document.querySelectorAll('.next a.rt-card')].map((c) => {
+        const img = c.querySelector('img').getBoundingClientRect();
+        const bd = c.children[c.children.length - 1].getBoundingClientRect();
+        return Math.round((bd.top - img.bottom) * 100) / 100;
+      }));
+      expect(gaps.length).toBeGreaterThan(0);
+      for (const g of gaps) expect(Math.abs(g), `card photo and text are ${g}px apart`).toBeLessThanOrEqual(1);
+
+      // the accordion is a real <details>: the second one is shut, and clicking opens it
+      const second = page.locator('.faq details').nth(1);
+      await expect(second).toHaveJSProperty('open', false);
+      await second.locator('summary').click();
+      await expect(second).toHaveJSProperty('open', true);
+
+      const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(over, 'the page scrolls sideways').toBeLessThanOrEqual(0);
+    });
+  }
+
   test(`${p.name}: on a phone the price and the Book button are above the fold`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(p.url);

@@ -9,7 +9,8 @@ test('route page renders with nav, both options priced, and books directly', asy
   // The estimate moved from the hero's prose subtitle into the meta row when the hero
   // became a postcard — same single compact string (#537/#539), stated once, new home.
   await expect(page.locator('.route-hero .route-meta')).toContainText('Approx. 135 km · 3h 45m');
-  await expect(page.locator('.faq-q').first()).toContainText('approx. 135 km · 3h 45m');
+  // "How long does the drive take?" — the first row of the FAQ accordion, which ships open.
+  await expect(page.locator('.faq details').first()).toContainText('approx. 135 km · 3h 45m');
   await expect(page.locator('.nav-links')).toBeVisible();
 
   // private is priced per vehicle, on the page itself

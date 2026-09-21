@@ -22,7 +22,10 @@ const legOf = (p) => p.match(/^trip\/(.+)-to-(.+)\/index\.html$/).slice(1, 3);
 const decode = (s) => s.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
 const titleOf = (html) => decode(html.match(/<title>([^<]*)<\/title>/)[1]);
 const descOf = (html) => decode(html.match(/<meta name="description" content="([^"]*)"/)[1]);
-const faqQuestions = (html) => [...html.matchAll(/<div class="faq-q"><h3>([^<]*)<\/h3><p>([\s\S]*?)<\/p>/g)]
+// The FAQ is a native <details> accordion now (it used to be a stack of <div class="faq-q">
+// with an <h3>). Same array, same wording, same two keyword-bearing questions — only the
+// element that carries the question changed, so this reads <summary> instead of <h3>.
+const faqQuestions = (html) => [...html.matchAll(/<summary>([^<]*)<\/summary><p>([\s\S]*?)<\/p>/g)]
   .map((m) => [decode(m[1]), decode(m[2].replace(/<[^>]+>/g, ''))]);
 
 const sharedPages = pages.filter(([p]) => T.sharedOption(...legOf(p)));

@@ -44,7 +44,9 @@ test('a route page shows the engine fare everywhere it states a price, and books
   expect(await pending(page)).toBe(false);
 
   // the FAQ answers "how much is a taxi" with the same two numbers, not the catalogue's
-  const faq = page.locator('.faq-q', { hasText: 'How much is a taxi' });
+  // The FAQ is a <details> accordion now; the answer is in the DOM whether or not the row
+  // is open, and toContainText reads the DOM, so nothing here has to click it first.
+  const faq = page.locator('.faq details', { hasText: 'How much is a taxi' });
   await expect(faq).toContainText('from $66');
   await expect(faq).toContainText('from $88');
   // Scoped to THIS route's own statements. "Related routes" below lists other routes' fares

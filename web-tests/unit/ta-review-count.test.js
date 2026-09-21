@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from '../../tools/generate-route-pages.mjs';
+import { ROOT, generateAll } from '../../tools/generate-route-pages.mjs';
 
 const read = p => readFileSync(join(ROOT, p), 'utf8');
 
@@ -56,6 +56,22 @@ describe('Tripadvisor review count has one source', () => {
     // Crawlers read the source; the spans carry the number and site.js only refreshes it.
     for (const page of PAGES) {
       expect(read(page), page).toMatch(/data-ta-count/);
+    }
+  });
+
+  /* The 44 generated /trip/ pages carry no ta-data.js at all — they are indexed pages, so the
+     count has to be in the served HTML — and they cannot read it at paint time either. The
+     generator reads ta-data.js and BAKES the number in, which makes `npm run generate` the
+     step that keeps them honest. Read the pages ON DISK, never generateAll()'s output: the
+     generator agrees with ta-data.js by construction, so only the built file can be stale. */
+  it('every generated route page bakes ta-data.js’s count into its proof row', () => {
+    const TA = loadTA();
+    const pages = [...generateAll().keys()].filter(k => /^trip\/.+-to-.+\/index\.html$/.test(k));
+    expect(pages.length, 'no generated route pages found').toBeGreaterThan(40);
+    for (const rel of pages) {
+      const m = read(rel).match(/data-ta-reviews[^>]*>(\d+)</);
+      expect(m, `${rel} has no [data-ta-reviews] element — run npm run generate`).toBeTruthy();
+      expect(Number(m[1]), `${rel} is stale — run npm run generate`).toBe(TA.reviews);
     }
   });
 

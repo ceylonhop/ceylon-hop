@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import vm from 'node:vm';
 import { loadTransfers } from './load-transfers.mjs';
 import { loadPlacePhotos, photoFor, imgTag } from './place-photos.mjs';
 import { renderChrome, assetV } from './site-chrome.mjs';
@@ -154,11 +155,53 @@ function fmtTime(t) {
   return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`;
 }
 
-/** First sentence of the intro, if it fits a hero line; otherwise a plain template. */
-function pitch(intro, fromName, toName) {
-  const first = (String(intro).match(/^.*?[.!?](?=\s|$)/) || [''])[0].trim();
-  return first && first.length <= 120 ? first : `${fromName} to ${toName} in your own AC car or van, door to door, at a fixed price.`;
+/** Prose → sentences. ONE helper, shared by the hero line and the body lede below: they have
+ *  to agree about where the first sentence ends, or the page says the same thing twice. */
+function sentences(text) {
+  return (String(text).match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || []).map(s => s.trim()).filter(Boolean);
 }
+
+/* The hero's one-line pitch.
+
+   The first version of this was "the intro's first sentence if it is under 120 chars, else
+   <From> to <To> in your own AC car or van…". Both halves read badly on the built page: the
+   template repeated the two place names that are already in the h1 directly above it (26 of
+   44 pages), and where the first sentence WAS used it turned up again word for word as the
+   opening of the body copy one screen below (the other 18).
+
+   So: the fallback names no place — the h1 has just said them — and the intro's first
+   sentence is borrowed ONLY when it reads as a standalone line (40–120 chars) and there is
+   more intro left to carry the body. When it is borrowed, driveLede() starts at sentence two,
+   so nothing on the page is said twice. Guarded by web-tests/unit/trip-redesign.test.js. */
+const PITCH_FALLBACK = 'Your own air-conditioned car or van, door to door, at a fixed price.';
+function heroLine(intro) {
+  const parts = sentences(intro);
+  const first = parts[0] || '';
+  return (parts.length >= 2 && first.length >= 40 && first.length <= 120) ? first : PITCH_FALLBACK;
+}
+/** The body copy under "The drive" — the intro, minus whatever the hero already said. */
+function driveLede(intro) {
+  if (heroLine(intro) === PITCH_FALLBACK) return String(intro).trim();
+  return sentences(intro).slice(1).join(' ');
+}
+
+/* The Tripadvisor review count has ONE source: ta-data.js (web-tests/unit/ta-review-count.test.js
+   is what keeps every copy of it in step). A route page ships no script that could read it at
+   paint time — these pages exist to be crawled, so the number has to be in the served HTML —
+   so the generator reads it HERE and bakes it in, and `npm run generate` becomes the step that
+   keeps the 44 pages current. ta-data.js is a browser IIFE that assigns window.TA and then
+   paints; the sandbox reports the document as still loading, so paint() waits for a
+   DOMContentLoaded that never arrives and never touches a DOM that isn't there. */
+function loadTaReviews() {
+  const sandbox = { window: {}, document: { readyState: 'loading', addEventListener() {} } };
+  vm.createContext(sandbox);
+  vm.runInContext(readFileSync(join(ROOT, 'ta-data.js'), 'utf8'), sandbox, { filename: 'ta-data.js' });
+  const n = sandbox.window.TA && sandbox.window.TA.reviews;
+  if (!Number.isInteger(n) || n <= 0) throw new Error('ta-data.js did not publish a review count');
+  return n;
+}
+let TA_REVIEWS = 0;
+const taReviews = () => (TA_REVIEWS ||= loadTaReviews());
 
 /* The homepage's trust strip, minus its fifth item. "Shared seats every Wed & Sat" is a
    homepage claim about the scheduled service; on a route page it would contradict the page
@@ -175,10 +218,92 @@ const TRUST_CLAIMS = [
 const trustStrip = () =>
   `<div class="trip-trust"><div class="wrap"><ul>${TRUST_CLAIMS.map(([ic, t]) => `<li>${ic} ${t}</li>`).join('')}</ul></div></div>`;
 
+/* ── "What's included" ────────────────────────────────────────────────────────────────────
+   Four claims, and only four. Every one of them is something we actually do on every private
+   transfer; the row is not a place to add a fifth nice-sounding line. In particular there is
+   NO meet-and-greet here — we hold no name board at arrivals (docs: #679), and the pickup
+   copy stays generic on purpose.
+
+   The marks are the house line family (img/icons/line/{rate-lock,door-to-door,your-line,
+   free-cancel}.svg), the same four ideas search.html's own "included" chips carry — its
+   `.incl .chip` row is the precedent, down to filling the waypoint dot in saffron. An inlined
+   `class="wp"` dot and a `.wp{fill:…}` rule are a matched pair: without the rule the dot is an
+   invisible hairline ring, so `.included svg .wp` in the page CSS is not optional. */
+const ic = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const INCLUDED = [
+  [ic('<rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/>'),
+    'A fixed price', 'The price you see is the price you pay &mdash; no haggling at the kerb.'],
+  [ic('<circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/>'),
+    'Door to door', 'Picked up exactly where you are, dropped exactly where you&rsquo;re staying.'],
+  [ic('<path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/>'),
+    'Stops when you want', 'Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.'],
+  [ic('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/>'),
+    'Free cancellation', 'Up to 24 hours before, and no fees to change your date.'],
+];
+
+/* The proof row. The quote is the homepage founder note, VERBATIM (index.html, .founder-note)
+   — a softer paraphrase would be a different claim wearing the founder's name. The prototype
+   showed only its second sentence; both sentences are used here, because one sentence left
+   two thirds of a 1180px row empty and the first sentence is the half that says WHY. The
+   review count comes from ta-data.js at generate time, never a literal. */
+const FOUNDER_QUOTE = 'We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we&rsquo;d trust with our own family.';
+const FOUNDER_CITE = 'Roshen &mdash; Co-founder, Ceylon&nbsp;Hop';
+
+function includedSection(p) {
+  const items = INCLUDED.map(([icon, h, body]) => `<div>${icon}<h3>${h}</h3><p>${body}</p></div>`).join('');
+  return `
+  <section class="section trip-included">
+    <div class="wrap">
+      <div class="trip-head"><span class="eyebrow">Every private transfer</span><h2>What&rsquo;s included</h2></div>
+      <div class="included">${items}</div>
+      <figure class="proof">
+        <img src="${p}img/team-roshen.jpg" alt="Roshen, co-founder of Ceylon Hop" width="848" height="933" loading="lazy" decoding="async">
+        <blockquote>&ldquo;${FOUNDER_QUOTE}&rdquo;<cite>${FOUNDER_CITE}</cite></blockquote>
+        <div class="proof-ta"><b>5.0</b><span class="proof-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span><br><span data-ta-reviews>${taReviews()}</span> reviews on Tripadvisor</div>
+      </figure>
+    </div>
+  </section>`;
+}
+
+/* ── The drive ────────────────────────────────────────────────────────────────────────────
+   The highlights were a bullet list under a paragraph. They are the same strings, drawn as
+   the route line they describe: origin, every highlight in order, destination. A real <ol>,
+   because the order is the point; the markers are suppressed and redrawn as the dotted spine.
+
+   The title is written per PAIR and only for the two the prototype mocked — 44 hand-written
+   headings is 44 things to keep current. A reverse page falls back too: "Tea, waterfalls and
+   hairpins" describes the climb, not the descent. */
+function driveSection(c, forward, fromName, toName, highlights, intro, photos, from, p) {
+  const title = (forward && c.driveTitle) ? c.driveTitle : `The road from ${fromName} to ${toName}`;
+  const photo = photoFor(photos, c.photo || from);
+  const mid = highlights.map(h => `<li>${esc(h)}</li>`).join('');
+  return `
+  <section class="section trip-drive">
+    <div class="wrap drive">
+      <div class="drive-copy">
+        <span class="eyebrow">The drive</span>
+        <h2>${esc(title)}</h2>
+        <p class="drive-lede">${esc(driveLede(intro))}</p>
+        <ol class="stops">
+          <li class="end">${esc(fromName)}</li>${mid}<li class="end end-to">${esc(toName)}</li>
+        </ol>
+      </div>
+      <figure class="drive-photo">${imgTag(photo, { p, sizes: '(max-width:900px) 100vw, 45vw' })}<figcaption>${esc(photo.caption)}</figcaption></figure>
+    </div>
+  </section>`;
+}
+
 function faqItems(from, to, q, shared) {
   const estimate = lowerFirst(routeEstimate(q));
+  // Three of these five are generic questions that happened to carry the route name; in an
+  // accordion, where the question IS the row, "How long does the Colombo Airport (CMB) to
+  // Sigiriya / Dambulla transfer take?" is a paragraph pretending to be a label. They are
+  // shortened. The two that are NOT are the ones the old WordPress pages ranked for — "how
+  // much is a taxi from X to Y" and the shared-taxi question — and those keep every word
+  // (web-tests/unit/seo-legacy-keywords.test.js). This array is also the JSON-LD FAQPage, so
+  // the crawler's copy and the reader's copy change together, which is the point of it.
   const items = [
-    [`How long does the ${from} to ${to} transfer take?`,
+    [`How long does the drive take?`,
       `Plan for ${estimate} by road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
@@ -192,7 +317,7 @@ function faqItems(from, to, q, shared) {
       : [`Is there a shared taxi from ${from} to ${to}?`, `Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
-    [`How do I book the ${from} to ${to} transfer?`,
+    [`How do I book?`,
       `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.`],
   ];
   return items;
@@ -280,11 +405,18 @@ function routePage(T, content, from, to, forward, photos) {
     : `Private taxi from ${fromName} to ${toName} — car or AC van at a fixed price, door to door. ${estimate}. Rated 5.0 on Tripadvisor.`;
   const faq = faqItems(fromName, toName, q, shared);
 
-  const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
-  const related = relatedRoutes(from, to);
-  const relatedHtml = related.map(d => {
+  /* Where next. The reverse leg is always first (relatedRoutes picks it), and it says so —
+     "Return trip" is the single most likely next click and it should not look like just
+     another route. `data-list-fare` marks a fare that belongs to a DIFFERENT route from this
+     page's: nothing reads it yet, but route-page-fares.js only ever asks the engine about
+     [data-live-fares]'s own leg, so these must not be mistaken for it. The container class
+     and the card class are deliberately different — on the sibling /trip/ index they were the
+     same and the grid's `gap` applied inside every card. */
+  const relatedHtml = relatedRoutes(from, to).map(d => {
     const rq = T.privateQuote(d.from, d.to);
-    return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/"><span class="rt-name">${esc(T.byId[d.from].name)} → ${esc(T.byId[d.to].name)}</span><span class="rt-meta">${routeEstimate(rq)} · from $${price(rq.car)}</span></a>`;
+    const dFrom = T.byId[d.from].name, dTo = T.byId[d.to].name;
+    const ret = (d.from === to && d.to === from) ? '<span class="rt-ret">Return trip</span>' : '';
+    return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/">${ret}${imgTag(photoFor(photos, d.to), { p, sizes: '(max-width:900px) 50vw, 25vw' })}<span class="rt-bd"><span class="rt-name">${esc(dFrom)} → ${esc(dTo)}</span><span class="rt-meta">${routeEstimate(rq)}</span><span class="rt-fare">from <b data-list-fare data-from-name="${esc(dFrom)}" data-to-name="${esc(dTo)}">$${price(rq.car)}</b> fixed</span></span></a>`;
   }).join('');
   // The "how much is a taxi" answer states the same two fares as the card, so it gets the same
   // live figures — otherwise a boosted route would say $66 on the card and $59.99 a scroll below.
@@ -295,7 +427,10 @@ function routePage(T, content, from, to, forward, photos) {
     return html.replace(car, `from <span data-fare="car">$${price(q.car)}</span> and`)
                .replace(van, `from <span data-fare="van">$${price(q.van)}</span>,`);
   };
-  const faqHtml = faq.map(([qq, a]) => `<div class="faq-q"><h3>${esc(qq)}</h3><p>${liveFares(esc(a))}</p></div>`).join('\n        ');
+  // A native <details> accordion: it opens with no JavaScript, is keyboard-operable for free,
+  // and a crawler still reads every closed answer. The first item ships open so the column is
+  // never four unexplained bars.
+  const faqHtml = faq.map(([qq, a], i) => `<details${i === 0 ? ' open' : ''}><summary>${esc(qq)}</summary><p>${liveFares(esc(a))}</p></details>`).join('\n          ');
   if ((faqHtml.match(/data-fare=/g) || []).length !== 2) throw new Error(`${from}-to-${to}: the FAQ price sentence changed shape — liveFares() no longer finds both fares`);
 
   return `<!DOCTYPE html>
@@ -434,20 +569,97 @@ ${headAssets}
   .ld-meter i{display:block;height:100%;background:var(--teal,#0AB9B6);border-radius:99px}
   .ld-meter i.full{background:var(--saffron,#F9A429)}
   .ld-go{grid-column:4;grid-row:1/3;color:var(--blue-deep,#24758A);font-weight:800}
-  .route-body{padding:52px 0}
-  .route-body .lede{font-size:1.08rem;line-height:1.7;max-width:64ch}
-  .route-hl{margin:22px 0 0;padding-left:1.1rem}
-  .route-hl li{margin:.3rem 0}
-  .faq{padding:8px 0 52px}
-  .faq-q{max-width:70ch;margin:0 0 18px}
-  .faq-q h3{margin:0 0 .3rem;font-size:1.05rem}
-  .faq-q p{margin:0;color:var(--ink-soft,#6c6a6b)}
-  .route-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
-  .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
-  .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
-  .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
+  /* ── the drive ────────────────────────────────────────────────────────────────
+     A two-column band: the copy and the route line on the left, a photo of where you
+     START on the right (the hero already shows where you are going, so no page ever
+     prints the same photo twice). site.css does not define .drive, .stops, .end,
+     .included, .proof, .next or any of the rt-* names — the only shared names this
+     block reuses are .section, .wrap, .eyebrow and .btn, deliberately. */
+  .trip-drive{background:var(--paper,#fffdf8)}
+  .drive{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,5fr);gap:56px;align-items:center}
+  .drive h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .drive .eyebrow{margin:0 0 .7rem}
+  .drive-lede{margin:14px 0 0;font-size:1.04rem;line-height:1.65;color:var(--ink-soft,#6c6a6b);max-width:36rem}
+  /* A real <ol> — the stops happen in that order — with the markers suppressed and
+     redrawn as a dotted spine with a dot per stop. */
+  .stops{list-style:none;margin:26px 0 0;padding:0;position:relative}
+  .stops::before{content:"";position:absolute;left:11px;top:12px;bottom:12px;border-left:2px dotted var(--blue-deep,#24758A);opacity:.55}
+  .stops li{position:relative;padding:0 0 16px 40px;font-size:.96rem}
+  .stops li::before{content:"";position:absolute;left:6px;top:7px;width:12px;height:12px;border-radius:50%;
+    background:var(--paper,#fffdf8);border:2px solid var(--blue-deep,#24758A)}
+  .stops li.end{font-family:var(--display);font-weight:700;font-size:1.15rem;padding-bottom:18px}
+  .stops li.end::before{left:2px;top:3px;width:20px;height:20px;background:var(--blue-deep,#24758A);
+    border-color:var(--paper,#fffdf8);box-shadow:0 0 0 2px var(--blue-deep,#24758A)}
+  .stops li.end-to::before{background:var(--cta,#EC3A24);box-shadow:0 0 0 2px var(--cta,#EC3A24)}
+  .stops li:last-child{padding-bottom:0}
+  /* imgTag emits the photo's INTRINSIC width/height, so every framed image below needs
+     height:auto (or an explicit height) — otherwise the HTML height attribute wins over
+     the aspect-ratio box and the photo renders several times too tall. */
+  .drive-photo{position:relative;margin:0}
+  .drive-photo img{display:block;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;border-radius:26px}
+  .drive-photo figcaption{position:absolute;left:18px;bottom:16px;background:var(--paper,#fffdf8);border-radius:12px;
+    padding:6px 14px;font-family:var(--hand,'Caveat',cursive);font-weight:600;font-size:1.3rem;line-height:1.2;
+    transform:rotate(-2deg);box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}
+  /* ── what's included, and the proof row under it ──────────────────────────────
+     The four marks are the house line family, so each carries one filled waypoint dot.
+     An inlined class="wp" and a .wp{fill:…} rule are a matched pair — without the rule
+     the dot is an invisible hairline ring. Same pairing search.html's .incl chips use. */
+  .trip-included{background:linear-gradient(180deg,#E3EFE9,#EEF0E4)}
+  .trip-head{margin-bottom:34px}
+  .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .trip-head .eyebrow{margin:0 0 .7rem}
+  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
+  .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
+  .included h3{margin:0;font-family:var(--body);font-size:.98rem;font-weight:600}
+  .included p{margin:0;font-size:.86rem;line-height:1.55;color:var(--ink-soft,#6c6a6b)}
+  .proof{margin:48px 0 0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:22px;align-items:center;
+    background:#fff;border:1px solid var(--line,#e7e3d6);border-radius:22px;padding:24px 28px}
+  .proof img{display:block;width:64px;height:64px;border-radius:50%;object-fit:cover}
+  .proof blockquote{margin:0;font-family:var(--display);font-style:italic;font-size:1.08rem;line-height:1.45}
+  .proof cite{display:block;margin-top:6px;font-family:var(--body);font-style:normal;font-size:.8rem;color:var(--ink-soft,#6c6a6b)}
+  .proof-ta{text-align:center;font-size:.76rem;color:var(--ink-soft,#6c6a6b);border-left:1px solid var(--line,#e7e3d6);padding-left:22px}
+  .proof-ta b{display:block;font-size:1.7rem;color:var(--ink,#3A3739);line-height:1.1}
+  .proof-stars{color:var(--saffron,#F9A429);letter-spacing:2px}
+  /* ── FAQ accordion ────────────────────────────────────────────────────────────
+     Native <details>: it opens with no JavaScript, is keyboard-operable for free, and a
+     crawler still reads every closed answer — which matters, because this markup and the
+     JSON-LD FAQPage are built from the same array. */
+  .faq{background:var(--cream-deep,#E4E0D2)}
+  .faq-grid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:56px;align-items:start}
+  .faq-side{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+  .faq-side h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .faq-side .eyebrow{margin:0}
+  .faq-lede{margin:0;font-size:1.02rem;line-height:1.6;color:var(--ink-soft,#6c6a6b)}
+  .faq-acc{border-top:1px solid #d5d0bf}
+  .faq-acc details{border-bottom:1px solid #d5d0bf}
+  .faq-acc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+    gap:16px;padding:18px 2px;font-weight:600;font-size:1rem}
+  .faq-acc summary::-webkit-details-marker{display:none}
+  .faq-acc summary::after{content:"+";font-size:1.5rem;font-weight:400;color:var(--blue-deep,#24758A);line-height:1;flex:none}
+  .faq-acc details[open] summary::after{content:"\\2013"}
+  .faq-acc p{margin:0;padding:0 40px 20px 2px;color:var(--ink-soft,#6c6a6b);font-size:.94rem;line-height:1.6;max-width:40rem}
+  /* ── where next ───────────────────────────────────────────────────────────────
+     The grid (.next) and the card (a.rt-card) are different classes on purpose: on the
+     sibling /trip/ index they were the same, so the grid's gap applied INSIDE every
+     card and opened a stripe between each photo and its text. */
+  .next{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+  .rt-card{position:relative;display:flex;flex-direction:column;background:var(--paper,#fffdf8);
+    border:1px solid var(--line,#e7e3d6);border-radius:18px;overflow:hidden;text-decoration:none;color:inherit;
+    transition:transform .2s,box-shadow .2s}
+  .rt-card:hover{transform:translateY(-3px);box-shadow:0 18px 34px -18px rgba(30,40,36,.45)}
+  .rt-card img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover}
+  .rt-bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
+  .rt-name{font-family:var(--display);font-weight:700;font-size:1.12rem;line-height:1.2;overflow-wrap:anywhere}
+  .rt-meta{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  .rt-fare{margin-top:8px;font-size:.84rem}
+  .rt-fare b{font-size:1.08rem}
+  .rt-ret{position:absolute;top:10px;left:10px;z-index:1;background:var(--paper,#fffdf8);border-radius:999px;
+    padding:4px 10px;font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .trip-all{margin:24px 0 0}
+  .trip-all a{font-weight:600;color:var(--blue-deep,#24758A)}
+  @media(prefers-reduced-motion:reduce){.rt-card{transition:none}}
   @media(max-width:900px){
     /* On a phone the fares card must sit on CREAM, not on the photo — a card printed over a
        bright beach is unreadable, and the price is the one thing that has to be legible above
@@ -474,6 +686,22 @@ ${headAssets}
     .no-share{margin-top:24px}
     .share-grid{grid-template-columns:1fr;gap:26px}
     .veh-ic svg{width:38px;height:25px}
+    .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
+    .drive-photo img{aspect-ratio:4/3}
+    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    /* The quote runs to five lines in a phone column, and a vertically centred avatar then
+       floats in the middle of it with white space above and below. Align it to the first line. */
+    .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
+    .proof blockquote{font-size:1rem}
+    .proof-ta{grid-column:1/-1;border-left:0;border-top:1px solid var(--line,#e7e3d6);padding:14px 0 0}
+    .faq-acc p{padding-right:8px}
+    .next{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .rt-name{font-size:1.02rem}
+    /* "from $59.99 fixed" is 138px of type in a 170px card — a hair over, so the last word
+       fell to a line of its own on half the cards. */
+    .rt-bd{padding:12px 13px 14px}
+    .rt-fare{margin-top:6px;font-size:.8rem}
+    .rt-fare b{font-size:1rem}
     /* The bar is shipped hidden and stays hidden until a later step reveals it — hence
        :not([hidden]), which keeps display:flex from beating the UA's [hidden] rule. */
     .trip-bookbar:not([hidden]){display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
@@ -496,7 +724,7 @@ ${header}
         <div class="hero-media">${imgTag(photoFor(photos, to), { p, sizes: '100vw', eager: true, cls: 'hero-img' })}</div>
         <nav class="route-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> · <a href="${p}trip/">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
         <h1>${esc(fromName)} <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>${esc(toName)}</h1>
-        <p class="hero-sub">${esc(pitch(intro, fromName, toName))}</p>
+        <p class="hero-sub">${esc(heroLine(intro))}</p>
         <ul class="route-meta">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${esc(estimate)}</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg> Runs every day</li>
@@ -506,38 +734,28 @@ ${header}
       ${faresCard(T, from, to, q, shared, p)}
     </div>
   </section>
-  ${trustStrip()}${noShareNote(T, from, to, shared, p)}${sharedSection(T, from, to, shared, p)}
-  <section class="section route-body">
-    <div class="wrap">
-      <p class="lede">${esc(intro)}</p>
-      <ul class="route-hl">${highlightLis}</ul>
-    </div>
-  </section>
-  <section class="section faq" style="background:var(--cream-deep,#E4E0D2)">
-    <div class="wrap">
-      <span class="eyebrow">Good to know</span>
-      <h2>${esc(fromName)} to ${esc(toName)} — questions</h2>
-      <!-- The WhatsApp button used to sit in the hero, where it competed with the price for
-           the one action above the fold. It belongs with the questions: it is what you press
-           when the page has not answered yours. -->
-      <div class="route-cta" style="margin-top:14px">
+  ${trustStrip()}${noShareNote(T, from, to, shared, p)}${sharedSection(T, from, to, shared, p)}${driveSection(c, forward, fromName, toName, highlights, intro, photos, from, p)}${includedSection(p)}
+  <section class="section faq">
+    <div class="wrap faq-grid">
+      <div class="faq-side">
+        <span class="eyebrow">Good to know</span>
+        <h2>${esc(fromName)} to ${esc(toName)}, answered</h2>
+        <p class="faq-lede">Something we haven&rsquo;t covered? We reply within minutes, 7 days a week.</p>
+        <!-- The WhatsApp button used to sit in the hero, where it competed with the price for
+             the one action above the fold. It belongs with the questions: it is what you press
+             when the page has not answered yours. -->
         <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
       </div>
-      <div style="margin-top:20px">
-        ${faqHtml}
-      </div>
-      <div class="route-cta" style="margin-top:8px">
-        <!-- The prices are already ON this page, so the tail CTA returns the reader to
-             them rather than forwarding to search.html for a second opinion. -->
-        <a class="btn btn-primary" href="#top-options">See your options</a>
+      <div class="faq-acc">
+          ${faqHtml}
       </div>
     </div>
   </section>
-  <section class="section">
+  <section class="section trip-next">
     <div class="wrap">
-      <h2>Related routes</h2>
-      <div class="rt-grid">${relatedHtml}</div>
-      <p style="margin-top:14px"><a href="${p}trip/">See all Sri Lanka transfer routes →</a></p>
+      <div class="trip-head"><span class="eyebrow">Keep hopping</span><h2>Where next from ${esc(toName)}?</h2></div>
+      <div class="next">${relatedHtml}</div>
+      <p class="trip-all"><a href="${p}trip/">See all Sri Lanka transfer routes →</a></p>
     </div>
   </section>
   <!-- Shipped hidden and priced: a later step reveals it once the hero card scrolls away.
