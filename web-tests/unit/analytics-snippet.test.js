@@ -30,15 +30,42 @@ describe('analytics snippet (Phase 0)', () => {
     expect(analyticsSnippet).not.toContain("analytics_storage:'denied'");
   });
 
-  /* The site runs no ads. These stay pinned so an ads tag added inside the GTM container
-     cannot start setting advertising cookies without this line changing first. */
-  it('hard-denies every advertising signal', () => {
-    expect(analyticsSnippet).toContain("ad_storage:'denied'");
-    expect(analyticsSnippet).toContain("ad_user_data:'denied'");
-    expect(analyticsSnippet).toContain("ad_personalization:'denied'");
+  /* SUPERSEDED 2026-09-20. The old rule was "the site runs no ads, so deny everything", pinned
+     so an ads tag could not start setting cookies without this line changing first. That
+     tripwire worked: the Google Ads tag (AW-16942077888) and the Meta pixel both exist in the
+     container and were PERMANENTLY BLOCKED by it — Meta was told visitors arrived and never
+     told one bought, and neither failed loudly.
+
+     The new rule, from the owner's own Search Console export: EU 21.7% of clicks, UK 7.9% —
+     about 30% in GDPR / UK-GDPR scope, too much to ignore and too much to switch off. So
+     advertising is granted globally and re-denied for the EEA + UK + CH, where the rules bite.
+     There is still no consent banner (owner decision 2026-08-27), so the European third stays
+     unmeasured by design.
+
+     The tripwire is kept, just moved: the region-scoped denial must exist and must cover the
+     big EU markets, so nobody can quietly grant advertising consent in Europe. */
+  it('grants advertising signals by default, outside Europe', () => {
     for (const k of ['ad_storage', 'ad_user_data', 'ad_personalization']) {
-      expect(analyticsSnippet, `${k} must never be granted`).not.toContain(`${k}:'granted'`);
+      expect(analyticsSnippet, `${k} must be granted in the global default`).toContain(`${k}:'granted'`);
+      expect(analyticsSnippet, `${k} must be re-denied for the region list`).toContain(`${k}:'denied'`);
     }
+  });
+
+  it('re-denies advertising for the EEA, the UK and Switzerland', () => {
+    const regional = analyticsSnippet.split("consent','default'")[2] || '';
+    expect(regional, 'a second, region-scoped default must exist').toContain('region:');
+    // Spot-check the markets that actually send traffic, plus the UK and Switzerland, which
+    // are outside the EU and are the easiest to leave out by accident.
+    for (const cc of ['GB', 'DE', 'FR', 'NL', 'ES', 'IT', 'IE', 'SE', 'PL', 'CH', 'NO', 'IS']) {
+      expect(regional, `${cc} must be in the region-scoped denial`).toContain(`'${cc}'`);
+    }
+    expect(regional, 'the regional block must deny, not grant').not.toContain("ad_storage:'granted'");
+  });
+
+  it('keeps the global default first — a later region default only narrows it', () => {
+    const iGlobal = analyticsSnippet.indexOf("consent','default'");
+    const iRegion = analyticsSnippet.indexOf('region:');
+    expect(iGlobal).toBeLessThan(iRegion);
   });
 
   /* wait_for_update existed to hold hits back while a banner was on screen. With no banner

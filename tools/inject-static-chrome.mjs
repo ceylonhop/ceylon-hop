@@ -21,10 +21,10 @@
 //
 // Idempotent: it replaces the entire contents of the <div data-footer> host, so running it
 // twice is the same as running it once. Part of `npm run generate`.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderFooter } from './site-chrome.mjs';
+import { renderFooter, analyticsSnippet } from './site-chrome.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -36,6 +36,23 @@ export const PAGES = ['index.html', 'about.html', 'blog.html', 'tours.html', 'wh
 // contains nested divs, so we anchor on the host's own opening tag and rebuild it wholesale.
 const HOST = /<div data-footer>[\s\S]*?<\/div>\s*(?=<script|<\/body>)/;
 
+// The Consent Mode default line is COPIED into every page's <head>, not linked, because it
+// must execute before the GTM loader on that same page. site-chrome.mjs is the single source;
+// this keeps the copies in step. Left to drift, a page would quietly run the old policy —
+// which is how ad_storage stayed denied sitewide while the container had ads tags in it.
+const CONSENT_LINE = /gtag\('consent','default'[\s\S]*?(?=<\/script>)/;
+const canonicalConsent = () => {
+  const m = analyticsSnippet.match(CONSENT_LINE);
+  if (!m) throw new Error('inject-static-chrome: no consent default found in analyticsSnippet');
+  return m[0];
+};
+
+/** @returns the page HTML with its consent defaults re-synced from site-chrome.mjs. */
+export function syncConsent(html) {
+  if (!CONSENT_LINE.test(html)) return html; // page carries no analytics snippet
+  return html.replace(CONSENT_LINE, canonicalConsent());
+}
+
 /** @returns the page HTML with the footer baked into its [data-footer] host. */
 export function injectFooter(html, prefix = '') {
   const footer = renderFooter(prefix);
@@ -46,14 +63,34 @@ export function injectFooter(html, prefix = '') {
   throw new Error('inject-static-chrome: no [data-footer] host found — page layout changed?');
 }
 
+/** Root-level pages that carry the analytics snippet inline. The generated pages get it from
+    site-chrome at build time; these hand-written ones hold their own copy and must be synced.
+    Discovered rather than listed, so a new page cannot be forgotten. */
+export function consentPages() {
+  return readdirSync(ROOT)
+    .filter((f) => f.endsWith('.html'))
+    .filter((f) => CONSENT_LINE.test(readFileSync(path.join(ROOT, f), 'utf8')));
+}
+
 export function injectAll({ write = true } = {}) {
   const results = [];
+
+  // 1. Footer — only the pages that have a [data-footer] host.
   for (const page of PAGES) {
     const file = path.join(ROOT, page);
     const before = readFileSync(file, 'utf8');
     const after = injectFooter(before, '');
     if (write && after !== before) writeFileSync(file, after);
     results.push([page, after !== before]);
+  }
+
+  // 2. Consent defaults — every root page carrying the snippet, footer or not.
+  for (const page of consentPages()) {
+    const file = path.join(ROOT, page);
+    const before = readFileSync(file, 'utf8');
+    const after = syncConsent(before);
+    if (write && after !== before) writeFileSync(file, after);
+    if (after !== before) results.push([`${page} (consent)`, true]);
   }
   return results;
 }
