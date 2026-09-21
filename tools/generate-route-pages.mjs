@@ -544,9 +544,22 @@ ${headAssets}
      here overlaps the header: unlike the hand-written pages, a generated page's <header> is a
      normal in-flow element (no [data-header] sticky wrapper), so the hero sits under it, not
      behind it. */
-  .hero{position:relative;color:#fff;background:#23302b;isolation:isolate;overflow:hidden}
+  /* Fix 1 (coordinator review): .hero itself must NOT clip. The .fares card is designed to
+     overlap the hero's bottom edge (negative margin, like the prototype and the home booking
+     widget) — overflow:hidden on .hero clipped that overlap along with everything below it (the
+     submit button sliced in half, the fine print invisible). The photo + gradient are the only
+     things that ever need clipping (that's what overflow:hidden was for), so they get their own
+     absolutely-positioned wrapper with its own clip; .hero itself stays overflow:visible. */
+  .hero{position:relative;color:#fff;background:#23302b;isolation:isolate}
+  /* hero-media itself gets a z-index (to sit behind .wrap in .hero's isolated stacking
+     context), which means it establishes its OWN stacking context for its two children — so
+     they need their own explicit order too, or ::before (generated first, so painted first/
+     furthest back with an auto z-index) loses to the later <img> in DOM order and the photo
+     paints OVER the gradient instead of under it. Same -2/-1 relationship as before the fix,
+     just scoped one level deeper. */
+  .hero-media{position:absolute;inset:0;overflow:hidden;z-index:-2}
   .hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
-  .hero::before{content:"";position:absolute;inset:0;z-index:-1;
+  .hero-media::before{content:"";position:absolute;inset:0;z-index:-1;
     background:linear-gradient(90deg,rgba(20,28,26,.78) 0%,rgba(20,28,26,.5) 48%,rgba(20,28,26,.12) 100%),
                linear-gradient(0deg,rgba(20,28,26,.55),rgba(20,28,26,0) 45%)}
   .hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-block:56px 0}
@@ -592,7 +605,11 @@ ${headAssets}
 
   .fromsticky{position:sticky;top:0;z-index:20;background:var(--cream,#F0EEE5);border-block:1px solid var(--line,#e7e3d6)}
   .fromsticky .wrap{display:flex;align-items:center;gap:14px;padding-block:12px}
-  .fromsticky .lbl{font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);white-space:nowrap}
+  /* Fix 1 (coordinator review, bug 2): a flex item shrinks by default even with
+     white-space:nowrap, so at a narrow-enough width the label itself lost letters ("LEAVING
+     FROI") while the chip row next to it still had room to scroll. flex:none takes it out of
+     the shrink calculation entirely — the chips are what scroll, never the label. */
+  .fromsticky .lbl{flex:none;font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);white-space:nowrap}
   .fchips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px}
   .fchips::-webkit-scrollbar{display:none}
   .fchips a{flex:none;border:1px solid #d5d0bf;background:var(--paper,#fffdf8);border-radius:999px;padding:8px 15px;font-size:.84rem;font-weight:500;text-decoration:none;color:inherit}
@@ -644,7 +661,7 @@ ${headAssets}
 ${header}
 <main>
   <section class="hero ix-hero">
-    ${imgTag(heroPhoto, { p, sizes: '100vw', eager: true, cls: 'hero-img' })}
+    <div class="hero-media">${imgTag(heroPhoto, { p, sizes: '100vw', eager: true, cls: 'hero-img' })}</div>
     <div class="wrap">
       <div class="hero-copy">
         <span class="eyebrow">Sri Lanka, door to door</span>
