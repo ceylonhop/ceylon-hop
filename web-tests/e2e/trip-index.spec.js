@@ -134,6 +134,90 @@ test('pressing "Everywhere" after a filter clears every hidden origin block', as
   expect(anyHidden).toBe(false);
 });
 
+// Fix 1 (coordinator review): the chips are role="button" (screen readers announce
+// "button"), but a plain <a> only fires 'click' on Enter natively — Space does
+// nothing, or falls through to the browser's default "page down". Both keys must
+// activate the SAME filter as a click, and Space must never scroll the page.
+test('Space activates a focused chip and does not itself scroll the page', async ({ page }) => {
+  await page.goto('/trip/?api=off');
+  const kandy = page.locator('.fchips [data-from="kandy"]');
+  // preventScroll: true — a plain .focus() on an off-screen link makes the BROWSER'S
+  // OWN native scroll-into-view kick in, and since site.css sets html{scroll-
+  // behavior:smooth} globally, that native scroll animates rather than jumping —
+  // landing at a different scrollY depending on timing/CPU load and making "before"
+  // a moving target that has nothing to do with this fix. Suppressing it isolates
+  // exactly what's under test: whether the Space KEYPRESS itself causes a scroll.
+  await kandy.evaluate((el) => el.focus({ preventScroll: true }));
+  const before = await page.evaluate(() => window.scrollY);
+  await page.keyboard.press('Space');
+  await expect(page.locator('section.origin:visible')).toHaveCount(1);
+  await expect(page.locator('#from-kandy')).toBeVisible();
+  await expect(kandy).toHaveAttribute('aria-pressed', 'true');
+  const after = await page.evaluate(() => window.scrollY);
+  expect(after, 'Space scrolled the page on its own').toBe(before);
+});
+
+test('Enter activates a focused chip the same way', async ({ page }) => {
+  await page.goto('/trip/?api=off');
+  const ella = page.locator('.fchips [data-from="ella"]');
+  await ella.evaluate((el) => el.focus({ preventScroll: true }));
+  await page.keyboard.press('Enter');
+  await expect(page.locator('section.origin:visible')).toHaveCount(1);
+  await expect(page.locator('#from-ella')).toBeVisible();
+  await expect(ella).toHaveAttribute('aria-pressed', 'true');
+});
+
+// Fix 1: filtering while scrolled deep into the list can shrink the document enough
+// that the picked block ends up above the (clamped) viewport, under the closing
+// band/footer. The filter must bring it back to just under the sticky chip row.
+test('filtering while scrolled past the list brings the picked block back under the sticky row', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/trip/?api=off');
+  await page.evaluate(() => {
+    const el = document.querySelector('#from-arugam-bay'); // the LAST origin block
+    const r = el.getBoundingClientRect();
+    window.scrollTo({ top: window.scrollY + r.top, left: 0, behavior: 'instant' });
+  });
+  const scrolledPastStart = await page.evaluate(() => {
+    const r = document.querySelector('#routes').getBoundingClientRect();
+    return r.top < 0;
+  });
+  expect(scrolledPastStart, 'setup did not actually scroll past the start of the list').toBe(true);
+
+  await page.locator('.fchips [data-from="kandy"]').click();
+
+  const geo = await page.evaluate(() => {
+    const kandy = document.querySelector('#from-kandy');
+    const sticky = document.querySelector('.fromsticky');
+    const kr = kandy.getBoundingClientRect();
+    const sr = sticky.getBoundingClientRect();
+    const heading = kandy.querySelector('h2');
+    const hr = heading.getBoundingClientRect();
+    const hit = document.elementFromPoint(hr.left + hr.width / 2, hr.top + hr.height / 2);
+    return {
+      topInViewport: kr.top >= 0 && kr.top <= window.innerHeight,
+      belowSticky: kr.top >= sr.bottom,
+      headingVisible: !!hit && (hit === kandy || kandy.contains(hit)),
+    };
+  });
+  expect(geo.topInViewport, "kandy block's top is not inside the viewport").toBe(true);
+  expect(geo.belowSticky, "kandy block's top is above the sticky row's bottom edge").toBe(true);
+  expect(geo.headingVisible, 'kandy heading is occluded').toBe(true);
+});
+
+test('filtering from the top of the page causes no scroll jump', async ({ page }) => {
+  // Tall enough that the chip row sits inside the viewport unscrolled — otherwise
+  // Playwright's own click() scrolls the target into view before clicking, which
+  // would move scrollY off 0 for a reason that has nothing to do with this fix.
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await page.goto('/trip/?api=off');
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBe(0);
+  await page.locator('.fchips [data-from="kandy"]').click();
+  const after = await page.evaluate(() => window.scrollY);
+  expect(after, 'filtering from the top jumped the scroll position').toBe(0);
+});
+
 test.describe('phone', () => {
   test.use({ viewport: { width: 375, height: 812 } });
   test('no sideways scroll; chips scroll inside their own row', async ({ page }) => {

@@ -624,10 +624,13 @@ ${headAssets}
 
   .origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
   .origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
-  /* trip-index.js's filter sets the hidden attribute on a block. The browser's own
-     [hidden]{display:none} default has the SAME specificity as .origin{display:grid} above
-     (both one class/attribute selector), so without this it loses the cascade — .origin's
-     display:grid wins and a "hidden" block stays visible. .origin[hidden] outranks it. */
+  /* trip-index.js's filter sets the hidden attribute on a block. The cascade sorts by
+     ORIGIN before specificity: any normal author rule beats a normal user-agent rule
+     no matter what each one's specificity is, so .origin{display:grid} above (an
+     author rule) always wins over the browser's own [hidden]{display:none} default
+     (a user-agent rule) — without this it loses regardless, and a "hidden" block
+     stays visible. .origin[hidden] is itself an author rule, so it outranks .origin
+     the ordinary way (specificity, both being author-origin now). */
   .origin[hidden]{display:none}
   .origin-head{display:flex;flex-direction:column;gap:6px}
   .origin-head img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:18px;max-width:100%}
