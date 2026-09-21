@@ -16,11 +16,13 @@ test('route page renders with nav, both options priced, and books directly', asy
   await expect(page.getByText('$59').first()).toBeVisible();
   await expect(page.getByText('total, fixed').first()).toBeVisible();
 
-  // Kandy -> Ella is not a leg we sell shared, so it says so rather than inventing one
-  await expect(page.locator('.opt-none')).toBeVisible();
+  // Kandy -> Ella is not a leg we sell shared, so it says so rather than inventing one.
+  // The refusal used to be a grey half-page card (.opt-none); the redesign makes it one
+  // line under the trust strip, which is the same statement with honest weight.
+  await expect(page.locator('p.no-share')).toBeVisible();
 
   // ...and the CTA books, rather than forwarding to search
-  const cta = page.getByRole('link', { name: /book private transfer/i }).first();
+  const cta = page.getByRole('link', { name: /choose date & book/i }).first();
   await expect(cta).toBeVisible();
   await cta.click();
   // Assert where the traveller ENDS UP, not where they pass through. This used to be a bare

@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadTransfers } from './load-transfers.mjs';
+import { loadPlacePhotos, photoFor, imgTag } from './place-photos.mjs';
 import { renderChrome, assetV } from './site-chrome.mjs';
 
 const require = createRequire(import.meta.url);
@@ -40,12 +41,19 @@ const routeEstimate = q => formatRouteEstimate({
   state: q.estimated ? 'estimated' : 'browse',
 });
 
-/* ── Design A: the two option cards ───────────────────────────────────────────
+/* ── Design A, photo-led: one card, above the fold ────────────────────────────
    docs/superpowers/plans/2026-08-16-unified-route-page.md
+   docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md
 
    Two options, never three. A shared seat is a DATE WITH NAMES ON IT, so there is
    no "scheduled" product beside a "pooled" one, and no unavailable state — any
    date can run once enough travellers commit.
+
+   What changed in the redesign is WEIGHT, not the offer. The private fares are a
+   card inside the photo hero, so the price and the Book button are on the first
+   screen; the shared ride is a full section further down where we sell one, and a
+   single sentence where we don't (it used to be a grey half-page card giving equal
+   billing to the thing we don't sell).
 
    Emitted as complete static HTML on purpose. These pages exist to be indexed, so
    a crawler must see the prices, the boarding points and the CTAs with no JS at
@@ -54,55 +62,89 @@ const routeEstimate = q => formatRouteEstimate({
    markup. */
 const MIN_SEATS = 3; // domain/rideList.ts policyForCorridor — three names run the van
 
-function optionCards(T, from, to, q, shared, p) {
-  // booking.js only reads from/to when `mode` is set; without it the page falls through to
-  // getRoute(id), finds nothing, and location.replace('plan.html')s -- so a CTA missing these
-  // params silently dumps the traveller in the planner. Same contract as search.js's bookUrl:
-  // the display price plus the unfinished fare, so extras are added before the finishing pass.
-  const bookHref = `${p}booking.html?${new URLSearchParams({
+// The two vehicle marks from the approved prototype. Their canvas is 46×30 rather than the
+// line family's 24×24 square: these are wide silhouettes seen side-on, and squeezing them
+// into a square would shrink them to a quarter of the tile they have to fill.
+const ICON_CAR = '<svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20v-4.5l5-1.5 4.5-6.5h14l6 6.5 6.5 1.5c1.5.4 2 1.3 2 2.5V20h-4"/><path d="M13 20h16"/><circle cx="10" cy="21" r="3.5"/><circle cx="33" cy="21" r="3.5"/><path d="M14.5 13.5h17"/></svg>';
+const ICON_VAN = '<svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20V8.5C3 7.1 4.1 6 5.5 6H29l8 8 4 1.5c1 .4 2 1.3 2 2.5v2h-3"/><path d="M13.5 20H30"/><circle cx="10" cy="21" r="3.5"/><circle cx="34" cy="21" r="3.5"/><path d="M8 10.5h7v4H8zM19 10.5h8l4 4H19z"/></svg>';
+
+/** booking.js only reads from/to when `mode` is set; without it the page falls through to
+ *  getRoute(id), finds nothing, and location.replace('plan.html')s -- so a CTA missing these
+ *  params silently dumps the traveller in the planner. Same contract as search.js's bookUrl:
+ *  the display price plus the unfinished fare, so extras are added before the finishing pass. */
+function bookHrefFor(from, to, q, p) {
+  return `${p}booking.html?${new URLSearchParams({
     from, to, mode: 'private', vehicle: 'car',
     price: String(q.car), rawPrice: String(q.rawCar),
   })}`;
-  // data-live-fares + data-fare: route-page-fares.js asks the engine for these two figures and
-  // writes them in (hot zones live in the prod DB, so nothing generated here can know them).
-  // The catalogue fare stays in the markup — it is what a crawler, a no-JS browser and an
-  // unreachable API all show.
-  const priv = `
-      <article class="opt opt-private" data-live-fares data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}">
-        <span class="opt-tag">Most flexible</span>
-        <h2>Private transfer</h2>
-        <p class="opt-sub">Door to door · runs every day · your own vehicle</p>
-        <div class="veh"><span class="veh-n">AC car<small>up to 3 travellers + bags</small></span><span class="veh-p"><span data-fare="car">$${price(q.car)}</span><small>total, fixed</small></span></div>
-        <div class="veh"><span class="veh-n">AC van<small>up to 6 travellers + bags</small></span><span class="veh-p"><span data-fare="van">$${price(q.van)}</span><small>total, fixed</small></span></div>
-        <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Book private transfer</a>
+}
+
+/* The fares card. It lives INSIDE the hero and overhangs its bottom edge.
+   data-live-fares + data-fare: route-page-fares.js asks the engine for these two figures and
+   writes them in (hot zones live in the prod DB, so nothing generated here can know them).
+   The catalogue fare stays in the markup — it is what a crawler, a no-JS browser and an
+   unreachable API all show. The data-cat- and data-raw- attributes carry the catalogue pair
+   so the selection script can rewrite the CTA for whichever vehicle is picked without
+   re-deriving prices. */
+function faresCard(T, from, to, q, shared, p) {
+  const bookHref = bookHrefFor(from, to, q, p);
+  // A real radio, not a button: the choice works with JS off, arrow-keys as one group, and
+  // reads to a screen reader as what it is. The selection behaviour is a later step.
+  const tile = (v, name, cap, fare, checked) => `
+          <label class="veh"><input type="radio" name="vehicle" value="${v}"${checked ? ' checked' : ''}>
+            <span class="veh-ic" aria-hidden="true">${v === 'car' ? ICON_CAR : ICON_VAN}</span>
+            <span class="veh-n">${name}<small>${cap}</small></span>
+            <span class="veh-p"><span data-fare="${v}">$${price(fare)}</span><small>total, fixed</small></span></label>`;
+  return `<article class="opt opt-private fares" data-live-fares data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}"
+        data-cat-car="${q.car}" data-cat-van="${q.van}" data-raw-car="${q.rawCar}" data-raw-van="${q.rawVan}">
+        <div><p class="fares-kick">Private transfer · door to door</p>
+        <h2>Your own car, fixed price</h2></div>
+        <fieldset class="veh-set"><legend class="vh">Choose a vehicle</legend>${tile('car', 'AC car', 'up to 3 travellers + bags', q.car, true)}${tile('van', 'AC van', 'up to 6 travellers + bags', q.van, false)}
+        </fieldset>
+        <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Choose date &amp; book</a>
+        <p class="fares-fine">Free cancellation up to 24h before · no change fees</p>${shared ? `
+        <a class="share-strip" href="#share"><span>Or share the van<br><b>$${price(shared.seat)}</b> a seat</span><span>See who's going ↓</span></a>` : ''}
       </article>`;
+}
 
-  if (!shared) {
-    return `<div class="opt-grid">${priv}
-      <article class="opt opt-none">
-        <span class="opt-tag opt-tag-mute">Not on this route</span>
-        <h2>Shared ride</h2>
-        <p class="opt-sub">No shared van here</p>
-        <p class="opt-desc">We don't run a shared van between ${esc(T.byId[from].name)} and ${esc(T.byId[to].name)}, and it isn't a route travellers pool either. A private transfer covers it door to door at a fixed price — and for three or more it often works out close to a seat price anyway.</p>
-      </article></div>`;
-  }
-
+/* The shared ride, where we sell one. The article keeps the class, the copy and the hooks
+   today's card has — route-page.js inserts its live date rows immediately before
+   [data-shared-cta], so that block must stay inside the card it belongs to. */
+function sharedSection(T, from, to, shared, p) {
+  if (!shared) return '';
   const stops = shared.pickups
     .map(s => `<li><b>${esc(fmtTime(s.time))}</b> ${esc(s.point || T.byId[from].name)}</li>`)
     .join('');
-  return `<div class="opt-grid">${priv}
+  return `
+  <section class="section trip-share" id="share">
+    <div class="wrap share-grid">
+      <div class="share-copy">
+        <span class="share-tag">Best value · share &amp; save</span>
+        <h2>One van, split between you</h2>
+        <p class="share-lede">Same driver, same air-conditioned van, same door-to-door care as a private transfer — for a fraction of the fare. Your card is saved when you add your name, and is only charged once the van is confirmed.</p>
+      </div>
       <article class="opt opt-shared">
-        <span class="opt-tag opt-tag-warm">Best value · share &amp; save</span>
-        <h2>Shared ride</h2>
-        <p class="opt-sub">One van, split between you</p>
         <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
         <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
-        <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
         <ul class="pickups">${stops}</ul>
         <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
-          <a class="btn btn-cta opt-cta" href="${esc(`${p}board.html?from=${encodeURIComponent(T.byId[from].name)}&to=${encodeURIComponent(T.byId[to].name)}`)}">See who's going &amp; add your name</a>
+          <a class="btn btn-cta opt-cta" href="${esc(boardHref(T, from, to, p))}">See who's going &amp; add your name</a>
         </div>
-      </article></div>`;
+      </article>
+    </div>
+  </section>`;
+}
+
+const boardHref = (T, from, to, p) =>
+  `${p}board.html?from=${encodeURIComponent(T.byId[from].name)}&to=${encodeURIComponent(T.byId[to].name)}`;
+
+/** Private-only routes decline in ONE line, under the trust strip — not in a card that
+ *  competes with the offer. It still has to be said, and said statically: a page that
+ *  cannot sell a seat must not leave a reader to infer that from silence. */
+function noShareNote(T, from, to, shared, p) {
+  if (shared) return '';
+  return `
+  <div class="wrap"><p class="no-share"><span>No shared van runs ${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}. For three or more, a private car often works out close to a seat price.</span> <a href="${esc(boardHref(T, from, to, p))}">Or start a ride on the board →</a></p></div>`;
 }
 
 /** 07:30 → 7:30am, matching how the product pages state boarding times. */
@@ -112,14 +154,26 @@ function fmtTime(t) {
   return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`;
 }
 
-function priceChips(q, shared) {
-  const chips = [
-    `<div class="pc"><span class="pc-k">Private car</span><span class="pc-v">from $${price(q.car)}</span></div>`,
-    `<div class="pc"><span class="pc-k">AC van (up to 6)</span><span class="pc-v">from $${price(q.van)}</span></div>`,
-  ];
-  if (shared) chips.push(`<div class="pc pc-share"><span class="pc-k">Shared seat</span><span class="pc-v">from $${shared.seat}</span></div>`);
-  return chips.join('');
+/** First sentence of the intro, if it fits a hero line; otherwise a plain template. */
+function pitch(intro, fromName, toName) {
+  const first = (String(intro).match(/^.*?[.!?](?=\s|$)/) || [''])[0].trim();
+  return first && first.length <= 120 ? first : `${fromName} to ${toName} in your own AC car or van, door to door, at a fixed price.`;
 }
+
+/* The homepage's trust strip, minus its fifth item. "Shared seats every Wed & Sat" is a
+   homepage claim about the scheduled service; on a route page it would contradict the page
+   itself, which under design A refuses no date at all (route-page-unified.test.js asserts
+   no page ever says it). Same four marks as the homepage row, verbatim: they are generic
+   stroke icons rather than img/icons/line family marks — none of the four has a family
+   equivalent that carries the waypoint dot, and mixing the two sets in one row shows. */
+const TRUST_CLAIMS = [
+  ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg>', 'Fully insured &amp; safe drivers'],
+  ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg>', 'AC cars &amp; vans'],
+  ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg>', 'Free cancellation 24h before'],
+  ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>', 'WhatsApp support 7 days'],
+];
+const trustStrip = () =>
+  `<div class="trip-trust"><div class="wrap"><ul>${TRUST_CLAIMS.map(([ic, t]) => `<li>${ic} ${t}</li>`).join('')}</ul></div></div>`;
 
 function faqItems(from, to, q, shared) {
   const estimate = lowerFirst(routeEstimate(q));
@@ -195,7 +249,7 @@ function relatedRoutes(from, to, limit = 4) {
   return picked.slice(0, limit);
 }
 
-function routePage(T, content, from, to, forward) {
+function routePage(T, content, from, to, forward, photos) {
   const key = forward ? `${from}|${to}` : `${to}|${from}`;
   const c = content.pairs[key];
   if (!c) throw new Error(`route-content.json missing pair "${key}"`);
@@ -271,46 +325,87 @@ ${headAssets}
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);}
 })();</script>
 <style>
-  /* The route hero is a POSTCARD, not a banner. It used to be a teal gradient block with
-     price chips punched into it — but the chips are now real option cards below, so the
-     hero's only job is to name the route and set the tone. Paper, the display face, the
-     stamp and the dotted route line, per the approved prototype. */
-  .route-hero{position:relative;background:linear-gradient(180deg,var(--paper,#fffdf8) 0%,var(--cream,#F0EEE5) 100%);border-bottom:1px solid var(--line,#e7e3d6);padding:30px 0 38px;overflow:hidden}
-  .route-hero .wrap{position:relative}
-  .route-hero h1{font-weight:700;margin:0;font-size:clamp(2rem,4.4vw,3.2rem);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  /* ── hero ──────────────────────────────────────────────────────────────────────
+     The route page LEADS with a photo of where you are going, and the fares card sits
+     on top of it. The card overhangs the hero's bottom edge by 64px, which is why
+     .route-hero must NOT be overflow:hidden — that clips the card and slices the Book
+     button in half. The photo and its gradient are contained in .hero-media instead.
+     Guarded by web-tests/e2e/route-page-layout.spec.js. */
+  .route-hero{position:relative;color:#fff;background:#23302b;isolation:isolate}
+  .route-hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-top:30px}
+  .hero-media{position:absolute;inset:0;overflow:hidden;z-index:-1}
+  /* imgTag emits the image's INTRINSIC width/height, so a box with no explicit height lets
+     the HTML height attribute win and the photo renders several times too tall. */
+  .hero-media img{position:absolute;inset:0;z-index:0;width:100%;height:100%;object-fit:cover}
+  /* Both children carry an explicit z-index on purpose: .hero-media is its own stacking
+     context, and without it the gradient can paint UNDER the photo — which quietly removes
+     the contrast the white hero text depends on. */
+  .hero-media::after{content:"";position:absolute;inset:0;z-index:1;
+    background:linear-gradient(90deg,rgba(20,28,26,.86) 0%,rgba(20,28,26,.66) 46%,rgba(20,28,26,.24) 100%),
+               linear-gradient(0deg,rgba(20,28,26,.62),rgba(20,28,26,0) 45%)}
+  .route-hero-copy{display:flex;flex-direction:column;gap:16px;min-height:430px;padding-bottom:74px}
+  .route-crumbs{font-size:.84rem;color:rgba(255,255,255,.85);margin-bottom:auto;text-shadow:0 1px 10px rgba(12,18,16,.6)}
+  .route-crumbs a{color:inherit}
+  .route-hero h1{font-weight:700;margin:0;color:#fff;font-size:clamp(2.1rem,5vw,4rem);display:flex;align-items:center;gap:.05em .3em;flex-wrap:wrap;text-shadow:0 2px 22px rgba(12,18,16,.5)}
   .route-hero h1 .arr{color:var(--accent,#63BFD6);display:inline-flex}
   /* The squiggle replaces the word "to" visually, but "<from> to <to>" IS the phrase these
      pages rank for — so the word stays in the h1 for crawlers and screen readers. */
   .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-  .route-hero h1 .arr svg{width:34px;height:34px}
-  .route-meta{display:flex;gap:22px;flex-wrap:wrap;color:var(--ink-soft,#6c6a6b);font-size:.95rem;margin-top:12px;font-weight:500}
-  .route-meta span{display:inline-flex;align-items:center;gap:.45rem}
-  .route-meta svg{width:16px;height:16px;color:var(--teal-deep,#08938f)}
+  .route-hero h1 .arr svg{width:.8em;height:.8em}
+  .hero-sub{max-width:34rem;margin:0;font-size:1.02rem;color:rgba(255,255,255,.93);text-shadow:0 1px 14px rgba(12,18,16,.6)}
+  .route-meta{display:flex;gap:8px;flex-wrap:wrap;list-style:none;margin:0;padding:0;font-size:.8rem;font-weight:500}
+  .route-meta li{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;background:rgba(20,28,26,.55);border:1px solid rgba(255,255,255,.24);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  .route-meta svg{width:15px;height:15px;flex:none}
   .route-meta svg .wp{fill:var(--saffron,#F9A429);stroke:none}
-  .hero-stamp{position:absolute;right:0;top:14px;width:220px;pointer-events:none}
-  @media(max-width:900px){.hero-stamp{display:none}}
-  .hero-stamp .stamp{position:absolute;right:0;top:-6px;width:70px;height:84px;background:var(--paper,#fffdf8);border:1.5px dashed var(--cream-deep,#E4E0D2);border-radius:4px;transform:rotate(6deg);display:grid;place-items:center;box-shadow:0 2px 8px rgba(58,55,57,.08)}
-  .hero-stamp .stamp i{width:54px;height:66px;border-radius:2px;display:grid;place-items:center;font-style:normal;font-size:1rem;background:linear-gradient(180deg,#bfe4ee 0 55%,#f6d9a0 55% 70%,#7ccbc9 70% 100%)}
-  /* Design A option cards — the page's whole job. Static: a crawler sees all of it. */
-  .route-options{padding:34px 0 0}
-  .opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
-  @media(max-width:820px){.opt-grid{grid-template-columns:1fr}}
+  /* fares card — the page's whole job, above the fold. Static: a crawler sees all of it. */
   .opt{position:relative;background:var(--paper,#fffdf8);border:1.5px solid var(--line,#e7e3d6);border-radius:20px;padding:26px}
-  .opt-tag{position:absolute;top:-12px;left:20px;background:var(--accent,#63BFD6);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:.28rem .8rem}
-  .opt-tag-warm{background:var(--saffron,#F9A429)}
-  .opt-tag-mute{background:var(--ink-soft,#6c6a6b)}
-  .opt h2{margin:.3rem 0 .1rem;font-size:1.4rem}
-  .opt-sub{font-size:.7rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);margin:0 0 .8rem}
-  .opt-desc{font-size:.94rem;color:var(--ink-soft,#6c6a6b);margin:.5rem 0 0}
-  .veh{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:13px;padding:12px 15px;margin-top:10px}
-  .veh-n{font-weight:700;font-size:.97rem} .veh-n small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.82rem}
-  .veh-p{font-weight:800;font-size:1.25rem;text-align:right} .veh-p small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.72rem}
+  .opt.fares{color:var(--ink,#3A3739);border:0;border-radius:22px;padding:22px;margin-bottom:-64px;z-index:2;
+    display:flex;flex-direction:column;gap:12px;
+    box-shadow:0 24px 60px -18px rgba(30,40,36,.45),0 2px 0 rgba(255,255,255,.6) inset}
+  .fares h2{margin:0;font-size:1.35rem}
+  .fares-kick{margin:0 0 .15rem;font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b)}
+  .veh-set{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .veh{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+    background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:14px;padding:12px 14px;cursor:pointer}
+  .veh input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+  .veh:has(input:checked){border-color:var(--blue-deep,#24758A);box-shadow:0 0 0 3px rgba(var(--accent-rgb,99,191,214),.28)}
+  .veh:has(input:focus-visible){outline:3px solid var(--blue-deep,#24758A);outline-offset:2px}
+  .veh-ic{display:inline-flex;color:var(--blue-deep,#24758A)}
+  .veh-ic svg{width:46px;height:30px}
+  .veh-n{font-weight:600;font-size:.95rem;line-height:1.3} .veh-n small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.78rem}
+  .veh-p{font-weight:700;font-size:1.3rem;line-height:1.1;text-align:right;font-variant-numeric:tabular-nums} .veh-p small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.68rem}
+  .fares-fine{margin:0;font-size:.76rem;color:var(--ink-soft,#6c6a6b);text-align:center}
+  .share-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FDF0D6;border:1px solid #F3D9A4;
+    border-radius:14px;padding:11px 14px;font-size:.84rem;text-decoration:none;color:inherit}
+  .share-strip b{font-size:1.05rem}
+  .share-strip span:last-child{font-weight:600;color:var(--blue-deep,#24758A);white-space:nowrap}
+  /* ── trust strip ──────────────────────────────────────────────────────────────
+     Sits directly under the hero, so the overhanging card lands on its right-hand end.
+     The list RESERVES that space (400px card + 40px clearance) and wraps to a second
+     line rather than running underneath it. */
+  .trip-trust{background:#22302F;color:#fff}
+  .trip-trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500;max-width:calc(100% - 440px)}
+  .trip-trust li{display:flex;align-items:center;gap:8px}
+  .trip-trust svg{width:16px;height:16px;flex:none;color:var(--accent,#63BFD6)}
+  /* private-only note — one line, not half the page. Same reservation as the strip above. */
+  .no-share{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:36px 0 0;padding:14px 18px;
+    border:1px dashed #cfcab8;border-radius:14px;font-size:.9rem;color:var(--ink-soft,#6c6a6b);max-width:calc(100% - 448px)}
+  .no-share a{font-weight:600;color:var(--blue-deep,#24758A)}
+  /* ── shared ride section ── */
+  .share-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:48px;align-items:start}
+  .share-copy{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+  .share-tag{background:var(--saffron,#F9A429);color:#3a2a08;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:5px 12px}
+  .share-copy h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .share-lede{margin:0;font-size:1.04rem;line-height:1.6;color:var(--ink-soft,#6c6a6b);max-width:36rem}
   .seat-price{margin:.2rem 0 .1rem} .seat-price b{font-size:2.3rem;line-height:1} .seat-price span{color:var(--ink-soft,#6c6a6b);font-weight:600}
   .runs-line{font-size:.9rem;font-weight:600;margin:.1rem 0 .5rem}
   .pickups{list-style:none;margin:.7rem 0 0;padding:0;display:grid;gap:.25rem}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  .fares .opt-cta{margin-top:0}
+  /* ── sticky book bar — shipped hidden; a later step turns it on while scrolling ── */
+  .trip-bookbar{display:none}
   /* A fare the engine has not confirmed yet: same box, no ink. */
   .fares-pending [data-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
   /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
@@ -353,36 +448,65 @@ ${headAssets}
   .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
   .rt-name{font-weight:700}
   .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
-  .route-crumbs{padding:16px 0 0;font-size:.85rem}
-  .route-crumbs a{color:inherit}
+  @media(max-width:900px){
+    /* On a phone the fares card must sit on CREAM, not on the photo — a card printed over a
+       bright beach is unreadable, and the price is the one thing that has to be legible above
+       the fold. So the photo stops where the copy stops: .hero-media re-parents itself to
+       .route-hero-copy (it is absolute, and this is the rule that makes the copy its
+       containing block), and the card slides down onto the page background. */
+    .route-hero{background:var(--cream,#F0EEE5)}
+    /* The copy block is full-bleed, so the hero's wrap gives up its gutter and the two
+       children carry their own. A negative margin was the obvious way to do it and the wrong
+       one: site.css steps .wrap's padding 24 → 20 → 18 down the widths, so any hardcoded
+       -24px leaves the photo hanging 6px past the viewport at 320 and the whole page scrolls
+       sideways. */
+    .route-hero .wrap{grid-template-columns:1fr;gap:0;padding-top:18px;padding-left:0;padding-right:0}
+    .route-hero-copy{position:relative;isolation:isolate;background:#23302b;min-height:330px;gap:12px;
+      padding:18px 20px 52px}
+    /* One column now, so the horizontal wash has nothing to do; the readable band is the whole
+       block. The TOP end matters as much as the bottom — the breadcrumb and the first line of
+       the h1 sit there, and on the brightest photos (Negombo's sand, Mirissa's water) white on
+       an unwashed sky is barely a contrast at all. */
+    .hero-media::after{background:linear-gradient(0deg,rgba(20,28,26,.9) 0%,rgba(20,28,26,.44) 55%,rgba(20,28,26,.66) 100%)}
+    .opt.fares{margin:-32px 20px 20px;padding:18px;gap:10px}
+    .trip-trust ul,.no-share{max-width:none}
+    .trip-trust ul{gap:8px 18px;font-size:.78rem}
+    .no-share{margin-top:24px}
+    .share-grid{grid-template-columns:1fr;gap:26px}
+    .veh-ic svg{width:38px;height:25px}
+    /* The bar is shipped hidden and stays hidden until a later step reveals it — hence
+       :not([hidden]), which keeps display:flex from beating the UA's [hidden] rule. */
+    .trip-bookbar:not([hidden]){display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
+      align-items:center;justify-content:space-between;gap:14px;background:var(--paper,#fffdf8);
+      border-top:1px solid var(--line,#e7e3d6);box-shadow:0 -10px 30px -12px rgba(0,0,0,.25);
+      padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+    .trip-bookbar .tb-p{font-size:.74rem;color:var(--ink-soft,#6c6a6b);line-height:1.25}
+    .trip-bookbar .tb-p b{display:block;font-size:1.2rem;color:var(--ink,#3A3739)}
+    .trip-bookbar .btn{padding:13px 26px}
+  }
 </style>
 ${jsonLd(fromName, toName, url, q, faq)}
 </head>
 <body>
 ${header}
 <main>
-  <section class="route-hero">
+  <section class="route-hero" id="top-options">
     <div class="wrap">
-      <nav class="route-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> · <a href="${p}trip/">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
-      <h1>${esc(fromName)} <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>${esc(toName)}</h1>
-      <div class="route-meta">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${esc(estimate)}</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</span>
+      <div class="route-hero-copy">
+        <div class="hero-media">${imgTag(photoFor(photos, to), { p, sizes: '100vw', eager: true, cls: 'hero-img' })}</div>
+        <nav class="route-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> · <a href="${p}trip/">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
+        <h1>${esc(fromName)} <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>${esc(toName)}</h1>
+        <p class="hero-sub">${esc(pitch(intro, fromName, toName))}</p>
+        <ul class="route-meta">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${esc(estimate)}</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg> Runs every day</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</li>
+        </ul>
       </div>
-      <div class="hero-stamp" aria-hidden="true">
-        <svg viewBox="0 0 220 56" fill="none"><path d="M6 44 C58 10 144 50 208 16" stroke="#24758A" stroke-width="1.5" stroke-dasharray="1 7" stroke-linecap="round"/><circle cx="6" cy="44" r="3.5" fill="#24758A"/></svg>
-        <span class="stamp"><i>🌴</i></span>
-      </div>
-      <div class="route-cta">
-        <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
-      </div>
+      ${faresCard(T, from, to, q, shared, p)}
     </div>
   </section>
-  <section class="section route-options" id="top-options">
-    <div class="wrap">
-      ${optionCards(T, from, to, q, shared, p)}
-    </div>
-  </section>
+  ${trustStrip()}${noShareNote(T, from, to, shared, p)}${sharedSection(T, from, to, shared, p)}
   <section class="section route-body">
     <div class="wrap">
       <p class="lede">${esc(intro)}</p>
@@ -393,6 +517,12 @@ ${header}
     <div class="wrap">
       <span class="eyebrow">Good to know</span>
       <h2>${esc(fromName)} to ${esc(toName)} — questions</h2>
+      <!-- The WhatsApp button used to sit in the hero, where it competed with the price for
+           the one action above the fold. It belongs with the questions: it is what you press
+           when the page has not answered yours. -->
+      <div class="route-cta" style="margin-top:14px">
+        <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
+      </div>
       <div style="margin-top:20px">
         ${faqHtml}
       </div>
@@ -410,6 +540,13 @@ ${header}
       <p style="margin-top:14px"><a href="${p}trip/">See all Sri Lanka transfer routes →</a></p>
     </div>
   </section>
+  <!-- Shipped hidden and priced: a later step reveals it once the hero card scrolls away.
+       Its fare carries data-fare like every other, so route-page-fares.js updates it too and
+       the fares-pending hold covers it. -->
+  <div class="trip-bookbar" hidden>
+    <span class="tb-p"><small data-bar-label>AC car · total, fixed</small><b><span data-fare="car">$${price(q.car)}</span></b></span>
+    <a class="btn btn-cta bar-cta" href="${esc(bookHrefFor(from, to, q, p))}">Choose date &amp; book</a>
+  </div>
 </main>
 ${footer}
 ${bootScript}
@@ -493,10 +630,11 @@ export function loadContent() {
 export function generateAll() {
   const T = loadTransfers();
   const content = loadContent();
+  const photos = loadPlacePhotos();
   const out = new Map();
   for (const [a, b] of BASE_PAIRS) {
-    out.set(`trip/${slug(a, b)}/index.html`, routePage(T, content, a, b, true));
-    out.set(`trip/${slug(b, a)}/index.html`, routePage(T, content, b, a, false));
+    out.set(`trip/${slug(a, b)}/index.html`, routePage(T, content, a, b, true, photos));
+    out.set(`trip/${slug(b, a)}/index.html`, routePage(T, content, b, a, false, photos));
   }
   out.set('trip/index.html', tripIndex(T, content));
   // terms/privacy are added to the sitemap in Unit 2 (Task 2.4) via SITEMAP_EXTRA.
