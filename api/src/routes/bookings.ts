@@ -62,8 +62,11 @@ const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
 const UNPRICED_NOTE_PREFIX = 'unpriced booking — set a price before this can be paid';
 
 // One maps lookup per route pair per request: engine pricing and the M8 enrichment share
-// results, so going engine-first doesn't double the billed Google calls.
-function memoizeDistance(maps: MapsAdapter): MapsAdapter {
+// results, so going engine-first doesn't double the billed Google calls. Exported: quote.ts's
+// /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a (from,to)
+// pair (e.g. one corridor priced for car and for van) share one lookup instead of both racing
+// a cold cache miss under Promise.all.
+export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
   const cache = new Map<string, Promise<DistanceResult | null>>();
   return {
     provider: maps.provider,

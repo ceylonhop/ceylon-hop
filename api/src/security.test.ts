@@ -111,6 +111,24 @@ describe('rate limiting (/quote and /quote/lock)', () => {
     const blocked = await postQuote(app, '/quote', '9.9.9.8');
     expect(blocked.status).toBe(429);
   });
+
+  // Same '/quote/*' wildcard, a newer subpath (D1): pin it too, so a future path-specific
+  // limiter change can't silently exempt this one.
+  it('429s POST /quote/v2/estimate-batch past the limit', async () => {
+    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 }, quoteV2Enabled: true });
+    const batchBody = { intents: [{ product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ from: 'Kandy', to: 'Ella' }], extras: [] }] };
+    const postBatch = (ip: string) =>
+      app.request('/quote/v2/estimate-batch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+        body: JSON.stringify(batchBody),
+      });
+    await postBatch('9.9.9.7');
+    await postBatch('9.9.9.7');
+    const blocked = await postBatch('9.9.9.7');
+    expect(blocked.status).toBe(429);
+    expect((await blocked.json()).error).toBe('rate_limited');
+  });
 });
 
 describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', () => {
