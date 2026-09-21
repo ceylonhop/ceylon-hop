@@ -52,8 +52,11 @@ management tightens accordingly. These refine the Hard rules above for day-to-da
 7. **No surprises to production.** The API/ops app runs a **Dev → Staging → Prod pipeline**
    (set up 2026-07-18): `main` auto-deploys to **staging** (`ceylon-hop-staging`,
    `ops.staging.ceylonhop.com`); **prod** (`ceylon-hop-api`) deploys from the **`production`**
-   branch — you promote via a reviewed, CI-green PR `main → production`. The static site on
-   GitHub **Pages still deploys from `main`.** Don't ship anything to prod — **especially
+   branch — you promote via a reviewed, CI-green PR `main → production`. **Since the apex
+   cutover (2026-09-20) the customer site ships the same way:** GitHub Pages serves
+   **`ceylonhop.com` from the `production` branch**, so a front-end merge to `main` no longer
+   reaches customers — only the promote does. `prod.ceylonhop.com` is retired (404).
+   Don't ship anything to prod — **especially
    schema/migrations, pricing, or config** — without the owner's explicit ok. **Merging a
    migration IS its release** (PR #50, 2026-07-16): pending migrations **auto-apply on Render
    boot**, fail-closed — so a migration hits **staging** the moment it merges to `main`, and
