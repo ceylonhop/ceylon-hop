@@ -96,7 +96,12 @@ function faresCard(T, from, to, q, shared, p) {
             <span class="veh-ic" aria-hidden="true">${v === 'car' ? ICON_CAR : ICON_VAN}</span>
             <span class="veh-n">${name}<small>${cap}</small></span>
             <span class="veh-p"><span data-fare="${v}">$${price(fare)}</span><small>total, fixed</small></span></label>`;
-  return `<article class="opt opt-private fares" data-live-fares data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}"
+  // id="book" is the FAQ column's link target. It is on the CARD rather than the hero section
+  // so the jump lands on the price and the Book button, not on the top of a photo that pushes
+  // both below the fold. The hero keeps id="top-options" as well — nothing in the repo links
+  // to it, but it has been live since the apex cutover and an inbound deep link costs nothing
+  // to honour.
+  return `<article class="opt opt-private fares" id="book" data-live-fares data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}"
         data-cat-car="${q.car}" data-cat-van="${q.van}" data-raw-car="${q.rawCar}" data-raw-van="${q.rawVan}">
         <div><p class="fares-kick">Private transfer · door to door</p>
         <h2>Your own car, fixed price</h2></div>
@@ -161,7 +166,8 @@ function sentences(text) {
   return (String(text).match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || []).map(s => s.trim()).filter(Boolean);
 }
 
-/* The hero's one-line pitch.
+/* The hero's one-line pitch, and the body copy under "The drive" — derived TOGETHER, because
+   the only rule that matters between them is that the page never says the same thing twice.
 
    The first version of this was "the intro's first sentence if it is under 120 chars, else
    <From> to <To> in your own AC car or van…". Both halves read badly on the built page: the
@@ -169,20 +175,32 @@ function sentences(text) {
    44 pages), and where the first sentence WAS used it turned up again word for word as the
    opening of the body copy one screen below (the other 18).
 
-   So: the fallback names no place — the h1 has just said them — and the intro's first
-   sentence is borrowed ONLY when it reads as a standalone line (40–120 chars) and there is
-   more intro left to carry the body. When it is borrowed, driveLede() starts at sentence two,
-   so nothing on the page is said twice. Guarded by web-tests/unit/trip-redesign.test.js. */
+   Three rules, in order:
+
+   1. A written pitch wins. `pitch` (forward) / `pitchBack` (reverse) in route-content.json
+      let the owner give one route a line of its own without a code change — the cure for 32
+      pages carrying the same fallback sentence. Nothing has been taken OUT of the intro in
+      this case, so the body shows all of it.
+   2. Otherwise the intro's first sentence is borrowed, but ONLY when it reads as a standalone
+      line (40–120 chars) and there is more intro left to carry the body. The body then starts
+      at sentence two.
+   3. Otherwise a fallback that names no place — the h1 has just said both of them.
+
+   Guarded by web-tests/unit/trip-redesign.test.js, against a synthetic pair rather than the
+   44 built pages, so the rules can be stated one at a time. */
 const PITCH_FALLBACK = 'Your own air-conditioned car or van, door to door, at a fixed price.';
-function heroLine(intro) {
+
+export function pairCopy(c, forward) {
+  const intro = String((forward ? c.intro : c.back) || '').trim();
+  const written = String((forward ? c.pitch : c.pitchBack) || '').trim();
+  if (written) return { hero: written, lede: intro };
+
   const parts = sentences(intro);
   const first = parts[0] || '';
-  return (parts.length >= 2 && first.length >= 40 && first.length <= 120) ? first : PITCH_FALLBACK;
-}
-/** The body copy under "The drive" — the intro, minus whatever the hero already said. */
-function driveLede(intro) {
-  if (heroLine(intro) === PITCH_FALLBACK) return String(intro).trim();
-  return sentences(intro).slice(1).join(' ');
+  if (parts.length >= 2 && first.length >= 40 && first.length <= 120) {
+    return { hero: first, lede: parts.slice(1).join(' ') };
+  }
+  return { hero: PITCH_FALLBACK, lede: intro };
 }
 
 /* The Tripadvisor review count has ONE source: ta-data.js (web-tests/unit/ta-review-count.test.js
@@ -273,7 +291,7 @@ function includedSection(p) {
    The title is written per PAIR and only for the two the prototype mocked — 44 hand-written
    headings is 44 things to keep current. A reverse page falls back too: "Tea, waterfalls and
    hairpins" describes the climb, not the descent. */
-function driveSection(c, forward, fromName, toName, highlights, intro, photos, from, p) {
+function driveSection(c, forward, fromName, toName, highlights, lede, photos, from, p) {
   const title = (forward && c.driveTitle) ? c.driveTitle : `The road from ${fromName} to ${toName}`;
   const photo = photoFor(photos, c.photo || from);
   const mid = highlights.map(h => `<li>${esc(h)}</li>`).join('');
@@ -283,7 +301,7 @@ function driveSection(c, forward, fromName, toName, highlights, intro, photos, f
       <div class="drive-copy">
         <span class="eyebrow">The drive</span>
         <h2>${esc(title)}</h2>
-        <p class="drive-lede">${esc(driveLede(intro))}</p>
+        <p class="drive-lede">${esc(lede)}</p>
         <ol class="stops">
           <li class="end">${esc(fromName)}</li>${mid}<li class="end end-to">${esc(toName)}</li>
         </ol>
@@ -381,7 +399,8 @@ function routePage(T, content, from, to, forward, photos) {
   const fromName = T.byId[from].name, toName = T.byId[to].name;
   const q = T.privateQuote(from, to);
   const shared = T.sharedOption(from, to);
-  const intro = forward ? c.intro : c.back;
+  // The hero line and the body lede are one decision, not two — see pairCopy().
+  const copy = pairCopy(c, forward);
   const highlights = (!forward && c.highlightsBack) ? c.highlightsBack : c.highlights;
   const estimate = routeEstimate(q);
   const url = `${ORIGIN}/trip/${slug(from, to)}/`;
@@ -632,6 +651,15 @@ ${headAssets}
   .faq-side h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
   .faq-side .eyebrow{margin:0}
   .faq-lede{margin:0;font-size:1.02rem;line-height:1.6;color:var(--ink-soft,#6c6a6b)}
+  /* A text link, styled like the page's other text links (.trip-all a, .no-share a), not a
+     second button — the WhatsApp button above it is this column's action. */
+  .faq-book{font-weight:600;font-size:.92rem;color:var(--accent-deep,#24758A);text-decoration:none;border-bottom:1px solid rgba(var(--accent-rgb,99,191,214),.6);padding-bottom:1px}
+  .faq-book:hover{border-bottom-color:currentColor}
+  .faq-book:focus-visible{outline:3px solid var(--accent-deep,#24758A);outline-offset:3px;border-radius:3px}
+  /* The jump target is the fares card. Without this the card lands flush against the viewport
+     top and reads as a page that has lost its header. These pages have no sticky chrome, so a
+     gutter is all it needs. */
+  #book{scroll-margin-top:20px}
   .faq-acc{border-top:1px solid #d5d0bf}
   .faq-acc details{border-bottom:1px solid #d5d0bf}
   .faq-acc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
@@ -724,7 +752,7 @@ ${header}
         <div class="hero-media">${imgTag(photoFor(photos, to), { p, sizes: '100vw', eager: true, cls: 'hero-img' })}</div>
         <nav class="route-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> · <a href="${p}trip/">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
         <h1>${esc(fromName)} <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>${esc(toName)}</h1>
-        <p class="hero-sub">${esc(heroLine(intro))}</p>
+        <p class="hero-sub">${esc(copy.hero)}</p>
         <ul class="route-meta">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> ${esc(estimate)}</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg> Runs every day</li>
@@ -734,17 +762,25 @@ ${header}
       ${faresCard(T, from, to, q, shared, p)}
     </div>
   </section>
-  ${trustStrip()}${noShareNote(T, from, to, shared, p)}${sharedSection(T, from, to, shared, p)}${driveSection(c, forward, fromName, toName, highlights, intro, photos, from, p)}${includedSection(p)}
+  ${trustStrip()}${noShareNote(T, from, to, shared, p)}${sharedSection(T, from, to, shared, p)}${driveSection(c, forward, fromName, toName, highlights, copy.lede, photos, from, p)}${includedSection(p)}
   <section class="section faq">
     <div class="wrap faq-grid">
       <div class="faq-side">
         <span class="eyebrow">Good to know</span>
         <h2>${esc(fromName)} to ${esc(toName)}, answered</h2>
-        <p class="faq-lede">Something we haven&rsquo;t covered? We reply within minutes, 7 days a week.</p>
+        <!-- "We reply within minutes" was a response-time promise no other page on the site
+             makes and nobody in ops agreed to. The trust strip's claim is availability —
+             WhatsApp, 7 days — so this says the same thing and nothing more. -->
+        <p class="faq-lede">Something we haven&rsquo;t covered? We&rsquo;re on WhatsApp 7 days a week.</p>
         <!-- The WhatsApp button used to sit in the hero, where it competed with the price for
              the one action above the fold. It belongs with the questions: it is what you press
              when the page has not answered yours. -->
         <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
+        <!-- The one way back to the price on a desktop. The sticky book bar is phone-only by
+             design, so without this a reader who has scrolled past the hero has to scroll all
+             the way back by hand. A text link, not a second button: the WhatsApp button above
+             it is the action this column is FOR. -->
+        <a class="faq-book" href="#book">See prices &amp; book &uarr;</a>
       </div>
       <div class="faq-acc">
           ${faqHtml}

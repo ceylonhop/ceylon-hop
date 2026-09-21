@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
-import { ROOT, generateAll } from '../../tools/generate-route-pages.mjs';
+import { ROOT, generateAll, pairCopy } from '../../tools/generate-route-pages.mjs';
 
 /* The /trip/ page redesign (docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md).
    The page now LEADS with a photo of where you're going and a bookable price, instead of
@@ -204,6 +204,95 @@ describe('trip page — the hero line never repeats the page', () => {
     const d = dom(slug);
     const line = squash(d.querySelector('.hero-sub').textContent);
     expect(squash(d.querySelector('.drive').textContent)).not.toContain(line);
+  });
+});
+
+/* The FAQ side column: what it promises, and the way back to the price.
+
+   It shipped saying "We reply within minutes, 7 days a week." Nowhere else on the site makes
+   a response-time promise — the trust strip says "WhatsApp support 7 days" and stops there —
+   so a route page was the only page underwriting a number nobody in ops had agreed to.
+
+   And this column is the ONLY route back to the fares card once the reader is past the fold:
+   the sticky book bar is phone-only by design, so on a desktop the old tail CTA's removal
+   left a 2,000px page whose price you could only reach by scrolling back by hand. */
+const FAQ_LEDE = 'Something we haven’t covered? We’re on WhatsApp 7 days a week.';
+
+describe('trip page — the FAQ column promises only what we do', () => {
+  it.each(slugs)('%s: no response-time promise anywhere on the page', (slug) => {
+    const body = dom(slug).body.cloneNode(true);
+    for (const n of body.querySelectorAll('script,style')) n.remove();
+    expect(body.textContent).not.toMatch(/within minutes/i);
+  });
+
+  it.each(slugs)('%s: the FAQ lede is the WhatsApp sentence, word for word', (slug) => {
+    expect(dom(slug).querySelector('.faq-lede').textContent.trim()).toBe(FAQ_LEDE);
+  });
+
+  it.each(slugs)('%s: one text link back to the price, pointing at the fares card itself', (slug) => {
+    const d = dom(slug);
+    const links = [...d.querySelectorAll('a.faq-book')];
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('#book');
+    expect(links[0].closest('.faq-side'), 'the link belongs in the side column').toBeTruthy();
+    // a text link, not a second big button competing with Chat on WhatsApp
+    expect(links[0].classList.contains('btn')).toBe(false);
+
+    const targets = [...d.querySelectorAll('#book')];
+    expect(targets).toHaveLength(1);
+    expect(targets[0].hasAttribute('data-live-fares')).toBe(true);
+    expect(targets[0].classList.contains('opt-private')).toBe(true);
+  });
+});
+
+/* The hero line, and what the body does with what it takes.
+
+   Three rules in priority order, and the point of the first is that the owner can give one
+   route its own line by editing route-content.json — no code change, no 44 new strings. When
+   a written pitch is used nothing has been taken OUT of the intro, so the body shows all of
+   it; that is the half that is easy to get wrong. */
+describe('pairCopy — a written pitch wins, then the first sentence, then the fallback', () => {
+  const FALLBACK = 'Your own air-conditioned car or van, door to door, at a fixed price.';
+  const intro = 'A lead sentence comfortably past the forty character floor. A second sentence. A third.';
+  const back = 'The way home, in a sentence long enough to clear the floor. And a second one.';
+
+  it('uses c.pitch on the forward page and leaves the whole intro in the body', () => {
+    const r = pairCopy({ intro, back, pitch: 'Two oceans and a mountain road.' }, true);
+    expect(r.hero).toBe('Two oceans and a mountain road.');
+    expect(r.lede).toBe(intro);
+  });
+
+  it('uses c.pitchBack on the reverse page, and c.pitch never leaks onto it', () => {
+    expect(pairCopy({ intro, back, pitch: 'Forward only.', pitchBack: 'Homeward only.' }, false).hero)
+      .toBe('Homeward only.');
+    // pitch set, pitchBack not: the reverse page falls through to the sentence rule
+    expect(pairCopy({ intro, back, pitch: 'Forward only.' }, false).hero)
+      .toBe('The way home, in a sentence long enough to clear the floor.');
+  });
+
+  it('without a pitch it borrows the first sentence and the body starts at the second', () => {
+    const r = pairCopy({ intro, back }, true);
+    expect(r.hero).toBe('A lead sentence comfortably past the forty character floor.');
+    expect(r.lede).toBe('A second sentence. A third.');
+    expect(r.lede).not.toContain(r.hero);
+  });
+
+  it('falls back for a fragment, for an over-long opener, and for a one-sentence intro', () => {
+    const cases = [
+      'Two words. And more after it.',                                  // first sentence < 40
+      `${'x'.repeat(130)}. And a second sentence.`,                      // first sentence > 120
+      'One sentence that is long enough on its own but stands alone.',   // nothing left for the body
+    ];
+    for (const one of cases) {
+      const r = pairCopy({ intro: one, back }, true);
+      expect(r.hero, one.slice(0, 30)).toBe(FALLBACK);
+      expect(r.lede, one.slice(0, 30)).toBe(one);
+    }
+  });
+
+  it('an empty pitch is not a pitch', () => {
+    expect(pairCopy({ intro, back, pitch: '' }, true).hero)
+      .toBe('A lead sentence comfortably past the forty character floor.');
   });
 });
 

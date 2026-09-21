@@ -147,6 +147,59 @@ for (const p of PAGES) {
     });
   }
 
+  /* Desktop's only way back to the price. The sticky book bar is phone-only by design, so
+     below the fold a 1280px reader has exactly one route back to the fares card: the text
+     link under the WhatsApp button. This asserts the link ARRIVES — that #book resolves to
+     the card and that the card's CTA is on screen when the scroll settles, not just that an
+     anchor exists. site.css sets html{scroll-behavior:smooth}, so the click starts an
+     animation: poll the rect instead of sampling it once or waiting a fixed time. */
+  test(`${p.name} @ 1280x900: the FAQ's back-to-the-price link lands on the fares card`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(p.url);
+
+    const link = page.locator('a.faq-book');
+    await expect(link).toHaveAttribute('href', '#book');
+    await expect(page.locator('#book')).toHaveClass(/\bopt-private\b/);
+
+    // start from the FAQ, the way a reader who has read it would
+    await page.evaluate(() => {
+      const el = document.querySelector('.faq');
+      window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, left: 0, behavior: 'instant' });
+    });
+    const before = await page.evaluate(() => window.scrollY);
+    expect(before, 'the FAQ should be well below the fold').toBeGreaterThan(900);
+
+    await link.click();
+
+    /* Wait for the smooth scroll to SETTLE, on the thing we actually want: the whole card on
+       screen. It has to be BOTH edges — "the Book button is above the bottom of the viewport"
+       is trivially true while the card is still 2,000px above the fold, which is exactly how
+       this poll passed on a page that had not scrolled at all. */
+    await expect.poll(async () => page.evaluate(() => {
+      const card = document.querySelector('#book');
+      const cta = card.querySelector('a.opt-cta');
+      // Rounded, with a pixel of slack: a settled scroll can leave a rect at -0.5, and the
+      // exact gutter is the NEXT assertion's business, not this one's.
+      return Math.round(card.getBoundingClientRect().top) >= -1
+        && Math.round(cta.getBoundingClientRect().bottom) <= window.innerHeight + 1;
+    }), { timeout: 5000, message: 'the fares card never came fully on screen after the jump' }).toBe(true);
+
+    // ...and the card is not jammed against the top edge — that is what #book's
+    // scroll-margin-top buys.
+    const at = await page.evaluate(() => {
+      const card = document.querySelector('#book');
+      const cta = card.querySelector('a.opt-cta');
+      return {
+        cardTop: Math.round(card.getBoundingClientRect().top),
+        ctaBottom: Math.round(cta.getBoundingClientRect().bottom),
+        vh: window.innerHeight,
+      };
+    });
+    expect(at.cardTop, `the card is flush against the viewport top (${at.cardTop})`).toBeGreaterThanOrEqual(8);
+    expect(at.cardTop, `the card did not come into view (${at.cardTop})`).toBeLessThan(at.vh);
+    expect(at.ctaBottom, `the Book button is below the fold after the jump (${at.ctaBottom} > ${at.vh})`).toBeLessThanOrEqual(at.vh);
+  });
+
   test(`${p.name}: on a phone the price and the Book button are above the fold`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(p.url);
