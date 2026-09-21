@@ -7,7 +7,7 @@ Kandy → Ella (private only), Airport → Sigiriya (with shared ride), All rout
 
 ## 1. Problem
 
-The 52 `/trip/<a>-to-<b>/` pages and the `/trip/` index are the outside-arrival landing pages (owner
+The 44 generated `/trip/<a>-to-<b>/` pages (22 pairs, both directions; `trip/` also holds ~25 hand-built legacy directories this work does not touch) and the `/trip/` index are the outside-arrival landing pages (owner
 decision 2026-09-19; they inherited the old site's rankings at the 2026-09-20 cutover). They are the first
 thing a Google visitor sees, and they are the weakest pages on the site:
 
@@ -161,7 +161,7 @@ browser at 375w before merge. No JS → no bar (the in-page CTA still works).
   as a contact sheet before PR 1 merges.**
 - Generator throws if a place has no manifest entry or the file is missing (same fail-loud style as the
   `route-content.json` check).
-- `<image-slot>` is **not** used: it is a root-page authoring tool that stores base64 in a sidecar; 52
+- `<image-slot>` is **not** used: it is a root-page authoring tool that stores base64 in a sidecar; 44
   generated pages need plain cacheable files.
 
 ## 6. List prices = engine prices ("fix the index prices")
