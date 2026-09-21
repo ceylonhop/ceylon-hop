@@ -40,7 +40,7 @@
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Tips'],
       itinerary:[
-        {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Your driver meets you at Colombo Airport with a Ceylon Hop sign. A short hop to laid-back Negombo to shake off the flight — lagoon breezes, a fresh seafood dinner and an early night.'},
+        {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Your driver meets you at your Colombo Airport pick-up point. A short hop to laid-back Negombo to shake off the flight — lagoon breezes, a fresh seafood dinner and an early night.'},
         {place:'Sigiriya', t:'Into the Cultural Triangle', body:'Drive north to the heart of the island. Stop at the golden Dambulla Cave Temple, then arrive in Sigiriya for an evening 4×4 safari in Minneriya — home to the famous “elephant gathering”.'},
         {place:'Kandy', t:'Lion Rock & the sacred city', body:'Beat the heat with a sunrise climb of Sigiriya rock fortress. After breakfast, drive to Kandy via a spice garden, arriving for the evening rituals at the Temple of the Sacred Tooth Relic.'},
         {place:'Nuwara Eliya', t:'Up into tea country', body:'Visit the Peradeniya Royal Botanical Gardens, then climb into the cool highlands past Ramboda Falls. Tour a working tea factory and sip a fresh Ceylon brew in “Little England”.'},
