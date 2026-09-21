@@ -85,9 +85,32 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 // asserts those previews contain no '$' at all — a blunt but effective proxy for "the
 // amount never leaks into a WhatsApp link preview". A regex anchor would have smuggled
 // a dollar sign in and defeated that guard for a reason nothing to do with money.
+// CONSENT — advertising storage is granted by default EXCEPT in Europe.
+//
+// Until 2026-09-20 ad_storage was denied everywhere and there is deliberately no consent
+// banner (owner decision 2026-08-27), so it could never be granted. Effect: the Meta pixel
+// and the Google Ads conversion tag were permanently blocked — Meta was told visitors
+// arrived and never told one bought, and Ads recorded conversions with no value. Neither
+// failed loudly; they simply never fired.
+//
+// The split is grounded in the owner's own Search Console export (16 months): EU 21.7% of
+// clicks, UK 7.9% — about 30% in GDPR / UK-GDPR scope. Too much to ignore, too much to
+// switch off. So the second call re-declares the ad keys as denied for the EEA + UK + CH,
+// which is where the rules actually bite; everywhere else (Sri Lanka 42%, Australia, US,
+// India, Canada, Singapore, UAE) advertising conversions now work.
+//
+// Consequences to hold in mind:
+//   - Meta and Ads conversion counts UNDER-report by roughly a third, by design. That is
+//     the price of having no banner, and it is a better position than the zero it replaces.
+//   - Region matching is by IP at Google's edge: good, not perfect.
+//   - GTM's own consent gating reads this same state, so the Meta Custom HTML tags need no
+//     change — they fire where permitted and stay silent where not.
+//   - analytics_storage is untouched: granted everywhere, as before.
+// A later consent banner would be what wins the European third back.
 export const analyticsSnippet = `<script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
-gtag('consent','default',{analytics_storage:'granted',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
+gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
+gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
 
