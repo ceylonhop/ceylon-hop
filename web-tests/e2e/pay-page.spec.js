@@ -15,7 +15,7 @@ const COPY = {
     subtitle: 'Saturday 8 August 2026',
     facts: [{ k: 'Travellers', v: '2' }, { k: 'Vehicle', v: 'Private car' }],
     legs: null,
-    includedText: 'Driver, fuel and highway tolls. Airport pickup with a name board.',
+    includedText: 'Driver, fuel and highway tolls. Airport pickup included.',
     totalLabel: 'Total',
   },
   multi: {

@@ -470,14 +470,33 @@ test('the pay page measures on arrival, and shows the payer nothing at all', asy
   // Nothing rendered means nothing reserved space either.
   expect(await page.evaluate(() => document.body.style.paddingBottom)).toBe('');
 
+  // TWO defaults since 2026-09-20: a global one, then a region-scoped one that re-denies
+  // advertising for the EEA + UK + CH.
+  //
+  // The original rule here was a single default denying advertising everywhere, reasoned as:
+  // "the basis for not asking is that this is first-party measurement with no advertising
+  // attached. An ad grant here would remove that argument." That argument is PRESERVED
+  // exactly where it has force — in Europe nothing advertising-related is granted, so the
+  // no-banner posture still rests on the same ground there. Outside Europe the Meta pixel and
+  // the Google Ads conversion (both already in the container, both previously blocked by this
+  // very line) are allowed to work. Owner decision 2026-09-20, taken on their own Search
+  // Console split: EU 21.7% of clicks, UK 7.9%.
   const defaults = await consentCalls(page, 'default');
-  expect(defaults).toHaveLength(1);
+  expect(defaults).toHaveLength(2);
   expect(defaults[0].analytics_storage).toBe('granted');
-  // The basis for not asking is that this is first-party measurement with no advertising
-  // attached. An ad grant here would remove that argument.
-  expect(defaults[0].ad_storage).toBe('denied');
-  expect(defaults[0].ad_user_data).toBe('denied');
-  expect(defaults[0].ad_personalization).toBe('denied');
+  expect(defaults[0].ad_storage).toBe('granted');
+
+  const [regional] = defaults.filter((d) => d.region);
+  expect(regional, 'a region-scoped default must re-deny advertising').toBeTruthy();
+  expect(regional.ad_storage).toBe('denied');
+  expect(regional.ad_user_data).toBe('denied');
+  expect(regional.ad_personalization).toBe('denied');
+  // The markets that actually send traffic, plus the non-EU states easiest to forget.
+  for (const cc of ['GB', 'DE', 'FR', 'NL', 'ES', 'IT', 'CH', 'NO', 'IS']) {
+    expect(regional.region, `${cc} must be covered`).toContain(cc);
+  }
+  // Analytics is never region-limited: it stays granted everywhere, as before.
+  expect(regional.analytics_storage).toBeUndefined();
 
   // Nothing updates the default any more, because nothing is left to ask.
   expect(await consentCalls(page, 'update')).toHaveLength(0);
