@@ -6,6 +6,7 @@ import { EXTRA_CODES, RATE_CARD } from '../quote/rateCard';
 import { rateLockUntil } from '../quote/rateLock';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { MapsAdapter } from '../adapters/maps';
+import { isCatalogTown } from '../adapters/maps';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { liveRateCard } from '../quote/liveCard';
@@ -287,6 +288,39 @@ export function quoteRoutes(deps: {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
     }
+  });
+
+  // Many list prices in ONE request (spec 2026-09-21 §6.1): the /trip/ index and "where next"
+  // cards advertise the engine's fare, and ch-pricing can only ask one intent at a time.
+  // Each intent takes the SAME path as /v2/estimate — engineRequestFor → quote() on the live card —
+  // so a list price and the page it links to cannot disagree. Two deliberate differences:
+  //   • only catalogue-town legs are priced. Those are the pairs CachedMapsAdapter persists, so a
+  //     batch costs at most one billed distance call per pair, EVER. Anything else is null — this
+  //     endpoint must not become a way to fan 60 arbitrary addresses out to Google.
+  //   • an estimated distance is null, not flagged: a list has nowhere to put the caveat.
+  // One bad intent never fails the batch; the page keeps its catalogue figure for that row.
+  const BatchSchema = z.object({ intents: z.array(z.unknown()).min(1).max(60) }).strict();
+  r.post('/v2/estimate-batch', async (c) => {
+    if (!deps.v2Enabled) return c.notFound();
+    if (!deps.maps) return c.json({ error: 'not_available' }, 501);
+    const envelope = BatchSchema.safeParse(await c.req.json().catch(() => null));
+    if (!envelope.success) return c.json({ error: 'invalid_request', details: envelope.error.flatten() }, 400);
+    const maps = deps.maps;
+    const card = await liveCard();
+    const results = await Promise.all(envelope.data.intents.map(async (raw) => {
+      try {
+        const parsed = WebQuoteIntentSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.product !== 'private') return null;
+        if (!parsed.data.legs.every((l) => isCatalogTown(l.from) && isCatalogTown(l.to))) return null;
+        const resolved = await engineRequestFor(parsed.data, maps);
+        if (!resolved || resolved.estimated) return null;
+        const result = quote(resolved.request, card);
+        return { totalCents: result.totalCents, currency: result.currency };
+      } catch {
+        return null;
+      }
+    }));
+    return c.json({ results }, 200);
   });
 
   r.post('/v2/lock', async (c) => {
