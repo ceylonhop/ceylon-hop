@@ -1,0 +1,110 @@
+{
+  "ella": {
+    "stem": "ella",
+    "alt": "The blue hill-country train crossing Nine Arch Bridge near Ella",
+    "caption": "Nine Arch Bridge, Ella",
+    "credit": "Adam Vandermeer",
+    "creditUrl": "https://unsplash.com/photos/blue-and-white-train-on-rail-tracks-Dw9dWTzzsUE?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "65% 70%",
+    "w": 1800, "h": 675
+  },
+  "kandy": {
+    "stem": "kandy",
+    "alt": "The lakeside pavilion on Kandy Lake with forested hills behind",
+    "caption": "Kandy Lake",
+    "credit": "Polina Kocheva",
+    "creditUrl": "https://unsplash.com/photos/a-gazebo-in-the-middle-of-a-lake-surrounded-by-trees-_fcHQGnncM8?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "40% 55%",
+    "w": 1800, "h": 825
+  },
+  "galle": {
+    "stem": "galle",
+    "alt": "Galle Fort's white lighthouse among palms at dusk",
+    "caption": "Galle Fort lighthouse",
+    "credit": "Hendrik Cornelissen",
+    "creditUrl": "https://unsplash.com/photos/white-lighthouse-svZvPZ54uBI?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "22% 50%",
+    "w": 1800, "h": 832
+  },
+  "mirissa": {
+    "stem": "mirissa",
+    "alt": "A rocky Mirissa beach point with turquoise water, palms and a fishing boat",
+    "caption": "Mirissa beach",
+    "credit": "Zoshua Colah",
+    "creditUrl": "https://unsplash.com/photos/tropical-beach-with-palm-trees-rocks-and-blue-sky-bTy_q1ajFeQ?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "30% 45%",
+    "w": 1800, "h": 1200
+  },
+  "nuwara-eliya": {
+    "stem": "nuwara-eliya",
+    "alt": "Mist rolling over the tea-covered hills of Nuwara Eliya",
+    "caption": "Tea country, Nuwara Eliya",
+    "credit": "Rowan Heuvel",
+    "creditUrl": "https://unsplash.com/photos/green-grass-covered-mountain-with-fog-0iCcTwyQX7U?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "50% 75%",
+    "w": 1800, "h": 1200
+  },
+  "sigiriya": {
+    "stem": "sigiriya",
+    "alt": "Sigiriya, the ancient Lion Rock fortress, rising from the jungle plain",
+    "caption": "Sigiriya, Lion Rock",
+    "credit": "Mike Swigunski",
+    "creditUrl": "https://unsplash.com/photos/brown-rock-formation-under-white-sky-during-daytime-zDDQZgZjFtM?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "45% 60%",
+    "w": 1800, "h": 989
+  },
+  "yala": {
+    "stem": "yala",
+    "alt": "A mother and calf elephant at a waterhole in Yala National Park",
+    "caption": "Elephants, Yala National Park",
+    "credit": "Sach",
+    "creditUrl": "https://unsplash.com/photos/a-couple-of-elephants-are-standing-in-the-water-kKeC_lgVs_o?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "30% 60%",
+    "w": 1800, "h": 675
+  },
+  "cmb-airport": {
+    "stem": "cmb-airport",
+    "alt": "An aircraft wing silhouetted against a warm sunset sky on arrival",
+    "caption": "Touching down in Sri Lanka",
+    "credit": "Bhavik Dalal",
+    "creditUrl": "https://unsplash.com/photos/silhouette-photograph-of-plane-wing-during-golden-hour-SQqAZQvaRT0?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "70% 45%",
+    "w": 1800, "h": 1350
+  },
+  "colombo": {
+    "stem": "colombo",
+    "alt": "The Colombo skyline with Lotus Tower rising between the high-rises",
+    "caption": "Colombo skyline",
+    "credit": "Ajai S",
+    "creditUrl": "https://unsplash.com/photos/a-large-body-of-water-with-a-city-in-the-background-3fmmUdRE2Fk?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "50% 55%",
+    "w": 1800, "h": 1050
+  },
+  "negombo": {
+    "stem": "negombo",
+    "alt": "A silhouetted palm over the beach at Negombo at sunset",
+    "caption": "Negombo beach",
+    "credit": "rick judah",
+    "creditUrl": "https://unsplash.com/photos/silhouette-of-palm-tree-during-sunset-fIyKwbE9anM?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "75% 55%",
+    "w": 1800, "h": 1350
+  },
+  "arugam-bay": {
+    "stem": "arugam-bay",
+    "alt": "Sunset over the surf and beach at Arugam Bay",
+    "caption": "Arugam Bay at sunset",
+    "credit": "Isuru Ranasinha",
+    "creditUrl": "https://unsplash.com/photos/a-beach-with-a-sunset-aksPgTprHlo?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "60% 40%",
+    "w": 1800, "h": 1350
+  },
+  "_index": {
+    "stem": "_index",
+    "alt": "A road winding through the tea-covered hills of Sri Lanka's highlands",
+    "caption": "The road through tea country",
+    "credit": "Muditha Gajanayake",
+    "creditUrl": "https://unsplash.com/photos/a-road-going-through-a-grassy-area-KIkGZwrNSms?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "70% 60%",
+    "w": 1800, "h": 675
+  }
+}
