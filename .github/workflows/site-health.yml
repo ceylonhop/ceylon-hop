@@ -1,0 +1,75 @@
+name: site-health
+
+# Watches the CUSTOMER SITE. Nothing did before: keepalive.yml pings only the API, so if
+# GitHub Pages, Cloudflare or DNS broke, the first report would be a customer. That was
+# tolerable while WordPress served the apex; since the 2026-09-20 cutover ceylonhop.com IS
+# the product.
+#
+# Three checks, each for a failure that has a real precedent:
+#
+#  1. THE SITE IS OUR SITE. A 200 is not enough — a Cloudflare error page, a misdirected
+#     origin, or a reverted CNAME all return 200 with something that is not us. So this
+#     greps for a marker only our build emits, the way the cutover itself was verified.
+#
+#  2. THE CERTIFICATE IS NOT ABOUT TO EXPIRE. GitHub renews the Pages certificate by
+#     fetching the domain, and the apex is Cloudflare-PROXIED, so GitHub sees Cloudflare's
+#     IPs rather than its own. Renewal can therefore fail silently, and with SSL mode Full
+#     (strict) the failure is a 526 — a hard outage on the money domain. An uptime monitor
+#     cannot catch it either: it sees Cloudflare's edge certificate, not the origin's. So
+#     this asks GitHub Pages DIRECTLY, by IP with SNI, bypassing Cloudflare entirely.
+#     At < 21 days the job goes red, leaving time to fix it by hand (set the apex records
+#     to DNS-only until the certificate issues, then re-proxy).
+#
+#  3. THE ROUTE PAGES STILL RESOLVE. They carry the SEO inherited at the cutover; a broken
+#     deploy that leaves them 404ing would be invisible from the homepage alone.
+#
+# GitHub's scheduler is approximate and pauses after ~60 days of repo inactivity, so this is
+# a safety net, NOT a substitute for an external uptime monitor. It costs nothing and needs
+# no account, which is exactly why it is worth having while the external one is set up.
+on:
+  schedule:
+    - cron: '17 7 * * *' # daily, off the hour so it does not queue behind everyone else's jobs
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The apex serves our site over HTTPS
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS --max-time 30 https://ceylonhop.com/)
+          echo "$body" | grep -q 'site\.css?v=' \
+            || { echo "::error::ceylonhop.com answered, but not with our build (no stamped site.css)"; exit 1; }
+          echo "$body" | grep -qi 'wp-content' \
+            && { echo "::error::ceylonhop.com is serving WordPress — the apex has reverted"; exit 1; }
+          echo "ok: apex serves the current build"
+
+      - name: A route page and the route index resolve
+        run: |
+          set -euo pipefail
+          for p in /trip/ /trip/kandy-to-ella/ /sitemap.xml; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "https://ceylonhop.com$p")
+            [ "$code" = "200" ] || { echo "::error::https://ceylonhop.com$p returned $code"; exit 1; }
+            echo "ok: $p"
+          done
+
+      - name: GitHub Pages certificate has more than 21 days left
+        run: |
+          set -euo pipefail
+          # Ask Pages directly. Through Cloudflare we would read Cloudflare's certificate,
+          # which renews independently and would hide exactly the failure we are looking for.
+          end=$(echo | openssl s_client -connect 185.199.108.153:443 -servername ceylonhop.com 2>/dev/null \
+                | openssl x509 -noout -enddate | cut -d= -f2)
+          subject=$(echo | openssl s_client -connect 185.199.108.153:443 -servername ceylonhop.com 2>/dev/null \
+                | openssl x509 -noout -subject)
+          case "$subject" in
+            *ceylonhop.com*) : ;;
+            *) echo "::error::Pages is serving $subject for ceylonhop.com — the custom-domain certificate is gone"; exit 1 ;;
+          esac
+          days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+          echo "certificate expires $end ($days days)"
+          [ "$days" -gt 21 ] || {
+            echo "::error::Pages certificate expires in $days days and may not auto-renew while the apex is Cloudflare-proxied."
+            echo "::error::Fix: set the four apex A records to DNS-only, wait for the certificate to reissue, then re-proxy."
+            exit 1; }
