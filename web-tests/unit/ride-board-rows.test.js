@@ -76,9 +76,9 @@ describe('rowState — one coloured state and one action per row', () => {
     expect(s.sub).toBe('1 seat left');
     expect(s.cta).toEqual({ kind: 'view', text: "See who's going" });
   });
-  it('full and not yours: grey, Start another van', () => {
+  it('full and not yours: grey, Start another taxi', () => {
     const s = RB.rowState(L({ committed: 6, confirmed: true }), false);
-    expect(s).toEqual({ cls: 'f', label: 'Full', sub: '6 of 6', cta: { kind: 'again', text: 'Start another van' } });
+    expect(s).toEqual({ cls: 'f', label: 'Full', sub: '6 of 6', cta: { kind: 'again', text: 'Start another taxi' } });
   });
   it("yours: View your ride, and the state says you're on it", () => {
     expect(RB.rowState(L({ committed: 2 }), true)).toMatchObject({

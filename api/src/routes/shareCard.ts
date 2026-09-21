@@ -84,16 +84,16 @@ export function rideCopy(found: RideListWithMembers): RideCopy {
   let hot = false;
   if (full) {
     lead = 'Van locked in';
-    leadSub = 'This one is full — start the next van on the same route.';
+    leadSub = 'This one is full — start the next taxi on the same route.';
   } else if (locked) {
     lead = `${left} seat${left === 1 ? '' : 's'} left`;
     hot = left === 1;
     leadSub = left === 1
-      ? 'Take it and the van is full — everyone rolls.'
-      : 'The van is locked in. These seats are still going.';
+      ? 'Take it and the taxi is full — everyone rolls.'
+      : 'The taxi is locked in. These seats are still going.';
   } else if (need === 1) {
     lead = '1 more and it rolls';
-    leadSub = `${taken} on board. One more name locks the van in.`;
+    leadSub = `${taken} on board. One more name locks the taxi in.`;
   } else {
     lead = `${need} more and it rolls`;
     leadSub = `${taken} on board so far. ${need} more names and it is on.`;
@@ -104,8 +104,8 @@ export function rideCopy(found: RideListWithMembers): RideCopy {
     : `Closes ${deadlineText(list.cutoffAt)}`;
 
   const description = full
-    ? `${taken} of ${list.capacity} seats taken at ${money(list.seatPrice)} each. This van is full — start the next one on the same route.`
-    : `${price} for your seat. $0 to join — you're only charged if the van fills. Closes ${deadlineText(list.cutoffAt)}.`;
+    ? `${taken} of ${list.capacity} seats taken at ${money(list.seatPrice)} each. This taxi is full — start the next one on the same route.`
+    : `${price} for your seat. $0 to join — you're only charged if the taxi fills. Closes ${deadlineText(list.cutoffAt)}.`;
 
   return {
     title: `${lead} · ${route}, ${when}`,

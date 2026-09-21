@@ -82,7 +82,7 @@ export async function sendRideConfirmed(
     subject: `It's on! Your ${route(list)} ride is confirmed`,
     html: shell(
       `It's on, ${esc(args.firstName)}! 🚐`,
-      `<p>Enough travellers joined — your shared van is confirmed.</p>
+      `<p>Enough travellers joined — your shared taxi is confirmed.</p>
        <p><b>${routeHtml(list)}</b><br>${esc(list.date)} · departs <b>${esc(args.lockedTime)}</b><br>${money(list.seatPrice)} per seat, charged now.</p>
        <p>We'll email your driver's name and WhatsApp the evening before. See you at the pickup!</p>`,
     ),
@@ -141,7 +141,7 @@ export async function sendRideAtRisk(
     subject: `Action needed: your seat on ${route(list)} is at risk`,
     html: shell(
       `Your card couldn't be charged`,
-      `<p>Hi ${esc(args.firstName)}, the van for <b>${routeHtml(list)}</b> on ${esc(list.date)} is confirmed, but we couldn't charge your card for your seat.</p>
+      `<p>Hi ${esc(args.firstName)}, the taxi for <b>${routeHtml(list)}</b> on ${esc(list.date)} is confirmed, but we couldn't charge your card for your seat.</p>
        <p>Reply and we'll sort a fresh payment so you keep your spot.</p>`,
     ),
     text: `Hi ${args.firstName}, we couldn't charge your card for your ${route(list)} seat on ${list.date}. Reply to keep your spot.`,
