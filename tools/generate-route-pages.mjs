@@ -647,13 +647,15 @@ ${headAssets}
 
   .origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
   /* F5 fix: arriving at #from-<id> (hash link, bookmark, or back/forward) used to land with
-     the block's top ~35px behind .fromsticky (position:sticky;top:0, ~64px tall once it's
+     the block's top ~35px behind .fromsticky (position:sticky;top:0, measured 71px tall once it's
      pinned to the very top of the viewport — the header itself is NOT sticky on a generated
      page, see the note above). scroll-margin-top makes the browser's own "scroll to fragment"
      step (which the CSSOM View spec ties to scroll-margin, same as scrollIntoView()) leave
      room for the sticky row — no JS required, so it fixes the no-JS path too. #routes gets
-     the same treatment for the "Everywhere" chip's plain #routes anchor. */
-  #routes,.origin{scroll-margin-top:76px}
+     the same treatment for the "Everywhere" chip's plain #routes anchor. CSS cannot read
+     another element's height, so 92px is that 71px plus ~20px of slack: a larger default font
+     grows the row, and a 5px margin would put the block's top back behind it. */
+  #routes,.origin{scroll-margin-top:92px}
   .origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
   /* trip-index.js's filter sets the hidden attribute on a block. The cascade sorts by
      ORIGIN before specificity: any normal author rule beats a normal user-agent rule
