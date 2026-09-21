@@ -222,7 +222,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .place-option:hover small,.place-option.hi small{color:var(--accent-deep)}
   .place-option.loading small,.place-option.loading:hover small{color:var(--ink-soft)}
   .rb-divider{position:relative;height:1px;background:var(--line)}
-  .rb-swap{position:absolute;right:-4px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-s);transition:transform .15s,border-color .15s}
+  /* z-index: the drop-off .rb-field is position:relative and later in the DOM, so without it
+     the field paints over the arrow's lower half and eats the press. Stays under .place-menu (30). */
+  .rb-swap{position:absolute;z-index:1;right:-4px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-s);transition:transform .15s,border-color .15s}
   .rb-swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
   .rb-swap:active{transform:translateY(-50%) rotate(180deg)}
   .rb-swap svg{width:15px;height:15px}
@@ -679,6 +681,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=55d79307cf"></script>
+<script src="plan.js?v=59ad6c1607"></script>
 </body>
 </html>

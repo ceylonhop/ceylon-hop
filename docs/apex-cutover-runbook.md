@@ -1,8 +1,11 @@
 # Apex cutover runbook — `ceylonhop.com` becomes the new site
 
 Date: 2026-09-20
-Status: **NOT STARTED.** Design agreed with the owner 2026-09-20; every phase below is
-unexecuted. Tick the boxes as they land.
+Status: **DONE 2026-09-20.** Phases 0–3 executed the same day; `ceylonhop.com` now serves
+the new site over HTTPS and `prod.ceylonhop.com` returns 404. **Phase 4 (staging.ceylonhop.com)
+is NOT built** — `tools/build-staging.mjs` exists and is tested, but no Cloudflare Pages project
+or Access policy has been created, so there is currently **no staging copy of the customer
+site**. Phase 5 is outstanding. See §12 for what actually happened vs what this planned.
 
 This is the **one-time** switch that makes the new stack the live customer site, retires
 `prod.ceylonhop.com`, and stands up a login-gated `staging.ceylonhop.com` in its place. It
@@ -162,10 +165,15 @@ account you own.
       it. Wait for the Pages settings page to report the certificate as issued.
 - [ ] **Then turn the proxy back on (orange cloud)** and set Cloudflare SSL mode to **Full
       (strict)**.
-- [ ] Import [`cloudflare-redirects.csv`](./cloudflare-redirects.csv) (27 rules) as **Bulk
-      Redirects**, 301. Bulk Redirects only run on a *proxied* record — they do nothing until
-      the previous step is done.
-- [ ] Add a `www → apex` 301 redirect rule.
+- [ ] **OPTIONAL — not done, and not needed for correctness.** Importing
+      [`cloudflare-redirects.csv`](./cloudflare-redirects.csv) (27 rules) as **Bulk Redirects**
+      would upgrade the legacy URLs to true server-side 301s. **The repo already ships redirect
+      stubs for every one of them** (`tools/generate-redirects.mjs`, 28 artifacts) and they were
+      verified working live on the apex: `/trip/kandy_to_ella/` → `/trip/kandy-to-ella/`,
+      `/about-us/` → `/about.html`, each 200 with an instant meta-refresh plus a `canonical` and
+      `noindex, follow`. Cloudflare's free plan also caps Bulk Redirects below 27 rules. Park it.
+- [x] ~~`www → apex` redirect rule~~ — **unnecessary.** GitHub Pages already 301s `www` to the
+      apex because the `CNAME` file names the apex. Verified live.
 
 These two requirements pull against each other for a few minutes: the certificate needs the
 proxy off, the redirects need it on. Sequence them; don't try to satisfy both at once.
@@ -307,3 +315,35 @@ Access policy), both Google consoles, PayHere, Search Console, and the six terms
 
 **Agent** (PRs, reviewable): the `CNAME` file change, `tools/build-staging.mjs` and its test,
 the promote PR, the doc updates in §8, and running every verification probe in §6.
+
+## 12. What actually happened (2026-09-20)
+
+Executed in one session. Deviations from the plan above, all verified rather than assumed:
+
+- **Phase 0 was mostly already done.** The Maps browser key already allowed `ceylonhop.com/*`
+  and `*.ceylonhop.com/*`; only `ALLOWED_ORIGINS` and the OAuth origins actually needed a change.
+  The project holds **two** OAuth Web clients and only **Web client 2** (`369028158972-46hq…`)
+  is live — confirmed from `board.html` and from both prod and staging `/ops`.
+- **Three promotes, not one.** #655 (content), #659 (line `production` up with `main`), then
+  #663 (the `CNAME`). Promoting to identical trees first made the Pages branch switch a true
+  no-op, so any visible change at that step would have been a signal rather than noise.
+- **The terms were finished first** (#662, owner supplied all six facts), so the apex never
+  served `[OWNER TO CONFIRM]` to a real customer. #661 was closed and re-cut as #663 for this.
+- **Certificate: ~15 minutes** from correct DNS to `approved`, then a few more for all four
+  edge IPs. `185.199.109.153` lagged the others — during that window a quarter of visitors
+  would have hit a certificate warning.
+- **Local DNS caching lied repeatedly.** `dig` and `curl` disagreed for most of the cutover
+  because `curl` used the OS resolver's cached Cloudflare address while `dig` queried fresh.
+  It twice made the apex look finished when it was not, and once made it look like the proxy
+  had been re-enabled when it had not. **Test with `dig @eve.ns.cloudflare.com` and
+  `curl --resolve`, or by connecting to the Pages IP directly with SNI — never from the OS
+  resolver.** The definitive certificate test is `openssl s_client -connect
+  185.199.108.153:443 -servername ceylonhop.com` and reading the CN.
+- **No redirect loop**, which also proved the Cloudflare SSL mode was not Flexible: Flexible
+  plus GitHub's Enforce HTTPS is an infinite loop, and `http://` resolved in one hop.
+- **Verified after, not assumed:** a real quote from the apex origin (Colombo→Kandy car,
+  $56.00, `floor_cents`), canonical targets resolving 200 for the first time, sitemap listing
+  59 apex URLs, 404 returning a real 404.
+- **Not verifiable from outside, still open:** `APP_BASE_URL` (only observable in a minted
+  booking link) and the GA4 `purchase` event (needs a real transaction — it has never fired,
+  because `chIsProd()` only matches the apex).
