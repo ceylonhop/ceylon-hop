@@ -95,8 +95,15 @@ comes up, so launch is a clean, mechanical switch-over.
   - [x] set `ALERT_EMAIL` on Render — **DONE 2026-07-05** (alert emails currently send from a test sender until the `ceylonhop.com` domain is verified in Resend)
   - [x] create the free **Sentry** project → set `SENTRY_DSN` on Render — **DONE 2026-07-05** (verified via a real event; project `ceylonhop/env production`)
   - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
-  - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage)
-  - [ ] **cron-job.org**: `POST /admin/jobs/watchdog` every 15 min with header `x-admin-key: <ADMIN_API_KEY>` (same service as the keep-warm pinger)
+  - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage). **Add a second monitor for `https://ceylonhop.com/` with a keyword check** — since the cutover the apex is the product, and a 200 alone does not prove it: a Cloudflare error page and a reverted CNAME both return 200. A 5-min ping also keeps the API warm, which is the other unticked item above.
+  - Partial cover exists meanwhile: `.github/workflows/site-health.yml` (added 2026-09-20) checks daily that the apex serves OUR build (stamped `site.css`, no `wp-content`), that `/trip/` and the sitemap resolve, and that the **Pages certificate has >21 days left**. That last one matters because the apex is Cloudflare-proxied, so GitHub renews against a domain that no longer resolves to it — and an uptime monitor cannot see it, because it reads Cloudflare's edge certificate, not the origin's. The workflow asks Pages directly by IP with SNI.
+  - [x] **payments watchdog now has a scheduler** — `.github/workflows/watchdog.yml` (added
+        2026-09-20). Until then NOTHING called `/admin/jobs/watchdog`: no workflow, no cron. So
+        every abandoned-checkout recovery email since M17 went unsent and every stuck payment
+        went unalerted. **This is a stopgap** — GitHub's scheduler is throttled (measured here
+        at a median 84 min against a requested 13), and the sweep is idempotent so a late tick
+        is harmless but a missed hour is still a missed hour. **cron-job.org at ~15 min, or a
+        paid tier, is still the real answer** — same service that solves the keep-warm problem.
   - [ ] **Resend dashboard**: add a webhook → `https://ceylon-hop-api.onrender.com/webhooks/resend` (events: bounced, complained) → set `RESEND_WEBHOOK_SECRET`
   - [ ] **Supabase**: toggle the built-in DB alerts on
 
