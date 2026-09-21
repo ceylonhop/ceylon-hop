@@ -14,7 +14,7 @@ const LISTS = [
   { ...base, code: 'RW-2', date: '2099-08-15', slot: 'afternoon', committed: 2, members: [member('Jo', 'NL', { isStarter: true }), member('So', 'ES')] },
   { ...base, code: 'RW-1', date: '2099-08-15', slot: 'morning', committed: 3,
     members: [member('Anna', 'PL', { isStarter: true }), member('Yuki', 'JP'), member('Ben', 'IE')] },
-  // a full van: its action ("Start another van") is the widest, which is what knocked columns out of line
+  // a full taxi: its action ("Start another taxi") is the widest, which is what knocked columns out of line
   { ...base, code: 'RW-4', date: '2099-08-16', slot: 'afternoon', status: 'confirmed', committed: 6,
     members: ['Tom', 'Ela', 'Kim', 'Nat', 'Jo', 'Sam'].map((n, i) => member(n, 'AU', { isStarter: i === 0 })) },
 ];
@@ -79,7 +79,7 @@ for (const [label, width] of [['laptop', 1280], ['tablet', 820]]) {
     await page.setViewportSize({ width, height: 1000 });
     await stubApi(page);
     await page.goto('/board.html');
-    await expect(page.locator('.rw[data-code="RW-4"] [data-again]')).toHaveText('Start another van', { timeout: 15000 });
+    await expect(page.locator('.rw[data-code="RW-4"] [data-again]')).toHaveText('Start another taxi', { timeout: 15000 });
 
     const ends = await page.$$eval('.rw .rw-price', (els) => els.map((e) => Math.round(e.getBoundingClientRect().right)));
     expect(new Set(ends).size, `price columns end at ${ends.join(', ')}px`).toBe(1);
@@ -125,7 +125,7 @@ test('the create form prints a seat price as money, not a bare number', async ({
   await expect(page.locator('#c-est')).toHaveText(/^\$\d+(\.\d{2})? \/ each$/);
 });
 
-test('with a route chosen, the list closes with one invite to start a van on that route', async ({ page }) => {
+test('with a route chosen, the list closes with one invite to start a taxi on that route', async ({ page }) => {
   await stubApi(page, [LISTS[2]]);
   await page.goto('/board.html?from=' + encodeURIComponent(base.from) + '&to=' + encodeURIComponent(base.to));
   const invite = page.locator('.rw-invite');
