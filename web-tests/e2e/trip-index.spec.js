@@ -23,7 +23,10 @@ async function hitTestsSelf(page, sel) {
     const margin = 10;
     let rect = el.getBoundingClientRect();
     if (rect.bottom > window.innerHeight - margin || rect.top < margin) {
-      window.scrollBy(0, rect.top - margin);
+      // behavior:'instant' matters: site.css sets html{scroll-behavior:smooth} globally, so a
+      // plain scrollBy(x,y) animates and the very next getBoundingClientRect() below still
+      // reads the PRE-scroll position — silently testing the wrong point instead of failing.
+      window.scrollBy({ top: rect.top - margin, left: 0, behavior: 'instant' });
       rect = el.getBoundingClientRect();
     }
     const x = rect.left + rect.width / 2;
@@ -55,3 +58,51 @@ test('the "Leaving from" label never truncates at 1280x900', async ({ page }) =>
   });
   expect(clipped, 'the "Leaving from" label is truncated').toBe(false);
 });
+
+// Fix 2: the trust strip (`.trust ul`) had no width reservation for the `.fares` card
+// overlapping down into it (the prototype's `.trust ul{max-width:calc(100% - 440px)}` was
+// dropped in the port), so at desktop widths the row ran full-width and its last item slid
+// UNDER the card instead of wrapping to a second line — "WhatsApp support 7 days" read as
+// "WhatsApp supp" because the card (z-index:2) painted over the rest of it.
+async function trustItemOcclusion(page) {
+  return page.evaluate(() => {
+    const margin = 10;
+    // Same reasoning as hitTestsSelf above: a real minimal page-level scroll per item (never
+    // scrollIntoView, and never against .hero's own overflow:hidden ancestor), forced instant
+    // (site.css: html{scroll-behavior:smooth} would otherwise animate it, leaving the very next
+    // getBoundingClientRect() read stale) so a point that is merely below the fold at a short
+    // viewport isn't mistaken for occlusion. .fares moves with the rest of the page, so it's
+    // re-measured after each item's scroll too.
+    return [...document.querySelectorAll('.trust li')].map((li) => {
+      let r = li.getBoundingClientRect();
+      if (r.bottom > window.innerHeight - margin || r.top < margin) {
+        window.scrollBy({ top: r.top - margin, left: 0, behavior: 'instant' });
+        r = li.getBoundingClientRect();
+      }
+      const fares = document.querySelector('.fares').getBoundingClientRect();
+      const cy = Math.min(window.innerHeight - 1, Math.max(0, r.top + r.height / 2));
+      const cx = r.left + r.width / 2;
+      const rx = Math.min(window.innerWidth - 1, Math.max(0, r.right - 2));
+      const centre = document.elementFromPoint(cx, cy);
+      const rightEdge = document.elementFromPoint(rx, cy);
+      const selfAtCentre = !!centre && (centre === li || li.contains(centre));
+      const selfAtRightEdge = !!rightEdge && (rightEdge === li || li.contains(rightEdge));
+      const overlapsFares = r.left < fares.right && r.right > fares.left && r.top < fares.bottom && r.bottom > fares.top;
+      return { text: li.textContent, selfAtCentre, selfAtRightEdge, overlapsFares };
+    });
+  });
+}
+
+for (const vp of [{ width: 1280, height: 900 }, { width: 1024, height: 800 }, { width: 375, height: 812 }]) {
+  test(`trust strip items stay fully readable, never under the hero card, at ${vp.width}x${vp.height}`, async ({ page }) => {
+    await page.setViewportSize(vp);
+    await page.goto('/trip/?api=off');
+    const items = await trustItemOcclusion(page);
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item.selfAtCentre, `"${item.text}" occluded at its centre`).toBe(true);
+      expect(item.selfAtRightEdge, `"${item.text}" occluded at its right edge`).toBe(true);
+      expect(item.overlapsFares, `"${item.text}" horizontally/vertically overlaps the fares card`).toBe(false);
+    }
+  });
+}

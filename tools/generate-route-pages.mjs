@@ -584,7 +584,12 @@ ${headAssets}
   .fine{font-size:.76rem;color:var(--ink-soft,#6c6a6b);text-align:center;margin:0}
 
   .trust{background:#22302F;color:#fff}
-  .trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500}
+  /* Fix 2 (review): the .fares card overlaps DOWN into this strip (its whole point — see the
+     Fix 1 comment above), so the row needs the prototype's own width reservation for it or the
+     last item runs under the card instead of wrapping to a second line. 440px ~= the card's
+     400px column + its 48px gap from .hero .wrap's grid-template-columns above. Restored at
+     ≤900px, where the card no longer floats beside the strip in a way that needs clearing. */
+  .trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500;max-width:calc(100% - 440px)}
   .trust li{display:flex;align-items:center;gap:8px}
   .trust svg{width:16px;height:16px;color:var(--blue,#63BFD6)}
 
@@ -641,7 +646,7 @@ ${headAssets}
     .hero .wrap{grid-template-columns:1fr;gap:0;padding-block:18px 0}
     .hero-copy{padding-bottom:56px;gap:12px;min-height:250px}
     .fares{margin-bottom:22px;margin-top:-36px;padding:18px}
-    .trust ul{gap:8px 18px;font-size:.78rem}
+    .trust ul{gap:8px 18px;font-size:.78rem;max-width:none}
     .band{padding-block:36px}
     .pop{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .fromsticky{position:static}
