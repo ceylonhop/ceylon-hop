@@ -1,0 +1,46 @@
+name: payments-watchdog
+
+# Drives the M17 payments watchdog (POST /admin/jobs/watchdog): the sweep that emails a
+# recovery link for an abandoned checkout, and raises the critical alerts for payments stuck
+# between "customer paid" and "we recorded it".
+#
+# WHY THIS FILE EXISTS. The endpoint has shipped since M17 and nothing has ever called it on a
+# schedule. go-live-checklist.md §3 assigns it to an external cron (cron-job.org) at ~15 min,
+# and that box is still unticked — confirmed 2026-09-20 by grepping the repo: no workflow, no
+# caller. So every abandoned-payment recovery email since M17 has gone unsent, and every stuck
+# payment has gone unalerted. That mattered less while WordPress served customers; the apex
+# cutover the same day makes it live money.
+#
+# THIS IS A STOPGAP, NOT THE DESIGN. GitHub's scheduler is approximate and heavily throttled —
+# measured on this repo's own keepalive at a median 84 min against a requested 13. The watchdog
+# is idempotent (alerts dedupe per booking inside their cooldown), so a late or repeated tick is
+# harmless, and a 30-minute request that lands hourly still beats never. An external pinger or a
+# paid tier remains the real answer; see the keep-warm note in the go-live checklist, which has
+# the same root cause and would be solved by the same service.
+#
+# Requires the repo secret `ADMIN_API_KEY` to match ADMIN_API_KEY on the ceylon-hop-api Render
+# service. Mismatched or unset, the endpoint 401s and this job goes red — which is the signal.
+# That exact failure hid the notifications tick for 42 consecutive runs (docs/known-bugs.md),
+# so this job fails loudly rather than swallowing a non-2xx.
+on:
+  schedule:
+    - cron: '*/30 * * * *' # every 30 min; GitHub will deliver it less often than that
+  workflow_dispatch: {}
+
+# A slow tick overlapping the next one would double-send nothing (the sweep is idempotent), but
+# there is no value in piling them up either.
+concurrency:
+  group: payments-watchdog
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the payments watchdog sweep
+        run: |
+          # -f makes curl exit non-zero on 4xx/5xx: a 401 from a missing secret must go red,
+          # not print a JSON error body and pass.
+          curl -fsS --max-time 120 -X POST \
+            -H "x-admin-key: ${{ secrets.ADMIN_API_KEY }}" \
+            https://ceylon-hop-api.onrender.com/admin/jobs/watchdog
