@@ -574,7 +574,25 @@ function legBadges(){
   return state.legs.map(l => l.type==='stay' ? `Stay ${++stayNo}` : `Leg ${++legNo}`);
 }
 let dragEl=null;
+/* A press on a rail button is mousedown → BLUR of the field being edited → mouseup → click.
+   If that field's text has moved, the blur fires its 'change', whose render() replaced the
+   pressed button before its click landed — so the press did nothing (the ↕ swap arrow, ✕,
+   the nights steppers). The 'change' still commits to state at once; only its re-render is
+   held until the press is over. The button's own click render()s anyway; the timeout covers
+   a press that is dragged off the button and never clicks.
+   Do NOT "fix" this by preventDefault()ing the mousedown to keep focus on the field: the
+   button's render() then removes a focused, dirty input, Chrome commits it mid-removal, and
+   that 'change' re-enters render() with the stale value on top of the button's work. */
+let railPress=false, renderHeld=false;
+document.addEventListener('mousedown',e=>{ railPress=!!e.target.closest('#rail button'); },true);
+window.addEventListener('mouseup',()=>{
+  if(!railPress) return;
+  railPress=false;
+  setTimeout(()=>{ if(renderHeld) render(); },0);
+});
+function renderAfterPress(){ if(railPress) renderHeld=true; else render(); }
 function render(){
+  renderHeld=false;
   const rail=document.getElementById('rail');
   // Gate the itinerary on the traveller count — no building transfers until the customer
   // has actively picked how many are travelling (mirrors the ops dashboard trip-basics gate).
@@ -682,14 +700,14 @@ function render(){
       }
       fromI.addEventListener('input',recompute);
       toI.addEventListener('input',recompute);
-      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; render(); });
-      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; render(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; renderAfterPress(); });
+      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; renderAfterPress(); });
       const swap=wrap.querySelector('.rb-swap');
       if(swap) swap.addEventListener('click',()=>{ markRouteCustomized(); const t=state.legs[i].from; state.legs[i].from=state.legs[i].to; state.legs[i].to=t; render(); });
     } else {
       // stay wiring — one place (mirrors to drop-off so chaining continues)
       fromI.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; updateSummary(); });
-      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; render(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; renderAfterPress(); });
       const up=wrap.querySelector('.sn-up'), dn=wrap.querySelector('.sn-dn');
       if(up) up.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].nights=(state.legs[i].nights||0)+1; render(); });
       if(dn) dn.addEventListener('click',()=>{ if((state.legs[i].nights||0)>0){ markRouteCustomized(); state.legs[i].nights--; render(); } });

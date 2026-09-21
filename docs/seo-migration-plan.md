@@ -2,9 +2,13 @@
 
 **Status: LARGELY SHIPPED — M16 merged to main (PR #7, 2026-07-03).** The in-repo
 deliverables exist (`trip/` route pages, `sitemap.xml`, `robots.txt`, `404.html`, generated
-`terms.html`/`privacy.html`, `docs/cloudflare-redirects.csv`, the M16 design spec). Only the
-apex-cutover tail remains: point the CNAME at the new host, load the Cloudflare bulk redirects,
-and re-submit in Search Console. Do that tail before/at go-live. _(Original plan recorded 2026-06-25.)_
+`terms.html`/`privacy.html`, `docs/cloudflare-redirects.csv`, the M16 design spec). The apex cutover
+happened **2026-09-20** ([`apex-cutover-runbook.md`](./apex-cutover-runbook.md)): the CNAME and
+DNS point at the new host and canonicals now resolve. The Cloudflare bulk redirects were
+**deliberately parked** at cutover: the in-repo redirect stubs already cover every legacy URL
+(200 + instant meta-refresh + `canonical` + `noindex, follow`, verified live), so the CSV import
+would only upgrade them to server-side 301s. **Still open from the tail:** the Search Console
+re-submit. _(Original plan recorded 2026-06-25.)_
 Owner record for the SEO impact of replacing the current `ceylonhop.com` site with the
 new booking-enabled site. Read this before the apex cutover (it interacts with the
 [go-live checklist](./go-live-checklist.md): "serve the new site on the apex").

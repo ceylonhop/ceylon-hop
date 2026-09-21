@@ -424,6 +424,7 @@ export function createApp(deps: AppDeps = {}) {
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+      email,
       alerts,
     }),
   );
