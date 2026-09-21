@@ -106,3 +106,38 @@ for (const vp of [{ width: 1280, height: 900 }, { width: 1024, height: 800 }, { 
     }
   });
 }
+
+// Task C2: the "Leaving from" chips progressively enhance into a show/hide filter
+// (trip-index.js). Without it they are plain in-page anchors — that's the no-JS
+// behaviour, still exercised by web-tests/unit/trip-index.test.js.
+test('a "leaving from" chip hides other origins but keeps every link in the DOM', async ({ page }) => {
+  await page.goto('/trip/?api=off');
+  const total = await page.locator('.origins a.dest').count();
+  await page.locator('.fchips [data-from="kandy"]').click();
+  await expect(page.locator('section.origin:visible')).toHaveCount(1);
+  await expect(page.locator('#from-kandy')).toBeVisible();
+  await expect(page.locator('.fchips [data-from="kandy"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.locator('.origins a.dest').count()).toBe(total);
+  await page.locator('.fchips [data-from=""]').click();
+  await expect(page.locator('section.origin:visible')).toHaveCount(await page.locator('section.origin').count());
+});
+
+// One more assertion beyond the brief: filtering to Kandy then pressing "Everywhere"
+// must clear every hidden origin block, not just make the count match.
+test('pressing "Everywhere" after a filter clears every hidden origin block', async ({ page }) => {
+  await page.goto('/trip/?api=off');
+  await page.locator('.fchips [data-from="kandy"]').click();
+  await page.locator('.fchips [data-from=""]').click();
+  const anyHidden = await page.evaluate(() =>
+    [...document.querySelectorAll('section.origin')].some((s) => s.hasAttribute('hidden'))
+  );
+  expect(anyHidden).toBe(false);
+});
+
+test.describe('phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test('no sideways scroll; chips scroll inside their own row', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+});

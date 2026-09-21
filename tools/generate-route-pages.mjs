@@ -618,9 +618,17 @@ ${headAssets}
   .fchips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-block:2px}
   .fchips::-webkit-scrollbar{display:none}
   .fchips a{flex:none;border:1px solid #d5d0bf;background:var(--paper,#fffdf8);border-radius:999px;padding:8px 15px;font-size:.84rem;font-weight:500;text-decoration:none;color:inherit}
+  /* Pressed state for trip-index.js's filter (progressive enhancement — with JS off,
+     [aria-pressed] is never set, so every chip stays unstyled and plain-anchor-shaped). */
+  .fchips a[aria-pressed="true"]{background:var(--ink,#3A3739);border-color:var(--ink,#3A3739);color:#fff}
 
   .origins{display:flex;flex-direction:column;gap:46px;padding-block:48px 84px}
   .origin{display:grid;grid-template-columns:200px minmax(0,1fr);gap:34px;align-items:start}
+  /* trip-index.js's filter sets the hidden attribute on a block. The browser's own
+     [hidden]{display:none} default has the SAME specificity as .origin{display:grid} above
+     (both one class/attribute selector), so without this it loses the cascade — .origin's
+     display:grid wins and a "hidden" block stays visible. .origin[hidden] outranks it. */
+  .origin[hidden]{display:none}
   .origin-head{display:flex;flex-direction:column;gap:6px}
   .origin-head img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:18px;max-width:100%}
   .origin-head h2{font-size:1.5rem;margin:8px 0 0}
@@ -717,6 +725,7 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<script src="${p}${assetV('trip-index.js')}"></script>
 </body>
 </html>
 `;
