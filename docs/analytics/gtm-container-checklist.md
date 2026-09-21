@@ -105,3 +105,46 @@ event.) Each tag carries a `notes` field saying why it earns its place.
 `web-tests/unit/gtm-event-coverage.test.js` fails if a new event is added to the site without
 being tagged or explicitly listed as deliberately untagged — verified by adding a probe event
 and watching it go red.
+
+---
+
+## Meta pixel conversions — 2026-09-20
+
+The base pixel loaded on every page and reported **no conversions**: `Purchase`,
+`InitiateCheckout` and `AddToCart` appeared **zero** times in the published container. Meta was
+told visitors arrived and never told one bought — so no ad spend was measurable, and Meta's
+optimiser had no conversion signal to learn from, which degrades delivery as well as reporting.
+
+**[`gtm-meta-conversions.json`](gtm-meta-conversions.json)** adds three tags:
+
+| Meta event | Fires on | Carries |
+|---|---|---|
+| `Purchase` | `purchase` | value, currency, `eventID` = booking reference |
+| `InitiateCheckout` | `begin_checkout` | value, currency |
+| `Lead` | `contact_whatsapp` | `content_name` |
+
+`Lead` is there because most customers reach us on WhatsApp rather than paying online — GA4
+already counts it as a key event.
+
+### Import
+
+Same flow as the missing-tags import: **Admin → Import Container → Existing → Default
+Workspace → Merge → Rename conflicting**. Expect **3 tags, 3 triggers, 1 variable**, nothing
+deleted. Preview, complete a test booking, confirm `Meta - Purchase` fires, then publish.
+
+It defines only `DLV - transaction_id`; `DLV - value` and `DLV - currency` already exist from
+the earlier import and Custom HTML resolves `{{Name}}` by name, so re-importing them would only
+create duplicates.
+
+### Two things worth knowing
+
+**Every `{{variable}}` sits inside double quotes.** GTM substitutes raw text, so
+`currency: {{DLV - currency}}` renders as `currency: USD` — a ReferenceError — and an empty
+value renders as `value: `, a syntax error that kills the tag silently. `gtm-meta-conversions.test.js`
+enforces the quoting and was verified to fail when it is removed.
+
+**`eventID` is not decoration.** If server-side CAPI is ever added, Meta deduplicates browser
+and server events sharing an eventID. Without it, adding CAPI later double-counts every sale.
+
+**No PII.** Advanced matching is deliberately off — it would send customer email and phone to
+Meta, which is an owner decision, not a tagging detail. A test pins that too.
