@@ -739,6 +739,10 @@ ${headAssets}
     .trip-bookbar .tb-p{font-size:.74rem;color:var(--ink-soft,#6c6a6b);line-height:1.25}
     .trip-bookbar .tb-p b{display:block;font-size:1.2rem;color:var(--ink,#3A3739)}
     .trip-bookbar .btn{padding:13px 26px}
+    /* The bar is position:fixed, so it sits over whatever the page ends on — the footer, on
+       every one of these pages. Scoped to THIS page's own <style> (site.css's .footer is
+       untouched), so only /trip/ pages carry the extra room a fixed bar needs. */
+    .footer{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
   }
 </style>
 ${jsonLd(fromName, toName, url, q, faq)}
@@ -806,6 +810,7 @@ ${footer}
 ${bootScript}
 <script src="${p}${assetV('ch-pricing.js')}"></script>
 <script src="${p}${assetV('route-page-fares.js')}"></script>
+<script src="${p}${assetV('route-page-select.js')}"></script>
 <script src="${p}${assetV('route-page.js')}"></script>
 </body>
 </html>

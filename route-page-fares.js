@@ -18,6 +18,11 @@
    Every failure is silent and ends the same way — the catalogue fares, exactly as generated:
    no API, ?api=off, engine switched off (404), unreachable, slower than CAP_MS, or this file
    not loading at all (the <head> releases the hold on its own timer).
+
+   This file only ever writes fare TEXT — it does not touch either booking href. On success it
+   also records both fares in cents on the card (data-engine-car / data-engine-van) and fires
+   `ch:fares` on it; route-page-select.js (loaded right after this file) is what owns the CTA
+   and the mobile book bar, and reacts to that event.
    ============================================================ */
 (function () {
   'use strict';
@@ -57,16 +62,11 @@
         var f = fares[el.getAttribute('data-fare')];
         if (f) el.textContent = f;
       });
-      // The CTA books the car. booking.js reads rawPrice FIRST, so the catalogue's unfinished
-      // figure must not ride along beside an engine fare — it would win over the price shown.
-      var cta = card.querySelector('a.opt-cta');
-      if (cta) {
-        var parts = cta.getAttribute('href').split('?');
-        var q = new URLSearchParams(parts[1] || '');
-        q.set('price', String(car.totalCents / 100));
-        q.delete('rawPrice');
-        cta.setAttribute('href', parts[0] + '?' + q.toString());
-      }
+      // route-page-select.js owns both hrefs; it reads these two attributes and reacts to the
+      // event below rather than this file touching a.opt-cta or the bar's a.bar-cta itself.
+      card.setAttribute('data-engine-car', String(car.totalCents));
+      card.setAttribute('data-engine-van', String(van.totalCents));
+      card.dispatchEvent(new CustomEvent('ch:fares'));
     }
     release();
   });

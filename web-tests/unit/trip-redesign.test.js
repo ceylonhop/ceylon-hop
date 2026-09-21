@@ -64,6 +64,20 @@ describe('trip page — leads with a photo and a bookable price', () => {
     expect(bar.querySelector('span[data-fare=car]').textContent).toMatch(/^\$\d/);
     expect(bar.querySelector('a.bar-cta').getAttribute('href')).toContain('booking.html?');
   });
+  // Task B3: route-page-select.js owns the CTA + bar once route-page-fares.js has an engine
+  // answer (it dispatches `ch:fares` rather than touching any href itself), so load order
+  // matters — the selection script has to attach its `ch:fares` listener before that event can
+  // ever fire, which only happens if it is parsed and its IIFE runs before the fares script's
+  // async chain resolves. Both are classic <script src> (no defer/async/type=module), so
+  // execution order is document order: select merely has to come AFTER fares in the source.
+  it.each(slugs)('%s: route-page-select.js loads after route-page-fares.js', (slug) => {
+    const html = readFileSync(join(ROOT, 'trip', slug, 'index.html'), 'utf8');
+    const iFares = html.indexOf('route-page-fares.js');
+    const iSelect = html.indexOf('route-page-select.js');
+    expect(iFares, 'route-page-fares.js script tag missing').toBeGreaterThan(-1);
+    expect(iSelect, 'route-page-select.js script tag missing').toBeGreaterThan(-1);
+    expect(iSelect).toBeGreaterThan(iFares);
+  });
 });
 
 /* The BODY of the page (task B2): the drive, what's included + the proof row, the FAQ as a
