@@ -58,5 +58,12 @@
       });
     }
     release();
-  }).catch(function () { if (!settled) { settled = true; clearTimeout(cap); release(); } });
+  }).catch(function () {
+    // F5 fix: release() unconditionally (idempotent — classList.remove) — the .then above sets
+    // settled = true before its own release(), so if anything in that handler throws (a bad
+    // response shape, a DOM surprise), the old `if (!settled) release()` guard here found
+    // settled already true and skipped release too, leaving the figures held until CAP_MS.
+    if (!settled) { settled = true; clearTimeout(cap); }
+    release();
+  });
 })();

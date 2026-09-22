@@ -40,21 +40,26 @@ test('the index asks once and shows the engine fare on every row of that pair', 
 });
 
 test('a null result leaves that row on its catalogue figure', async ({ page }) => {
-  await batch(page, () => null);
   await stubHealth(page);
+  const sel = '#from-galle a.dest[href*="galle-to-mirissa"] [data-list-fare]';
+  await page.goto('/trip/?api=off');                 // engine off: the markup's OWN figure
+  const catalogue = (await page.locator(sel).textContent()).trim();
+  expect(catalogue).toMatch(/^\$\d/);
+  await batch(page, () => null);
   await page.goto('/trip/');
-  const row = page.locator('#from-galle a.dest[href*="galle-to-mirissa"] [data-list-fare]');
-  const catalogue = await row.textContent();
-  await expect.poll(() => held(page)).toBe(false);
-  await expect(row).toHaveText(catalogue);
+  await expect.poll(() => held(page), { timeout: 3000 }).toBe(false);  // 3s < the head's 4.5s
+  await expect(page.locator(sel)).toHaveText(catalogue);
 });
 
 test('404, and ?api=off, both end silently at catalogue prices', async ({ page }) => {
-  await page.route('**/quote/v2/estimate-batch', (r) => r.fulfill({ status: 404, body: '' }));
   await stubHealth(page);
+  const sel = '#from-kandy a.dest[href*="kandy-to-ella"] [data-list-fare]';
+  await page.goto('/trip/?api=off');
+  const catalogue = (await page.locator(sel).textContent()).trim();
+  await page.route('**/quote/v2/estimate-batch', (r) => r.fulfill({ status: 404, body: '' }));
   await page.goto('/trip/');
-  await expect.poll(() => held(page)).toBe(false);
-  await expect(page.locator('#from-kandy [data-list-fare]').first()).toHaveText(/^\$\d/);
+  await expect.poll(() => held(page), { timeout: 3000 }).toBe(false);
+  await expect(page.locator(sel)).toHaveText(catalogue);
   await page.goto('/trip/?api=off');
   expect(await held(page)).toBe(false);
 });
@@ -77,4 +82,38 @@ test('a route page fills its where-next cards from the same endpoint', async ({ 
   await stubHealth(page);
   await page.goto('/trip/kandy-to-ella/');
   await expect(page.locator('.next [data-list-fare]').first()).toHaveText('$31.50');
+});
+
+// F4 (mutation-test guard for F1): the CLASS toggling correctly is not proof the figures are
+// actually invisible — that's exactly the bug (F1): `.dests .pr b`'s own color won on
+// specificity, so 44 of 48 figures painted anyway while `list-fares-pending` sat on <html> the
+// whole time. This asserts the computed color itself, on every `[data-list-fare]` on the page,
+// and counts them so a selector that matches nothing (or too few) can't pass silently.
+test('while held, every index list-fare figure is genuinely invisible, not just class-toggled', async ({ page }) => {
+  await batch(page, () => ({ totalCents: 6600, currency: 'USD' }), [], 2000);
+  await stubHealth(page);
+  await page.goto('/trip/');
+  expect(await held(page)).toBe(true);
+  const transparentCount = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-list-fare]'))
+      .filter((el) => getComputedStyle(el).color === 'rgba(0, 0, 0, 0)').length);
+  expect(transparentCount).toBeGreaterThanOrEqual(45);
+
+  await expect.poll(() => held(page), { timeout: 6000 }).toBe(false);
+  const opaqueCount = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-list-fare]'))
+      .filter((el) => getComputedStyle(el).color !== 'rgba(0, 0, 0, 0)').length);
+  expect(opaqueCount).toBeGreaterThanOrEqual(45);
+});
+
+test('a route page holds its "where next" list-fare figures the same, invisible way', async ({ page }) => {
+  await single(page);
+  await batch(page, () => ({ totalCents: 3150, currency: 'USD' }), [], 2000);
+  await stubHealth(page);
+  await page.goto('/trip/kandy-to-ella/');
+  const transparent = await page.evaluate(() => {
+    const el = document.querySelector('.next [data-list-fare]');
+    return el ? getComputedStyle(el).color === 'rgba(0, 0, 0, 0)' : null;
+  });
+  expect(transparent).toBe(true);
 });
