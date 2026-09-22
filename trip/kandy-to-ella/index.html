@@ -142,13 +142,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ld-face{width:25px;height:25px;border-radius:50%;border:2px solid #fff;display:inline-grid;place-items:center;font-size:.62rem;font-weight:800;color:#fff}
   .ld-face+.ld-face{margin-left:-8px}
   .ld-face-more{background:var(--ink-soft,#6c6a6b)}
-  .ld-when{font-weight:700;font-size:.9rem;grid-column:2}
+  .ld-when{font-weight:700;font-size:.9rem;grid-column:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ld-tag{font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a00;background:#fdeecb;border-radius:999px;padding:.1rem .45rem}
-  .ld-count{grid-column:2;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b)}
-  .ld-count b{color:var(--ink,#3A3739)}
-  .ld-meter{grid-column:3;grid-row:1/3;width:52px;height:5px;border-radius:99px;background:var(--cream-deep,#E4E0D2);overflow:hidden}
-  .ld-meter i{display:block;height:100%;background:var(--teal,#0AB9B6);border-radius:99px}
-  .ld-meter i.full{background:var(--saffron,#F9A429)}
+  .ld-count{grid-column:2;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ld-pill{grid-column:3;grid-row:1/3;font-size:.7rem;font-weight:700;border-radius:999px;padding:4px 10px;white-space:nowrap}
+  .ld-pill.go{background:#DDF1E3;color:#1E6B39}
+  .ld-pill.need{background:#FDF0D6;color:#8A5A06}
   .ld-go{grid-column:4;grid-row:1/3;color:var(--blue-deep,#24758A);font-weight:800}
   /* ── the drive ────────────────────────────────────────────────────────────────
      A two-column band: the copy and the route line on the left, a photo of where you
@@ -305,6 +304,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
        every one of these pages. Scoped to THIS page's own <style> (site.css's .footer is
        untouched), so only /trip/ pages carry the extra room a fixed bar needs. */
     .footer{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
+    /* The "already going" row has four things competing for one line on a phone (faces, date,
+       pill, arrow), inside a card that keeps its full padding at this width. Nothing here
+       drops off the row — the date still ellipses rather than wraps, and the pill and arrow
+       stay put — this just claws back enough space that the date isn't reduced to two
+       characters before it does. */
+    .ld-row{gap:4px 8px;padding:10px 10px}
+    .ld-face{width:22px;height:22px;font-size:.58rem}
+    .ld-face+.ld-face{margin-left:-7px}
+    .ld-pill{font-size:.66rem;padding:3px 8px}
   }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Kandy to Ella","item":"https://ceylonhop.com/trip/kandy-to-ella/"}]}</script>
@@ -453,7 +461,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </script>
 <script src="../../ch-pricing.js?v=74a30546ee"></script>
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
-<script src="../../route-page-select.js?v=d63c888d71"></script>
-<script src="../../route-page.js?v=1cac31d713"></script>
+<script src="../../route-page-select.js?v=a9768533d4"></script>
+<script src="../../route-page.js?v=175d7a6b9e"></script>
 </body>
 </html>
