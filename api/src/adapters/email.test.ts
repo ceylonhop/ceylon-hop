@@ -83,7 +83,10 @@ describe('a customer with no email address', () => {
 
   it('does not throw — a missing address is not an error', async () => {
     const fake = new FakeEmailAdapter();
-    await expect(fake.send({ ...msg, to: '' })).resolves.toBeUndefined();
+    // Resolves rather than throwing, and now SAYS why nothing was sent. It used to resolve
+    // with undefined, which a caller could not tell from a delivered message — the gap that
+    // let a suppressed confirmation be written to the ledger as sent (audit 2026-09-22 #2).
+    await expect(fake.send({ ...msg, to: '' })).resolves.toEqual({ delivered: false, reason: 'no_address' });
   });
 
   it('still sends to a real address', async () => {

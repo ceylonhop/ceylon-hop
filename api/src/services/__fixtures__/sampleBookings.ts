@@ -66,9 +66,14 @@ const shared: Booking = {
   total: 480_000,
   channel: 'website',
   input: {
-    corridorId: 'ella-mirissa',
+    // A real catalogue leg, so /dev/emails previews what a customer now receives. It used
+    // to name a corridor id that is not in the catalogue at all, which rendered the
+    // anonymous "Shared ride" and hid how a shared seat actually reads (CH-6HE3V).
+    corridorId: 'airport-cultural',
+    fromPlace: 'Colombo Airport (CMB)',
+    toPlace: 'Sigiriya / Dambulla',
     date: '2026-08-09',
-    time: '09:00',
+    time: '07:00',
     seats: 2,
     customer,
   },

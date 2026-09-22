@@ -9,6 +9,7 @@ import {
   sendPaymentFailed,
   sendDepositReceived,
   sendCustomerQuote,
+  routeText,
 } from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
@@ -517,5 +518,93 @@ describe('partial-booking coverage (spec 2026-08-04)', () => {
     await sendBookingConfirmation(trip, email);
     expect(email.sent[0].html).not.toContain('of the');
     expect(email.sent[0].text).not.toContain('your own arrangement');
+  });
+});
+
+// ── CH-6HE3V (owner-reported 2026-09-21) ───────────────────────────────────
+// A customer bought CMB Airport → Sigiriya / Dambulla. Their confirmation, and
+// the team's paid alert, both said "Colombo Airport (CMB) – Kandy".
+//
+// Nothing was mispriced and nothing was mis-booked: every label rebuilt the
+// route from the CORRIDOR's end stops. A corridor names the ROAD a van drives
+// (airport-cultural runs CMB … Kandy); it is not the leg that was sold. Since
+// the directed catalogue landed (2026-08-16) a corridor carries several legs at
+// their own prices, so its ends name no customer's journey.
+//
+// The leg is now recorded on the booking, and every label reads that.
+describe('shared seat — the email names the leg that was sold', () => {
+  const seat: Booking = {
+    mode: 'shared',
+    id: 'id-leg',
+    reference: 'CH-6HE3V',
+    status: 'paid',
+    createdAt: new Date().toISOString(),
+    total: 5498,
+    currency: 'USD',
+    channel: 'website',
+    input: {
+      corridorId: 'airport-cultural',
+      fromPlace: 'Colombo Airport (CMB)',
+      toPlace: 'Sigiriya / Dambulla',
+      date: '2026-09-23',
+      time: '07:00',
+      seats: 2,
+      customer,
+    },
+  };
+
+  it('names where the traveller actually gets off', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(seat, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Sigiriya');
+    expect(m.text).toContain('Sigiriya');
+  });
+
+  // The defect itself: airport-cultural ENDS at Kandy, so every label said Kandy.
+  it('never names a destination the customer did not buy', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(seat, email);
+    expect(email.sent[0].html).not.toContain('Kandy');
+    expect(email.sent[0].text).not.toContain('Kandy');
+  });
+
+  it('reads as a directed leg, because a sold leg has a direction', () => {
+    expect(routeText(seat)).toBe('Shared shuttle · Colombo Airport (CMB) → Sigiriya / Dambulla');
+  });
+
+  // Rows booked before the leg was recorded cannot be resolved. The corridor ends
+  // are still worth showing, but as the SERVICE — never as this traveller's route.
+  it('a row with no recorded leg names the service, not a destination', () => {
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as Booking;
+    expect(routeText(legacy)).toBe('Shared shuttle on the Colombo Airport (CMB) – Kandy service');
+  });
+});
+
+// ── Audit 2026-09-22, finding 6 ────────────────────────────────────────────
+// The booking stores a flattened `car | van`, not the tier the quote was priced on. An ops
+// quote built for 5 passengers on `car` is upgraded to a van by the engine and charged at
+// van rates, while the booking keeps `'car'`. The email then turned that into a CAPACITY
+// claim — "AC car (up to 3)" — printed directly above "Travellers: 5".
+//
+// Storing the real tier is a schema change and its own step. What the email must not do,
+// either way, is assert a maximum it cannot possibly know from a two-value enum.
+describe('confirmation email — the vehicle line does not invent a capacity', () => {
+  const fiveUp: Booking = {
+    ...single,
+    input: { ...single.input, vehicleType: 'car', adults: 5, children: 0 },
+  } as Booking;
+
+  it('never claims a seat limit smaller than the party it was sent to', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(fiveUp, email);
+    expect(email.sent[0].html).not.toContain('up to 3');
+    expect(email.sent[0].text).not.toContain('up to 3');
+  });
+
+  it('still names the vehicle', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(fiveUp, email);
+    expect(email.sent[0].text).toContain('AC car');
   });
 });

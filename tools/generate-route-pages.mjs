@@ -99,10 +99,10 @@ function optionCards(T, from, to, q, shared, p) {
       <article class="opt opt-shared">
         <span class="opt-tag opt-tag-warm">Best value · share &amp; save</span>
         <h2>Shared ride</h2>
-        <p class="opt-sub">One van, split between you</p>
+        <p class="opt-sub">One vehicle, shared between you</p>
         <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
         <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
-        <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
+        <p class="opt-desc">One AC vehicle, shared between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
         <ul class="pickups">${stops}</ul>
         <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
           <a class="btn btn-cta opt-cta" href="${esc(`${p}board.html?from=${encodeURIComponent(T.byId[from].name)}&to=${encodeURIComponent(T.byId[to].name)}`)}">See who's going &amp; add your name</a>
@@ -142,7 +142,7 @@ function faqItems(from, to, q, shared) {
       // answer it, not to imply a seat in the title.
       : [`Is there a shared taxi from ${from} to ${to}?`, `Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
-      `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
+      `Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.`],
     [`How do I book the ${from} to ${to} transfer?`,
       `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.`],
   ];

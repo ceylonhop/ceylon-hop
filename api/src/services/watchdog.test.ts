@@ -260,3 +260,33 @@ describe('runWatchdog — burst cap', () => {
     expect(res.recoveryEmails).toBe(0); // but no customer mail left the building
   });
 });
+
+// ── Audit 2026-09-22, finding 2 ────────────────────────────────────────────
+// Once a suppressed confirmation stops being recorded as sent (so this watchdog can finally
+// see it), the bookings that were NEVER due an email must not start paging instead. A
+// WhatsApp-only customer has no address; that is a fact about them, not a silent failure,
+// and nothing ever clears it — a paid booking stays 'paid' until departure, so without an
+// exemption it would alert on every sweep for weeks and bury the real ones.
+describe('watchdog — a customer with no email address is not a missing confirmation', () => {
+  it('stays quiet for a paid booking whose customer has no email', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({
+      ...sample,
+      input: { ...sample.input, customer: { ...sample.input.customer, email: '' } },
+    } as NewBooking);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
+    expect(res.paidUnconfirmed).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  // The counterpart: an address we DO have and did not write to is exactly what it should shout about.
+  it('still alerts when the customer has an address and no confirmation is recorded', async () => {
+    const { bookings } = await seed('paid');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
+    expect(res.paidUnconfirmed).toBe(1);
+  });
+});
