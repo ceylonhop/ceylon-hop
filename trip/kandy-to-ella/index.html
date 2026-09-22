@@ -41,46 +41,95 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);}
 })();</script>
 <style>
-  /* The route hero is a POSTCARD, not a banner. It used to be a teal gradient block with
-     price chips punched into it — but the chips are now real option cards below, so the
-     hero's only job is to name the route and set the tone. Paper, the display face, the
-     stamp and the dotted route line, per the approved prototype. */
-  .route-hero{position:relative;background:linear-gradient(180deg,var(--paper,#fffdf8) 0%,var(--cream,#F0EEE5) 100%);border-bottom:1px solid var(--line,#e7e3d6);padding:30px 0 38px;overflow:hidden}
-  .route-hero .wrap{position:relative}
-  .route-hero h1{font-weight:700;margin:0;font-size:clamp(2rem,4.4vw,3.2rem);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+  /* ── hero ──────────────────────────────────────────────────────────────────────
+     The route page LEADS with a photo of where you are going, and the fares card sits
+     on top of it. The card overhangs the hero's bottom edge by 64px, which is why
+     .route-hero must NOT be overflow:hidden — that clips the card and slices the Book
+     button in half. The photo and its gradient are contained in .hero-media instead.
+     Guarded by web-tests/e2e/route-page-layout.spec.js. */
+  .route-hero{position:relative;color:#fff;background:#23302b;isolation:isolate}
+  .route-hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:48px;align-items:end;padding-top:30px}
+  .hero-media{position:absolute;inset:0;overflow:hidden;z-index:-1}
+  /* imgTag emits the image's INTRINSIC width/height, so a box with no explicit height lets
+     the HTML height attribute win and the photo renders several times too tall. */
+  .hero-media img{position:absolute;inset:0;z-index:0;width:100%;height:100%;object-fit:cover}
+  /* Both children carry an explicit z-index on purpose: .hero-media is its own stacking
+     context, and without it the gradient can paint UNDER the photo — which quietly removes
+     the contrast the white hero text depends on. */
+  .hero-media::after{content:"";position:absolute;inset:0;z-index:1;
+    background:linear-gradient(90deg,rgba(20,28,26,.86) 0%,rgba(20,28,26,.66) 46%,rgba(20,28,26,.24) 100%),
+               linear-gradient(0deg,rgba(20,28,26,.62),rgba(20,28,26,0) 45%)}
+  .route-hero-copy{display:flex;flex-direction:column;gap:16px;min-height:430px;padding-bottom:74px}
+  .route-crumbs{font-size:.84rem;color:rgba(255,255,255,.85);margin-bottom:auto;text-shadow:0 1px 10px rgba(12,18,16,.6)}
+  .route-crumbs a{color:inherit}
+  .route-hero h1{font-weight:700;margin:0;color:#fff;font-size:clamp(2.1rem,5vw,4rem);display:flex;align-items:center;gap:.05em .3em;flex-wrap:wrap;text-shadow:0 2px 22px rgba(12,18,16,.5)}
   .route-hero h1 .arr{color:var(--accent,#63BFD6);display:inline-flex}
   /* The squiggle replaces the word "to" visually, but "<from> to <to>" IS the phrase these
      pages rank for — so the word stays in the h1 for crawlers and screen readers. */
   .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-  .route-hero h1 .arr svg{width:34px;height:34px}
-  .route-meta{display:flex;gap:22px;flex-wrap:wrap;color:var(--ink-soft,#6c6a6b);font-size:.95rem;margin-top:12px;font-weight:500}
-  .route-meta span{display:inline-flex;align-items:center;gap:.45rem}
-  .route-meta svg{width:16px;height:16px;color:var(--teal-deep,#08938f)}
+  .route-hero h1 .arr svg{width:.8em;height:.8em}
+  .hero-sub{max-width:34rem;margin:0;font-size:1.02rem;color:rgba(255,255,255,.93);text-shadow:0 1px 14px rgba(12,18,16,.6)}
+  .route-meta{display:flex;gap:8px;flex-wrap:wrap;list-style:none;margin:0;padding:0;font-size:.8rem;font-weight:500}
+  .route-meta li{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;background:rgba(20,28,26,.55);border:1px solid rgba(255,255,255,.24);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  .route-meta svg{width:15px;height:15px;flex:none}
   .route-meta svg .wp{fill:var(--saffron,#F9A429);stroke:none}
-  .hero-stamp{position:absolute;right:0;top:14px;width:220px;pointer-events:none}
-  @media(max-width:900px){.hero-stamp{display:none}}
-  .hero-stamp .stamp{position:absolute;right:0;top:-6px;width:70px;height:84px;background:var(--paper,#fffdf8);border:1.5px dashed var(--cream-deep,#E4E0D2);border-radius:4px;transform:rotate(6deg);display:grid;place-items:center;box-shadow:0 2px 8px rgba(58,55,57,.08)}
-  .hero-stamp .stamp i{width:54px;height:66px;border-radius:2px;display:grid;place-items:center;font-style:normal;font-size:1rem;background:linear-gradient(180deg,#bfe4ee 0 55%,#f6d9a0 55% 70%,#7ccbc9 70% 100%)}
-  /* Design A option cards — the page's whole job. Static: a crawler sees all of it. */
-  .route-options{padding:34px 0 0}
-  .opt-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
-  @media(max-width:820px){.opt-grid{grid-template-columns:1fr}}
+  /* fares card — the page's whole job, above the fold. Static: a crawler sees all of it. */
   .opt{position:relative;background:var(--paper,#fffdf8);border:1.5px solid var(--line,#e7e3d6);border-radius:20px;padding:26px}
-  .opt-tag{position:absolute;top:-12px;left:20px;background:var(--accent,#63BFD6);color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:.28rem .8rem}
-  .opt-tag-warm{background:var(--saffron,#F9A429)}
-  .opt-tag-mute{background:var(--ink-soft,#6c6a6b)}
-  .opt h2{margin:.3rem 0 .1rem;font-size:1.4rem}
-  .opt-sub{font-size:.7rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b);margin:0 0 .8rem}
-  .opt-desc{font-size:.94rem;color:var(--ink-soft,#6c6a6b);margin:.5rem 0 0}
-  .veh{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:13px;padding:12px 15px;margin-top:10px}
-  .veh-n{font-weight:700;font-size:.97rem} .veh-n small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.82rem}
-  .veh-p{font-weight:800;font-size:1.25rem;text-align:right} .veh-p small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.72rem}
+  .opt.fares{color:var(--ink,#3A3739);border:0;border-radius:22px;padding:22px;margin-bottom:-64px;z-index:2;
+    display:flex;flex-direction:column;gap:12px;
+    box-shadow:0 24px 60px -18px rgba(30,40,36,.45),0 2px 0 rgba(255,255,255,.6) inset}
+  .fares h2{margin:0;font-size:1.35rem}
+  .fares-kick{margin:0 0 .15rem;font-size:.68rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft,#6c6a6b)}
+  .veh-set{border:0;margin:0;padding:0;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .veh{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;
+    background:#fff;border:1.5px solid var(--line,#e7e3d6);border-radius:14px;padding:12px 14px;cursor:pointer}
+  /* The input covers the WHOLE tile (not the old 1x1px dot) so its own :focus-visible outline
+     traces the tile's edge with no :has() involved — Firefox < 121 has no :has() at all, so a
+     .veh:has(input:focus-visible) rule left a keyboard user there with only the invisible 1px
+     ring the input used to be. Positioned, so it plays no part in .veh's own grid layout, same
+     as before; the label still does the pointer click-through, so the tile stays fully clickable
+     (clicking the price text still selects the vehicle) and screen readers still get the
+     implicit label association. */
+  .veh input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
+  .veh:has(input:checked){border-color:var(--blue-deep,#24758A);box-shadow:0 0 0 3px rgba(var(--accent-rgb,99,191,214),.28)}
+  .veh input:focus-visible{opacity:1;appearance:none;-webkit-appearance:none;background:transparent;border:0;
+    outline:3px solid var(--blue-deep,#24758A);outline-offset:2px;border-radius:14px}
+  .veh-ic{display:inline-flex;color:var(--blue-deep,#24758A)}
+  .veh-ic svg{width:46px;height:30px}
+  .veh-n{font-weight:600;font-size:.95rem;line-height:1.3} .veh-n small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.78rem}
+  .veh-p{font-weight:700;font-size:1.3rem;line-height:1.1;text-align:right;font-variant-numeric:tabular-nums} .veh-p small{display:block;font-weight:400;color:var(--ink-soft,#6c6a6b);font-size:.68rem}
+  .fares-fine{margin:0;font-size:.76rem;color:var(--ink-soft,#6c6a6b);text-align:center}
+  .share-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FDF0D6;border:1px solid #F3D9A4;
+    border-radius:14px;padding:11px 14px;font-size:.84rem;text-decoration:none;color:inherit}
+  .share-strip b{font-size:1.05rem}
+  .share-strip span:last-child{font-weight:600;color:var(--blue-deep,#24758A);white-space:nowrap}
+  /* ── trust strip ──────────────────────────────────────────────────────────────
+     Sits directly under the hero, so the overhanging card lands on its right-hand end.
+     The list RESERVES that space (400px card + 40px clearance) and wraps to a second
+     line rather than running underneath it. */
+  .trip-trust{background:#22302F;color:#fff}
+  .trip-trust ul{list-style:none;margin:0;padding:18px 0;display:flex;flex-wrap:wrap;gap:10px 30px;font-size:.82rem;font-weight:500;max-width:calc(100% - 440px)}
+  .trip-trust li{display:flex;align-items:center;gap:8px}
+  .trip-trust svg{width:16px;height:16px;flex:none;color:var(--accent,#63BFD6)}
+  /* private-only note — one line, not half the page. Same reservation as the strip above. */
+  .no-share{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:36px 0 0;padding:14px 18px;
+    border:1px dashed #cfcab8;border-radius:14px;font-size:.9rem;color:var(--ink-soft,#6c6a6b);max-width:calc(100% - 448px)}
+  .no-share a{font-weight:600;color:var(--blue-deep,#24758A)}
+  /* ── shared ride section ── */
+  .share-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:48px;align-items:start}
+  .share-copy{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+  .share-tag{background:var(--saffron,#F9A429);color:#3a2a08;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:5px 12px}
+  .share-copy h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .share-lede{margin:0;font-size:1.04rem;line-height:1.6;color:var(--ink-soft,#6c6a6b);max-width:36rem}
   .seat-price{margin:.2rem 0 .1rem} .seat-price b{font-size:2.3rem;line-height:1} .seat-price span{color:var(--ink-soft,#6c6a6b);font-weight:600}
   .runs-line{font-size:.9rem;font-weight:600;margin:.1rem 0 .5rem}
   .pickups{list-style:none;margin:.7rem 0 0;padding:0;display:grid;gap:.25rem}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  .fares .opt-cta{margin-top:0}
+  /* ── sticky book bar — shipped hidden; a later step turns it on while scrolling ── */
+  .trip-bookbar{display:none}
   /* A fare the engine has not confirmed yet: same box, no ink. */
   .fares-pending [data-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
   /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
@@ -101,33 +150,212 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ld-face{width:25px;height:25px;border-radius:50%;border:2px solid #fff;display:inline-grid;place-items:center;font-size:.62rem;font-weight:800;color:#fff}
   .ld-face+.ld-face{margin-left:-8px}
   .ld-face-more{background:var(--ink-soft,#6c6a6b)}
-  .ld-when{font-weight:700;font-size:.9rem;grid-column:2}
+  .ld-when{font-weight:700;font-size:.9rem;grid-column:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ld-tag{font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a00;background:#fdeecb;border-radius:999px;padding:.1rem .45rem}
-  .ld-count{grid-column:2;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b)}
-  .ld-count b{color:var(--ink,#3A3739)}
-  .ld-meter{grid-column:3;grid-row:1/3;width:52px;height:5px;border-radius:99px;background:var(--cream-deep,#E4E0D2);overflow:hidden}
-  .ld-meter i{display:block;height:100%;background:var(--teal,#0AB9B6);border-radius:99px}
-  .ld-meter i.full{background:var(--saffron,#F9A429)}
+  .ld-slot-short{display:none}
+  .ld-count{grid-column:2;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ld-pill{grid-column:3;grid-row:1/3;font-size:.7rem;font-weight:700;border-radius:999px;padding:4px 10px;white-space:nowrap}
+  .ld-pill.go{background:#DDF1E3;color:#1E6B39}
+  .ld-pill.need{background:#FDF0D6;color:#8A5A06}
   .ld-go{grid-column:4;grid-row:1/3;color:var(--blue-deep,#24758A);font-weight:800}
-  .route-body{padding:52px 0}
-  .route-body .lede{font-size:1.08rem;line-height:1.7;max-width:64ch}
-  .route-hl{margin:22px 0 0;padding-left:1.1rem}
-  .route-hl li{margin:.3rem 0}
-  .faq{padding:8px 0 52px}
-  .faq-q{max-width:70ch;margin:0 0 18px}
-  .faq-q h3{margin:0 0 .3rem;font-size:1.05rem}
-  .faq-q p{margin:0;color:var(--ink-soft,#6c6a6b)}
-  .route-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
-  .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
-  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e3d6);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
-  .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
-  .rt-name{font-weight:700}
-  .rt-meta{font-size:.85rem;color:var(--ink-soft,#6c6a6b)}
-  .route-crumbs{padding:16px 0 0;font-size:.85rem}
-  .route-crumbs a{color:inherit}
+  /* ── the drive ────────────────────────────────────────────────────────────────
+     A two-column band: the copy and the route line on the left, a photo of where you
+     START on the right (the hero already shows where you are going, so no page ever
+     prints the same photo twice). site.css does not define .drive, .stops, .end,
+     .included, .proof, .next or any of the rt-* names — the only shared names this
+     block reuses are .section, .wrap, .eyebrow and .btn, deliberately. */
+  .trip-drive{background:var(--paper,#fffdf8)}
+  .drive{display:grid;grid-template-columns:minmax(0,6fr) minmax(0,5fr);gap:56px;align-items:center}
+  .drive h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .drive .eyebrow{margin:0 0 .7rem}
+  .drive-lede{margin:14px 0 0;font-size:1.04rem;line-height:1.65;color:var(--ink-soft,#6c6a6b);max-width:36rem}
+  /* A real <ol> — the stops happen in that order — with the markers suppressed and
+     redrawn as a dotted spine with a dot per stop. */
+  .stops{list-style:none;margin:26px 0 0;padding:0;position:relative}
+  .stops::before{content:"";position:absolute;left:11px;top:12px;bottom:12px;border-left:2px dotted var(--blue-deep,#24758A);opacity:.55}
+  .stops li{position:relative;padding:0 0 16px 40px;font-size:.96rem}
+  .stops li::before{content:"";position:absolute;left:6px;top:7px;width:12px;height:12px;border-radius:50%;
+    background:var(--paper,#fffdf8);border:2px solid var(--blue-deep,#24758A)}
+  .stops li.end{font-family:var(--display);font-weight:700;font-size:1.15rem;padding-bottom:18px}
+  .stops li.end::before{left:2px;top:3px;width:20px;height:20px;background:var(--blue-deep,#24758A);
+    border-color:var(--paper,#fffdf8);box-shadow:0 0 0 2px var(--blue-deep,#24758A)}
+  .stops li.end-to::before{background:var(--cta,#EC3A24);box-shadow:0 0 0 2px var(--cta,#EC3A24)}
+  .stops li:last-child{padding-bottom:0}
+  /* imgTag emits the photo's INTRINSIC width/height, so every framed image below needs
+     height:auto (or an explicit height) — otherwise the HTML height attribute wins over
+     the aspect-ratio box and the photo renders several times too tall. */
+  .drive-photo{position:relative;margin:0}
+  .drive-photo img{display:block;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;border-radius:26px}
+  .drive-photo figcaption{position:absolute;left:18px;bottom:16px;background:var(--paper,#fffdf8);border-radius:12px;
+    padding:6px 14px;font-family:var(--hand,'Caveat',cursive);font-weight:600;font-size:1.3rem;line-height:1.2;
+    transform:rotate(-2deg);box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}
+  /* ── what's included, and the proof row under it ──────────────────────────────
+     The four marks are the house line family, so each carries one filled waypoint dot.
+     An inlined class="wp" and a .wp{fill:…} rule are a matched pair — without the rule
+     the dot is an invisible hairline ring. Same pairing search.html's .incl chips use. */
+  .trip-included{background:linear-gradient(180deg,#E3EFE9,#EEF0E4)}
+  .trip-head{margin-bottom:34px}
+  .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .trip-head .eyebrow{margin:0 0 .7rem}
+  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
+  .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
+  .included h3{margin:0;font-family:var(--body);font-size:.98rem;font-weight:600}
+  .included p{margin:0;font-size:.86rem;line-height:1.55;color:var(--ink-soft,#6c6a6b)}
+  .proof{margin:48px 0 0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:22px;align-items:center;
+    background:#fff;border:1px solid var(--line,#e7e3d6);border-radius:22px;padding:24px 28px}
+  .proof img{display:block;width:64px;height:64px;border-radius:50%;object-fit:cover}
+  .proof blockquote{margin:0;font-family:var(--display);font-style:italic;font-size:1.08rem;line-height:1.45}
+  .proof cite{display:block;margin-top:6px;font-family:var(--body);font-style:normal;font-size:.8rem;color:var(--ink-soft,#6c6a6b)}
+  .proof-ta{text-align:center;font-size:.76rem;color:var(--ink-soft,#6c6a6b);border-left:1px solid var(--line,#e7e3d6);padding-left:22px}
+  .proof-ta b{display:block;font-size:1.7rem;color:var(--ink,#3A3739);line-height:1.1}
+  .proof-stars{color:var(--saffron,#F9A429);letter-spacing:2px}
+  /* ── FAQ accordion ────────────────────────────────────────────────────────────
+     Native <details>: it opens with no JavaScript, is keyboard-operable for free, and a
+     crawler still reads every closed answer — which matters, because this markup and the
+     JSON-LD FAQPage are built from the same array. */
+  .faq{background:var(--cream-deep,#E4E0D2)}
+  .faq-grid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:56px;align-items:start}
+  .faq-side{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+  .faq-side h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
+  .faq-side .eyebrow{margin:0}
+  .faq-lede{margin:0;font-size:1.02rem;line-height:1.6;color:var(--ink-soft,#6c6a6b)}
+  /* A text link, styled like the page's other text links (.trip-all a, .no-share a), not a
+     second button — the WhatsApp button above it is this column's action. */
+  .faq-book{font-weight:600;font-size:.92rem;color:var(--accent-deep,#24758A);text-decoration:none;border-bottom:1px solid rgba(var(--accent-rgb,99,191,214),.6);padding-bottom:1px}
+  .faq-book:hover{border-bottom-color:currentColor}
+  .faq-book:focus-visible{outline:3px solid var(--accent-deep,#24758A);outline-offset:3px;border-radius:3px}
+  /* The jump target is the fares card. Without this the card lands flush against the viewport
+     top and reads as a page that has lost its header. These pages have no sticky chrome, so a
+     gutter is all it needs. */
+  #book{scroll-margin-top:20px}
+  .faq-acc{border-top:1px solid #d5d0bf}
+  .faq-acc details{border-bottom:1px solid #d5d0bf}
+  .faq-acc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+    gap:16px;padding:18px 2px;font-weight:600;font-size:1rem}
+  .faq-acc summary::-webkit-details-marker{display:none}
+  .faq-acc summary::after{content:"+";font-size:1.5rem;font-weight:400;color:var(--blue-deep,#24758A);line-height:1;flex:none}
+  .faq-acc details[open] summary::after{content:"\2013"}
+  .faq-acc p{margin:0;padding:0 40px 20px 2px;color:var(--ink-soft,#6c6a6b);font-size:.94rem;line-height:1.6;max-width:40rem}
+  /* ── where next ───────────────────────────────────────────────────────────────
+     The grid (.next) and the card (a.rt-card) are different classes on purpose: on the
+     sibling /trip/ index they were the same, so the grid's gap applied INSIDE every
+     card and opened a stripe between each photo and its text. */
+  .next{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+  .rt-card{position:relative;display:flex;flex-direction:column;background:var(--paper,#fffdf8);
+    border:1px solid var(--line,#e7e3d6);border-radius:18px;overflow:hidden;text-decoration:none;color:inherit;
+    transition:transform .2s,box-shadow .2s}
+  .rt-card:hover{transform:translateY(-3px);box-shadow:0 18px 34px -18px rgba(30,40,36,.45)}
+  .rt-card img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover}
+  .rt-bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
+  .rt-name{font-family:var(--display);font-weight:700;font-size:1.12rem;line-height:1.2;overflow-wrap:anywhere}
+  .rt-meta{font-size:.78rem;color:var(--ink-soft,#6c6a6b)}
+  .rt-fare{margin-top:8px;font-size:.84rem}
+  .rt-fare b{font-size:1.08rem}
+  .rt-ret{position:absolute;top:10px;left:10px;z-index:1;background:var(--paper,#fffdf8);border-radius:999px;
+    padding:4px 10px;font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .trip-all{margin:24px 0 0}
+  .trip-all a{font-weight:600;color:var(--blue-deep,#24758A)}
+  @media(prefers-reduced-motion:reduce){.rt-card{transition:none}}
+  @media(max-width:900px){
+    /* On a phone the fares card must sit on CREAM, not on the photo — a card printed over a
+       bright beach is unreadable, and the price is the one thing that has to be legible above
+       the fold. So the photo stops where the copy stops: .hero-media re-parents itself to
+       .route-hero-copy (it is absolute, and this is the rule that makes the copy its
+       containing block), and the card slides down onto the page background. */
+    .route-hero{background:var(--cream,#F0EEE5)}
+    /* The copy block is full-bleed, so the hero's wrap gives up its gutter and the two
+       children carry their own. A negative margin was the obvious way to do it and the wrong
+       one: site.css steps .wrap's padding 24 → 20 → 18 down the widths, so any hardcoded
+       -24px leaves the photo hanging 6px past the viewport at 320 and the whole page scrolls
+       sideways. */
+    .route-hero .wrap{grid-template-columns:1fr;gap:0;padding-top:18px;padding-left:0;padding-right:0}
+    .route-hero-copy{position:relative;isolation:isolate;background:#23302b;min-height:330px;gap:12px;
+      padding:18px 20px 52px}
+    /* One column now, so the horizontal wash has nothing to do; the readable band is the whole
+       block. The TOP end matters as much as the bottom — the breadcrumb and the first line of
+       the h1 sit there, and on the brightest photos (Negombo's sand, Mirissa's water) white on
+       an unwashed sky is barely a contrast at all. */
+    .hero-media::after{background:linear-gradient(0deg,rgba(20,28,26,.9) 0%,rgba(20,28,26,.44) 55%,rgba(20,28,26,.66) 100%)}
+    .opt.fares{margin:-32px 20px 20px;padding:18px;gap:10px}
+    .trip-trust ul,.no-share{max-width:none}
+    .trip-trust ul{gap:8px 18px;font-size:.78rem}
+    .no-share{margin-top:24px}
+    .share-grid{grid-template-columns:1fr;gap:26px}
+    .veh-ic svg{width:38px;height:25px}
+    .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
+    .drive-photo img{aspect-ratio:4/3}
+    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    /* The quote runs to five lines in a phone column, and a vertically centred avatar then
+       floats in the middle of it with white space above and below. Align it to the first line. */
+    .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
+    .proof blockquote{font-size:1rem}
+    .proof-ta{grid-column:1/-1;border-left:0;border-top:1px solid var(--line,#e7e3d6);padding:14px 0 0}
+    .faq-acc p{padding-right:8px}
+    .next{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .rt-name{font-size:1.02rem}
+    /* "from $59.99 fixed" is 138px of type in a 170px card — a hair over, so the last word
+       fell to a line of its own on half the cards. */
+    .rt-bd{padding:12px 13px 14px}
+    .rt-fare{margin-top:6px;font-size:.8rem}
+    .rt-fare b{font-size:1rem}
+    /* The bar is shipped hidden and stays hidden until a later step reveals it — hence
+       :not([hidden]), which keeps display:flex from beating the UA's [hidden] rule. */
+    .trip-bookbar:not([hidden]){display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;
+      align-items:center;justify-content:space-between;gap:14px;background:var(--paper,#fffdf8);
+      border-top:1px solid var(--line,#e7e3d6);box-shadow:0 -10px 30px -12px rgba(0,0,0,.25);
+      padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+    .trip-bookbar .tb-p{font-size:.74rem;color:var(--ink-soft,#6c6a6b);line-height:1.25}
+    .trip-bookbar .tb-p b{display:block;font-size:1.2rem;color:var(--ink,#3A3739)}
+    .trip-bookbar .btn{padding:13px 26px}
+    /* The bar is position:fixed, so it sits over whatever the page ends on — the footer, on
+       every one of these pages. Scoped to THIS page's own <style> (site.css's .footer is
+       untouched), so only /trip/ pages carry the extra room a fixed bar needs. Further scoped
+       to html.has-bookbar — a class route-page-select.js adds only once its observer has
+       actually started (and removes on leaving phone width) — so a page with no JS at all
+       (the bar can never appear: it ships hidden and nothing else ever removes that) does not
+       reserve 88px of dead space under a footer no bar will ever sit over. */
+    html.has-bookbar .footer{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
+    /* The "already going" row has four things competing for one line on a phone (faces, date,
+       pill, arrow), inside a card that keeps its full padding at this width. This tightening
+       alone (below 480px it's superseded by the reflow that follows) claws back some space so
+       the date isn't reduced to two characters before its ellipsis kicks in. */
+    .ld-row{gap:4px 8px;padding:10px 10px}
+    .ld-face{width:22px;height:22px;font-size:.58rem}
+    .ld-face+.ld-face{margin-left:-7px}
+    .ld-pill{font-size:.66rem;padding:3px 8px}
+    /* Below 480px even that tightened single-line row doesn't leave the date enough room:
+       "Thu 22 Oct · afternoon" plus the "your date" tag needs ~228px of natural text width,
+       but the date's own column was down to ~95px — so the tag's TEXT was invisible (only its
+       orange chip border survived) and the slot word ellipsised on nearly every row. Fixing
+       that means giving the date its own line: faces + date fill row 1 at (nearly) the row's
+       full content width, and count/pill/arrow move to row 2 underneath — the pill and arrow
+       stay ON the row, just its second line, and the count keeps sharing that second line
+       with them exactly as it already did above 480px. The date still carries
+       nowrap+overflow:hidden+ellipsis as a last resort, but that's now only reachable by a
+       string wider than any real fmt()+slot+tag combination — measured with ~40px to spare
+       even with the slot shortened below, well past the ~3.7% Linux-fallback-font margin
+       this repo's e2e suite has to allow for. */
+    @media(max-width:480px){
+      .ld-row{gap:4px 6px;padding:10px 8px}
+      .ld-face{width:20px;height:20px;font-size:.56rem}
+      .ld-face+.ld-face{margin-left:-7px}
+      .ld-when{grid-column:2/5;grid-row:1}
+      .ld-count{grid-column:2;grid-row:2}
+      .ld-pill{grid-column:3;grid-row:2}
+      .ld-go{grid-column:4;grid-row:2}
+      .ld-tag{font-size:.56rem;padding:.06rem .35rem;margin-left:2px}
+      /* Even with the reflow above, the date + the FULL slot word + the "your date" tag is
+         tight enough to risk the ellipsis on some devices. Shortening the slot word only
+         (never the date, never fmt(), never the tag's own text) buys back the room. */
+      .ld-slot-long{display:none}
+      .ld-slot-short{display:inline}
+    }
+  }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Kandy to Ella","item":"https://ceylonhop.com/trip/kandy-to-ella/"}]}</script>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the Kandy to Ella transfer take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 135 km · 3h 45m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Kandy to Ella?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $59.99 and an air-conditioned van (up to 6 people) from $79.99, fixed and door to door — the price you see is the price you pay."}},{"@type":"Question","name":"Is there a shared taxi from Kandy to Ella?","acceptedAnswer":{"@type":"Answer","text":"Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book the Kandy to Ella transfer?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the drive take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 135 km · 3h 45m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Kandy to Ella?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $59.99 and an air-conditioned van (up to 6 people) from $79.99, fixed and door to door — the price you see is the price you pay."}},{"@type":"Question","name":"Is there a shared taxi from Kandy to Ella?","acceptedAnswer":{"@type":"Answer","text":"Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Service","serviceType":"Taxi & private intercity transfer","name":"Kandy to Ella taxi — private transfer","areaServed":"Sri Lanka","provider":{"@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","telephone":"+94779669662"},"offers":{"@type":"Offer","priceCurrency":"USD","price":"59.99","url":"https://ceylonhop.com/trip/kandy-to-ella/"}}</script>
 </head>
 <body>
@@ -142,73 +370,106 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </header>
 <div class="mobile-menu" data-mobile><a href="../../plan.html">Plan a trip</a><a href="../../board.html">Share a ride</a><a href="../../tours.html">Tours</a><a href="../../blog.html">Travel Guide</a><a href="../../why.html">Why us</a><a href="../../about.html">About</a></div>
 <main>
-  <section class="route-hero">
+  <section class="route-hero" id="top-options">
     <div class="wrap">
-      <nav class="route-crumbs" aria-label="Breadcrumb"><a href="../../index.html">Home</a> · <a href="../../trip/">Routes</a> · Kandy to Ella</nav>
-      <h1>Kandy <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>Ella</h1>
-      <div class="route-meta">
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> Approx. 135 km · 3h 45m</span>
-        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</span>
+      <div class="route-hero-copy">
+        <div class="hero-media"><img class="hero-img" src="../../img/places/ella-900.jpg" srcset="../../img/places/ella-900.jpg 900w, ../../img/places/ella-1800.jpg 1800w" sizes="100vw" width="1800" height="675" alt="The blue hill-country train crossing Nine Arch Bridge near Ella" style="object-position:65% 70%" fetchpriority="high" decoding="async"></div>
+        <nav class="route-crumbs" aria-label="Breadcrumb"><a href="../../index.html">Home</a> · <a href="../../trip/">Routes</a> · Kandy to Ella</nav>
+        <h1>Kandy <span class="arr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c4-6 8 6 12 0 2.5-3.7 4-3 6 0"/><path d="M17 8l4 4-4 4"/></svg></span><span class="vh"> to </span>Ella</h1>
+        <p class="hero-sub">This is the full hill-country traverse: tea, waterfalls and hairpins from Kandy's lake to the Ella Gap.</p>
+        <ul class="route-meta">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/><circle class="wp" cx="12" cy="10" r="2.6"/></svg> Approx. 135 km · 3h 45m</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg> Runs every day</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 2.7l2.6 5.4 5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 8.9l5.9-.8z"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg> 5.0 on Tripadvisor</li>
+        </ul>
       </div>
-      <div class="hero-stamp" aria-hidden="true">
-        <svg viewBox="0 0 220 56" fill="none"><path d="M6 44 C58 10 144 50 208 16" stroke="#24758A" stroke-width="1.5" stroke-dasharray="1 7" stroke-linecap="round"/><circle cx="6" cy="44" r="3.5" fill="#24758A"/></svg>
-        <span class="stamp"><i>🌴</i></span>
-      </div>
-      <div class="route-cta">
-        <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
-      </div>
-    </div>
-  </section>
-  <section class="section route-options" id="top-options">
-    <div class="wrap">
-      <div class="opt-grid">
-      <article class="opt opt-private" data-live-fares data-from-name="Kandy" data-to-name="Ella">
-        <span class="opt-tag">Most flexible</span>
-        <h2>Private transfer</h2>
-        <p class="opt-sub">Door to door · runs every day · your own vehicle</p>
-        <div class="veh"><span class="veh-n">AC car<small>up to 3 travellers + bags</small></span><span class="veh-p"><span data-fare="car">$59.99</span><small>total, fixed</small></span></div>
-        <div class="veh"><span class="veh-n">AC van<small>up to 6 travellers + bags</small></span><span class="veh-p"><span data-fare="van">$79.99</span><small>total, fixed</small></span></div>
-        <a class="btn btn-cta opt-cta" href="../../booking.html?from=kandy&amp;to=ella&amp;mode=private&amp;vehicle=car&amp;price=59.99&amp;rawPrice=60.38">Book private transfer</a>
+      <article class="opt opt-private fares" id="book" data-live-fares data-from-name="Kandy" data-to-name="Ella"
+        data-cat-car="59.99" data-cat-van="79.99" data-raw-car="60.38" data-raw-van="81.08">
+        <div><p class="fares-kick">Private transfer · door to door</p>
+        <h2>Your own car, fixed price</h2></div>
+        <fieldset class="veh-set"><legend class="vh">Choose a vehicle</legend>
+          <label class="veh"><input type="radio" name="vehicle" value="car" checked>
+            <span class="veh-ic" aria-hidden="true"><svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20v-4.5l5-1.5 4.5-6.5h14l6 6.5 6.5 1.5c1.5.4 2 1.3 2 2.5V20h-4"/><path d="M13 20h16"/><circle cx="10" cy="21" r="3.5"/><circle cx="33" cy="21" r="3.5"/><path d="M14.5 13.5h17"/></svg></span>
+            <span class="veh-n">AC car<small>up to 3 travellers + bags</small></span>
+            <span class="veh-p"><span data-fare="car">$59.99</span><small>total, fixed</small></span></label>
+          <label class="veh"><input type="radio" name="vehicle" value="van">
+            <span class="veh-ic" aria-hidden="true"><svg viewBox="0 0 46 30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20V8.5C3 7.1 4.1 6 5.5 6H29l8 8 4 1.5c1 .4 2 1.3 2 2.5v2h-3"/><path d="M13.5 20H30"/><circle cx="10" cy="21" r="3.5"/><circle cx="34" cy="21" r="3.5"/><path d="M8 10.5h7v4H8zM19 10.5h8l4 4H19z"/></svg></span>
+            <span class="veh-n">AC van<small>up to 6 travellers + bags</small></span>
+            <span class="veh-p"><span data-fare="van">$79.99</span><small>total, fixed</small></span></label>
+        </fieldset>
+        <a class="btn btn-cta opt-cta" href="../../booking.html?from=kandy&amp;to=ella&amp;mode=private&amp;vehicle=car&amp;price=59.99&amp;rawPrice=60.38">Choose date &amp; book</a>
+        <p class="fares-fine">Free cancellation up to 24h before · no change fees</p>
       </article>
-      <article class="opt opt-none">
-        <span class="opt-tag opt-tag-mute">Not on this route</span>
-        <h2>Shared ride</h2>
-        <p class="opt-sub">No shared van here</p>
-        <p class="opt-desc">We don't run a shared van between Kandy and Ella, and it isn't a route travellers pool either. A private transfer covers it door to door at a fixed price — and for three or more it often works out close to a seat price anyway.</p>
-      </article></div>
     </div>
   </section>
-  <section class="section route-body">
-    <div class="wrap">
-      <p class="lede">This is the full hill-country traverse: tea, waterfalls and hairpins from Kandy's lake to the Ella Gap. Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg.</p>
-      <ul class="route-hl"><li>Ramboda Falls tumbling beside the A5</li><li>Tea factory tours between Pussellawa and Nuwara Eliya</li><li>Option to join the famous hill train for part of the way</li><li>Ella Gap views on the hill road</li><li>Nine Arch Bridge a short tuk-tuk ride from Ella</li></ul>
-    </div>
-  </section>
-  <section class="section faq" style="background:var(--cream-deep,#E4E0D2)">
-    <div class="wrap">
-      <span class="eyebrow">Good to know</span>
-      <h2>Kandy to Ella — questions</h2>
-      <div style="margin-top:20px">
-        <div class="faq-q"><h3>How long does the Kandy to Ella transfer take?</h3><p>Plan for approx. 135 km · 3h 45m by road. Your driver takes the fastest safe route and can add stops along the way.</p></div>
-        <div class="faq-q"><h3>How much is a taxi from Kandy to Ella?</h3><p>A private car is from <span data-fare="car">$59.99</span> and an air-conditioned van (up to 6 people) from <span data-fare="van">$79.99</span>, fixed and door to door — the price you see is the price you pay.</p></div>
-        <div class="faq-q"><h3>Is there a shared taxi from Kandy to Ella?</h3><p>Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.</p></div>
-        <div class="faq-q"><h3>Can we stop along the way?</h3><p>Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.</p></div>
-        <div class="faq-q"><h3>How do I book the Kandy to Ella transfer?</h3><p>Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.</p></div>
+  <div class="trip-trust"><div class="wrap"><ul><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation 24h before</li><li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</li></ul></div></div>
+  <div class="wrap"><p class="no-share"><span>No shared vehicle runs Kandy → Ella. For three or more, a private car often works out close to a seat price.</span> <a href="../../board.html?from=Kandy&amp;to=Ella">Or start a ride on the board →</a></p></div>
+  <section class="section trip-drive">
+    <div class="wrap drive">
+      <div class="drive-copy">
+        <span class="eyebrow">The drive</span>
+        <h2>Tea, waterfalls and hairpins</h2>
+        <p class="drive-lede">Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg.</p>
+        <ol class="stops">
+          <li class="end">Kandy</li><li>Ramboda Falls tumbling beside the A5</li><li>Tea factory tours between Pussellawa and Nuwara Eliya</li><li>Option to join the famous hill train for part of the way</li><li>Ella Gap views on the hill road</li><li>Nine Arch Bridge a short tuk-tuk ride from Ella</li><li class="end end-to">Ella</li>
+        </ol>
       </div>
-      <div class="route-cta" style="margin-top:8px">
-        <!-- The prices are already ON this page, so the tail CTA returns the reader to
-             them rather than forwarding to search.html for a second opinion. -->
-        <a class="btn btn-primary" href="#top-options">See your options</a>
+      <figure class="drive-photo"><img src="../../img/places/kandy-900.jpg" srcset="../../img/places/kandy-900.jpg 900w, ../../img/places/kandy-1800.jpg 1800w" sizes="(max-width:900px) 100vw, 45vw" width="1800" height="825" alt="The lakeside pavilion on Kandy Lake with forested hills behind" style="object-position:40% 55%" loading="lazy" decoding="async"><figcaption>Kandy Lake</figcaption></figure>
+    </div>
+  </section>
+  <section class="section trip-included">
+    <div class="wrap">
+      <div class="trip-head"><span class="eyebrow">Every private transfer</span><h2>What&rsquo;s included</h2></div>
+      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg><h3>Stops when you want</h3><p>Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
+      <figure class="proof">
+        <img src="../../img/team-roshen.jpg" alt="Roshen, co-founder of Ceylon Hop" width="848" height="933" loading="lazy" decoding="async">
+        <blockquote>&ldquo;We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we&rsquo;d trust with our own family.&rdquo;<cite>Roshen &mdash; Co-founder, Ceylon&nbsp;Hop</cite></blockquote>
+        <div class="proof-ta"><b>5.0</b><span class="proof-stars" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span><br><span data-ta-reviews>31</span> reviews on Tripadvisor</div>
+      </figure>
+    </div>
+  </section>
+  <section class="section faq">
+    <div class="wrap faq-grid">
+      <div class="faq-side">
+        <span class="eyebrow">Good to know</span>
+        <h2>Kandy to Ella, answered</h2>
+        <!-- "We reply within minutes" was a response-time promise no other page on the site
+             makes and nobody in ops agreed to. The trust strip's claim is availability —
+             WhatsApp, 7 days — so this says the same thing and nothing more. -->
+        <p class="faq-lede">Something we haven&rsquo;t covered? We&rsquo;re on WhatsApp 7 days a week.</p>
+        <!-- The WhatsApp button used to sit in the hero, where it competed with the price for
+             the one action above the fold. It belongs with the questions: it is what you press
+             when the page has not answered yours. -->
+        <a class="btn btn-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg> Chat on WhatsApp</a>
+        <!-- The one way back to the price on a desktop. The sticky book bar is phone-only by
+             design, so without this a reader who has scrolled past the hero has to scroll all
+             the way back by hand. A text link, not a second button: the WhatsApp button above
+             it is the action this column is FOR. -->
+        <a class="faq-book" href="#book">See prices &amp; book &uarr;</a>
+      </div>
+      <div class="faq-acc">
+          <details open><summary>How long does the drive take?</summary><p>Plan for approx. 135 km · 3h 45m by road. Your driver takes the fastest safe route and can add stops along the way.</p></details>
+          <details><summary>How much is a taxi from Kandy to Ella?</summary><p>A private car is from <span data-fare="car">$59.99</span> and an air-conditioned van (up to 6 people) from <span data-fare="van">$79.99</span>, fixed and door to door — the price you see is the price you pay.</p></details>
+          <details><summary>Is there a shared taxi from Kandy to Ella?</summary><p>Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.</p></details>
+          <details><summary>Can we stop along the way?</summary><p>Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.</p></details>
+          <details><summary>How do I book?</summary><p>Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.</p></details>
       </div>
     </div>
   </section>
-  <section class="section">
+  <section class="section trip-next">
     <div class="wrap">
-      <h2>Related routes</h2>
-      <div class="rt-grid"><a class="rt-card" href="../../trip/ella-to-kandy/"><span class="rt-name">Ella → Kandy</span><span class="rt-meta">Approx. 135 km · 3h 45m · from $59.99</span></a><a class="rt-card" href="../../trip/ella-to-cmb-airport/"><span class="rt-name">Ella → Colombo Airport (CMB)</span><span class="rt-meta">Approx. 335 km · 5h · from $140</span></a><a class="rt-card" href="../../trip/ella-to-colombo/"><span class="rt-name">Ella → Colombo city</span><span class="rt-meta">Approx. 315 km · 5h · from $132</span></a><a class="rt-card" href="../../trip/ella-to-nuwara-eliya/"><span class="rt-name">Ella → Nuwara Eliya</span><span class="rt-meta">Approx. 55 km · 1h 45m · from $29</span></a></div>
-      <p style="margin-top:14px"><a href="../../trip/">See all Sri Lanka transfer routes →</a></p>
+      <div class="trip-head"><span class="eyebrow">Keep hopping</span><h2>Where next from Ella?</h2></div>
+      <div class="next"><a class="rt-card" href="../../trip/ella-to-kandy/"><span class="rt-ret">Return trip</span><img src="../../img/places/kandy-900.jpg" srcset="../../img/places/kandy-900.jpg 900w, ../../img/places/kandy-1800.jpg 1800w" sizes="(max-width:900px) 50vw, 25vw" width="1800" height="825" alt="The lakeside pavilion on Kandy Lake with forested hills behind" style="object-position:40% 55%" loading="lazy" decoding="async"><span class="rt-bd"><span class="rt-name">Ella → Kandy</span><span class="rt-meta">Approx. 135 km · 3h 45m</span><span class="rt-fare">from <b data-list-fare data-from-name="Ella" data-to-name="Kandy">$59.99</b> fixed</span></span></a><a class="rt-card" href="../../trip/ella-to-cmb-airport/"><img src="../../img/places/cmb-airport-900.jpg" srcset="../../img/places/cmb-airport-900.jpg 900w, ../../img/places/cmb-airport-1800.jpg 1800w" sizes="(max-width:900px) 50vw, 25vw" width="1800" height="1200" alt="A small plane climbing through a bright blue sky over tall palm trees" style="object-position:55% 45%" loading="lazy" decoding="async"><span class="rt-bd"><span class="rt-name">Ella → Colombo Airport (CMB)</span><span class="rt-meta">Approx. 335 km · 5h</span><span class="rt-fare">from <b data-list-fare data-from-name="Ella" data-to-name="Colombo Airport (CMB)">$140</b> fixed</span></span></a><a class="rt-card" href="../../trip/ella-to-colombo/"><img src="../../img/places/colombo-900.jpg" srcset="../../img/places/colombo-900.jpg 900w, ../../img/places/colombo-1800.jpg 1800w" sizes="(max-width:900px) 50vw, 25vw" width="1800" height="975" alt="The Colombo skyline and harbour on a bright day, with the Amari tower and the ocean beyond" style="object-position:65% 55%" loading="lazy" decoding="async"><span class="rt-bd"><span class="rt-name">Ella → Colombo city</span><span class="rt-meta">Approx. 315 km · 5h</span><span class="rt-fare">from <b data-list-fare data-from-name="Ella" data-to-name="Colombo city">$132</b> fixed</span></span></a><a class="rt-card" href="../../trip/ella-to-nuwara-eliya/"><img src="../../img/places/nuwara-eliya-900.jpg" srcset="../../img/places/nuwara-eliya-900.jpg 900w, ../../img/places/nuwara-eliya-1800.jpg 1800w" sizes="(max-width:900px) 50vw, 25vw" width="1800" height="525" alt="Sunlit green tea terraces rolling across the hills of Nuwara Eliya under a blue sky" style="object-position:50% 55%" loading="lazy" decoding="async"><span class="rt-bd"><span class="rt-name">Ella → Nuwara Eliya</span><span class="rt-meta">Approx. 55 km · 1h 45m</span><span class="rt-fare">from <b data-list-fare data-from-name="Ella" data-to-name="Nuwara Eliya">$29</b> fixed</span></span></a></div>
+      <p class="trip-all"><a href="../../trip/">See all Sri Lanka transfer routes →</a></p>
     </div>
   </section>
+  <!-- Shipped hidden and priced: a later step reveals it once the hero card scrolls away.
+       Its fare carries data-fare like every other, so route-page-fares.js updates it too and
+       the fares-pending hold covers it. -->
+  <div class="trip-bookbar" hidden>
+    <span class="tb-p"><small data-bar-label>AC car · total, fixed</small><b><span data-fare="car">$59.99</span></b></span>
+    <a class="btn btn-cta bar-cta" href="../../booking.html?from=kandy&amp;to=ella&amp;mode=private&amp;vehicle=car&amp;price=59.99&amp;rawPrice=60.38">Choose date &amp; book</a>
+  </div>
 </main>
 <footer class="footer">
   <div class="wrap foot-grid">
@@ -238,7 +499,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
 <script src="../../ch-pricing.js?v=74a30546ee"></script>
-<script src="../../route-page-fares.js?v=9cd2b7b9e0"></script>
-<script src="../../route-page.js?v=1cac31d713"></script>
+<script src="../../route-page-fares.js?v=2e89d5aa59"></script>
+<script src="../../route-page-select.js?v=196875bb50"></script>
+<script src="../../route-page.js?v=bf219f8473"></script>
 </body>
 </html>
