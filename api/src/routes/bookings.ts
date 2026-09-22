@@ -637,7 +637,9 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
       fromPlace: product.fromPlace,
       toPlace: product.toPlace,
       date: req.date,
-      time: req.time,
+      // Trimmed, like the hold: a padded '07:30 ' stored here sent every later release to a
+      // pool that had never been held, and the seats were lost with no error anywhere.
+      time,
       seats: req.seats,
       customer: req.customer,
     };

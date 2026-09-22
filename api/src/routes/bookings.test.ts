@@ -441,6 +441,31 @@ describe('POST /bookings/shared — seat-hold compensation', () => {
     expect(released).toBe(2); // the 2 held seats were given back, not stranded on the departure
   });
 
+  // The hold trimmed the time, the compensating release did not — so a padded '07:30 ' held
+  // seats on '07:30' and handed them back on a row that never existed. The booking stored the
+  // untrimmed time too, so cancel/refund and the stale sweep missed it the same way: the seats
+  // were gone with no error anywhere.
+  it('releases a hold taken under a padded departure time', async () => {
+    const departures = new InMemoryDepartureRepo();
+    class FailingBookings extends InMemoryBookingRepo {
+      async create(): Promise<never> { throw new Error('db down after hold'); }
+    }
+    const app = createApp({ departures, bookings: new FailingBookings() });
+    const date = futureServiceDay();
+    const res = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date, time: '07:30 ', seats: 12, customer: valid.customer,
+    });
+    expect(res.status).toBeGreaterThanOrEqual(500); // the create threw after the hold
+
+    // Asserted through the door rather than on the key: if the seats came back, the next
+    // traveller can still buy the whole van.
+    const app2 = createApp({ departures });
+    const next = await jpost(app2, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date, time: '07:30', seats: 12, customer: valid.customer,
+    });
+    expect(next.status).toBe(201);
+  });
+
   it('charges the shared extra-bag fee end to end ($10/bag beyond one free per seat)', async () => {
     const app = createApp();
     const res = await jpost(app, '/bookings/shared', {
