@@ -1894,25 +1894,46 @@ const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('e
 const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
 const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
 
-const DAYGROUPS=['Pending','Today','Tomorrow','Needs closing','Upcoming','Closed'];
+/* ── queue shape (reorganised 2026-09-22, from the real prod counts) ───────────────────
+   Of 80 rows in the queue, 32 were past trips nobody had closed and 11 were unpaid carts whose
+   travel date had already gone: 54% residue, rendered ABOVE the 10 rows of actual forward work.
+   At ~6 trips a week the whole live book fits on one screen, so the answer was fewer sections,
+   not better-ordered ones. The forward timeline comes first and the two past piles are reached
+   by their own filter chips (see GROUPS/inGroup) instead of sitting in the default list.
+
+   The two past states are NOT the same job, so they are not one bucket:
+     Needs closing — a trip that ran (or didn't) and nobody recorded which. Action: close it.
+     Expired       — unpaid and the date is gone. The money can never arrive; there is no trip
+                     to close. Action: none. It is display-only — no status is written here,
+                     because auto-expiring a booking is a lifecycle change and its own step. */
+const isExpired=t=>{ return t.stage==='awaiting_payment'&&!!t.date&&t.date<TODAY; };
+const isOverdue=t=>{ return !CLOSED.includes(t.stage)&&t.stage!=='awaiting_payment'&&!!t.date&&t.date<TODAY; };
+
+const DAYGROUPS=['Today','Tomorrow','Upcoming','No date yet','Needs closing','Expired','Closed'];
 const dayGroup=t=>{
   /* Every closed outcome files together — a cancelled or refunded booking has a travel date
      that has not stopped being "tomorrow", and dating it into the live groups would put a
      dead booking at the top of the day's work. */
   if(CLOSED.includes(t.stage))return 'Closed';
-  if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
-  /* The PAST gets its own bucket (team report 2026-08-06): with no branch here, a live-stage
+  /* The PAST gets its own buckets (team report 2026-08-06): with no branch here, a live-stage
      booking from last week fell through to "Upcoming" and sat beside real future work forever.
-     A passed date on a live stage means one thing — nobody recorded how the trip ended — so
-     these file as closing admin, oldest first, never as upcoming. Deliberately NOT auto-
-     completed: whether it ran or no-showed is a fact only ops knows (the server-side date
-     enforcement call deferred in July stays deferred). */
-  if(t.date<TODAY)return 'Needs closing';
+     Deliberately NOT auto-completed: whether it ran or no-showed is a fact only ops knows (the
+     server-side date enforcement call deferred in July stays deferred). */
+  if(isExpired(t))return 'Expired';
+  if(isOverdue(t))return 'Needs closing';
+  /* Undated is its own state, not a payment state. 9 of these were PAID bookings with no travel
+     date, filed under a heading that read "awaiting payment · undated" — the money was in and
+     what was missing was a date, which is a different phone call. */
+  if(!t.date)return 'No date yet';
+  /* Everything still to come files by ITS OWN DATE, paid or not. A dated unpaid booking is a
+     trip that is coming: the two most urgent rows in the real queue were exactly that (trip
+     inside the week, money not in) and the old "Pending" block put them as far from their date
+     as the layout allowed. The row's stage pill already says it is unpaid. */
   if(t.date===TODAY)return 'Today';
   if(t.date===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
-const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),'Needs closing':'date passed — mark completed or no-show',Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
+const groupNote={Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead','No date yet':'trip date not set — confirm with the customer','Needs closing':'date passed — mark completed or no-show',Expired:'unpaid and the date has passed — no trip to run',Closed:'done · cancelled · refunded'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
    channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
@@ -1989,15 +2010,27 @@ const GROUPS=[
   {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
   {id:'ready',label:'Ready',c:'#0a8f86'},
   {id:'trip',label:'On trip',c:'#1f6fd0'},
+  /* The two past piles, each with a count so the size of the backlog is visible from the
+     default view without it being IN the default view. Nothing is hidden — only moved. */
+  {id:'closing',label:'Needs closing',c:'#8a6a1f'},
+  {id:'expired',label:'Expired',c:'#8c5a52'},
   {id:'done',label:'Closed',c:'#7c7a73'},
 ];
 const CLOSED=['completed','no_show','cancelled','refunded'];
 const inGroup=(t,g)=>{
-  if(g==='all')return !CLOSED.includes(t.stage);
-  if(g==='pay')return t.stage==='awaiting_payment';
-  if(g==='paid')return t.stage==='paid';
-  if(g==='ready')return ['vehicle_confirmed','pickup_confirmed'].includes(t.stage);
-  if(g==='trip')return t.stage==='on_trip';
+  /* "All open" is the day's work: everything still to come, dated or not. The past piles have
+     their own chips below, so a row that has fallen out of the future appears in exactly one
+     place rather than nagging from the middle of the timeline. */
+  if(g==='all')return !CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t);
+  /* The stage chips answer "what do I do next", so they are scoped to live rows too: a trip
+     whose date is gone needs closing, not a vehicle; an unpaid cart past its date cannot be
+     chased for money. 11 of 16 unpaid rows in prod were exactly that — dead, and listed. */
+  if(g==='pay')return t.stage==='awaiting_payment'&&!isExpired(t);
+  if(g==='paid')return t.stage==='paid'&&!isOverdue(t);
+  if(g==='ready')return ['vehicle_confirmed','pickup_confirmed'].includes(t.stage)&&!isOverdue(t);
+  if(g==='trip')return t.stage==='on_trip'&&!isOverdue(t);
+  if(g==='closing')return isOverdue(t);
+  if(g==='expired')return isExpired(t);
   if(g==='done')return CLOSED.includes(t.stage);
   return true;
 };
@@ -2237,7 +2270,11 @@ function setNav(){
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
   // open in the builder keeps the Quotes nav highlighted so the queue reads as "home".
-  const attn=tickets.filter(isAttn).length; /* badge only when there's something to act on — a red "0" is noise */
+  /* Scoped to OPEN work (2026-09-22): the badge has to count the same rows the Bookings list
+     shows, or it points at a list that does not contain them. Counting every ticket made it
+     read ~60 against a queue whose forward book was 10. Badge only when there's something to
+     act on — a red "0" is noise. */
+  const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
@@ -2327,13 +2364,13 @@ function viewTickets(){
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="pagehead"><h1>Bookings</h1></div>
-    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${tickets.filter(isAttn).length} need attention</span></p>
+    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${list.filter(isAttn).length} need attention</span></p>
     <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
   DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
-    html+=`<div class="sec${g==='Pending'||g==='Needs closing'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`;
+    html+=`<div class="sec${g==='No date yet'||g==='Needs closing'||g==='Expired'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`;
     /* Bulk close-out bar. Completed ONLY — moving a booking to completed emails nobody
        (ops.ts maybeEmailForStage sends on no_show alone), whereas a bulk no-show would tell
        every one of these customers their fare is non-refundable. That stays a per-booking
