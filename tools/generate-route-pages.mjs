@@ -479,8 +479,11 @@ ${headAssets}
 <script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
      so the page never shows one price and then another. Set HERE, before first paint, and
-     released HERE on a timer too — if that script never loads, the catalogue fares still appear. */
-  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);}
+     released HERE on a timer too — if that script never loads, the catalogue fares still appear.
+     list-fares-pending is the same hold for the "where next" cards' [data-list-fare] figures,
+     released by route-list-fares.js (or this same timer if that file never loads). */
+  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);
+  d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
 })();</script>
 <style>
   /* ── hero ──────────────────────────────────────────────────────────────────────
@@ -574,6 +577,8 @@ ${headAssets}
   .trip-bookbar{display:none}
   /* A fare the engine has not confirmed yet: same box, no ink. */
   .fares-pending [data-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
+  /* A "where next" list fare the engine has not confirmed yet: no layout shift, just held back. */
+  .list-fares-pending [data-list-fare]{color:transparent}
   /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
      unreachable, which is why nothing above depends on it. */
   .ld-datebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
@@ -861,6 +866,7 @@ ${footer}
 ${bootScript}
 <script src="${p}${assetV('ch-pricing.js')}"></script>
 <script src="${p}${assetV('route-page-fares.js')}"></script>
+<script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('route-page-select.js')}"></script>
 <script src="${p}${assetV('route-page.js')}"></script>
 </body>
@@ -983,6 +989,16 @@ function tripIndex(T, photos) {
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
+<!-- Same CEYLON_HOP_API bootstrap as routePage()'s: "?api=off" disables the engine and
+     "?api=ORIGIN" points it elsewhere, so one local API can drive this page too. The index
+     lacked this block until route-list-fares.js needed it (Task E1). -->
+<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+  /* List fares: held back (transparent, in place) until route-list-fares.js has the engine's
+     answer, so the page never shows one price and then another. Set HERE, before first paint,
+     and released HERE on a timer too — if that script never loads, the catalogue fares still
+     appear. */
+  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
+})();</script>
 <style>
   /* Approved prototype: docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md,
      renderIndex() + its "routes index" CSS block. Ported faithfully; classes renamed only where
@@ -1120,6 +1136,16 @@ ${headAssets}
   .dests .pr{grid-row:1/3;grid-column:2;text-align:right;font-size:.76rem;color:var(--ink-soft,#6c6a6b);font-variant-numeric:tabular-nums;white-space:nowrap}
   .dests .pr b{font-size:1.08rem;color:var(--ink,#3A3739)}
   .dests .sh{display:inline-block;margin-left:8px;background:#FDF0D6;color:#8A5A06;border-radius:999px;padding:2px 9px;font-size:.68rem;font-weight:700;vertical-align:1px}
+  /* A list fare the engine has not confirmed yet: no layout shift, just held back — same cream
+     skeleton chip as routePage()'s .fares-pending [data-fare] (F1 fix). The plain
+     '.list-fares-pending [data-list-fare]{color:transparent}' rule used on the route page is NOT
+     enough here: '.dests .pr b' above sets its own color at higher specificity (0,2,1 beats
+     0,2,0) and wins regardless of source order, so 44 of this page's 48 figures painted visibly
+     anyway. Both selectors below must reach the SAME b[data-list-fare] specificity (0,3,1) to
+     outrank it; '.rt-card .fr b' carries no color of its own, so the second selector only needs
+     to match, not out-rank anything — but is written the same way for one shared rule. */
+  .list-fares-pending .dests .pr b[data-list-fare],
+  .list-fares-pending .fr b[data-list-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
 
   .anywhere{background:#22302F;color:#fff}
   .anywhere .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:center;padding-block:56px}
@@ -1206,6 +1232,7 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('trip-index.js')}"></script>
 </body>
 </html>
