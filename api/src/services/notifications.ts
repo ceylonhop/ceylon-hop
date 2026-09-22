@@ -142,10 +142,18 @@ function factRows(booking: Booking): [string, string][] {
     return rows;
   }
   if (booking.mode === 'shared') {
-    return [
+    const rows: [string, string][] = [
       ['Seats', String(booking.input.seats)],
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
+    // One bag per seat rides free; the rest were charged. Showing the count is what makes the
+    // total add up — before this the surcharge was simply unexplained (audit 2026-09-22 #1).
+    const bags = booking.input.bags ?? 0;
+    if (bags > 0) {
+      const extra = Math.max(0, bags - booking.input.seats);
+      rows.push(['Luggage', `${bags} bag${bags > 1 ? 's' : ''}${extra > 0 ? ` · ${extra} over the free allowance` : ''}`]);
+    }
+    return rows;
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
