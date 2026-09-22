@@ -358,6 +358,20 @@
       "when": 1789344000000,
       "tag": "0050_promo_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1790121600000,
+      "tag": "0051_shared_booking_records_its_leg",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1790136000000,
+      "tag": "0052_shared_request_bags",
+      "breakpoints": true
     }
   ]
 }

@@ -35,7 +35,7 @@
         'Door-to-door pick-up at every hotel along the way',
         'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
-        'Reserved seats on the Ella train',
+        'Ella train tickets, booked as soon as reservations open',
         'All driving, fuel, tolls & parking'
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Tips'],
@@ -74,7 +74,7 @@
         'Door-to-door pick-up at every hotel along the way',
         'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
-        'Reserved seats on the Ella train',
+        'Ella train tickets, booked as soon as reservations open',
         'All driving, fuel, tolls & parking'
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Whale-watching boat','Tips'],
@@ -116,7 +116,7 @@
         'Door-to-door pick-up at every hotel along the way',
         'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
-        'Reserved seats on the Ella train',
+        'Ella train tickets, booked as soon as reservations open',
         'All driving, fuel, tolls & parking'
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Horton Plains park fees','Tips'],
@@ -226,7 +226,7 @@
         'Door-to-door pick-up at every hotel along the way',
         'A candlelit beach dinner, on us',
         'Airport pick-up & drop-off',
-        'Reserved seats on the Ella train',
+        'Ella train tickets, booked as soon as reservations open',
         'All driving, fuel, tolls & parking'
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks — except your candlelit beach dinner','Site entrance tickets','Safari jeep & park fees','Whale-watching boat','Tips'],

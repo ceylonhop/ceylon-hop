@@ -83,7 +83,7 @@ describe('route page — one shared option, never two', () => {
     for (const [path, html] of pages) {
       const [from, to] = legOf(path);
       if (T.sharedOption(from, to) || T.corridorFor(from, to)) continue;
-      expect(text(html), `${path} should decline shared`).toMatch(/No shared van runs/);
+      expect(text(html), `${path} should decline shared`).toMatch(/No shared vehicle runs/);
     }
   });
 });

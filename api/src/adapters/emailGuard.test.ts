@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { FakeEmailAdapter } from './email';
+import { FakeEmailAdapter, wasDelivered } from './email';
 import { GuardedEmailAdapter, parseAllowlist, isAllowed } from './emailGuard';
 
 const msg = (to: string, extra: Record<string, unknown> = {}) => ({
@@ -117,5 +117,50 @@ describe('GuardedEmailAdapter', () => {
     await guard.send(msg('anyone@anywhere.com'));
     expect(inner.sent).toHaveLength(1);
     expect(spy.mock.calls.filter((c) => String(c[0]).includes('notification.suppressed'))).toHaveLength(0);
+  });
+});
+
+// ── Audit 2026-09-22, finding 2 ────────────────────────────────────────────
+// A suppressed message never reached anyone, but `send()` resolved exactly like a delivered
+// one. The webhook could not tell the difference, so it wrote `markSent(...)` either way —
+// and that ledger row is precisely what the paid-but-unconfirmed watchdog checks to decide
+// nothing is wrong. Leaving NOTIFICATIONS_ENABLED off after an incident therefore stopped
+// every customer's confirmation AND silenced the alarm built to catch exactly that.
+describe('GuardedEmailAdapter — a caller can tell a suppressed send from a delivered one', () => {
+  it('reports a delivered send', async () => {
+    const inner = new FakeEmailAdapter();
+    const out = await new GuardedEmailAdapter(inner, {}).send(msg('a@x.com'));
+    expect(wasDelivered(out)).toBe(true);
+    expect(inner.sent).toHaveLength(1);
+  });
+
+  it('reports a customer send suppressed by NOTIFICATIONS_ENABLED=false', async () => {
+    const inner = new FakeEmailAdapter();
+    const out = await new GuardedEmailAdapter(inner, { enabled: false }).send(msg('a@x.com'));
+    expect(wasDelivered(out)).toBe(false);
+    expect(inner.sent).toHaveLength(0);
+  });
+
+  it('reports a send suppressed by the allowlist', async () => {
+    const inner = new FakeEmailAdapter();
+    const guard = new GuardedEmailAdapter(inner, { allowlist: ['@ceylonhop.com'] });
+    expect(wasDelivered(await guard.send(msg('stranger@example.com')))).toBe(false);
+    expect(wasDelivered(await guard.send(msg('ops@ceylonhop.com')))).toBe(true);
+  });
+
+  // An ops alert must still get out while customer mail is switched off — that is the whole
+  // point of the lever, and it is how the watchdog's own alert escapes.
+  it('still delivers ops mail when customer mail is disabled', async () => {
+    const inner = new FakeEmailAdapter();
+    const guard = new GuardedEmailAdapter(inner, { enabled: false });
+    expect(wasDelivered(await guard.send(msg('ops@x.com', { audience: 'ops' })))).toBe(true);
+  });
+
+  // A customer with no address is not a failure, it is a fact about the customer. It must be
+  // distinguishable from a suppression so the watchdog can exempt it rather than page forever.
+  it('reports a missing address as its own reason, not a suppression', async () => {
+    const out = await new GuardedEmailAdapter(new FakeEmailAdapter(), {}).send(msg(''));
+    expect(wasDelivered(out)).toBe(false);
+    expect(out && 'reason' in out ? out.reason : null).toBe('no_address');
   });
 });

@@ -109,7 +109,7 @@ function faresCard(T, from, to, q, shared, p) {
         </fieldset>
         <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Choose date &amp; book</a>
         <p class="fares-fine">Free cancellation up to 24h before · no change fees</p>${shared ? `
-        <a class="share-strip" href="#share"><span>Or share the van<br><b>$${price(shared.seat)}</b> a seat</span><span>See who's going ↓</span></a>` : ''}
+        <a class="share-strip" href="#share"><span>Or share the ride<br><b>$${price(shared.seat)}</b> a seat</span><span>See who's going ↓</span></a>` : ''}
       </article>`;
 }
 
@@ -126,8 +126,8 @@ function sharedSection(T, from, to, shared, p) {
     <div class="wrap share-grid">
       <div class="share-copy">
         <span class="share-tag">Best value · share &amp; save</span>
-        <h2>One van, split between you</h2>
-        <p class="share-lede">Same driver, same air-conditioned van, same door-to-door care as a private transfer — for a fraction of the fare. Your card is saved when you add your name, and is only charged once the van is confirmed.</p>
+        <h2>One vehicle, shared between you</h2>
+        <p class="share-lede">Same driver, same air-conditioned vehicle, same door-to-door care as a private transfer — for a fraction of the fare. Your card is saved when you add your name, and is only charged once the vehicle is confirmed.</p>
       </div>
       <article class="opt opt-shared">
         <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
@@ -150,7 +150,7 @@ const boardHref = (T, from, to, p) =>
 function noShareNote(T, from, to, shared, p) {
   if (shared) return '';
   return `
-  <div class="wrap"><p class="no-share"><span>No shared van runs ${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}. For three or more, a private car often works out close to a seat price.</span> <a href="${esc(boardHref(T, from, to, p))}">Or start a ride on the board →</a></p></div>`;
+  <div class="wrap"><p class="no-share"><span>No shared vehicle runs ${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}. For three or more, a private car often works out close to a seat price.</span> <a href="${esc(boardHref(T, from, to, p))}">Or start a ride on the board →</a></p></div>`;
 }
 
 /** 07:30 → 7:30am, matching how the product pages state boarding times. */
@@ -328,13 +328,13 @@ function faqItems(from, to, q, shared) {
     // Design A: a shared seat is a date with names on it. No fixed timetable is quoted,
     // because there is no date we refuse — the van runs when enough travellers commit.
     shared
-      ? [`How does the ${from} to ${to} shared taxi work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the van runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the van is confirmed — if it never fills, you pay nothing.`]
+      ? [`How does the ${from} to ${to} shared taxi work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the vehicle runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the vehicle is confirmed — if it never fills, you pay nothing.`]
       // Asked in the searcher's own words. The old site's best-known page was a Kandy → Ella
       // "shared taxi" we no longer run; the honest way to stay relevant to that search is to
       // answer it, not to imply a seat in the title.
       : [`Is there a shared taxi from ${from} to ${to}?`, `Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
-      `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
+      `Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.`],
     [`How do I book?`,
       `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.`],
   ];

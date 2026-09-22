@@ -19,8 +19,8 @@
 // rather than fourteen call sites — the same argument hasDeliverableAddress() makes.
 // ============================================================================
 
-import type { EmailAdapter, EmailMessage } from './email';
-import { hasDeliverableAddress } from './email';
+import type { EmailAdapter, EmailMessage, SendOutcome } from './email';
+import { DELIVERED, hasDeliverableAddress } from './email';
 import { logEvent } from '../observability/events';
 
 export interface EmailPolicy {
@@ -67,20 +67,25 @@ export class GuardedEmailAdapter implements EmailAdapter {
     this.allowlist = policy.allowlist ?? [];
   }
 
-  async send(msg: EmailMessage): Promise<void> {
+  async send(msg: EmailMessage): Promise<SendOutcome> {
     // No address is a fact about the customer, not a suppression — let the inner adapter's
-    // own guard handle it silently, exactly as before, and log nothing.
-    if (!hasDeliverableAddress(msg.to)) return this.inner.send(msg);
+    // own guard handle it silently, exactly as before, and log nothing. It still reports
+    // `no_address` so a caller can tell it apart from a message that WAS due and was stopped.
+    if (!hasDeliverableAddress(msg.to)) {
+      await this.inner.send(msg);
+      return { delivered: false, reason: 'no_address' };
+    }
 
     const audience = msg.audience ?? 'customer';
 
     if (!this.enabled && audience === 'customer') return this.drop(msg, 'disabled', audience);
     if (!isAllowed(msg.to, this.allowlist)) return this.drop(msg, 'allowlist', audience);
 
-    return this.inner.send(msg);
+    await this.inner.send(msg);
+    return DELIVERED;
   }
 
-  private drop(msg: EmailMessage, reason: 'disabled' | 'allowlist', audience: string): void {
+  private drop(msg: EmailMessage, reason: 'disabled' | 'allowlist', audience: string): SendOutcome {
     // Loud on purpose: a silently swallowed email is the failure mode this whole spec is
     // about. The subject carries the booking reference, which is a code, not personal data.
     logEvent('notification.suppressed', {
@@ -89,5 +94,6 @@ export class GuardedEmailAdapter implements EmailAdapter {
       toDomain: domainOf(msg.to),
       subject: msg.subject,
     });
+    return { delivered: false, reason: reason === 'disabled' ? 'suppressed_disabled' : 'suppressed_allowlist' };
   }
 }

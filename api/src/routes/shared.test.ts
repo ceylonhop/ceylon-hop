@@ -195,3 +195,130 @@ describe('POST /bookings/shared', () => {
     expect(email.sent).toHaveLength(1);
   });
 });
+
+// ── CH-SEATS (2026-09-22) ──────────────────────────────────────────────────
+// Two legs that ride one van at the same time each opened their own full-capacity pool,
+// because inventory keys on the boarding time and they board at different ones. The van
+// could be sold twice over on the stretch its passengers share.
+describe('overlapping legs share one vehicle’s seats', () => {
+  it('a full CMB -> Sigiriya run leaves no Negombo -> Sigiriya seats', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+
+    const first = await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 12,
+    });
+    expect(first.status).toBe(201); // the van is full
+
+    // Boards 30 minutes later at Negombo and rides to Sigiriya alongside them.
+    const second = await postShared(app, {
+      ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 12,
+    });
+    expect(second.status).toBe(409);
+  });
+
+  it('a full Mirissa -> CMB run leaves no Weligama -> CMB seats', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+
+    const first = await postShared(app, {
+      ...valid, from: 'Mirissa', to: 'Colombo Airport (CMB)', time: '14:45', seats: 12,
+    });
+    expect(first.status).toBe(201);
+
+    const second = await postShared(app, {
+      ...valid, from: 'Weligama', to: 'Colombo Airport (CMB)', time: '15:00', seats: 12,
+    });
+    expect(second.status).toBe(409);
+  });
+
+  // The seats still add up to ONE van, not a smaller one: pooling must not cost capacity.
+  it('still sells a full van across the two legs together', async () => {
+    const app = createApp({ departures: new InMemoryDepartureRepo() });
+    const a = await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 7,
+    });
+    const b = await postShared(app, {
+      ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 5,
+    });
+    expect([a.status, b.status]).toEqual([201, 201]); // 7 + 5 = the full 12
+  });
+
+  // Sigiriya -> Kandy boards at 11:30, by which time the northbound passengers have got
+  // out. Its separate seat pool is deliberate — pooling must not swallow it.
+  it('leaves Sigiriya -> Kandy its own seats after the airport run fills', async () => {
+    const app = createApp({ departures: new InMemoryDepartureRepo() });
+    await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 12,
+    });
+    const tail = await postShared(app, {
+      ...valid, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 12,
+    });
+    expect(tail.status).toBe(201);
+  });
+});
+
+// CH-6HE3V (2026-09-21): the booking stored only a corridorId, so what the customer
+// bought could not be recovered from the row — the emails and the ops tool each
+// rebuilt it from the corridor's ends and named the wrong town. Record the leg.
+describe('POST /bookings/shared — the booking records the leg it sold', () => {
+  it('stores the product endpoints on the booking', async () => {
+    const res = await postShared(createApp(), {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00',
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.fromPlace).toBe('Colombo Airport (CMB)');
+    expect(b.input.toPlace).toBe('Sigiriya / Dambulla');
+  });
+
+  // The catalogue's spelling is the one ops and the customer both read, so the
+  // booking keeps THAT, not whatever casing/padding the request happened to carry.
+  it('records the catalogue spelling, not the request spelling', async () => {
+    const res = await postShared(createApp(), { ...valid, from: '  negombo ', to: 'sigiriya / dambulla' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.fromPlace).toBe('Negombo');
+    expect(b.input.toPlace).toBe('Sigiriya / Dambulla');
+  });
+
+  // Two legs on ONE corridor, told apart only by what the row records.
+  it('tells two legs of the same corridor apart', async () => {
+    const app = createApp();
+    const north = await (await postShared(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00' })).json();
+    const onward = await (await postShared(app, { ...valid, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 1 })).json();
+    expect(north.input.corridorId).toBe(onward.input.corridorId);
+    expect(north.input.toPlace).toBe('Sigiriya / Dambulla');
+    expect(onward.input.toPlace).toBe('Kandy');
+  });
+});
+
+// ── Audit 2026-09-22, finding 1 ────────────────────────────────────────────
+// Same shape as CH-6HE3V: the customer chose it, we charged for it, we never wrote it down.
+// `priceShared` bills $10 for every bag beyond one per seat, but the stored input had no
+// `bags` field at all — so the surcharge appeared in the total with nothing anywhere to
+// explain it, to the customer or to ops in a refund dispute, and the vehicle was loaded for
+// the wrong amount of luggage.
+describe('POST /bookings/shared — the booking records the luggage it charged for', () => {
+  const leg = { ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 2 };
+
+  it('stores the bag count', async () => {
+    const res = await postShared(createApp(), { ...leg, bags: 5 });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.bags).toBe(5);
+  });
+
+  it('the stored count is the one the surcharge was computed from', async () => {
+    const res = await postShared(createApp(), { ...leg, bags: 5 });
+    const b = await res.json();
+    // 2 × $27.49 + 3 extra bags × $10 — one bag per seat rides free.
+    expect(b.total).toBe(5498 + 3000);
+    expect(b.input.bags).toBe(5);
+  });
+
+  it('records zero rather than nothing when no bags were sent', async () => {
+    const b = await (await postShared(createApp(), leg)).json();
+    expect(b.input.bags).toBe(0);
+  });
+});

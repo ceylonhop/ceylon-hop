@@ -1,7 +1,7 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter } from '../adapters/email';
-import { corridorRouteEnds } from '../db/departureRepo';
+import type { EmailAdapter, SendOutcome } from '../adapters/email';
+import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette — "concierge letter" direction, held to docs/brand-book.md. Colours are
@@ -37,7 +37,11 @@ function esc(s: string): string {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
 }
 function vehicleLabel(v: 'car' | 'van'): string {
-  return v === 'van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  // No capacity claim. `v` is a flattened car|van, not the tier the quote was priced on, so a
+  // 5-pax booking upgraded to a van by the engine can still arrive here as 'car' — and this
+  // line printed "up to 3" directly above "Travellers: 5" (audit 2026-09-22, finding 6).
+  // Naming the vehicle is all this enum can honestly support.
+  return v === 'van' ? 'AC van' : 'AC car';
 }
 function fmtDate(d: string): string {
   const dt = new Date(`${d}T12:00:00`);
@@ -89,10 +93,17 @@ function journey(booking: Booking): Stop[] {
     });
   }
   if (booking.mode === 'shared') {
-    // Only the corridorId is stored (not the customer's exact stops), and a seat can run
-    // either way along the corridor — so name the service's route, without an arrow.
-    const ends = corridorRouteEnds(booking.input.corridorId);
-    return [{ color: TEAL, label: 'Service', place: ends ? `${ends.from} – ${ends.to} shared shuttle` : 'Shared ride' }];
+    // A recorded leg is a real journey with a direction, so show it like one: where they
+    // get on, where they get off. Only a row that never recorded its leg falls back to
+    // naming the service, which is honest about describing the van and not the trip.
+    const label = sharedRouteLabel(booking.input);
+    if (label?.kind === 'leg') {
+      return [
+        { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(label.from) },
+        { color: TOMATO, label: 'Drop-off', place: shortPlace(label.to) },
+      ];
+    }
+    return [{ color: TEAL, label: 'Service', place: label ? `${label.from} – ${label.to} shared shuttle` : 'Shared ride' }];
   }
   return [
     { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(booking.input.from) },
@@ -131,10 +142,18 @@ function factRows(booking: Booking): [string, string][] {
     return rows;
   }
   if (booking.mode === 'shared') {
-    return [
+    const rows: [string, string][] = [
       ['Seats', String(booking.input.seats)],
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
+    // One bag per seat rides free; the rest were charged. Showing the count is what makes the
+    // total add up — before this the surcharge was simply unexplained (audit 2026-09-22 #1).
+    const bags = booking.input.bags ?? 0;
+    if (bags > 0) {
+      const extra = Math.max(0, bags - booking.input.seats);
+      rows.push(['Luggage', `${bags} bag${bags > 1 ? 's' : ''}${extra > 0 ? ` · ${extra} over the free allowance` : ''}`]);
+    }
+    return rows;
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
@@ -147,11 +166,27 @@ function factRows(booking: Booking): [string, string][] {
   return rows;
 }
 
+// When they travel. The team's paid alert carried route, customer, money and reference and
+// no date at all; the timestamp at the foot of that email is stamped by the alert transport
+// at send time, so it says when the money landed (CH-6HE3V, 2026-09-21).
+export function travelWhenText(booking: Booking): string {
+  if (booking.mode === 'trip') {
+    const start = booking.input.dates?.find(Boolean);
+    return start ? `from ${fmtDate(start)}` : 'dates to confirm';
+  }
+  return dateTime(booking.input.date, booking.input.time);
+}
+
 export function routeText(booking: Booking): string {
   if (booking.mode === 'trip') return booking.input.stops.map(shortPlace).join(' → ');
   if (booking.mode === 'shared') {
-    const ends = corridorRouteEnds(booking.input.corridorId);
-    return ends ? `Shared shuttle · ${ends.from} – ${ends.to}` : 'Shared ride';
+    const label = sharedRouteLabel(booking.input);
+    if (!label) return 'Shared ride';
+    // An arrow only where a direction was actually sold. The service wording says plainly
+    // that it names the van's route, so nobody reads a far-end stop as their destination.
+    return label.kind === 'leg'
+      ? `Shared shuttle · ${label.from} → ${label.to}`
+      : `Shared shuttle on the ${label.from} – ${label.to} service`;
   }
   return `${shortPlace(booking.input.from)} → ${shortPlace(booking.input.to)}`;
 }
@@ -470,8 +505,11 @@ export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
-): Promise<void> {
-  await email.send({
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome so the caller can decide whether to write this down. A
+  // suppressed confirmation must NOT be recorded as sent: that row is what the watchdog
+  // reads to conclude the customer was told (audit 2026-09-22, finding 2).
+  return email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking, links.manage, links.coverage),

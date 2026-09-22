@@ -705,3 +705,58 @@ describe('the promote checklist’s own liveness probe', () => {
     expect(alerts.sent[0].severity).toBe('critical');
   });
 });
+
+// CH-6HE3V (owner-reported 2026-09-21): the paid alert carried route, customer, money and
+// reference — and no travel date. The timestamp at the foot of that email is stamped by the
+// alert transport when it sends, so it says when the money landed, never when anyone travels.
+// The one message telling the team a seat sold could not tell them it departs in two days.
+describe('POST /webhooks/payments — the paid alert says when they travel', () => {
+  it('carries the travel date and time, not just the moment money landed', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+
+    const paid = alerts.sent.find((a) => a.kind === 'booking_paid');
+    const [y, m, d] = valid.date.split('-');
+    const travel = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      .format(new Date(`${y}-${m}-${d}T12:00:00`));
+    expect(paid?.body).toContain(travel);
+    expect(paid?.body).toContain('09:00');
+  });
+});
+
+// ── Audit 2026-09-22, finding 2 ────────────────────────────────────────────
+// The notification ledger is what the paid-but-unconfirmed watchdog reads to decide a
+// customer has been told. Writing a row for a message that was suppressed asserts an email
+// that never went out — and silences the one alarm that would have caught it.
+describe('POST /webhooks/payments — the ledger records only mail that actually left', () => {
+  it('does NOT record a confirmation that notifications suppressed', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    // The documented incident lever: customer mail off, ops mail still flowing.
+    const app = createApp({ adapter, notificationLog, emailPolicy: { enabled: false } });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(false);
+  });
+
+  it('still records one that did go out', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, notificationLog });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(true);
+  });
+});

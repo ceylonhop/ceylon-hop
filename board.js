@@ -949,7 +949,7 @@
       '<div class="d-block d-faq faq"><h2>Quick answers</h2>' +
       '<details><summary>Can I cancel after adding my name?</summary><p>Yes — scratch off anytime <b>before the deadline</b>, no questions, hold released. After the list fills and everyone\'s charged, normal cancellation terms apply.</p></details>' +
       '<details><summary>Where exactly is the pickup?</summary><p>Our set shared-ride point for this city — <b>' + esc(pointFor(L.from, L.fromId)) + '</b>. If you\'re staying within ~10 km we can usually collect from your door instead; just ask when you join. You\'ll get the exact pickup time the evening before.</p></details>' +
-      '<details><summary>Luggage? Surfboards?</summary><p>A backpack + day bag each is always fine. Boards and bikes usually fit — mention it in a note and we\'ll confirm.</p></details>' +
+      '<details><summary>Luggage? Surfboards?</summary><p>A backpack + day bag each fits comfortably. Boards and bikes usually fit — mention it in a note and we\'ll confirm.</p></details>' +
       '</div></div>' +
       // ---- sticky join card ----
       '<aside class="d-join">' +

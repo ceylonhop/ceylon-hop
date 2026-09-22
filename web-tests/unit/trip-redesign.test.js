@@ -315,7 +315,7 @@ describe('trip page — shared ride is a section or a sentence, never a grey car
     const d = dom(slug);
     expect(d.querySelector('.opt-none')).toBeNull();
     const note = d.querySelector('p.no-share');
-    expect(note.textContent).toMatch(/^No shared van runs /);
+    expect(note.textContent).toMatch(/^No shared vehicle runs /);
     expect(note.querySelector('a[href*="board.html?from="]')).toBeTruthy();
     expect(d.querySelector('#share')).toBeNull();
   });
