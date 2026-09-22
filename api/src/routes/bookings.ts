@@ -26,7 +26,7 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
-import { sharedProductFor } from '../db/departureRepo';
+import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -62,8 +62,11 @@ const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
 const UNPRICED_NOTE_PREFIX = 'unpriced booking — set a price before this can be paid';
 
 // One maps lookup per route pair per request: engine pricing and the M8 enrichment share
-// results, so going engine-first doesn't double the billed Google calls.
-function memoizeDistance(maps: MapsAdapter): MapsAdapter {
+// results, so going engine-first doesn't double the billed Google calls. Exported: quote.ts's
+// /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a (from,to)
+// pair (e.g. one corridor priced for car and for van) share one lookup instead of both racing
+// a cold cache miss under Promise.all.
+export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
   const cache = new Map<string, Promise<DistanceResult | null>>();
   return {
     provider: maps.provider,
@@ -186,17 +189,19 @@ export function projectBooking(b: Booking): CustomerBookingView {
       vehicleType: b.input.vehicleType,
     };
   }
-  // Shared (corridor) bookings store only a corridorId — not from/to strings — and the
-  // repo that resolves corridor names (DepartureRepo) isn't loaded here, so the
-  // customer-safe view surfaces the fixed pickup/drop-off wording used elsewhere for
-  // unresolved fields, plus the date/time the customer picked (SharedInput has both).
+  // A shared booking records the leg it sold, so the manage page can name it like any other
+  // journey. Before 2026-09-22 it recorded only a corridorId and this view showed the literal
+  // words "Pickup"/"Drop-off" — which is what a row with no recorded leg still falls back to,
+  // because the corridor's endpoints are the van's route and not this traveller's (CH-6HE3V).
+  const label = sharedRouteLabel(b.input);
+  const leg = label?.kind === 'leg' ? label : null;
   return {
     ...base,
-    from: 'Pickup',
-    to: 'Drop-off',
+    from: leg?.from ?? 'Pickup',
+    to: leg?.to ?? 'Drop-off',
     date: b.input.date,
     time: b.input.time,
-    stops: ['Pickup', 'Drop-off'],
+    stops: leg ? [leg.from, leg.to] : ['Pickup', 'Drop-off'],
     legDates: [b.input.date ?? null],
     endDate: b.input.date ?? 'to confirm',
     travellers: b.input.seats,
@@ -621,6 +626,12 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     );
     const input = {
       corridorId: corridor.id,
+      // Record WHAT WAS SOLD, in the catalogue's spelling rather than the request's. A
+      // corridorId alone cannot identify a booking, so without this every downstream label
+      // had to guess the journey from the corridor's endpoints — and told a CMB -> Sigiriya
+      // customer they were going to Kandy (CH-6HE3V, 2026-09-21).
+      fromPlace: product.fromPlace,
+      toPlace: product.toPlace,
       date: req.date,
       time: req.time,
       seats: req.seats,

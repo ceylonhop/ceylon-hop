@@ -1,0 +1,110 @@
+{
+  "ella": {
+    "stem": "ella",
+    "alt": "The blue hill-country train crossing Nine Arch Bridge near Ella",
+    "caption": "Nine Arch Bridge, Ella",
+    "credit": "Adam Vandermeer",
+    "creditUrl": "https://unsplash.com/photos/blue-and-white-train-on-rail-tracks-Dw9dWTzzsUE?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "65% 70%",
+    "w": 1800, "h": 675
+  },
+  "kandy": {
+    "stem": "kandy",
+    "alt": "The lakeside pavilion on Kandy Lake with forested hills behind",
+    "caption": "Kandy Lake",
+    "credit": "Polina Kocheva",
+    "creditUrl": "https://unsplash.com/photos/a-gazebo-in-the-middle-of-a-lake-surrounded-by-trees-_fcHQGnncM8?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "40% 55%",
+    "w": 1800, "h": 825
+  },
+  "galle": {
+    "stem": "galle",
+    "alt": "Galle Fort's white lighthouse among palms at dusk",
+    "caption": "Galle Fort lighthouse",
+    "credit": "Hendrik Cornelissen",
+    "creditUrl": "https://unsplash.com/photos/white-lighthouse-svZvPZ54uBI?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "22% 50%",
+    "w": 1800, "h": 832
+  },
+  "mirissa": {
+    "stem": "mirissa",
+    "alt": "A rocky Mirissa beach point with turquoise water, palms and a fishing boat",
+    "caption": "Mirissa beach",
+    "credit": "Zoshua Colah",
+    "creditUrl": "https://unsplash.com/photos/tropical-beach-with-palm-trees-rocks-and-blue-sky-bTy_q1ajFeQ?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "30% 45%",
+    "w": 1800, "h": 1200
+  },
+  "nuwara-eliya": {
+    "stem": "nuwara-eliya",
+    "alt": "Sunlit green tea terraces rolling across the hills of Nuwara Eliya under a blue sky",
+    "caption": "Tea terraces, Nuwara Eliya",
+    "credit": "Lakshan Mamalgaha",
+    "creditUrl": "https://unsplash.com/photos/a-lush-green-hillside-covered-in-trees-and-bushes-P-avRWoSy9I?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "50% 55%",
+    "w": 1800, "h": 525
+  },
+  "sigiriya": {
+    "stem": "sigiriya",
+    "alt": "Sigiriya, the ancient Lion Rock fortress, rising from the jungle plain",
+    "caption": "Sigiriya, Lion Rock",
+    "credit": "Mike Swigunski",
+    "creditUrl": "https://unsplash.com/photos/brown-rock-formation-under-white-sky-during-daytime-zDDQZgZjFtM?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "45% 60%",
+    "w": 1800, "h": 989
+  },
+  "yala": {
+    "stem": "yala",
+    "alt": "A mother and calf elephant at a waterhole in Yala National Park",
+    "caption": "Elephants, Yala National Park",
+    "credit": "Sach",
+    "creditUrl": "https://unsplash.com/photos/a-couple-of-elephants-are-standing-in-the-water-kKeC_lgVs_o?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "30% 60%",
+    "w": 1800, "h": 675
+  },
+  "cmb-airport": {
+    "stem": "cmb-airport",
+    "alt": "A small plane climbing through a bright blue sky over tall palm trees",
+    "caption": "Arriving in Sri Lanka",
+    "credit": "Keith Myers",
+    "creditUrl": "https://unsplash.com/photos/green-palm-tree-under-blue-sky-and-white-clouds-during-daytime-NTA5BYe8eqo?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "55% 45%",
+    "w": 1800, "h": 1200
+  },
+  "colombo": {
+    "stem": "colombo",
+    "alt": "The Colombo skyline and harbour on a bright day, with the Amari tower and the ocean beyond",
+    "caption": "Colombo skyline",
+    "credit": "Sajeevan Balachandran",
+    "creditUrl": "https://unsplash.com/photos/a-road-with-cars-on-it-next-to-a-body-of-water-cbziHTgK8VE?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "65% 55%",
+    "w": 1800, "h": 975
+  },
+  "negombo": {
+    "stem": "negombo",
+    "alt": "A colourful fishing boat on the bright sandy beach at Negombo, palms lining the shore",
+    "caption": "Negombo beach",
+    "credit": "Tomasz Anusiewicz",
+    "creditUrl": "https://unsplash.com/photos/a-sandy-beach-with-a-boat-on-the-shore-Q6l8QUhCw-I?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "72% 15%",
+    "w": 1800, "h": 975
+  },
+  "arugam-bay": {
+    "stem": "arugam-bay",
+    "alt": "Fishing boats lined up on the bright sandy beach at Arugam Bay, waves rolling in",
+    "caption": "Arugam Bay",
+    "credit": "Etienne Boulanger",
+    "creditUrl": "https://unsplash.com/photos/aerial-view-of-people-on-shoreline-J7LiHL7jAgU?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "50% 45%",
+    "w": 1800, "h": 1011
+  },
+  "_index": {
+    "stem": "_index",
+    "alt": "A road winding through the tea-covered hills of Sri Lanka's highlands",
+    "caption": "The road through tea country",
+    "credit": "Muditha Gajanayake",
+    "creditUrl": "https://unsplash.com/photos/a-road-going-through-a-grassy-area-KIkGZwrNSms?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "70% 60%",
+    "w": 1800, "h": 675
+  }
+}

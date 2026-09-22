@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { quoteRoutes, engineRequestFor } from './quote';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeMapsAdapter } from '../adapters/maps';
+import type { MapsAdapter } from '../adapters/maps';
 import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
 import type { RateCard } from '../quote/rateCard';
 
@@ -306,6 +307,125 @@ describe('public quote v2 estimate', () => {
       body: JSON.stringify({ ...V2_PRIVATE, legs }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('public quote v2 estimate-batch', () => {
+  function batchApp(maps: MapsAdapter = new FakeMapsAdapter()) {
+    const app = new Hono();
+    const quotes = new InMemoryQuoteRepo();
+    app.route('/quote', quoteRoutes({ quotes, maps, v2Enabled: true }));
+    return { app, quotes };
+  }
+  const post = (app: Hono, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const intent = (from: string, to: string, vehicle: 'car' | 'van' = 'car') =>
+    ({ vehicle, product: 'private', pax: 1, bags: 0, legs: [{ from, to }], extras: [] });
+
+  it('prices every intent, index-aligned, and persists nothing', async () => {
+    const { app, quotes } = batchApp();
+    const res = await post(app, '/quote/v2/estimate-batch', { intents: [intent('Kandy', 'Ella'), intent('Galle', 'Mirissa', 'van')] });
+    expect(res.status).toBe(200);
+    const { results } = await res.json();
+    expect(results).toHaveLength(2);
+    expect(results[0].totalCents).toBeGreaterThan(0);
+    expect(results[0].currency).toBe('USD');
+    expect(results[1].totalCents).toBeGreaterThan(0);
+    expect(await quotes.list()).toHaveLength(0);
+  });
+
+  it('gives exactly the figure /v2/estimate gives for the same intent', async () => {
+    const { app } = batchApp();
+    const one = await (await post(app, '/quote/v2/estimate', intent('Kandy', 'Ella'))).json();
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', { intents: [intent('Kandy', 'Ella')] })).json();
+    expect(results[0].totalCents).toBe(one.totalCents);
+  });
+
+  it('nulls one bad intent without failing its neighbours', async () => {
+    const { app } = batchApp();
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', {
+      intents: [intent('Kandy', 'Ella'), { nonsense: true }, intent('Kandy', '12 Some Hotel Lane, Nowhere'), intent('Galle', 'Mirissa')],
+    })).json();
+    expect(results[0]).not.toBeNull();
+    expect(results[1]).toBeNull();
+    expect(results[2]).toBeNull(); // not a catalogue town → never reaches the maps adapter
+    expect(results[3]).not.toBeNull();
+  });
+
+  it('never asks the maps adapter about a non-catalogue place', async () => {
+    // FakeMapsAdapter's methods live on the class prototype, not as own properties — a plain
+    // object spread ({ ...inner }) would silently drop them, leaving the spy missing places()/
+    // distanceVariants()/geocode(). Object.create(inner) keeps them reachable via the prototype
+    // chain; Object.assign only overrides the one method this spy cares about.
+    const inner = new FakeMapsAdapter();
+    const asked: string[] = [];
+    const spy: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: (a: string, b: string) => { asked.push(`${a}|${b}`); return inner.distance(a, b); },
+    });
+    const { app } = batchApp(spy);
+    await post(app, '/quote/v2/estimate-batch', { intents: [intent('Kandy', '12 Some Hotel Lane, Nowhere')] });
+    expect(asked).toEqual([]);
+  });
+
+  it('nulls an estimated distance rather than advertising a price built on one', async () => {
+    const inner = new FakeMapsAdapter();
+    const est: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: async () => ({ km: 140, durationMin: 230, estimated: true }),
+    });
+    const { app } = batchApp(est);
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', { intents: [intent('Kandy', 'Ella')] })).json();
+    expect(results[0]).toBeNull();
+  });
+
+  it('refuses an empty batch, more than 60 intents, and a non-object body', async () => {
+    const { app } = batchApp();
+    expect((await post(app, '/quote/v2/estimate-batch', { intents: [] })).status).toBe(400);
+    expect((await post(app, '/quote/v2/estimate-batch', { intents: Array.from({ length: 61 }, () => intent('Kandy', 'Ella')) })).status).toBe(400);
+    expect((await post(app, '/quote/v2/estimate-batch', 'nope')).status).toBe(400);
+  });
+
+  it('is 404 when v2 is disabled', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    expect((await post(app as never, '/quote/v2/estimate-batch', { intents: [intent('Kandy', 'Ella')] })).status).toBe(404);
+  });
+
+  it('never leaks margin or line items', async () => {
+    const { app } = batchApp();
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', { intents: [intent('Kandy', 'Ella')] })).json();
+    expect(Object.keys(results[0]).sort()).toEqual(['currency', 'totalCents']);
+  });
+
+  // isCatalogTown() is keyed on canonPlace() (trim/lowercase/collapse-space), and the display
+  // names below canonicalize to exactly the COORDS keys ('colombo airport (cmb)', 'sigiriya /
+  // dambulla', 'colombo city', 'nuwara eliya') — checked in api/src/adapters/maps.ts. These pin
+  // that the batch prices the same display strings the /trip/ and search pages actually send.
+  it('prices catalogue pairs sent as page display names', async () => {
+    const { app } = batchApp();
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', {
+      intents: [intent('Colombo Airport (CMB)', 'Sigiriya / Dambulla'), intent('Colombo city', 'Nuwara Eliya')],
+    })).json();
+    expect(results[0]).not.toBeNull();
+    expect(results[1]).not.toBeNull();
+  });
+
+  // Two intents sharing a (from,to) pair — the same corridor priced for car and for van — must
+  // not each pay for their own billed distance lookup: under Promise.all both fire before either
+  // resolves, so a naive per-intent call races past a cold CachedMapsAdapter miss and bills twice.
+  it('asks the maps adapter at most once per distinct (from,to) pair in the batch', async () => {
+    const inner = new FakeMapsAdapter();
+    const calls: string[] = [];
+    const spy: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: (a: string, b: string) => { calls.push(`${a}|${b}`); return inner.distance(a, b); },
+    });
+    const { app } = batchApp(spy);
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', {
+      intents: [intent('Kandy', 'Ella'), intent('Kandy', 'Ella', 'van'), intent('Galle', 'Mirissa')],
+    })).json();
+    expect(calls).toHaveLength(2); // one for Kandy|Ella (shared by both vehicles), one for Galle|Mirissa
+    expect(results[0]).not.toBeNull();
+    expect(results[1]).not.toBeNull();
+    expect(results[2]).not.toBeNull();
+    expect(results[1].totalCents).not.toBe(results[0].totalCents); // van vs car price still differs
   });
 });
 
