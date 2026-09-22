@@ -222,6 +222,43 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(row.seats_booked).toBeLessThanOrEqual(row.seats_total);
   });
 
+  // CH-SEATS (2026-09-22) — Postgres is what runs in prod, and it is a separate
+  // implementation from the in-memory repo, so the pooling has to be proven through real
+  // SQL: two legs boarding one van at different times must land on ONE row.
+  it('pools legs that ride one van into a single departure row', async () => {
+    const date = `p-${Date.now()}`; // a fresh departure each run
+
+    // CMB boards 07:00, Negombo 07:30; they ride to Sigiriya together.
+    await departures.holdSeats({ corridorId: 'airport-cultural', date, time: '07:00', seats: 7 });
+    await departures.holdSeats({ corridorId: 'airport-cultural', date, time: '07:30', seats: 5 });
+
+    const rows = await sql<
+      { time: string; seats_booked: number; seats_total: number }[]
+    >`select time, seats_booked, seats_total from shared_departure
+        where corridor_id = 'airport-cultural' and date = ${date} order by time`;
+    expect(rows).toHaveLength(1); // one van, not two
+    expect(rows[0].seats_booked).toBe(12); // 7 + 5, on the one row
+
+    // The van is now full: the next seat on either leg must be refused.
+    expect(await departures.holdSeats({ corridorId: 'airport-cultural', date, time: '07:30', seats: 1 })).toBeNull();
+    expect(await departures.holdSeats({ corridorId: 'airport-cultural', date, time: '07:00', seats: 1 })).toBeNull();
+
+    // A release on the OTHER leg's time must find the same row.
+    await departures.releaseSeats({ corridorId: 'airport-cultural', date, time: '07:30', seats: 5 });
+    const [afterRelease] = await sql<
+      { seats_booked: number }[]
+    >`select seats_booked from shared_departure where corridor_id = 'airport-cultural' and date = ${date}`;
+    expect(afterRelease.seats_booked).toBe(7);
+
+    // Sigiriya -> Kandy boards at 11:30, after they have got out — its own row, own seats.
+    await departures.holdSeats({ corridorId: 'airport-cultural', date, time: '11:30', seats: 12 });
+    const all = await sql<
+      { time: string; seats_booked: number }[]
+    >`select time, seats_booked from shared_departure
+        where corridor_id = 'airport-cultural' and date = ${date} order by time`;
+    expect(all.map((r) => [r.time, r.seats_booked])).toEqual([['07:00', 7], ['11:30', 12]]);
+  });
+
   it('releases held seats, flooring at zero (GL-3)', async () => {
     await sql`
       insert into corridor (id, from_place, to_place, seat_price, seat_capacity)
