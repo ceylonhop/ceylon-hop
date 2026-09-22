@@ -570,7 +570,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
         {
           error: 'not_a_shared_route',
           message:
-            'We don’t run a scheduled shared seat on that route. Book it as a private transfer, or start a ride-board list and we’ll run a van once enough travellers join.',
+            'We don’t run a scheduled shared seat on that route. Book it as a private transfer, or start a ride-board list and we’ll run a vehicle once enough travellers join.',
         },
         400,
       );
@@ -633,7 +633,10 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
       fromPlace: product.fromPlace,
       toPlace: product.toPlace,
       date: req.date,
-      time: req.time,
+      // The TRIMMED time — what the hold above used. Storing req.time untrimmed meant a
+      // padded " 07:30 " held one key and every later release looked up another, so
+      // cancel, refund and the stale sweep all silently freed nothing (CH-SEATS).
+      time,
       seats: req.seats,
       customer: req.customer,
     };
@@ -646,7 +649,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     } catch (err) {
       // Compensate the hold so a failed create doesn't strand seats on the departure
       // (sweepStaleSharedHolds only reclaims holds that have a booking row).
-      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time: req.time, seats: req.seats });
+      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time, seats: req.seats });
       throw err;
     }
     if (req.quotedTotal !== undefined && Math.abs(req.quotedTotal - total) > MISMATCH_TOLERANCE_CENTS) {

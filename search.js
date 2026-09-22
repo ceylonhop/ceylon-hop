@@ -420,7 +420,7 @@ if (shared) {
     <span class="tag-top">Runs ${daysStr}</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">One vehicle, shared between you</div></div>
     </div>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
     <div class="sb-off"><b>No shared ride on ${dateText}</b><span>This van runs ${daysLong}. ${alts ? 'Two ways to still share:' : 'You can still share:'}</span></div>
@@ -436,9 +436,9 @@ if (shared) {
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">One vehicle, shared between you</div></div>
     </div>
-    <p class="o-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
+    <p class="o-desc">One AC vehicle, shared between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
     <p class="shared-runs"><b>${runs ? `Runs ${dateText}` : 'Scheduled service'}</b> · guaranteed departure · pay now to reserve your seat</p>
     <span id="shared-save-slot" style="display:contents">${sharedSavingHtml(askEngine)}</span>
@@ -551,7 +551,7 @@ function boardRideCard(L) {
     <span class="tag-top">Travellers going ${dateText}</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">One van, split between you${L.slot ? ` · ${L.slot}` : ''}</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">One vehicle, shared between you${L.slot ? ` · ${L.slot}` : ''}</div></div>
     </div>
     <div class="shared-price"><span class="amt">$${seat}</span><span class="per">/ seat</span></div>
     ${savePct != null && savePct >= 5 ? `<span class="shared-save"${faresFinal ? '' : ' style="visibility:hidden" aria-hidden="true"'}>${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
