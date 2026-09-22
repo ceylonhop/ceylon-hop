@@ -633,7 +633,11 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
       fromPlace: product.fromPlace,
       toPlace: product.toPlace,
       date: req.date,
-      time: req.time,
+      // The TRIMMED time — the exact key `holdSeats` used above. Storing the raw request
+      // string meant one stray space made every later release (ops cancel, refund, and the
+      // 24h stale-hold sweep) look up a departure the hold had never written. Nothing threw
+      // and the sweep still reported success; the seats were simply stranded.
+      time,
       seats: req.seats,
       customer: req.customer,
     };
@@ -646,7 +650,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     } catch (err) {
       // Compensate the hold so a failed create doesn't strand seats on the departure
       // (sweepStaleSharedHolds only reclaims holds that have a booking row).
-      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time: req.time, seats: req.seats });
+      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time, seats: req.seats });
       throw err;
     }
     if (req.quotedTotal !== undefined && Math.abs(req.quotedTotal - total) > MISMATCH_TOLERANCE_CENTS) {

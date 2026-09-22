@@ -5,6 +5,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { nextIsoWeekday } from '../testSupport/dates';
+import { sweepStaleSharedHolds } from '../services/scheduler';
 
 // Anchored to "now" and weekday-preserving so neither the past-date rule nor the service-day
 // schedule (corridors run Wed & Sat) ever expires these (see testSupport/dates).
@@ -228,5 +229,42 @@ describe('POST /bookings/shared — the booking records the leg it sold', () => 
     expect(north.input.corridorId).toBe(onward.input.corridorId);
     expect(north.input.toPlace).toBe('Sigiriya / Dambulla');
     expect(onward.input.toPlace).toBe('Kandy');
+  });
+});
+
+// ── Follow-up to CH-6HE3V (2026-09-22) ─────────────────────────────────────
+// The seat hold is keyed on the TRIMMED departure time, but the booking stored the raw
+// request string. One stray space and every later release — ops cancel, refund, and the
+// 24h stale-hold sweep — reads a key the hold never wrote. Nothing errors: the sweep even
+// reports success. The seats are simply gone, held against a departure nobody can find.
+describe('POST /bookings/shared — the stored time is the one the hold used', () => {
+  const padded = { ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: ' 07:30 ' };
+  const departure = { corridorId: 'airport-cultural', date: wednesday, time: '07:30' } as const;
+
+  it('stores the trimmed departure time, not the request string', async () => {
+    const res = await postShared(createApp(), padded);
+    expect(res.status).toBe(201);
+    expect((await res.json()).input.time).toBe('07:30');
+  });
+
+  // The one that costs money: a whole van's seats stranded with no error anywhere.
+  it('gives the seats back when a stale hold is swept', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ bookings, departures });
+
+    const res = await postShared(app, { ...padded, seats: 12 }); // the whole van
+    expect(res.status).toBe(201);
+    // the hold is real: nothing more can be sold on that departure
+    expect(await departures.holdSeats({ ...departure, seats: 1 })).toBeNull();
+
+    const r = await sweepStaleSharedHolds({
+      bookings,
+      departures,
+      now: new Date(Date.now() + 25 * 3600 * 1000),
+    });
+    expect(r.swept).toBe(1);
+    // and the seats are ACTUALLY back, not merely reported swept
+    expect(await departures.holdSeats({ ...departure, seats: 12 })).not.toBeNull();
   });
 });
