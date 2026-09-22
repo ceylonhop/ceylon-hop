@@ -378,7 +378,10 @@
   // its own cutoff: the server refuses it (400 cutoff_passed) and, before that guard existed,
   // it produced a ride nobody could join. Measured from the MORNING window, the earliest
   // departure there is — an afternoon ride on the same date closes later still.
-  var CUTOFF_H = 48, FIRST_DEPARTURE = '07:00', SLK = '+05:30';
+  // MIRRORS api/src/domain/rideList.ts CUTOFF_HOURS_BEFORE. The parity test in
+  // web-tests/unit/ride-board-earliest-date.test.js compares closesAt() against the backend's
+  // own cutoffAt(), so these cannot drift apart unnoticed.
+  var CUTOFF_H = 24, FIRST_DEPARTURE = '07:00', SLK = '+05:30';
   function closesAtMs(date) {
     return Date.parse(date + 'T' + FIRST_DEPARTURE + ':00' + SLK) - CUTOFF_H * 3600e3;
   }
@@ -420,6 +423,7 @@
     resolvePlaceId: resolvePlaceId,
     filterOptions: filterOptions,
     earliestStartDate: earliestStartDate,
+    closesAt: closesAtMs,
     SLOTS: SLOTS,
     MIN_DEFAULT: MIN_DEFAULT,
     CAP_DEFAULT: CAP_DEFAULT
@@ -1327,7 +1331,7 @@
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
   // Offer only dates a ride can actually gather names for. The floor was "tomorrow", which is
-  // always past its own 48 h cutoff — the server now refuses those (400 cutoff_passed), and a
+  // always past its own cutoff — the server now refuses those (400 cutoff_passed), and a
   // traveller should never have been able to pick one in the first place.
   (function () {
     var min = earliestStartDate();
@@ -1677,7 +1681,7 @@
         cDate.min = floor;
         if (!cDate.value || cDate.value < floor) cDate.value = floor;
         setStep(0);
-        sheetError('That date is too soon', 'A shared ride closes 48 hours before it leaves. Pick a later date.');
+        sheetError('That date is too soon', 'A shared ride closes 24 hours before it leaves. Pick a later date.');
       }
       else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
