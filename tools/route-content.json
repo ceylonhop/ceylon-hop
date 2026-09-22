@@ -46,6 +46,7 @@
       "back": "Downhill nearly all the way: leave the lake behind, drop through the Kadugannawa pass and let your driver time the run to Katunayake around the Kegalle-road traffic. Works well for evening departures."
     },
     "cmb-airport|sigiriya": {
+      "driveTitle": "Coconut country to the rock",
       "intro": "Straight from the arrivals hall into the Cultural Triangle: the road runs through Kurunegala's coconut country before opening onto dry-zone plains, with Dambulla's cave temples a natural first stop before Sigiriya rock rises ahead. Book private for stops on demand, or split the cost on the shared run into the Cultural Triangle.",
       "highlights": [
         "Dambulla's painted cave temples, right on the route",
@@ -172,6 +173,7 @@
       "back": "Northbound, you trade Kandy's hill air for dry-zone plains: down past Matale and through Dambulla's junction bustle, with Sigiriya's rock rising ahead on the final stretch."
     },
     "kandy|ella": {
+      "driveTitle": "Tea, waterfalls and hairpins",
       "intro": "This is the full hill-country traverse: tea, waterfalls and hairpins from Kandy's lake to the Ella Gap. Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg.",
       "highlights": [
         "Ramboda Falls tumbling beside the A5",
