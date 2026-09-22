@@ -3,10 +3,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTransfers } from './_load.js';
-// The backend's own cutoff function, imported directly (same trick as backend-price-parity).
-// board.js mirrors the 24 h rule in its own arithmetic; comparing against THIS is what stops
-// the two drifting apart when someone changes the deadline on one side only.
-import { cutoffAt } from '../../api/src/domain/rideList.ts';
 
 // ────────────────────────────────────────────────────────────────────────────
 // A ride closes CUTOFF_HOURS_BEFORE its departure window opens (api/src/domain/rideList.ts —
@@ -30,8 +26,26 @@ beforeAll(() => {
   RB = window.RideBoard;
 });
 
-// Derived from the backend, never a second copy of the number.
-const cutoffMs = (date) => cutoffAt(date, 'morning').getTime();
+// The backend's rule, READ OUT OF ITS SOURCE rather than copied here — so this file holds no
+// second opinion about the number. Importing the module itself is not an option: it pulls in
+// zod, which the web-tests job does not install (the API job owns those deps).
+function backendRule() {
+  const src = readFileSync(path.join(ROOT, 'api', 'src', 'domain', 'rideList.ts'), 'utf8');
+  const hours = /const CUTOFF_HOURS_BEFORE = (\d+)/.exec(src);
+  const offset = /const SLK_OFFSET = '([+-]\d{2}:\d{2})'/.exec(src);
+  const slots = /morning: \['(\d{2}:\d{2})'[\s\S]*?afternoon: \['(\d{2}:\d{2})'/.exec(src);
+  if (!hours || !offset || !slots) {
+    throw new Error('could not read the cutoff rule out of api/src/domain/rideList.ts — it moved, '
+      + 'so this parity guard is no longer guarding anything');
+  }
+  const at = (date, start) => Date.parse(`${date}T${start}:00${offset[1]}`) - Number(hours[1]) * 3600e3;
+  return {
+    hours: Number(hours[1]),
+    morning: (date) => at(date, slots[1]),
+    afternoon: (date) => at(date, slots[2]),
+  };
+}
+const cutoffMs = (date) => backendRule().morning(date);
 
 describe('RideBoard.earliestStartDate(now)', () => {
   it('is exposed as a pure helper', () => {
@@ -66,22 +80,27 @@ describe('RideBoard.earliestStartDate(now)', () => {
 });
 
 // The whole point of this block: the deadline is written in TWO places — the backend constant
-// and board.js's own arithmetic. Comparing the page's computation against the backend FUNCTION
-// (not against a copied number) means changing one side alone turns this red.
+// and board.js's own arithmetic. Changing one side alone turns this red.
 describe('board.js and the backend agree on when a ride closes', () => {
   it('computes the identical closing instant, morning window, across a year', () => {
+    const rule = backendRule();
     // date-bomb-ok: pure function inputs on both sides; nothing here reads the wall clock
     for (const date of ['2026-09-23', '2026-10-01', '2026-12-31', '2027-03-15', '2027-09-22']) {
-      expect(RB.closesAt(date)).toBe(cutoffAt(date, 'morning').getTime());
+      expect(RB.closesAt(date)).toBe(rule.morning(date));
     }
   });
 
   it('uses the morning window as the floor, which is never later than the afternoon one', () => {
+    const rule = backendRule();
     // The form offers one date for both windows, so the floor must come from the EARLIER
     // departure or an afternoon-only date would be offered while its morning twin is closed.
     for (const date of ['2026-09-23', '2027-03-15']) { // date-bomb-ok: pure fn inputs
-      expect(RB.closesAt(date)).toBeLessThan(cutoffAt(date, 'afternoon').getTime());
+      expect(RB.closesAt(date)).toBeLessThan(rule.afternoon(date));
     }
+  });
+
+  it('is actually reading the backend, not a copy — the rule it finds is the one in force', () => {
+    expect(backendRule().hours).toBe(24);
   });
 });
 
