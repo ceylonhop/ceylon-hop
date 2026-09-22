@@ -178,8 +178,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dests .pr{grid-row:1/3;grid-column:2;text-align:right;font-size:.76rem;color:var(--ink-soft,#6c6a6b);font-variant-numeric:tabular-nums;white-space:nowrap}
   .dests .pr b{font-size:1.08rem;color:var(--ink,#3A3739)}
   .dests .sh{display:inline-block;margin-left:8px;background:#FDF0D6;color:#8A5A06;border-radius:999px;padding:2px 9px;font-size:.68rem;font-weight:700;vertical-align:1px}
-  /* A list fare the engine has not confirmed yet: no layout shift, just held back. */
-  .list-fares-pending [data-list-fare]{color:transparent}
+  /* A list fare the engine has not confirmed yet: no layout shift, just held back — same cream
+     skeleton chip as routePage()'s .fares-pending [data-fare] (F1 fix). The plain
+     '.list-fares-pending [data-list-fare]{color:transparent}' rule used on the route page is NOT
+     enough here: '.dests .pr b' above sets its own color at higher specificity (0,2,1 beats
+     0,2,0) and wins regardless of source order, so 44 of this page's 48 figures painted visibly
+     anyway. Both selectors below must reach the SAME b[data-list-fare] specificity (0,3,1) to
+     outrank it; '.rt-card .fr b' carries no color of its own, so the second selector only needs
+     to match, not out-rank anything — but is written the same way for one shared rule. */
+  .list-fares-pending .dests .pr b[data-list-fare],
+  .list-fares-pending .fr b[data-list-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
 
   .anywhere{background:#22302F;color:#fff}
   .anywhere .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:center;padding-block:56px}
@@ -579,7 +587,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
-<script src="../route-list-fares.js?v=4aff2a57ab"></script>
+<script src="../route-list-fares.js?v=62f1985096"></script>
 <script src="../trip-index.js?v=6b608a5ae7"></script>
 </body>
 </html>
