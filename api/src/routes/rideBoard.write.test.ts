@@ -630,6 +630,36 @@ describe('Ride Board — ops is told when a seat is held', () => {
   });
 });
 
+// A ride closes 48 h before its window opens, so a date that is merely "not in the past" can
+// still be past its OWN cutoff. Creating one produced a ride nobody could join (the join route
+// 409s a closed list) which the next sweep called off. Seen on production: EA-8707, started
+// 2026-09-22 for 2026-09-24, closed 01:30Z that same morning.
+describe('POST /board (create) — a ride must still be open when it is started', () => {
+  it('400s a date whose 48h cutoff has already passed, and takes nothing from the traveller', async () => {
+    const { app, paygw, email } = opsMailApp();
+    const cookie = await loginCookie(app);
+
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(1), slot: 'morning', seats: 1,
+    }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('cutoff_passed');
+    // no card approval stranded, no dead list on the board, nobody emailed about it
+    expect(paygw.preapprovals).toHaveLength(0);
+    expect((email as FakeEmailAdapter).sent).toHaveLength(0);
+  });
+
+  it('still accepts a date far enough out to gather names', async () => {
+    const { app } = opsMailApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
+    }));
+    expect(res.status).toBe(201);
+  });
+});
+
 describe('POST /board (create) — catalogue legs', () => {
   const noMaps = {
     provider: 'outage', places: async () => [], distanceVariants: async () => null,
