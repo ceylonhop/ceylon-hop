@@ -570,7 +570,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
         {
           error: 'not_a_shared_route',
           message:
-            'We don’t run a scheduled shared seat on that route. Book it as a private transfer, or start a ride-board list and we’ll run a van once enough travellers join.',
+            'We don’t run a scheduled shared seat on that route. Book it as a private transfer, or start a ride-board list and we’ll run a vehicle once enough travellers join.',
         },
         400,
       );
