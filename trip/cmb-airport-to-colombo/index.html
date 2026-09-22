@@ -144,6 +144,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ld-face-more{background:var(--ink-soft,#6c6a6b)}
   .ld-when{font-weight:700;font-size:.9rem;grid-column:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ld-tag{font-size:.6rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a00;background:#fdeecb;border-radius:999px;padding:.1rem .45rem}
+  .ld-slot-short{display:none}
   .ld-count{grid-column:2;grid-row:2;font-size:.82rem;color:var(--ink-soft,#6c6a6b);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ld-pill{grid-column:3;grid-row:1/3;font-size:.7rem;font-weight:700;border-radius:999px;padding:4px 10px;white-space:nowrap}
   .ld-pill.go{background:#DDF1E3;color:#1E6B39}
@@ -305,14 +306,40 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
        untouched), so only /trip/ pages carry the extra room a fixed bar needs. */
     .footer{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
     /* The "already going" row has four things competing for one line on a phone (faces, date,
-       pill, arrow), inside a card that keeps its full padding at this width. Nothing here
-       drops off the row — the date still ellipses rather than wraps, and the pill and arrow
-       stay put — this just claws back enough space that the date isn't reduced to two
-       characters before it does. */
+       pill, arrow), inside a card that keeps its full padding at this width. This tightening
+       alone (below 480px it's superseded by the reflow that follows) claws back some space so
+       the date isn't reduced to two characters before its ellipsis kicks in. */
     .ld-row{gap:4px 8px;padding:10px 10px}
     .ld-face{width:22px;height:22px;font-size:.58rem}
     .ld-face+.ld-face{margin-left:-7px}
     .ld-pill{font-size:.66rem;padding:3px 8px}
+    /* Below 480px even that tightened single-line row doesn't leave the date enough room:
+       "Thu 22 Oct · afternoon" plus the "your date" tag needs ~228px of natural text width,
+       but the date's own column was down to ~95px — so the tag's TEXT was invisible (only its
+       orange chip border survived) and the slot word ellipsised on nearly every row. Fixing
+       that means giving the date its own line: faces + date fill row 1 at (nearly) the row's
+       full content width, and count/pill/arrow move to row 2 underneath — the pill and arrow
+       stay ON the row, just its second line, and the count keeps sharing that second line
+       with them exactly as it already did above 480px. The date still carries
+       nowrap+overflow:hidden+ellipsis as a last resort, but that's now only reachable by a
+       string wider than any real fmt()+slot+tag combination — measured with ~40px to spare
+       even with the slot shortened below, well past the ~3.7% Linux-fallback-font margin
+       this repo's e2e suite has to allow for. */
+    @media(max-width:480px){
+      .ld-row{gap:4px 6px;padding:10px 8px}
+      .ld-face{width:20px;height:20px;font-size:.56rem}
+      .ld-face+.ld-face{margin-left:-7px}
+      .ld-when{grid-column:2/5;grid-row:1}
+      .ld-count{grid-column:2;grid-row:2}
+      .ld-pill{grid-column:3;grid-row:2}
+      .ld-go{grid-column:4;grid-row:2}
+      .ld-tag{font-size:.56rem;padding:.06rem .35rem;margin-left:2px}
+      /* Even with the reflow above, the date + the FULL slot word + the "your date" tag is
+         tight enough to risk the ellipsis on some devices. Shortening the slot word only
+         (never the date, never fmt(), never the tag's own text) buys back the room. */
+      .ld-slot-long{display:none}
+      .ld-slot-short{display:inline}
+    }
   }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Colombo Airport (CMB) to Colombo city","item":"https://ceylonhop.com/trip/cmb-airport-to-colombo/"}]}</script>
@@ -462,6 +489,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="../../ch-pricing.js?v=74a30546ee"></script>
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-page-select.js?v=a9768533d4"></script>
-<script src="../../route-page.js?v=175d7a6b9e"></script>
+<script src="../../route-page.js?v=bf219f8473"></script>
 </body>
 </html>
