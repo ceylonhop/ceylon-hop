@@ -385,12 +385,24 @@
   function aliasKey(s){
     return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ').replace(COUNTRY_SUFFIX, '').trim();
   }
+  /* Words a traveller genuinely uses for a place that are in neither its name nor its id.
+     These used to live ONLY inside suggestionAliases(), where they ranked the dropdown — so
+     "Airport" found Colombo Airport (CMB) in the menu but resolved to nothing when TYPED, and a
+     real customer's Ella → Airport search reached the engine as a bare "Airport" that Google
+     cannot place in Sri Lanka: no price at all on a route we sell for $140 (2026-09-22).
+     One table, read by both, so the word that ranks is the word that resolves. Still exact
+     matches, never substrings — the rule above is unchanged. */
+  const NICKNAMES = {
+    'cmb-airport': ['cmb', 'airport', 'colombo airport', 'bandaranaike'],
+    colombo: ['colombo city', 'colombo'],
+  };
   const ALIAS_ID = {};
   PLACES.forEach(p => {
-    [p.name, p.name.replace(/\(.*?\)/g, ''), p.id.replace(/-/g, ' ')].forEach(a => {
-      const k = aliasKey(a);
-      if(k && !(k in ALIAS_ID)) ALIAS_ID[k] = p.id;
-    });
+    [p.name, p.name.replace(/\(.*?\)/g, ''), p.id.replace(/-/g, ' ')]
+      .concat(NICKNAMES[p.id] || []).forEach(a => {
+        const k = aliasKey(a);
+        if(k && !(k in ALIAS_ID)) ALIAS_ID[k] = p.id;
+      });
   });
   /** The catalogue id this label names, or null. Exact match only — see above. */
   function placeAliasId(text){
@@ -398,9 +410,7 @@
     return k ? (ALIAS_ID[k] || null) : null;
   }
   function suggestionAliases(label, id){
-    const aliases = [label, id || '', label.replace(/\(.*?\)/g, '')];
-    if(id === 'cmb-airport') aliases.push('cmb', 'airport', 'colombo airport', 'bandaranaike');
-    if(id === 'colombo') aliases.push('colombo city', 'colombo');
+    const aliases = [label, id || '', label.replace(/\(.*?\)/g, '')].concat(NICKNAMES[id] || []);
     return aliases.map(nrm).filter(Boolean);
   }
   function rankSuggestion(item, query){
