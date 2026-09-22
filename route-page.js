@@ -86,9 +86,8 @@
         faces(l.members) +
         '<span class="ld-when">' + esc(fmt(when)) + (l.slot ? ' · ' + esc(l.slot) : '') +
         (exact ? ' <span class="ld-tag">your date</span>' : '') + '</span>' +
-        '<span class="ld-count"><b>' + got + ' of ' + (l.minSeats || MIN) + '</b>' +
-        (need > 0 ? ' — ' + need + ' more to run' : ' — running') + '</span>' +
-        '<span class="ld-meter"><i' + (need <= 0 ? ' class="full"' : '') + ' style="width:' + Math.min(100, (got / (l.minSeats || MIN)) * 100) + '%"></i></span>' +
+        '<span class="ld-count">' + got + ' going</span>' +
+        '<span class="ld-pill ' + (need > 0 ? 'need' : 'go') + '">' + (need > 0 ? need + ' more to run' : 'Running') + '</span>' +
         '<span class="ld-go">→</span></a>';
     }
     return h;
