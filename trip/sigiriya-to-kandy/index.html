@@ -37,8 +37,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
      so the page never shows one price and then another. Set HERE, before first paint, and
-     released HERE on a timer too — if that script never loads, the catalogue fares still appear. */
-  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);}
+     released HERE on a timer too — if that script never loads, the catalogue fares still appear.
+     list-fares-pending is the same hold for the "where next" cards' [data-list-fare] figures,
+     released by route-list-fares.js (or this same timer if that file never loads). */
+  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('fares-pending');setTimeout(function(){d.classList.remove('fares-pending');},4500);
+  d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
 })();</script>
 <style>
   /* ── hero ──────────────────────────────────────────────────────────────────────
@@ -132,6 +135,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-bookbar{display:none}
   /* A fare the engine has not confirmed yet: same box, no ink. */
   .fares-pending [data-fare]{color:transparent;background:var(--cream-deep,#ece6da);border-radius:6px}
+  /* A "where next" list fare the engine has not confirmed yet: no layout shift, just held back. */
+  .list-fares-pending [data-list-fare]{color:transparent}
   /* Live dates — added by route-page.js. Absent for a crawler and whenever the API is
      unreachable, which is why nothing above depends on it. */
   .ld-datebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
@@ -517,6 +522,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </script>
 <script src="../../ch-pricing.js?v=74a30546ee"></script>
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
+<script src="../../route-list-fares.js?v=4aff2a57ab"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>
 <script src="../../route-page.js?v=bf219f8473"></script>
 </body>
