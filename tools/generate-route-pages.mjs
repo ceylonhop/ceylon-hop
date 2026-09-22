@@ -6,7 +6,6 @@ import vm from 'node:vm';
 import { loadTransfers } from './load-transfers.mjs';
 import { loadPlacePhotos, photoFor, imgTag } from './place-photos.mjs';
 import { renderChrome, assetV } from './site-chrome.mjs';
-import { loadPlacePhotos, photoFor, imgTag } from './place-photos.mjs';
 
 const require = createRequire(import.meta.url);
 const { formatRouteEstimate } = require('../route-estimate.js');
