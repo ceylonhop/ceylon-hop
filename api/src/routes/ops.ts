@@ -196,12 +196,17 @@ export function opsRoutes(deps: OpsDeps) {
     const stage = c.req.query('stage'); const date = c.req.query('date');
     const q = (c.req.query('q') ?? '').toLowerCase();
     const all = await deps.bookings.list({ status: [...QUEUE_STATUSES] });
-    const ops = await deps.rideOps.listByBookingIds(all.map((b) => b.id));
+    const ids = all.map((b) => b.id);
+    // Both batched: this list is read on every load of the ops Bookings surface and holds every
+    // queue booking, closed ones included. A payments query per booking, awaited in sequence,
+    // was a ~100 ms round-trip per row from Render to the database (2026-09-22) — the whole
+    // reason the page took many seconds to paint its first row.
+    const [ops, allPayments] = await Promise.all([deps.rideOps.listByBookingIds(ids), deps.payments.findByBookingIds(ids)]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
+    const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const rows: OpsBookingRow[] = [];
     for (const b of all) {
-      const paid = (await deps.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded');
-      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid });
+      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id) });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;
