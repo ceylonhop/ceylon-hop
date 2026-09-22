@@ -94,16 +94,20 @@ test('while held, every index list-fare figure is genuinely invisible, not just 
   await stubHealth(page);
   await page.goto('/trip/');
   expect(await held(page)).toBe(true);
-  const transparentCount = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-list-fare]'))
-      .filter((el) => getComputedStyle(el).color === 'rgba(0, 0, 0, 0)').length);
-  expect(transparentCount).toBeGreaterThanOrEqual(45);
+  const heldCounts = await page.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('[data-list-fare]'));
+    return { total: els.length, transparent: els.filter((el) => getComputedStyle(el).color === 'rgba(0, 0, 0, 0)').length };
+  });
+  expect(heldCounts.total).toBeGreaterThan(40); // sanity floor: an empty page can't pass
+  expect(heldCounts.transparent).toBe(heldCounts.total); // EVERY figure, not a sample
 
   await expect.poll(() => held(page), { timeout: 6000 }).toBe(false);
-  const opaqueCount = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-list-fare]'))
-      .filter((el) => getComputedStyle(el).color !== 'rgba(0, 0, 0, 0)').length);
-  expect(opaqueCount).toBeGreaterThanOrEqual(45);
+  const settledCounts = await page.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('[data-list-fare]'));
+    return { total: els.length, opaque: els.filter((el) => getComputedStyle(el).color !== 'rgba(0, 0, 0, 0)').length };
+  });
+  expect(settledCounts.total).toBeGreaterThan(40);
+  expect(settledCounts.opaque).toBe(settledCounts.total);
 });
 
 test('a route page holds its "where next" list-fare figures the same, invisible way', async ({ page }) => {
@@ -111,9 +115,18 @@ test('a route page holds its "where next" list-fare figures the same, invisible 
   await batch(page, () => ({ totalCents: 3150, currency: 'USD' }), [], 2000);
   await stubHealth(page);
   await page.goto('/trip/kandy-to-ella/');
-  const transparent = await page.evaluate(() => {
-    const el = document.querySelector('.next [data-list-fare]');
-    return el ? getComputedStyle(el).color === 'rgba(0, 0, 0, 0)' : null;
+  const held1 = await page.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('.next [data-list-fare]'));
+    return { total: els.length, transparent: els.filter((el) => getComputedStyle(el).color === 'rgba(0, 0, 0, 0)').length };
   });
-  expect(transparent).toBe(true);
+  expect(held1.total).toBe(4);
+  expect(held1.transparent).toBe(4);
+
+  await expect.poll(() => held(page), { timeout: 6000 }).toBe(false);
+  const settled1 = await page.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('.next [data-list-fare]'));
+    return { total: els.length, opaque: els.filter((el) => getComputedStyle(el).color !== 'rgba(0, 0, 0, 0)').length };
+  });
+  expect(settled1.total).toBe(4);
+  expect(settled1.opaque).toBe(4);
 });
