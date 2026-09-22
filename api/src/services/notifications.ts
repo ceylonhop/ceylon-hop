@@ -1,7 +1,7 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
 import type { EmailAdapter } from '../adapters/email';
-import { corridorRouteEnds } from '../db/departureRepo';
+import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette — "concierge letter" direction, held to docs/brand-book.md. Colours are
@@ -89,10 +89,17 @@ function journey(booking: Booking): Stop[] {
     });
   }
   if (booking.mode === 'shared') {
-    // Only the corridorId is stored (not the customer's exact stops), and a seat can run
-    // either way along the corridor — so name the service's route, without an arrow.
-    const ends = corridorRouteEnds(booking.input.corridorId);
-    return [{ color: TEAL, label: 'Service', place: ends ? `${ends.from} – ${ends.to} shared shuttle` : 'Shared ride' }];
+    // A recorded leg is a real journey with a direction, so show it like one: where they
+    // get on, where they get off. Only a row that never recorded its leg falls back to
+    // naming the service, which is honest about describing the van and not the trip.
+    const label = sharedRouteLabel(booking.input);
+    if (label?.kind === 'leg') {
+      return [
+        { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(label.from) },
+        { color: TOMATO, label: 'Drop-off', place: shortPlace(label.to) },
+      ];
+    }
+    return [{ color: TEAL, label: 'Service', place: label ? `${label.from} – ${label.to} shared shuttle` : 'Shared ride' }];
   }
   return [
     { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(booking.input.from) },
@@ -147,11 +154,27 @@ function factRows(booking: Booking): [string, string][] {
   return rows;
 }
 
+// When they travel. The team's paid alert carried route, customer, money and reference and
+// no date at all; the timestamp at the foot of that email is stamped by the alert transport
+// at send time, so it says when the money landed (CH-6HE3V, 2026-09-21).
+export function travelWhenText(booking: Booking): string {
+  if (booking.mode === 'trip') {
+    const start = booking.input.dates?.find(Boolean);
+    return start ? `from ${fmtDate(start)}` : 'dates to confirm';
+  }
+  return dateTime(booking.input.date, booking.input.time);
+}
+
 export function routeText(booking: Booking): string {
   if (booking.mode === 'trip') return booking.input.stops.map(shortPlace).join(' → ');
   if (booking.mode === 'shared') {
-    const ends = corridorRouteEnds(booking.input.corridorId);
-    return ends ? `Shared shuttle · ${ends.from} – ${ends.to}` : 'Shared ride';
+    const label = sharedRouteLabel(booking.input);
+    if (!label) return 'Shared ride';
+    // An arrow only where a direction was actually sold. The service wording says plainly
+    // that it names the van's route, so nobody reads a far-end stop as their destination.
+    return label.kind === 'leg'
+      ? `Shared shuttle · ${label.from} → ${label.to}`
+      : `Shared shuttle on the ${label.from} – ${label.to} service`;
   }
   return `${shortPlace(booking.input.from)} → ${shortPlace(booking.input.to)}`;
 }

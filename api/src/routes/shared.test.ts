@@ -195,3 +195,38 @@ describe('POST /bookings/shared', () => {
     expect(email.sent).toHaveLength(1);
   });
 });
+
+// CH-6HE3V (2026-09-21): the booking stored only a corridorId, so what the customer
+// bought could not be recovered from the row — the emails and the ops tool each
+// rebuilt it from the corridor's ends and named the wrong town. Record the leg.
+describe('POST /bookings/shared — the booking records the leg it sold', () => {
+  it('stores the product endpoints on the booking', async () => {
+    const res = await postShared(createApp(), {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00',
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.fromPlace).toBe('Colombo Airport (CMB)');
+    expect(b.input.toPlace).toBe('Sigiriya / Dambulla');
+  });
+
+  // The catalogue's spelling is the one ops and the customer both read, so the
+  // booking keeps THAT, not whatever casing/padding the request happened to carry.
+  it('records the catalogue spelling, not the request spelling', async () => {
+    const res = await postShared(createApp(), { ...valid, from: '  negombo ', to: 'sigiriya / dambulla' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.fromPlace).toBe('Negombo');
+    expect(b.input.toPlace).toBe('Sigiriya / Dambulla');
+  });
+
+  // Two legs on ONE corridor, told apart only by what the row records.
+  it('tells two legs of the same corridor apart', async () => {
+    const app = createApp();
+    const north = await (await postShared(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00' })).json();
+    const onward = await (await postShared(app, { ...valid, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 1 })).json();
+    expect(north.input.corridorId).toBe(onward.input.corridorId);
+    expect(north.input.toPlace).toBe('Sigiriya / Dambulla');
+    expect(onward.input.toPlace).toBe('Kandy');
+  });
+});

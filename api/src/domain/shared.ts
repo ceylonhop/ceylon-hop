@@ -21,6 +21,12 @@ const IsoDate = z.string().refine(
 // how many seats.
 export const SharedInput = z.object({
   corridorId: z.string().min(1),
+  // The leg that was actually sold, in the catalogue's own spelling. A corridorId cannot
+  // identify a booking — one corridor carries several legs at their own prices — so without
+  // these the emails and the ops tool had to guess, and guessed the corridor's far end
+  // (CH-6HE3V, 2026-09-21). Optional ONLY because rows predating 2026-09-22 have none.
+  fromPlace: z.string().min(1).optional(),
+  toPlace: z.string().min(1).optional(),
   date: IsoDate,
   time: z.string().min(1),
   seats: z.number().int().min(1),
