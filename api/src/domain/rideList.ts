@@ -51,7 +51,12 @@ export const SLOT_TIMES: Record<Slot, string[]> = {
 // Sri Lanka is a fixed UTC+05:30 (no DST), so a literal offset is exact and keeps
 // cutoff math a pure string→instant computation (no Intl round-trips).
 const SLK_OFFSET = '+05:30';
-const CUTOFF_HOURS_BEFORE = 48;
+// Owner decision 2026-09-22: 24 h, not 48. The board's problem is liquidity, and a later
+// deadline helps twice — a ride gathers names for a day longer, and a traveller can start one
+// two days out instead of three. Stored per list at creation (ride_lists.cutoff_at), so a change
+// here never moves a deadline anyone has already been given. board.js mirrors this number and
+// web-tests/unit/ride-board-earliest-date.test.js fails if the two ever disagree.
+const CUTOFF_HOURS_BEFORE = 24;
 
 /** The instant a list closes: `hoursBefore` before the window's earliest departure
  *  on the list's date, in Asia/Colombo. */

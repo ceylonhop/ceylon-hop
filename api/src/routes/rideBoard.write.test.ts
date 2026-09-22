@@ -8,6 +8,7 @@ import { PayHereTokenizedPaymentAdapter } from '../adapters/payhereTokenized';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
+import { isoToday } from '../domain/dateRules';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
 // free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
@@ -627,6 +628,40 @@ describe('Ride Board — ops is told when a seat is held', () => {
     const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
     expect(res.status).toBe(200);
     expect(flaky.sent.map((m) => m.to)).toEqual(['ops@x.com']);
+  });
+});
+
+// A ride closes 24 h before its window opens, so a date that is merely "not in the past" can
+// still be past its OWN cutoff. Creating one produced a ride nobody could join (the join route
+// 409s a closed list) which the next sweep called off. Seen on production: EA-8707, started
+// 2026-09-22 for 2026-09-24, closed 01:30Z that same morning.
+describe('POST /board (create) — a ride must still be open when it is started', () => {
+  it('400s a date whose cutoff has already passed, and takes nothing from the traveller', async () => {
+    const { app, paygw, email } = opsMailApp();
+    const cookie = await loginCookie(app);
+
+    const res = await app.request('/board', json(cookie, {
+      // TODAY in Colombo — the same function the route measures "past" with, so this is never
+      // a date_in_past. Its morning window opened hours ago, so its cutoff passed yesterday: true
+      // at every hour, unlike "tomorrow", which stays open until 01:30 UTC and would make this
+      // test depend on when CI happens to run.
+      from: 'Ella', to: 'Mirissa', date: isoToday(), slot: 'morning', seats: 1,
+    }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('cutoff_passed');
+    // no card approval stranded, no dead list on the board, nobody emailed about it
+    expect(paygw.preapprovals).toHaveLength(0);
+    expect((email as FakeEmailAdapter).sent).toHaveLength(0);
+  });
+
+  it('still accepts a date far enough out to gather names', async () => {
+    const { app } = opsMailApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
+    }));
+    expect(res.status).toBe(201);
   });
 });
 

@@ -9,18 +9,21 @@ test('route page renders with nav, both options priced, and books directly', asy
   // The estimate moved from the hero's prose subtitle into the meta row when the hero
   // became a postcard — same single compact string (#537/#539), stated once, new home.
   await expect(page.locator('.route-hero .route-meta')).toContainText('Approx. 135 km · 3h 45m');
-  await expect(page.locator('.faq-q').first()).toContainText('approx. 135 km · 3h 45m');
+  // "How long does the drive take?" — the first row of the FAQ accordion, which ships open.
+  await expect(page.locator('.faq details').first()).toContainText('approx. 135 km · 3h 45m');
   await expect(page.locator('.nav-links')).toBeVisible();
 
   // private is priced per vehicle, on the page itself
   await expect(page.getByText('$59').first()).toBeVisible();
   await expect(page.getByText('total, fixed').first()).toBeVisible();
 
-  // Kandy -> Ella is not a leg we sell shared, so it says so rather than inventing one
-  await expect(page.locator('.opt-none')).toBeVisible();
+  // Kandy -> Ella is not a leg we sell shared, so it says so rather than inventing one.
+  // The refusal used to be a grey half-page card (.opt-none); the redesign makes it one
+  // line under the trust strip, which is the same statement with honest weight.
+  await expect(page.locator('p.no-share')).toBeVisible();
 
   // ...and the CTA books, rather than forwarding to search
-  const cta = page.getByRole('link', { name: /book private transfer/i }).first();
+  const cta = page.getByRole('link', { name: /choose date & book/i }).first();
   await expect(cta).toBeVisible();
   await cta.click();
   // Assert where the traveller ENDS UP, not where they pass through. This used to be a bare
