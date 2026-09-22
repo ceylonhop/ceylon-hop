@@ -51,9 +51,14 @@ describe('JoinInput', () => {
 });
 
 describe('cutoffAt', () => {
-  it('closes 48h before the window start in Asia/Colombo', () => {
-    // morning window starts 07:00 +05:30 on 2026-08-08; minus 48h ⇒ 2026-08-06 01:30 UTC
-    expect(cutoffAt('2026-08-08', 'morning').toISOString()).toBe('2026-08-06T01:30:00.000Z');
+  it('closes 24h before the window start in Asia/Colombo', () => {
+    // morning window starts 07:00 +05:30 on 2026-08-08; minus 24h ⇒ 2026-08-07 01:30 UTC
+    expect(cutoffAt('2026-08-08', 'morning').toISOString()).toBe('2026-08-07T01:30:00.000Z');
+  });
+
+  it('measures from the window that was chosen, not a fixed hour', () => {
+    // afternoon opens 13:00 +05:30 ⇒ 07:30 UTC; a day earlier is 2026-08-07 07:30 UTC
+    expect(cutoffAt('2026-08-08', 'afternoon').toISOString()).toBe('2026-08-07T07:30:00.000Z');
   });
 });
 
