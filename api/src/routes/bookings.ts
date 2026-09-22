@@ -609,10 +609,14 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
       );
     }
 
+    // Inventory is the VAN, not the stop. Two legs of one load (CMB 07:00 and Negombo 07:30;
+    // Mirissa 14:45 and Weligama 15:00) draw down a single pool of 12 — holding on the boarding
+    // time gave each pickup its own full van and let 24 travellers board a 12-seater.
+    const inventoryTime = product.inventoryTime;
     const held = await departures.holdSeats({
       corridorId: corridor.id,
       date: req.date,
-      time,
+      time: inventoryTime,
       seats: req.seats,
     });
     if (!held) return c.json({ error: 'sold_out' }, 409);
@@ -646,7 +650,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     } catch (err) {
       // Compensate the hold so a failed create doesn't strand seats on the departure
       // (sweepStaleSharedHolds only reclaims holds that have a booking row).
-      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time: req.time, seats: req.seats });
+      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time: inventoryTime, seats: req.seats });
       throw err;
     }
     if (req.quotedTotal !== undefined && Math.abs(req.quotedTotal - total) > MISMATCH_TOLERANCE_CENTS) {

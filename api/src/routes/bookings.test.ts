@@ -522,6 +522,55 @@ describe('POST /bookings — pricing and inventory cannot be undercut', () => {
       expect([400, 409]).toContain(res.status); // never a fresh 12-seat van
     }
   });
+
+  // One van, two seat counts. Inventory keys on the PRODUCT's boarding time, so the CMB 07:00
+  // pickup and the Negombo 07:30 pickup — the same van, still loading — each opened their own
+  // full 12-seat pool: 24 travellers confirmed onto a 12-seat van, silently, both 201.
+  // (Owner confirmed one van serves both pickups, 2026-09-22.)
+  it('does not sell a second full van to the later pickup on the same load', async () => {
+    const app = createApp();
+    const date = futureServiceDay();
+    const airport = await jpost(app, '/bookings/shared', {
+      from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', date, time: '07:00', seats: 12, customer: valid.customer,
+    });
+    expect(airport.status).toBe(201); // the van fills at the airport
+
+    const negombo = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date, time: '07:30', seats: 12, customer: valid.customer,
+    });
+    expect(negombo.status).toBe(409); // same van, 30 minutes later — sold out
+  });
+
+  it('shares one pool on the southbound airport run too (Mirissa 14:45, Weligama 15:00)', async () => {
+    const app = createApp();
+    const date = futureServiceDay();
+    const mirissa = await jpost(app, '/bookings/shared', {
+      from: 'Mirissa', to: 'Colombo Airport (CMB)', date, time: '14:45', seats: 12, customer: valid.customer,
+    });
+    expect(mirissa.status).toBe(201);
+
+    const weligama = await jpost(app, '/bookings/shared', {
+      from: 'Weligama', to: 'Colombo Airport (CMB)', date, time: '15:00', seats: 12, customer: valid.customer,
+    });
+    expect(weligama.status).toBe(409);
+  });
+
+  // The per-boarding-time key is only wrong where the van is STILL LOADING. Sigiriya boards at
+  // 11:30 on the van that left CMB at 07:00 — the morning lot have got out by then, so that
+  // really is a fresh 12 seats. Merging these would refuse bookings we can honour.
+  it('keeps a separate pool for a later load on the same corridor', async () => {
+    const app = createApp();
+    const date = futureServiceDay();
+    const morning = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date, time: '07:30', seats: 12, customer: valid.customer,
+    });
+    expect(morning.status).toBe(201);
+
+    const midday = await jpost(app, '/bookings/shared', {
+      from: 'Sigiriya / Dambulla', to: 'Kandy', date, time: '11:30', seats: 12, customer: valid.customer,
+    });
+    expect(midday.status).toBe(201); // a different load, not an oversell
+  });
 });
 
 // A Google Distance Matrix failure used to fall back to a crow-flies estimate and price against

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryDepartureRepo, serviceDaysForCorridor, sharedRouteLabel, type Corridor } from './departureRepo';
+import { InMemoryDepartureRepo, inventoryTimeFor, serviceDaysForCorridor, sharedRouteLabel, SHARED_PRODUCTS, type Corridor } from './departureRepo';
 
 describe('InMemoryDepartureRepo', () => {
   it('exposes seeded corridors', async () => {
@@ -108,5 +108,57 @@ describe('sharedRouteLabel', () => {
 
   it('is null for a corridor outside the catalogue, so callers keep their own wording', () => {
     expect(sharedRouteLabel({ corridorId: 'cmb-galle' })).toBeNull();
+  });
+});
+
+// Seat inventory is the VAN, not the stop. A leg's `inventoryTime` names the load it rides, so
+// two pickups on one van share a pool of 12 and a genuinely later load keeps its own.
+describe('inventoryTimeFor', () => {
+  it('sends both pickups of one load to the same pool', () => {
+    // CMB 07:00 → Negombo 07:30: one van, still filling up.
+    expect(inventoryTimeFor('airport-cultural', '07:00')).toBe('07:00');
+    expect(inventoryTimeFor('airport-cultural', '07:30')).toBe('07:00');
+    // Mirissa 14:45 → Weligama 15:00: the southbound twin.
+    expect(inventoryTimeFor('south-airport', '14:45')).toBe('14:45');
+    expect(inventoryTimeFor('south-airport', '15:00')).toBe('14:45');
+  });
+
+  it('leaves a later load on its own pool', () => {
+    // Sigiriya boards at 11:30 on the van that left CMB at 07:00 — the morning lot have got
+    // out, so merging these would refuse seats we can actually sell.
+    expect(inventoryTimeFor('airport-cultural', '11:30')).toBe('11:30');
+  });
+
+  it('resolves a booking’s stored time, padding and all', () => {
+    expect(inventoryTimeFor('airport-cultural', '07:30 ')).toBe('07:00');
+  });
+
+  it('gives an unpublished time its own pool rather than someone else’s van', () => {
+    expect(inventoryTimeFor('airport-cultural', '21:15')).toBe('21:15');
+    expect(inventoryTimeFor('made-up', '07:30')).toBe('07:30');
+  });
+
+  // The release paths resolve a pool from (corridor, stored time) alone, so that pair has to
+  // land on ONE answer — otherwise a cancel could hand seats back to the wrong van.
+  it('the catalogue cannot make a (corridor, time) pair ambiguous', () => {
+    const seen = new Map<string, string>();
+    for (const p of SHARED_PRODUCTS) {
+      const key = `${p.corridorId}|${p.time}`;
+      const prior = seen.get(key);
+      if (prior !== undefined) expect(prior).toBe(p.inventoryTime);
+      seen.set(key, p.inventoryTime);
+    }
+  });
+
+  // A load is named by the time it STARTS boarding, so every inventoryTime is itself a
+  // published boarding time on that corridor, and never later than the leg that rides it.
+  it('every leg rides a load that exists and has already started boarding', () => {
+    for (const p of SHARED_PRODUCTS) {
+      const load = SHARED_PRODUCTS.find(
+        (q) => q.corridorId === p.corridorId && q.time === p.inventoryTime,
+      );
+      expect(load, `${p.corridorId} ${p.fromPlace} → no load at ${p.inventoryTime}`).toBeDefined();
+      expect(p.inventoryTime <= p.time).toBe(true);
+    }
   });
 });

@@ -86,31 +86,49 @@ export interface SharedProduct {
   toPlace: string;
   seatPrice: number; // minor units, per adult
   time: string; // boarding time AT `fromPlace`
+  // The LOAD this leg rides, named by the time that load starts boarding. Seat inventory keys
+  // on this, never on `time`: CMB 07:00 and Negombo 07:30 are one van still filling up, so a
+  // full van at the airport must leave nothing to sell in Negombo (owner confirmed one van for
+  // both pickups, 2026-09-22). Sigiriya 11:30 is a genuinely later load on the same corridor —
+  // the morning travellers have got out — so it keeps a pool of its own.
+  inventoryTime: string;
   pickup: string | null; // named boarding point, as published
 }
 
 export const SHARED_PRODUCTS: SharedProduct[] = [
   // Northbound: CMB 07:00 -> Negombo 07:30 -> Sigiriya 11:30 -> Kandy ~14:00
-  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:00', pickup: 'CMB Airport' },
-  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Negombo', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:30', pickup: 'Zen Cafe, Negombo' },
-  { id: 'sigiriya-kandy', corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy', seatPrice: 1999, time: '11:30', pickup: 'Barista Cafe, Sigiriya' },
+  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:00', inventoryTime: '07:00', pickup: 'CMB Airport' },
+  { id: 'negombo-sigiriya', corridorId: 'airport-cultural', fromPlace: 'Negombo', toPlace: 'Sigiriya / Dambulla', seatPrice: 2749, time: '07:30', inventoryTime: '07:00', pickup: 'Zen Cafe, Negombo' },
+  { id: 'sigiriya-kandy', corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy', seatPrice: 1999, time: '11:30', inventoryTime: '11:30', pickup: 'Barista Cafe, Sigiriya' },
   // Ella run: Ella 09:00 -> Tissamaharama 11:15 (marketed as "Yala")
-  { id: 'ella-yala', corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Yala', seatPrice: 2299, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  { id: 'ella-yala', corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Yala', seatPrice: 2299, time: '09:00', inventoryTime: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
   // Ella -> south coast: ONE vehicle out of Ella at 09:00, dropping Mirissa 14:30,
   // Weligama 14:45, Ahangama 15:15 (owner's operating table, 2026-08-27). The seat is $24
   // to every stop, so these three legs differ only in where the traveller gets out.
   // Ella -> Mirissa is deliberately NOT sold as a shared seat (owner, 2026-08-27). The van
   // still runs the road to Weligama and Ahangama; Mirissa is simply not an offer on it.
-  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Weligama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
-  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Ahangama', seatPrice: 2400, time: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Weligama', seatPrice: 2400, time: '09:00', inventoryTime: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
+  { id: 'ella-south-coast', corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Ahangama', seatPrice: 2400, time: '09:00', inventoryTime: '09:00', pickup: 'Barn by Starbeans Cafe, Ella' },
   // Southbound: Mirissa 14:45 -> Weligama 15:00 -> Colombo 18:30 -> CMB 19:00-20:00.
   // Colombo city is NOT sold: no product page has ever carried it and it has never taken a
   // booking. The marketed product on this van is "Mirissa/Weligama to Airport".
-  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '14:45', pickup: 'Barista Cafe, Mirissa' },
-  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '15:00', pickup: 'Nomad Cafe, Weligama' },
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Mirissa', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '14:45', inventoryTime: '14:45', pickup: 'Barista Cafe, Mirissa' },
+  { id: 'south-airport', corridorId: 'south-airport', fromPlace: 'Weligama', toPlace: 'Colombo Airport (CMB)', seatPrice: 2999, time: '15:00', inventoryTime: '14:45', pickup: 'Nomad Cafe, Weligama' },
 ];
 
 const normPlace = (s: string) => s.trim().toLowerCase();
+
+// Which seat pool a leg draws down, from what a BOOKING records: its corridor and the time the
+// customer picked. The hold has the product in hand and reads `inventoryTime` off it directly;
+// every release path (cancel, refund, the stale-hold sweep) has only these two, so it resolves
+// the same pool this way rather than keying on the boarding time it stored.
+// A time no product publishes keeps its own pool: an unrecognised departure must never draw
+// down someone else's van.
+export function inventoryTimeFor(corridorId: string, boardingTime: string): string {
+  const t = boardingTime.trim();
+  const product = SHARED_PRODUCTS.find((p) => p.corridorId === corridorId && p.time === t);
+  return product ? product.inventoryTime : t;
+}
 
 /** The scheduled product for a DIRECTED leg, or null. Adjacency is not an offer. */
 export function sharedProductFor(from: string, to: string): SharedProduct | null {

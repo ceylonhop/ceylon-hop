@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
-import type { DepartureRepo } from '../db/departureRepo';
+import { inventoryTimeFor, type DepartureRepo } from '../db/departureRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -118,7 +118,7 @@ export function adminRoutes(deps: {
         await departures.releaseSeats({
           corridorId: updated.input.corridorId,
           date: updated.input.date,
-          time: updated.input.time,
+          time: inventoryTimeFor(updated.input.corridorId, updated.input.time),
           seats: updated.input.seats,
         });
       } catch (err) {
@@ -225,7 +225,7 @@ export function adminRoutes(deps: {
         await departures.releaseSeats({
           corridorId: after.input.corridorId,
           date: after.input.date,
-          time: after.input.time,
+          time: inventoryTimeFor(after.input.corridorId, after.input.time),
           seats: after.input.seats,
         });
       } catch (error) {

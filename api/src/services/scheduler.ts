@@ -1,5 +1,5 @@
 import type { BookingRepo, Booking } from '../db/bookingRepo';
-import type { DepartureRepo } from '../db/departureRepo';
+import { inventoryTimeFor, type DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo, NotificationKind } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
@@ -164,7 +164,7 @@ export async function sweepStaleSharedHolds(deps: {
         await departures.releaseSeats({
           corridorId: b.input.corridorId,
           date: b.input.date,
-          time: b.input.time,
+          time: inventoryTimeFor(b.input.corridorId, b.input.time),
           seats: b.input.seats,
         });
         swept++;
