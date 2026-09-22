@@ -1,6 +1,7 @@
 import type { Booking } from '../db/bookingRepo';
 import type { RideOps } from '../db/rideOpsRepo';
 import type { RideStatus } from '../domain/rideStatus';
+import { sharedRouteLabel } from '../db/departureRepo';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -51,7 +52,13 @@ export interface OpsBookingRow {
 
 function route(b: Booking): string {
   if (b.mode === 'trip') return b.input.stops.join(' → ');
-  if (b.mode === 'shared') return `Shared · ${b.input.corridorId}`;
+  if (b.mode === 'shared') {
+    // Ops needs the stops, not the road: `Shared · airport-cultural` never said these two
+    // travellers get out at Sigiriya rather than riding on to Kandy (CH-6HE3V). A row that
+    // never recorded its leg keeps the corridor id, which is at least precise about that.
+    const label = sharedRouteLabel(b.input);
+    return label?.kind === 'leg' ? `Shared · ${label.from} → ${label.to}` : `Shared · ${b.input.corridorId}`;
+  }
   return `${b.input.from} → ${b.input.to}`;
 }
 function pax(b: Booking): number {

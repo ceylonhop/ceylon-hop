@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   InMemoryDepartureRepo,
   serviceDaysForCorridor,
+  sharedRouteLabel,
   departureKeyFor,
   SHARED_PRODUCTS,
   type Corridor,
@@ -144,5 +145,41 @@ describe('departureKeyFor', () => {
       if (prev !== undefined) expect(pool).toBe(prev);
       seen.set(k, pool);
     }
+  });
+});
+
+// ── CH-6HE3V (2026-09-21) ──────────────────────────────────────────────────
+// A shared booking used to store only its corridorId, so every label rebuilt the
+// route from the corridor's end stops and told a CMB → Sigiriya customer they
+// were going to Kandy. A corridor is the ROAD, not the offer: since the directed
+// catalogue (2026-08-16) one corridor carries several legs at their own prices,
+// so its endpoints describe no customer's journey.
+describe('sharedRouteLabel', () => {
+  it('names the leg the booking recorded', () => {
+    expect(
+      sharedRouteLabel({
+        corridorId: 'airport-cultural',
+        fromPlace: 'Colombo Airport (CMB)',
+        toPlace: 'Sigiriya / Dambulla',
+      }),
+    ).toEqual({ kind: 'leg', from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla' });
+  });
+
+  // Corridor ends stay useful context for ops, but they are the SERVICE. Callers
+  // get a different `kind` so they cannot render them as a traveller's route.
+  it('marks corridor ends as the service when no leg was recorded', () => {
+    expect(sharedRouteLabel({ corridorId: 'airport-cultural' })).toEqual({
+      kind: 'service',
+      from: 'Colombo Airport (CMB)',
+      to: 'Kandy',
+    });
+  });
+
+  it('will not guess from half a leg', () => {
+    expect(sharedRouteLabel({ corridorId: 'airport-cultural', fromPlace: 'Negombo', toPlace: null })?.kind).toBe('service');
+  });
+
+  it('is null for a corridor outside the catalogue, so callers keep their own wording', () => {
+    expect(sharedRouteLabel({ corridorId: 'cmb-galle' })).toBeNull();
   });
 });

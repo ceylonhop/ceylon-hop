@@ -90,3 +90,27 @@ describe('opsView', () => {
     expect(row.channel).toBe('whatsapp');
   });
 });
+
+// CH-6HE3V (2026-09-21): the ops row showed `Shared · airport-cultural`, which names
+// the corridor, not the journey — so nobody reading the board could tell these two
+// travellers get out at Sigiriya rather than riding through to Kandy.
+describe('ops row — a shared seat shows the leg it sold', () => {
+  const seat: Booking = {
+    mode: 'shared', id: 's2', reference: 'CH-6HE3V', status: 'paid', createdAt: '2026-09-21T12:53:39Z',
+    total: 5498, currency: 'USD', channel: 'website',
+    input: {
+      corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+      date: '2026-09-23', time: '07:00', seats: 2,
+      customer: { firstName: 'Chris', lastName: 'B', email: 'c@x.com', whatsapp: '+61', country: 'AU' },
+    },
+  };
+
+  it('shows where they board and where they get off', () => {
+    expect(toOpsRow(seat, { paid: true }).route).toBe('Shared · Colombo Airport (CMB) → Sigiriya / Dambulla');
+  });
+
+  it('keeps the corridor id when the leg was never recorded', () => {
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as Booking;
+    expect(toOpsRow(legacy, { paid: true }).route).toBe('Shared · airport-cultural');
+  });
+});
