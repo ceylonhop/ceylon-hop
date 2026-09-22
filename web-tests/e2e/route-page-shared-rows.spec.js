@@ -219,6 +219,18 @@ test('Fix 1 — at 375px, the longest real row shows the whole date and slot, an
 // book bar (route-page-select.js, which only ever watched the PRIVATE fares card) had no idea
 // the shared CTA existed — so it stayed on screen, and on top of, "See who's going & add your
 // name" for a ~150px scroll window. A tap there silently booked the private car instead.
+//
+// HARDENED (final-review F4 follow-up): an earlier version of this test read `bar.hidden` (via
+// `expect(bar).toBeHidden()`, Playwright's own auto-retrying assertion) right after an instant
+// `scrollTo`, on the theory that its built-in polling would absorb the IntersectionObserver
+// callback's async delivery. Measured against the actual pre-Fix-2 script it does NOT: 10 raw
+// runs came back a mix of pass and fail — a regression guard that only catches the regression
+// some of the time is not a guard. The fix here is to (1) explicitly settle one animation frame
+// + one macrotask after every scroll before touching any state (not a fixed sleep — the
+// callback is guaranteed to have had its chance to run by then), and (2) poll the SAME
+// observable, settled state (`bar.hidden`) with a longer, explicit timeout, so a script that
+// genuinely never flips it back correctly times out and fails on every run rather than
+// occasionally getting lucky.
 test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await stubBoard(page, [RUNNING, NEEDS_ONE, BOUNDARY]);
@@ -230,6 +242,11 @@ test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', a
   const cta = page.locator('[data-shared-cta] a.opt-cta');
   await expect(cta).toBeVisible();
 
+  /** The persisted, settled state the fixed script actually maintains — read straight off the
+   *  DOM, not through Playwright's own visibility heuristics (display/opacity/etc.), since
+   *  `bar.hidden` IS the state route-page-select.js's recomputeBar() writes. */
+  const barHidden = () => page.evaluate(() => document.querySelector('.trip-bookbar').hidden);
+
   /** What Playwright's own click would actually hit at the CTA's centre point right now. */
   const hitsCta = () => page.evaluate(() => {
     const el = document.querySelector('[data-shared-cta] a.opt-cta');
@@ -239,40 +256,73 @@ test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', a
     const at = document.elementFromPoint(x, y);
     return at === el || (at !== null && el.contains(at));
   });
+
+  /** Scrolls so the CTA's top lands at `targetTop`, then explicitly waits one animation frame
+   *  plus one macrotask (`setTimeout(0)`) before returning — NOT a fixed sleep: it is exactly
+   *  "give the browser the next chance it gets to run any pending IntersectionObserver
+   *  callback", which an instant (non-animated) scrollTo schedules but does not run
+   *  synchronously. Without this, a one-shot read right after `scrollTo` can win a race against
+   *  that callback and read stale state — which is what let the un-hardened version of this
+   *  test pass against the unfixed script roughly as often as it failed. */
   const scrollSoCtaTopIsAt = (targetTop) => page.evaluate((top) => {
     const el = document.querySelector('[data-shared-cta] a.opt-cta');
     const current = el.getBoundingClientRect().top;
     window.scrollTo({ top: window.scrollY + (current - top), left: 0, behavior: 'instant' });
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   }, targetTop);
 
-  // IntersectionObserver callbacks are asynchronous (delivered on a later frame, not
-  // synchronously with the scroll), so a one-shot check right after `scrollTo` can read STALE
-  // state from before the browser has recomputed intersections — which is exactly the trap
-  // that made an early draft of this test pass against the unfixed script. `expect.poll` keeps
-  // asking `hitsCta()` until it settles (or times out), the same way `expect(bar).toBeHidden()`
-  // already retries under the hood.
-  const pollHitsCta = (message) => expect.poll(hitsCta, { message: message, timeout: 2000 }).toBe(true);
+  // Beyond the settle above, still poll rather than read once: `expect.poll` re-reads the DOM
+  // itself, so it also survives a SECOND late callback (e.g. one queued by the settle's own
+  // rAF/setTimeout landing just after the settle returns). Against the unfixed script — a
+  // single-target observer that only ever watches the private fares card — `bar.hidden` in the
+  // CTA's band settles to `false` and STAYS `false` (nothing ever revisits it once the card has
+  // left the viewport), so a poll expecting `true` here times out and fails on every run, not
+  // just some of them.
+  const pollBarHidden = (expected, message) => expect.poll(barHidden, { message, timeout: 3000 }).toBe(expected);
+  const pollHitsCta = (message) => expect.poll(hitsCta, { message, timeout: 3000 }).toBe(true);
 
   // (a) the CTA sits comfortably in the middle of the viewport, nowhere near the bar's band
   await scrollSoCtaTopIsAt(300);
-  await expect(bar, '(a) the bar should be hidden while the shared CTA is on screen').toBeHidden();
+  await pollBarHidden(true, '(a) the bar should be hidden while the shared CTA is on screen');
   await pollHitsCta('(a) fully clear of the bar: the CTA itself should be hit-testable');
 
   // (b) the CTA is just entering from the bottom — its top inside the bar's ~88px band. This is
   // the exact case the coordinator's finding measured as broken: the CTA's own box sat entirely
   // inside the bar's, so elementFromPoint returned the bar (or its link), not the CTA.
   await scrollSoCtaTopIsAt(780);
-  await expect(bar, '(b) the bar must stay hidden while the CTA is anywhere near its band').toBeHidden();
+  await pollBarHidden(true, '(b) the bar must stay hidden while the CTA is anywhere near its band');
   await pollHitsCta('(b) CTA entering the bar band: must still be tappable, not covered by the bar');
+  // A second, independent proof of the same fact at the same scroll position: elementFromPoint
+  // at the CTA's own centre must resolve to the CTA (or one of its descendants) — never the bar
+  // or its link. `hitsCta()` above already computes this, but polling a boolean can in principle
+  // settle on a stale `true` from before a late re-render; re-deriving it fresh here, after the
+  // poll above has already stabilised, closes that gap.
+  const atCentre = await page.evaluate(() => {
+    const el = document.querySelector('[data-shared-cta] a.opt-cta');
+    const r = el.getBoundingClientRect();
+    const at = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    return at === el || (at !== null && el.contains(at));
+  });
+  expect(atCentre, '(b) elementFromPoint at the CTA\'s own centre must be the CTA itself, not the bar').toBe(true);
 
-  // (c) scrolled well past it, to the FAQ — the bar has no reason to stay hidden any more
+  // NEGATIVE SPACE: the checks above would also pass, vacuously, on a script that simply never
+  // shows the bar at all (e.g. a botched fix that leaves it `hidden` forever) — proving that
+  // is not what is happening. Scroll to where the CTA is fully out of view ABOVE the viewport
+  // (the FAQ, well past the shared section) and require the bar to actually become visible.
   await page.evaluate(() => {
     const el = document.querySelector('.faq');
     window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, left: 0, behavior: 'instant' });
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   });
+  await pollBarHidden(false, '(negative space) the CTA is fully out of view above — the bar must actually show, or the earlier "hidden" checks prove nothing');
+
+  // (c) restates the same fact in Playwright's own terms, for a reader scanning just this file
   await expect(bar, '(c) past the shared CTA: the bar should reappear').toBeVisible();
 
   // (d) back at the top of the page — the fares card is on screen, so the bar hides again
-  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
-  await expect(bar, '(d) at the top: the fares card is on screen, so the bar should be hidden').toBeHidden();
+  await page.evaluate(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  });
+  await pollBarHidden(true, '(d) at the top: the fares card is on screen, so the bar should be hidden');
 });
