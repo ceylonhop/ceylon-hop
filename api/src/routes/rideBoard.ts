@@ -30,6 +30,7 @@ import {
 } from '../domain/rideList';
 import type { EmailAdapter } from '../adapters/email';
 import { sendRideJoined } from '../services/rideBoardEmails';
+import { sendRideSeatHeld, type SeatHeldKind } from '../services/opsNotifications';
 import { isPastIsoDate, isoToday } from '../domain/dateRules';
 import type { AlertAdapter } from '../adapters/alerts';
 
@@ -126,6 +127,9 @@ export interface RideBoardDeps {
   allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
   boardBaseUrl?: string; // browser return/cancel origin for PayHere preapproval
   alerts?: AlertAdapter; // paged when a gateway callback cannot be verified
+  // Internal "seat held" mail (spec 2026-09-22). Unset → nothing internal is sent, the same
+  // rule the digest follows when ALERT_EMAIL is empty.
+  opsNotify?: { to: string; opsBaseUrl?: string };
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -151,18 +155,41 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     }
   }
 
-  async function mailJoinReceipt(list: RideList, member: RideMember): Promise<void> {
+  // Two mails ride this one hook: the traveller's receipt and, when an ops inbox is
+  // configured, the internal "seat held" note. They are sent independently — a provider
+  // rejecting one must not silence the other — and the first failure is re-thrown so the
+  // callers' best-effort catches keep their meaning.
+  async function mailJoinReceipt(list: RideList, member: RideMember, kind?: SeatHeldKind): Promise<void> {
     // Seeded placeholders hold a seat but have no inbox (domain/rideList.ts).
     if (isSeedMember(member) || !member.email) return;
-    await sendRideJoined(deps.email, {
-      to: member.email,
-      firstName: member.firstName,
-      list,
-      seats: member.seats,
-      // The hash route board.js already uses to open one ride's detail — where the
-      // "Scratch my name off" button lives.
-      rideUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html#/${list.code}`,
-    });
+    const outcomes = await Promise.allSettled([
+      sendRideJoined(deps.email, {
+        to: member.email,
+        firstName: member.firstName,
+        list,
+        seats: member.seats,
+        // The hash route board.js already uses to open one ride's detail — where the
+        // "Scratch my name off" button lives.
+        rideUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html#/${list.code}`,
+      }),
+      // The starter is the list's creator taking their own first seat; position alone
+      // cannot tell that from a joiner on a list that was created empty.
+      notifyOpsSeatHeld(list, member, kind ?? (list.createdBy === member.sub ? 'started' : 'joined')),
+    ]);
+    const failed = outcomes.find((o): o is PromiseRejectedResult => o.status === 'rejected');
+    if (failed) throw failed.reason;
+  }
+
+  async function notifyOpsSeatHeld(list: RideList, member: RideMember, kind: SeatHeldKind): Promise<void> {
+    if (!deps.opsNotify?.to) return;
+    // Re-read for the live seat count: `list` came from before this commitment landed.
+    const fresh = await deps.rideLists.getByCode(list.code);
+    const committed = committedSeats(fresh?.members ?? []);
+    await sendRideSeatHeld(
+      { to: deps.opsNotify.to, list: fresh?.list ?? list, member, committed, kind },
+      deps.email,
+      deps.opsNotify.opsBaseUrl ?? '',
+    );
   }
 
   // Where PayHere sends the payer back. The board page is its own return page, so go back to
@@ -517,7 +544,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       // an unchanged repeat join would make a refresh look like a second booking.
       if (member && (!alreadyOn || mine?.seats !== seats)) {
         try {
-          await mailJoinReceipt(found.list, member);
+          await mailJoinReceipt(found.list, member, alreadyOn ? 'changed' : 'joined');
         } catch {
           // best-effort — see sendJoinReceipt
         }

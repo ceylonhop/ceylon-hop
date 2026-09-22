@@ -137,7 +137,7 @@ function faqItems(from, to, q, shared) {
       // answer it, not to imply a seat in the title.
       : [`Is there a shared taxi from ${from} to ${to}?`, `Not at the moment — this route is private-only, so you get the whole vehicle to yourself. If you'd like to share, message us and we'll suggest the nearest route travellers are pooling.`],
     [`Can we stop along the way?`,
-      `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
+      `Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.`],
     [`How do I book the ${from} to ${to} transfer?`,
       `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.`],
   ];

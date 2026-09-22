@@ -1,6 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter } from '../adapters/email';
+import type { EmailAdapter, SendOutcome } from '../adapters/email';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -37,7 +37,11 @@ function esc(s: string): string {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
 }
 function vehicleLabel(v: 'car' | 'van'): string {
-  return v === 'van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  // No capacity claim. `v` is a flattened car|van, not the tier the quote was priced on, so a
+  // 5-pax booking upgraded to a van by the engine can still arrive here as 'car' — and this
+  // line printed "up to 3" directly above "Travellers: 5" (audit 2026-09-22, finding 6).
+  // Naming the vehicle is all this enum can honestly support.
+  return v === 'van' ? 'AC van' : 'AC car';
 }
 function fmtDate(d: string): string {
   const dt = new Date(`${d}T12:00:00`);
@@ -138,10 +142,18 @@ function factRows(booking: Booking): [string, string][] {
     return rows;
   }
   if (booking.mode === 'shared') {
-    return [
+    const rows: [string, string][] = [
       ['Seats', String(booking.input.seats)],
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
+    // One bag per seat rides free; the rest were charged. Showing the count is what makes the
+    // total add up — before this the surcharge was simply unexplained (audit 2026-09-22 #1).
+    const bags = booking.input.bags ?? 0;
+    if (bags > 0) {
+      const extra = Math.max(0, bags - booking.input.seats);
+      rows.push(['Luggage', `${bags} bag${bags > 1 ? 's' : ''}${extra > 0 ? ` · ${extra} over the free allowance` : ''}`]);
+    }
+    return rows;
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
@@ -493,8 +505,11 @@ export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
-): Promise<void> {
-  await email.send({
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome so the caller can decide whether to write this down. A
+  // suppressed confirmation must NOT be recorded as sent: that row is what the watchdog
+  // reads to conclude the customer was told (audit 2026-09-22, finding 2).
+  return email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking, links.manage, links.coverage),

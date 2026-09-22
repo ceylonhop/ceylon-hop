@@ -9,6 +9,7 @@ import {
   PaymentSettlementError,
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
+import { wasDelivered } from '../adapters/email';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
 import type { Booking } from '../db/bookingRepo';
@@ -236,12 +237,16 @@ export function webhookRoutes(deps: {
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
           const sel = srcQuote?.payLinkSelection;
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
-          await sendBookingConfirmation(paid, email, {
+          const outcome = await sendBookingConfirmation(paid, email, {
             manage: manageUrl(paid, baseUrl, linkSecret),
             ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
           });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
-          await notificationLog?.markSent(paid.id, 'confirmation');
+          // Only when it actually left. A suppressed message (NOTIFICATIONS_ENABLED off, or an
+          // allowlist still in place) reached nobody, and recording it here would assert the
+          // opposite — and this row is the very thing the watchdog checks before staying quiet
+          // (audit 2026-09-22, finding 2). Leave it unwritten and let the alarm do its job.
+          if (wasDelivered(outcome)) await notificationLog?.markSent(paid.id, 'confirmation');
         }
         // Paid but the date/time is still flexible → a follow-up nudge that we'll
         // confirm the exact pickup on WhatsApp. Best-effort; never fails the webhook.

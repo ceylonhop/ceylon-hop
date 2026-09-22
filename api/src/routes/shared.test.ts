@@ -292,3 +292,33 @@ describe('POST /bookings/shared — the booking records the leg it sold', () => 
     expect(onward.input.toPlace).toBe('Kandy');
   });
 });
+
+// ── Audit 2026-09-22, finding 1 ────────────────────────────────────────────
+// Same shape as CH-6HE3V: the customer chose it, we charged for it, we never wrote it down.
+// `priceShared` bills $10 for every bag beyond one per seat, but the stored input had no
+// `bags` field at all — so the surcharge appeared in the total with nothing anywhere to
+// explain it, to the customer or to ops in a refund dispute, and the vehicle was loaded for
+// the wrong amount of luggage.
+describe('POST /bookings/shared — the booking records the luggage it charged for', () => {
+  const leg = { ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 2 };
+
+  it('stores the bag count', async () => {
+    const res = await postShared(createApp(), { ...leg, bags: 5 });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.bags).toBe(5);
+  });
+
+  it('the stored count is the one the surcharge was computed from', async () => {
+    const res = await postShared(createApp(), { ...leg, bags: 5 });
+    const b = await res.json();
+    // 2 × $27.49 + 3 extra bags × $10 — one bag per seat rides free.
+    expect(b.total).toBe(5498 + 3000);
+    expect(b.input.bags).toBe(5);
+  });
+
+  it('records zero rather than nothing when no bags were sent', async () => {
+    const b = await (await postShared(createApp(), leg)).json();
+    expect(b.input.bags).toBe(0);
+  });
+});

@@ -1,6 +1,7 @@
 import type { EmailAdapter } from '../adapters/email';
 import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
+import type { RideList, RideMember } from '../domain/rideList';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
 // services/notifications.ts: that file is customer-facing and Booking-shaped, this one goes to
@@ -111,4 +112,95 @@ export async function sendQuoteSentBack(
   const text = [lead.replace(/<[^>]+>/g, ''), '', `Reference: ${q.reference}`, note ? `\nNote: ${note}` : '', '', link ? `Open the quote: ${link}` : 'Open it from the Quotes tab.'].join('\n');
   const wrapped = opsEmailShell(html, text);
   await email.send({ to, subject: `Changes requested on quote ${q.reference} — Ceylon Hop ops`, html: wrapped.html, text: wrapped.text, audience: 'ops' });
+}
+
+// ---------------------------------------------------------------------------
+// Ride Board: a seat was held (spec 2026-09-22). Until this, ops learned that a traveller had
+// started or joined a shared ride only by opening the dashboard. One mail per commitment that
+// moves — a list started, a name added, a seat count changed — on the same hook as the
+// traveller's receipt, so it fires on the PayHere callback too (where every production join
+// completes). Recipient is ALERT_EMAIL, the inbox the digest and watchdog already use.
+// ---------------------------------------------------------------------------
+
+export type SeatHeldKind = 'started' | 'joined' | 'changed';
+
+export interface SeatHeldArgs {
+  to: string;
+  list: RideList;
+  member: RideMember;
+  /** Live seats on the list AFTER this commitment, so the subject reads "2 of 4 seats". */
+  committed: number;
+  kind: SeatHeldKind;
+}
+
+// ops-ui's routeStateFromUrl reads ?booking= and the sheet opener special-cases the board:
+// prefix, so this lands on the van sheet itself. '' when OPS_BASE_URL is unset — same
+// tolerate-a-linkless-email rule as quoteDeepLink.
+export function boardDeepLink(code: string, opsBaseUrl: string): string {
+  const base = (opsBaseUrl || '').trim().replace(/\/+$/, '');
+  return base ? `${base}/ops?booking=board:${encodeURIComponent(code)}` : '';
+}
+
+// "Fri, 14 Aug 2026" — the same shape the traveller's receipt uses. Noon anchors the calendar
+// date so no zone can roll it a day either way.
+function rideDay(d: string): string {
+  const dt = new Date(`${d}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return d;
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(dt);
+}
+
+// Cutoff on the clock ops runs on.
+function colomboStamp(at: Date): string {
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric' }).format(at);
+  const time = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+  return `${day} at ${time}`;
+}
+
+const seatsWord = (n: number) => (n === 1 ? '1 seat' : `${n} seats`);
+
+export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, opsBaseUrl: string): Promise<void> {
+  const { list, member, committed, kind } = args;
+  const route = `${list.fromPlace} → ${list.toPlace}`;
+  const day = rideDay(list.date);
+  const viable = committed >= list.minSeats;
+  const headline =
+    kind === 'started' ? 'New shared ride' : kind === 'changed' ? 'Seats changed' : 'Seat taken';
+  const subject = `${headline}: ${route}, ${day} (${committed} of ${list.minSeats} seats) — Ceylon Hop ops`;
+  const lead =
+    kind === 'started'
+      ? `${esc(member.firstName)} started a shared ride and holds the first seat.`
+      : kind === 'changed'
+        ? `${esc(member.firstName)} now holds ${seatsWord(member.seats)} on this ride.`
+        : `${esc(member.firstName)} added their name to this ride.`;
+  const fill = `${committed} of ${list.minSeats} needed · ${list.capacity} max`;
+  const viableLine = viable ? 'The van is viable — enough names to run at the cutoff.' : 'Still short of the minimum.';
+  const link = boardDeepLink(list.code, opsBaseUrl);
+
+  const rows: [string, string][] = [
+    ['Traveller', `${member.firstName} (${member.country}) · ${member.email}`],
+    ['Seats', seatsWord(member.seats)],
+    ['Committed', fill],
+    ['Departs', `${day} · ${list.slot}`],
+    ['Cutoff', colomboStamp(list.cutoffAt)],
+    ['Seat price', money(list.seatPrice, 'USD')],
+  ];
+  const html = [
+    `<p style="font-size:16px;margin:0 0 4px">${lead}</p>`,
+    heroRef(list.code),
+    detailTable(rows),
+    `<p style="margin:0 0 20px;font-weight:500">${esc(viableLine)}</p>`,
+    ctaBlock('Open the van', link, 'Find it under Bookings in the ops dashboard.'),
+  ].join('');
+  const text = [
+    lead.replace(/<[^>]+>/g, ''),
+    '',
+    `Ride:       ${list.code}`,
+    ...rows.map(([k, v]) => `${(k + ':').padEnd(12)}${v}`),
+    '',
+    viableLine,
+    '',
+    link ? `Open the van: ${link}` : 'Find it under Bookings in the ops dashboard.',
+  ].join('\n');
+  const wrapped = opsEmailShell(html, text);
+  await email.send({ to: args.to, subject, html: wrapped.html, text: wrapped.text, audience: 'ops' });
 }
