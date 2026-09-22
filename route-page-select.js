@@ -25,6 +25,11 @@
    No JS at all → no listener ever runs. The static href already books the car — the checked
    radio at generation time — and the bar stays permanently hidden (shipped with `hidden`, and
    nothing here to ever remove it). The page is fully usable either way.
+
+   The bar's IntersectionObserver only makes sense under the phone media query, and that query
+   is watched, not just read once at load: a page loaded wide and later narrowed still gets the
+   bar, and one loaded narrow and later widened stops observing (and hides the bar) rather than
+   leaving the observer running forever.
    ============================================================ */
 (function () {
   'use strict';
@@ -77,9 +82,34 @@
   window.addEventListener('pageshow', sync);
   sync();
 
-  if (bar && 'IntersectionObserver' in window && window.matchMedia('(max-width:900px)').matches) {
-    new IntersectionObserver(function (entries) {
-      bar.hidden = entries[0].isIntersecting;
-    }, { threshold: 0 }).observe(card);
+  // The bar is phone-only, and "phone" can change mid-visit — a tablet rotated, or a desktop
+  // window resized into or out of a split view. Reading matchMedia() once at load would either
+  // never turn the bar on for a page loaded wide and later narrowed, or leave the observer
+  // running forever on a page loaded narrow and later widened. So the observer itself is
+  // created and torn down as the query's match state changes, not just read once.
+  if (bar && 'IntersectionObserver' in window) {
+    var mql = window.matchMedia('(max-width:900px)');
+    var io = null;
+
+    function startObserving() {
+      if (io) return;
+      io = new IntersectionObserver(function (entries) {
+        bar.hidden = entries[0].isIntersecting;
+      }, { threshold: 0 });
+      io.observe(card);
+    }
+    function stopObserving() {
+      if (!io) return;
+      io.disconnect();
+      io = null;
+      bar.hidden = true;
+    }
+    function onMqlChange(e) {
+      if (e.matches) startObserving(); else stopObserving();
+    }
+
+    if (mql.matches) startObserving();
+    if (mql.addEventListener) mql.addEventListener('change', onMqlChange);
+    else if (mql.addListener) mql.addListener(onMqlChange); // older Safari
   }
 })();

@@ -27,6 +27,16 @@ const engine = (page, { car, van, delayMs = 0 }) =>
 const q = (href) => new URLSearchParams(href.split('?')[1]);
 const pending = (page) => page.evaluate(() => document.documentElement.classList.contains('fares-pending'));
 
+// An instant, computed scroll rather than `scrollIntoViewIfNeeded()` (or any smooth scroll):
+// site.css sets `html{scroll-behavior:smooth}` globally, so a smooth scroll is still animating
+// when the very next line reads geometry off it — a known CI-only flake source in this repo
+// (see route-page-layout.spec.js). Computing the target position and jumping straight there
+// removes the animation instead of racing it.
+const scrollTo = (page, selector) => page.evaluate((sel) => {
+  const el = document.querySelector(sel);
+  window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, left: 0, behavior: 'instant' });
+}, selector);
+
 test('choosing the van books the van at the engine fare, with no catalogue rawPrice riding along', async ({ page }) => {
   await engine(page, { car: 6600, van: 8900 });
   await stubHealth(page);
@@ -97,7 +107,13 @@ test('the 4s cap fires before a slow engine answers: the late answer is dropped,
   expect(p.get('rawPrice')).toBe(await page.locator('.fares').getAttribute('data-raw-van'));
 });
 
-test('back navigation restores the checked radio and the CTA is re-synced to match it', async ({ page }) => {
+// Renamed from "back navigation restores the checked radio and the CTA is re-synced to match
+// it" — in Chromium, page.goBack() does NOT restore the checked radio (it comes back as car,
+// the static default), so that name claimed a bfcache-restoration test this never was. What
+// it actually proves is narrower and still worth keeping: the CTA always matches whichever
+// radio the browser hands back, van or car. It does not exercise the `pageshow` listener at
+// all — see the next test for that.
+test('back navigation: the CTA always matches whatever radio the browser restores', async ({ page }) => {
   await page.goto('/trip/kandy-to-ella/?api=off');
   await page.locator('input[name=vehicle][value=van]').check();
   let p = q(await page.locator('.fares a.opt-cta').getAttribute('href'));
@@ -111,6 +127,55 @@ test('back navigation restores the checked radio and the CTA is re-synced to mat
   expect(p.get('vehicle')).toBe(checked);
 });
 
+// F1: a REAL bfcache/form-state restore, which is what the `pageshow` listener in
+// route-page-select.js exists for. The browser's own restore sets `.checked` directly and
+// fires no `change` event — Chromium's goBack() above doesn't reproduce that (it resets the
+// radio to car instead), so this drives the exact mechanism by hand: flip the radio without
+// dispatching `change`, then dispatch the `pageshow` event a persisted-page restore sends.
+test('pageshow re-syncs both booking links when a bfcache/form-restore silently rechecks a radio', async ({ page }) => {
+  await page.goto('/trip/kandy-to-ella/?api=off');
+  const card = page.locator('.fares');
+  const vanPrice = await card.getAttribute('data-cat-van');
+  const vanRaw = await card.getAttribute('data-raw-van');
+
+  await page.evaluate(() => {
+    document.querySelector('input[name=vehicle][value=van]').checked = true;
+  });
+  // Not synced yet — nothing has told either link to re-check, which is exactly the bug this
+  // listener exists to prevent.
+  let p = q(await card.locator('a.opt-cta').getAttribute('href'));
+  expect(p.get('vehicle')).toBe('car');
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+
+  for (const sel of ['.fares a.opt-cta', '.trip-bookbar a.bar-cta']) {
+    const href = await page.locator(sel).getAttribute('href');
+    const params = q(href);
+    expect(params.get('vehicle'), sel).toBe('van');
+    expect(params.get('price'), sel).toBe(vanPrice);
+    expect(params.get('rawPrice'), sel).toBe(vanRaw);
+  }
+});
+
+// F3: the media query used to be read once at load, so a page loaded wide and later narrowed
+// never got the bar, and one loaded narrow then widened kept observing forever. This proves
+// both directions react live.
+test('the book bar starts/stops tracking the fares card as the viewport crosses 900px, not just at load', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/trip/kandy-to-ella/?api=off');
+  const bar = page.locator('.trip-bookbar');
+  await expect(bar).toBeHidden();
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await scrollTo(page, '.faq');
+  await expect(bar).toBeVisible();
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(bar).toBeHidden();
+});
+
 test.describe('phone', () => {
   test.use({ viewport: { width: 375, height: 812 } });
   test('car fare and the CTA are on the first screen; the bar appears once the card scrolls away and follows the selection', async ({ page }) => {
@@ -122,7 +187,7 @@ test.describe('phone', () => {
     const bar = page.locator('.trip-bookbar');
     await expect(bar).toBeHidden();
     await page.locator('input[name=vehicle][value=van]').check();
-    await page.locator('.faq').scrollIntoViewIfNeeded();
+    await scrollTo(page, '.faq');
     await expect(bar).toBeVisible();
     await expect(bar.locator('[data-bar-label]')).toHaveText('AC van · total, fixed');
     expect(q(await bar.locator('a.bar-cta').getAttribute('href')).get('vehicle')).toBe('van');
@@ -132,7 +197,7 @@ test.describe('phone', () => {
   test('the bar hides again once the card scrolls back into view', async ({ page }) => {
     await page.goto('/trip/kandy-to-ella/?api=off');
     const bar = page.locator('.trip-bookbar');
-    await page.locator('.faq').scrollIntoViewIfNeeded();
+    await scrollTo(page, '.faq');
     await expect(bar).toBeVisible();
     await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
     await expect(bar).toBeHidden();
