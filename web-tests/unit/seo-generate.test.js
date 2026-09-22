@@ -24,8 +24,11 @@ describe('generateAll', () => {
     expect(html).not.toContain('136 km');
     expect(html).not.toContain('about 4 hours');
 
+    // The index card markup changed under the C1 redesign (task-C1-brief.md): a "Most booked"
+    // rt-card.pop now carries the name, the compact estimate and the price as three separate
+    // spans rather than one packed rt-meta string — same numbers, new shape.
     const index = out.get('trip/index.html');
-    expect(index).toContain(`Kandy → Ella</span><span class="rt-meta">${compact} · from $59`);
+    expect(index).toMatch(/Kandy → Ella<\/span>\s*<span class="est">Approx\. 135 km · 3h 45m<\/span>\s*<span class="fr">from <b[^>]*>\$59\.99<\/b> fixed<\/span>/);
   });
   // The route page used to be a signpost: it showed price CHIPS and deep-linked into
   // search.html to do the actual selling. Under design A it IS the product page — the

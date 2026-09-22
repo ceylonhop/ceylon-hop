@@ -7,6 +7,8 @@ import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
+import { InMemoryRideListRepo } from '../db/rideListRepo';
+import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday, futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
@@ -358,6 +360,44 @@ describe('POST /admin/jobs/notifications', () => {
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ abandonedDrafts: 0 });
+  });
+});
+
+describe('POST /admin/jobs/board-ops-backfill', () => {
+  it('403 for an ops session (no admin:jobs)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/board-ops-backfill', {
+      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('409 not_configured when there is no ops inbox to mail', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/board-ops-backfill', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_configured');
+  });
+
+  it('runs for the system key, honours ?dryRun, and reports counts', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList({
+      corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: futureIsoDate(10), slot: 'morning',
+      minSeats: 3, capacity: 6, seatPrice: 2400, note: null, cutoffAt: new Date(Date.now() + 8 * 86_400_000), createdBy: null,
+    });
+    await rideLists.addMember(l.id, { sub: 'ana-sub', firstName: 'Ana', country: 'ES', email: 'ana@x.com', seats: 1 });
+    const app = createApp({ adminApiKey: KEY, auth, email, rideLists, digestTo: 'ops@x.com', alertLog: new InMemoryAlertLogRepo() });
+
+    const dry = await app.request('/admin/jobs/board-ops-backfill?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(dry.status).toBe(200);
+    expect(await dry.json()).toMatchObject({ dryRun: true, seats: 1, sent: 0 });
+    expect(email.sent).toHaveLength(0);
+
+    const real = await app.request('/admin/jobs/board-ops-backfill', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(real.status).toBe(200);
+    expect(await real.json()).toMatchObject({ seats: 1, sent: 1 });
+    expect(email.sent.map((m) => m.to)).toEqual(['ops@x.com']);
   });
 });
 

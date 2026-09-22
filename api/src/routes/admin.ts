@@ -13,6 +13,7 @@ import {
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
+import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -577,6 +578,24 @@ export function adminRoutes(deps: {
       { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
+  });
+
+  // One-shot catch-up for the ops "seat held" mail (2026-09-22): announce every live seat on
+  // a list still gathering, once. Not on the cron — a human POSTs it with the system key after
+  // the feature lands, ?dryRun=1 first. Idempotent via the alert ledger, so a second POST is
+  // harmless. 409 rather than a silent no-op when there is no inbox to mail: the whole point
+  // is that ops hears, and "ran fine, sent nothing" would hide a missing ALERT_EMAIL.
+  r.post('/jobs/board-ops-backfill', requireCap('admin:jobs'), async (c) => {
+    if (!deps.digestTo || !deps.rideLists) return c.json({ error: 'not_configured' }, 409);
+    const result = await runBoardOpsBackfill(new Date(), {
+      rideLists: deps.rideLists,
+      email,
+      to: deps.digestTo,
+      opsBaseUrl: deps.opsBaseUrl,
+      alertLog: deps.alertLog,
+      dryRun: !!c.req.query('dryRun'),
+    });
+    return c.json(result, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
