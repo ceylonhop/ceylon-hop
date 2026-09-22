@@ -43,6 +43,11 @@ describe('/trip/ index', () => {
     expect(fares.length).toBeGreaterThanOrEqual(slugs.length);
     for (const f of fares) { expect(f.getAttribute('data-from-name')).toBeTruthy(); expect(f.getAttribute('data-to-name')).toBeTruthy(); expect(f.textContent).toMatch(/^\$\d/); }
   });
+  it('stays within the batch endpoint\'s 60-intent cap (route-list-fares.js asks once per page)', () => {
+    const fares = [...d.querySelectorAll('[data-list-fare]')];
+    const pairs = new Set(fares.map((f) => f.getAttribute('data-from-name') + '|' + f.getAttribute('data-to-name')));
+    expect(pairs.size).toBeLessThanOrEqual(60);
+  });
   it('keeps its H1 and offers a way out for unlisted routes', () => {
     expect(d.querySelector('h1').textContent.trim()).toBe('Sri Lanka transfer routes');
     expect(d.querySelector('.anywhere a[href$="search.html"]')).toBeTruthy();
