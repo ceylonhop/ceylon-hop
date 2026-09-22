@@ -3,21 +3,22 @@
 ## Status tracker
 
 Owner said "fix the for sure issues" on 2026-09-22. This table is the record of what happened next.
+Five fixed, one partly fixed, three left open — two of those need a decision rather than code.
 
 > **This table rots.** A status line is a claim about code at a moment. Check the code before you
 > trust a row. Where a row says FIXED it names the PR, so you can read the diff instead.
 
 | # | Finding | Status |
 |---|---|---|
-| 1 | Shared seat charges for bags, records none | OPEN — needs a migration |
-| 2 | Suppressed email recorded as sent, silences watchdog | OPEN |
-| 3 | JSON-LD still advertises the pre-engine price | OPEN — needs an owner call (removing a price hurts rich results) |
-| 4 | Homepage promises 24h free cancellation; chauffeur is 10 days | OPEN |
-| 5 | Route pages offer free stops; stops are a paid add-on | OPEN |
-| 6 | Email asserts a seat capacity from a flattened vehicle tier | OPEN |
-| 7 | Traveller country is really the dial-code picker | OPEN — needs a design call |
-| 8 | `releaseSeats` can't tell released from matched-nothing | OPEN |
-| 9 | Absolute guarantees in copy ("never", "always", "reserved") | OPEN |
+| 1 | Shared seat charges for bags, records none | **FIXED** — records `bags`, email shows it (migration 0052) |
+| 2 | Suppressed email recorded as sent, silences watchdog | **FIXED** — ledger records only delivered mail; watchdog exempts no-address customers |
+| 3 | JSON-LD still advertises the pre-engine price | OPEN — **owner call**: drop the price from structured data and lose rich results, or accept the gap |
+| 4 | Homepage promises 24h free cancellation; chauffeur is 10 days | **FIXED** — hero note qualified, badge shortened |
+| 5 | Route pages offer free stops; stops are a paid add-on | **FIXED** — generator + blog source + search card |
+| 6 | Email asserts a seat capacity from a flattened vehicle tier | **PARTLY FIXED** — capacity claim removed; the flattening itself is still there |
+| 7 | Traveller country is really the dial-code picker | OPEN — **owner call**: add a real country field, or stop recording country |
+| 8 | `releaseSeats` can't tell released from matched-nothing | OPEN — latent since the trigger was fixed; a zero-row release should stop counting as a sweep |
+| 9 | Absolute guarantees in copy ("never", "always", "reserved") | **FIXED** — all four tours included |
 | 10 | Tour chauffeur prices hand-typed and drifting | UNVERIFIED — arithmetic not re-derived |
 
 ---
