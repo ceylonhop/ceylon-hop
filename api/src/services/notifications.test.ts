@@ -580,3 +580,31 @@ describe('shared seat — the email names the leg that was sold', () => {
     expect(routeText(legacy)).toBe('Shared shuttle on the Colombo Airport (CMB) – Kandy service');
   });
 });
+
+// ── Audit 2026-09-22, finding 6 ────────────────────────────────────────────
+// The booking stores a flattened `car | van`, not the tier the quote was priced on. An ops
+// quote built for 5 passengers on `car` is upgraded to a van by the engine and charged at
+// van rates, while the booking keeps `'car'`. The email then turned that into a CAPACITY
+// claim — "AC car (up to 3)" — printed directly above "Travellers: 5".
+//
+// Storing the real tier is a schema change and its own step. What the email must not do,
+// either way, is assert a maximum it cannot possibly know from a two-value enum.
+describe('confirmation email — the vehicle line does not invent a capacity', () => {
+  const fiveUp: Booking = {
+    ...single,
+    input: { ...single.input, vehicleType: 'car', adults: 5, children: 0 },
+  } as Booking;
+
+  it('never claims a seat limit smaller than the party it was sent to', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(fiveUp, email);
+    expect(email.sent[0].html).not.toContain('up to 3');
+    expect(email.sent[0].text).not.toContain('up to 3');
+  });
+
+  it('still names the vehicle', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(fiveUp, email);
+    expect(email.sent[0].text).toContain('AC car');
+  });
+});

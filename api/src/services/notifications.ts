@@ -37,7 +37,11 @@ function esc(s: string): string {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
 }
 function vehicleLabel(v: 'car' | 'van'): string {
-  return v === 'van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  // No capacity claim. `v` is a flattened car|van, not the tier the quote was priced on, so a
+  // 5-pax booking upgraded to a van by the engine can still arrive here as 'car' — and this
+  // line printed "up to 3" directly above "Travellers: 5" (audit 2026-09-22, finding 6).
+  // Naming the vehicle is all this enum can honestly support.
+  return v === 'van' ? 'AC van' : 'AC car';
 }
 function fmtDate(d: string): string {
   const dt = new Date(`${d}T12:00:00`);
