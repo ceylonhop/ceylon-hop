@@ -30,6 +30,16 @@
    is watched, not just read once at load: a page loaded wide and later narrowed still gets the
    bar, and one loaded narrow and later widened stops observing (and hides the bar) rather than
    leaving the observer running forever.
+
+   The observer watches TWO targets, not one: the fares card's own CTA, and — on a route that
+   sells one — the shared-ride CTA (`[data-shared-cta] a.opt-cta`). A phone with only the first
+   target let the fixed bar sit directly on top of the shared button once the "already going"
+   rows pushed the page tall enough: the bar never knew the shared CTA existed, so it stayed
+   visible (and on top) right through it — a tap there silently booked the private car instead.
+   Visibility is now tracked per target and the bar stays hidden while EITHER is on screen, with
+   a rootMargin the size of the bar itself so it hides just BEFORE a button reaches the bar's
+   band, not only once they already overlap. On a private-only route there is no shared CTA to
+   find, so it is simply never added to the observed set.
    ============================================================ */
 (function () {
   'use strict';
@@ -90,18 +100,38 @@
   if (bar && 'IntersectionObserver' in window) {
     var mql = window.matchMedia('(max-width:900px)');
     var io = null;
+    // Absent on a private-only route (no shared seat sold on this leg) — the second target is
+    // then simply never observed, and nothing below has to special-case that.
+    var sharedCta = document.querySelector('[data-shared-cta] a.opt-cta');
+    // One flag per observed target, keyed by a stable string rather than the last callback
+    // entry: IntersectionObserver can deliver either target's entry on its own, so tracking
+    // only "the last entry" would forget the other target's last known state on every change.
+    var visible = { card: false, sharedCta: false };
 
+    function recomputeBar() {
+      bar.hidden = visible.card || visible.sharedCta;
+    }
     function startObserving() {
       if (io) return;
+      // rootMargin extends the viewport's bottom edge by the bar's own height, so a target is
+      // already "intersecting" while it's still approaching the bar's band — hiding the bar
+      // just BEFORE the two would overlap, not only once they already do.
       io = new IntersectionObserver(function (entries) {
-        bar.hidden = entries[0].isIntersecting;
-      }, { threshold: 0 });
+        for (var i = 0; i < entries.length; i++) {
+          var key = entries[i].target === card ? 'card' : 'sharedCta';
+          visible[key] = entries[i].isIntersecting;
+        }
+        recomputeBar();
+      }, { threshold: 0, rootMargin: '0px 0px 88px 0px' });
       io.observe(card);
+      if (sharedCta) io.observe(sharedCta);
     }
     function stopObserving() {
       if (!io) return;
       io.disconnect();
       io = null;
+      visible.card = false;
+      visible.sharedCta = false;
       bar.hidden = true;
     }
     function onMqlChange(e) {

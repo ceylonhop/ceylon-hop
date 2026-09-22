@@ -57,6 +57,20 @@ async function pickDate(page, iso) {
   }, iso);
 }
 
+// Fix 2: the bar-occlusion repro needs BOTH the board rows (route-page.js) AND the fares card's
+// engine call (route-page-fares.js) stubbed, or the unstubbed `/quote/v2/estimate` request
+// hangs against a real (offline-test) origin. `?api=off` was the coordinator's first idea, but
+// it disables the whole live-dates feature (route-page.js returns before ever fetching `/board`
+// once `window.CEYLON_HOP_API` is empty) — no rows would render at all, which is the opposite of
+// this test's setup. Stubbing both endpoints on the default (unmodified) CEYLON_HOP_API origin,
+// the way route-page-fares.spec.js already does, gets the same determinism without that.
+async function stubEngine(page) {
+  await page.route('**/quote/v2/estimate', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ totalCents: 6699, legs: [{ from: 'CMB Airport', to: 'Sigiriya', distanceKm: 150, durationMin: 180 }] }),
+  }));
+}
+
 async function stubBoard(page, lists) {
   await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
@@ -199,4 +213,66 @@ test('Fix 1 — at 375px, the longest real row shows the whole date and slot, an
   const pillBox = await row.locator('.ld-pill').boundingBox();
   expect(Math.abs(countBox.y - pillBox.y), 'the count and the pill are not on the same line').toBeLessThanOrEqual(2);
   expect(countBox.y, 'the count/pill line is not below the date').toBeGreaterThan(whenBox.y);
+});
+
+// Fix 2: once the "already going" rows made the shared section tall enough, the sticky phone
+// book bar (route-page-select.js, which only ever watched the PRIVATE fares card) had no idea
+// the shared CTA existed — so it stayed on screen, and on top of, "See who's going & add your
+// name" for a ~150px scroll window. A tap there silently booked the private car instead.
+test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await stubBoard(page, [RUNNING, NEEDS_ONE, BOUNDARY]);
+  await stubEngine(page);
+  await page.goto('/trip/cmb-airport-to-sigiriya/');
+  await expect(page.locator('.ld-row')).toHaveCount(3);
+
+  const bar = page.locator('.trip-bookbar');
+  const cta = page.locator('[data-shared-cta] a.opt-cta');
+  await expect(cta).toBeVisible();
+
+  /** What Playwright's own click would actually hit at the CTA's centre point right now. */
+  const hitsCta = () => page.evaluate(() => {
+    const el = document.querySelector('[data-shared-cta] a.opt-cta');
+    const r = el.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2);
+    const y = Math.round(r.top + r.height / 2);
+    const at = document.elementFromPoint(x, y);
+    return at === el || (at !== null && el.contains(at));
+  });
+  const scrollSoCtaTopIsAt = (targetTop) => page.evaluate((top) => {
+    const el = document.querySelector('[data-shared-cta] a.opt-cta');
+    const current = el.getBoundingClientRect().top;
+    window.scrollTo({ top: window.scrollY + (current - top), left: 0, behavior: 'instant' });
+  }, targetTop);
+
+  // IntersectionObserver callbacks are asynchronous (delivered on a later frame, not
+  // synchronously with the scroll), so a one-shot check right after `scrollTo` can read STALE
+  // state from before the browser has recomputed intersections — which is exactly the trap
+  // that made an early draft of this test pass against the unfixed script. `expect.poll` keeps
+  // asking `hitsCta()` until it settles (or times out), the same way `expect(bar).toBeHidden()`
+  // already retries under the hood.
+  const pollHitsCta = (message) => expect.poll(hitsCta, { message: message, timeout: 2000 }).toBe(true);
+
+  // (a) the CTA sits comfortably in the middle of the viewport, nowhere near the bar's band
+  await scrollSoCtaTopIsAt(300);
+  await expect(bar, '(a) the bar should be hidden while the shared CTA is on screen').toBeHidden();
+  await pollHitsCta('(a) fully clear of the bar: the CTA itself should be hit-testable');
+
+  // (b) the CTA is just entering from the bottom — its top inside the bar's ~88px band. This is
+  // the exact case the coordinator's finding measured as broken: the CTA's own box sat entirely
+  // inside the bar's, so elementFromPoint returned the bar (or its link), not the CTA.
+  await scrollSoCtaTopIsAt(780);
+  await expect(bar, '(b) the bar must stay hidden while the CTA is anywhere near its band').toBeHidden();
+  await pollHitsCta('(b) CTA entering the bar band: must still be tappable, not covered by the bar');
+
+  // (c) scrolled well past it, to the FAQ — the bar has no reason to stay hidden any more
+  await page.evaluate(() => {
+    const el = document.querySelector('.faq');
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, left: 0, behavior: 'instant' });
+  });
+  await expect(bar, '(c) past the shared CTA: the bar should reappear').toBeVisible();
+
+  // (d) back at the top of the page — the fares card is on screen, so the bar hides again
+  await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+  await expect(bar, '(d) at the top: the fares card is on screen, so the bar should be hidden').toBeHidden();
 });
