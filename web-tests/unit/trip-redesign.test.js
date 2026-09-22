@@ -328,3 +328,16 @@ describe('trip page — shared ride is a section or a sentence, never a grey car
     expect(d.querySelector('.route-hero a.share-strip[href="#share"]')).toBeTruthy();
   });
 });
+
+// F1: the fixed book bar only exists — and only reserves footer space — once JS has run and the
+// route-page-select.js observer has actually started (see that script's startObserving/
+// stopObserving). Scoping the rule to `html.has-bookbar .footer` means no JS -> no class -> no
+// padding, instead of every /trip/ page reserving 88px of dead space under the footer whether or
+// not a bar can ever appear there.
+describe('trip page — footer padding under the sticky bar is conditional on JS, not unconditional', () => {
+  it.each(slugs)('%s: the ≤900px footer padding is scoped to html.has-bookbar, never a bare .footer rule', (slug) => {
+    const css = dom(slug).querySelector('style').textContent;
+    expect(css).toMatch(/html\.has-bookbar \.footer\{padding-bottom:/);
+    expect(css).not.toMatch(/(?<!has-bookbar )\.footer\{padding-bottom/);
+  });
+});

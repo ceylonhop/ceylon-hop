@@ -31,7 +31,7 @@
    bar, and one loaded narrow and later widened stops observing (and hides the bar) rather than
    leaving the observer running forever.
 
-   The observer watches TWO targets, not one: the fares card's own CTA, and — on a route that
+   The observer watches TWO targets, not one: the fares card itself, and — on a route that
    sells one — the shared-ride CTA (`[data-shared-cta] a.opt-cta`). A phone with only the first
    target let the fixed bar sit directly on top of the shared button once the "already going"
    rows pushed the page tall enough: the bar never knew the shared CTA existed, so it stayed
@@ -113,6 +113,11 @@
     }
     function startObserving() {
       if (io) return;
+      // The book bar only exists — and only needs the footer to reserve room for it — once this
+      // observer is actually running. site.css leaves .footer alone; this page's own <style>
+      // scopes that extra padding to html.has-bookbar, so a page with no JS at all (nothing ever
+      // adds this class) keeps the ordinary footer instead of a permanent, pointless gap.
+      document.documentElement.classList.add('has-bookbar');
       // rootMargin extends the viewport's bottom edge by the bar's own height, so a target is
       // already "intersecting" while it's still approaching the bar's band — hiding the bar
       // just BEFORE the two would overlap, not only once they already do.
@@ -133,6 +138,7 @@
       visible.card = false;
       visible.sharedCta = false;
       bar.hidden = true;
+      document.documentElement.classList.remove('has-bookbar');
     }
     function onMqlChange(e) {
       if (e.matches) startObserving(); else stopObserving();

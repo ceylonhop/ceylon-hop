@@ -219,4 +219,72 @@ test.describe('phone', () => {
     });
     expect(overlap, 'the footer\'s last line sits under the fixed bar').toBe(false);
   });
+
+  // F1: the ≤900px footer padding exists only to keep the fixed book bar from covering the
+  // footer's last line — but the bar only ever exists once route-page-select.js has run and its
+  // observer has started. With JS running (and narrow enough for the bar to apply), the class it
+  // adds to <html> must be in place and the footer's computed padding must actually reserve the
+  // bar's height.
+  test('the footer reserves the book bar\'s height once JS starts observing it', async ({ page }) => {
+    await page.goto('/trip/kandy-to-ella/?api=off');
+    expect(await page.evaluate(() => document.documentElement.classList.contains('has-bookbar'))).toBe(true);
+    const padding = await page.locator('.footer').evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom));
+    expect(padding).toBeGreaterThanOrEqual(88);
+  });
+});
+
+// F1: no JS at all means the bar can never appear (it ships `hidden` and nothing but this
+// script ever removes it), so the footer must keep the site's ordinary padding — not the extra
+// 88px reserved for a bar that will never exist on this load.
+test.describe('no JS', () => {
+  test.use({ javaScriptEnabled: false, viewport: { width: 375, height: 812 } });
+  test('with JS disabled, the footer keeps its normal padding, not the book-bar reservation', async ({ page }) => {
+    await page.goto('/trip/kandy-to-ella/?api=off');
+    const padding = await page.locator('.footer').evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom));
+    expect(padding).toBeLessThan(88);
+  });
+});
+
+// F2: site.css's blanket `:focus-visible{outline:2px solid var(--accent-deep);...}` (site.css:561)
+// already gives EVERY focusable element an outline in any browser, :has() or not — so a plain
+// "does the input have a non-zero computed outline" check passes today regardless of this bug.
+// The actual defect is that the input itself is 1x1px (`.veh input{...width:1px;height:1px}`),
+// so that outline traces an invisible sliver; `.veh:has(input:focus-visible)` was papering over
+// it by drawing a SECOND ring on the whole label — but only in a browser that supports :has().
+// Firefox < 121 does not, so a Firefox keyboard user is back to the invisible 1px ring. The
+// fix makes the input itself cover the whole tile, so the browser's ordinary outline is visible
+// with no :has() involved. This only proves it in Chromium — see the report for Firefox
+// availability.
+test('keyboard focus on the checked vehicle tile traces the whole tile, not a 1px sliver', async ({ page }) => {
+  await page.goto('/trip/kandy-to-ella/?api=off');
+  const carRadio = page.locator('input[name=vehicle][value=car]');
+  const tile = page.locator('label.veh', { has: page.locator('input[value=car]') });
+  // Tab through the page from a cold load — no mouse interaction anywhere in this test, so
+  // Chromium's focus-visible heuristic stays in "keyboard" modality the whole way. Radios in a
+  // named group are a single tab stop (the checked one), so this lands on the car tile without
+  // ever needing to visit the van one.
+  for (let i = 0; i < 100; i++) {
+    if (await carRadio.evaluate((el) => el === document.activeElement)) break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(carRadio).toBeFocused();
+  const outline = await carRadio.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) };
+  });
+  expect(outline.style, 'input:focus-visible has no outline').toBe('solid');
+  expect(outline.width, 'input:focus-visible outline has zero width').toBeGreaterThan(0);
+  const inputBox = await carRadio.boundingBox();
+  const tileBox = await tile.boundingBox();
+  expect(inputBox.width, 'the focused input is a near-invisible sliver, not the tile').toBeGreaterThan(tileBox.width * 0.9);
+  expect(inputBox.height, 'the focused input is a near-invisible sliver, not the tile').toBeGreaterThan(tileBox.height * 0.9);
+  // Still fully clickable and still associated with its label for assistive tech: the tile is
+  // the input's own <label> (implicit association). The input now covers the whole tile, so a
+  // real click on the VAN tile's price text physically lands on the input itself, same as it
+  // would in a browser — dispatched by coordinate (not Playwright's element .click(), which
+  // insists the nominal target receives the event) to prove that real click still checks the
+  // van radio, not the already-checked car one.
+  const priceBox = await page.locator('label.veh', { has: page.locator('input[value=van]') }).locator('.veh-p').boundingBox();
+  await page.mouse.click(priceBox.x + priceBox.width / 2, priceBox.y + priceBox.height / 2);
+  await expect(page.locator('input[name=vehicle]:checked')).toHaveAttribute('value', 'van');
 });
