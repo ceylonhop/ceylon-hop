@@ -1,6 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter } from '../adapters/email';
+import type { EmailAdapter, SendOutcome } from '../adapters/email';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -493,8 +493,11 @@ export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
-): Promise<void> {
-  await email.send({
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome so the caller can decide whether to write this down. A
+  // suppressed confirmation must NOT be recorded as sent: that row is what the watchdog
+  // reads to conclude the customer was told (audit 2026-09-22, finding 2).
+  return email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking, links.manage, links.coverage),

@@ -13,10 +13,29 @@ export interface EmailMessage {
   audience?: EmailAudience;
 }
 
+// What actually happened to a message. Only a DELIVERED outcome may be written to the
+// notification ledger: recording a message nobody received as sent is what silenced the
+// paid-but-unconfirmed watchdog (audit 2026-09-22, finding 2 — see docs/).
+//
+// `no_address` is kept apart from the two suppressions on purpose. A customer with no email
+// is a fact about the customer; a suppression is an operator setting. The watchdog must
+// exempt the first and shout about the second, and it cannot if they look the same.
+export type SendOutcome =
+  | { delivered: true }
+  | { delivered: false; reason: 'no_address' | 'suppressed_disabled' | 'suppressed_allowlist' };
+
+export const DELIVERED: SendOutcome = { delivered: true };
+
+// An adapter that reports nothing is assumed to have delivered — that was the behaviour
+// before outcomes existed, so no existing caller or test double changes meaning.
+export function wasDelivered(outcome: SendOutcome | void): boolean {
+  return !outcome || outcome.delivered;
+}
+
 // The swappable email seam. A real provider (Resend/Postmark) implements this later;
 // everything else uses the fake so no email is ever actually sent in code or tests.
 export interface EmailAdapter {
-  send(msg: EmailMessage): Promise<void>;
+  send(msg: EmailMessage): Promise<SendOutcome | void>;
 }
 
 // A customer who reached out on WhatsApp has no email address, and since 2026-08-08 a booking may
@@ -32,9 +51,10 @@ export function hasDeliverableAddress(to: string | null | undefined): boolean {
 export class FakeEmailAdapter implements EmailAdapter {
   readonly sent: EmailMessage[] = [];
 
-  async send(msg: EmailMessage): Promise<void> {
-    if (!hasDeliverableAddress(msg.to)) return;
+  async send(msg: EmailMessage): Promise<SendOutcome> {
+    if (!hasDeliverableAddress(msg.to)) return { delivered: false, reason: 'no_address' };
     this.sent.push(msg);
+    return DELIVERED;
   }
 }
 
