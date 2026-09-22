@@ -19,7 +19,7 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter } = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
@@ -35,6 +35,11 @@ function makeApp(identity: Partial<{ sub: string; email: string; name: string; p
 // checked byte-for-byte; makeApp otherwise leaves the base URL to config.
 const mailApp = (identity: Parameters<typeof makeApp>[0] = {}, email?: EmailAdapter) =>
   makeApp(identity, { bookingBaseUrl: 'https://ceylonhop.com', email });
+
+// Same, with an ops inbox configured — the internal "seat held" mail only fires when one is
+// (ALERT_EMAIL in production, unset in tests unless a case asks for it).
+const opsMailApp = (identity: Parameters<typeof makeApp>[0] = {}, email?: EmailAdapter) =>
+  makeApp(identity, { bookingBaseUrl: 'https://ceylonhop.com', email, digestTo: 'ops@x.com', opsBaseUrl: 'https://ops.example' });
 
 async function loginCookie(app: ReturnType<typeof makeApp>['app'], country = 'LK'): Promise<string> {
   const res = await app.request('/board/login', {
@@ -58,7 +63,7 @@ const paymentDetails = {
   city: 'Colombo',
 };
 
-function makePayHereApp(over: { rateLimit?: { max: number; windowMs: number }; alerts?: FakeAlertAdapter } = {}) {
+function makePayHereApp(over: { rateLimit?: { max: number; windowMs: number }; alerts?: FakeAlertAdapter; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string } = {}) {
   const rideLists = new InMemoryRideListRepo();
   const paygw = new PayHereTokenizedPaymentAdapter(
     '1234567',
@@ -79,6 +84,9 @@ function makePayHereApp(over: { rateLimit?: { max: number; windowMs: number }; a
     bookingBaseUrl: 'https://ceylonhop.com',
     ...(over.rateLimit ? { rateLimit: over.rateLimit } : {}),
     ...(over.alerts ? { alerts: over.alerts } : {}),
+    ...(over.email ? { email: over.email } : {}),
+    ...(over.digestTo ? { digestTo: over.digestTo } : {}),
+    ...(over.opsBaseUrl ? { opsBaseUrl: over.opsBaseUrl } : {}),
   });
   return { app, rideLists, paygw };
 }
@@ -510,6 +518,115 @@ describe('POST /board (create) — the starter gets a receipt too', () => {
     const sent = (email as FakeEmailAdapter).sent;
     expect(sent).toHaveLength(1);
     expect(sent[0].html).toContain(code);
+  });
+});
+
+// Spec 2026-09-22: ops hears about every commitment that moves, on the same hook as the
+// traveller's receipt — so it fires on the PayHere callback too, which is where every
+// production join actually completes.
+describe('Ride Board — ops is told when a seat is held', () => {
+  const opsMail = (email: EmailAdapter) => (email as FakeEmailAdapter).sent.filter((m) => m.to === 'ops@x.com');
+
+  it('mails ops when a traveller starts a list, alongside the starter receipt', async () => {
+    const { app, email } = opsMailApp();
+    const cookie = await loginCookie(app, 'FR');
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
+    }));
+    expect(res.status).toBe(201);
+    const code = (await res.json()).list.code;
+
+    const sent = (email as FakeEmailAdapter).sent;
+    expect(sent).toHaveLength(2);
+    expect(sent.find((m) => m.to === 'roshen@x.com')).toBeTruthy();
+    const ops = opsMail(email);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].subject).toMatch(/^New shared ride: Ella → Mirissa/);
+    expect(ops[0].html).toContain(code);
+    expect(ops[0].html).toContain('Roshen');
+    expect(ops[0].html).toContain('FR');
+    expect(ops[0].html).toContain('roshen@x.com');
+    expect(ops[0].html).toContain(`https://ops.example/ops?booking=board:${code}`);
+  });
+
+  it('mails ops when a traveller joins, with the running seat count', async () => {
+    const { app, rideLists, email } = opsMailApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 'lea-sub', firstName: 'Léa', country: 'FR', email: 'lea@x.com', seats: 1 });
+    const cookie = await loginCookie(app);
+
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    expect(res.status).toBe(200);
+
+    const ops = opsMail(email);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].subject).toMatch(/^Seat taken: Ella → Mirissa/);
+    expect(ops[0].subject).toContain('(3 of 4 seats)');
+    expect(ops[0].html).toContain('2 seats');
+  });
+
+  it('mails ops once when PayHere\'s callback completes the join', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, rideLists, paygw } = makePayHereApp({ email, digestTo: 'ops@x.com', opsBaseUrl: 'https://ops.example' });
+    const list = await rideLists.createList(listArgs({ date: '2999-08-08' }));
+    const cookie = await loginCookie(app);
+
+    const started = await app.request(`/board/${list.code}/join`, json(cookie, { seats: 1, payment: paymentDetails }));
+    expect(started.status).toBe(202);
+    // Nothing is held yet, so nothing is announced yet.
+    expect(email.sent).toHaveLength(0);
+
+    const { orderId } = (await started.json()).payment;
+    const notify = paygw.simulatePreapprovalNotify({ orderId, customerToken: 'real-encrypted-card-token' });
+    const res = await app.request('/board/payhere/notify', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: notify,
+    });
+    expect(res.status).toBe(200);
+
+    const ops = opsMail(email);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].subject).toMatch(/^Seat taken/);
+    expect(ops[0].html).toContain(list.code);
+  });
+
+  it('tells ops when a seat count changes, and stays quiet on an unchanged repeat join', async () => {
+    const { app, rideLists, email } = opsMailApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    expect(opsMail(email)).toHaveLength(1);
+
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    const ops = opsMail(email);
+    expect(ops).toHaveLength(2);
+    expect(ops[1].subject).toMatch(/^Seats changed: Ella → Mirissa/);
+  });
+
+  it('sends nothing internal when no ops inbox is configured', async () => {
+    const { app, rideLists, email } = mailApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect((email as FakeEmailAdapter).sent.map((m) => m.to)).toEqual(['roshen@x.com']);
+  });
+
+  it('still mails ops when the traveller receipt fails, and vice versa, and never fails the join', async () => {
+    // A provider that rejects only the customer mail: the ops mail must still go out.
+    const flaky = new FakeEmailAdapter();
+    const send = flaky.send.bind(flaky);
+    flaky.send = async (msg) => {
+      if (msg.audience !== 'ops') throw new Error('customer mail down');
+      return send(msg);
+    };
+    const { app, rideLists } = opsMailApp({}, flaky);
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    expect(res.status).toBe(200);
+    expect(flaky.sent.map((m) => m.to)).toEqual(['ops@x.com']);
   });
 });
 

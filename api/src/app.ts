@@ -426,6 +426,9 @@ export function createApp(deps: AppDeps = {}) {
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       email,
       alerts,
+      ...((deps.digestTo ?? config.ALERT_EMAIL)
+        ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL } }
+        : {}),
     }),
   );
   // Share links for the Ride Board. Its own mount, not /board/:code — that one answers
