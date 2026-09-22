@@ -219,6 +219,10 @@ export class PostgresBookingRepo implements BookingRepo {
         mode: 'shared',
         input: {
           corridorId: sr.corridorId,
+          // null => this row never recorded its leg (pre-0051). Undefined, not null, so the
+          // label resolver's "both ends or nothing" rule reads it the same as an absent field.
+          ...(sr.fromPlace ? { fromPlace: sr.fromPlace } : {}),
+          ...(sr.toPlace ? { toPlace: sr.toPlace } : {}),
           date: sr.date,
           time: sr.time,
           seats: sr.seats,
@@ -339,6 +343,8 @@ export class PostgresBookingRepo implements BookingRepo {
         await tx.insert(sharedRequests).values({
           bookingId: bk.id,
           corridorId: t.corridorId,
+          fromPlace: t.fromPlace ?? null,
+          toPlace: t.toPlace ?? null,
           date: t.date,
           time: t.time,
           seats: t.seats,

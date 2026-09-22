@@ -153,6 +153,33 @@ export function corridorRouteEnds(id: string): { from: string; to: string } | nu
   return route ? { from: route.stops[0], to: route.stops[route.stops.length - 1] } : null;
 }
 
+// What a shared booking's route should be CALLED, from what the booking itself recorded.
+//
+// CH-6HE3V (2026-09-21): a CMB -> Sigiriya customer was told "Colombo Airport (CMB) – Kandy",
+// because every label rebuilt the route from the corridor's end stops. Since the directed
+// catalogue (2026-08-16) one corridor carries several legs at their own prices, so its
+// endpoints name the ROAD a van drives and no customer's journey.
+//
+// Bookings now record the leg they sold. Rows created before 2026-09-22 may not, and nothing
+// recovers what those bought — so `kind` keeps the two apart and no caller can render a
+// service's endpoints as a traveller's destination.
+export type SharedRouteLabel =
+  | { kind: 'leg'; from: string; to: string }
+  | { kind: 'service'; from: string; to: string };
+
+export function sharedRouteLabel(input: {
+  corridorId: string;
+  fromPlace?: string | null;
+  toPlace?: string | null;
+}): SharedRouteLabel | null {
+  // Both ends or nothing: half a leg is a guess, and guessing is the bug.
+  if (input.fromPlace && input.toPlace) {
+    return { kind: 'leg', from: input.fromPlace, to: input.toPlace };
+  }
+  const ends = corridorRouteEnds(input.corridorId);
+  return ends ? { kind: 'service', from: ends.from, to: ends.to } : null;
+}
+
 // Resolve which corridor carries both endpoints (any direction), first match wins —
 // mirrors the front-end iteration order. Used when no corridorId is supplied.
 export function corridorIdForRoute(from: string, to: string): string | null {
