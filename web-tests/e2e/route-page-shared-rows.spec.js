@@ -37,6 +37,25 @@ const BOUNDARY = {
   status: 'gathering', minSeats: 3, committed: 3,
   members: ['Hal', 'Ira', 'Jon'].map(member),
 };
+// Fix 1: the longest real row — an afternoon slot AND the "your date" tag, together — is the
+// combination that exposed the bug (the tag's TEXT was invisible; only its chip border
+// survived, and the slot word ellipsised on nearly every row at 375px).
+const MARKED = {
+  code: 'RB-MINE', corridorId: 'airport-cultural', date: futureIsoDate(15), slot: 'afternoon',
+  status: 'gathering', minSeats: 3, committed: 2,
+  members: ['Kim', 'Lee'].map(member),
+};
+
+/** Sets the traveller's chosen date the way the date-field's `input[type=date]` does: writes
+ *  the value and fires `change` (route-page.js listens for that, not `input`). This is what
+ *  makes a matching list's row exact/`.is-yours` and appends the "your date" tag. */
+async function pickDate(page, iso) {
+  await page.evaluate((value) => {
+    const input = document.querySelector('.ld-date');
+    input.value = value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, iso);
+}
 
 async function stubBoard(page, lists) {
   await page.route((u) => isApiRequest(u), (route) => {
@@ -51,14 +70,23 @@ async function stubBoard(page, lists) {
 /** Does the element's own text content occupy a single line box? Built as a Range over its
  *  contents rather than the element's own rect: inline children (the faces, the "your date"
  *  tag) each contribute their own client rect even on one visual line, so counting rects would
- *  over-count. Distinct rounded `top` values is what actually answers "does this wrap". */
+ *  over-count. Grouping distinct `top` values is what actually answers "does this wrap" — but
+ *  an exact-match grouping is too strict once a padded inline chip is in the mix: the "your
+ *  date" tag's own padding/line-height sits its rect ~5px off from the plain text beside it on
+ *  the very same visual line (measured: text tops at 1689, the tag's at 1694-1695). A real wrap
+ *  moves a whole line-height (~20px+) instead, so cluster tops within 10px as "the same line"
+ *  rather than requiring them to round to the same integer. */
 function oneLine(locator) {
   return locator.evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
     const rects = [...range.getClientRects()];
-    const tops = new Set(rects.map((r) => Math.round(r.top)));
-    return { lines: tops.size, rectCount: rects.length };
+    const tops = rects.map((r) => r.top).sort((a, b) => a - b);
+    let lines = tops.length ? 1 : 0;
+    for (let i = 1; i < tops.length; i++) {
+      if (tops[i] - tops[i - 1] > 10) lines++;
+    }
+    return { lines, rectCount: rects.length };
   });
 }
 
@@ -129,4 +157,46 @@ test('at 375px, every row keeps its date on one line, its pill on the row, and t
 
   const docOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(docOverflow, 'the page scrolls sideways').toBeLessThanOrEqual(0);
+});
+
+test('Fix 1 — at 375px, the longest real row shows the whole date and slot, and the "your date" tag is actually visible', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await stubBoard(page, [MARKED]);
+  await page.goto('/trip/cmb-airport-to-sigiriya/');
+  await expect(page.locator('.ld-row')).toHaveCount(1);
+  await pickDate(page, MARKED.date);
+
+  const row = page.locator('.ld-row.is-yours');
+  await expect(row).toBeVisible();
+  const when = row.locator('.ld-when');
+
+  // nothing ellipsised: the box is at least as wide as its own (unclipped) content
+  const { scrollW, clientW, innerText } = await when.evaluate((el) => (
+    { scrollW: el.scrollWidth, clientW: el.clientWidth, innerText: el.innerText }
+  ));
+  expect(scrollW, `.ld-when overflows its own box (scrollWidth ${scrollW} > clientWidth ${clientW})`).toBeLessThanOrEqual(clientW);
+  // `innerText` (not textContent) so this reads what a traveller actually sees: below 480px
+  // the slot word itself is shortened ('afternoon' -> 'pm', see the generator's .ld-slot-short
+  // rule) as the last-resort fix for this exact row, once the reflow alone still fell ~6px
+  // short of the full word's natural width. The date is never shortened.
+  expect(innerText, '.ld-when dropped the slot entirely').toMatch(/pm|afternoon/);
+  expect(innerText, '.ld-when lost the date').toMatch(/\d{1,2} \w{3}/);
+
+  // the "your date" tag is genuinely rendered, not just a border with no text in it
+  const tag = row.locator('.ld-tag');
+  await expect(tag).toBeVisible();
+  const tagBox = await tag.boundingBox();
+  expect(tagBox.width, 'the "your date" tag has no visible width').toBeGreaterThan(0);
+  expect(tagBox.height, 'the "your date" tag has no visible height').toBeGreaterThan(0);
+
+  const { lines } = await oneLine(when);
+  expect(lines, 'the date wrapped onto multiple lines').toBe(1);
+
+  // the count and the pill now share a second line, below the date, rather than the date
+  // being squeezed to make room for them beside it
+  const whenBox = await when.boundingBox();
+  const countBox = await row.locator('.ld-count').boundingBox();
+  const pillBox = await row.locator('.ld-pill').boundingBox();
+  expect(Math.abs(countBox.y - pillBox.y), 'the count and the pill are not on the same line').toBeLessThanOrEqual(2);
+  expect(countBox.y, 'the count/pill line is not below the date').toBeGreaterThan(whenBox.y);
 });
