@@ -94,10 +94,10 @@ function optionCards(T, from, to, q, shared, p) {
       <article class="opt opt-shared">
         <span class="opt-tag opt-tag-warm">Best value · share &amp; save</span>
         <h2>Shared ride</h2>
-        <p class="opt-sub">One van, split between you</p>
+        <p class="opt-sub">One vehicle, shared between you</p>
         <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
         <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
-        <p class="opt-desc">One AC van, split between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
+        <p class="opt-desc">One AC vehicle, shared between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
         <ul class="pickups">${stops}</ul>
         <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
           <a class="btn btn-cta opt-cta" href="${esc(`${p}board.html?from=${encodeURIComponent(T.byId[from].name)}&to=${encodeURIComponent(T.byId[to].name)}`)}">See who's going &amp; add your name</a>
