@@ -112,6 +112,81 @@ export const SHARED_PRODUCTS: SharedProduct[] = [
 
 const normPlace = (s: string) => s.trim().toLowerCase();
 
+// ── Which van a boarding time belongs to (CH-SEATS, 2026-09-22) ────────────
+// Seat inventory keys on (corridor, date, time) and holdSeats find-or-creates that row
+// with a full 12 seats. A leg's `time` is when it BOARDS, which is not the same thing as
+// which van it rides: CMB -> Sigiriya boards 07:00 and Negombo -> Sigiriya boards 07:30,
+// but they are aboard TOGETHER between Negombo and Sigiriya — so each opening its own
+// full pool sold that one van twice over. Same shape on south-airport (14:45 / 15:00).
+//
+// Legs pool when the stretches of road they occupy OVERLAP, derived from the corridor's
+// stop order rather than hand-declared, so a new catalogue leg cannot quietly miss it.
+// Sigiriya -> Kandy boards at 11:30, after the northbound passengers have got out; it
+// shares no road with them and keeps its own seats. That separation is deliberate.
+//
+// Overlap is transitive here (connected components), so a chain A->B, B->C, A->C pools
+// all three even though A->B and B->C never meet. That is the safe way to be wrong:
+// under-selling a van is recoverable, overselling one strands people at the roadside.
+
+/** A leg's position on its corridor as a half-open span of stop indexes, or null. */
+function stopSpan(corridorId: string, from: string, to: string): [number, number] | null {
+  const route = CORRIDOR_ROUTES.find((c) => c.id === corridorId);
+  if (!route) return null;
+  const names = route.stops.map(normPlace);
+  const a = names.indexOf(normPlace(from));
+  const b = names.indexOf(normPlace(to));
+  if (a < 0 || b < 0 || a === b) return null; // an unknown stop is never pooled by guesswork
+  return a < b ? [a, b] : [b, a]; // direction does not change which road is occupied
+}
+
+// corridorId -> (boarding time -> pool key). Built once: the catalogue is a constant.
+const POOL_KEYS: ReadonlyMap<string, ReadonlyMap<string, string>> = (() => {
+  const byCorridor = new Map<string, SharedProduct[]>();
+  for (const p of SHARED_PRODUCTS) {
+    const list = byCorridor.get(p.corridorId);
+    if (list) list.push(p);
+    else byCorridor.set(p.corridorId, [p]);
+  }
+
+  const out = new Map<string, Map<string, string>>();
+  for (const [corridorId, products] of byCorridor) {
+    const spans = products.map((p) => stopSpan(corridorId, p.fromPlace, p.toPlace));
+    const parent = products.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    for (let i = 0; i < products.length; i++) {
+      for (let j = i + 1; j < products.length; j++) {
+        const s = spans[i];
+        const t = spans[j];
+        if (!s || !t) continue;
+        if (s[0] < t[1] && t[0] < s[1]) parent[find(i)] = find(j); // they share road
+      }
+    }
+    // Name each pool after its earliest boarding time: stable, and it reads as a real
+    // departure in the DB rather than an opaque id (HH:MM sorts lexicographically).
+    const earliest = new Map<number, string>();
+    products.forEach((p, i) => {
+      const root = find(i);
+      const cur = earliest.get(root);
+      if (cur === undefined || p.time < cur) earliest.set(root, p.time);
+    });
+    const times = new Map<string, string>();
+    products.forEach((p, i) => times.set(p.time, earliest.get(find(i))!));
+    out.set(corridorId, times);
+  }
+  return out;
+})();
+
+/**
+ * The seat pool a boarding time draws on. Legs riding one van at the same time share a
+ * pool, so the van cannot be sold twice. A time outside the catalogue passes through
+ * trimmed, leaving corridors without products (and direct repo callers) per-time as before
+ * — the route layer still rejects times no product publishes.
+ */
+export function departureKeyFor(corridorId: string, time: string): string {
+  const t = time.trim();
+  return POOL_KEYS.get(corridorId)?.get(t) ?? t;
+}
+
 /** The scheduled product for a DIRECTED leg, or null. Adjacency is not an offer. */
 export function sharedProductFor(from: string, to: string): SharedProduct | null {
   const f = normPlace(from), t = normPlace(to);
@@ -190,14 +265,16 @@ export class InMemoryDepartureRepo implements DepartureRepo {
   }): Promise<SharedDeparture | null> {
     const corridor = this.corridors.get(args.corridorId);
     if (!corridor) return null;
-    const key = `${args.corridorId}|${args.date}|${args.time}`;
+    // Legs that ride one van together resolve to one pool — see departureKeyFor.
+    const time = departureKeyFor(args.corridorId, args.time);
+    const key = `${args.corridorId}|${args.date}|${time}`;
     let dep = this.departures.get(key);
     if (!dep) {
       dep = {
         id: randomUUID(),
         corridorId: args.corridorId,
         date: args.date,
-        time: args.time,
+        time,
         seatsTotal: corridor.seatCapacity,
         seatsBooked: 0,
       };
@@ -215,7 +292,8 @@ export class InMemoryDepartureRepo implements DepartureRepo {
     time: string;
     seats: number;
   }): Promise<void> {
-    const dep = this.departures.get(`${args.corridorId}|${args.date}|${args.time}`);
+    const time = departureKeyFor(args.corridorId, args.time);
+    const dep = this.departures.get(`${args.corridorId}|${args.date}|${time}`);
     if (!dep) return; // never held → nothing to give back
     dep.seatsBooked = Math.max(0, dep.seatsBooked - args.seats);
   }

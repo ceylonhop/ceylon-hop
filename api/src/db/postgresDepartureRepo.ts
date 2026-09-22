@@ -5,6 +5,7 @@ import {
   type SharedDeparture,
   DEFAULT_CORRIDORS,
   corridorIdForRoute,
+  departureKeyFor,
   serviceDaysForCorridor,
 } from './departureRepo';
 
@@ -59,11 +60,13 @@ export class PostgresDepartureRepo implements DepartureRepo {
   }): Promise<SharedDeparture | null> {
     const corridor = await this.getCorridor(args.corridorId);
     if (!corridor) return null;
+    // Legs that ride one van together resolve to one pool — see departureKeyFor.
+    const time = departureKeyFor(args.corridorId, args.time);
 
     // Ensure the departure row exists (no-op if a concurrent caller created it).
     await this.sql`
       insert into shared_departure (corridor_id, date, time, seats_total, seats_booked)
-      values (${args.corridorId}, ${args.date}, ${args.time}, ${corridor.seatCapacity}, 0)
+      values (${args.corridorId}, ${args.date}, ${time}, ${corridor.seatCapacity}, 0)
       on conflict (corridor_id, date, time) do nothing`;
 
     // Atomic hold: the WHERE guard + row lock means concurrent holds can never oversell.
@@ -72,7 +75,7 @@ export class PostgresDepartureRepo implements DepartureRepo {
     >`
       update shared_departure
       set seats_booked = seats_booked + ${args.seats}
-      where corridor_id = ${args.corridorId} and date = ${args.date} and time = ${args.time}
+      where corridor_id = ${args.corridorId} and date = ${args.date} and time = ${time}
         and seats_booked + ${args.seats} <= seats_total
       returning id, corridor_id, date, time, seats_total, seats_booked`;
     const r = rows[0];
@@ -94,11 +97,13 @@ export class PostgresDepartureRepo implements DepartureRepo {
     time: string;
     seats: number;
   }): Promise<void> {
-    // Same row-targeting as holdSeats; greatest() floors at 0 so a stray double release
-    // can never drive the count negative. No row (never held) is a harmless no-op.
+    // Same row-targeting as holdSeats — including the pool resolver, so a release can
+    // never miss a hold. greatest() floors at 0 so a stray double release can never drive
+    // the count negative. No row (never held) is a harmless no-op.
+    const time = departureKeyFor(args.corridorId, args.time);
     await this.sql`
       update shared_departure
       set seats_booked = greatest(seats_booked - ${args.seats}, 0)
-      where corridor_id = ${args.corridorId} and date = ${args.date} and time = ${args.time}`;
+      where corridor_id = ${args.corridorId} and date = ${args.date} and time = ${time}`;
   }
 }

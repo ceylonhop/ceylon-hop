@@ -10,6 +10,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import { isoToday } from '../domain/dateRules';
 import { futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { signBookingToken } from '../lib/bookingToken';
+import { sweepStaleSharedHolds } from '../services/scheduler';
 
 async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
   const repo = new InMemoryZonesRepo();
@@ -599,5 +600,66 @@ describe('an unpriced booking never charges the client-supplied figure', () => {
     const res = await post(app, { ...valid, date: futureIsoDate(14), quotedTotal: 99_999_00 });
     const body = await res.json();
     expect(body.total).toBeLessThan(99_999_00);
+  });
+});
+
+// ── CH-SEATS (2026-09-22) ──────────────────────────────────────────────────
+// The hold used the TRIMMED time while the booking stored `req.time` untrimmed, so every
+// later release looked up a key the hold had never used and silently found nothing: the
+// compensation below, and cancel/refund (admin.ts) and the stale sweep (scheduler.ts) too.
+// A padded time clears the guard — it is trimmed before the comparison — so this is
+// reachable from the wire, and it strands real seats.
+describe('POST /bookings/shared — a padded departure time must not strand seats', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  const leg = (date: string, extra: Record<string, unknown>) => ({
+    from: 'Negombo', to: 'Sigiriya / Dambulla', date, customer: valid.customer, ...extra,
+  });
+
+  it('releases the hold when booking creation fails', async () => {
+    const departures = new InMemoryDepartureRepo();
+    class FailingBookings extends InMemoryBookingRepo {
+      async create(): Promise<never> { throw new Error('db down after hold'); }
+    }
+    const date = futureServiceDay();
+    const app = createApp({ departures, bookings: new FailingBookings() });
+    const res = await jpost(app, '/bookings/shared', leg(date, { time: ' 07:30 ', seats: 12 }));
+    expect(res.status).toBeGreaterThanOrEqual(500);
+
+    // The whole van must be back on sale, not stranded on a key nothing will release.
+    const after = await departures.holdSeats({
+      corridorId: 'airport-cultural', date, time: '07:30', seats: 12,
+    });
+    expect(after).not.toBeNull();
+  });
+
+  // The stored time is what every later release reads, so a padded one breaks them all.
+  // The sweep is the sharpest case: it reports success while the seats never come back.
+  it('gives the seats back when the stale-hold sweep cancels it', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const bookings = new InMemoryBookingRepo();
+    const date = futureServiceDay();
+    const app = createApp({ departures, bookings });
+    expect((await jpost(app, '/bookings/shared', leg(date, { time: ' 07:30 ', seats: 12 }))).status).toBe(201);
+
+    const { swept } = await sweepStaleSharedHolds({
+      bookings, departures, now: new Date(Date.now() + 48 * 3600 * 1000),
+    });
+    expect(swept).toBe(1);
+
+    const after = await departures.holdSeats({
+      corridorId: 'airport-cultural', date, time: '07:30', seats: 12,
+    });
+    expect(after).not.toBeNull();
   });
 });

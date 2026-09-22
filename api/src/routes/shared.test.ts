@@ -195,3 +195,65 @@ describe('POST /bookings/shared', () => {
     expect(email.sent).toHaveLength(1);
   });
 });
+
+// ── CH-SEATS (2026-09-22) ──────────────────────────────────────────────────
+// Two legs that ride one van at the same time each opened their own full-capacity pool,
+// because inventory keys on the boarding time and they board at different ones. The van
+// could be sold twice over on the stretch its passengers share.
+describe('overlapping legs share one vehicle’s seats', () => {
+  it('a full CMB -> Sigiriya run leaves no Negombo -> Sigiriya seats', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+
+    const first = await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 12,
+    });
+    expect(first.status).toBe(201); // the van is full
+
+    // Boards 30 minutes later at Negombo and rides to Sigiriya alongside them.
+    const second = await postShared(app, {
+      ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 12,
+    });
+    expect(second.status).toBe(409);
+  });
+
+  it('a full Mirissa -> CMB run leaves no Weligama -> CMB seats', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+
+    const first = await postShared(app, {
+      ...valid, from: 'Mirissa', to: 'Colombo Airport (CMB)', time: '14:45', seats: 12,
+    });
+    expect(first.status).toBe(201);
+
+    const second = await postShared(app, {
+      ...valid, from: 'Weligama', to: 'Colombo Airport (CMB)', time: '15:00', seats: 12,
+    });
+    expect(second.status).toBe(409);
+  });
+
+  // The seats still add up to ONE van, not a smaller one: pooling must not cost capacity.
+  it('still sells a full van across the two legs together', async () => {
+    const app = createApp({ departures: new InMemoryDepartureRepo() });
+    const a = await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 7,
+    });
+    const b = await postShared(app, {
+      ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 5,
+    });
+    expect([a.status, b.status]).toEqual([201, 201]); // 7 + 5 = the full 12
+  });
+
+  // Sigiriya -> Kandy boards at 11:30, by which time the northbound passengers have got
+  // out. Its separate seat pool is deliberate — pooling must not swallow it.
+  it('leaves Sigiriya -> Kandy its own seats after the airport run fills', async () => {
+    const app = createApp({ departures: new InMemoryDepartureRepo() });
+    await postShared(app, {
+      ...valid, from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', time: '07:00', seats: 12,
+    });
+    const tail = await postShared(app, {
+      ...valid, from: 'Sigiriya / Dambulla', to: 'Kandy', time: '11:30', seats: 12,
+    });
+    expect(tail.status).toBe(201);
+  });
+});
