@@ -223,6 +223,7 @@ export class PostgresBookingRepo implements BookingRepo {
           // label resolver's "both ends or nothing" rule reads it the same as an absent field.
           ...(sr.fromPlace ? { fromPlace: sr.fromPlace } : {}),
           ...(sr.toPlace ? { toPlace: sr.toPlace } : {}),
+          ...(sr.bags === null ? {} : { bags: sr.bags }),
           date: sr.date,
           time: sr.time,
           seats: sr.seats,
@@ -345,6 +346,7 @@ export class PostgresBookingRepo implements BookingRepo {
           corridorId: t.corridorId,
           fromPlace: t.fromPlace ?? null,
           toPlace: t.toPlace ?? null,
+          bags: t.bags ?? null,
           date: t.date,
           time: t.time,
           seats: t.seats,

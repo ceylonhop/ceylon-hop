@@ -58,7 +58,9 @@ const LINKS = {
 interface EmailDef {
   name: string;
   label: string;
-  run: (b: Booking, e: FakeEmailAdapter) => Promise<void>;
+  // Senders that report a delivery outcome return it; the preview only cares that the render
+  // happened, so the result is deliberately ignored here.
+  run: (b: Booking, e: FakeEmailAdapter) => Promise<unknown>;
 }
 
 const EMAILS: EmailDef[] = [

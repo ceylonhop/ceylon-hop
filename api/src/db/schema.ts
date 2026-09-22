@@ -389,6 +389,9 @@ export const sharedRequests = pgTable('shared_request', {
   // what it could; a null means "we never recorded it", which callers must not paper over.
   fromPlace: text('from_place'),
   toPlace: text('to_place'),
+  // Bags the customer declared. Nullable only because rows created before 0052 have none —
+  // the surcharge was charged from this number and nothing recorded it (audit 2026-09-22 #1).
+  bags: integer('bags'),
   date: text('date').notNull(),
   time: text('time').notNull(),
   seats: integer('seats').notNull(),

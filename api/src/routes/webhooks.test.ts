@@ -729,3 +729,34 @@ describe('POST /webhooks/payments — the paid alert says when they travel', () 
     expect(paid?.body).toContain('09:00');
   });
 });
+
+// ── Audit 2026-09-22, finding 2 ────────────────────────────────────────────
+// The notification ledger is what the paid-but-unconfirmed watchdog reads to decide a
+// customer has been told. Writing a row for a message that was suppressed asserts an email
+// that never went out — and silences the one alarm that would have caught it.
+describe('POST /webhooks/payments — the ledger records only mail that actually left', () => {
+  it('does NOT record a confirmation that notifications suppressed', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    // The documented incident lever: customer mail off, ops mail still flowing.
+    const app = createApp({ adapter, notificationLog, emailPolicy: { enabled: false } });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(false);
+  });
+
+  it('still records one that did go out', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, notificationLog });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(true);
+  });
+});

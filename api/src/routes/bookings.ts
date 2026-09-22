@@ -632,6 +632,9 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
       // customer they were going to Kandy (CH-6HE3V, 2026-09-21).
       fromPlace: product.fromPlace,
       toPlace: product.toPlace,
+      // The number priceShared just billed from. Without it the extra-bag surcharge landed in
+      // the total with nothing anywhere to explain it (audit 2026-09-22, finding 1).
+      bags: req.bags ?? 0,
       date: req.date,
       // The TRIMMED time — what the hold above used. Storing req.time untrimmed meant a
       // padded " 07:30 " held one key and every later release looked up another, so

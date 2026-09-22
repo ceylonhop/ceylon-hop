@@ -4,6 +4,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
+import { hasDeliverableAddress } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl } from './notifications';
 
@@ -114,6 +115,13 @@ export async function runWatchdog(
   for (const b of paid) {
     if (now.getTime() - Date.parse(b.createdAt) < UNCONFIRMED_PAID_MS) continue;
     if (await log.wasSent(b.id, 'confirmation')) continue;
+    // No address means no confirmation was ever due — a fact about the customer, like the
+    // manual-settlement exemption below, not a silent failure. This became load-bearing on
+    // 2026-09-22: before then the webhook recorded a send for these bookings even though
+    // nothing left, and that false row is what kept this loop quiet. Now that only real
+    // sends are recorded, the exemption has to be stated rather than implied — otherwise
+    // every WhatsApp-only customer pages the founder on every sweep until they travel.
+    if (!hasDeliverableAddress(b.input.customer.email)) continue;
     // Money that arrived out-of-band (cash/bank recorded by ops via mark-paid) is NOT a silent
     // failure — that route deliberately sends no confirmation email (owner 2026-07-30), so the
     // missing log entry is the expected state, not a symptom. Same spirit as the channel
