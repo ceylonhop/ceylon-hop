@@ -1248,7 +1248,7 @@ ${bootScript}
 function sitemap(extraPaths = []) {
   const urls = [`${ORIGIN}/`, `${ORIGIN}/trip/`];
   for (const [a, b] of BASE_PAIRS) { urls.push(`${ORIGIN}/trip/${slug(a, b)}/`); urls.push(`${ORIGIN}/trip/${slug(b, a)}/`); }
-  for (const f of ['about.html', 'why.html', 'plan.html', 'tours.html', 'blog.html', ...extraPaths]) urls.push(`${ORIGIN}/${f}`);
+  for (const f of ['about.html', 'why.html', 'plan.html', 'board.html', 'tours.html', 'blog.html', ...extraPaths]) urls.push(`${ORIGIN}/${f}`);
   const body = urls.map(u => `  <url><loc>${u}</loc></url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
