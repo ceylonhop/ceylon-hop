@@ -21,6 +21,23 @@ describe('EmailAlertAdapter', () => {
   });
 });
 
+describe('EmailAlertAdapter — a pre-rendered email', () => {
+  it('sends the alert\'s own subject/html/text verbatim, with no [SEVERITY] prefix', async () => {
+    const email = new FakeEmailAdapter();
+    await new EmailAlertAdapter(email, 'ops@ceylonhop.com').send({
+      severity: 'info',
+      kind: 'booking_paid',
+      title: 'Paid: CH-1',
+      body: 'fallback',
+      email: { subject: 'Paid: Colombo → Ella', html: '<p>hi</p>', text: 'hi' },
+    });
+    expect(email.sent[0].subject).toBe('Paid: Colombo → Ella');
+    expect(email.sent[0].html).toBe('<p>hi</p>');
+    expect(email.sent[0].text).toBe('hi');
+    expect(email.sent[0].audience).toBe('ops');
+  });
+});
+
 describe('LogAlertAdapter', () => {
   it('writes one console.error line and never throws', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
