@@ -613,7 +613,7 @@ function showAlreadyGoing() {
     const need = Math.max(0, (L.minSeats || 3) - (L.committed || 0));
     wrap.innerHTML = `<div class="sb-going"><b>${L.committed} of ${L.minSeats} going ${dateText}</b>
       <small>${need > 0 ? `needs ${need} more` : 'enough to run'} · $0 until it's confirmed</small></div>
-      <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Hop on ${ICON.arrow}</a>`;
+      <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Join ${ICON.arrow}</a>`;
   };
   if (goingList !== undefined) { apply(); return; }
   const api = window.CEYLON_HOP_API;
