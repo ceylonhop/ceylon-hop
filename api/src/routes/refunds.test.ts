@@ -32,7 +32,8 @@ async function fixture() {
   const bookings = new InMemoryBookingRepo();
   const payments = new InMemoryPaymentRepo();
   const email = new FakeEmailAdapter();
-  const app = createApp({ bookings, payments, email, adminApiKey: KEY, auth });
+  const alerts = new FakeAlertAdapter();
+  const app = createApp({ bookings, payments, email, alerts, adminApiKey: KEY, auth });
   const created = await app.request('/bookings/single', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -64,7 +65,7 @@ async function fixture() {
   await payments.markSucceeded(payment.id);
   await bookings.setStatus(booking.id, 'payment_pending');
   await bookings.setStatus(booking.id, 'paid');
-  return { app, bookings, payments, email, booking, payment };
+  return { app, bookings, payments, email, alerts, booking, payment };
 }
 
 const requestRefund = async (
@@ -498,5 +499,34 @@ describe('the watchdog sweep for refunds stuck mid-call', () => {
     });
     expect(result.stuckRefunds).toBe(0);
     expect(alerts.sent.filter((a) => a.kind === 'refund_stuck_processing')).toHaveLength(0);
+  });
+});
+
+// Owner 2026-09-23: money going back reached only the customer's inbox. The team gets a
+// "Refunded:" mail when a refund is CONFIRMED — never on the request, which moves nothing.
+describe('refund team email', () => {
+  it('sends a "Refunded:" team email on confirm, not on request, stating partial vs full', async () => {
+    const { app, alerts, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 100)).json();
+    expect(alerts.sent.filter((a) => a.kind === 'booking_refunded')).toHaveLength(0);
+    await app.request(`/admin/bookings/${booking.id}/refunds/${refund.id}/confirm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
+      body: JSON.stringify({ gatewayRef: 'PAYHERE-R-9' }),
+    });
+    const sent = alerts.sent.filter((a) => a.kind === 'booking_refunded');
+    expect(sent).toHaveLength(1);
+    const m = sent[0].email!;
+    expect(m.subject.startsWith('Refunded: ')).toBe(true);
+    expect(m.subject).toContain('$1.00');
+    expect(m.subject).toContain('partial');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('AC car');
+      expect(part).toContain('2 adults');
+      expect(part).toContain('PAYHERE-R-9');
+      expect(part).toContain('founder@test');
+      expect(part).toContain('Customer request');
+    }
+    expect(sent[0].dedupeKey).toBe(refund.id);
   });
 });

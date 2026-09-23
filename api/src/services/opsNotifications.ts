@@ -1,5 +1,5 @@
 import type { EmailAdapter } from '../adapters/email';
-import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP } from './opsEmail';
+import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP, MUTED } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
 import type { Booking } from '../db/bookingRepo';
@@ -235,13 +235,15 @@ function headCount(b: Booking): number {
   return b.input.adults + b.input.children;
 }
 
-export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
+// Everything the team emails say about a booking, computed once so "Paid:", "Cancelled:" and
+// "Refunded:" describe the same booking in the same words.
+function bookingFacts(b: Booking) {
   const c = b.input.customer;
   const shared = b.mode === 'shared';
   const n = headCount(b);
   const vehicle = b.mode === 'shared' ? '' : b.input.vehicleType === 'van' ? 'AC van' : 'AC car';
-  // Long itineraries are shortened in the subject only; the body keeps every stop.
   const route = routeText(b);
+  // Long itineraries are shortened in the subject only; the body keeps every stop.
   const subjectRoute =
     b.mode === 'trip' && b.input.stops.length > 2
       ? `${shortPlace(b.input.stops[0])} → … → ${shortPlace(b.input.stops[b.input.stops.length - 1])}`
@@ -249,18 +251,7 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   const start = b.mode === 'trip' ? b.input.dates?.find(Boolean) : b.input.date;
   const when = start ? (b.mode === 'trip' ? `from ${shortDay(start)}` : shortDay(start)) : 'date TBC';
   const time = b.mode !== 'trip' && b.input.time ? ` · ${b.input.time}` : '';
-
-  // What actually landed: a deposit booking charges amountDueNow, not the total.
-  const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;
-  const balance = b.total - paidNow;
-  const paid = money(paidNow, b.currency);
-
   const people = shared ? `${n} seat${n === 1 ? '' : 's'}` : `${vehicle} · ${n} pax`;
-  const subject = `Paid: ${subjectRoute}, ${when} — ${people} — ${paid}`;
-
-  const keys: [string, string][] = shared
-    ? [['Seats', String(n)], ['Travels', `${when}${time}`]]
-    : [['Vehicle', vehicle], ['Passengers', String(n)], [b.mode === 'trip' ? 'Starts' : 'Travels', `${when}${time}`]];
   // The customer email's own fact rows, in the team's word for travellers.
   const tripRows = factRows(b).map(([k, v]): [string, string] => [k === 'Travellers' ? 'Passengers' : k, v]);
   if (b.mode === 'trip') tripRows.unshift(['Stops', route]);
@@ -269,35 +260,173 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
     ['Email', c.email],
     ['WhatsApp', c.whatsapp],
   ];
-  const moneyRows: [string, string][] = [
-    ['Paid', paid],
-    ...(balance > 0 ? [['Balance due', money(balance, b.currency)] as [string, string]] : []),
-    ['Channel', b.channel === 'whatsapp' ? 'WhatsApp' : 'Website'],
-  ];
+  // What a paid booking actually took: a deposit booking charges amountDueNow, not the total.
+  const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;
+  return { shared, n, vehicle, route, subjectRoute, when, time, people, tripRows, customerRows, paidNow };
+}
+
+type BookingFacts = ReturnType<typeof bookingFacts>;
+
+// The three facts in the grey boxes. `dateLabel` is "Travels", "Starts" or "Was due".
+function bookingKeys(f: BookingFacts, b: Booking, dateLabel?: string): [string, string][] {
+  const label = dateLabel ?? (b.mode === 'trip' ? 'Starts' : 'Travels');
+  return f.shared
+    ? [['Seats', String(f.n)], [label, `${f.when}${f.time}`]]
+    : [['Vehicle', f.vehicle], ['Passengers', String(f.n)], [label, `${f.when}${f.time}`]];
+}
+
+interface TeamBookingParts {
+  pill: [string, string, string]; // label, colour, background
+  lead?: string;
+  keys: [string, string][];
+  note?: string;
+  moneyTitle: string;
+  moneyRows: [string, string][];
+  strong: string[];
+}
+
+function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBaseUrl: string): { html: string; text: string } {
   const link = bookingDeepLink(b.id, opsBaseUrl);
   const fallback = 'Find it under Bookings in the ops dashboard.';
-
+  const lead = p.lead ? ` <span style="font-size:14px;color:${MUTED};margin-left:6px">${esc(p.lead)}</span>` : '';
   const html = [
-    `<p style="margin:0 0 10px">${statusPill('PAID', '#1f6b3a', '#e3f1e6')}</p>`,
-    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(route)}</p>`,
+    `<p style="margin:0 0 10px">${statusPill(...p.pill)}${lead}</p>`,
+    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(f.route)}</p>`,
     `<p style="font-size:15px;font-weight:600;color:${TEAL_DEEP};margin:0 0 16px">${esc(b.reference)}</p>`,
-    keyFacts(keys),
-    section('Trip', tripRows),
-    section('Customer', customerRows),
-    section('Payment', moneyRows, ['Paid']),
+    keyFacts(p.keys),
+    p.note ? `<p style="margin:0 0 18px;padding:12px 14px;background:#F0EEE5;border-radius:6px;font-size:14px">${esc(p.note)}</p>` : '',
+    section('Trip', f.tripRows),
+    section('Customer', f.customerRows),
+    section(p.moneyTitle, p.moneyRows, p.strong),
     ctaBlock('Open the booking', link, fallback),
   ].join('');
   const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(13)}${v}`), ''];
   const text = [
-    `PAID · ${b.reference}`,
-    route,
+    `${p.pill[0]} · ${b.reference}${p.lead ? ` · ${p.lead}` : ''}`,
+    f.route,
     '',
-    ...rows('Trip', tripRows),
-    ...rows('Customer', customerRows),
-    ...rows('Payment', moneyRows),
+    ...(p.note ? [p.note, ''] : []),
+    ...rows('Trip', f.tripRows),
+    ...rows('Customer', f.customerRows),
+    ...rows(p.moneyTitle, p.moneyRows),
     link ? `Open the booking: ${link}` : fallback,
   ].join('\n');
-  return { subject, ...opsEmailShell(html, text) };
+  return opsEmailShell(html, text);
+}
+
+const channelLabel = (b: Booking) => (b.channel === 'whatsapp' ? 'WhatsApp' : 'Website');
+
+export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const balance = b.total - f.paidNow;
+  const paid = money(f.paidNow, b.currency);
+  const subject = `Paid: ${f.subjectRoute}, ${f.when} — ${f.people} — ${paid}`;
+  const moneyRows: [string, string][] = [
+    ['Paid', paid],
+    ...(balance > 0 ? [['Balance due', money(balance, b.currency)] as [string, string]] : []),
+    ['Channel', channelLabel(b)],
+  ];
+  return {
+    subject,
+    ...teamBookingBody(b, f, { pill: ['PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Paid'] }, opsBaseUrl),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cancelled / Refunded (owner, 2026-09-23). Both used to reach only the customer. Subjects
+// start "Cancelled: " / "Refunded: " — deliberately NOT "Paid:", which the owner forwards on.
+// ---------------------------------------------------------------------------
+
+export interface TeamCancelledArgs {
+  by: string;
+  reason: string;
+  /** Status before the cancel: a booking still awaiting payment took no money. */
+  statusBefore: string;
+  /** Sum already refunded (confirmed) before this cancel, minor units. */
+  refundedCents: number;
+}
+
+// Every status before money is taken (domain/status.ts): a cancel from one of these refunds nothing.
+const UNPAID_STATUSES = new Set(['draft', 'payment_pending', 'awaiting_details']);
+
+export function teamCancelledEmail(b: Booking, a: TeamCancelledArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const tookMoney = !UNPAID_STATUSES.has(a.statusBefore);
+  const subject = f.shared
+    ? `Cancelled: ${f.subjectRoute}, ${f.when} — ${f.people} released — ${b.reference}`
+    : `Cancelled: ${f.subjectRoute}, ${f.when} — ${f.people} — ${b.reference}`;
+  const owed = f.paidNow - a.refundedCents;
+  const moneyRows: [string, string][] = tookMoney
+    ? [
+        ['Paid', money(f.paidNow, b.currency)],
+        [
+          'Refund',
+          a.refundedCents <= 0
+            ? 'Not refunded yet — open the booking to refund'
+            : owed > 0
+              ? `${money(a.refundedCents, b.currency)} refunded · ${money(owed, b.currency)} not refunded`
+              : `${money(a.refundedCents, b.currency)} refunded (full)`,
+        ],
+      ]
+    : [['Paid', 'Not paid — nothing to refund']];
+  if (f.shared) f.tripRows.push(['Released', `${f.people} back on sale`]);
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['CANCELLED', '#8a6a63', '#f2eae8'],
+        lead: `Cancelled by ${a.by}`,
+        keys: bookingKeys(f, b, 'Was due'),
+        note: `Reason: ${a.reason}`,
+        moneyTitle: 'Money',
+        moneyRows,
+        strong: ['Refund'],
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+export interface TeamRefundedArgs {
+  amountCents: number;
+  currency: string;
+  full: boolean;
+  by: string;
+  reason: string;
+  gatewayRef: string | null;
+  viaApi: boolean;
+}
+
+export function teamRefundedEmail(b: Booking, a: TeamRefundedArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const amount = money(a.amountCents, a.currency);
+  const subject = `Refunded: ${f.subjectRoute}, ${f.when} — ${amount} back to customer${a.full ? '' : ' (partial)'} — ${b.reference}`;
+  const moneyRows: [string, string][] = [
+    ['Paid', money(f.paidNow, b.currency)],
+    ['Refunded', `${amount} (${a.full ? 'full' : 'partial'})`],
+    ['Method', a.viaApi ? 'PayHere (automatic)' : 'PayHere (by hand)'],
+    ...(a.gatewayRef ? [['PayHere ref', a.gatewayRef] as [string, string]] : []),
+  ];
+  const keys: [string, string][] = [['Refunded', amount], ...bookingKeys(f, b).slice(0, 2)];
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['REFUNDED', '#6b4f8a', '#eee8f4'],
+        lead: `Refunded by ${a.by}`,
+        keys,
+        note: `Reason: ${a.reason}`,
+        moneyTitle: 'Money',
+        moneyRows,
+        strong: ['Refunded'],
+      },
+      opsBaseUrl,
+    ),
+  };
 }
 
 // ---------------------------------------------------------------------------
