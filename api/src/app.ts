@@ -467,6 +467,7 @@ export function createApp(deps: AppDeps = {}) {
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({

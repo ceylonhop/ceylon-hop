@@ -38,6 +38,38 @@ export function ctaBlock(label: string, href: string, fallback: string): string 
     : `<p style="margin:0;color:${MUTED};font-size:14px">${esc(fallback)}</p>`;
 }
 
+// A small coloured label ("PAID") that heads a message. Colours are the ops-ui status chips.
+export function statusPill(label: string, color: string, bg: string): string {
+  return `<span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;color:${color};` +
+    `background:${bg};border-radius:999px;padding:3px 10px">${esc(label)}</span>`;
+}
+
+// The two or three facts a reader needs at a glance, as grey boxes in one row. A table, not
+// flex/grid: email clients only agree on tables.
+export function keyFacts(facts: [string, string][]): string {
+  const cells = facts.map(
+    ([k, v]) =>
+      `<td style="padding:10px 14px;background:#F6F4EE;border-radius:8px;vertical-align:top">` +
+      `<div style="font-size:11px;color:${MUTED};text-transform:uppercase;letter-spacing:.05em">${esc(k)}</div>` +
+      `<div style="font-size:17px;font-weight:700;margin-top:2px">${esc(v)}</div></td>`,
+  );
+  return `<table style="border-collapse:separate;margin:0 0 20px"><tr>${cells.join('<td style="width:8px"></td>')}</tr></table>`;
+}
+
+// A titled group of label/value rows. `strong` rows are bolded (the money line).
+export function section(title: string, rows: [string, string][], strong: string[] = []): string {
+  return [
+    `<p style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:${MUTED};margin:0 0 6px">${esc(title)}</p>`,
+    '<table style="border-collapse:collapse;font-size:14px;margin:0 0 18px;width:100%">',
+    ...rows.map(
+      ([k, v]) =>
+        `<tr><td style="padding:5px 16px 5px 0;color:${MUTED};width:110px;vertical-align:top;border-top:1px solid #eee9df">${esc(k)}</td>` +
+        `<td style="padding:5px 0;font-weight:${strong.includes(k) ? 700 : 500};border-top:1px solid #eee9df">${esc(v)}</td></tr>`,
+    ),
+    '</table>',
+  ].join('');
+}
+
 // Wrap a caller-built body in the branded container + eyebrow + footer.
 export function opsEmailShell(bodyHtml: string, bodyText: string): { html: string; text: string } {
   const html = [

@@ -15,6 +15,10 @@ export interface Alert {
   title: string; // one-line human summary
   body: string; // detail — reference, route, error message
   dedupeKey?: string; // defaults to kind; storms collapse per key per cooldown
+  // A fully rendered email for alerts a human reads as a message, not an incident (the team's
+  // "Paid:" mail). Sent verbatim — no [SEVERITY] prefix — so its subject can be filtered on.
+  // Title/body stay required: they are what the log fallback prints.
+  email?: { subject: string; html: string; text: string };
 }
 
 export interface AlertAdapter {
@@ -42,6 +46,10 @@ export class EmailAlertAdapter implements AlertAdapter {
   ) {}
 
   async send(alert: Alert): Promise<void> {
+    if (alert.email) {
+      await this.email.send({ to: this.to, ...alert.email, audience: 'ops' });
+      return;
+    }
     const sev = alert.severity.toUpperCase();
     const text = [
       `${sev} · ${alert.kind}`,

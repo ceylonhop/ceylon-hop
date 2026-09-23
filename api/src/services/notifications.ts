@@ -127,8 +127,9 @@ function extrasLabel(extras?: string[]): string | null {
   return labels.join(', ');
 }
 
-// The non-route facts (date, vehicle, travellers, …) as label/value pairs.
-function factRows(booking: Booking): [string, string][] {
+// The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
+// team's paid email states the vehicle and head-count in exactly the customer's words.
+export function factRows(booking: Booking): [string, string][] {
   if (booking.mode === 'trip') {
     const start = booking.input.dates?.find(Boolean);
     const chauffeur = booking.input.serviceType === 'chauffeur';

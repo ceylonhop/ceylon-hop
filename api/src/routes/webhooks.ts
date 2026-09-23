@@ -12,6 +12,7 @@ import {
 import { wasDelivered } from '../adapters/email';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
+import { teamPaidEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
@@ -89,6 +90,8 @@ export function webhookRoutes(deps: {
   // Signs the customer's "manage my booking" link in the confirmation email.
   baseUrl: string;
   linkSecret: string;
+  // Deep link in the team's paid email. Unset → the email says where to look instead.
+  opsBaseUrl?: string;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -282,6 +285,7 @@ export function webhookRoutes(deps: {
           kind: 'booking_paid',
           title: `Paid: ${paid.reference} — ${fmtMoney(paid.total, paid.currency)}`,
           body: teamPaidBody(paid),
+          email: teamPaidEmail(paid, deps.opsBaseUrl ?? ''),
           dedupeKey: paid.reference,
         });
       } catch (err) {
