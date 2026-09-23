@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { Hono } from 'hono';
@@ -298,5 +299,39 @@ describe('ops fulfilment milestones email the customer', () => {
     const before = email.sent.length;
     await post(app, b.id, 'pickup_confirmed');
     expect(email.sent.length).toBe(before);
+  });
+});
+
+// The queue is read on every load of the ops Bookings surface, and it holds every booking in
+// the eight queue statuses — closed ones included — so it only ever grows. A payments lookup
+// per booking, awaited one after another, is a round-trip per booking to a database ~100 ms
+// away (prod, 2026-09-22): the whole reason the page "takes forever". Pin it to one batched
+// lookup, and prove the paid flag still comes from the payments rows.
+describe('ops bookings list — payments are fetched in one batch, not per booking', () => {
+  it('never calls findByBookingId for the list, and still marks the paid booking paid', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const perBooking: string[] = [];
+    const orig = payments.findByBookingId.bind(payments);
+    payments.findByBookingId = async (id: string) => { perBooking.push(id); return orig(id); };
+    const app = createApp({ bookings, payments, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
+
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const b = await seed(bookings);
+      await bookings.setStatus(b.id, 'payment_pending');
+      ids.push(b.id);
+    }
+    const p = await payments.create({ bookingId: ids[1], provider: 'fake', orderId: `o-${ids[1]}`, amount: 12100, currency: 'USD', idempotencyKey: `k-${ids[1]}` });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(ids[1], 'paid');
+
+    const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
+    const rows: { id: string; paymentStatus: string }[] = await res.json();
+
+    expect(perBooking).toEqual([]);
+    expect(rows.map((r) => [r.id, r.paymentStatus]).sort()).toEqual(
+      [[ids[0], 'unpaid'], [ids[1], 'paid'], [ids[2], 'unpaid']].sort(),
+    );
   });
 });
