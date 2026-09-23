@@ -309,6 +309,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .svc.disabled:hover,.svc:disabled:hover{border-color:var(--line)}
   /* Inactive but still pressable: the only thing missing is dates, and pressing goes to collect
      them. Reads as unavailable, invites the press that fixes it. */
+  /* inside the notice window the card stays pressable — pressing it opens the explainer below */
+  .svc.too-soon{cursor:pointer}
+  /* The notice-window explainer: information about a website rule, not an error the traveller
+     made — so calm teal, no red, and it only appears once they reach for the chauffeur card. */
+  .cx-note{margin:-6px 0 18px;padding:14px 16px;border-radius:14px;background:var(--pc-teal);font-size:.9rem;color:var(--ink-soft);line-height:1.45}
+  .cx-note[hidden]{display:none}
+  .cx-note .cx-h{display:flex;align-items:center;gap:.5rem;font-weight:700;color:var(--accent-deep)}
+  .cx-note .cx-h svg{width:18px;height:18px;flex:none}
+  .cx-note p{margin:6px 0 0}
+  .cx-note p.cx-alt a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
+  .cx-note .cx-btn{margin-top:12px;background:none;color:var(--accent-deep);border:1.5px solid var(--accent-deep);border-radius:999px;padding:.5rem 1rem;font:inherit;font-weight:700;cursor:pointer}
+  .cx-note .cx-btn:hover{background:var(--accent-deep);color:#fff}
   .svc.needs-dates{cursor:pointer}
   .svc.needs-dates:hover{border-color:var(--accent);opacity:.78}
   .svc.needs-dates .svc-tag{text-decoration:underline;text-underline-offset:2px}
@@ -777,6 +789,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <span class="svc-tag" id="svc-chauffeur-tag"></span>
         </button>
       </div>
+      <!-- chauffeur notice-window explainer: opens beside the card only when it's pressed (filled by render) -->
+      <div class="cx-note" id="chauffeur-notice" role="status" hidden></div>
 
       <!-- itinerary route (multi-day trips only) -->
       <div class="trip-route" id="trip-route" style="display:none"></div>
@@ -1081,6 +1095,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=3daed01ac4"></script>
+<script src="booking.js?v=74f6a4fcdc"></script>
 </body>
 </html>

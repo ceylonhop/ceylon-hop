@@ -113,15 +113,33 @@ describe('chauffeur-guide — 7 days notice', () => {
     expect(ev(w, 'chauffeurTooSoon()')).toBe(true);
   });
 
-  it('disables the chauffeur option and explains why', () => {
+  /* Owner feedback 2026-09-23: the explainer used to sit under the itinerary, shown up-front in
+     red, and read like an error the traveller had made. It now waits until they actually reach
+     for the chauffeur card, opens right beside it, and reads as information, not a warning. */
+  it('keeps the explainer out of the way until the chauffeur card is pressed', () => {
     const w = loadBooking(tripQuery(futureIsoDate(3), futureIsoDate(5)));
     const btn = w.document.querySelector('.svc[data-svc="chauffeur"]');
-    expect(btn.disabled).toBe(true);
-    expect(btn.getAttribute('aria-disabled')).toBe('true');
-    const cx = w.document.getElementById('chauffeur-extra');
-    expect(cx.style.display).toBe('block');
-    expect(cx.textContent).toContain('7 days');
-    expect(cx.textContent).toContain('earliest chauffeur start is');
+    expect(btn.disabled, 'the card must stay pressable so it can explain itself').toBe(false);
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    const note = w.document.getElementById('chauffeur-notice');
+    expect(note, 'no notice slot beside the service chooser').toBeTruthy();
+    expect(note.hidden).toBe(true);
+    // nothing about the notice window leaks into the itinerary card any more
+    expect(w.document.getElementById('chauffeur-extra').textContent).not.toContain('notice');
+  });
+
+  it('explains the notice window beside the card when it is pressed — without selecting it', () => {
+    const w = loadBooking(tripQuery(futureIsoDate(3), futureIsoDate(5)));
+    w.eval("window.pickSvc('chauffeur')");
+    expect(ev(w, 'state.svc')).toBe('private');
+    const note = w.document.getElementById('chauffeur-notice');
+    expect(note.hidden).toBe(false);
+    expect(w.document.querySelector('.svc[data-svc="chauffeur"]').getAttribute('aria-expanded')).toBe('true');
+    expect(note.previousElementSibling.id, 'the notice should open right under the chooser').toBe('svc-chooser');
+    expect(note.textContent).toContain('7 days');
+    expect(note.textContent).toContain('earliest chauffeur start is');
+    expect(note.className, 'information, not an error').not.toMatch(/warn|err/);
   });
 
   /* The notice window is a WEBSITE rule, not a capacity one -- the API deliberately exempts
@@ -131,7 +149,8 @@ describe('chauffeur-guide — 7 days notice', () => {
      does not retype what they just entered. */
   it('offers WhatsApp as the way through, carrying the trip with it', () => {
     const w = loadBooking(tripQuery(futureIsoDate(3), futureIsoDate(5)));
-    const wa = w.document.querySelector('#chauffeur-extra a[href*="wa.me"]');
+    w.eval("window.pickSvc('chauffeur')");
+    const wa = w.document.querySelector('#chauffeur-notice a[href*="wa.me"]');
     expect(wa, 'no WhatsApp handoff in the chauffeur notice explainer').toBeTruthy();
     expect(wa.target).toBe('_blank');
     expect(wa.rel).toContain('noopener');

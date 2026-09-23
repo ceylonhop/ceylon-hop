@@ -89,6 +89,7 @@ const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
 let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
+let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
@@ -1035,7 +1036,18 @@ window.pickSvc=function(svc){
     if(tripEditUrl) location.href=tripEditUrl;
     return;
   }
-  if(svc===state.svc) return;                 // re-pressing the active option shouldn't animate
+  // Inside the notice window the card can't be chosen online — pressing it opens the explainer
+  // right beside it instead (owner feedback 2026-09-23: shown up-front under the itinerary, in red,
+  // it read like an error). Pressing the private card again folds it away.
+  if(isTrip && svc==='chauffeur' && chauffeurTooSoon()){
+    chauffeurNoticeOpen=true;
+    render();
+    const note=document.getElementById('chauffeur-notice');
+    if(note && note.scrollIntoView) note.scrollIntoView({behavior:'smooth', block:'nearest'});
+    return;
+  }
+  if(svc==='private' && chauffeurNoticeOpen){ chauffeurNoticeOpen=false; render(); }
+  if(svc===state.svc) return;                // re-pressing the active option shouldn't animate
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
   state.payPlan = 'full';
@@ -1872,30 +1884,40 @@ function render(){
       // "Add all dates to quote" — pressing it goes and collects them (see pickSvc). It used to
       // carry `disabled`, which makes every child inert: we told them exactly what to do and gave
       // them no way to do it (owner-spotted 2026-09-18).
-      // The notice window is the opposite case — nothing they do on this card fixes it today — so
-      // that one stays truly disabled and the panel below explains it.
-      chBtn.disabled=tooSoon;
-      chBtn.setAttribute('aria-disabled', tooSoon?'true':'false');
+      // The notice window can't be fixed on this card either, so it can't be SELECTED — but it stays
+      // pressable, and pressing it opens the explainer beside it (pickSvc) — so to assistive tech
+      // it's a working control that expands that explainer, not a disabled one.
+      chBtn.disabled=false;
+      chBtn.setAttribute('aria-disabled', 'false');
+      if(tooSoon){ chBtn.setAttribute('aria-controls','chauffeur-notice'); chBtn.setAttribute('aria-expanded', chauffeurNoticeOpen?'true':'false'); }
+      else { chBtn.removeAttribute('aria-controls'); chBtn.removeAttribute('aria-expanded'); }
       chBtn.classList.toggle('disabled', !chOK);
       chBtn.classList.toggle('needs-dates', !datesOK && !tooSoon);
+      chBtn.classList.toggle('too-soon', tooSoon);
     }
-    if(!chOK && state.svc==='chauffeur'){
-      state.svc='private';
-      document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
-    }
-    if(cx){
-      if(datesOK && tooSoon){
-        cx.className='cx-inline warn'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Chauffeur-guide trips need '+CHAUFFEUR_MIN_LEAD_DAYS+' days’ notice</b></div>'+
+    const note=document.getElementById('chauffeur-notice');
+    if(note){
+      if(datesOK && tooSoon && chauffeurNoticeOpen){
+        note.hidden=false;
+        note.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><b>Chauffeur-guide trips need '+CHAUFFEUR_MIN_LEAD_DAYS+' days’ notice</b></div>'+
           '<p>Your driver-guide stays with you for the whole journey, so we need time to assign one. The earliest chauffeur start is <b>'+fmtNoticeDate(earliestChauffeurISO())+'</b> — your private transfers are unaffected.</p>'+
           // The notice window is a WEBSITE rule, not a capacity one: ops can still take a
           // chauffeur booking inside it by hand (the API exempts staff bookings on purpose).
           // Ending on "no" would turn away a trip we are actually able to run, so offer the
           // one route that still works. waTripSummary() carries the itinerary, so the
           // traveller does not retype what they just entered.
-          '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we\u2019ll see what we can do.</p>'+
+          '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we’ll see what we can do.</p>'+
           '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
-      } else if(!datesOK){
+      } else { note.hidden=true; note.innerHTML=''; }
+    }
+    if(!chOK && state.svc==='chauffeur'){
+      state.svc='private';
+      document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
+    }
+    if(cx){
+      // (the notice-window explainer lives beside the card in #chauffeur-notice, above)
+      if(datesOK && tooSoon){ cx.style.display='none'; cx.innerHTML=''; }
+      else if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
