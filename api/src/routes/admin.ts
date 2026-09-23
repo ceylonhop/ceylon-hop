@@ -13,6 +13,7 @@ import {
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
+import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
@@ -97,6 +98,8 @@ export function adminRoutes(deps: {
     to: BookingStatus,
     notify: (b: Booking, e: EmailAdapter) => Promise<void>,
     audit?: StatusAudit,
+    // The team's copy (owner, 2026-09-23). Runs last; best-effort like the customer email.
+    team?: (updated: Booking, before: Booking) => Promise<void>,
   ) {
     const id = c.req.param('id');
     if (!id) return c.json({ error: 'not_found' }, 404);
@@ -134,6 +137,13 @@ export function adminRoutes(deps: {
     } catch (err) {
       console.error(`${to} email failed for ${updated.reference}:`, err);
     }
+    if (team) {
+      try {
+        await team(updated, booking);
+      } catch (err) {
+        console.error(`${to} team email failed for ${updated.reference}:`, err);
+      }
+    }
     return c.json(updated, 200);
   }
 
@@ -160,9 +170,20 @@ export function adminRoutes(deps: {
     // A reason is required, not encouraged: a time-bounded grant is only auditable if the
     // reason and the actor are actually written down.
     if (!parsed.success) return c.json({ error: 'cancellation_reason_required' }, 400);
-    return transitionAndNotify(c, 'cancelled', sendCancellationConfirmation, {
-      reason: parsed.data.reason,
-      by: c.get('identity').email,
+    const by = c.get('identity').email;
+    return transitionAndNotify(c, 'cancelled', sendCancellationConfirmation, { reason: parsed.data.reason, by }, async (updated, before) => {
+      const refundedCents = (await deps.refunds.list(updated.id))
+        .filter((r) => r.status === 'manual_confirmed' || r.status === 'api_confirmed')
+        .reduce((n, r) => n + r.amountCents, 0);
+      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, refundedCents }, deps.opsBaseUrl ?? '');
+      await alerts.send({
+        severity: 'info',
+        kind: 'booking_cancelled',
+        title: mail.subject,
+        body: `Booking ${updated.reference} cancelled by ${by}: ${parsed.data.reason}`,
+        email: mail,
+        dedupeKey: updated.reference,
+      });
     });
   });
   const RefundRequest = z
@@ -237,6 +258,30 @@ export function adminRoutes(deps: {
       await sendRefundConfirmation(after, email, outcome.refund.amountCents, outcome.refund.currency);
     } catch (error) {
       console.error(`refund email failed for ${after.reference}:`, error);
+    }
+    // The team's copy (owner, 2026-09-23), after the customer's. Keyed on the refund row, so a
+    // second partial refund on the same booking is its own email.
+    try {
+      const rf = outcome.refund;
+      const mail = teamRefundedEmail(after, {
+        amountCents: rf.amountCents,
+        currency: rf.currency,
+        full: outcome.bookingFullyRefunded,
+        by: rf.confirmedBy ?? rf.requestedBy,
+        reason: rf.reason,
+        gatewayRef: rf.gatewayRef,
+        viaApi: rf.status === 'api_confirmed',
+      }, deps.opsBaseUrl ?? '');
+      await alerts.send({
+        severity: 'info',
+        kind: 'booking_refunded',
+        title: mail.subject,
+        body: `Refund of ${rf.amountCents / 100} ${rf.currency} confirmed on ${after.reference}`,
+        email: mail,
+        dedupeKey: rf.id,
+      });
+    } catch (error) {
+      console.error(`refund team email failed for ${after.reference}:`, error);
     }
   };
 
@@ -521,7 +566,7 @@ export function adminRoutes(deps: {
     let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
     if (deps.rideLists && deps.ridePaygw) {
       try {
-        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts });
+        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts, opsBaseUrl: deps.opsBaseUrl });
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);

@@ -78,6 +78,37 @@ function makeApp() {
   return { app: createApp({ adminApiKey: KEY, auth, bookings, email }), bookings, email };
 }
 
+// Owner 2026-09-23: a cancellation emailed only the customer — the team, who may have a
+// driver booked, heard nothing. It is a "Cancelled:" mail: never "Paid:" (the Gmail forward).
+describe('POST /admin/bookings/:id/cancel — the team is told', () => {
+  it('sends one "Cancelled:" team email with vehicle, passengers, who and why', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, opsBaseUrl: 'https://ops.example' });
+    const b = await book(app);
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Flight moved <next week>' }),
+    });
+    const sent = alerts.sent.filter((a) => a.kind === 'booking_cancelled');
+    expect(sent).toHaveLength(1);
+    const m = sent[0].email!;
+    expect(m.subject.startsWith('Cancelled: ')).toBe(true);
+    expect(m.subject).toContain('AC car · 2 pax');
+    expect(m.subject).toContain(b.reference);
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('f@x.com');
+      expect(part).toContain('2 adults');
+      expect(part).toContain('Not paid');
+    }
+    expect(m.text).toContain('Flight moved <next week>');
+    expect(m.html).toContain('Flight moved &lt;next week&gt;');
+    expect(m.html).toContain(`https://ops.example/ops?booking=${b.id}`);
+    expect(sent[0].dedupeKey).toBe(b.reference);
+  });
+});
+
 describe('POST /admin/bookings/:id/cancel', () => {
   // Cancelling moved to payments:reverse — founder only (owner, 2026-08-02). Calling a
   // customer's trip off is not something finance should be able to do alone.

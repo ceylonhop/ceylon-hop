@@ -415,3 +415,46 @@ describe('seeded placeholder members', () => {
     expect(res).toMatchObject({ processed: 1, confirmed: 1 });
   });
 });
+
+// Owner 2026-09-23: when a ride locks in and cards are charged, the travellers heard ("It's
+// on!") and the team heard nothing. The team mail is a "Paid:" mail — the owner forwards on it.
+describe('runRideBoardCutoff — the team hears when a ride locks in', () => {
+  it('sends one "Paid: Locked in" email with the passengers, vehicle and money', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const list = await repo.createList(listArgs({ minSeats: 4, capacity: 6 }));
+    await fill(repo, list.id, 5, ['09:00', '09:00', '09:00', '08:00', '08:00']);
+    paygw.markRefWillFail('pa_u4');
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, alerts, opsBaseUrl: 'https://ops.example' });
+    const locked = alerts.sent.filter((a) => a.kind === 'ride_board_locked');
+    expect(locked).toHaveLength(1);
+    const m = locked[0].email!;
+    expect(m.subject.startsWith('Paid: Locked in — ')).toBe(true);
+    expect(m.subject).toContain('Ella → Mirissa');
+    expect(m.subject).toContain('09:00');
+    expect(m.subject).toContain('Shared taxi · 4 pax');
+    expect(m.subject).toContain('$96.00 collected');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('U0');
+      expect(part).toContain('u3@x.com');
+      expect(part).toContain('6 seats max');
+      expect(part).toContain(list.code);
+      expect(part).toContain('U4'); // the declined card is named, not dropped
+    }
+    expect(m.html).toContain(`https://ops.example/ops?booking=board:${list.code}`);
+    expect(locked[0].dedupeKey).toBe(list.code);
+    expect(locked[0].severity).toBe('info');
+  });
+
+  it('a called-off ride sends no "Paid:" mail', async () => {
+    const repo = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 2);
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email: new FakeEmailAdapter(), alerts });
+    expect(alerts.sent.filter((a) => a.email?.subject.startsWith('Paid:'))).toHaveLength(0);
+  });
+});
