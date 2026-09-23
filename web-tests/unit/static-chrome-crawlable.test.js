@@ -66,3 +66,56 @@ describe('every page ships its footer in the HTML, not only via site.js', () => 
     expect(home.match(/<a class="rt-card"/g) || []).toHaveLength(0);
   });
 });
+
+/* The header, too. Sitelinks are picked from strong, repeated, crawlable links with consistent
+   anchor text, and on these seven pages the header only existed after site.js ran — the same
+   gap the footer had. Baked the same way, into the [data-header] host site.js overwrites. */
+describe('every page ships its header nav in the HTML, not only via site.js', () => {
+  const HEADER_PAGES = ['index.html', 'about.html', 'blog.html', 'tours.html', 'why.html', 'plan.html', 'search.html'];
+  const NAV = [
+    ['Routes & prices', 'trip/'],
+    ['Share a ride', 'board.html'],
+    ['Plan a trip', 'plan.html'],
+    ['Tours', 'tours.html'],
+    ['About', 'about.html'],
+  ];
+  const navLinks = (html) => {
+    // board.html hand-writes its bar as a <div>; the rest render a <nav>.
+    const m = noJs(html).match(/<(nav|div) class="nav-links">([\s\S]*?)<\/\1>/);
+    return m ? [...m[2].matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map(([, h, t]) => [t, h]) : null;
+  };
+
+  it.each([...HEADER_PAGES, 'board.html', 'trip/index.html', 'trip/kandy-to-ella/index.html', 'terms.html'])(
+    '%s carries the five nav links without JavaScript', (page) => {
+      const links = navLinks(read(page));
+      expect(links, `${page} has no static <nav class="nav-links">`).not.toBeNull();
+      // Generated pages prefix hrefs with ../ per depth; compare on the tail.
+      expect(links.map(([t, h]) => [t, h.replace(/^(\.\.\/)*/, '')])).toEqual(NAV);
+    });
+
+  it('mounts exactly one header host per page, with the markup inside it', () => {
+    for (const page of HEADER_PAGES) {
+      const html = read(page);
+      expect((html.match(/data-header/g) || []).length, `${page} data-header hosts`).toBe(1);
+      expect(html, `${page}: the static header must sit inside [data-header]`)
+        .toMatch(/<div data-header>\s*<header class="nav/);
+    }
+  });
+
+  it('marks the active section and the on-dark heroes, so nothing jumps when site.js takes over', () => {
+    // active = what the page passes to initChrome. blog/why are no longer IN the nav, so they
+    // highlight nothing — exactly what site.js renders for them too.
+    for (const [page, active, onDark] of [
+      ['index.html', '', false], ['about.html', 'about.html', true], ['blog.html', 'blog.html', true],
+      ['why.html', 'why.html', true], ['tours.html', 'tours.html', false], ['plan.html', 'plan.html', false],
+      ['search.html', '', false],
+    ]) {
+      const header = read(page).match(/<div data-header>\s*(<header[^>]*>)/)?.[1] || '';
+      expect(header.includes('on-dark'), `${page} on-dark`).toBe(onDark);
+      const nav = noJs(read(page)).match(/<nav class="nav-links">[\s\S]*?<\/nav>/)?.[0] || '';
+      const inNav = NAV.some(([, h]) => h === active);
+      expect((nav.match(/class="active"/g) || []).length, `${page} active links`).toBe(inNav ? 1 : 0);
+      if (inNav) expect(nav).toMatch(new RegExp(`href="${active.replace('.', '\\.')}" class="active"`));
+    }
+  });
+});

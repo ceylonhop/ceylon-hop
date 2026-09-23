@@ -1,5 +1,5 @@
 // tools/inject-static-chrome.mjs
-// Bake the footer into the hand-written pages' HTML, instead of leaving it to site.js.
+// Bake the header and footer into the hand-written pages' HTML, instead of leaving them to site.js.
 //
 // WHY. The footer holds the only sitewide link to the route index (`trip/`), and from there to
 // the 44 route pages. The generated pages (route pages, terms, privacy, 404) already ship it
@@ -24,12 +24,36 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderFooter, analyticsSnippet } from './site-chrome.mjs';
+import { renderHeader, renderFooter, analyticsSnippet } from './site-chrome.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Hand-written, root-level pages. The generated ones get their chrome from render-page.mjs. */
 export const PAGES = ['index.html', 'about.html', 'blog.html', 'tours.html', 'why.html', 'plan.html', 'search.html'];
+
+/** The header, per page: what each page passes to mountHeader/initChrome at runtime (active
+    link, dark hero), so the baked copy is what site.js will paint anyway. index.html's dark
+    hero is a tweak-only variant (hero-immersive), off by default; search.js mounts with ''. */
+export const HEADERS = {
+  'index.html':  { active: '',           onDark: false },
+  'about.html':  { active: 'about.html', onDark: true },
+  'blog.html':   { active: 'blog.html',  onDark: true },
+  'tours.html':  { active: 'tours.html', onDark: false },
+  'why.html':    { active: 'why.html',   onDark: true },
+  'plan.html':   { active: 'plan.html',  onDark: false },
+  'search.html': { active: '',           onDark: false },
+};
+
+// The header host holds <header> + the mobile menu <div>; the menu holds only <a>s, so its
+// closing tag is the first </div> after it, and the host's own is the next.
+const HEADER_HOST = /<div data-header>(?:\s*<header class="nav[\s\S]*?<div class="mobile-menu" data-mobile>[\s\S]*?<\/div>\s*)?<\/div>/;
+
+/** @returns the page HTML with the header baked into its [data-header] host. */
+export function injectHeader(html, { active = '', onDark = false } = {}, prefix = '') {
+  const block = `<div data-header>${renderHeader(prefix, active, onDark)}</div>`;
+  if (!HEADER_HOST.test(html)) throw new Error('inject-static-chrome: no [data-header] host found — page layout changed?');
+  return html.replace(HEADER_HOST, block);
+}
 
 // Matches the host whether it is empty (<div data-footer></div>) or already filled by a
 // previous run. Non-greedy up to the first </div> that closes it — the footer markup itself
@@ -75,11 +99,11 @@ export function consentPages() {
 export function injectAll({ write = true } = {}) {
   const results = [];
 
-  // 1. Footer — only the pages that have a [data-footer] host.
+  // 1. Header + footer — the pages that mount both at runtime.
   for (const page of PAGES) {
     const file = path.join(ROOT, page);
     const before = readFileSync(file, 'utf8');
-    const after = injectFooter(before, '');
+    const after = injectFooter(injectHeader(before, HEADERS[page], ''), '');
     if (write && after !== before) writeFileSync(file, after);
     results.push([page, after !== before]);
   }

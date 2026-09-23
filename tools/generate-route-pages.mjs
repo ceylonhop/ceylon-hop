@@ -408,7 +408,7 @@ function routePage(T, content, from, to, forward, photos) {
   const highlights = (!forward && c.highlightsBack) ? c.highlightsBack : c.highlights;
   const estimate = routeEstimate(q);
   const url = `${ORIGIN}/trip/${slug(from, to)}/`;
-  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2 });
+  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2, active: 'trip/' });
   const p = '../../';
 
   // Private-only routes must never promise a seat in the SERP, so the shared half is added ONLY
@@ -959,7 +959,7 @@ function faresForm(T, p) {
 }
 
 function tripIndex(T, photos) {
-  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 1 });
+  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 1, active: 'trip/' });
   const p = '../';
   const dirs = allDirections();
   for (const d of dirs) {

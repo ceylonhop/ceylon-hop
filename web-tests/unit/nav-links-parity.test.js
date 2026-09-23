@@ -80,3 +80,29 @@ describe('footer — one link set, two copies', () => {
     expect(all.filter(([, h]) => h === 'blog.html')).toHaveLength(1);
   });
 });
+
+/* Which five links, and in what order — owner decision 2026-09-22. Google's sitelinks for the
+   homepage are chosen from the strongest, most consistently linked pages, and two days after
+   the apex cutover they were still three dead WordPress pages ("Shared Taxi" = /routes/, "The
+   Island Loop 6 Stops", an old trip page) plus Why/About. The header is the signal we control:
+   the pages a customer buys from, first, and nothing that competes with them for a slot. The
+   blog and Why us stay in the footer, so they are still crawled — just not from the top level. */
+describe('header nav — the five sitelinks we want Google to show', () => {
+  const live = fromLiteral(read('site.js'));
+
+  it('is Routes, Share a ride, Plan, Tours, About — in that order', () => {
+    expect(live).toEqual([
+      ['Routes & prices', 'trip/'],
+      ['Share a ride', 'board.html'],
+      ['Plan a trip', 'plan.html'],
+      ['Tours', 'tours.html'],
+      ['About', 'about.html'],
+    ]);
+  });
+
+  it('keeps the blog and Why us reachable from the footer', () => {
+    const src = read('site.js');
+    expect(src).toMatch(/href="[^"]*blog\.html"/);
+    expect(src).toMatch(/href="[^"]*why\.html"/);
+  });
+});
