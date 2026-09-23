@@ -33,6 +33,8 @@ import { sendRideJoined } from '../services/rideBoardEmails';
 import { sendRideSeatHeld, type SeatHeldKind } from '../services/opsNotifications';
 import { isPastIsoDate, isoToday } from '../domain/dateRules';
 import type { AlertAdapter } from '../adapters/alerts';
+import type { RideBoardAction, RideBoardEventInput, RideBoardEventRepo } from '../db/rideBoardEventRepo';
+import type { RidePreapproval } from '../db/rideListRepo';
 
 // ============================================================================
 // Ride Board routes — public reads + customer-authenticated writes.
@@ -130,6 +132,8 @@ export interface RideBoardDeps {
   // Internal "seat held" mail (spec 2026-09-22). Unset → nothing internal is sent, the same
   // rule the digest follows when ALERT_EMAIL is empty.
   opsNotify?: { to: string; opsBaseUrl?: string };
+  // Attempt log (db/rideBoardEventRepo.ts). Unset → nothing is recorded.
+  events?: RideBoardEventRepo;
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -202,6 +206,68 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     if (origin && (deps.allowedOrigins ?? []).includes(origin)) return origin;
     return deps.boardBaseUrl ?? 'http://localhost:4173';
   }
+
+  // ---- attempt log ---------------------------------------------------------
+  // Best-effort and never awaited: a traveller's join must not fail, or wait, on the log.
+  function track(e: RideBoardEventInput): void {
+    if (!deps.events) return;
+    try {
+      deps.events.record(e).catch((err: unknown) => console.error('ride_board_event_failed', err));
+    } catch (err) {
+      console.error('ride_board_event_failed', err);
+    }
+  }
+
+  // The fields every event about one member's approval carries. A PayHere callback has no
+  // session, so whether it completed a start or a join comes from who created the list.
+  function memberFields({ list, member }: RidePreapproval): RideBoardEventInput {
+    return {
+      action: list.createdBy === member.sub ? 'start' : 'join',
+      outcome: 'succeeded',
+      listCode: list.code, corridorId: list.corridorId, fromPlace: list.fromPlace, toPlace: list.toPlace,
+      rideDate: list.date, slot: list.slot, seats: member.seats,
+      customerSub: member.sub, country: member.country, orderId: member.preapprovalOrderId ?? null,
+    };
+  }
+
+  const text = (v: unknown): string | null => (typeof v === 'string' && v ? v.slice(0, 120) : null);
+
+  // Every refusal and server error on a write, recorded in one place so a new early return
+  // can't slip past it: the response's own error code is the reason. Handlers record only
+  // their 2xx outcomes, so the two never double up. For a refused start there is no list yet,
+  // so what the traveller ASKED for (route, date) comes from the body — that is the demand.
+  const attempt = (action: RideBoardAction): MiddlewareHandler => async (c, next) => {
+    await next();
+    const status = c.res.status;
+    if (status < 400) return;
+    let reason: string | null = null;
+    if (status >= 500) {
+      reason = 'server_error';
+    } else {
+      try {
+        reason = text(((await c.res.clone().json()) as { error?: unknown }).error);
+      } catch {
+        reason = null;
+      }
+    }
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const cust = c.get('customer');
+    track({
+      action,
+      outcome: status >= 500 ? 'error' : 'refused',
+      reason,
+      httpStatus: status,
+      listCode: text(c.req.param('code')),
+      corridorId: text(body?.corridorId),
+      fromPlace: text(body?.from),
+      toPlace: text(body?.to),
+      rideDate: text(body?.date),
+      slot: text(body?.slot),
+      seats: typeof body?.seats === 'number' ? body.seats : null,
+      customerSub: cust?.sub ?? null,
+      country: cust?.country ?? null,
+    });
+  };
 
   // Populate c.var.customer from the ch_cust cookie on every request (never throws).
   r.use('*', customerIdentity(deps.customer.sessionSecret));
@@ -289,12 +355,36 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       });
       return c.json({ error: 'invalid_signature' }, 400);
     }
+    // Read first: PayHere retries callbacks, and only the one that moves a pending member
+    // is an outcome worth logging.
+    const before = await deps.rideLists.getByPreapprovalOrder(event.orderId);
+    const wasPending = before?.member.status === 'preapproval_pending';
     if (event.status === 'succeeded' && event.ref) {
       await deps.rideLists.approveMemberPreapproval(event.orderId, event.ref);
       // In production this callback IS the join — the browser only polls afterwards.
       await sendJoinReceipt(event.orderId);
+      const after = await deps.rideLists.getByPreapprovalOrder(event.orderId);
+      if (wasPending && after) {
+        const held = after.member.status === 'held' || after.member.status === 'charged';
+        // A card approved too late (past the 30-minute window) or onto a van that filled up
+        // meanwhile is refused here — the repo doesn't say which, so tell them apart by the clock.
+        const late = (before?.member.preapprovalExpiresAt?.getTime() ?? 0) <= Date.now();
+        track({
+          ...memberFields(after),
+          ...(held
+            ? { outcome: 'succeeded', reason: 'payhere' }
+            : { outcome: 'payment_failed', reason: late ? 'approved_too_late' : 'full' }),
+        });
+      }
     } else if (event.status === 'failed' || event.status === 'cancelled') {
       await deps.rideLists.failMemberPreapproval(event.orderId);
+      if (wasPending && before) {
+        track({
+          ...memberFields(before),
+          outcome: 'payment_failed',
+          reason: event.status === 'failed' ? 'declined' : 'cancelled_at_payhere',
+        });
+      }
     }
     return c.json({ ok: true });
   });
@@ -308,6 +398,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       (found.member.preapprovalExpiresAt?.getTime() ?? 0) <= Date.now()
     ) {
       await deps.rideLists.failMemberPreapproval(c.req.param('orderId'));
+      track({ ...memberFields(found), outcome: 'payment_failed', reason: 'expired' });
       return c.json({ status: 'failed', error: 'payment_expired' });
     }
     if (found.member.status === 'preapproval_pending') return c.json({ status: 'pending' });
@@ -329,6 +420,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     if (!found || found.member.sub !== cust.sub) return c.json({ error: 'not_found' }, 404);
     if (found.member.status === 'preapproval_pending') {
       await deps.rideLists.failMemberPreapproval(c.req.param('orderId'));
+      track({ ...memberFields(found), outcome: 'payment_failed', reason: 'cancelled_by_traveller' });
     }
     return c.json({ ok: true });
   });
@@ -368,7 +460,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   // ---- writes (customer session) ------------------------------------------
 
   // POST /board — start a new list; the creator auto-joins as name #1.
-  r.post('/', requireCustomer(), async (c) => {
+  r.post('/', attempt('start'), requireCustomer(), async (c) => {
     const cust = c.get('customer')!;
     const parsed = CreateListInput.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
@@ -491,10 +583,17 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       }
       throw error;
     }
+    const startEvent: RideBoardEventInput = {
+      action: 'start', outcome: 'succeeded', listCode: list.code, corridorId: list.corridorId,
+      fromPlace, toPlace, rideDate: list.date, slot: list.slot, seats: input.seats ?? 1,
+      customerSub: cust.sub, country: cust.country, orderId,
+    };
     if (preapproval.status === 'requires_action') {
+      track({ ...startEvent, outcome: 'payment_started', httpStatus: 202 });
       return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
     }
     await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
+    track({ ...startEvent, httpStatus: 201 });
     // Starting a list auto-joins you as name #1 — the same commitment, so the same receipt.
     await sendJoinReceipt(orderId);
     const fresh = await deps.rideLists.getByCode(list.code);
@@ -509,7 +608,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   });
 
   // POST /board/:code/join { preferredTime?, seats? }
-  r.post('/:code/join', requireCustomer(), async (c) => {
+  r.post('/:code/join', attempt('join'), requireCustomer(), async (c) => {
     const cust = c.get('customer')!;
     const parsed = JoinInput.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
@@ -550,6 +649,12 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       preferredTime: preferredTime ?? null,
       seats,
       preapprovalRef: previous?.preapprovalRef ?? null,
+    };
+    const joinEvent: RideBoardEventInput = {
+      action: 'join', outcome: 'succeeded', listCode: found.list.code, corridorId: found.list.corridorId,
+      fromPlace: found.list.fromPlace, toPlace: found.list.toPlace, rideDate: found.list.date,
+      slot: found.list.slot, seats, customerSub: cust.sub, country: cust.country,
+      reason: alreadyOn ? 'seat_change' : previous?.preapprovalRef ? 'rejoin' : null,
     };
     let member;
     // A live member is changing seats; a scratched member with a still-valid PayHere token is
@@ -597,7 +702,9 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
         }
         throw error;
       }
+      joinEvent.orderId = orderId;
       if (preapproval.status === 'requires_action') {
+        track({ ...joinEvent, outcome: 'payment_started', httpStatus: 202 });
         return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
       }
       await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
@@ -607,6 +714,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     if (!member) return c.json({ error: 'full' }, 409);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
     const committed = committedSeats(fresh?.members ?? []);
+    track({ ...joinEvent, httpStatus: 200 });
     logEvent('ride_board.join', {
       code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
       seats, committed, minSeats: found.list.minSeats, capacity: found.list.capacity,
@@ -620,7 +728,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   });
 
   // POST /board/:code/scratch  (signed-in customer, or ?t=<manage token>)
-  r.post('/:code/scratch', async (c) => {
+  r.post('/:code/scratch', attempt('scratch'), async (c) => {
     const found = await deps.rideLists.getByCode(c.req.param('code'));
     if (!found) return c.json({ error: 'not_found' }, 404);
 
@@ -638,6 +746,11 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
     const left = committedSeats(fresh?.members ?? []);
     if (removed) {
+      track({
+        action: 'scratch', outcome: 'succeeded', httpStatus: 200, listCode: found.list.code,
+        corridorId: found.list.corridorId, fromPlace: found.list.fromPlace, toPlace: found.list.toPlace,
+        rideDate: found.list.date, slot: found.list.slot, customerSub: sub, country: cust?.country ?? null,
+      });
       logEvent('ride_board.scratch', {
         code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
         committed: left, minSeats: found.list.minSeats,

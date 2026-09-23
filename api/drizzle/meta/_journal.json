@@ -372,6 +372,13 @@
       "when": 1790136000000,
       "tag": "0052_shared_request_bags",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790150400000,
+      "tag": "0053_ride_board_event",
+      "breakpoints": true
     }
   ]
 }

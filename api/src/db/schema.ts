@@ -453,6 +453,31 @@ export const rideListMembers = pgTable(
   (t) => [unique().on(t.listId, t.sub), index('ride_list_member_list_idx').on(t.listId)],
 );
 
+// Ride Board attempt log — one append-only row per start/join/scratch attempt, whatever the
+// outcome (0053). See db/rideBoardEventRepo.ts.
+export const rideBoardEvents = pgTable(
+  'ride_board_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+    action: text('action').notNull(), // start | join | scratch
+    outcome: text('outcome').notNull(), // refused | payment_started | payment_failed | succeeded | error
+    reason: text('reason'),
+    httpStatus: integer('http_status'),
+    listCode: text('list_code'),
+    corridorId: text('corridor_id'),
+    fromPlace: text('from_place'),
+    toPlace: text('to_place'),
+    rideDate: text('ride_date'),
+    slot: text('slot'),
+    seats: integer('seats'),
+    customerSub: text('customer_sub'),
+    country: text('country'),
+    orderId: text('order_id'),
+  },
+  (t) => [index('ride_board_event_at_idx').on(t.at), index('ride_board_event_list_code_idx').on(t.listCode)],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {
