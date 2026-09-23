@@ -634,8 +634,11 @@ img,svg,video,iframe{max-width:100%}
 
   /* ---- filter bars become a single horizontal scroll strip, not stacked rows ---- */
   body .filters{top:62px;padding:11px 0}
+  /* The row IS the .wrap (not inside one), so it keeps its own 20px gutter — a negative-margin
+     bleed pushed "All tours" 20px off-screen. scroll-padding makes the snap respect that gutter
+     too; without it, snapping parks the first chip flush against (or past) the screen edge. */
   body .filter-row{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;
-    margin:0 -20px;padding:2px 20px;scroll-snap-type:x proximity}
+    padding:2px 20px;scroll-padding-inline:20px;scroll-snap-type:x proximity}
   body .filter-row::-webkit-scrollbar{display:none}
   body .filter-row .chip{flex:none;scroll-snap-align:start}
   body .filter-row .count{display:none}
@@ -655,7 +658,7 @@ img,svg,video,iframe{max-width:100%}
 }
 @media(max-width:380px){
   .wrap{padding-left:18px;padding-right:18px}
-  body .filter-row{margin:0 -18px;padding:2px 18px}
+  body .filter-row{padding:2px 18px;scroll-padding-inline:18px}
   /* Four half-width footer columns leave long contact links wider than the viewport. */
   .foot-grid{grid-template-columns:1fr}
   .foot-grid>div,.foot-grid a{max-width:100%;overflow-wrap:anywhere}
