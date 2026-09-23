@@ -587,7 +587,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
+<!-- The hero form's place picker is site.js's shared attachLocalPlaceAutocomplete (the one the
+     home hero uses), fed by transfers-data.js. trip-index.js wires it; without these files the
+     form keeps its datalist. No Maps key on this page yet, so the menu offers catalogue places
+     only — anything else is still typed and priced by search.html's engine path. -->
+<script src="../transfers-data.js?v=a00d86c790"></script>
+<script src="../site.js?v=4d9960d50b"></script>
 <script src="../route-list-fares.js?v=62f1985096"></script>
-<script src="../trip-index.js?v=6b608a5ae7"></script>
+<script src="../trip-index.js?v=d1a8fbc89d"></script>
 </body>
 </html>
