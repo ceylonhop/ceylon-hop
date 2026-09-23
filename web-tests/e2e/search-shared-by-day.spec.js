@@ -100,5 +100,9 @@ test('switching date lands back on the shared card, now bookable', async ({ page
   await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=${THU}` });
   await card(page).locator('a.sb-alt').nth(1).click();
   await expect(page).toHaveURL(new RegExp(`date=${SAT}`));
+  // Assert the position the traveller is actually left in, not one the page is still moving
+  // through: the private card above this one is a pricing skeleton for its first moments, and
+  // it grows 26px when the fare lands. Wait for the page to stop moving, THEN look.
+  await expect(page.locator('#results .opt-private')).not.toHaveClass(/is-pending/);
   await expect(card(page).getByRole('link', { name: /Book a seat/ })).toBeInViewport();
 });

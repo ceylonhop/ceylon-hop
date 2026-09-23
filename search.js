@@ -513,9 +513,42 @@ function renderResults(state) {
   // browser's own jump to the hash finds nothing. Do it once the card exists.
   if (location.hash === '#shared-option' && !renderResults.jumped) {
     renderResults.jumped = true;
-    const el = document.getElementById('shared-option');
-    if (el) el.scrollIntoView({ block: 'start' });
+    jumpToShared();
   }
+}
+
+/* Land on the shared card — and stay there while the page finishes settling.
+
+   The card is drawn before the rest of the page has stopped growing: the private card above it
+   swaps its pricing skeleton for the priced one (+26px) and the load-time reflow above that adds
+   the rest, so between the jump and the last reflow the card slides ~67px further down. A SMOOTH
+   scroll fixes its target on its first frame, so a reflow that lands mid-flight leaves the scroll
+   short by exactly that much — and the card is 823px tall in an 812px phone viewport, so those
+   67px are the whole margin. "Book a seat" ends up just under the fold, which is the one thing
+   this landing exists to prevent. (Seen on a fast machine 3 runs in 10; a slow phone is worse.)
+
+   So: land instantly — which is what the browser's own hash jump, the thing this stands in for,
+   would have done — and re-assert the position for as long as the page keeps moving under it.
+   The moment the traveller scrolls for themselves we let go and never pull them back. */
+function jumpToShared() {
+  const el = document.getElementById('shared-option');
+  if (!el) return;
+  let want = -1;   // where we last asked the card's top to sit, in document coordinates
+  let left = -1;   // where that actually left the page — scrollTo clamps at the bottom
+  const until = Date.now() + 1200;
+  const hold = () => {
+    if (left >= 0 && Math.abs(window.scrollY - left) > 2) return;   // they took over: let go
+    const top = Math.round(el.getBoundingClientRect().top + window.scrollY);
+    if (top !== want) {
+      want = top;
+      // 'instant' and not 'auto': site.css sets scroll-behavior:smooth on the root, and an
+      // animated correction would be a moving target all over again.
+      window.scrollTo({ top: top, behavior: 'instant' });
+      left = Math.round(window.scrollY);
+    }
+    if (Date.now() < until) requestAnimationFrame(hold);
+  };
+  hold();
 }
 
 /* Someone may already have started a ride for this route and date. The board's public dupe
