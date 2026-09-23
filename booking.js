@@ -2992,8 +2992,10 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
 
   // sheet close button (only styled/visible in sheet mode via CSS scoping)
   const closeBtn=document.createElement('button');
-  closeBtn.type='button'; closeBtn.className='s-close'; closeBtn.setAttribute('aria-label','Close summary');
-  closeBtn.innerHTML='&times;';
+  // A down-chevron, not ✕: the sheet slides up from the bar's ^ toggle, so this folds it back down
+  // rather than dismissing anything (owner feedback 2026-09-23).
+  closeBtn.type='button'; closeBtn.className='s-close'; closeBtn.setAttribute('aria-label','Collapse summary');
+  closeBtn.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   summary.prepend(closeBtn);
 
   const primaryBtn=()=>document.querySelector('.panel.active .nav-btns .btn');
