@@ -336,6 +336,34 @@ test.describe('hero form id resolution (F4)', () => {
   });
 });
 
+// The hero form used a bare <datalist>: Chrome shows it only after you type or press its arrow,
+// never offers Google, and looks nothing like the home hero's picker. It now wires site.js's
+// shared attachLocalPlaceAutocomplete (the same picker the home hero uses — not a new one).
+test.describe('hero form place picker', () => {
+  test('typing opens the site place menu, and picking a place submits its id', async ({ page }) => {
+    await page.goto('/trip/?api=off');
+    await page.click('#ix-from');
+    await page.keyboard.type('Kand');
+    const menu = page.locator('.place-menu');
+    await expect(menu).toBeVisible();
+    await menu.locator('.place-option', { hasText: 'Kandy' }).first().click();
+    await expect(page.locator('#ix-from')).toHaveValue('Kandy');
+    await expect(menu).toHaveCount(0);
+    // the native datalist is only the no-JS fallback — with the picker on it must not also open
+    expect(await page.locator('#ix-from').getAttribute('list')).toBeNull();
+    await page.click('#ix-to');
+    await page.keyboard.type('Ell');
+    await menu.locator('.place-option', { hasText: 'Ella' }).first().click();
+    await Promise.all([
+      page.waitForURL(/search\.html\?/),
+      page.click('.ix-form button[type="submit"]'),
+    ]);
+    const u = new URL(page.url());
+    expect(u.searchParams.get('from')).toBe('kandy');
+    expect(u.searchParams.get('to')).toBe('ella');
+  });
+});
+
 // F5: site.css gives "section.origin"/"#routes" scroll-margin-top so a fragment arrival clears
 // the sticky chip row; with JS on, the chip state must catch up too (arriving used to leave
 // "Everywhere" pressed with nothing filtered, even though the hash named an origin).
