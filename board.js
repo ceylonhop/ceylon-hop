@@ -1872,10 +1872,17 @@
           return new Promise(function (resolve) { setTimeout(resolve, 1000); }).then(function () { return poll(left - 1); });
         }
         if (data.status !== 'succeeded' || !data.list) {
-          ev('ride_board_payment_failed', {
-            item_list_id: LIST_ID,
-            reason: data.status === 'pending' ? 'still_pending' : (data.error || 'failed')
-          });
+          // This outcome keeps the order in the URL and sessionStorage, and the toast says to
+          // refresh — so every reload lands here again. Count each order once.
+          var counted = null;
+          try { counted = sessionStorage.getItem('ch_ride_payment_failed'); } catch (e) {}
+          if (counted !== orderId) {
+            ev('ride_board_payment_failed', {
+              item_list_id: LIST_ID,
+              reason: data.status === 'pending' ? 'still_pending' : (data.error || 'failed')
+            });
+            try { sessionStorage.setItem('ch_ride_payment_failed', orderId); } catch (e) {}
+          }
           if (data.status === 'pending') toast('PayHere is still confirming', 'Refresh this page in a moment — your seat appears only after approval.');
           else toast('Card approval did not complete', 'Your name was not added. Please try again.');
           return;

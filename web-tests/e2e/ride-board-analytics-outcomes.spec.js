@@ -98,6 +98,19 @@ test('a card approval that did not complete is counted', async ({ page }) => {
   expect((await events(page, 'ride_board_payment_failed'))[0]).toMatchObject({ reason: 'payment_expired' });
 });
 
+// The failed/pending return leaves the order in the URL and sessionStorage (the toast even says
+// "refresh"), so every reload polls again. One order is one failure, however often it's reloaded.
+test('an order that did not complete is counted once, not once per reload', async ({ page }) => {
+  await stubBoard(page, (path) =>
+    path === '/board/payments/RBPA-test' && (ok({ status: 'failed' })));
+  await page.goto('/board.html?ridePayment=RBPA-test');
+  await expect.poll(() => events(page, 'ride_board_payment_failed')).toHaveLength(1);
+  await page.reload();
+  // The second poll really ran (same outcome shown to the traveller) — just not counted again.
+  await expect(page.getByText('Card approval did not complete')).toBeVisible();
+  expect(await events(page, 'ride_board_payment_failed')).toHaveLength(0);
+});
+
 test('a join refused because the list closed fires ride_board_refused with the reason', async ({ page }) => {
   await stubBoard(page, (path) =>
     path === `/board/${list.code}/join` &&
