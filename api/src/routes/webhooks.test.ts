@@ -308,6 +308,23 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(paid?.dedupeKey).toBe(b.reference); // a PayHere retry must not re-notify
   });
 
+  // Owner 2026-09-23: the team needs the vehicle and head-count, and forwards on "Paid:".
+  it('the team email names the vehicle and passengers under a "Paid:" subject', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app, { adults: 2, children: 1 });
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    const paid = alerts.sent.find((a) => a.kind === 'booking_paid');
+    expect(paid?.email?.subject.startsWith('Paid: ')).toBe(true);
+    expect(paid?.email?.subject).toContain('AC car · 3 pax');
+    expect(paid?.email?.html).toContain('2 adults, 1 child');
+    expect(paid?.email?.text).toContain(b.reference);
+  });
+
   it('the team notification never costs the customer their confirmation', async () => {
     // The customer's email comes first and the team's is best-effort behind it: a failure in
     // ours must not cost them theirs, and must not fail the webhook (PayHere would retry).

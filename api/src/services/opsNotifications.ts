@@ -1,7 +1,10 @@
 import type { EmailAdapter } from '../adapters/email';
-import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc } from './opsEmail';
+import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
+import type { Booking } from '../db/bookingRepo';
+import { factRows, routeText } from './notifications';
+import { shortPlace } from '../quote/shortPlace';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
 // services/notifications.ts: that file is customer-facing and Booking-shaped, this one goes to
@@ -203,4 +206,96 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
   ].join('\n');
   const wrapped = opsEmailShell(html, text);
   await email.send({ to: args.to, subject, html: wrapped.html, text: wrapped.text, audience: 'ops' });
+}
+
+// ---------------------------------------------------------------------------
+// The team's "Paid:" email (owner, 2026-09-23). Money landed on a booking: who, where, when,
+// which vehicle, how many people, how much. It was a monospace alert dump with no vehicle or
+// head-count. The owner forwards these from Gmail on the subject prefix, so every subject
+// here MUST start "Paid: " (guarded by opsNotifications.test.ts) and nothing else may.
+// ---------------------------------------------------------------------------
+
+// Lands on the booking sheet: ops-ui's routeStateFromUrl reads ?booking=<id>. '' without
+// OPS_BASE_URL, same tolerate-a-linkless-email rule as quoteDeepLink.
+export function bookingDeepLink(id: string, opsBaseUrl: string): string {
+  const base = (opsBaseUrl || '').trim().replace(/\/+$/, '');
+  return base ? `${base}/ops?booking=${encodeURIComponent(id)}` : '';
+}
+
+// "Fri 25 Sep" — short enough for a subject line. Noon anchors the calendar date.
+function shortDay(d: string): string {
+  const dt = new Date(`${d}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return d;
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(dt).replace(',', '');
+}
+
+function headCount(b: Booking): number {
+  if (b.mode === 'trip') return b.input.pax;
+  if (b.mode === 'shared') return b.input.seats;
+  return b.input.adults + b.input.children;
+}
+
+export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const c = b.input.customer;
+  const shared = b.mode === 'shared';
+  const n = headCount(b);
+  const vehicle = b.mode === 'shared' ? '' : b.input.vehicleType === 'van' ? 'AC van' : 'AC car';
+  // Long itineraries are shortened in the subject only; the body keeps every stop.
+  const route = routeText(b);
+  const subjectRoute =
+    b.mode === 'trip' && b.input.stops.length > 2
+      ? `${shortPlace(b.input.stops[0])} → … → ${shortPlace(b.input.stops[b.input.stops.length - 1])}`
+      : route;
+  const start = b.mode === 'trip' ? b.input.dates?.find(Boolean) : b.input.date;
+  const when = start ? (b.mode === 'trip' ? `from ${shortDay(start)}` : shortDay(start)) : 'date TBC';
+  const time = b.mode !== 'trip' && b.input.time ? ` · ${b.input.time}` : '';
+
+  // What actually landed: a deposit booking charges amountDueNow, not the total.
+  const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;
+  const balance = b.total - paidNow;
+  const paid = money(paidNow, b.currency);
+
+  const people = shared ? `${n} seat${n === 1 ? '' : 's'}` : `${vehicle} · ${n} pax`;
+  const subject = `Paid: ${subjectRoute}, ${when} — ${people} — ${paid}`;
+
+  const keys: [string, string][] = shared
+    ? [['Seats', String(n)], ['Travels', `${when}${time}`]]
+    : [['Vehicle', vehicle], ['Passengers', String(n)], [b.mode === 'trip' ? 'Starts' : 'Travels', `${when}${time}`]];
+  // The customer email's own fact rows, in the team's word for travellers.
+  const tripRows = factRows(b).map(([k, v]): [string, string] => [k === 'Travellers' ? 'Passengers' : k, v]);
+  if (b.mode === 'trip') tripRows.unshift(['Stops', route]);
+  const customerRows: [string, string][] = [
+    ['Name', `${c.firstName} ${c.lastName}`],
+    ['Email', c.email],
+    ['WhatsApp', c.whatsapp],
+  ];
+  const moneyRows: [string, string][] = [
+    ['Paid', paid],
+    ...(balance > 0 ? [['Balance due', money(balance, b.currency)] as [string, string]] : []),
+    ['Channel', b.channel === 'whatsapp' ? 'WhatsApp' : 'Website'],
+  ];
+  const link = bookingDeepLink(b.id, opsBaseUrl);
+  const fallback = 'Find it under Bookings in the ops dashboard.';
+
+  const html = [
+    `<p style="margin:0 0 10px">${statusPill('PAID', '#1f6b3a', '#e3f1e6')}</p>`,
+    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(route)}</p>`,
+    `<p style="font-size:15px;font-weight:600;color:${TEAL_DEEP};margin:0 0 16px">${esc(b.reference)}</p>`,
+    keyFacts(keys),
+    section('Trip', tripRows),
+    section('Customer', customerRows),
+    section('Payment', moneyRows, ['Paid']),
+    ctaBlock('Open the booking', link, fallback),
+  ].join('');
+  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(13)}${v}`), ''];
+  const text = [
+    `PAID · ${b.reference}`,
+    route,
+    '',
+    ...rows('Trip', tripRows),
+    ...rows('Customer', customerRows),
+    ...rows('Payment', moneyRows),
+    link ? `Open the booking: ${link}` : fallback,
+  ].join('\n');
+  return { subject, ...opsEmailShell(html, text) };
 }
