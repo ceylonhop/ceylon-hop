@@ -9,6 +9,7 @@ import { PostgresPaymentRepo } from './db/postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './db/postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo';
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
+import { PostgresRideBoardEventRepo } from './db/postgresRideBoardEventRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { PayHereTokenizedPaymentAdapter } from './adapters/payhereTokenized';
@@ -131,6 +132,7 @@ const app = createApp({
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   rideLists: new PostgresRideListRepo(sql),
+  rideBoardEvents: new PostgresRideBoardEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),

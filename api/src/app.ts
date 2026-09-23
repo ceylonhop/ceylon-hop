@@ -8,6 +8,7 @@ import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
+import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
@@ -66,6 +67,8 @@ export interface AppDeps {
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
+  // Ride Board attempt log. Unset → attempts are not recorded (tests opt in).
+  rideBoardEvents?: RideBoardEventRepo;
   paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
   customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
   customerVerifier?: JwtVerifier; // test seam for the customer Google login
@@ -426,6 +429,7 @@ export function createApp(deps: AppDeps = {}) {
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       email,
       alerts,
+      ...(deps.rideBoardEvents ? { events: deps.rideBoardEvents } : {}),
       ...((deps.digestTo ?? config.ALERT_EMAIL)
         ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL } }
         : {}),
