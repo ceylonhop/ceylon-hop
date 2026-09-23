@@ -52,11 +52,10 @@
 
   // ---- Header ----
   const NAVLINKS = [
-    ['Plan a trip','plan.html'],
+    ['Routes & prices','trip/'],
     ['Share a ride','board.html'],
+    ['Plan a trip','plan.html'],
     ['Tours','tours.html'],
-    ['Travel Guide','blog.html'],
-    ['Why us','why.html'],
     ['About','about.html']
   ];
   window.mountHeader = function(active='', onDark=false, showCta=true){
