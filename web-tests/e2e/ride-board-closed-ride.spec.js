@@ -48,7 +48,7 @@ test('a ride past its cutoff says so and does not invite a join', async ({ page 
   await expect(card).toBeVisible({ timeout: 15000 });
 
   await expect(card).toContainText('Names closed');
-  await expect(card).not.toContainText('Hop on');
+  await expect(card).not.toContainText('Join');
   await expect(card.locator('[data-view]')).toHaveText(/See who's going/);
 });
 
@@ -88,7 +88,7 @@ test('an open ride is completely unaffected', async ({ page }) => {
 
   const card = page.locator('.rw[data-code="OP-2222"]');
   await expect(card).toBeVisible({ timeout: 15000 });
-  await expect(card.locator('[data-view]')).toHaveText('Hop on');
+  await expect(card.locator('[data-view]')).toHaveText('Join');
   await expect(card).not.toContainText('Names closed');
 
   await card.locator('[data-view]').click();

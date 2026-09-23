@@ -117,7 +117,7 @@ test('the lookup only ever upgrades the panel: an error leaves the link', async 
   await expect(rideCard(page)).toHaveCount(0);
 });
 
-test('a ride that is no longer gathering is never offered as "Hop on"', async ({ page }) => {
+test('a ride that is no longer gathering is never offered as "Join"', async ({ page }) => {
   await dupe(page, { list: { ...going, status: 'confirmed' } });
   await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=${THU}` });
   await expect(panel(page).locator('a.ns-board')).toBeVisible();
