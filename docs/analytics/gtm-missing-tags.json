@@ -93,6 +93,30 @@
         "accountId": "0",
         "containerId": "0",
         "variableId": "4",
+        "name": "DLV - flow",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "flow"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "5",
         "name": "DLV - has_balance",
         "type": "v",
         "parameter": [
@@ -116,7 +140,55 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "5",
+        "variableId": "6",
+        "name": "DLV - http_status",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "http_status"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "7",
+        "name": "DLV - item_id",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "item_id"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "8",
         "name": "DLV - item_list_id",
         "type": "v",
         "parameter": [
@@ -140,7 +212,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "6",
+        "variableId": "9",
         "name": "DLV - km",
         "type": "v",
         "parameter": [
@@ -164,7 +236,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "7",
+        "variableId": "10",
         "name": "DLV - leg",
         "type": "v",
         "parameter": [
@@ -188,7 +260,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "8",
+        "variableId": "11",
         "name": "DLV - link_id",
         "type": "v",
         "parameter": [
@@ -212,7 +284,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "9",
+        "variableId": "12",
         "name": "DLV - material",
         "type": "v",
         "parameter": [
@@ -236,7 +308,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "10",
+        "variableId": "13",
         "name": "DLV - method",
         "type": "v",
         "parameter": [
@@ -260,7 +332,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "11",
+        "variableId": "14",
         "name": "DLV - new_value",
         "type": "v",
         "parameter": [
@@ -284,7 +356,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "12",
+        "variableId": "15",
         "name": "DLV - page",
         "type": "v",
         "parameter": [
@@ -308,7 +380,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "13",
+        "variableId": "16",
         "name": "DLV - payment_type",
         "type": "v",
         "parameter": [
@@ -332,7 +404,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "14",
+        "variableId": "17",
         "name": "DLV - reason",
         "type": "v",
         "parameter": [
@@ -356,7 +428,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "15",
+        "variableId": "18",
         "name": "DLV - route_fingerprint",
         "type": "v",
         "parameter": [
@@ -380,7 +452,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "16",
+        "variableId": "19",
         "name": "DLV - state",
         "type": "v",
         "parameter": [
@@ -404,7 +476,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "17",
+        "variableId": "20",
         "name": "DLV - status",
         "type": "v",
         "parameter": [
@@ -428,7 +500,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "18",
+        "variableId": "21",
         "name": "DLV - surface",
         "type": "v",
         "parameter": [
@@ -452,7 +524,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "19",
+        "variableId": "22",
         "name": "DLV - tries",
         "type": "v",
         "parameter": [
@@ -476,7 +548,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "20",
+        "variableId": "23",
         "name": "DLV - value",
         "type": "v",
         "parameter": [
@@ -500,7 +572,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "21",
+        "variableId": "24",
         "name": "DLV - which",
         "type": "v",
         "parameter": [
@@ -863,6 +935,54 @@
         "accountId": "0",
         "containerId": "0",
         "triggerId": "15",
+        "name": "CE - ride_board_refused",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "ride_board_refused"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "16",
+        "name": "CE - ride_board_payment_failed",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "ride_board_payment_failed"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "17",
         "name": "CE - reprice_shown",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -886,7 +1006,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "16",
+        "triggerId": "18",
         "name": "CE - reprice_accepted",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -910,7 +1030,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "17",
+        "triggerId": "19",
         "name": "CE - route_estimate_update",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -934,7 +1054,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "18",
+        "triggerId": "20",
         "name": "CE - route_estimate_unavailable",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -958,7 +1078,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "19",
+        "triggerId": "21",
         "name": "CE - exact_location_deferred",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -982,7 +1102,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "20",
+        "triggerId": "22",
         "name": "CE - exact_location_out_of_range",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -2127,6 +2247,203 @@
         "accountId": "0",
         "containerId": "0",
         "tagId": "15",
+        "name": "GA4 - ride_board_refused",
+        "type": "gaawe",
+        "notes": "The board turned a traveller away (list closed, van full, date too soon). `reason` is the API error code.",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "ride_board_refused"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "item_list_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - item_list_id}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "flow"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - flow}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "item_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - item_id}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "reason"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - reason}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "http_status"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - http_status}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XEW62ZD7B3"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "analytics_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "15"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "16",
+        "name": "GA4 - ride_board_payment_failed",
+        "type": "gaawe",
+        "notes": "A card approval for a board seat did not complete — cancelled, expired, or still pending.",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "ride_board_payment_failed"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "item_list_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - item_list_id}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "reason"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - reason}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XEW62ZD7B3"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "analytics_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "16"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "17",
         "name": "GA4 - reprice_shown",
         "type": "gaawe",
         "notes": "We told the customer the price moved. Pair with reprice_accepted for the accept rate.",
@@ -2181,13 +2498,13 @@
           }
         },
         "firingTriggerId": [
-          "15"
+          "17"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "16",
+        "tagId": "18",
         "name": "GA4 - reprice_accepted",
         "type": "gaawe",
         "notes": "They accepted the new price. The other half of the reprice rate.",
@@ -2257,13 +2574,13 @@
           }
         },
         "firingTriggerId": [
-          "16"
+          "18"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "17",
+        "tagId": "19",
         "name": "GA4 - route_estimate_update",
         "type": "gaawe",
         "notes": "A live estimate replaced a catalogue one. Tells you if the engine is answering in time.",
@@ -2363,13 +2680,13 @@
           }
         },
         "firingTriggerId": [
-          "17"
+          "19"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "18",
+        "tagId": "20",
         "name": "GA4 - route_estimate_unavailable",
         "type": "gaawe",
         "notes": "The engine did not answer and the customer saw a fallback price.",
@@ -2439,13 +2756,13 @@
           }
         },
         "firingTriggerId": [
-          "18"
+          "20"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "19",
+        "tagId": "21",
         "name": "GA4 - exact_location_deferred",
         "type": "gaawe",
         "notes": "Customer skipped giving an exact pickup/drop — a driver-side problem later.",
@@ -2500,13 +2817,13 @@
           }
         },
         "firingTriggerId": [
-          "19"
+          "21"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "20",
+        "tagId": "22",
         "name": "GA4 - exact_location_out_of_range",
         "type": "gaawe",
         "notes": "The pin was outside the serviceable radius; `km` sizes the demand you are refusing.",
@@ -2576,7 +2893,7 @@
           }
         },
         "firingTriggerId": [
-          "20"
+          "22"
         ]
       }
     ]
