@@ -45,3 +45,21 @@ describe('site plumbing', () => {
     expect(xml).toContain('<loc>https://ceylonhop.com/privacy.html</loc>');
   });
 });
+
+/* The ride board went live, but its pre-launch `noindex` stayed — with a comment saying to remove
+   it at go-live and add the URL to the sitemap. That kept "Share a ride", one of the five header
+   links chosen as the homepage's sitelinks (owner, 2026-09-22), out of Google entirely: a noindexed
+   page can never be a sitelink. Owner go 2026-09-23. */
+describe('the ride board is indexable', () => {
+  it('board.html carries no noindex', () => {
+    expect(read('board.html')).not.toMatch(/<meta name="robots"[^>]*noindex/i);
+  });
+  it('sitemap lists board.html', () => {
+    expect(read('sitemap.xml')).toContain('<loc>https://ceylonhop.com/board.html</loc>');
+  });
+  it('still keeps the transactional pages out of the index', () => {
+    for (const page of ['search.html', 'booking.html']) {
+      expect(read(page), page).toMatch(/<meta name="robots" content="noindex, follow">/);
+    }
+  });
+});
