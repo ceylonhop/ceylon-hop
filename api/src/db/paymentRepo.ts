@@ -39,6 +39,9 @@ export interface PaymentRepo {
   findByIdempotencyKey(key: string): Promise<Payment | null>;
   findByOrderId(orderId: string): Promise<Payment | null>;
   findByBookingId(bookingId: string): Promise<Payment[]>;
+  // Every payment for a SET of bookings in one query. The ops queue reads all its bookings'
+  // payments on every page load; asking per booking was a round-trip per row (2026-09-22).
+  findByBookingIds(bookingIds: string[]): Promise<Payment[]>;
   markSucceeded(id: string): Promise<Payment>;
   // Settle a payment that no gateway will ever confirm (cash / bank transfer taken by ops).
   // Separate from markSucceeded() so real out-of-band money is never stamped 'legacy_backfill';
@@ -101,6 +104,11 @@ export class InMemoryPaymentRepo implements PaymentRepo {
 
   async findByBookingId(bookingId: string): Promise<Payment[]> {
     return [...this.byId.values()].filter((p) => p.bookingId === bookingId).map((p) => this.toPayment(p));
+  }
+
+  async findByBookingIds(bookingIds: string[]): Promise<Payment[]> {
+    const want = new Set(bookingIds);
+    return [...this.byId.values()].filter((p) => want.has(p.bookingId)).map((p) => this.toPayment(p));
   }
 
   async markSucceeded(id: string): Promise<Payment> {
