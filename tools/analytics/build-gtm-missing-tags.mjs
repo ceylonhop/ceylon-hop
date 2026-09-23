@@ -55,6 +55,10 @@ const EVENTS = [
     why: 'Google sign-in on the ride board; the gate every join must pass.' },
   { name: 'scratch_ride', params: ['item_list_id'],
     why: 'A traveller withdrew from a list — the board\'s churn signal.' },
+  { name: 'ride_board_refused', params: ['item_list_id', 'flow', 'item_id', 'reason', 'http_status'],
+    why: 'The board turned a traveller away (list closed, van full, date too soon). `reason` is the API error code.' },
+  { name: 'ride_board_payment_failed', params: ['item_list_id', 'reason'],
+    why: 'A card approval for a board seat did not complete — cancelled, expired, or still pending.' },
 
   // ---- pricing behaviour -------------------------------------------------------------------
   { name: 'reprice_shown', params: ['extra_km'],

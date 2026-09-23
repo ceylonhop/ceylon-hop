@@ -1424,7 +1424,7 @@
       flow: creating ? 'create_list' : 'join_list',
       item_id: current ? current.code : null,
       currency: 'USD',
-      value: current ? centsToDollars(current.seatPrice) : null
+      value: current ? centsToDollars(current.seatPriceCents) : null
     });
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -1649,17 +1649,7 @@
       state.mineCodes.add(L.code);
       current = L;
       updateMyRidesButton();
-      // The conversion. NOT 'purchase' — no money moves until the van locks at
-      // cutoff; this is an approved card against a seat. `van_runs` is the thing the
-      // funnel actually turns on: a name that tipped a van over its threshold.
-      ev(wasCreating ? 'create_ride_list' : 'join_ride', {
-        item_list_id: LIST_ID, item_id: L.code,
-        item_name: (L.from || '') + ' → ' + (L.to || ''),
-        currency: 'USD', value: Math.round(centsToDollars(L.seatPrice) * seats * 100) / 100,
-        quantity: seats,
-        seats_committed: L.committed, seats_needed: L.minSeats,
-        van_runs: L.committed >= L.minSeats
-      });
+      trackCommitted(L, wasCreating, seats, 'direct');
       // refresh whatever's on screen
       if (state.detailId === L.code) renderDetail(L);
       if (state.filter.mine) showMine(); else loadBoard();
@@ -1669,6 +1659,16 @@
       // Before any per-status handling: those branches call setStep()/toast() and assume the
       // steps are on screen.
       hideHandoff();
+      // A turned-away traveller ("That list just closed") used to leave no trace in GA4. Only
+      // the API's deliberate refusals — a 5xx or a dropped connection is an error, which
+      // report() below already counts as 'exception'.
+      if (e.status >= 400 && e.status < 500) {
+        ev('ride_board_refused', {
+          item_list_id: LIST_ID, flow: wasCreating ? 'create_list' : 'join_list',
+          item_id: wasCreating ? null : (current && current.code) || null,
+          reason: (e.body && e.body.error) || String(e.status), http_status: e.status
+        });
+      }
       if (e.status === 401) { state.me = null; setStep(panels().indexOf('mstep-1')); sheetError('Please sign in to continue'); }
       else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
@@ -1686,6 +1686,23 @@
       else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
       else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
+    });
+  }
+
+  // The conversion. NOT 'purchase' — no money moves until the van locks at cutoff; this is an
+  // approved card against a seat. `van_runs` is the thing the funnel actually turns on: a name
+  // that tipped a van over its threshold. Fired from BOTH routes to a held seat: `direct` (no
+  // card needed, e.g. a seat change) and `payhere` (the return from card approval — in
+  // production, nearly every real join).
+  function trackCommitted(L, wasCreating, seats, via) {
+    ev(wasCreating ? 'create_ride_list' : 'join_ride', {
+      item_list_id: LIST_ID, item_id: L.code,
+      item_name: (L.from || '') + ' → ' + (L.to || ''),
+      currency: 'USD', value: Math.round(centsToDollars(L.seatPriceCents) * seats * 100) / 100,
+      quantity: seats,
+      seats_committed: L.committed, seats_needed: L.minSeats,
+      van_runs: L.committed >= L.minSeats,
+      via: via
     });
   }
 
@@ -1844,6 +1861,7 @@
         .catch(function (e) { report(e, 'payhereCancel'); });
       clearPaymentQuery();
       try { sessionStorage.removeItem('ch_ride_payment'); } catch (e) {}
+      ev('ride_board_payment_failed', { item_list_id: LIST_ID, reason: 'cancelled' });
       toast('Card approval cancelled', 'Your name was not added. You can try again anytime.');
       return cancelRequest;
     }
@@ -1854,6 +1872,10 @@
           return new Promise(function (resolve) { setTimeout(resolve, 1000); }).then(function () { return poll(left - 1); });
         }
         if (data.status !== 'succeeded' || !data.list) {
+          ev('ride_board_payment_failed', {
+            item_list_id: LIST_ID,
+            reason: data.status === 'pending' ? 'still_pending' : (data.error || 'failed')
+          });
           if (data.status === 'pending') toast('PayHere is still confirming', 'Refresh this page in a moment — your seat appears only after approval.');
           else toast('Card approval did not complete', 'Your name was not added. Please try again.');
           return;
@@ -1864,6 +1886,8 @@
         if (data.manageToken) state.manageTokens[L.code] = data.manageToken;
         current = L;
         creating = L.members.some(function (m) { return m.isYou && m.isStarter; });
+        var mine = L.members.filter(function (m) { return m.isYou; })[0];
+        trackCommitted(L, creating, (mine && mine.seats) || 1, 'payhere');
         overlay.classList.add('open');
         document.body.style.overflow = 'hidden';
         showSuccess(L);
