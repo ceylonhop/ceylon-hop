@@ -99,6 +99,118 @@ export function safeLegRowsForBooking(bookingId: string, b: NewBooking): NewLegR
   }
 }
 
+type CustomerRow = typeof customers.$inferSelect;
+type RequestRow = typeof tripRequests.$inferSelect | typeof sharedRequests.$inferSelect | typeof transferRequests.$inferSelect;
+
+// Pure shaping of one booking from its already-fetched rows. No I/O here on purpose: every
+// query belongs in assembleMany(), where it runs once per table.
+function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
+  const customer = {
+    firstName: cust.firstName,
+    lastName: cust.lastName,
+    email: cust.email,
+    phoneCountryCode: cust.phoneCountryCode ?? undefined,
+    phoneNumber: cust.phoneNumber ?? undefined,
+    whatsapp: cust.whatsapp,
+    country: cust.country,
+    marketingOptIn: cust.marketingOptIn ?? undefined,
+  };
+  const base = {
+    id: row.id,
+    reference: row.reference,
+    status: row.status as BookingStatus,
+    createdAt: row.createdAt.toISOString(),
+    total: row.total,
+    amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
+    needsPricing: row.needsPricing, // null on rows predating the column
+    // Cancellation audit (owner rule 2026-08-02); null on anything not cancelled, and on
+    // cancellations that predate the rule.
+    cancellationReason: row.cancellationReason,
+    cancelledBy: row.cancelledBy,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    currency: row.currency,
+    channel: row.channel as BookingChannel,
+    // Billing is all-or-nothing: address/city/country are validated together at /start, so
+    // a row either has the set or has none. Keyed off address to avoid handing checkout a
+    // half-filled object it would send to the gateway.
+    billing: row.billingAddress
+      ? {
+          firstName: row.billingFirstName ?? undefined,
+          lastName: row.billingLastName ?? undefined,
+          address: row.billingAddress,
+          city: row.billingCity ?? '',
+          postcode: row.billingPostcode ?? undefined,
+          state: row.billingState ?? undefined,
+          country: row.billingCountry ?? '',
+        }
+      : null,
+    termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
+    // Only bookings made with a code carry these, so every other booking's shape is unchanged.
+    ...(row.promoCodeId
+      ? {
+          promoCodeId: row.promoCodeId,
+          promoHoldUntil: row.promoHoldUntil ? row.promoHoldUntil.toISOString() : null,
+          discountTotal: row.discountTotal ?? 0,
+        }
+      : {}),
+  };
+  if (row.mode === 'trip') {
+    const tr = req as typeof tripRequests.$inferSelect;
+    return {
+      ...base,
+      mode: 'trip',
+      input: {
+        stops: tr.stops,
+        nights: tr.nights,
+        dates: tr.dates ?? undefined,
+        pax: tr.pax,
+        vehicleType: tr.vehicleType as 'car' | 'van',
+        serviceType: tr.serviceType as 'private' | 'chauffeur',
+        days: tr.days ?? undefined,
+        driverNights: tr.driverNights ?? undefined,
+        customer,
+      },
+    };
+  }
+  if (row.mode === 'shared') {
+    const sr = req as typeof sharedRequests.$inferSelect;
+    return {
+      ...base,
+      mode: 'shared',
+      input: {
+        corridorId: sr.corridorId,
+        // null => this row never recorded its leg (pre-0051). Undefined, not null, so the
+        // label resolver's "both ends or nothing" rule reads it the same as an absent field.
+        ...(sr.fromPlace ? { fromPlace: sr.fromPlace } : {}),
+        ...(sr.toPlace ? { toPlace: sr.toPlace } : {}),
+        ...(sr.bags === null ? {} : { bags: sr.bags }),
+        date: sr.date,
+        time: sr.time,
+        seats: sr.seats,
+        customer,
+      },
+    };
+  }
+  const t = req as typeof transferRequests.$inferSelect;
+  return {
+    ...base,
+    mode: 'single',
+    distanceKm: t.distanceKm ?? undefined,
+    durationMin: t.durationMin ?? undefined,
+    input: {
+      from: t.fromPlace,
+      to: t.toPlace,
+      date: t.travelDate ?? undefined,
+      time: t.travelTime ?? undefined,
+      vehicleType: t.vehicleType as 'car' | 'van',
+      adults: t.adults,
+      children: t.children,
+      bags: t.bags,
+      customer,
+    },
+  };
+}
+
 export class PostgresBookingRepo implements BookingRepo {
   constructor(private readonly db: Db) {}
 
@@ -138,120 +250,37 @@ export class PostgresBookingRepo implements BookingRepo {
   }
 
   private async assemble(row: BookingRow): Promise<Booking> {
-    const [cust] = await this.db.select().from(customers).where(eq(customers.id, row.customerId));
-    const customer = {
-      firstName: cust.firstName,
-      lastName: cust.lastName,
-      email: cust.email,
-      phoneCountryCode: cust.phoneCountryCode ?? undefined,
-      phoneNumber: cust.phoneNumber ?? undefined,
-      whatsapp: cust.whatsapp,
-      country: cust.country,
-      marketingOptIn: cust.marketingOptIn ?? undefined,
-    };
-    const base = {
-      id: row.id,
-      reference: row.reference,
-      status: row.status as BookingStatus,
-      createdAt: row.createdAt.toISOString(),
-      total: row.total,
-      amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
-      needsPricing: row.needsPricing, // null on rows predating the column
-      // Cancellation audit (owner rule 2026-08-02); null on anything not cancelled, and on
-      // cancellations that predate the rule.
-      cancellationReason: row.cancellationReason,
-      cancelledBy: row.cancelledBy,
-      cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
-      currency: row.currency,
-      channel: row.channel as BookingChannel,
-      // Billing is all-or-nothing: address/city/country are validated together at /start, so
-      // a row either has the set or has none. Keyed off address to avoid handing checkout a
-      // half-filled object it would send to the gateway.
-      billing: row.billingAddress
-        ? {
-            firstName: row.billingFirstName ?? undefined,
-            lastName: row.billingLastName ?? undefined,
-            address: row.billingAddress,
-            city: row.billingCity ?? '',
-            postcode: row.billingPostcode ?? undefined,
-            state: row.billingState ?? undefined,
-            country: row.billingCountry ?? '',
-          }
-        : null,
-      termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
-      // Only bookings made with a code carry these, so every other booking's shape is unchanged.
-      ...(row.promoCodeId
-        ? {
-            promoCodeId: row.promoCodeId,
-            promoHoldUntil: row.promoHoldUntil ? row.promoHoldUntil.toISOString() : null,
-            discountTotal: row.discountTotal ?? 0,
-          }
-        : {}),
-    };
-    if (row.mode === 'trip') {
-      const [tr] = await this.db
-        .select()
-        .from(tripRequests)
-        .where(eq(tripRequests.bookingId, row.id));
-      return {
-        ...base,
-        mode: 'trip',
-        input: {
-          stops: tr.stops,
-          nights: tr.nights,
-          dates: tr.dates ?? undefined,
-          pax: tr.pax,
-          vehicleType: tr.vehicleType as 'car' | 'van',
-          serviceType: tr.serviceType as 'private' | 'chauffeur',
-          days: tr.days ?? undefined,
-          driverNights: tr.driverNights ?? undefined,
-          customer,
-        },
-      };
-    }
-    if (row.mode === 'shared') {
-      const [sr] = await this.db
-        .select()
-        .from(sharedRequests)
-        .where(eq(sharedRequests.bookingId, row.id));
-      return {
-        ...base,
-        mode: 'shared',
-        input: {
-          corridorId: sr.corridorId,
-          // null => this row never recorded its leg (pre-0051). Undefined, not null, so the
-          // label resolver's "both ends or nothing" rule reads it the same as an absent field.
-          ...(sr.fromPlace ? { fromPlace: sr.fromPlace } : {}),
-          ...(sr.toPlace ? { toPlace: sr.toPlace } : {}),
-          ...(sr.bags === null ? {} : { bags: sr.bags }),
-          date: sr.date,
-          time: sr.time,
-          seats: sr.seats,
-          customer,
-        },
-      };
-    }
-    const [t] = await this.db
-      .select()
-      .from(transferRequests)
-      .where(eq(transferRequests.bookingId, row.id));
-    return {
-      ...base,
-      mode: 'single',
-      distanceKm: t.distanceKm ?? undefined,
-      durationMin: t.durationMin ?? undefined,
-      input: {
-        from: t.fromPlace,
-        to: t.toPlace,
-        date: t.travelDate ?? undefined,
-        time: t.travelTime ?? undefined,
-        vehicleType: t.vehicleType as 'car' | 'van',
-        adults: t.adults,
-        children: t.children,
-        bags: t.bags,
-        customer,
-      },
-    };
+    const [b] = await this.assembleMany([row]);
+    return b;
+  }
+
+  // One round-trip per TABLE, not per booking. list() feeds the ops queue, which reads every
+  // booking in the eight queue statuses on every page load; a customer + request lookup per
+  // row was 2N statements, and from Render to the Supabase pooler each one costs ~100 ms
+  // (2026-09-22). get() goes through here too so the two never drift in shape.
+  private async assembleMany(rows: BookingRow[]): Promise<Booking[]> {
+    if (rows.length === 0) return [];
+    const custRows = await this.db.select().from(customers)
+      .where(inArray(customers.id, [...new Set(rows.map((r) => r.customerId))]));
+    const custById = new Map(custRows.map((c) => [c.id, c]));
+    const idsFor = (mode: string) => rows.filter((r) => r.mode === mode).map((r) => r.id);
+    const tripIds = idsFor('trip'); const sharedIds = idsFor('shared');
+    const singleIds = rows.filter((r) => r.mode !== 'trip' && r.mode !== 'shared').map((r) => r.id);
+    const [trips, shareds, transfers] = await Promise.all([
+      tripIds.length ? this.db.select().from(tripRequests).where(inArray(tripRequests.bookingId, tripIds)) : [],
+      sharedIds.length ? this.db.select().from(sharedRequests).where(inArray(sharedRequests.bookingId, sharedIds)) : [],
+      singleIds.length ? this.db.select().from(transferRequests).where(inArray(transferRequests.bookingId, singleIds)) : [],
+    ]);
+    const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
+    const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
+    const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
+    return rows.map((row) => {
+      const cust = custById.get(row.customerId);
+      if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
+      const req = row.mode === 'trip' ? tripBy.get(row.id) : row.mode === 'shared' ? sharedBy.get(row.id) : transferBy.get(row.id);
+      if (!req) throw new Error(`booking ${row.id}: ${row.mode} request row missing`);
+      return build(row, cust, req);
+    });
   }
 
   async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
@@ -532,6 +561,6 @@ export class PostgresBookingRepo implements BookingRepo {
     } else {
       rows = await this.db.select().from(bookings).where(eq(bookings.status, filter.status));
     }
-    return Promise.all(rows.map((r) => this.assemble(r)));
+    return this.assembleMany(rows);
   }
 }
