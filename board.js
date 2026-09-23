@@ -168,8 +168,9 @@
   }
 
   /* ---------------- board rows (pure) ---------------- */
-  // A row always shows the 2-hour window, never a pinned clock time: every other row is still
-  // gathering on a window, and a column mixing "08:30" with "7–9 am" stops scanning.
+  // A traveller ride always shows its 2-hour window, never a pinned clock time. A scheduled taxi
+  // is the one row with a clock time (09:00): the exact time is part of what tells the two apart
+  // (spec 2026-09-22-ride-board-scheduled-rows).
   function windowLabel(slot) { return slotWindow(slot).win; }
 
   // "~4h door to door" → "~4h" — duration is the one fact that sits under a route.
@@ -186,14 +187,23 @@
     return m ? { main: m[1], qual: m[2] } : { main: n, qual: '' };
   }
 
-  var SLOT_ORDER = { morning: 0, afternoon: 1 };
-  // Day headings in date order; morning before afternoon; a dateless list goes last, not missing.
+  // Minutes after midnight a row leaves: a scheduled taxi by its clock time, a list by the start
+  // of its window (7:00 / 13:00). A tie keeps input order — lists are merged in first.
+  function departsAt(row) {
+    if (row && row.sched) {
+      var m = /^(\d{1,2}):(\d{2})$/.exec(row.time || '');
+      if (m) return (+m[1]) * 60 + (+m[2]);
+    }
+    return row && row.slot === 'afternoon' ? 13 * 60 : 7 * 60;
+  }
+  // Day headings in date order; within a day, by when things leave; a dateless list goes last,
+  // not missing.
   function groupByDay(lists) {
     var sorted = (lists || []).map(function (L, i) { return { L: L, i: i }; }).sort(function (a, b) {
       var da = a.L.date || '￿', db = b.L.date || '￿';
       if (da !== db) return da < db ? -1 : 1;
-      var sa = SLOT_ORDER[a.L.slot] || 0, sb = SLOT_ORDER[b.L.slot] || 0;
-      return sa !== sb ? sa - sb : a.i - b.i;
+      var ta = departsAt(a.L), tb = departsAt(b.L);
+      return ta !== tb ? ta - tb : a.i - b.i;
     });
     var groups = [];
     sorted.forEach(function (x) {
@@ -209,8 +219,9 @@
   }
 
   // One coloured seat state and one action per row. The action rules are #597/#599's: a
-  // confirmed list is past its cutoff and the join route refuses it, so it never says "Hop on";
+  // confirmed list is past its cutoff and the join route refuses it, so it never says "Join";
   // a list that has only reached its minimum is still gathering and still takes joiners.
+  // "Join" (was "Hop on") is the traveller-ride verb; a scheduled taxi's is "Book".
   function rowState(list, mine) {
     var min = list.minSeats, cap = list.capacity;
     var need = Math.max(0, min - list.committed);
@@ -219,12 +230,99 @@
     var cta = mine ? { kind: 'view', text: 'View your ride' }
       : left === 0 ? { kind: 'again', text: 'Start another taxi' }
       : list.confirmed ? { kind: 'view', text: "See who's going" }
-      : { kind: 'view', text: 'Hop on' };
+      : { kind: 'view', text: 'Join' };
     if (left === 0) return { cls: 'f', label: 'Full', sub: list.committed + ' of ' + cap + you, cta: cta };
     if (list.confirmed || need === 0) {
       return { cls: 'l', label: 'Locked in', sub: left + ' seat' + (left === 1 ? '' : 's') + ' left' + you, cta: cta };
     }
-    return { cls: 'g', label: list.committed + ' of ' + min + ' in', sub: 'needs ' + need + ' more' + you, cta: cta };
+    var st = { cls: 'g', label: list.committed + ' of ' + min + ' in', sub: 'needs ' + need + ' more' + you, cta: cta };
+    // The day a gathering ride finds out whether it runs (its cutoff), as a Sri Lanka date. Kept
+    // apart from `sub`: a desktop row puts it under the seat count, a phone row on the time line.
+    if (isFinite(list.cutoffMs)) st.decided = fmtDate(colomboToday(list.cutoffMs));
+    return st;
+  }
+
+  /* ---------------- scheduled taxis on the board (pure) ----------------
+     The Wed/Sat taxis we run, merged into the same day groups as the lists travellers start
+     (spec 2026-09-22-ride-board-scheduled-rows). What runs comes from the @generated catalogue
+     (TRANSFERS.sharedOption); which days, from shared-day.js — the helper search.html uses. */
+  var COLOMBO_OFFSET_MS = 5.5 * 3600000; // UTC+05:30, no daylight saving
+  function colomboToday(nowMs) { return new Date(nowMs + COLOMBO_OFFSET_MS).toISOString().slice(0, 10); }
+  function addDaysIso(iso, n) {
+    var d = new Date(iso + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // One entry per van: its destination, the days it runs and every stop it boards at, in
+  // departure order. sharedOption answers per (from, to) pair, so a van boarding at two stops
+  // comes back twice — keyed on its stops, it is kept once.
+  function scheduledVans() {
+    var TR = (typeof window !== 'undefined') && window.TRANSFERS;
+    if (!TR || !TR.sharedOption || !TR.PLACES) return [];
+    var ids = TR.PLACES.map(function (p) { return p.id; });
+    var idOf = {};
+    TR.PLACES.forEach(function (p) { idOf[p.name] = p.id; });
+    var seen = {}, vans = [];
+    ids.forEach(function (f) {
+      ids.forEach(function (t) {
+        var so = TR.sharedOption(f, t);
+        if (!so || !so.pickups || !so.pickups.length) return;
+        var to = TR.byId[t].name;
+        var key = so.corridorId + '|' + to + '|' + so.pickups.map(function (x) { return x.place; }).join(',');
+        if (seen[key]) return;
+        seen[key] = true;
+        vans.push({
+          to: to, toId: t, days: so.days || [], freqText: so.freqText || '', seat: so.seat,
+          legs: so.pickups.map(function (x) { return { place: x.place, placeId: idOf[x.place] || null, time: x.time, point: x.point || x.place }; })
+        });
+      });
+    });
+    return vans;
+  }
+
+  // The scheduled rows for the days after `todayIso` up to `days` ahead, narrowed by the board's
+  // route filter. Never today: a seat on a van that leaves today is not an offer. Filtered to a
+  // later stop, the row is THAT stop — its own time and pickup point.
+  function scheduledRows(vans, opts) {
+    var f = (opts && opts.filter) || {};
+    var SD = (typeof window !== 'undefined') && window.CHSharedDay;
+    if (f.mine || !SD || !opts || !opts.todayIso) return [];
+    var from = f.from && f.from !== 'all' ? f.from : null;
+    var to = f.to && f.to !== 'all' ? f.to : null;
+    var rows = [];
+    for (var i = 1; i <= (opts.days || 0); i++) {
+      var iso = addDaysIso(opts.todayIso, i);
+      (vans || []).forEach(function (v) {
+        if (to && v.to !== to) return;
+        var leg = from ? v.legs.filter(function (l) { return l.place === from; })[0] : v.legs[0];
+        if (!leg || !SD.runsOn(iso, v.days)) return;
+        rows.push({ sched: true, date: iso, time: leg.time, from: leg.place, fromId: leg.placeId, point: leg.point,
+          to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText });
+      });
+    }
+    return rows;
+  }
+
+  // Index of the first day group past the window (where "keeps running every Wed & Sat" goes);
+  // a dateless group counts as past it.
+  function horizonAt(groups, endIso) {
+    for (var i = 0; i < (groups || []).length; i++) {
+      if (!groups[i].date || groups[i].date > endIso) return i;
+    }
+    return (groups || []).length;
+  }
+
+  var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  // "Today" / "Tomorrow" / "This Friday" / "Next week" beside a day heading; nothing further out.
+  function relativeDay(iso, todayIso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '') || !/^\d{4}-\d{2}-\d{2}$/.test(todayIso || '')) return '';
+    var n = Math.round((Date.parse(iso + 'T00:00:00Z') - Date.parse(todayIso + 'T00:00:00Z')) / 864e5);
+    if (n === 0) return 'Today';
+    if (n === 1) return 'Tomorrow';
+    if (n > 1 && n < 7) return 'This ' + WEEKDAYS[new Date(iso + 'T00:00:00Z').getUTCDay()];
+    if (n >= 7 && n < 14) return 'Next week';
+    return '';
   }
 
   // PublicList (wire shape) → the internal card model the renderers use.
@@ -414,6 +512,11 @@
     splitPlace: splitPlace,
     scheduledClash: scheduledClash,
     groupByDay: groupByDay,
+    scheduledVans: scheduledVans,
+    scheduledRows: scheduledRows,
+    horizonAt: horizonAt,
+    relativeDay: relativeDay,
+    colomboToday: colomboToday,
     rowState: rowState,
     normalizeList: normalizeList,
     centsToDollars: centsToDollars,
@@ -603,21 +706,64 @@
       (p.qual ? ' <small class="rw-q">' + esc(p.qual) + '</small>' : '') + '</span>';
   }
 
+  var CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  // "Colombo Airport (CMB)" → "Airport", "Sigiriya / Dambulla" → "Sigiriya": the phone's one-line route.
+  function shortPlace(name) {
+    var main = splitPlace(name).main;
+    return main === 'Colombo Airport' ? 'Airport' : main;
+  }
+
+  // A scheduled taxi: its clock time, the solid clock mark, an exact price and no button — the
+  // whole row is the link to book it on search.html for that date.
+  function schedRowHtml(S) {
+    var href = 'search.html?' + new URLSearchParams({ from: S.fromId || S.from, to: S.toId || S.to, date: S.date }).toString();
+    return '<a class="rws" href="' + esc(href) + '"' +
+      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + ', ' + money(S.seat) + ' a seat') + '">' +
+      '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
+      '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
+        '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled</small></span></div>' +
+      '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
+        '<span class="rws-kt"><b>Scheduled</b><small>Always runs · ' + esc(S.point) + '</small></span></div>' +
+      '<div class="rw-price"><b>' + money(S.seat) + '</b><span class="rws-per"> / seat</span></div>' +
+      '<span class="rws-go">Book a seat</span>' +
+      '</a>';
+  }
+
+  // Where the scheduled rows stop: they keep running, the board just stops listing them. Only a
+  // chosen route gets a link — search.html with no route falls back to the airport.
+  function schedMoreHtml(sched, endIso) {
+    var f = state.filter, s = sched[0];
+    var link = (f.from !== 'all' && f.to !== 'all')
+      ? '<a href="' + esc('search.html?' + new URLSearchParams({ from: s.fromId || s.from, to: s.toId || s.to }).toString()) + '">Pick a date ›</a>'
+      : '';
+    return '<div class="rws-more"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
+      '<p><b>Scheduled taxis keep running every ' + esc(s.freqText || 'Wed & Sat') + '</b> after ' + esc(fmtDate(endIso)) + '.' +
+      (link ? '' : ' Choose your route above to book a later date.') + '</p>' + link + '</div>';
+  }
+
+  function dayHeading(g, todayIso) {
+    var rel = relativeDay(g.date, todayIso);
+    return esc(g.label) + (rel ? ' <span class="rw-rel' + (rel === 'Today' || rel === 'Tomorrow' ? ' soon' : '') + '">' + esc(rel) + '</span>' : '');
+  }
+
   function rowHtml(L) {
+    if (L.sched) return schedRowHtml(L);
     var mine = iAmOn(L);
     var st = rowState(L, mine);
     var dur = durationOf(L);
     var win = windowLabel(L.slot);
     var hook = st.cta.kind === 'again' ? 'data-again' : 'data-view';
-    var primary = st.cta.text === 'Hop on';
+    var primary = st.cta.text === 'Join';
     return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
       ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
-      '<div class="rw-when">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + '</div>' +
+      '<div class="rw-when' + (st.decided ? ' has-dec' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') +
+        (st.decided ? '<span class="rw-dec-w"> · decided ' + esc(st.decided) + '</span>' : '') + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
       '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
-        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span></div>' +
-      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b> each</div>' +
+        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) +
+          (st.decided ? '<span class="rw-dec-s">decided ' + esc(st.decided) + '</span>' : '') + '</small></span></div>' +
+      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></div>' +
       '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
         esc(st.cta.text) + '</button>' +
       '</article>';
@@ -653,7 +799,9 @@
   var filtersEl = document.getElementById('filters');
 
   function render() {
-    var shown = state.lists;
+    var today = colomboToday(Date.now());
+    var sched = scheduledRows(VANS, { todayIso: today, days: SCHED_DAYS, filter: state.filter });
+    var shown = state.lists.concat(sched);
     grid.removeAttribute('aria-busy');
     if (!shown.length) {
       grid.innerHTML = '<div class="board-empty"><div class="plus">🗺️</div>' +
@@ -661,9 +809,13 @@
         '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>';
     } else {
-      grid.innerHTML = groupByDay(shown).map(function (g) {
-        return '<section class="rw-group"><h3 class="rw-day-h">' + esc(g.label) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
-      }).join('') + routeInvite();
+      var groups = groupByDay(shown);
+      var endIso = addDaysIso(today, SCHED_DAYS);
+      var cut = sched.length ? horizonAt(groups, endIso) : -1;
+      grid.innerHTML = groups.map(function (g, i) {
+        return (i === cut ? schedMoreHtml(sched, endIso) : '') +
+          '<section class="rw-group"><h3 class="rw-day-h">' + dayHeading(g, today) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
+      }).join('') + (cut === groups.length ? schedMoreHtml(sched, endIso) : '') + routeInvite();
     }
 
     var es = document.getElementById('empty-start');
@@ -746,6 +898,11 @@
   // "Sigiriya / Dambulla"), so the dedupe key joins on \u0000 — a character that cannot occur
   // in one — rather than punctuation that could split a name in half.
   var PAIR_SEP = '\u0000';
+  // The scheduled taxis are known before the board loads: they come from the catalogue, not the
+  // API. Every stop they board at is a route a traveller can filter to.
+  var VANS = scheduledVans();
+  var SCHED_DAYS = 14;
+  VANS.forEach(function (v) { v.legs.forEach(function (l) { state.pairs.push([l.place, v.to]); }); });
   function rememberPlaceOptions(lists) {
     var seen = {};
     state.pairs.forEach(function (p) { seen[p[0] + PAIR_SEP + p[1]] = true; });
@@ -989,7 +1146,7 @@
       (youIn
         ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
-        : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
+        : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Join — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
       // Sharing is what fills a van, so the share block sits right under the actions. It used to
       // sit below the deadline, reached by an "Invite someone" button whose only job was to
@@ -1405,7 +1562,7 @@
     }
     document.getElementById('see-list').hidden = true;
     document.getElementById('m-title').textContent = current
-      ? (current.confirmed || current.committed >= current.minSeats ? 'Hop on this ride' : 'Add your name')
+      ? (current.confirmed || current.committed >= current.minSeats ? 'Join this ride' : 'Add your name')
       : 'Start a list';
     document.getElementById('m-route').textContent = current
       ? current.from + ' → ' + current.to + ' · ' + current.whenLabel + ' · ' + slotWindow(current.slot).label

@@ -60,16 +60,16 @@ describe('groupByDay — day headings in date order, morning before afternoon', 
 });
 
 describe('rowState — one coloured state and one action per row', () => {
-  it('gathering: amber count, how many more, Hop on', () => {
+  it('gathering: amber count, how many more, Join', () => {
     const s = RB.rowState(L({ committed: 3 }), false);
-    expect(s).toEqual({ cls: 'g', label: '3 of 4 in', sub: 'needs 1 more', cta: { kind: 'view', text: 'Hop on' } });
+    expect(s).toEqual({ cls: 'g', label: '3 of 4 in', sub: 'needs 1 more', cta: { kind: 'view', text: 'Join' } });
   });
-  it('minimum reached but still gathering: green, seats left, still Hop on (#599)', () => {
+  it('minimum reached but still gathering: green, seats left, still Join (#599)', () => {
     const s = RB.rowState(L({ committed: 4 }), false);
     expect(s.cls).toBe('l');
     expect(s.label).toBe('Locked in');
     expect(s.sub).toBe('2 seats left');
-    expect(s.cta).toEqual({ kind: 'view', text: 'Hop on' });
+    expect(s.cta).toEqual({ kind: 'view', text: 'Join' });
   });
   it("confirmed (cutoff passed): no join invitation — See who's going (#597)", () => {
     const s = RB.rowState(L({ committed: 5, confirmed: true }), false);
