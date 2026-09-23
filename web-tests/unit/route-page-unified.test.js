@@ -18,7 +18,12 @@ const pages = [...generateAll()].filter(([p]) => /^trip\/.+-to-.+\/index\.html$/
 
 /** What a crawler with no JS actually sees. */
 const noJs = (html) => html.replace(/<script[\s\S]*?<\/script>/g, '');
-const text = (html) => noJs(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+/* Entities are decoded because the generator escapes every content string: a traveller reads
+   "Wed & Sat" where the markup says "Wed &amp; Sat". Matching the raw HTML let the off-day
+   guard below pass for as long as that phrase was on the Ella → Yala page. */
+const text = (html) => noJs(html).replace(/<[^>]+>/g, ' ')
+  .replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+  .replace(/\s+/g, ' ');
 const legOf = (p) => p.match(/^trip\/(.+)-to-(.+)\/index\.html$/).slice(1, 3);
 const money = (n) => (n % 1 === 0 ? String(n) : n.toFixed(2));
 
