@@ -22,6 +22,13 @@
   var MIN = parseInt(host.getAttribute('data-min') || '3', 10);
   if (!FROM || !TO) return;
 
+  /* Where the board lives FROM HERE. A route page sits two directories deep
+     (/trip/<slug>/), so a bare "board.html" href resolves against the trip page's own
+     folder and 404s. The static CTA inside this host is generated with the correct
+     relative path already — take it from there rather than assuming a depth. */
+  var ctaHref = (host.querySelector('a[href*="board.html"]') || { getAttribute: function () { return null; } }).getAttribute('href');
+  var BOARD = ctaHref ? ctaHref.replace(/[?#].*$/, '') : 'board.html';
+
   // Same contract as search.html/booking.html: `?api=off` disables, `?api=<origin>`
   // points elsewhere. Empty means the traveller turned it off — leave the static page be.
   var base = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
@@ -48,6 +55,12 @@
      only — no email, no sub — so this is exactly what the board itself shows. A row with
      faces reads as people going somewhere; the same row without them reads as inventory. */
   var FACE_BG = ['#24758A', '#F9A429', '#08938f', '#EC3A24'];
+  // A narrow-screen fallback for the slot word, never for the date itself: below 480px
+  // (see the generator's inline CSS) .ld-slot-long is hidden and this shows instead, so the
+  // full date + full slot + the "your date" tag still fit on one line without either the
+  // date or the tag being cut. Only 'morning'/'afternoon' exist (domain/rideList.ts's Slot
+  // enum), so this is a closed, 2-entry map — not a rewording of fmt() or the slot itself.
+  var SLOT_SHORT = { morning: 'am', afternoon: 'pm' };
   function faces(members) {
     var m = (members || []).slice(0, 3);
     if (!m.length) return '';
@@ -82,13 +95,14 @@
       var need = Math.max(0, (l.minSeats || MIN) - got);
       var exact = state.date && l.date === iso(state.date);
       var when = new Date(l.date + 'T00:00:00');
-      h += '<a class="ld-row' + (exact ? ' is-yours' : '') + '" href="board.html#/' + encodeURIComponent(l.code) + '">' +
+      h += '<a class="ld-row' + (exact ? ' is-yours' : '') + '" href="' + esc(BOARD) + '#/' + encodeURIComponent(l.code) + '">' +
         faces(l.members) +
-        '<span class="ld-when">' + esc(fmt(when)) + (l.slot ? ' · ' + esc(l.slot) : '') +
+        '<span class="ld-when">' + esc(fmt(when)) +
+        (l.slot ? ' · <span class="ld-slot"><span class="ld-slot-long">' + esc(l.slot) + '</span>' +
+          '<span class="ld-slot-short">' + esc(SLOT_SHORT[l.slot] || l.slot) + '</span></span>' : '') +
         (exact ? ' <span class="ld-tag">your date</span>' : '') + '</span>' +
-        '<span class="ld-count"><b>' + got + ' of ' + (l.minSeats || MIN) + '</b>' +
-        (need > 0 ? ' — ' + need + ' more to run' : ' — running') + '</span>' +
-        '<span class="ld-meter"><i' + (need <= 0 ? ' class="full"' : '') + ' style="width:' + Math.min(100, (got / (l.minSeats || MIN)) * 100) + '%"></i></span>' +
+        '<span class="ld-count">' + got + ' going</span>' +
+        '<span class="ld-pill ' + (need > 0 ? 'need' : 'go') + '">' + (need > 0 ? need + ' more to run' : 'Running') + '</span>' +
         '<span class="ld-go">→</span></a>';
     }
     return h;

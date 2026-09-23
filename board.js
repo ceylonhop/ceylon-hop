@@ -373,6 +373,31 @@
     return { from: from.sort(abc), to: to.sort(abc) };
   }
 
+  // The earliest date a ride can still be STARTED. A list closes CUTOFF_H hours before its
+  // window opens (api/src/domain/rideList.ts is the authority), so "tomorrow" is always past
+  // its own cutoff: the server refuses it (400 cutoff_passed) and, before that guard existed,
+  // it produced a ride nobody could join. Measured from the MORNING window, the earliest
+  // departure there is — an afternoon ride on the same date closes later still.
+  // MIRRORS api/src/domain/rideList.ts CUTOFF_HOURS_BEFORE. The parity test in
+  // web-tests/unit/ride-board-earliest-date.test.js compares closesAt() against the backend's
+  // own cutoffAt(), so these cannot drift apart unnoticed.
+  var CUTOFF_H = 24, FIRST_DEPARTURE = '07:00', SLK = '+05:30';
+  function closesAtMs(date) {
+    return Date.parse(date + 'T' + FIRST_DEPARTURE + ':00' + SLK) - CUTOFF_H * 3600e3;
+  }
+  function earliestStartDate(now) {
+    var t = now == null ? Date.now() : now;
+    // Start from the calendar date in Colombo and walk forward to the first one still open.
+    var d = new Date(t + 5.5 * 3600e3);
+    var day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    for (var i = 0; i < 8; i++) {
+      var iso = day.toISOString().slice(0, 10);
+      if (closesAtMs(iso) > t) return iso;
+      day = new Date(day.getTime() + 864e5);
+    }
+    return day.toISOString().slice(0, 10);
+  }
+
   var RideBoard = {
     shouldReport: shouldReport,
     errorPayload: errorPayload,
@@ -397,6 +422,8 @@
     fmtDate: fmtDate,
     resolvePlaceId: resolvePlaceId,
     filterOptions: filterOptions,
+    earliestStartDate: earliestStartDate,
+    closesAt: closesAtMs,
     SLOTS: SLOTS,
     MIN_DEFAULT: MIN_DEFAULT,
     CAP_DEFAULT: CAP_DEFAULT
@@ -1303,7 +1330,15 @@
   syncCreate();
   cFrom.addEventListener('change', syncCreate);
   cTo.addEventListener('change', syncCreate);
-  (function () { var d = new Date(Date.now() + 3 * 864e5); cDate.value = d.toISOString().slice(0, 10); cDate.min = new Date(Date.now() + 864e5).toISOString().slice(0, 10); })();
+  // Offer only dates a ride can actually gather names for. The floor was "tomorrow", which is
+  // always past its own cutoff — the server now refuses those (400 cutoff_passed), and a
+  // traveller should never have been able to pick one in the first place.
+  (function () {
+    var min = earliestStartDate();
+    var want = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+    cDate.min = min;
+    cDate.value = want > min ? want : min;
+  })();
   cDate.addEventListener('change', function () { checkSched(); if (dupeTimer) clearTimeout(dupeTimer); dupeTimer = setTimeout(checkDupe, 250); });
   cFrom.addEventListener('change', checkSched);
   cTo.addEventListener('change', checkSched);
@@ -1638,6 +1673,16 @@
       else if (e.status === 409) { closeModal(); toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { setStep(0); sheetError('Pick a future date'); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { setStep(0); sheetError('That route isn\'t served yet'); }
+      // Reachable from a tab left open past midnight: the floor on the date input is computed
+      // when the page loads, so a date that was valid then can close while the form sits there.
+      // Re-seed the input so the date they are sent back to is one that still works.
+      else if (e.status === 400 && e.body && e.body.error === 'cutoff_passed') {
+        var floor = earliestStartDate();
+        cDate.min = floor;
+        if (!cDate.value || cDate.value < floor) cDate.value = floor;
+        setStep(0);
+        sheetError('That date is too soon', 'A shared ride closes 24 hours before it leaves. Pick a later date.');
+      }
       else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
       else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }

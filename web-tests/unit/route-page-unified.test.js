@@ -75,11 +75,15 @@ describe('route page — one shared option, never two', () => {
     }
   });
 
+  // The refusal used to be half a page — a grey "Shared ride / Not on this route" card sitting
+  // beside the real offer, giving equal weight to the thing we don't sell. It is now one line
+  // (p.no-share) under the trust strip. Same intent, same routes: a page that cannot sell a
+  // seat must SAY so in the static markup rather than leaving the reader to infer it.
   it('says plainly when a route has no shared option at all', () => {
     for (const [path, html] of pages) {
       const [from, to] = legOf(path);
       if (T.sharedOption(from, to) || T.corridorFor(from, to)) continue;
-      expect(text(html), `${path} should decline shared`).toMatch(/private[- ]only|no shared/i);
+      expect(text(html), `${path} should decline shared`).toMatch(/No shared vehicle runs/);
     }
   });
 });
