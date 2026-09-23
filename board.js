@@ -211,16 +211,25 @@
   // One coloured seat state and one action per row. The action rules are #597/#599's: a
   // confirmed list is past its cutoff and the join route refuses it, so it never says "Hop on";
   // a list that has only reached its minimum is still gathering and still takes joiners.
-  function rowState(list, mine) {
+  function rowState(list, mine, now) {
     var min = list.minSeats, cap = list.capacity;
     var need = Math.max(0, min - list.committed);
     var left = Math.max(0, cap - list.committed);
     var you = mine ? " · you're on it" : '';
+    // Past the cutoff the join route refuses everyone, so the row must not invite one. A
+    // confirmed ride already behaved this way; this is the ride still GATHERING when its
+    // deadline goes by — the case that sent travellers through the whole sheet for nothing.
+    var shut = !list.confirmed && isClosed(list, now);
     var cta = mine ? { kind: 'view', text: 'View your ride' }
       : left === 0 ? { kind: 'again', text: 'Start another taxi' }
-      : list.confirmed ? { kind: 'view', text: "See who's going" }
+      : (list.confirmed || shut) ? { kind: 'view', text: "See who's going" }
       : { kind: 'view', text: 'Hop on' };
     if (left === 0) return { cls: 'f', label: 'Full', sub: list.committed + ' of ' + cap + you, cta: cta };
+    if (shut) {
+      // Deliberately not "called off": the sweep decides that, and until it runs this ride may
+      // still confirm. All the page knows is that names have closed.
+      return { cls: 'f', label: 'Names closed', sub: list.committed + ' of ' + min + ' in' + you, cta: cta };
+    }
     if (list.confirmed || need === 0) {
       return { cls: 'l', label: 'Locked in', sub: left + ' seat' + (left === 1 ? '' : 's') + ' left' + you, cta: cta };
     }
@@ -415,6 +424,8 @@
     scheduledClash: scheduledClash,
     groupByDay: groupByDay,
     rowState: rowState,
+    isClosed: isClosed,
+    cdText: cdText,
     normalizeList: normalizeList,
     centsToDollars: centsToDollars,
     money: money,
@@ -548,6 +559,19 @@
   }
 
   /* ---------------- countdown helpers (impure wrappers) ---------------- */
+  // A ride stops taking names at its cutoff — POST /board/:code/join refuses one past it
+  // (409 'closed', #597). Nothing on the page checked, so the countdown clamped to
+  // "closes in 0m 00s" while the card still said "Hop on": the traveller filled in the whole
+  // join sheet before the server told them. Rides are marked closed by a once-daily sweep, so
+  // one whose cutoff passes just after a sweep sits like this for nearly a day.
+  // No cutoff at all is treated as OPEN — the server is the authority either way, and guessing
+  // "closed" from missing data would hide a joinable ride.
+  function isClosed(list, now) {
+    var ms = list && list.cutoffMs;
+    if (!isFinite(ms)) return false;
+    return ms <= (now == null ? Date.now() : now);
+  }
+
   function remaining(cutoffMs) { return (cutoffMs || 0) - Date.now(); }
   function isUrgent(cutoffMs) { return isFinite(cutoffMs) && remaining(cutoffMs) < 3 * 3600000; }
   // Quiet urgency gradient: 'soon' (closing within 6h) warms the tone; 'urgent' (final hour,
@@ -560,7 +584,12 @@
     if (r < 6 * 3600000) return 'soon';
     return '';
   }
-  function cdHtml(cutoffMs) { return '<span class="cd">closes in ' + esc(fmtCountdown(remaining(cutoffMs))) + '</span>'; }
+  // Once the clock runs out the countdown used to clamp to "closes in 0m 00s" and sit there,
+  // which reads as "still open, barely" — the opposite of the truth. Say it plainly instead.
+  function cdText(cutoffMs) {
+    return remaining(cutoffMs) <= 0 ? 'names closed' : 'closes in ' + fmtCountdown(remaining(cutoffMs));
+  }
+  function cdHtml(cutoffMs) { return '<span class="cd">' + esc(cdText(cutoffMs)) + '</span>'; }
 
   /* ---------------- identity helpers ---------------- */
   var iAmOn = function (L) { return state.mineCodes.has(L.code); };
@@ -912,7 +941,9 @@
     var min = L.minSeats, cap = L.capacity;
     var need = Math.max(0, min - L.committed);
     var conf = L.confirmed || need === 0;
-    var slots = conf ? 0 : need;
+    // Names are shut: no join anywhere on this sheet, and no empty "you?" seats inviting one.
+    var shut = !L.confirmed && isClosed(L);
+    var slots = (conf || shut) ? 0 : need;
     var youIn = iAmOn(L);
     // Seats you could still add to your own name: what's free on the van, capped at the
     // three one traveller may hold in total.
@@ -982,22 +1013,29 @@
       '<aside class="d-join">' +
       (youIn
         ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The taxi is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.') + '</span></div></div>'
-        : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the taxi locks in. Never a cent before.</div>') +
-      '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>' +
+        : shut
+          ? '<div class="zero-hero"><b>Closed</b><span>this ride is no longer taking names</span></div>'
+          : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the taxi locks in. Never a cent before.</div>') +
+      (shut ? '' : '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>') +
       '<div class="who-row">' + whoRow + '<span class="lbl">' + L.committed + ' of ' + min + ' in</span></div>' +
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
       (youIn
-        ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
+        ? (conf || shut || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
-        : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
-          '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
+        : shut
+          ? '<div class="zero-sub" style="margin-top:4px">Names have closed for this ride, so it is not taking anyone new. We are working out whether it runs and everyone on it will hear shortly.</div>'
+          : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
+            '<p class="fine">Google sign-in · card approved by PayHere · <b>no ride fare unless it runs</b> · scratch off before the cutoff</p>') +
       // Sharing is what fills a van, so the share block sits right under the actions. It used to
       // sit below the deadline, reached by an "Invite someone" button whose only job was to
       // scroll here — the same action twice, in a louder green than the primary.
-      '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
-      '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
-      '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
-      '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
+      // Not once names have closed: the link would land a friend on a ride that cannot take
+      // them, which is the same dead end this whole change removes, one step further away.
+      (shut ? '' :
+        '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
+        '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
+        '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
+        '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>') +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
       (conf ? 'taxi locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
@@ -1886,7 +1924,7 @@
       document.querySelectorAll('.countdown[data-cut]').forEach(function (el) {
         var ms = +el.getAttribute('data-cut');
         var t = el.querySelector('.cd');
-        if (t) t.textContent = 'closes in ' + fmtCountdown(remaining(ms));
+        if (t) t.textContent = cdText(ms);
         var c = cdClass(ms);
         el.classList.toggle('soon', c === 'soon');
         el.classList.toggle('urgent', c === 'urgent');
