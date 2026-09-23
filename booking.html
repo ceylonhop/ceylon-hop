@@ -330,6 +330,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .svc b{display:block;font-size:1rem}
   .svc small{display:block;color:var(--ink-soft);font-size:.82rem;margin-top:3px;line-height:1.4}
   .svc .svc-tag{display:inline-block;margin-top:auto;padding-top:10px;font-size:.74rem;font-weight:700;color:var(--accent-deep)}
+  /* each service's free-cancellation window, stated where the choice is made (terms.html §7) */
+  .svc .svc-cancel{display:block;margin-top:8px;font-size:.78rem;font-weight:600;color:var(--ink-soft)}
+  .svc .svc-cancel+.svc-tag{padding-top:6px}
+  /* Pay step: the refund policy in full, collapsed under its one-line headline */
+  .pay-pol{margin:0 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--pc-teal);font-size:.88rem}
+  .pay-pol summary{cursor:pointer;font-weight:700;color:var(--accent-deep)}
+  .pay-pol ul{margin:8px 0 0;padding-left:18px;color:var(--ink-soft);line-height:1.5}
+  .pay-pol a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
 
   /* itinerary route summary (trip mode) */
   .trip-route{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:20px;background:var(--white)}
@@ -780,12 +788,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg></span>
           <b>I just want pick-up &amp; drop-off</b>
           <small>A private car &amp; driver moves you from each stop to the next, door to door. You don&rsquo;t keep the car in between — it&rsquo;s a fresh transfer each leg.</small>
+          <span class="svc-cancel">Free cancellation up to 24h before</span>
           <span class="svc-tag" id="svc-private-tag"></span>
         </button>
         <button type="button" class="svc" data-svc="chauffeur" onclick="pickSvc('chauffeur')">
           <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.6 12h6.2M14.2 12h6.2M12 14.2v6.2"/><circle class="wp" cx="12" cy="12" r="2.2"/></svg></span>
           <b>Keep the car &amp; driver the whole trip</b>
           <small>Your own car &amp; driver-guide stays with you start to finish — same friendly face every day, flexible stops and local tips along the way.</small>
+          <span class="svc-cancel">Free cancellation up to 10 days before</span>
           <span class="svc-tag" id="svc-chauffeur-tag"></span>
         </button>
       </div>
@@ -953,6 +963,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </div>
       </div>
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
+      <!-- the refund policy in full for the service chosen (filled by booking.js payPolicyHtml) -->
+      <details class="pay-pol" id="pay-pol"></details>
       <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a> and confirm my travel details are correct.</span></label>
       <div class="concierge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5a2 2 0 0 1-2 2H7.5l-4 3.5V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><circle cx="8.5" cy="10" r=".4"/><circle cx="15.5" cy="10" r=".4"/><circle class="wp" cx="12" cy="10" r="1.3"/></svg>
@@ -1095,6 +1107,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=0072140a4e"></script>
+<script src="booking.js?v=32bfcf3832"></script>
 </body>
 </html>
