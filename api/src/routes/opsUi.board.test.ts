@@ -46,7 +46,17 @@ beforeAll(async () => {
   body = await (await createApp().request('/ops')).text();
 });
 
+// Deliberately past / far future: these drive a cutoff comparison, not a bookable date.
+const PAST = '2020-01-01T00:00:00.000Z';
+const FUTURE = '2099-01-01T00:00:00.000Z';
+
 describe('board row helpers', () => {
+  /** boardSeats + stageLabel both read boardShut, so it has to come along. */
+  function seater() {
+    const src = `${liftConst(body, 'boardShut')}\n${liftConst(body, 'boardSeats')}`;
+    return new Function(`${src}; return boardSeats;`)() as (t: unknown) => string;
+  }
+
   it('isBoard distinguishes a van row from a booking row', () => {
     const src = liftConst(body, 'isBoard');
     const isBoard = new Function(`${src}; return isBoard;`)() as (t: unknown) => boolean;
@@ -58,8 +68,7 @@ describe('board row helpers', () => {
   });
 
   it('boardSeats says whether the van actually runs', () => {
-    const src = liftConst(body, 'boardSeats');
-    const f = new Function(`${src}; return boardSeats;`)() as (t: unknown) => string;
+    const f = seater();
 
     expect(f({ board: { seatsCommitted: 2, minSeats: 3, capacity: 6 } }))
       .toBe('2 of 3 seats · needs more');
@@ -70,15 +79,31 @@ describe('board row helpers', () => {
   });
 
   it('boardSeats is silent on a row with no board payload', () => {
-    const src = liftConst(body, 'boardSeats');
-    const f = new Function(`${src}; return boardSeats;`)() as (t: unknown) => string;
-    expect(f({ board: null })).toBe('');
+    expect(seater()({ board: null })).toBe('');
+  });
+
+  // Names shut at the cutoff — the join route refuses everyone past it. The sweep that marks a
+  // van closed runs once a day, so between the cutoff and the next sweep the row is still
+  // 'gathering' and used to read "needs more", telling an operator to wait for names that can
+  // no longer be added.
+  it('stops asking for more names once the cutoff has gone by', () => {
+    const f = seater();
+    const shut = { listStatus: 'gathering', cutoffAt: PAST };
+    expect(f({ board: { ...shut, seatsCommitted: 2, minSeats: 3, capacity: 6 } }))
+      .toBe('2 of 3 seats · short, will be called off');
+    expect(f({ board: { ...shut, seatsCommitted: 3, minSeats: 3, capacity: 6 } }))
+      .toBe('3 of 3 seats · confirming');
+  });
+
+  it('leaves a van whose cutoff is still ahead exactly as it was', () => {
+    expect(seater()({ board: { listStatus: 'gathering', cutoffAt: FUTURE, seatsCommitted: 2, minSeats: 3, capacity: 6 } }))
+      .toBe('2 of 3 seats · needs more');
   });
 });
 
 describe('stageLabel keeps grouping and wording separate', () => {
   function labeller() {
-    const src = `${liftConst(body, 'isBoard')}\n${/const STAGE=\{[\s\S]*?\n\};/.exec(body)![0]}\n${liftConst(body, 'stageLabel')}`;
+    const src = `${liftConst(body, 'isBoard')}\n${/const STAGE=\{[\s\S]*?\n\};/.exec(body)![0]}\n${liftConst(body, 'boardShut')}\n${liftConst(body, 'stageLabel')}`;
     return new Function(`${src}; return stageLabel;`)() as (t: unknown) => string;
   }
 
@@ -91,8 +116,13 @@ describe('stageLabel keeps grouping and wording separate', () => {
   });
 
   it('labels a still-gathering van plainly', () => {
-    expect(labeller()({ source: 'ride_board', stage: 'gathering', board: { listStatus: 'gathering' } }))
+    expect(labeller()({ source: 'ride_board', stage: 'gathering', board: { listStatus: 'gathering', cutoffAt: FUTURE } }))
       .toBe('Gathering names');
+  });
+
+  it('says the names are closed once the cutoff has passed, not still gathering', () => {
+    expect(labeller()({ source: 'ride_board', stage: 'gathering', board: { listStatus: 'gathering', cutoffAt: PAST } }))
+      .toBe('Names closed');
   });
 
   it('leaves real bookings on their normal stage wording', () => {
