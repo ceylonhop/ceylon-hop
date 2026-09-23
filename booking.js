@@ -1793,6 +1793,28 @@ function cancelText(){
     ? 'Free cancellation up to 10 days before'
     : 'Free cancellation up to 24 hours before';
 }
+// The policy in full for the Pay step (terms.html §7) — same words as pay.html's
+// cancellationPolicy(), so a quote link and this checkout never disagree about a refund.
+// Transfers and shared seats share the 24-hour rule (owner, 2026-09-23).
+function cancelPolicy(){
+  if(isTrip && state.svc==='chauffeur') return {
+    headline:'Free cancellation until 10 days before your trip starts.',
+    rows:['10–8 days before: 80% refund',
+          '7–3 days before: 60% refund',
+          '2 days–24 hours before: 40% refund',
+          'Within 24 hours, a no-show, or after the trip begins: no refund'],
+  };
+  return {
+    headline:'Free cancellation until 24 hours before departure.',
+    rows:['More than 24 hours before departure: full refund, unlimited changes',
+          'Within 24 hours, a no-show, or after departure: no refund'],
+  };
+}
+function payPolicyHtml(){
+  const pol=cancelPolicy();
+  return '<summary>'+acEsc(pol.headline)+'</summary><ul>'+pol.rows.map(r=>'<li>'+acEsc(r)+'</li>').join('')+'</ul>'+
+    '<p style="margin:8px 0 0">Cancel on WhatsApp or by email — <a href="terms.html#refunds" target="_blank" rel="noopener">full terms</a>.</p>';
+}
 /* The summary figures change on almost every interaction in this flow — a traveller added, a
    bag, an extra, a switch between private and shared — and each change rewrote the number
    outright. On a RUNNING TOTAL that loses the only thing the customer is watching for: whether
@@ -2071,6 +2093,8 @@ function render(){
   if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg> ${cancelText()}`;
   const paySub=document.getElementById('pay-sub');
   if(paySub) paySub.textContent=`Pay securely to confirm. ${cancelText()}.`;
+  const payPol=document.getElementById('pay-pol');
+  if(payPol){ const html=payPolicyHtml(); if(payPol.innerHTML!==html){ const open=payPol.open; payPol.innerHTML=html; payPol.open=open; } }
 
   // clarity note about how the service works (Where step)
   const pvtNote=document.getElementById('pvt-note'), pvtTx=document.getElementById('pvt-note-tx');
