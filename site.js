@@ -186,6 +186,14 @@
     if(direct) return { id:direct.id, name:direct.name, known:true };
     const found=T.PLACES.find(p=>nPlace(p.name)===nPlace(text));
     if(found) return { id:found.id, name:found.name, known:true };
+    /* The same question the picker's merge asks (below, via placeAliasId): is this free text one
+       of OUR places, stated in its own vocabulary? Without it, typing a real shorthand and
+       pressing the button — rather than clicking the row the dropdown ranked first — sent the
+       place on as free text, and "Airport" reached the engine with no price to come back
+       (customer report 2026-09-22). Exact match only, so a hotel that merely contains a place
+       name stays unknown and is priced by the engine as before. */
+    const aliased=T.placeAliasId ? T.place(T.placeAliasId(text)) : null;
+    if(aliased) return { id:aliased.id, name:aliased.name, known:true };
     const extra=(T.EXTRA||[]).find(e=>nPlace(e[0])===nPlace(text));
     return extra ? { id:null, name:extra[0], known:false, popular:true } : { id:null, name:text, known:false };
   };

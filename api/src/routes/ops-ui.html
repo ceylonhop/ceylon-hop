@@ -2084,14 +2084,23 @@ const isBoard=t=>t&&t.source==='ride_board';
    vehicle" with real bookings — but it must not inherit the word "Paid", which
    would contradict the money block whenever a card is merely held or has failed.
    Grouping and labelling are decoupled here on purpose. */
+/* Names shut at the cutoff — the join route refuses everyone past it. A van marked closed by
+   the daily sweep changes status, but between the cutoff and the next sweep it is still
+   'gathering', and the row used to read "needs more" as if an operator should wait for names
+   that can no longer be added. */
+const boardShut=t=>!!(t&&t.board&&t.board.listStatus!=='confirmed'&&t.board.cutoffAt&&Date.parse(t.board.cutoffAt)<=Date.now());
 const stageLabel=t=>{
   if(!isBoard(t))return STAGE[t.stage]?STAGE[t.stage].label:t.stage;
-  return (t.board&&t.board.listStatus==='confirmed')?'Van confirmed':'Gathering names';
+  if(t.board&&t.board.listStatus==='confirmed')return 'Van confirmed';
+  return boardShut(t)?'Names closed':'Gathering names';
 };
 /* "3 of 3 seats · van runs" — the one number that says whether this van goes. */
 const boardSeats=t=>{
   const b=t.board;if(!b)return '';
   const runs=b.seatsCommitted>=b.minSeats;
+  /* Past the cutoff "needs more" is a lie — nobody can join. Say what happens next instead:
+     the sweep either confirms the van or calls it off. */
+  if(boardShut(t))return `${b.seatsCommitted} of ${b.minSeats} seats`+(runs?' · confirming':' · short, will be called off');
   return `${b.seatsCommitted} of ${b.minSeats} seats`+(runs?` · van runs · ${b.capacity-b.seatsCommitted} spare`:' · needs more');
 };
 

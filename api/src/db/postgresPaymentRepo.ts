@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
 import type { PaymentRepo, NewPayment, Payment, PaymentStatus } from './paymentRepo';
@@ -40,6 +40,12 @@ export class PostgresPaymentRepo implements PaymentRepo {
 
   async findByBookingId(bookingId: string): Promise<Payment[]> {
     const rows = await this.db.select().from(payments).where(eq(payments.bookingId, bookingId));
+    return rows.map(toPayment);
+  }
+
+  async findByBookingIds(bookingIds: string[]): Promise<Payment[]> {
+    if (bookingIds.length === 0) return [];
+    const rows = await this.db.select().from(payments).where(inArray(payments.bookingId, bookingIds));
     return rows.map(toPayment);
   }
 
