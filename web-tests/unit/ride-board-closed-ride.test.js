@@ -50,16 +50,16 @@ describe('RideBoard.isClosed(list, now)', () => {
 });
 
 describe('rowState — a ride past its cutoff never invites a join', () => {
-  it('says it is closed and offers a look instead of "Hop on"', () => {
+  it('says it is closed and offers a look instead of "Join"', () => {
     const s = RB.rowState(L({ committed: 3, cutoffMs: SHUT }), false, NOW);
-    expect(s.cta.text).not.toBe('Hop on');
+    expect(s.cta.text).not.toBe('Join');
     expect(s.cta).toEqual({ kind: 'view', text: "See who's going" });
     expect(`${s.label} ${s.sub}`).toMatch(/closed/i);
   });
 
   it('closes a ride that had already reached its minimum but never confirmed', () => {
     const s = RB.rowState(L({ committed: 4, cutoffMs: SHUT }), false, NOW);
-    expect(s.cta.text).not.toBe('Hop on');
+    expect(s.cta.text).not.toBe('Join');
   });
 
   it('still says "View your ride" to someone already on it', () => {
@@ -69,7 +69,8 @@ describe('rowState — a ride past its cutoff never invites a join', () => {
 
   it('leaves an open ride exactly as it was', () => {
     expect(RB.rowState(L({ committed: 3, cutoffMs: OPEN }), false, NOW))
-      .toEqual({ cls: 'g', label: '3 of 4 in', sub: 'needs 1 more', cta: { kind: 'view', text: 'Hop on' } });
+      .toEqual({ cls: 'g', label: '3 of 4 in', sub: 'needs 1 more', cta: { kind: 'view', text: 'Join' },
+        decided: RB.fmtDate(RB.colomboToday(OPEN)) });
   });
 
   it('a full ride still says "Start another taxi", closed or not', () => {
@@ -80,7 +81,7 @@ describe('rowState — a ride past its cutoff never invites a join', () => {
   it('defaults to the real clock when no time is passed, so old callers are safe', () => {
     // far-future cutoff: open under any clock
     expect(RB.rowState(L({ committed: 3, cutoffMs: Date.parse('2099-01-01T00:00:00Z') }), false).cta.text)
-      .toBe('Hop on');
+      .toBe('Join');
   });
 });
 

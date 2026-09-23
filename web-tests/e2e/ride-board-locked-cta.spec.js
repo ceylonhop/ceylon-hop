@@ -6,7 +6,7 @@ import { isApiRequest } from './_api-host.js';
 // states wearing one label:
 //
 //   * status 'confirmed' — set only by the cutoff sweep, so the cutoff has passed. The join
-//     route refuses a seat here (a seat nothing can charge for), so "Hop on" invited an
+//     route refuses a seat here (a seat nothing can charge for), so "Hop on" (now "Join") invited an
 //     action that could only fail.
 //   * still 'gathering', minimum reached, cutoff ahead, seats spare — joins fine, and is the
 //     ride most worth offering a hop-on. It keeps the invitation.
@@ -56,7 +56,7 @@ test('a confirmed van invites you to look, not to join', async ({ page }) => {
 
   await expect(card.locator('[data-view]')).toHaveText(/See who's going/);
   // the point of the change: no join invitation on a ride whose join is refused
-  await expect(card).not.toContainText('Hop on');
+  await expect(card).not.toContainText('Join');
 });
 
 test('a van that has merely hit its minimum still invites you on', async ({ page }) => {
@@ -68,5 +68,5 @@ test('a van that has merely hit its minimum still invites you on', async ({ page
 
   // it draws as locked but the seat is still sellable
   await expect(card).toContainText('Locked in');
-  await expect(card.locator('[data-view]')).toHaveText('Hop on');
+  await expect(card.locator('[data-view]')).toHaveText('Join');
 });
