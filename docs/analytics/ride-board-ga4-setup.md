@@ -34,6 +34,15 @@ Review the diff GTM shows you before confirming.
 | `GA4 - create_ride_list (ride board)` | `create_ride_list` | same as `join_ride` |
 | `GA4 - scratch_ride (ride board)` | `scratch_ride` | `item_list_id`, `item_id`, `broke_threshold` |
 
+**Outcome events (2026-09-22).** `join_ride` / `create_ride_list` now also fire when a traveller
+returns from PayHere card approval — in production that is nearly every real join — and carry
+`via: payhere | direct`. Their `value` was `0` on every event before then (board.js read a field
+the list never had). Two failure events were added: `ride_board_refused` (`flow`, `item_id`,
+`reason` = the API error code, `http_status`) and `ride_board_payment_failed` (`reason` =
+`cancelled | payment_expired | failed | still_pending`). Their tags are in
+[`gtm-missing-tags.json`](gtm-missing-tags.json), not this file. To report on `via`, add it as a
+param on the two conversion tags and register it as a custom dimension.
+
 **Why the first three are scoped.** `view_item_list`, `select_item` and `begin_checkout` are
 GA4-standard names that `search.js`, `plan.js` and `booking.js` also fire. Their board tags
 are filtered on `item_list_id = ride_board` so they can't double-fire on non-board events.
