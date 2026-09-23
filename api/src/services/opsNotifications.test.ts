@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, type AssignedQuote } from './opsNotifications';
 import { sampleBooking } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -215,5 +215,24 @@ describe('teamPaidEmail', () => {
     const b = sampleBooking('single');
     const evil = { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<img src=x>' } } } as typeof b;
     expect(teamPaidEmail(evil, '').html).not.toContain('<img src=x>');
+  });
+});
+
+describe('teamCancelledEmail / teamRefundedEmail', () => {
+  it('a paid shared seat: seats released, refund still owed, never a "Paid:" subject', () => {
+    const m = teamCancelledEmail(sampleBooking('shared'), { by: 'r@x.com', reason: 'Duplicate', statusBefore: 'paid', refundedCents: 0 }, '');
+    expect(m.subject.startsWith('Cancelled: ')).toBe(true);
+    expect(m.subject).toContain('2 seats released');
+    expect(m.text).toContain('Not refunded yet');
+    expect(m.text).toContain('back on sale');
+  });
+
+  it('a full refund reads as full, and says how it was made', () => {
+    const b = sampleBooking('single');
+    const m = teamRefundedEmail(b, { amountCents: b.total, currency: b.currency, full: true, by: 'f@x.com', reason: 'Sick', gatewayRef: 'R1', viaApi: true }, '');
+    expect(m.subject.startsWith('Refunded: ')).toBe(true);
+    expect(m.subject).not.toContain('partial');
+    expect(m.text).toContain('(full)');
+    expect(m.text).toContain('PayHere (automatic)');
   });
 });
