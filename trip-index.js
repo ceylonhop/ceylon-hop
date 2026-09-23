@@ -123,7 +123,24 @@
     var datalist = document.getElementById(listId);
     var options = datalist ? Array.prototype.slice.call(datalist.querySelectorAll('option')) : [];
 
+    // The site's place picker (site.js), when it loaded: the same menu the home hero uses.
+    // The datalist stays in the HTML only as the no-JS fallback; left attached, Chrome would
+    // open its own list on top of ours.
+    var fields = form.querySelectorAll('input[list]');
+    if (typeof window.attachLocalPlaceAutocomplete === 'function' && window.TRANSFERS) {
+      for (var f = 0; f < fields.length; f++) {
+        fields[f].removeAttribute('list');
+        window.attachLocalPlaceAutocomplete(fields[f]);
+      }
+    }
+
     var resolveField = function (raw) {
+      // resolvePlaceInput also knows the catalogue's aliases ("Airport", "Sigiriya") — the
+      // same answer the home hero submits.
+      if (typeof window.resolvePlaceInput === 'function' && window.TRANSFERS) {
+        var r = window.resolvePlaceInput(raw);
+        if (r.known) return r.id;
+      }
       var trimmed = String(raw).trim();
       var lower = trimmed.toLowerCase();
       for (var i = 0; i < options.length; i++) {

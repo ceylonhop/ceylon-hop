@@ -1232,6 +1232,12 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<!-- The hero form's place picker is site.js's shared attachLocalPlaceAutocomplete (the one the
+     home hero uses), fed by transfers-data.js. trip-index.js wires it; without these files the
+     form keeps its datalist. No Maps key on this page yet, so the menu offers catalogue places
+     only — anything else is still typed and priced by search.html's engine path. -->
+<script src="${p}${assetV('transfers-data.js')}"></script>
+<script src="${p}${assetV('site.js')}"></script>
 <script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('trip-index.js')}"></script>
 </body>
