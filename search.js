@@ -40,6 +40,8 @@ const ICONS = {
   flexi:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>',
   stops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg>',
+  // The same calendar-refresh mark as the page's own "Free cancellation" reassurance row.
+  cancel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg>',
   // img/icons/line/{closes-soon,live-count}.svg — the shared service's departure and its
   // seat availability.
   departs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.6 1.8"/><path d="M9.5 3h5"/><path d="M17.5 5.5l1.5 1.5" stroke-dasharray="2 2.6"/><circle class="wp" cx="12" cy="13" r="1.3"/></svg>',
@@ -312,6 +314,7 @@ function privateCardHtml(pending) {
       <span class="chip">${ICONS.flexi} Pick your own time</span>
       <span class="chip">${ICONS.stops} Stops on request</span>
       <span class="chip">${ICONS.lock} Fixed price, no meter</span>
+      <span class="chip">${ICONS.cancel} Free cancellation up to 24h before</span>
     </div>
   </article>`;
 }
@@ -450,6 +453,7 @@ if (shared) {
       <span class="chip">${ICONS.ck} Air-conditioned</span>
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
       <span class="chip">${ICONS.ck} Meet other travellers</span>
+      <span class="chip">${ICONS.cancel} Free cancellation up to 24h before</span>
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
     ${runs === null ? `<a class="sb-other" href="${boardStart(false)}">Other days? Start a ride ${ICON.arrow}</a>` : ''}

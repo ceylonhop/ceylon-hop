@@ -56,6 +56,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .assure{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
   .assure .pill{background:var(--paper);box-shadow:var(--shadow-s);border:1px solid var(--line)}
   .assure .pill svg{width:15px;height:15px;color:var(--teal-deep)}
+  /* the refund pill is the longest line here; let it wrap on a phone rather than run off the edge */
+  .assure .pill.pill-wrap{white-space:normal;max-width:100%}
+  .assure .pill.pill-wrap svg{flex:none}
 
   /* filter bar (matches routes.html vocabulary) */
   .filters{position:sticky;top:74px;z-index:40;background:rgba(244,242,234,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:14px 0}
@@ -133,6 +136,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg> Private transfers between every stop</span>
       <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg> You book your own hotels (we shortlist)</span>
       <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg> Or add a chauffeur-guide, whole trip</span>
+      <span class="pill pill-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 6 9 17l-5-5"/></svg> Free cancellation: 24h before on transfers, 10 days on a chauffeur-guide</span>
     </div>
   </div>
 </section>
