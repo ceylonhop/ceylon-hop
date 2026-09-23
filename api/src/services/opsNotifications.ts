@@ -299,3 +299,73 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   ].join('\n');
   return { subject, ...opsEmailShell(html, text) };
 }
+
+// ---------------------------------------------------------------------------
+// Ride Board: the ride locked in and the cards were charged (owner, 2026-09-23). The
+// travellers get "It's on!"; this is the team's copy, and it doubles as the driver manifest.
+// A "Paid:" mail like teamPaidEmail — money landed — so the owner's Gmail forward catches it.
+// ---------------------------------------------------------------------------
+
+export interface RideLockedArgs {
+  list: RideList;
+  /** The departure the sweep just pinned. */
+  time: string;
+  /** Real travellers whose seat is paid (or whose charge outcome is unknown — see below). */
+  charged: RideMember[];
+  /** Real travellers whose card declined: emailed "at risk", not on the van unless they pay. */
+  declined: RideMember[];
+  /** Subset of `charged` whose charge reply was lost — flagged, since that money is in doubt. */
+  unknown: RideMember[];
+  /** Placeholder seats that helped clear the minimum but are nobody. */
+  seedSeats: number;
+  currency: string;
+}
+
+export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const { list, time } = a;
+  const route = `${list.fromPlace} → ${list.toPlace}`;
+  const pax = a.charged.reduce((n, m) => n + m.seats, 0);
+  const collected = money(pax * list.seatPrice, a.currency);
+  const unknownSubs = new Set(a.unknown.map((m) => m.sub));
+  const subject = `Paid: Locked in — ${route}, ${shortDay(list.date)} ${time} — Shared taxi · ${pax} pax — ${collected} collected`;
+
+  const rideRows: [string, string][] = [
+    ['Departs', `${rideDay(list.date)} · ${time} (locked)`],
+    ['Vehicle', `Shared taxi · ${list.capacity} seats max`],
+    ['Passengers', `${pax} paid${a.seedSeats ? ` + ${a.seedSeats} placeholder seat${a.seedSeats === 1 ? '' : 's'} (not people)` : ''}`],
+    ['Seat price', money(list.seatPrice, a.currency)],
+  ];
+  const onBoard: [string, string][] = a.charged.map((m) => [
+    `${m.firstName} (${m.country})`,
+    `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}`,
+  ]);
+  const moneyRows: [string, string][] = [
+    ['Collected', `${collected} (${seatsWord(pax)})`],
+    ...(a.unknown.length ? [['Unconfirmed', `${a.unknown.length} charge(s) — check PayHere before chasing`] as [string, string]] : []),
+    ['Card declined', a.declined.length ? a.declined.map((m) => `${m.firstName} (${seatsWord(m.seats)}, ${m.email})`).join('; ') : 'None'],
+  ];
+  const link = boardDeepLink(list.code, opsBaseUrl);
+  const fallback = 'Find it under Bookings in the ops dashboard.';
+
+  const html = [
+    `<p style="margin:0 0 10px">${statusPill('RIDE LOCKED IN', '#1f6b3a', '#e3f1e6')}</p>`,
+    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(route)}</p>`,
+    `<p style="font-size:15px;font-weight:600;color:${TEAL_DEEP};margin:0 0 16px">${esc(list.code)}</p>`,
+    keyFacts([['Vehicle', 'Shared taxi'], ['Passengers', String(pax)], ['Departs', `${shortDay(list.date)} · ${time}`]]),
+    section('Ride', rideRows),
+    section('On board', onBoard),
+    section('Money', moneyRows, ['Collected']),
+    ctaBlock('Open the ride', link, fallback),
+  ].join('');
+  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
+  const text = [
+    `PAID · RIDE LOCKED IN · ${list.code}`,
+    route,
+    '',
+    ...rows('Ride', rideRows),
+    ...rows('On board', onBoard),
+    ...rows('Money', moneyRows),
+    link ? `Open the ride: ${link}` : fallback,
+  ].join('\n');
+  return { subject, ...opsEmailShell(html, text) };
+}

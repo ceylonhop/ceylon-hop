@@ -521,7 +521,7 @@ export function adminRoutes(deps: {
     let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
     if (deps.rideLists && deps.ridePaygw) {
       try {
-        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts });
+        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts, opsBaseUrl: deps.opsBaseUrl });
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);
