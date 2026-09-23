@@ -68,3 +68,34 @@ test('compact route estimates stay readable without mobile overflow', async ({ p
   await expect(page.locator('.rt-card').first()).toContainText('Approx. 135 km · 3h 45m');
   expect(await page.locator('body').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
+
+/* The live date rows are injected by route-page.js onto a page that sits TWO directories
+   deep (/trip/<slug>/), so a bare "board.html#/CODE" href resolved against the trip page's
+   own folder and every row landed on a 404. The static CTA beside them has always been
+   written "../../board.html" — these rows must reach the same place. */
+test('a live ride row links to the board, not to a 404 under /trip/', async ({ page }) => {
+  await page.route(
+    (u) => new URL(u.href).pathname === '/board',
+    (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        lists: [{
+          code: 'NS-1234', corridorId: 'airport-north', from: 'Negombo', to: 'Sigiriya / Dambulla',
+          date: '2099-01-01', slot: 'morning', lockedTime: null, minSeats: 3, capacity: 6,
+          seatPrice: 2749, status: 'gathering', note: null,
+          cutoffAt: '2099-01-01T00:00:00.000Z', committed: 2,
+          members: [{ position: 1, firstName: 'Ana', country: 'DE', photoUrl: null, isStarter: true }],
+        }],
+      }),
+    }),
+  );
+
+  await page.goto('/trip/negombo-to-sigiriya/');
+  const row = page.locator('.ld-row').first();
+  await expect(row).toBeVisible();
+  expect(new URL(await row.evaluate((a) => a.href)).pathname).toBe('/board.html');
+
+  await row.click();
+  await expect(page).toHaveURL(/\/board\.html#\/NS-1234$/);
+});
