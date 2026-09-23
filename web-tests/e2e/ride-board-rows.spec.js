@@ -35,11 +35,12 @@ test('rides are grouped under day headings, in date order, each showing its 2-ho
   await page.goto('/board.html');
   await expect(page.locator('.rw').first()).toBeVisible({ timeout: 15000 });
 
-  await expect(page.locator('.rw-day-h')).toHaveText(['Sat 15 Aug', 'Sun 16 Aug']);
-  const first = page.locator('.rw-group').first().locator('.rw');
+  // scheduled taxis add their own day groups for the next two weeks; these rides are in 2099
+  await expect(page.locator('.rw-group:has(.rw) .rw-day-h')).toHaveText(['Sat 15 Aug', 'Sun 16 Aug']);
+  const first = page.locator('.rw-group:has(.rw)').first().locator('.rw');
   await expect(first.locator('.rw-when')).toHaveText([/7–9 am/, /1–3 pm/]);
   await expect(page.locator('.rw[data-code="RW-1"] .rw-state')).toContainText('3 of 4 in');
-  await expect(page.locator('.rw[data-code="RW-1"] [data-view]')).toHaveText('Hop on');
+  await expect(page.locator('.rw[data-code="RW-1"] [data-view]')).toHaveText('Join');
   // no card-era markup survives
   await expect(page.locator('.lcard')).toHaveCount(0);
 });
