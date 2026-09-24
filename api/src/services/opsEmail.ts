@@ -56,18 +56,37 @@ export function keyFacts(facts: [string, string][]): string {
   return `<table style="border-collapse:separate;margin:0 0 20px"><tr>${cells.join('<td style="width:8px"></td>')}</tr></table>`;
 }
 
-// A titled group of label/value rows. `strong` rows are bolded (the money line).
-export function section(title: string, rows: [string, string][], strong: string[] = []): string {
+// A titled group of label/value rows. `strong` rows are bolded (the money line). A row may carry
+// a third element: trusted HTML placed after the escaped value (e.g. whatsappButton()).
+export type SectionRow = [string, string] | [string, string, string];
+export function section(title: string, rows: SectionRow[], strong: string[] = []): string {
   return [
     `<p style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:${MUTED};margin:0 0 6px">${esc(title)}</p>`,
     '<table style="border-collapse:collapse;font-size:14px;margin:0 0 18px;width:100%">',
     ...rows.map(
-      ([k, v]) =>
+      ([k, v, extra]) =>
         `<tr><td style="padding:5px 16px 5px 0;color:${MUTED};width:110px;vertical-align:top;border-top:1px solid #eee9df">${esc(k)}</td>` +
-        `<td style="padding:5px 0;font-weight:${strong.includes(k) ? 700 : 500};border-top:1px solid #eee9df">${esc(v)}</td></tr>`,
+        `<td style="padding:5px 0;font-weight:${strong.includes(k) ? 700 : 500};border-top:1px solid #eee9df">${esc(v)}${extra ?? ''}</td></tr>`,
     ),
     '</table>',
   ].join('');
+}
+
+// wa.me wants the full international number as bare digits. '' for anything too short to be a
+// phone number, so a junk value renders as plain text with no dead button beside it.
+export function whatsappLink(phone: string | null | undefined): string {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  return digits.length >= 8 ? `https://wa.me/${digits}` : '';
+}
+
+// The small "Message on WhatsApp" pill placed beside a number. WhatsApp's dark teal, not its
+// bright green: white on #25D366 is under 2:1, on #075E54 it clears 7:1.
+export function whatsappButton(phone: string | null | undefined): string {
+  const href = whatsappLink(phone);
+  return href
+    ? ` <a href="${esc(href)}" style="display:inline-block;margin-left:8px;background:#075E54;color:#fff;` +
+        `text-decoration:none;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap">Message on WhatsApp</a>`
+    : '';
 }
 
 // Wrap a caller-built body in the branded container + eyebrow + footer.
