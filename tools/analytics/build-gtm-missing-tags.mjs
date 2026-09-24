@@ -29,8 +29,9 @@ const EVENTS = [
     why: 'The step between begin_checkout and purchase. Without it you cannot see where checkout leaks.' },
   { name: 'payment_failed', params: ['payment_type', 'value', 'currency'],
     why: 'A customer tried to pay and could not. The single most actionable failure on the site.' },
-  { name: 'payment_dismissed', params: ['payment_type', 'value', 'currency'],
-    why: 'Customer closed the payment overlay — hesitation, not an error.' },
+  // (`payment_dismissed` was planned here: the website's PayHere SDK callback for a closed overlay.
+  // The website left the SDK for a top-level redirect on 2026-09-24 and nothing emits it now; a
+  // customer who backs out lands on manage.html's cancel leg, which reports `payment_cancelled`.)
   { name: 'payment_start_failed', params: ['reason'],
     why: 'Checkout could not even be started; `reason` carries the message.' },
   { name: 'payment_unconfirmed', params: ['leg', 'tries', 'reason', 'value', 'currency'],

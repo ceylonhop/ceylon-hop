@@ -14,9 +14,16 @@ import { JSDOM } from 'jsdom';
 //  The loading state never shows it, and a refusal before a booking exists shows
 //  it without the "for booking …" clause.
 //
+//  Since 2026-09-24 the card form lives on PayHere's own page (top-level redirect,
+//  booking-page-redirect.test.js): a decline or a "Back to Site" is answered on the
+//  booking's manage page, which carries the same link (manage-redirect.spec.js). On
+//  THIS page the overlay's end states are the ones before the gateway — a refused
+//  checkout, a failed booking create — and a page restored from the back/forward
+//  cache after Back from PayHere.
+//
 //  Same jsdom harness as booking-create-error.test.js: booking.js is a classic
 //  script with no window exports, so load the real page + its script deps and
-//  drive runPayment() against a stubbed fetch + PayHere SDK.
+//  drive runPayment() against a stubbed fetch (the gateway form's submit() stubbed).
 // ────────────────────────────────────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,22 +52,28 @@ function loadBooking(query) {
 
 // A backend that answers the rate-lock, the booking create, and the checkout.
 // `booking` null = the create is refused with a 5xx (no reference ever exists).
-function armApi(w, booking) {
+// `checkout` = [status, body] for POST /bookings/:id/checkout.
+function armApi(w, booking, checkout = [502, null]) {
   const createReply = booking ? `reply(200, ${JSON.stringify(booking)})` : 'reply(502, null)';
   w.eval(`
     window.CEYLON_HOP_API = 'https://api.test';
-    window.payhere = { startPayment: function(){} };
+    window.__submitted = 0;
+    HTMLFormElement.prototype.submit = function(){ window.__submitted++; };
+    navigator.sendBeacon = function(){ return true; };
     var reply = function(status, body){
       return Promise.resolve({ ok: status < 400, status: status, json: function(){ return Promise.resolve(body); } });
     };
     window.fetch = function(url){
       url = String(url);
-      if (url.indexOf('/checkout') !== -1) return reply(200, { checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: {} });
+      if (url.indexOf('/checkout') !== -1) return reply(${checkout[0]}, ${JSON.stringify(checkout[1])});
       if (url.indexOf('/bookings/') !== -1) return ${createReply};
       return reply(200, {});
     };
   `);
 }
+
+const PAYHERE = [200, { checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'CH-TEST1', hash: 'H' } }];
+const flush = (w) => new Promise((r) => w.setTimeout(r, 20));
 
 function waLink(w) {
   return w.document.querySelector('#ph-actions a[href^="https://wa.me/"]');
@@ -76,11 +89,11 @@ function decodedText(a) {
 }
 
 describe('payment overlay — "Tell us what happened on WhatsApp"', () => {
-  it('shows a prefilled WhatsApp link carrying the reference when PayHere is dismissed', async () => {
+  it('shows a prefilled WhatsApp link carrying the reference when the checkout is refused', async () => {
     const w = loadBooking(QUERY);
     armApi(w, FAKE_BOOKING);
     await w.eval('runPayment()');
-    w.eval('payhere.onDismissed()');
+    await flush(w);
 
     const a = visibleWaLink(w);
     expect(a).not.toBeNull();
@@ -94,29 +107,49 @@ describe('payment overlay — "Tell us what happened on WhatsApp"', () => {
     expect(w.document.getElementById('ph-actions').hidden).toBe(false);
   });
 
-  it('shows the same link when PayHere reports an error', async () => {
+  it('shows the same link on a refusal that explains itself (no retry offered)', async () => {
     const w = loadBooking(QUERY);
-    armApi(w, FAKE_BOOKING);
+    armApi(w, FAKE_BOOKING, [409, { error: 'not_chargeable' }]);
     await w.eval('runPayment()');
-    w.eval('payhere.onError()');
+    await flush(w);
 
     const a = visibleWaLink(w);
     expect(a).not.toBeNull();
     expect(decodedText(a)).toContain('CH-TEST1');
-    // the decline steps still render alongside it
-    expect(w.document.getElementById('ph-help').hidden).toBe(false);
+    expect(w.document.getElementById('ph-retry').hidden).toBe(true);
   });
 
   it('never shows the link in the loading state', async () => {
     const w = loadBooking(QUERY);
     armApi(w, FAKE_BOOKING);
     await w.eval('runPayment()');
-    w.eval('payhere.onError()');
+    await flush(w);
     expect(visibleWaLink(w)).not.toBeNull();
 
     // A retry starts a new attempt: the loading state must hide the link again.
     w.eval('phShowLoading("Setting up your secure payment…")');
     expect(visibleWaLink(w)).toBeNull();
+  });
+
+  it('never shows it on the hand-off to PayHere — nothing has gone wrong yet', async () => {
+    const w = loadBooking(QUERY);
+    armApi(w, FAKE_BOOKING, PAYHERE);
+    await w.eval('runPayment()');
+    await flush(w);
+    expect(w.__submitted).toBe(1);
+    expect(visibleWaLink(w)).toBeNull();
+  });
+
+  it('shows it, with the reference, when Back from PayHere restores the page', async () => {
+    const w = loadBooking(QUERY);
+    armApi(w, FAKE_BOOKING, PAYHERE);
+    await w.eval('runPayment()');
+    await flush(w);
+    w.dispatchEvent(new w.PageTransitionEvent('pageshow', { persisted: true }));
+
+    const a = visibleWaLink(w);
+    expect(a).not.toBeNull();
+    expect(decodedText(a)).toContain('CH-TEST1');
   });
 
   it('drops the "for booking …" clause when no booking was ever created', async () => {

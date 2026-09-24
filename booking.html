@@ -1110,15 +1110,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
 <script src="transfers-data.js?v=a00d86c790"></script>
-<!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
-     it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
-<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4,
+     §10). It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two
+     website payments that day were declined "3ds Authentication Failed" with no notify ever
+     reaching us. booking.js now does the same top-level form POST to PayHere's hosted checkout
+     that pay.html and manage.html do, and the customer comes back to their booking's manage page. -->
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="ch-pricing.js?v=74a30546ee"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=e64dad3537"></script>
+<script src="booking.js?v=16516599a5"></script>
 </body>
 </html>

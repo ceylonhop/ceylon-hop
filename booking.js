@@ -2385,14 +2385,18 @@ async function continueToCheckout(booking){
   // that cannot work: the price isn't coming back in a moment, and a paid booking will never
   // become unpaid. So read the body, and only fall back to the generic line when the server
   // didn't explain itself.
+  //
+  // `returnTo` states INTENT, never a URL: the server builds the return address — this booking's
+  // own manage page, carrying its manage token `t` and the status-only `rt` — from its own
+  // config. A gateway that redirects wherever the request body says is a phishing primitive.
   let checkout=null, refusal=null;
   try{
     const checkoutHeaders = booking.checkoutToken
-      ? { authorization: 'Bearer '+booking.checkoutToken }
-      : {};
+      ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
+      : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify({returnTo:'manage'})}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
@@ -2403,14 +2407,12 @@ async function continueToCheckout(booking){
   if(!checkout || !checkout.checkoutUrl){
     return phShowEnd(...checkoutRefusal(refusal));
   }
-  // Real PayHere gateway.
+  // Real PayHere gateway: the customer leaves for PayHere's own page and comes back to their
+  // booking's manage page, which asks our server what happened.
   if(/payhere\.lk/.test(checkout.checkoutUrl)){
-    if(!window.payhere){
-      // SDK failed to load (often an ad-blocker). Don't fake success.
-      return phShowEnd('error','We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
-    }
+    if(!checkout.fields) return phShowEnd(...checkoutRefusal(null));
     document.getElementById('ph-msg').textContent='Opening secure payment…';
-    return startPayHere(checkout, booking);
+    return redirectToPayHere(checkout, booking);
   }
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
   // (no real money gateway). Simulated interstitial with the real reference.
@@ -2583,57 +2585,52 @@ function simulatePayThenConfirm(booking){
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(booking); }, 3400);
 }
 
-function phShowSettlementPending(){
-  document.getElementById('ph-spin').style.display='none';
-  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
-  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
-  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
-  const ico=document.getElementById('ph-ico');
-  if(ico){
-    ico.hidden=false; ico.className='ph-ico warn';
-    ico.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-  }
-  const m=document.getElementById('ph-msg');
-  m.className='ph-msg ph-msg-big';
-  m.textContent='Payment is still being confirmed. Don’t try again—we’ll email you when it lands.';
-  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
-  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=true;
-  document.getElementById('ph-actions').hidden=false;
-  document.getElementById('ph-overlay').classList.add('show');
+// Real PayHere hosted checkout: a TOP-LEVEL form POST, exactly as pay.html and manage.html do it.
+// Until 2026-09-24 this ran PayHere's JS SDK, which renders the card form and the bank's 3-D
+// Secure challenge inside a cross-origin iframe; that day two website payments (CH-Y5RXW,
+// CH-V43ZU) were declined "3ds Authentication Failed" with no notify ever reaching us
+// (docs/checkout-redirect-spec.md §1.4, §10). PayHere sends the customer back to their booking's
+// manage page (returnTo:'manage' above), which rebuilds the booking from its manage token and
+// polls /bookings/pay-return for paid / declined / still confirming. So nothing on THIS page
+// reports an outcome: `purchase` and `payment_failed` for a real-gateway payment come only from
+// that return leg, from our server's answer. The confirmation email carries the details the
+// on-page boarding pass used to.
+let payHandedOff=false;
+function redirectToPayHere(checkout, booking){
+  // manage.html's purchase gate never sees the gateway URL on the way back, so it reads WHICH
+  // gateway this tab handed off to from here — the same key its own hand-off writes. A sandbox
+  // settlement reported as revenue is permanent in GA4.
+  try{ sessionStorage.setItem('ch_manage_pay_v1:sandbox', /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) ? '1' : '0'); }catch(e){}
+  // The fields are the server's verbatim: `hash` covers merchant_id + order_id + amount +
+  // currency and is signed server side, so reordering, renaming or adding anything here would
+  // be refused by the gateway.
+  const form=document.createElement('form');
+  form.method='POST';
+  form.action=checkout.checkoutUrl;
+  Object.keys(checkout.fields).forEach(function(k){
+    const input=document.createElement('input');
+    input.type='hidden';
+    input.name=k;
+    input.value=checkout.fields[k];
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  payHandedOff=true;
+  // Logged the instant before we leave: a sendBeacon survives the navigation.
+  sendCheckoutEvent(checkout, booking, 'opened');
+  // The overlay keeps saying "Opening secure payment…" until the browser actually leaves.
+  form.submit();
 }
 
-async function waitForPaymentConfirmation(checkout, booking){
-  const token=checkout && checkout.payReturnToken;
-  if(!token) return phShowSettlementPending();
-  phShowLoading('Confirming your payment…');
-  const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
-  const url=API+'/bookings/pay-return?rt='+encodeURIComponent(token);
-  for(let attempt=0; attempt<15; attempt++){
-    try{
-      const res=await fetch(url,{method:'GET',cache:'no-store'});
-      if(res.ok){
-        const result=await res.json();
-        if(result.status==='paid'){
-          document.getElementById('ph-overlay').classList.remove('show');
-          return finalizeBooking(booking);
-        }
-        if(result.status==='failed'){
-          return phShowEnd('error','Your payment wasn’t confirmed. No booking has been completed — please try again or message us on WhatsApp.');
-        }
-      }
-    }catch(e){ /* transient network failure — settlement may still arrive */ }
-    if(attempt<14) await new Promise(resolve=>setTimeout(resolve,1200));
-  }
-  return phShowSettlementPending();
-}
-
-// What the PayHere SDK reported, sent to our own attempt log (POST /bookings/:id/checkout-events).
+// Checkout diagnostics, sent to our own attempt log (POST /bookings/:id/checkout-events).
 // Audit 2026-09-24: every incomplete payment in 60 days ended silently — the SDK's onError message
 // was thrown away, so when a customer reached the gateway twice and pressed "Try again" twice
 // nobody could say whether he saw a blank frame, a spinner or an error. sendBeacon so the report
 // survives the tab closing, with the checkout token in the BODY (a beacon cannot set a header);
 // keepalive fetch where sendBeacon is missing. Best-effort in every branch: the payment flow
-// must never wait on, or fail because of, its own diagnostics.
+// must never wait on, or fail because of, its own diagnostics. Since the website left the SDK for
+// the redirect (2026-09-24) the page reports only `opened`, just before it leaves for PayHere; the
+// outcome is logged server side when the customer comes back through GET /bookings/pay-return.
 function sendCheckoutEvent(checkout, booking, outcome, reason){
   try{
     const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
@@ -2649,33 +2646,15 @@ function sendCheckoutEvent(checkout, booking, outcome, reason){
   }catch(e){ /* diagnostics only */ }
 }
 
-// Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
-// truth for "paid"; onCompleted starts a short poll of that server-owned state.
-function startPayHere(checkout, booking){
-  const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-  payhere.onCompleted = function(){ waitForPaymentConfirmation(checkout, booking); };
-  payhere.onDismissed = function(){ sendCheckoutEvent(checkout, booking, 'dismissed'); showPayDismissed(); };
-  payhere.onError = function(err){ sendCheckoutEvent(checkout, booking, 'error', err==null?'unknown':err); showPayFailed(); };
-  sendCheckoutEvent(checkout, booking, 'opened');
-  payhere.startPayment(payment);
-}
-
-// PayHere's SDK reports a decline and a plain "I closed the window" through two different
-// callbacks, but neither one says WHICH — a declined card also closes the window. So both
-// outcomes carry the decline steps, and the heading asks rather than asserts ("if your card
-// was declined"). Guessing wrong in either direction is worse than letting the payer pick.
-function declineHelp(){ return window.CH_DECLINE_HELP || []; }
-
-function showPayFailed(){
-  // Same dimensions as payment_initiated, so a failure can be compared against
-  // its own initiation — otherwise GA4 shows a count with nothing to divide by.
-  if(typeof window.chTrack==='function') window.chTrack('payment_failed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('error','Your payment didn’t go through — no charge was made.',{help:declineHelp()});
-}
-function showPayDismissed(){
-  if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.',{help:declineHelp()});
-}
+// Back from PayHere's page with the browser's Back button: a page restored from the back/forward
+// cache still shows the hand-off spinner and a latched Pay button. Give them the booking back with
+// an honest line and a working retry (a retry reuses the same draft booking, and the server
+// refuses one that has meanwhile been paid).
+window.addEventListener('pageshow', function(e){
+  if(!e.persisted || !payHandedOff) return;
+  payHandedOff=false;
+  phShowEnd('cancelled','You came back before finishing the payment. If you completed it on PayHere, your confirmation email is on its way — otherwise you can try again.');
+});
 
 // Rate-lock (spec 2026-07-11 §5): mint — or reuse — a 7-day locked quote for the current
 // itinerary, so a customer who returns within the window books the price they were quoted even if
