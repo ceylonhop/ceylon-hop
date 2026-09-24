@@ -180,3 +180,18 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).not.toThrow();
   });
 });
+
+// TEAM_EMAILS labels the owner's and team's own test bookings so ops counts and the digest can
+// leave them out (2026-09-24 abandoned-payment audit had to be cleaned by hand). Parsed once,
+// here, into a normalized set; unset means the feature is inert.
+describe('config — TEAM_EMAILS parses once into a normalized set', () => {
+  it('unset → empty set', () => {
+    expect(buildConfig({}).TEAM_EMAILS).toEqual(new Set());
+  });
+
+  it('lower-cases and trims each comma-separated address, dropping blanks', () => {
+    expect(buildConfig({ TEAM_EMAILS: ' A@x.com, b@y.com ,, ' }).TEAM_EMAILS).toEqual(
+      new Set(['a@x.com', 'b@y.com']),
+    );
+  });
+});

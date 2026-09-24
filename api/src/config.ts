@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { parseTeamEmails } from './services/testBookings';
 
 // The public, referrer-restricted browser Maps JS key the website already uses. The ops
 // itinerary map defaults to it (no separate config needed) — just add the ops/API domain to
@@ -137,6 +138,11 @@ const Env = z.object({
   // which is what makes it structurally unable to email a real customer instead of merely
   // conventionally unable (docs/staging-environment-plan.md).
   EMAIL_ALLOWLIST: z.string().default(''),
+  // TEAM_EMAILS: the owner's and team's own addresses, comma-separated. A booking whose customer
+  // email is one of these is a TEST booking (services/testBookings.ts): the ops queue labels it
+  // and leaves it out of its counts, the daily digest leaves it out of its status counts.
+  // Parsed ONCE here into a lower-cased, trimmed set; unset = empty set = feature inert.
+  TEAM_EMAILS: z.string().default('').transform(parseTeamEmails),
   // Relevance window (same spec, R6). Never notify about a trip that ended more than this
   // many days ago — stateless, so an emptied or restored notification_log cannot resurrect
   // an old booking. 30 days is well past any legitimate review request.

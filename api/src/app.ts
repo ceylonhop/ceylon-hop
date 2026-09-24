@@ -135,6 +135,9 @@ export interface AppDeps {
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
+  // Reaches the ops queue rows (isTest) and the daily digest's status counts.
+  teamEmails?: ReadonlySet<string>;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
@@ -503,6 +506,7 @@ export function createApp(deps: AppDeps = {}) {
     email, notificationLog, rideLists, quotes,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+    teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
@@ -580,6 +584,7 @@ export function createApp(deps: AppDeps = {}) {
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+      teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
