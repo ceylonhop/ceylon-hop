@@ -99,8 +99,18 @@ function resolve(rel) {
   return null;
 }
 
+// booking.js beacons the PayHere SDK's outcome to POST /bookings/:id/checkout-events. Under the
+// offline guard that lands here instead of the API; acknowledge it the way the API does (204)
+// so a spec driving the gateway callbacks never sees a 404 page where a beacon receipt belongs.
+const CHECKOUT_EVENTS = /^\/bookings\/[^/]+\/checkout-events$/;
+
 const server = http.createServer((req, res) => {
   let rel = decodeURIComponent(req.url.split('?')[0]);
+  if (OFFLINE_API && req.method === 'POST' && CHECKOUT_EVENTS.test(rel)) {
+    req.resume();
+    req.on('end', () => res.writeHead(204).end());
+    return;
+  }
   if (rel === '/') rel = '/index.html';
   const filePath = resolve(rel);
   if (!filePath) {

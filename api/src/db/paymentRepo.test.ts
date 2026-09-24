@@ -43,3 +43,25 @@ describe('InMemoryPaymentRepo', () => {
     expect(await r.findByBookingId('nope')).toHaveLength(0);
   });
 });
+
+// 0055 — retries reused the same payment row without touching it, so "how many times did this
+// customer reach PayHere" had no answer (audit 2026-09-24, CH-8UVYG).
+describe('InMemoryPaymentRepo.touchAttempt', () => {
+  it('starts at zero and counts each checkout, stamping the last one', async () => {
+    const r = new InMemoryPaymentRepo();
+    const p = await r.create(np);
+    expect(p.attemptCount).toBe(0);
+    expect(p.lastAttemptAt).toBeNull();
+    await r.touchAttempt(p.id);
+    await r.touchAttempt(p.id);
+    const after = await r.findByOrderId('CH-1');
+    expect(after!.attemptCount).toBe(2);
+    expect(after!.lastAttemptAt).toBeInstanceOf(Date);
+    expect(after!.status).toBe('pending');
+  });
+
+  it('throws for an unknown payment', async () => {
+    const r = new InMemoryPaymentRepo();
+    await expect(r.touchAttempt('nope')).rejects.toThrow(/payment_not_found/);
+  });
+});

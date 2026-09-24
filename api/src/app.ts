@@ -9,6 +9,7 @@ import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
+import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
@@ -70,6 +71,8 @@ export interface AppDeps {
   rideLists?: RideListRepo;
   // Ride Board attempt log. Unset → attempts are not recorded (tests opt in).
   rideBoardEvents?: RideBoardEventRepo;
+  // Booking checkout attempt log (0055). Unset → attempts are not recorded (tests opt in).
+  checkoutEvents?: BookingCheckoutEventRepo;
   paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
   customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
   customerVerifier?: JwtVerifier; // test seam for the customer Google login
@@ -421,6 +424,7 @@ export function createApp(deps: AppDeps = {}) {
       promoNow: deps.promoNow,
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
+      ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
     }),
   );
   app.route(
@@ -489,6 +493,7 @@ export function createApp(deps: AppDeps = {}) {
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+      ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({

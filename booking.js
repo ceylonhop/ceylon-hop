@@ -2627,13 +2627,36 @@ async function waitForPaymentConfirmation(checkout, booking){
   return phShowSettlementPending();
 }
 
+// What the PayHere SDK reported, sent to our own attempt log (POST /bookings/:id/checkout-events).
+// Audit 2026-09-24: every incomplete payment in 60 days ended silently — the SDK's onError message
+// was thrown away, so when a customer reached the gateway twice and pressed "Try again" twice
+// nobody could say whether he saw a blank frame, a spinner or an error. sendBeacon so the report
+// survives the tab closing, with the checkout token in the BODY (a beacon cannot set a header);
+// keepalive fetch where sendBeacon is missing. Best-effort in every branch: the payment flow
+// must never wait on, or fail because of, its own diagnostics.
+function sendCheckoutEvent(checkout, booking, outcome, reason){
+  try{
+    const API=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+    const id=booking&&booking.id, token=booking&&booking.checkoutToken;
+    if(!API||!id||!token) return;
+    const ev={ outcome:outcome, token:token };
+    if(checkout&&typeof checkout.attempt==='number') ev.attempt=checkout.attempt;
+    if(reason!=null) ev.reason=String(reason&&(reason.message||reason)).slice(0,200);
+    const url=API+'/bookings/'+encodeURIComponent(id)+'/checkout-events';
+    const body=JSON.stringify(ev);
+    if(navigator.sendBeacon&&navigator.sendBeacon(url,new Blob([body],{type:'application/json'}))) return;
+    fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:body,keepalive:true}).catch(function(){});
+  }catch(e){ /* diagnostics only */ }
+}
+
 // Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
 // truth for "paid"; onCompleted starts a short poll of that server-owned state.
 function startPayHere(checkout, booking){
   const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
   payhere.onCompleted = function(){ waitForPaymentConfirmation(checkout, booking); };
-  payhere.onDismissed = function(){ showPayDismissed(); };
-  payhere.onError = function(){ showPayFailed(); };
+  payhere.onDismissed = function(){ sendCheckoutEvent(checkout, booking, 'dismissed'); showPayDismissed(); };
+  payhere.onError = function(err){ sendCheckoutEvent(checkout, booking, 'error', err==null?'unknown':err); showPayFailed(); };
+  sendCheckoutEvent(checkout, booking, 'opened');
   payhere.startPayment(payment);
 }
 

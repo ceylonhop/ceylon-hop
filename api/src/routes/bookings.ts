@@ -1,5 +1,5 @@
-import { Hono } from 'hono';
-import type { ZodError } from 'zod';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { z, type ZodError } from 'zod';
 import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
@@ -50,6 +50,12 @@ import {
   type PromoCode,
   type PromoCodeErrorCode,
 } from '../domain/promoCode';
+import {
+  recordCheckoutEvent,
+  type BookingCheckoutEventInput,
+  type BookingCheckoutEventRepo,
+  type CheckoutAction,
+} from '../db/bookingCheckoutEventRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
@@ -231,6 +237,8 @@ export function bookingRoutes(deps: {
   promoCodes?: PromoCodeRepo;
   promoCodesEnabled?: boolean;
   promoNow?: () => Date;
+  // Checkout attempt log (db/bookingCheckoutEventRepo.ts). Unset → nothing is recorded.
+  checkoutEvents?: BookingCheckoutEventRepo;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -265,6 +273,46 @@ export function bookingRoutes(deps: {
     const token = authorization.slice(7);
     return token || undefined;
   }
+
+  // ---- checkout attempt log (0055) ------------------------------------------------------------
+  // Best-effort and never awaited: a booking or a payment must not fail, or wait, on the log.
+  const track = (e: BookingCheckoutEventInput): void => recordCheckoutEvent(deps.checkoutEvents, e);
+  const uaOf = (c: Context): string | null => c.req.header('user-agent')?.slice(0, 300) ?? null;
+  const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+  // booking_id is a uuid column; a path id that is not one ("nope") must not be sent as one.
+  const asUuid = (v: unknown): string | null =>
+    typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+
+  // Every refusal and server error on a create or a checkout, recorded in one place so a new
+  // early return cannot slip past it: the response's own error code is the reason. A 201 create
+  // is recorded here too (the door is the same for all three shapes); the checkout handler
+  // records its own 200, since only it knows the attempt number.
+  const attempt = (action: CheckoutAction): MiddlewareHandler => async (c, next) => {
+    try {
+      await next();
+    } catch (err) {
+      track({ action, outcome: 'error', reason: err instanceof Error ? err.message : 'server_error', httpStatus: 500,
+        bookingId: action === 'checkout' ? asUuid(c.req.param('id')) : null, ua: uaOf(c), source: 'server' });
+      throw err;
+    }
+    const status = c.res.status;
+    const body = (await c.res.clone().json().catch(() => null)) as Record<string, unknown> | null;
+    if (status < 400) {
+      if (action !== 'create' || status !== 201) return;
+      track({ action, outcome: 'succeeded', httpStatus: status, bookingId: asUuid(body?.id), reference: str(body?.reference),
+        channel: str(body?.channel), ua: uaOf(c), source: 'server' });
+      return;
+    }
+    track({
+      action,
+      outcome: status >= 500 ? 'error' : 'refused',
+      reason: status >= 500 ? (c.error?.message ?? 'server_error') : str(body?.error),
+      httpStatus: status,
+      bookingId: action === 'checkout' ? asUuid(c.req.param('id')) : null,
+      ua: uaOf(c),
+      source: 'server',
+    });
+  };
 
   // Rate-lock (spec 2026-07-11 §4): the card a booking should be priced against. A quoteId from a
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
@@ -374,7 +422,7 @@ function invalidRequest(error: ZodError) {
 }
 
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
-  r.post('/single', async (c) => {
+  r.post('/single', attempt('create'), async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = SingleTransferInput.safeParse(body);
     if (!parsed.success) {
@@ -451,7 +499,7 @@ function invalidRequest(error: ZodError) {
 
   // 9.4 — create a multi-stop trip draft (planner / tour hand-off). Same idempotency
   // and pipeline as a single transfer; only the input shape and pricing differ.
-  r.post('/trip', async (c) => {
+  r.post('/trip', attempt('create'), async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = TripInput.safeParse(body);
     if (!parsed.success) {
@@ -550,7 +598,7 @@ function invalidRequest(error: ZodError) {
 
   // 10.4 — book a shared seat. Resolve the corridor, price by seats, atomically hold the
   // seats on the departure (409 if sold out), then create the booking.
-  r.post('/shared', async (c) => {
+  r.post('/shared', attempt('create'), async (c) => {
     const body = await c.req.json().catch(() => null);
     // §6.2 — shared seats are per-seat corridor prices with no vehicle minimum to protect.
     if (promoCodeFrom(body).sent) return c.json({ error: 'promo_code_not_eligible' }, 422);
@@ -705,6 +753,8 @@ function invalidRequest(error: ZodError) {
       : rows.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
+    track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
+      reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
     return c.json({ status, reference: booking.reference }, 200);
   });
 
@@ -749,7 +799,7 @@ function invalidRequest(error: ZodError) {
   // equal what the booking says is due now (currently the full total; pre-GL-3 rows
   // have no amountDueNow and are charged the total) — never present a
   // charge that disagrees with the booking.
-  r.post('/:id/checkout', async (c) => {
+  r.post('/:id/checkout', attempt('checkout'), async (c) => {
     const id = c.req.param('id');
     const authorization = c.req.header('authorization');
     const token = bearerToken(authorization);
@@ -868,14 +918,72 @@ function invalidRequest(error: ZodError) {
     if (params.amount !== dueNow) {
       return c.json({ error: 'amount_mismatch' }, 409);
     }
+    // This is a payment attempt, fresh row or retried one: count it on the payment (0055). Pure
+    // bookkeeping, so a failure here costs the number and nothing else — the customer still
+    // gets their checkout.
+    let attemptNo: number | null = null;
+    try {
+      await payments.touchAttempt(payment.id);
+      attemptNo = (await payments.findByIdempotencyKey(idempotencyKey))?.attemptCount ?? null;
+    } catch (err) {
+      console.error(`checkout attempt count failed for ${booking.reference}:`, err);
+    }
+    track({ action: 'checkout', outcome: 'succeeded', httpStatus: 200, bookingId: booking.id, reference: booking.reference,
+      orderId: payment.orderId, channel: booking.channel, attempt: attemptNo, ua: uaOf(c), source: 'server' });
     // The PayHere popup callback only means the hosted checkout finished. The browser must
     // still ask our server whether the webhook settled this booking before it can say
     // "booked". This purpose-scoped token exposes no booking data and cannot authorize a
     // second checkout; it is accepted only by GET /bookings/pay-return.
     return c.json(
-      { ...params, payReturnToken: signPayReturnToken(booking.id, deps.linkSecret) },
+      {
+        ...params,
+        payReturnToken: signPayReturnToken(booking.id, deps.linkSecret),
+        // Which attempt this is (1 = first). The page echoes it on its gateway beacons.
+        ...(attemptNo != null ? { attempt: attemptNo } : {}),
+      },
       200,
     );
+  });
+
+  // 0055 — the browser's report of what the PayHere SDK did: `opened` (handed the payment),
+  // `dismissed` (the customer closed it) or `error` (the SDK's own message, e.g. PH-0014). The
+  // only witness of the gateway step is the page, and until now it threw the message away.
+  //
+  // Authorised by the same checkout token as /checkout, accepted in the body as well as the
+  // bearer header because a sendBeacon cannot set headers. Always 204, whatever happens: a
+  // diagnostic reporter must never become a source of errors itself (same stance as
+  // clientErrors.ts), and telling a caller WHY it was ignored would only help a prober.
+  const GatewayEventInput = z.object({
+    outcome: z.enum(['opened', 'dismissed', 'error']),
+    reason: z.string().max(200).optional(),
+    attempt: z.number().int().min(0).optional(),
+    token: z.string().min(1).optional(),
+  });
+  r.post('/:id/checkout-events', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const parsed = GatewayEventInput.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.body(null, 204);
+      const token = bearerToken(c.req.header('authorization')) ?? parsed.data.token;
+      if (!verifyCheckoutToken(token, id, deps.linkSecret, checkoutNow())) return c.body(null, 204);
+      const booking = await bookings.get(id).catch(() => null);
+      track({
+        action: 'gateway',
+        outcome: parsed.data.outcome,
+        reason: parsed.data.reason ?? null,
+        attempt: parsed.data.attempt ?? null,
+        bookingId: asUuid(id),
+        reference: booking?.reference ?? null,
+        // The payment's order id is the booking reference (see /checkout).
+        orderId: booking?.reference ?? null,
+        channel: booking?.channel ?? null,
+        ua: uaOf(c),
+        source: 'client',
+      });
+    } catch (err) {
+      console.error('checkout-events beacon failed:', err);
+    }
+    return c.body(null, 204);
   });
 
   return r;
