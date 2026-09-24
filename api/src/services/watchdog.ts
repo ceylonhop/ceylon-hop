@@ -110,8 +110,27 @@ export async function runWatchdog(
     }
     stuck.push(b);
   }
+  // The customer may have retried and PAID the same trip on a newer booking (CH-Y5RXW was chased
+  // three hours after she paid on CH-L72HX). One extra list per sweep, only when something is stuck.
+  const settled = stuck.length ? await bookings.list({ status: [...PAID_OR_LATER] }) : [];
   let recoveryEmails = 0;
   for (const b of stuck) {
+    const paidOn = paidDuplicateOf(b, settled);
+    if (paidOn) {
+      // Nothing to chase — the money came in on the other booking. Still tell ops, but as a
+      // chore (cancel the leftover), not an incident; and never email the customer about it.
+      const gateway = payments ? await payments.findByBookingId(b.id) : null;
+      await alerts.send({
+        severity: 'warning',
+        kind: 'watchdog_stuck_pending',
+        title: `Booking ${b.reference} stuck in payment_pending — the customer paid on ${paidOn.reference}`,
+        body:
+          `Customer paid for the same trip on ${paidOn.reference}, cancel this duplicate.\n` +
+          stuckPendingBody(b, now, gateway, `not sent — the customer already paid on ${paidOn.reference}`, opsBaseUrl ?? ''),
+        dedupeKey: b.id,
+      });
+      continue;
+    }
     // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
     // sweep (the ops alert below fires regardless). Idempotent via notification_log.
     // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
@@ -221,6 +240,46 @@ export async function runWatchdog(
   await alertLog?.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, now);
 
   return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
+}
+
+// A booking is money in once it reaches any of these (the lifecycle only moves forward from paid).
+const PAID_OR_LATER = ['paid', 'confirmed', 'in_progress', 'completed'] as const;
+
+// The person, as the DB keys them: customers.person_key is generated from lower(btrim(email)).
+// Every booking inserts its own customers row, so the booking's own email is the join.
+function personKey(b: Booking): string {
+  return String(b.input.customer.email ?? '').trim().toLowerCase();
+}
+
+const norm = (s: string | undefined | null) => String(s ?? '').trim().toLowerCase();
+
+// Same mode, same travel date, and the same trip: the corridor and departure for a shared seat,
+// the endpoints for a single transfer, every stop for a trip. A trip or transfer with no date
+// yet matches nothing — "to confirm" is not a date two bookings can share.
+function sameTrip(a: Booking, b: Booking): boolean {
+  if (a.mode === 'shared' && b.mode === 'shared') {
+    return a.input.corridorId === b.input.corridorId && a.input.date === b.input.date && norm(a.input.time) === norm(b.input.time);
+  }
+  if (a.mode === 'single' && b.mode === 'single') {
+    return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
+  }
+  if (a.mode === 'trip' && b.mode === 'trip') {
+    const start = (x: typeof a) => x.input.dates?.find(Boolean);
+    return !!start(a) && start(a) === start(b) &&
+      a.input.stops.length === b.input.stops.length && a.input.stops.every((s, i) => norm(s) === norm(b.input.stops[i]));
+  }
+  return false;
+}
+
+// A paid booking by the same person for the same trip, made AFTER this stuck one — i.e. they came
+// back and paid again rather than finishing this checkout. Null when there is none.
+function paidDuplicateOf(b: Booking, settled: Booking[]): Booking | null {
+  const who = personKey(b);
+  if (!who) return null;
+  const since = Date.parse(b.createdAt);
+  return (
+    settled.find((p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && sameTrip(b, p)) ?? null
+  );
 }
 
 // Everything the reader used to have to open three tables for (CH-V43ZU). The one fact

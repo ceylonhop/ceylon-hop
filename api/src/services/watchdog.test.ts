@@ -7,6 +7,7 @@ import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { SendBudget } from './sendBudget';
+import { futureIsoDate } from '../testSupport/dates';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -536,4 +537,89 @@ describe('runWatchdog — team test bookings', () => {
       expect(alerts.sent).toHaveLength(1);
     }
   });
+});
+
+// Review of #774, finding 11. CH-Y5RXW's customer retried and PAID the same shared seat on a new
+// booking, CH-L72HX, ~20 min later — and three hours after that the watchdog emailed her to
+// "finish your booking" on the abandoned one. Every booking inserts its own customer row, so the
+// person is matched by email (lower/trim, as the DB's person_key is).
+describe('runWatchdog — the customer already paid for the same trip on a later booking', () => {
+  const T0 = Date.now();
+  const TRAVEL = futureIsoDate(7);
+  const at = (min: number) => new Date(T0 + min * MIN).toISOString();
+  const customer = { firstName: 'Ana', lastName: 'K', email: 'ana@example.com', whatsapp: '+491700000000', country: 'Germany' };
+  const shared = (over: Partial<{ date: string; time: string; corridorId: string; email: string }> = {}) => ({
+    mode: 'shared' as const,
+    input: {
+      corridorId: over.corridorId ?? 'ella-arugam', fromPlace: 'Ella', toPlace: 'Arugam Bay', date: over.date ?? TRAVEL,
+      time: over.time ?? '09:00', seats: 1, bags: 1, customer: { ...customer, email: over.email ?? customer.email },
+    },
+  });
+  function mk(reference: string, status: string, createdAt: string, trip: ReturnType<typeof shared>) {
+    return {
+      id: `id-${reference}`, reference, status, createdAt, channel: 'website', currency: 'USD', total: 5498, amountDueNow: 5498,
+      ...trip,
+    } as never;
+  }
+  function repo(rows: unknown[]) {
+    const all = rows as { status: string }[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r: any = {
+      list: async ({ status }: { status?: string | string[] } = {}) => {
+        const want = Array.isArray(status) ? status : status ? [status] : null;
+        return all.filter((b) => !want || want.includes(b.status));
+      },
+      get: async () => null,
+    };
+    return r;
+  }
+  const mail = { baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+  it('sends no recovery email, and pages a WARNING that names the paid booking', async () => {
+    const bookings = repo([
+      mk('CH-Y5RXW', 'payment_pending', at(0), shared()),
+      mk('CH-L72HX', 'paid', at(20), shared({ email: '  ANA@example.com ' })),
+    ]);
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const log = new InMemoryNotificationLogRepo();
+    const res = await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log, alerts, email, ...mail });
+    expect(email.sent).toHaveLength(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(await log.wasSent('id-CH-Y5RXW', 'payment_recovery')).toBe(false);
+    const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+    expect(stuck).toHaveLength(1);
+    expect(stuck[0].severity).toBe('warning');
+    expect(stuck[0].title).toContain('CH-Y5RXW');
+    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX, cancel this duplicate.');
+  });
+
+  it('counts any later lifecycle status as paid (confirmed, in progress, completed)', async () => {
+    for (const status of ['confirmed', 'in_progress', 'completed']) {
+      const bookings = repo([mk('CH-Y5RXW', 'payment_pending', at(0), shared()), mk('CH-L72HX', status, at(20), shared())]);
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), email, ...mail });
+      expect(email.sent, status).toHaveLength(0);
+    }
+  });
+
+  // Anything that is not the same person on the same trip, paid AFTER the stuck one, changes nothing.
+  for (const [what, paid] of [
+    ['a different travel date', () => mk('CH-L72HX', 'paid', at(20), shared({ date: futureIsoDate(8) }))],
+    ['a different customer', () => mk('CH-L72HX', 'paid', at(20), shared({ email: 'someone@else.com' }))],
+    ['a different departure time', () => mk('CH-L72HX', 'paid', at(20), shared({ time: '14:00' }))],
+    ['a different corridor', () => mk('CH-L72HX', 'paid', at(20), shared({ corridorId: 'kandy-ella' }))],
+    ['a paid booking made BEFORE the stuck one', () => mk('CH-L72HX', 'paid', at(-20), shared())],
+  ] as const) {
+    it(`${what}: the usual recovery email and critical page`, async () => {
+      const bookings = repo([mk('CH-Y5RXW', 'payment_pending', at(0), shared()), paid()]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail });
+      expect(email.sent).toHaveLength(1);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck[0].severity).toBe('critical');
+      expect(stuck[0].body).not.toContain('cancel this duplicate');
+    });
+  }
 });
