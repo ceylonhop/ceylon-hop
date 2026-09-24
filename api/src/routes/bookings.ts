@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ZodError } from 'zod';
 import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
@@ -361,12 +362,23 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
   return { sent: true, code: normalizePromoCode(raw) };
 }
 
+// A Zod refusal, worded for whoever has to fix it. `details` (flatten) keys only by the TOP-level
+// field, so a bad customer.whatsapp arrives as "customer: …" — and booking.js shows the generic
+// "try again in a moment" unless the body carries `message`, advice that cannot work for a
+// number the customer has to retype (CH-T74DT, 2026-08-27: a 26-digit WhatsApp number, banked by
+// all three doors). Same path-per-issue wording as POST /admin/quote/:id/book and
+// /quotes/pay/start. Additive: `error` and `details` are unchanged.
+function invalidRequest(error: ZodError) {
+  const message = error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ');
+  return { error: 'invalid_request', message, details: error.flatten() };
+}
+
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = SingleTransferInput.safeParse(body);
     if (!parsed.success) {
-      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+      return c.json(invalidRequest(parsed.error), 400);
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
@@ -443,7 +455,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     const body = await c.req.json().catch(() => null);
     const parsed = TripInput.safeParse(body);
     if (!parsed.success) {
-      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+      return c.json(invalidRequest(parsed.error), 400);
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
@@ -544,7 +556,7 @@ function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: str
     if (promoCodeFrom(body).sent) return c.json({ error: 'promo_code_not_eligible' }, 422);
     const parsed = SharedBookingRequest.safeParse(body);
     if (!parsed.success) {
-      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+      return c.json(invalidRequest(parsed.error), 400);
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
