@@ -311,6 +311,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var a = document.getElementById('paywa');
     if (a) a.hidden = false;
   }
+  // The same link, standalone, for the screens that have no booking to rebuild.
+  function tellUsLink(reference){
+    return '<a class="btn btn-ghost pp-cta pp-tellus" id="paywa" href="' + esc(waTellUsHref({ reference: reference }))
+      + '" target="_blank" rel="noopener">Tell us what happened on WhatsApp</a>';
+  }
 
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
@@ -437,6 +442,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var FIRST_PAINT_MS = 1400;
   var stopReturn = function(){};
   var handedOff = false;
+  // The poll budget ran out and our server still says `pending`. That is NOT "awaiting
+  // confirmation": PayHere sends no notify at all for a "3ds Authentication Failed" decline (review
+  // of #774), so a declined customer would wait for ever on a screen that implied it worked. Say the
+  // two things we can honestly say, open the decline steps, and offer the tell-us link — on either
+  // leg, because nobody knows which one a decline comes back on. Still not an outcome: no
+  // `payment_failed`, no purchase.
+  var NO_VERDICT = 'We haven’t heard back from your bank. If PayHere showed Declined, nothing was charged — '
+    + 'you can try again below. If it showed Approved, your confirmation email is on its way.';
 
   function renderReturn(){
     paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
@@ -496,16 +509,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // "checking" line in place rather than re-rendering under someone about to press Pay.
         if (fellBack) {
           var e = document.getElementById('payerr');
-          if (e) {
-            e.textContent = cameFromCancel
-              ? 'You came back without finishing the payment — nothing was charged.'
-              : 'We haven’t had confirmation yet — nothing was charged unless you completed the payment. We’ll email you if it lands.';
-          }
-          if (cameFromCancel) showTellUs();
+          if (e) e.textContent = NO_VERDICT;
+          var h = document.getElementById('payhelp');
+          if (h && DECLINE_HELP.length) { h.innerHTML = helpHtml(DECLINE_HELP, false); h.hidden = false; }
+          showTellUs();
           return;
         }
-        if (cameFromCancel) return resume('You came back without finishing the payment — nothing was charged.', DECLINE_HELP, true, true);
-        renderStillWaiting();
+        if (t) return resume(NO_VERDICT, DECLINE_HELP, false, true);
+        renderStillWaiting(x.reference);
       }).catch(function(e){
         if (settled) return;
         if (tries < budget) { setTimeout(poll, 2000); return; }
@@ -527,11 +538,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div>' + waLine());
   }
 
-  function renderStillWaiting(){
+  // No answer we can act on, and no booking on screen to act from (no manage token in this tab, or
+  // our server was unreachable). The same two honest readings as NO_VERDICT, with the way to retry
+  // being the booking link rather than a button that isn't here.
+  function renderStillWaiting(reference){
     paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
-      + '<h1 class="st-title">Payment received?</h1>'
-      + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
-      + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine());
+      + '<h1 class="st-title">Still waiting to hear from your bank</h1>'
+      + '<p class="st-sub">We haven’t heard back from your bank.</p>'
+      + '<p class="st-sub">If PayHere showed Declined, nothing was charged — open your booking link again to retry. '
+      + 'If it showed Approved, your confirmation email is on its way.</p>'
+      + tellUsLink(reference) + '</div>' + waLine());
   }
 
   function renderCannotResume(){

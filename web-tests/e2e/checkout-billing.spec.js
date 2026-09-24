@@ -144,7 +144,8 @@ test.describe('a declined card gets something to do about it', () => {
   });
 
   // A declined card also sends people back without a verdict — PayHere parks every payer behind
-  // "Back to Site" — so the cancel leg keeps the steps within reach, collapsed rather than asserted.
+  // "Back to Site", and sends no notify at all for a 3-D Secure decline — so once the check runs
+  // out the cancel leg shows the steps, open.
   test('coming back without finishing keeps them within reach — a decline can look the same', async ({ page }) => {
     const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['pending'] });
     await fillContact(page);
@@ -152,8 +153,8 @@ test.describe('a declined card gets something to do about it', () => {
     await page.waitForURL(/sandbox\.payhere\.lk/);
     await page.goto(fields.cancel_url);
 
-    await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
-    await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+    await expect(page.locator('#payerr')).toContainText('If PayHere showed Declined, nothing was charged', { timeout: 30000 });
+    await expect(page.locator('#payhelp h3')).toContainText('declined');
     await expect(page.locator('#payhelp li')).toHaveCount(4);
   });
 

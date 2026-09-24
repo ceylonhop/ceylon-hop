@@ -25,8 +25,8 @@ test('a booking-API failure shows an error state inside the overlay (not a stray
 
 // Backing out at PayHere used to be the SDK's onDismissed, shown in this overlay. Since the
 // website left the iframe SDK (2026-09-24) the customer is ON PayHere's page, and "Back to Site"
-// takes the cancel leg to their booking's manage page: it must say nothing was completed and
-// offer the payment again — the retry the overlay used to carry.
+// takes the cancel leg to their booking's manage page: with no verdict from the bank it says what
+// each outcome would mean and offers the payment again — the retry the overlay used to carry.
 test('cancelling at PayHere returns to the booking with a way to pay again', async ({ page }) => {
   const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['pending'] });
   await fillContact(page);
@@ -34,7 +34,7 @@ test('cancelling at PayHere returns to the booking with a way to pay again', asy
   await page.waitForURL(/sandbox\.payhere\.lk/);
 
   await page.goto(fields.cancel_url);
-  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+  await expect(page.locator('#payerr')).toContainText('If PayHere showed Declined, nothing was charged', { timeout: 30000 });
   await expect(page.locator('#paybtn')).toBeVisible();
 });
 

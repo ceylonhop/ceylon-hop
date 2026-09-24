@@ -94,9 +94,11 @@ test('backing out at PayHere (cancel leg) resumes the booking, claims nothing, a
   const { fields } = await payAtGateway(page, { settlementStatuses: ['pending'] });
   expect(fields.cancel_url).toMatch(/&c=1$/);
   await page.goto(fields.cancel_url);
-  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
-  // Not asserted as a decline: the steps are available, collapsed.
-  await expect(page.locator('#payhelp h3')).toHaveCount(0);
-  await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+  // While we are still asking, nothing is asserted: the steps are available, collapsed.
+  await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible({ timeout: 8000 });
+  // No verdict ever comes (PayHere sends no notify for a 3-D Secure decline): both honest readings,
+  // the steps open, and a way to pay again. Still no `payment_failed` — nothing was confirmed.
+  await expect(page.locator('#payerr')).toContainText('If PayHere showed Declined, nothing was charged', { timeout: 30000 });
+  await expect(page.locator('#payhelp h3')).toContainText('declined');
   await expect(page.locator('#paybtn')).toBeVisible();
 });
