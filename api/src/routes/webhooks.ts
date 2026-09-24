@@ -15,6 +15,7 @@ import { money as fmtMoney } from '../services/opsEmail';
 import { teamPaidEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
+import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
@@ -92,6 +93,8 @@ export function webhookRoutes(deps: {
   linkSecret: string;
   // Deep link in the team's paid email. Unset → the email says where to look instead.
   opsBaseUrl?: string;
+  // Checkout attempt log (db/bookingCheckoutEventRepo.ts). Unset → nothing is recorded.
+  checkoutEvents?: BookingCheckoutEventRepo;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };

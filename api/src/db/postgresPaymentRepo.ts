@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
 import type { PaymentRepo, NewPayment, Payment, PaymentStatus } from './paymentRepo';
@@ -13,6 +13,8 @@ const toPayment = (r: Row): Payment => ({
   currency: r.currency,
   status: r.status as PaymentStatus,
   idempotencyKey: r.idempotencyKey,
+  attemptCount: r.attemptCount,
+  lastAttemptAt: r.lastAttemptAt,
 });
 
 export class PostgresPaymentRepo implements PaymentRepo {
@@ -130,6 +132,17 @@ export class PostgresPaymentRepo implements PaymentRepo {
       )
       .limit(1);
     return Boolean(row);
+  }
+
+  // Bookkeeping only: status, settlement and updated_at are untouched, so nothing that reads
+  // "when did this payment last change" starts counting retries as changes.
+  async touchAttempt(id: string): Promise<void> {
+    const rows = await this.db
+      .update(payments)
+      .set({ attemptCount: sql`${payments.attemptCount} + 1`, lastAttemptAt: new Date() })
+      .where(eq(payments.id, id))
+      .returning({ id: payments.id });
+    if (rows.length === 0) throw new Error(`payment_not_found: ${id}`);
   }
 
   async markFailed(id: string): Promise<Payment> {

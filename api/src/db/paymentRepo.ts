@@ -14,6 +14,10 @@ export interface NewPayment {
 export interface Payment extends NewPayment {
   id: string;
   status: PaymentStatus;
+  // 0055 — how many checkouts were started against this row and when the last one was. A retry
+  // reuses the row (idempotent per booking), so before this the count was invisible.
+  attemptCount: number;
+  lastAttemptAt: Date | null;
 }
 
 export interface PaymentSettlementEvidence {
@@ -48,6 +52,9 @@ export interface PaymentRepo {
   // `reference` is whatever the operator can cite (a bank slip number), and is optional.
   markSucceededManually(id: string, evidence: { reference: string | null; settledBy: string }): Promise<Payment>;
   markFailed(id: string): Promise<Payment>;
+  // A checkout was started against this payment: attempt_count + 1, last_attempt_at = now.
+  // Bookkeeping only — never touches status or settlement.
+  touchAttempt(id: string): Promise<void>;
   // Did this booking's money arrive out-of-band? findByBookingId() returns the narrow Payment
   // shape, which drops the provenance; the watchdog needs exactly this distinction to tell a
   // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
@@ -80,6 +87,8 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       ...p,
       id: randomUUID(),
       status: 'pending',
+      attemptCount: 0,
+      lastAttemptAt: null,
       gatewayPaymentId: null,
       settledAt: null,
       settlementSource: null,
@@ -142,6 +151,12 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     const updated: InternalPaymentRecord = { ...p, status: 'failed', updatedAt: new Date() };
     this.byId.set(id, updated);
     return this.toPayment(updated);
+  }
+
+  async touchAttempt(id: string): Promise<void> {
+    const p = this.byId.get(id);
+    if (!p) throw new Error(`payment_not_found: ${id}`);
+    this.byId.set(id, { ...p, attemptCount: p.attemptCount + 1, lastAttemptAt: new Date() });
   }
 
   async hasManualSettlement(bookingId: string): Promise<boolean> {
@@ -207,6 +222,8 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       currency: payment.currency,
       idempotencyKey: payment.idempotencyKey,
       status: payment.status,
+      attemptCount: payment.attemptCount,
+      lastAttemptAt: payment.lastAttemptAt ? new Date(payment.lastAttemptAt) : null,
     };
   }
 }

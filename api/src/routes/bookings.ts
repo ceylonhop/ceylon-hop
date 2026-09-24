@@ -50,6 +50,7 @@ import {
   type PromoCode,
   type PromoCodeErrorCode,
 } from '../domain/promoCode';
+import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
@@ -231,6 +232,8 @@ export function bookingRoutes(deps: {
   promoCodes?: PromoCodeRepo;
   promoCodesEnabled?: boolean;
   promoNow?: () => Date;
+  // Checkout attempt log (db/bookingCheckoutEventRepo.ts). Unset → nothing is recorded.
+  checkoutEvents?: BookingCheckoutEventRepo;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
