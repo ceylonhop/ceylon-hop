@@ -630,6 +630,30 @@ function showAlreadyGoing() {
 }
 renderResults(askEngine ? 'pending' : 'priced');
 
+/* People treat a result card as the button. Clarity (21–23 Sep 2026): the most dead-clicked
+   text on the site was the shared card's badge, price and description, and the private
+   card's vehicle rows. So a click on the scheduled shared card follows its "Book a seat", and
+   a click on a priced vehicle row follows that row's Select — by clicking the real link, so
+   select_item still fires. The private card as a whole stays inert (two vehicles, no single
+   meaning), and so does an off-day shared card (several ways forward). A still-pricing row has
+   no link yet, and a drag to select text is not a click. Delegated: #results is redrawn. */
+(function () {
+  const box = document.getElementById('results');
+  if (!box) return;
+  box.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!t || !t.closest || e.defaultPrevented || e.button !== 0) return;
+    if (t.closest('a, button, input, select, textarea, label')) return;
+    const sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).trim()) return;
+    const row = t.closest('.opt-private .veh-row');
+    const card = row ? null : t.closest('#shared-option:not(.is-offday)');
+    const link = row ? row.querySelector('a.btn')
+      : card ? card.querySelector('a.btn-primary.o-cta') : null;
+    if (link) link.click();
+  });
+})();
+
 // ---- funnel: search + results view (Phase 0 analytics) ----
 // Called once prices exist. An engine route reports after its estimate lands, so view_item_list
 // never carries a placeholder price — and a route we never managed to price reports no items.
