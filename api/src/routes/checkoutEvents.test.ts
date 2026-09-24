@@ -164,6 +164,22 @@ describe('POST /bookings/:id/checkout → checkout events + attempt counter', ()
     expect(checkoutEvents.all().filter((r) => r.action === 'checkout').map((r) => r.attempt)).toEqual([1, 2]);
   });
 
+  // Review of #774, finding 8: touchAttempt answers with the new count, so the checkout reads the
+  // payment row once — not once more after the bump, a second round trip on the payment path.
+  it('reads the payment row once per checkout — the attempt number comes back from the bump', async () => {
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ checkoutEvents: new InMemoryBookingCheckoutEventRepo(), payments });
+    const b = await book(app);
+    await checkout(app, b);
+    // Measured on the retry: the first checkout's create() does its own idempotency read.
+    let reads = 0;
+    const find = payments.findByIdempotencyKey.bind(payments);
+    payments.findByIdempotencyKey = (k: string) => { reads += 1; return find(k); };
+    const res = await checkout(app, b);
+    expect((await res.json()).attempt).toBe(2);
+    expect(reads).toBe(1);
+  });
+
   it('records a bad token as checkout/refused (checkout_unauthorized) against the booking id', async () => {
     const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
     const app = createApp({ checkoutEvents });

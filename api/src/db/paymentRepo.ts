@@ -53,8 +53,9 @@ export interface PaymentRepo {
   markSucceededManually(id: string, evidence: { reference: string | null; settledBy: string }): Promise<Payment>;
   markFailed(id: string): Promise<Payment>;
   // A checkout was started against this payment: attempt_count + 1, last_attempt_at = now.
-  // Bookkeeping only — never touches status or settlement.
-  touchAttempt(id: string): Promise<void>;
+  // Bookkeeping only — never touches status or settlement. Resolves to the NEW attempt_count, so
+  // the checkout reports its attempt number without reading the row back.
+  touchAttempt(id: string): Promise<number>;
   // Did this booking's money arrive out-of-band? findByBookingId() returns the narrow Payment
   // shape, which drops the provenance; the watchdog needs exactly this distinction to tell a
   // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
@@ -153,10 +154,12 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     return this.toPayment(updated);
   }
 
-  async touchAttempt(id: string): Promise<void> {
+  async touchAttempt(id: string): Promise<number> {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
-    this.byId.set(id, { ...p, attemptCount: p.attemptCount + 1, lastAttemptAt: new Date() });
+    const attemptCount = p.attemptCount + 1;
+    this.byId.set(id, { ...p, attemptCount, lastAttemptAt: new Date() });
+    return attemptCount;
   }
 
   async hasManualSettlement(bookingId: string): Promise<boolean> {

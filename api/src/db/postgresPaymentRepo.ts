@@ -136,13 +136,14 @@ export class PostgresPaymentRepo implements PaymentRepo {
 
   // Bookkeeping only: status, settlement and updated_at are untouched, so nothing that reads
   // "when did this payment last change" starts counting retries as changes.
-  async touchAttempt(id: string): Promise<void> {
-    const rows = await this.db
+  async touchAttempt(id: string): Promise<number> {
+    const [row] = await this.db
       .update(payments)
       .set({ attemptCount: sql`${payments.attemptCount} + 1`, lastAttemptAt: new Date() })
       .where(eq(payments.id, id))
-      .returning({ id: payments.id });
-    if (rows.length === 0) throw new Error(`payment_not_found: ${id}`);
+      .returning({ attemptCount: payments.attemptCount });
+    if (!row) throw new Error(`payment_not_found: ${id}`);
+    return row.attemptCount;
   }
 
   async markFailed(id: string): Promise<Payment> {

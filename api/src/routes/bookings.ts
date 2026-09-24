@@ -959,8 +959,7 @@ function invalidRequest(error: ZodError) {
     // gets their checkout.
     let attemptNo: number | null = null;
     try {
-      await payments.touchAttempt(payment.id);
-      attemptNo = (await payments.findByIdempotencyKey(idempotencyKey))?.attemptCount ?? null;
+      attemptNo = await payments.touchAttempt(payment.id);
     } catch (err) {
       console.error(`checkout attempt count failed for ${booking.reference}:`, err);
     }
