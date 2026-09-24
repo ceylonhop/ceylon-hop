@@ -278,3 +278,18 @@ describe('sendRideSeatHeld — team email layout', () => {
     expect(email.sent[1].html).toContain('NEW SHARED RIDE');
   });
 });
+
+describe('Ride Board team emails — WhatsApp the traveller', () => {
+  it('seat-held email shows the number with a Message on WhatsApp button', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member({ phone: '+33 6 12 34 56 78' }), committed: 2, kind: 'joined' }, email, '');
+    expect(email.sent[0].html).toContain('href="https://wa.me/33612345678"');
+    expect(email.sent[0].text).toContain('https://wa.me/33612345678');
+  });
+
+  it('a traveller with no number on file (joined before 2026-09-23) shows a dash and no button', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member({ phone: null }), committed: 2, kind: 'joined' }, email, '');
+    expect(email.sent[0].html).not.toContain('wa.me');
+  });
+});

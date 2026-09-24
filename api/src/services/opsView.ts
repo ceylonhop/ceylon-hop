@@ -23,8 +23,9 @@ export interface OpsBoardDetail {
   capacity: number;
   seatPrice: number; // minor units, per seat
   cutoffAt: string; // ISO
-  /** Live manifest — first name + country only, never email or subject. */
-  members: Array<{ position: number; firstName: string; country: string; seats: number; status: string }>;
+  /** Live manifest — first name, country and the phone number they joined with (owner,
+   *  2026-09-23: ops must be able to WhatsApp them). Never email or subject. */
+  members: Array<{ position: number; firstName: string; country: string; phone: string | null; seats: number; status: string }>;
 }
 
 export interface OpsBookingRow {

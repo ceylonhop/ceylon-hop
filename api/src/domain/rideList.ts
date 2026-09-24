@@ -176,6 +176,8 @@ export interface RideMember {
   firstName: string;
   country: string;
   email: string;
+  /** Number from the join form (2026-09-23). Absent/null for members who joined before it was stored. */
+  phone?: string | null;
   photoUrl: string | null;
   preferredTime: string | null;
   seats: number;
