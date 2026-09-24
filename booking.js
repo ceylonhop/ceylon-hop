@@ -944,7 +944,11 @@ function departuresFor(){
       return {time:t, label}; });
   }
   const base = (r.times&&r.times.length) ? r.times : (r.type==='shared' ? ['07:30'] : ['07:00','08:30','10:00']);
-  return base.map((t,i)=>({time:t, label:i===0?'Morning hop':(i===1?'Midday hop':'Late hop')}));
+  // Label by the hour, as the private branch above does. Labelling by array position called
+  // the south-airport corridor's only departure, 14:45, a "Morning hop" (Clarity, 2026-09-24).
+  return base.map(t=>{ const h=+t.slice(0,2);
+    const label = h<12?'Morning hop':(h<17?'Afternoon hop':(h<20?'Evening hop':'Late hop'));
+    return {time:t, label}; });
 }
 // A private pick-up inside the 12-hour notice window is refused by the API, so it must not be
 // offered. Only private pickups are filtered: shared seats run on scheduled departures with
@@ -963,20 +967,36 @@ function renderDeps(){
   // A time carried over from the URL or an earlier date may now be inside the window.
   if(state.dep && !deps.some(dp=>dp.time===state.dep)) state.dep=null;
 
-  // Shared ride with a single fixed departure — show a read-only card, no picker needed
+  // Shared ride with a single fixed departure — there is nothing to pick, so the departure is
+  // selected right here and drawn as a pressed chip. It used to be a plain <div> styled like the
+  // dropdown it replaces: it read as a choice still to make, and a click on it did nothing (two
+  // dead clicks in the 2026-09-24 Clarity recording, then the customer left). A click is now a
+  // no-op that keeps the chip selected; only the travel date can still hold Continue back.
   if(isShared && deps.length===1){
     const dp=deps[0];
+    state.dep=dp.time;
     sel.style.display='none';
     hint.style.display='block';
     hint.textContent='Reserve a seat on a scheduled departure.';
     let card=document.getElementById('single-dep-card');
     if(!card){
-      card=document.createElement('div');
+      card=document.createElement('button');
+      card.type='button';
       card.id='single-dep-card';
-      card.className='single-dep-card';
+      card.className='single-dep-card on';
+      card.setAttribute('aria-pressed','true');
+      card.addEventListener('click',()=>{
+        state.dep=card.dataset.time; state.flexTime=false;
+        render(); checkWhen();
+      });
       sel.parentNode.insertBefore(card,sel);
     }
-    card.textContent=fmtTime(dp.time)+' · '+dp.label;
+    card.dataset.time=dp.time;
+    card.textContent='';
+    const tx=document.createElement('span'); tx.textContent=fmtTime(dp.time)+' · '+dp.label; card.appendChild(tx);
+    const ck=document.createElement('span'); ck.className='sdc-check'; ck.setAttribute('aria-hidden','true');
+    ck.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>';
+    card.appendChild(ck);
     const ftWrap=document.getElementById('flex-time-chk');
     if(ftWrap){ const lbl=ftWrap.closest('.flex-chk'); if(lbl) lbl.style.display='none'; }
     return;
@@ -2919,12 +2939,11 @@ function finalizeBooking(apiBooking){
 }
 window.finalizeBooking = finalizeBooking;
 
-// single transfer: pre-select the pick-up time if one was chosen upstream,
-// or when a shared ride runs a single fixed departure
+// single transfer: pre-select the pick-up time if one was chosen upstream. (A shared ride
+// with a single fixed departure selects it in renderDeps, where the chip is drawn.)
 if(!isTrip && !state.dep){
   const valid = departuresFor().map(d=>d.time);
   if(timeParam && valid.includes(timeParam)) state.dep = timeParam;
-  else if(r.type==='shared' && valid.length===1) state.dep = valid[0];
 }
 
 // ---- init ----
