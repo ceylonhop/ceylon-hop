@@ -114,6 +114,7 @@ export interface PayHereOptions {
 // status_code 2 = success. The secret never leaves the server.
 export class PayHerePaymentAdapter implements PaymentAdapter {
   readonly provider = 'payhere';
+  readonly live: boolean;
   private readonly checkoutUrl: string;
   private readonly apiBase: string;
   private token: { value: string; expiresAt: number } | null = null;
@@ -127,6 +128,7 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     // Seam for tests. Never stubbed in production.
     private readonly fetchImpl: typeof fetch = fetch,
   ) {
+    this.live = opts.mode === 'live';
     this.checkoutUrl =
       opts.mode === 'live' ? 'https://www.payhere.lk/pay/checkout' : 'https://sandbox.payhere.lk/pay/checkout';
     this.apiBase = opts.mode === 'live' ? 'https://www.payhere.lk' : 'https://sandbox.payhere.lk';

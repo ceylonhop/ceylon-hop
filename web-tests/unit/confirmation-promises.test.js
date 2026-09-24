@@ -13,8 +13,9 @@ describe('customer confirmation promises', () => {
     // must never reach the on-page confirmation.
     const js = read('booking.js');
     const handoff = js.slice(js.indexOf('function redirectToPayHere('), js.indexOf('function redirectToPayHere(') + 2000);
-    expect(handoff).toContain('form.submit()');
-    expect(handoff.slice(0, handoff.indexOf('form.submit()'))).not.toMatch(/finalizeBooking/);
+    // The form POST itself is checkout-handoff.js's chSubmitToGateway (shared with manage.html).
+    expect(handoff).toContain('chSubmitToGateway(checkout)');
+    expect(handoff.slice(0, handoff.indexOf('chSubmitToGateway(checkout)'))).not.toMatch(/finalizeBooking/);
     const manage = read('manage.html');
     expect(manage).toContain('/bookings/pay-return?rt=');
     expect(manage).toMatch(/x\.status === 'paid'/);

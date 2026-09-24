@@ -58,6 +58,7 @@ import {
   type CheckoutAction,
 } from '../db/bookingCheckoutEventRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
+import { SeenOnce } from '../lib/seenOnce';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -285,6 +286,10 @@ export function bookingRoutes(deps: {
   // Best-effort and never awaited: a booking or a payment must not fail, or wait, on the log.
   const track = (e: BookingCheckoutEventInput): void => recordCheckoutEvent(deps.checkoutEvents, e);
   const uaOf = (c: Context): string | null => c.req.header('user-agent')?.slice(0, 300) ?? null;
+  // GET /bookings/pay-return logs a `return` row only the first time a booking reports a given
+  // status (15 min, 10k keys). In process: the API is single-instance, and a restart costs at most
+  // one repeated row per in-flight return (lib/seenOnce.ts).
+  const returnSeen = new SeenOnce({ ttlMs: 15 * 60_000, max: 10_000 });
   const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
   // booking_id is a uuid column; a path id that is not one ("nope") must not be sent as one.
   const asUuid = (v: unknown): string | null =>
@@ -743,9 +748,12 @@ function invalidRequest(error: ZodError) {
   // the money is in, `failed` when the attempt reached a terminal refusal, `pending` while the
   // webhook has not landed yet — which is also, correctly, the answer before any attempt.
   //
-  // Deliberately returns TWO fields. The token authorises reading a settlement status, so that
+  // Deliberately returns THREE fields. The token authorises reading a settlement status, so that
   // is all it may read: no customer details, no itinerary, no amounts. The reference is included
   // because the page shows it and the customer already has it in their email and their link.
+  // `sandbox` is not booking data at all: it is this deployment's payment-gateway mode, which
+  // manage.html's purchase gate needs (a sandbox settlement must never become GA4 revenue) and
+  // which the return leg cannot see for itself — it never sees the checkout URL.
   r.get('/pay-return', async (c) => {
     const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
     if (!id) return c.json({ error: 'invalid_link' }, 401);
@@ -760,9 +768,10 @@ function invalidRequest(error: ZodError) {
       : rows.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
-    track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
+    // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
+    if (returnSeen.first(`${booking.id}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
       reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
-    return c.json({ status, reference: booking.reference }, 200);
+    return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
@@ -890,17 +899,24 @@ function invalidRequest(error: ZodError) {
         : body?.returnTo === 'manage' && deps.manageBaseUrl
           ? (() => {
               // manage.html (the watchdog's "Finish your booking" email, the ops drawer's pay
-              // link) left PayHere's iframe SDK for the same redirect on 2026-09-24. Back to the
-              // manage link's own origin, carrying the manage token `t` — the page rebuilds the
-              // booking view from it, exactly as the link in the email does — plus the
-              // status-only `rt` it polls /bookings/pay-return with. Same two-legs rule as above.
-              const t = signBookingToken(booking.id, deps.linkSecret);
+              // link) and the website checkout left PayHere's iframe SDK for the same redirect on
+              // 2026-09-24. Back to the manage link's own origin carrying ONLY the status-only
+              // `rt` it polls /bookings/pay-return with. NOT the manage token `t`: return_url is
+              // sent to PayHere, stored in their systems and walked through a redirect chain
+              // (spec §D4), and `t` can view this booking and start its payment. The page keeps
+              // `t` in the tab's sessionStorage across the round trip instead (manageToken below,
+              // for the website, which has none of its own). Same two-legs rule as above.
               const rt = signPayReturnToken(booking.id, deps.linkSecret);
-              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html`
-                + `?t=${encodeURIComponent(t)}&rt=${encodeURIComponent(rt)}`;
+              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=${encodeURIComponent(rt)}`;
               return { returnUrl: base, cancelUrl: `${base}&c=1` };
             })()
           : {};
+    // The website checkout (booking.js) arrives with only a checkout token, so a manage return
+    // hands it the booking's manage token to stash for the page it is about to land on. Nothing
+    // new is disclosed: the caller has just proved it owns this booking with the checkout token,
+    // and this is the same token the confirmation email carries.
+    const manageToken =
+      body?.returnTo === 'manage' && deps.manageBaseUrl ? signBookingToken(booking.id, deps.linkSecret) : null;
 
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
@@ -943,8 +959,7 @@ function invalidRequest(error: ZodError) {
     // gets their checkout.
     let attemptNo: number | null = null;
     try {
-      await payments.touchAttempt(payment.id);
-      attemptNo = (await payments.findByIdempotencyKey(idempotencyKey))?.attemptCount ?? null;
+      attemptNo = await payments.touchAttempt(payment.id);
     } catch (err) {
       console.error(`checkout attempt count failed for ${booking.reference}:`, err);
     }
@@ -960,6 +975,7 @@ function invalidRequest(error: ZodError) {
         payReturnToken: signPayReturnToken(booking.id, deps.linkSecret),
         // Which attempt this is (1 = first). The page echoes it on its gateway beacons.
         ...(attemptNo != null ? { attempt: attemptNo } : {}),
+        ...(manageToken ? { manageToken } : {}),
       },
       200,
     );

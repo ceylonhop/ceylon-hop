@@ -11,6 +11,7 @@ import type { Payment } from '../db/paymentRepo';
 import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './notifications';
 import { bookingDeepLink } from './opsNotifications';
+import { isTeamEmail } from './testBookings';
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -73,6 +74,9 @@ export async function runWatchdog(
     alertLog?: AlertLogRepo;
     // Deep link in the stuck-pending alert. '' without OPS_BASE_URL, as everywhere else.
     opsBaseUrl?: string;
+    // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
+    // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
+    teamEmails?: ReadonlySet<string>;
   },
 ): Promise<{
   stuckPending: number;
@@ -81,12 +85,16 @@ export async function runWatchdog(
   stuckRefunds: number;
 }> {
   const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, alertLog, opsBaseUrl } = deps;
+  const teamEmails = deps.teamEmails ?? new Set<string>();
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
   for (const b of pending) {
     const age = now.getTime() - Date.parse(b.createdAt);
     if (age < STUCK_PENDING_MS || age >= STUCK_PENDING_MAX_MS) continue;
+    // The owner's and team's own test bookings (#764): the ops queue and the digest already leave
+    // them out; chasing them mailed the owner and paged the founder about their own test.
+    if (isTeamEmail(b.input.customer.email, teamEmails)) continue;
     // Ops-booked bookings (channel 'whatsapp') were exempt wholesale when every one of
     // them was settled by hand. Pay links (2026-07-31) changed that: once a customer has
     // STARTED a gateway checkout on one, an abandoned payment is a real event again — the
@@ -102,8 +110,27 @@ export async function runWatchdog(
     }
     stuck.push(b);
   }
+  // The customer may have retried and PAID the same trip on a newer booking (CH-Y5RXW was chased
+  // three hours after she paid on CH-L72HX). One extra list per sweep, only when something is stuck.
+  const settled = stuck.length ? await bookings.list({ status: [...PAID_OR_LATER] }) : [];
   let recoveryEmails = 0;
   for (const b of stuck) {
+    const paidOn = paidDuplicateOf(b, settled);
+    if (paidOn) {
+      // Nothing to chase — the money came in on the other booking. Still tell ops, but as a
+      // chore (cancel the leftover), not an incident; and never email the customer about it.
+      const gateway = payments ? await payments.findByBookingId(b.id) : null;
+      await alerts.send({
+        severity: 'warning',
+        kind: 'watchdog_stuck_pending',
+        title: `Booking ${b.reference} stuck in payment_pending — the customer paid on ${paidOn.reference}`,
+        body:
+          `Customer paid for the same trip on ${paidOn.reference}, cancel this duplicate.\n` +
+          stuckPendingBody(b, now, gateway, `not sent — the customer already paid on ${paidOn.reference}`, opsBaseUrl ?? ''),
+        dedupeKey: b.id,
+      });
+      continue;
+    }
     // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
     // sweep (the ops alert below fires regardless). Idempotent via notification_log.
     // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
@@ -132,11 +159,13 @@ export async function runWatchdog(
           recovery = 'sent just now';
         } else {
           // Suppressed (kill switch / allowlist): nobody was chased, so neither count it nor
-          // burn the one-shot claim on it — the next sweep tries again.
+          // burn the one-shot claim — or the burst budget — on it. The next sweep tries again.
+          budget?.refund();
           await log.release(b.id, 'payment_recovery');
           recovery = `NOT delivered (${outcome && !outcome.delivered ? outcome.reason : 'unknown'}) — the next sweep retries`;
         }
       } catch (err) {
+        budget?.refund();
         await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);
         recovery = `FAILED to send (${err instanceof Error ? err.message : String(err)}) — the next sweep retries`;
@@ -213,10 +242,52 @@ export async function runWatchdog(
   return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
 }
 
+// A booking is money in once it reaches any of these (the lifecycle only moves forward from paid).
+const PAID_OR_LATER = ['paid', 'confirmed', 'in_progress', 'completed'] as const;
+
+// The person, as the DB keys them: customers.person_key is generated from lower(btrim(email)).
+// Every booking inserts its own customers row, so the booking's own email is the join.
+function personKey(b: Booking): string {
+  return String(b.input.customer.email ?? '').trim().toLowerCase();
+}
+
+const norm = (s: string | undefined | null) => String(s ?? '').trim().toLowerCase();
+
+// Same mode, same travel date, and the same trip: the corridor and departure for a shared seat,
+// the endpoints for a single transfer, every stop for a trip. A trip or transfer with no date
+// yet matches nothing — "to confirm" is not a date two bookings can share.
+function sameTrip(a: Booking, b: Booking): boolean {
+  if (a.mode === 'shared' && b.mode === 'shared') {
+    return a.input.corridorId === b.input.corridorId && a.input.date === b.input.date && norm(a.input.time) === norm(b.input.time);
+  }
+  if (a.mode === 'single' && b.mode === 'single') {
+    return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
+  }
+  if (a.mode === 'trip' && b.mode === 'trip') {
+    const start = (x: typeof a) => x.input.dates?.find(Boolean);
+    return !!start(a) && start(a) === start(b) &&
+      a.input.stops.length === b.input.stops.length && a.input.stops.every((s, i) => norm(s) === norm(b.input.stops[i]));
+  }
+  return false;
+}
+
+// A paid booking by the same person for the same trip, made AFTER this stuck one — i.e. they came
+// back and paid again rather than finishing this checkout. Null when there is none.
+function paidDuplicateOf(b: Booking, settled: Booking[]): Booking | null {
+  const who = personKey(b);
+  if (!who) return null;
+  const since = Date.parse(b.createdAt);
+  return (
+    settled.find((p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && sameTrip(b, p)) ?? null
+  );
+}
+
 // Everything the reader used to have to open three tables for (CH-V43ZU). The one fact
-// the gateway line leans on: EVERY verified PayHere notify — success, cancel, decline —
+// the gateway line leans on: every verified PayHere notify — success, cancel, decline —
 // moves a payment off 'pending' (paymentSettlementRepo), so a payment still pending means
-// PayHere has not called back at all, not that it called back with bad news.
+// PayHere has not called back at all. That is NOT proof nothing happened at the gateway:
+// PayHere sends no notify for a "3ds Authentication Failed" decline (confirmed in the merchant
+// dashboard for CH-Y5RXW and CH-V43ZU, 2026-09-24), so the line names that case and where to look.
 function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, recovery: string, opsBaseUrl: string): string {
   const minutes = Math.round((now.getTime() - Date.parse(b.createdAt)) / 60_000);
   const due = b.amountDueNow ?? b.total;
@@ -227,9 +298,15 @@ function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, reco
         ? ['Gateway: no gateway payment was ever created — the customer never reached PayHere (checkout was not started).']
         : [
             ...gateway.map((p) => `Gateway: ${p.provider} · ${p.status} · order ${p.orderId} · ${b.currency} ${(p.amount / 100).toFixed(2)}`),
-            ...(gateway.some((p) => p.status === 'pending')
-              ? ['PayHere has not called back for the pending payment at all (any notify, paid or not, would have moved it off pending): the customer closed the gateway without paying, or the notify never arrived.']
-              : []),
+            ...gateway
+              .filter((p) => p.status === 'pending')
+              .slice(0, 1)
+              .map(
+                (p) =>
+                  'PayHere has not called back for the pending payment. Either the customer closed the gateway without paying; ' +
+                  'or their bank declined the 3-D Secure check (PayHere does not notify for those — ' +
+                  `check the PayHere dashboard’s declined list for order ${p.orderId}); or the notify never arrived.`,
+              ),
           ];
   const link = bookingDeepLink(b.id, opsBaseUrl);
   return [

@@ -37,13 +37,17 @@ describe('booking page uses a top-level redirect, not the PayHere iframe SDK', (
     expect(js).not.toMatch(/function\s+startPayHere\b/);
   });
 
+  // The form itself lives in checkout-handoff.js, shared by booking.html and manage.html
+  // (checkout-handoff.test.js drives it); this page must hand the server's answer over untouched.
   it('submits a real top-level form POST to the gateway’s own URL, fields verbatim', () => {
-    expect(js).toMatch(/createElement\('form'\)/);
-    expect(js).toMatch(/\.method\s*=\s*'POST'/);
-    expect(js).toMatch(/\.action\s*=\s*checkout\.checkoutUrl/);
-    expect(js).toMatch(/Object\.keys\(checkout\.fields\)/);
+    const shared = readFileSync(path.join(__dirname, '..', '..', 'checkout-handoff.js'), 'utf8');
+    expect(shared).toMatch(/createElement\('form'\)/);
+    expect(shared).toMatch(/\.method\s*=\s*'POST'/);
+    expect(shared).toMatch(/\.action\s*=\s*checkout\.checkoutUrl/);
+    expect(shared).toMatch(/Object\.keys\(checkout\.fields\)/);
+    expect(shared).toMatch(/\.submit\(\)/);
+    expect(js).toMatch(/chSubmitToGateway\(checkout\)/);
     expect(js).not.toMatch(/fields\.(amount|hash|merchant_id|order_id)\s*=/);
-    expect(js).toMatch(/\.submit\(\)/);
   });
 
   it('asks the server for a manage-page return, stating intent rather than a URL', () => {
@@ -75,7 +79,7 @@ describe('booking page analytics for a real-gateway payment', () => {
 });
 
 // ── behaviour, in jsdom: the real page and booking.js, the gateway call stubbed ─────────────────
-const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js']
+const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'checkout-handoff.js', 'ch-map.js', 'ch-pricing.js']
   .map((f) => readFileSync(path.join(ROOT, f), 'utf8'));
 
 function loadBooking() {
@@ -97,7 +101,7 @@ const FIELDS = {
   amount: '121.00', first_name: 'Maya', hash: 'HASHVALUE',
 };
 
-function arm(w, checkoutUrl) {
+function arm(w, checkoutUrl, extra = {}) {
   w.eval(`
     window.CEYLON_HOP_API = 'https://api.test/';
     window.__fetches = [];
@@ -116,7 +120,8 @@ function arm(w, checkoutUrl) {
     window.fetch = function(url, opts){
       window.__fetches.push({ url: String(url), opts: opts });
       return Promise.resolve({ ok: true, json: function(){ return Promise.resolve({
-        checkoutUrl: ${JSON.stringify(checkoutUrl)}, payReturnToken: 'rt-1', attempt: 1, fields: ${JSON.stringify(FIELDS)} }); } });
+        checkoutUrl: ${JSON.stringify(checkoutUrl)}, payReturnToken: 'rt-1', attempt: 1, fields: ${JSON.stringify(FIELDS)},
+        ...${JSON.stringify(extra)} }); } });
     };
   `);
 }
@@ -165,20 +170,40 @@ describe('continueToCheckout hands the browser to PayHere', () => {
     expect(events).not.toContain('payment_dismissed');
   });
 
-  // manage.html's purchase gate reads which gateway it handed off to from this tab's storage (the
-  // return leg never sees the URL); a website hand-off must record it the same way, or a sandbox
-  // payment returning to a production host would be counted as revenue.
-  it('records a sandbox hand-off where manage.html’s purchase gate looks for it', async () => {
+  // manage.html's purchase gate used to read which gateway this tab handed off to from a private
+  // storage key booking.js wrote. The server's pay-return answer says it now (`sandbox`, from the
+  // payment adapter — manage-purchase-sandbox.test.js), so the website writes no such key.
+  it('writes no gateway-mode key for manage.html — the server reports the mode', async () => {
     const w = loadBooking();
     arm(w, 'https://sandbox.payhere.lk/pay/checkout');
     w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
     await flush(w);
-    expect(w.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBe('1');
-    const live = loadBooking();
-    arm(live, 'https://www.payhere.lk/pay/checkout');
-    live.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
-    await flush(live);
-    expect(live.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBe('0');
+    expect(w.__submitted).toHaveLength(1);
+    expect(w.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBeNull();
+  });
+
+  // Review of #774, finding 3: the return URL no longer carries the manage token, so the website
+  // (which has none of its own) stashes the one the checkout answer hands it, under manage.html's
+  // key, BEFORE it leaves — or the customer comes back to a page that cannot show their booking.
+  it('stashes the checkout’s manage token under manage.html’s key before handing off', async () => {
+    const w = loadBooking();
+    arm(w, 'https://www.payhere.lk/pay/checkout', { manageToken: 'mt-123' });
+    w.eval(`HTMLFormElement.prototype.submit = (function(orig){ return function(){
+      window.__stashAtSubmit = sessionStorage.getItem(window.CH_MANAGE_TOKEN_KEY); return orig.call(this); }; })(HTMLFormElement.prototype.submit);`);
+    w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+    await flush(w);
+    expect(w.CH_MANAGE_TOKEN_KEY).toBe('chManageToken');
+    expect(w.__stashAtSubmit).toBe('mt-123');
+    expect(w.__submitted).toHaveLength(1);
+  });
+
+  it('still hands off when storage refuses the token — manage.html has minimal states for that', async () => {
+    const w = loadBooking();
+    arm(w, 'https://www.payhere.lk/pay/checkout', { manageToken: 'mt-123' });
+    w.eval(`Storage.prototype.setItem = function(){ throw new Error('SecurityError'); };`);
+    w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+    await flush(w);
+    expect(w.__submitted).toHaveLength(1);
   });
 
   // Back from PayHere with the browser's Back button restores this page from the back/forward

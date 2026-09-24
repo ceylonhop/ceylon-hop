@@ -52,8 +52,9 @@ describe('InMemoryPaymentRepo.touchAttempt', () => {
     const p = await r.create(np);
     expect(p.attemptCount).toBe(0);
     expect(p.lastAttemptAt).toBeNull();
-    await r.touchAttempt(p.id);
-    await r.touchAttempt(p.id);
+    // It answers with the new count, so the caller needs no second read (review of #774).
+    expect(await r.touchAttempt(p.id)).toBe(1);
+    expect(await r.touchAttempt(p.id)).toBe(2);
     const after = await r.findByOrderId('CH-1');
     expect(after!.attemptCount).toBe(2);
     expect(after!.lastAttemptAt).toBeInstanceOf(Date);

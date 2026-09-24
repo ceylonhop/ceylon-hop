@@ -36,8 +36,9 @@ describe.skipIf(!TEST_URL)('PostgresPaymentRepo.touchAttempt (integration)', () 
     expect(p.lastAttemptAt).toBeNull();
 
     const before = Date.now();
-    await payments.touchAttempt(p.id);
-    await payments.touchAttempt(p.id);
+    // It answers with the new count (RETURNING), so the caller needs no second read.
+    expect(await payments.touchAttempt(p.id)).toBe(1);
+    expect(await payments.touchAttempt(p.id)).toBe(2);
     const after = await payments.findByOrderId(booking.reference);
     expect(after!.attemptCount).toBe(2);
     expect(after!.lastAttemptAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
