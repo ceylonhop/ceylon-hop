@@ -74,7 +74,7 @@ describe('ride board attempt log — refusals', () => {
     const { app, rideLists, events } = fakeApp();
     const l = await rideLists.createList(listArgs({ cutoffAt: new Date(Date.now() - 60_000) }));
     const cookie = await loginCookie(app);
-    const res = await app.request(`/board/${l.code}/join`, post(cookie, { seats: 2 }));
+    const res = await app.request(`/board/${l.code}/join`, post(cookie, { payment: paymentDetails, seats: 2 }));
     expect(res.status).toBe(409);
 
     expect(events.all()).toEqual([
@@ -97,7 +97,7 @@ describe('ride board attempt log — refusals', () => {
   it('records a start refused for being too close, with the route and date the traveller wanted', async () => {
     const { app, events } = fakeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', post(cookie, { from: 'Ella', to: 'Arugam Bay', date: isoToday(), slot: 'morning' }));
+    const res = await app.request('/board', post(cookie, { payment: paymentDetails, from: 'Ella', to: 'Arugam Bay', date: isoToday(), slot: 'morning' }));
     expect(res.status).toBe(400);
     expect(events.all()).toEqual([
       expect.objectContaining({
@@ -110,7 +110,7 @@ describe('ride board attempt log — refusals', () => {
   it('records an unparseable body as invalid_request', async () => {
     const { app, events } = fakeApp();
     const cookie = await loginCookie(app);
-    expect((await app.request('/board', post(cookie, { from: 'Ella' }))).status).toBe(400);
+    expect((await app.request('/board', post(cookie, { payment: paymentDetails, from: 'Ella' }))).status).toBe(400);
     expect(events.all()[0]).toMatchObject({ action: 'start', outcome: 'refused', reason: 'invalid_request' });
   });
 });
@@ -120,7 +120,7 @@ describe('ride board attempt log — successes', () => {
     const { app, rideLists, events } = fakeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, post(cookie, { seats: 2 }))).status).toBe(200);
+    expect((await app.request(`/board/${l.code}/join`, post(cookie, { payment: paymentDetails, seats: 2 }))).status).toBe(200);
     expect(events.all()).toEqual([
       expect.objectContaining({
         action: 'join', outcome: 'succeeded', reason: null, listCode: l.code, corridorId: 'ella-south',
@@ -132,7 +132,7 @@ describe('ride board attempt log — successes', () => {
   it('records a started ride with its new list code', async () => {
     const { app, events } = fakeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', post(cookie, { from: 'Ella', to: 'Mirissa', date: futureIsoDate(40), slot: 'morning' }));
+    const res = await app.request('/board', post(cookie, { payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: futureIsoDate(40), slot: 'morning' }));
     expect(res.status).toBe(201);
     const code = (await res.json()).list.code;
     expect(events.all()).toEqual([
@@ -144,7 +144,7 @@ describe('ride board attempt log — successes', () => {
     const { app, rideLists, events } = fakeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, post(cookie, {}));
+    await app.request(`/board/${l.code}/join`, post(cookie, { payment: paymentDetails,}));
     await app.request(`/board/${l.code}/scratch`, post(cookie));
     expect(events.all().map((e) => [e.action, e.outcome])).toEqual([['join', 'succeeded'], ['scratch', 'succeeded']]);
   });
@@ -241,13 +241,15 @@ describe('ride board attempt log — the PayHere path (production)', () => {
     expect(events.all().map((e) => e.outcome)).toEqual(['payment_started', 'succeeded']);
   });
 
-  it('records the missing-details refusal PayHere needs before it will take a card', async () => {
+  // A join with no details at all is now refused before PayHere is approached (2026-09-23): the
+  // phone number is required on every new commitment, so that is the reason logged.
+  it('records the missing-details refusal before any card is approached', async () => {
     const { app, rideLists, events } = payHereApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
     expect((await app.request(`/board/${l.code}/join`, post(cookie, {}))).status).toBe(400);
     expect(events.all()).toEqual([
-      expect.objectContaining({ action: 'join', outcome: 'refused', reason: 'payment_details_required' }),
+      expect.objectContaining({ action: 'join', outcome: 'refused', reason: 'phone_required' }),
     ]);
   });
 });
@@ -261,7 +263,7 @@ describe('ride board attempt log — never gets in the way', () => {
     const { app, rideLists } = fakeApp(broken);
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, post(cookie, {}))).status).toBe(200);
+    expect((await app.request(`/board/${l.code}/join`, post(cookie, { payment: paymentDetails,}))).status).toBe(200);
   });
 
   it('records a server error as an error, not a refusal', async () => {
@@ -269,7 +271,7 @@ describe('ride board attempt log — never gets in the way', () => {
     const l = await rideLists.createList(listArgs());
     rideLists.getByCode = () => Promise.reject(new Error('boom'));
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, post(cookie, {}))).status).toBe(500);
+    expect((await app.request(`/board/${l.code}/join`, post(cookie, { payment: paymentDetails,}))).status).toBe(500);
     expect(events.all()).toEqual([
       expect.objectContaining({ action: 'join', outcome: 'error', reason: 'server_error', httpStatus: 500 }),
     ]);

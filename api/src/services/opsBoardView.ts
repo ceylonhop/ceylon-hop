@@ -13,8 +13,9 @@ import type { OpsBookingRow } from './opsView';
 //  corrupt the booking queue, and the whole feature can be pulled by deleting
 //  one concat in routes/ops.ts.
 //
-//  The manifest carries first name + country only. Member email and Google
-//  subject never cross this boundary — same rule as the public board projection.
+//  The manifest carries first name, country and phone (phone added 2026-09-23 at the
+//  owner's ask, so ops can WhatsApp a traveller). Member email and Google subject never
+//  cross this boundary. The PUBLIC board projection never carries the phone.
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface RideListWithMembers {
@@ -121,6 +122,7 @@ export function rideListToOpsRow(
           position: m.position,
           firstName: m.firstName,
           country: m.country,
+          phone: m.phone?.trim() || null,
           seats: m.seats,
           status: m.status,
         })),

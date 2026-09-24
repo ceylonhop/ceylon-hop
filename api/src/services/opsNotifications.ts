@@ -187,9 +187,12 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
     ['Cutoff', colomboStamp(list.cutoffAt)],
     ['Seat price', money(list.seatPrice, 'USD')],
   ];
-  const travellerRows: [string, string][] = [
+  const phone = member.phone?.trim() || '';
+  const wa = whatsappLink(phone);
+  const travellerRows: SectionRow[] = [
     ['Traveller', `${member.firstName} (${member.country})`],
     ['Email', member.email],
+    ['WhatsApp', phone || '—', whatsappButton(phone)],
     ['Seats', seatsWord(member.seats)],
   ];
   const html = [
@@ -203,7 +206,8 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
     section('Traveller', travellerRows),
     ctaBlock('Open the van', link, fallback),
   ].join('');
-  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(12)}${v}`), ''];
+  const rows = (title: string, r: SectionRow[]) =>
+    [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(12)}${k === 'WhatsApp' && wa ? `${v} · ${wa}` : v}`), ''];
   const text = [
     `${pill} · ${list.code}`,
     route,
@@ -477,10 +481,14 @@ export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { su
     ['Passengers', `${pax} paid${a.seedSeats ? ` + ${a.seedSeats} placeholder seat${a.seedSeats === 1 ? '' : 's'} (not people)` : ''}`],
     ['Seat price', money(list.seatPrice, a.currency)],
   ];
-  const onBoard: [string, string][] = a.charged.map((m) => [
-    `${m.firstName} (${m.country})`,
-    `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}`,
-  ]);
+  const onBoard: SectionRow[] = a.charged.map((m) => {
+    const phone = m.phone?.trim() || '';
+    return [
+      `${m.firstName} (${m.country})`,
+      `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}${phone ? ` · ${phone}` : ''}`,
+      whatsappButton(phone),
+    ];
+  });
   const moneyRows: [string, string][] = [
     ['Collected', `${collected} (${seatsWord(pax)})`],
     ...(a.unknown.length ? [['Unconfirmed', `${a.unknown.length} charge(s) — check PayHere before chasing`] as [string, string]] : []),
@@ -499,13 +507,18 @@ export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { su
     section('Money', moneyRows, ['Collected']),
     ctaBlock('Open the ride', link, fallback),
   ].join('');
-  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
+  const rows = (title: string, r: SectionRow[]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
+  // The text version: each traveller's WhatsApp link on the line after them.
+  const onBoardText = onBoard.flatMap((row, i): SectionRow[] => {
+    const wa = whatsappLink(a.charged[i].phone);
+    return wa ? [row, ['', wa]] : [row];
+  });
   const text = [
     `PAID · RIDE LOCKED IN · ${list.code}`,
     route,
     '',
     ...rows('Ride', rideRows),
-    ...rows('On board', onBoard),
+    ...rows('On board', onBoardText),
     ...rows('Money', moneyRows),
     link ? `Open the ride: ${link}` : fallback,
   ].join('\n');

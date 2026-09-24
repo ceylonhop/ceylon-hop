@@ -465,6 +465,9 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const parsed = CreateListInput.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
     const input = parsed.data;
+    // Required on every new commitment (owner, 2026-09-23): the number is how ops reaches a
+    // traveller on WhatsApp. board.js already insists on it; this holds the line for any client.
+    if (!input.payment?.phone) return c.json({ error: 'phone_required' }, 400);
     if (isPastIsoDate(input.date, isoToday())) return c.json({ error: 'date_in_past' }, 400);
     // A future DATE is not the same as an open ride. A list closes CUTOFF_HOURS_BEFORE its window
     // opens, so anything under two days out is born past its own cutoff: the join route 409s
@@ -557,6 +560,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       country: cust.country,
       email: cust.email,
       photoUrl: cust.photo ?? null,
+      phone: input.payment.phone,
       preferredTime: input.preferredTime ?? null,
       seats: input.seats ?? 1,
     }, orderId, new Date(Date.now() + PREAPPROVAL_TTL_MS));
@@ -631,6 +635,8 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       (m) => m.sub === cust.sub && (m.status === 'held' || m.status === 'charged'),
     );
     const alreadyOn = Boolean(mine);
+    // A seat change keeps the number on file; anything else is a new commitment and needs one.
+    if (!alreadyOn && !parsed.data.payment?.phone) return c.json({ error: 'phone_required' }, 400);
     const seats = parsed.data.seats ?? mine?.seats ?? 1;
     // Capacity is checked net of the seats this traveller already holds — counting their own
     // seats twice would refuse a 1→2 change on a van that plainly has room for it.
@@ -645,6 +651,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       firstName: firstNameOf(cust.name),
       country: cust.country,
       email: cust.email,
+      phone: parsed.data.payment?.phone ?? null,
       photoUrl: cust.photo ?? null,
       preferredTime: preferredTime ?? null,
       seats,

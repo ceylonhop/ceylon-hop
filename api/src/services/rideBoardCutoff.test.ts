@@ -458,3 +458,18 @@ describe('runRideBoardCutoff — the team hears when a ride locks in', () => {
     expect(alerts.sent.filter((a) => a.email?.subject.startsWith('Paid:'))).toHaveLength(0);
   });
 });
+
+describe('runRideBoardCutoff — locked-in manifest carries phone numbers', () => {
+  it('lists each traveller with a WhatsApp link', async () => {
+    const repo = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const list = await repo.createList(listArgs({ minSeats: 2, capacity: 4 }));
+    await repo.addMember(list.id, { ...joiner('u0', 'pa_u0'), phone: '+94 77 111 2222' });
+    await repo.addMember(list.id, { ...joiner('u1', 'pa_u1'), phone: '+44 7700 900123' });
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email: new FakeEmailAdapter(), alerts });
+    const m = alerts.sent.find((a) => a.kind === 'ride_board_locked')!.email!;
+    expect(m.html).toContain('https://wa.me/94771112222');
+    expect(m.html).toContain('https://wa.me/447700900123');
+    expect(m.text).toContain('+44 7700 900123');
+  });
+});

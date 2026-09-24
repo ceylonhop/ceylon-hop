@@ -440,6 +440,9 @@ export const rideListMembers = pgTable(
     firstName: text('first_name').notNull(),
     country: text('country').notNull(),
     email: text('email').notNull(),
+    // The number they typed on the join form (2026-09-23). Required by the API on every new
+    // commitment; nullable only because members who joined before this have none on file.
+    phone: text('phone'),
     photoUrl: text('photo_url'),
     preferredTime: text('preferred_time'),
     seats: integer('seats').notNull().default(1),
