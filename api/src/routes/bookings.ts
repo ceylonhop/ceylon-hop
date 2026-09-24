@@ -58,6 +58,7 @@ import {
   type CheckoutAction,
 } from '../db/bookingCheckoutEventRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
+import { SeenOnce } from '../lib/seenOnce';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -285,6 +286,10 @@ export function bookingRoutes(deps: {
   // Best-effort and never awaited: a booking or a payment must not fail, or wait, on the log.
   const track = (e: BookingCheckoutEventInput): void => recordCheckoutEvent(deps.checkoutEvents, e);
   const uaOf = (c: Context): string | null => c.req.header('user-agent')?.slice(0, 300) ?? null;
+  // GET /bookings/pay-return logs a `return` row only the first time a booking reports a given
+  // status (15 min, 10k keys). In process: the API is single-instance, and a restart costs at most
+  // one repeated row per in-flight return (lib/seenOnce.ts).
+  const returnSeen = new SeenOnce({ ttlMs: 15 * 60_000, max: 10_000 });
   const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
   // booking_id is a uuid column; a path id that is not one ("nope") must not be sent as one.
   const asUuid = (v: unknown): string | null =>
@@ -763,7 +768,8 @@ function invalidRequest(error: ZodError) {
       : rows.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
-    track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
+    // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
+    if (returnSeen.first(`${booking.id}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
       reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
     return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
   });
