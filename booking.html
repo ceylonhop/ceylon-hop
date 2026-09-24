@@ -464,6 +464,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ph-btn-primary:hover{background:var(--btn-accent-hover,#1E6273)}
   .ph-btn-ghost{background:transparent;color:#666}
   .ph-btn-ghost:hover{background:#f1f1f1}
+  a.ph-btn{display:block;text-align:center}
   .ph-secure{font-size:.72rem;color:#999;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:.4rem}
   .ph-secure svg{width:13px;height:13px}
 
@@ -1095,6 +1096,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="ph-help" id="ph-help" hidden></div>
     <div class="ph-actions" id="ph-actions" hidden>
       <button type="button" class="ph-btn ph-btn-primary" id="ph-retry">Try again</button>
+      <!-- An incomplete payment ends silently on our side (no decline webhook), so the customer
+           is the only witness. booking.js fills the href with a prefilled message naming the
+           booking reference, and shows it ONLY on the failed/cancelled end states. -->
+      <a class="ph-btn ph-btn-ghost" id="ph-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener" hidden>Tell us what happened on WhatsApp</a>
       <button type="button" class="ph-btn ph-btn-ghost" id="ph-close">Close</button>
     </div>
     <div class="ph-secure" id="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
@@ -1114,6 +1119,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=ba53c19dd9"></script>
+<script src="booking.js?v=d372028d20"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { opsEmailShell, detailTable, money } from './opsEmail';
+import { WATCHDOG_TICK, agoText } from './watchdog';
 
 // M17 daily ops digest — one compact founder email per day riding the notifications
 // tick: what the business did in the last 24 h and whether the watchdog barked. Pure
@@ -10,8 +11,11 @@ import { opsEmailShell, detailTable, money } from './opsEmail';
 const ALERT_LABELS: Record<string, string> = {
   watchdog_stuck_pending: 'Payments stuck in pending',
   watchdog_paid_unconfirmed: 'Paid, no confirmation sent',
+  watchdog_stale: 'Watchdog not running',
   payment_failed: 'Payment failed',
 };
+// Ledger rows that are bookkeeping, not alerts anyone received.
+const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind]);
 const alertLabel = (kind: string): string => ALERT_LABELS[kind] ?? kind;
 
 export async function buildDigest(
@@ -46,9 +50,15 @@ export async function buildDigest(
     rows.push(['Open pipeline', `ready: ${qByStatus('ready')} · sent: ${qByStatus('sent')}`]);
   }
 
+  // The watchdog's heartbeat (CH-V43ZU): "did the monitor run?" is a fact the founder
+  // should see every day, whether or not it barked.
+  if (deps.alertLog) {
+    rows.push(['Watchdog last ran', agoText(now, await deps.alertLog.lastSentAt(WATCHDOG_TICK.kind, WATCHDOG_TICK.key))]);
+  }
+
   const alertCounts = deps.alertLog ? await deps.alertLog.countsSince(since) : {};
   const alertRows: [string, string][] = Object.entries(alertCounts)
-    .filter(([kind]) => kind !== 'ops_digest')
+    .filter(([kind]) => !NOT_ALERTS.has(kind))
     .sort(([, a], [, b]) => b - a)
     .map(([kind, n]) => [alertLabel(kind), String(n)]);
 
