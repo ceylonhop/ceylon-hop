@@ -1,20 +1,13 @@
 import { z } from 'zod';
-
-// What people type around the digits — "+94 77 123 4567", "077-123-4567", "+44 (0)7700 900123".
-// Dropped for the CHECK only: the value is stored exactly as sent (validation, not
-// normalisation — the wa.me links already strip for themselves).
-const PHONE_PUNCTUATION = /[\s\-().]/g;
-const digitsOf = (v: string) => v.replace(PHONE_PUNCTUATION, '');
+import { digitsOf, DIAL_CODE, NATIONAL_NUMBER, INTERNATIONAL_NUMBER } from './phone';
 
 // Every phone field is bounded (CH-T74DT, 2026-08-27: a website booking landed with a 26-digit
 // WhatsApp number and a 24-digit phone number under the name "dsad sdax" — the schema checked
 // for presence and nothing else, on all three create routes). E.164 caps a full number at 15
 // digits and a country code at 3; the floors keep out "+1" and "123". The messages name the box
 // and the rule, because the booker's overlay, pay.html and the ops toast all show the server's
-// `message` verbatim.
-const DIAL_CODE = /^\+\d{1,3}$/;
-const NATIONAL_NUMBER = /^\d{4,15}$/;
-const INTERNATIONAL_NUMBER = /^\+\d{6,15}$/;
+// `message` verbatim. The rules live in domain/phone.ts (the WhatsApp one is the Ride Board's
+// too): digits are read past spaces, dashes, dots and brackets, and the value is stored as sent.
 
 // A display-only phone part (country code / number) that may arrive as "" from the web booker
 // and must be read as "not provided" rather than rejected. The booker emits "" for these when a
