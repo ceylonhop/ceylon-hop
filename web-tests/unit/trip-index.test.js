@@ -49,7 +49,7 @@ describe('/trip/ index', () => {
     expect(pairs.size).toBeLessThanOrEqual(60);
   });
   it('keeps its H1 and offers a way out for unlisted routes', () => {
-    expect(d.querySelector('h1').textContent.trim()).toBe('Sri Lanka transfer routes');
+    expect(d.querySelector('h1').textContent.trim()).toBe('Sri Lanka shared taxi & transfer routes');
     expect(d.querySelector('.anywhere a[href$="search.html"]')).toBeTruthy();
     expect(d.querySelector('.anywhere a[href$="plan.html"]')).toBeTruthy();
   });
