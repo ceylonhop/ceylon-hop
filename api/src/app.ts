@@ -418,6 +418,8 @@ export function createApp(deps: AppDeps = {}) {
       zones,
       linkSecret: bookingLinkSecret,
       payBaseUrl,
+      // manage.html's checkout returns to where its link was built — manageUrl()'s base.
+      manageBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       checkoutNow: deps.checkoutNow,
       promoCodes,
       promoCodesEnabled,

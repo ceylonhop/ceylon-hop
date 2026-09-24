@@ -36,6 +36,7 @@ import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { liveRateCard } from '../quote/liveCard';
 import {
+  signBookingToken,
   signCheckoutToken,
   signPayReturnToken,
   verifyBookingToken,
@@ -234,6 +235,12 @@ export function bookingRoutes(deps: {
    * return leg; unset simply means a pay-link checkout keeps the adapter's default URLs.
    */
   payBaseUrl?: string;
+  /**
+   * Origin the customer's manage link is built on — the same base `manageUrl()` uses for the
+   * emails (bookingBaseUrl ?? APP_BASE_URL). Only used for a manage-page checkout's return leg;
+   * unset simply means that checkout keeps the adapter's default URLs.
+   */
+  manageBaseUrl?: string;
   promoCodes?: PromoCodeRepo;
   promoCodesEnabled?: boolean;
   promoNow?: () => Date;
@@ -880,7 +887,20 @@ function invalidRequest(error: ZodError) {
             // polls our own settlement state either way; `c=1` is a display hint, never truth.
             return { returnUrl: base, cancelUrl: `${base}&c=1` };
           })()
-        : {};
+        : body?.returnTo === 'manage' && deps.manageBaseUrl
+          ? (() => {
+              // manage.html (the watchdog's "Finish your booking" email, the ops drawer's pay
+              // link) left PayHere's iframe SDK for the same redirect on 2026-09-24. Back to the
+              // manage link's own origin, carrying the manage token `t` — the page rebuilds the
+              // booking view from it, exactly as the link in the email does — plus the
+              // status-only `rt` it polls /bookings/pay-return with. Same two-legs rule as above.
+              const t = signBookingToken(booking.id, deps.linkSecret);
+              const rt = signPayReturnToken(booking.id, deps.linkSecret);
+              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html`
+                + `?t=${encodeURIComponent(t)}&rt=${encodeURIComponent(rt)}`;
+              return { returnUrl: base, cancelUrl: `${base}&c=1` };
+            })()
+          : {};
 
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
