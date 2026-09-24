@@ -59,11 +59,21 @@ describe('bookingCreateFailure — the words shown when the booking is refused',
         message: 'This shared route only departs on Mondays. Pick one of those days, or book it as a private transfer.',
       },
     })[1]).toContain('only departs on Mondays');
+
+    // A phone number the schema refuses (CH-T74DT, 2026-08-27) — the API says which box and why.
+    expect(failureFor(w, {
+      status: 400,
+      body: {
+        error: 'invalid_request',
+        message: 'customer.whatsapp: WhatsApp number must be + followed by 6–15 digits (e.g. +94771234567)',
+        details: { fieldErrors: {} },
+      },
+    })[1]).toContain('customer.whatsapp');
   });
 
   it('falls back to the generic line when the server did not explain itself', () => {
     const w = loadBooking('mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90');
-    // 400s whose body is for us, not the customer — invalid_request carries Zod internals.
+    // 400s whose body is for us, not the customer — an invalid_request WITHOUT `message` is Zod internals only.
     expect(failureFor(w, { status: 400, body: { error: 'invalid_billing' } })).toEqual(['error', GENERIC]);
     expect(failureFor(w, { status: 400, body: { error: 'invalid_request', details: { fieldErrors: {} } } }))
       .toEqual(['error', GENERIC]);
