@@ -34,6 +34,9 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
       ({
         id: reference,
         reference,
+        mode: 'single',
+        channel: 'website',
+        input: { from: 'Colombo Airport', to: 'Ella', customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94', country: 'LK' } },
         status: 'payment_pending',
         createdAt: new Date(now.getTime() - minsAgo * 60_000).toISOString(),
         currency: 'USD',
@@ -141,5 +144,18 @@ describe('daily ops digest rides /admin/jobs/notifications (M17)', () => {
     const body = await res.json();
     expect(body.digest).toBe(false);
     expect(body).toHaveProperty('staleSharedHolds');
+  });
+});
+
+describe('POST /admin/jobs/watchdog — heartbeat', () => {
+  it('stamps the alert ledger so the daily tick can tell whether the cron is alive', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, alertLog });
+    const before = Date.now();
+    const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const at = await alertLog.lastSentAt('watchdog_tick', 'last');
+    expect(at).not.toBeNull();
+    expect(at!.getTime()).toBeGreaterThanOrEqual(before);
   });
 });
