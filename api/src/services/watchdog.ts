@@ -4,7 +4,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
-import { hasDeliverableAddress } from '../adapters/email';
+import { hasDeliverableAddress, wasDelivered } from '../adapters/email';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { Booking } from '../db/bookingRepo';
 import type { Payment } from '../db/paymentRepo';
@@ -18,7 +18,8 @@ import { bookingDeepLink } from './opsNotifications';
 // whether the cron is alive, and the digest shows it.
 export const WATCHDOG_TICK = { kind: 'watchdog_tick', key: 'last' } as const;
 // The cron is meant to fire every ~15 min; an hour of silence is four missed ticks.
-const WATCHDOG_STALE_MS = 60 * 60_000;
+// Exported for /health/deep, which reports the same staleness to an uptime monitor.
+export const WATCHDOG_STALE_MS = 60 * 60_000;
 
 export function agoText(now: Date, at: Date | null): string {
   if (!at) return 'never';
@@ -111,6 +112,10 @@ export async function runWatchdog(
     let recovery: string;
     if (!(email && baseUrl && linkSecret)) {
       recovery = 'not configured on this deployment';
+    } else if (!hasDeliverableAddress(b.input.customer.email)) {
+      // A fact about the customer, not a failure: nothing to send, so nothing to claim,
+      // count or retry — and no ledger row asserting a send that never happened.
+      recovery = 'none — the customer has no email address';
     } else if (!(await log.claim(b.id, 'payment_recovery'))) {
       recovery = 'already sent (an earlier sweep, or one running right now)';
     } else if (budget && !budget.tryClaim()) {
@@ -121,9 +126,16 @@ export async function runWatchdog(
       recovery = 'held back by the burst cap — the next sweep retries';
     } else {
       try {
-        await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
-        recoveryEmails += 1;
-        recovery = 'sent just now';
+        const outcome = await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
+        if (wasDelivered(outcome)) {
+          recoveryEmails += 1;
+          recovery = 'sent just now';
+        } else {
+          // Suppressed (kill switch / allowlist): nobody was chased, so neither count it nor
+          // burn the one-shot claim on it — the next sweep tries again.
+          await log.release(b.id, 'payment_recovery');
+          recovery = `NOT delivered (${outcome && !outcome.delivered ? outcome.reason : 'unknown'}) — the next sweep retries`;
+        }
       } catch (err) {
         await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);

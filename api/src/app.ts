@@ -58,6 +58,7 @@ import {
 } from './db/customerShortLinkRepo';
 import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
+import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -368,11 +369,27 @@ export function createApp(deps: AppDeps = {}) {
   );
   // M17: the uptime monitor's target — proves the DB answers, unlike the static /health
   // (which stays fast for keep-warm pings and the booking page's warm-up call).
+  //
+  // `watchdog` is the payments watchdog's heartbeat (the same ledger row the daily tick
+  // checks), so an uptime monitor can see a dead cron. Reported only — it deliberately does
+  // NOT affect the status code yet: the cron still lands hours apart, and a red health check
+  // on every gap would page constantly. Status is the DB check alone. Omitted when no alert
+  // ledger is wired (in-memory dev/tests) or it can't be read.
+  const watchdogHealth = async (): Promise<{ watchdog?: { lastRunAt: string | null; stale: boolean } }> => {
+    if (!deps.alertLog) return {};
+    try {
+      const last = await deps.alertLog.lastSentAt(WATCHDOG_TICK.kind, WATCHDOG_TICK.key);
+      const stale = !last || Date.now() - last.getTime() > WATCHDOG_STALE_MS;
+      return { watchdog: { lastRunAt: last ? last.toISOString() : null, stale } };
+    } catch (err) {
+      console.error('/health/deep watchdog heartbeat read failed:', err);
+      return {};
+    }
+  };
   app.get('/health/deep', async (c) => {
-    if (!deps.pingDb) return c.json({ status: 'ok', db: 'skipped' });
+    if (!deps.pingDb) return c.json({ status: 'ok', db: 'skipped', ...(await watchdogHealth()) });
     try {
       await deps.pingDb();
-      return c.json({ status: 'ok', db: 'ok' });
     } catch (err) {
       console.error('/health/deep DB check failed:', err);
       void alerts.send({
@@ -383,6 +400,7 @@ export function createApp(deps: AppDeps = {}) {
       });
       return c.json({ status: 'degraded', db: 'down' }, 503);
     }
+    return c.json({ status: 'ok', db: 'ok', ...(await watchdogHealth()) });
   });
   app.route(
     '/bookings',
