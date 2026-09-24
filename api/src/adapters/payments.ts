@@ -125,6 +125,11 @@ export interface RefundArgs {
 
 export interface PaymentAdapter {
   readonly provider: string;
+  // True only when this adapter moves REAL money (PayHere in live mode). Absent or false means a
+  // sandbox or fake gateway — what GET /bookings/pay-return reports as `sandbox`, so the page never
+  // counts a sandbox settlement as GA4 revenue. Optional: an adapter that says nothing is treated
+  // as not live, which fails closed (a missed purchase event, never a fake one).
+  readonly live?: boolean;
   createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
   // Verify + parse a raw webhook body. Returns null when the signature is invalid.
   parseWebhook(rawBody: string): VerifiedPaymentEvent | null;

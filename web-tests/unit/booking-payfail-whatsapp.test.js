@@ -29,7 +29,7 @@ import { JSDOM } from 'jsdom';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..', '..');
 const HTML = readFileSync(path.join(ROOT, 'booking.html'), 'utf8');
-const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js']
+const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'checkout-handoff.js', 'ch-map.js', 'ch-pricing.js']
   .map((f) => readFileSync(path.join(ROOT, f), 'utf8'));
 const BOOKING_SRC = readFileSync(path.join(ROOT, 'booking.js'), 'utf8');
 
@@ -107,16 +107,35 @@ describe('payment overlay — "Tell us what happened on WhatsApp"', () => {
     expect(w.document.getElementById('ph-actions').hidden).toBe(false);
   });
 
-  it('shows the same link on a refusal that explains itself (no retry offered)', async () => {
+  // Review of #774, finding 4: these refusals are not failed payments. "My payment didn't go
+  // through" is untrue for a booking that is already paid, waiting for a hand price, or closed — so
+  // they get a neutral question that still names the booking.
+  for (const error of ['already_paid', 'awaiting_price', 'not_chargeable']) {
+    it(`a ${error} refusal offers a neutral "Message us" link, not "my payment didn't go through"`, async () => {
+      const w = loadBooking(QUERY);
+      armApi(w, FAKE_BOOKING, [409, { error }]);
+      await w.eval('runPayment()');
+      await flush(w);
+
+      const a = visibleWaLink(w);
+      expect(a).not.toBeNull();
+      expect(a.textContent.trim()).toBe('Message us on WhatsApp');
+      expect(decodedText(a)).toBe('Hi Ceylon Hop, a question about booking CH-TEST1: ');
+      expect(w.document.getElementById('ph-retry').hidden).toBe(true);
+    });
+  }
+
+  it('a real failure after a neutral state gets the failure link and label back', async () => {
     const w = loadBooking(QUERY);
-    armApi(w, FAKE_BOOKING, [409, { error: 'not_chargeable' }]);
+    armApi(w, FAKE_BOOKING, [409, { error: 'already_paid' }]);
     await w.eval('runPayment()');
     await flush(w);
+    expect(visibleWaLink(w).textContent.trim()).toBe('Message us on WhatsApp');
 
+    w.eval(`phShowEnd('error', 'We couldn’t start your payment just now — no charge was made.')`);
     const a = visibleWaLink(w);
-    expect(a).not.toBeNull();
-    expect(decodedText(a)).toContain('CH-TEST1');
-    expect(w.document.getElementById('ph-retry').hidden).toBe(true);
+    expect(a.textContent.trim()).toBe('Tell us what happened on WhatsApp');
+    expect(decodedText(a)).toBe('Hi Ceylon Hop, my payment for booking CH-TEST1 didn\'t go through. What I saw: ');
   });
 
   it('never shows the link in the loading state', async () => {

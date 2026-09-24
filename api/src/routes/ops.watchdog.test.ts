@@ -54,6 +54,24 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
     expect(titles).toContain('R-FRESH');
     expect(titles).not.toContain('R-OLD');
   });
+
+  // Review of #774, finding 7: the job is handed config.TEAM_EMAILS (via createApp's teamEmails),
+  // the same set the ops queue and the digest use, so the owner's own test checkout pages nobody.
+  it('leaves a team test booking out of the sweep', async () => {
+    const alerts = new FakeAlertAdapter();
+    const stuck = {
+      id: 'b-team', reference: 'CH-TEAM1', mode: 'single', channel: 'website', status: 'payment_pending',
+      input: { from: 'Colombo Airport', to: 'Ella', customer: { firstName: 'O', lastName: 'W', email: 'owner@ceylonhop.com', whatsapp: '+94', country: 'LK' } },
+      createdAt: new Date(Date.now() - 45 * 60_000).toISOString(), currency: 'USD', total: 5000, amountDueNow: 5000,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bookings: any = { list: async ({ status }: { status: string }) => (status === 'payment_pending' ? [stuck] : []) };
+    const app = createApp({ adminApiKey: KEY, alerts, bookings, teamEmails: new Set(['owner@ceylonhop.com']) });
+    const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).stuckPending).toBe(0);
+    expect(alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending')).toHaveLength(0);
+  });
 });
 
 describe('GET /health/deep (M17)', () => {

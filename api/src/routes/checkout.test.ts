@@ -241,7 +241,7 @@ describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout
     });
     expect(res.status).toBe(200);
     const co = (await res.json()) as { fields: Record<string, string> };
-    return { b, fields: co.fields };
+    return { b, fields: co.fields, body: co as Record<string, unknown> };
   }
 
   it('sends the customer back to manage.html on the manage link’s own origin', async () => {
@@ -251,15 +251,42 @@ describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout
     // The manage link's base (bookingBaseUrl ?? APP_BASE_URL), NOT the pay domain.
     expect(ret.origin + ret.pathname).toBe(`${SITE}/manage.html`);
     expect(cancel.origin + cancel.pathname).toBe(`${SITE}/manage.html`);
-    // The manage token, so the page can rebuild the booking view after the round trip…
-    expect(verifyBookingToken(ret.searchParams.get('t') ?? undefined, SECRET)).toBe(b.id);
-    expect(verifyBookingToken(cancel.searchParams.get('t') ?? undefined, SECRET)).toBe(b.id);
-    // …and the purpose-scoped status token the page polls /bookings/pay-return with.
+    // The purpose-scoped status token the page polls /bookings/pay-return with.
     expect(verifyPayReturnToken(ret.searchParams.get('rt') ?? undefined, SECRET)).toBe(b.id);
     expect(verifyPayReturnToken(cancel.searchParams.get('rt') ?? undefined, SECRET)).toBe(b.id);
     // `c=1` marks the cancel leg only — a display hint, never an outcome.
     expect(ret.searchParams.has('c')).toBe(false);
     expect(cancel.searchParams.get('c')).toBe('1');
+  });
+
+  // Review of #774, finding 3. return_url is sent to PayHere, stored in their systems and walked
+  // through a redirect chain (spec §D4) — the manage token `t` is a bearer credential that can
+  // view the booking AND start its payment, so it must not ride there. The page keeps `t` in this
+  // tab's sessionStorage across the round trip instead.
+  it('puts ONLY the status token (and the cancel flag) in the return URLs — never the manage token', async () => {
+    const { fields } = await fieldsFor(payhereApp(), { returnTo: 'manage' });
+    for (const url of [fields.return_url, fields.cancel_url]) {
+      const u = new URL(url);
+      expect(u.searchParams.has('t')).toBe(false);
+      expect([...u.searchParams.keys()].sort()).toEqual(url === fields.cancel_url ? ['c', 'rt'] : ['rt']);
+    }
+    expect(fields.return_url).toMatch(/^https:\/\/site\.example\.com\/manage\.html\?rt=[^&]+$/);
+    expect(fields.cancel_url).toMatch(/^https:\/\/site\.example\.com\/manage\.html\?rt=[^&]+&c=1$/);
+  });
+
+  // The website checkout (booking.js) has no manage token of its own, so the manage-return
+  // checkout hands it one — the caller has just proved it owns this booking with the checkout
+  // token, and it is the same token the confirmation email carries.
+  it('hands a manage-return checkout the booking’s manage token in the response', async () => {
+    const { b, body } = await fieldsFor(payhereApp(), { returnTo: 'manage' });
+    expect(verifyBookingToken(body.manageToken as string, SECRET)).toBe(b.id);
+  });
+
+  it('hands no manage token to any other checkout', async () => {
+    for (const req of [{ returnTo: 'pay-link' }, {}, null]) {
+      const { body } = await fieldsFor(payhereApp(), req);
+      expect(body).not.toHaveProperty('manageToken');
+    }
   });
 
   it('ignores a client-supplied URL alongside the manage intent', async () => {

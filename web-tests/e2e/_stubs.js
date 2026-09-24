@@ -267,7 +267,10 @@ export async function gotoBooking(page, opts = {}) {
     }
     if (checkout === 'payhere') {
       Object.assign(fields, payhereFields(new URL(page.url()).origin, bookingAmountDueNow ?? bookingTotal));
-      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', payReturnToken: 'e2e-pay-return-token', attempt: 1, fields }));
+      // A manage return also hands the website its manage token, which it stashes for the page it
+      // lands on — the return URL no longer carries it (review of #774, finding 3).
+      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', payReturnToken: 'e2e-pay-return-token',
+        manageToken: 'e2e-manage-token', attempt: 1, fields }));
     }
     return r.fulfill(json({ checkoutUrl: 'https://example.test/fake-gateway', fields: {} }));
   });
@@ -283,25 +286,28 @@ export async function gotoBooking(page, opts = {}) {
 
   // The booking's manage page, where the gateway sends the customer back: it rebuilds the booking
   // from the manage token. Paid once the webhook (pay-return) has said so, owing until then.
+  // Which manage token each view request carried — the stash is the only place it can come from.
+  const viewTokens = [];
   if (checkout === 'payhere') {
     const due = bookingAmountDueNow ?? bookingTotal;
-    await page.route('**/bookings/view?*', (r) => r.fulfill(json({
+    await page.route('**/bookings/view?*', (r) => (viewTokens.push(new URL(r.request().url()).searchParams.get('t')), r.fulfill(json({
       reference: 'CH-E2E01', status: settled === 'paid' ? 'paid' : 'payment_pending', firstName: 'Roshen',
       from: 'Colombo Airport (CMB)', to: 'Hikkaduwa', date: futureIsoDate(30), time: null,
       travellers: 2, vehicleType: 'car', totalCents: bookingTotal, balanceDueCents: 0,
       amountDueNowCents: due, currency: 'USD',
-    })));
+    }))));
   }
 
   await page.goto(`${path}?${query}`);
-  return { gateway, sdk, checkoutBodies, fields };
+  return { gateway, sdk, checkoutBodies, fields, viewTokens };
 }
 
 // What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the
 // return and cancel legs pointing at THIS server's manage.html (the server builds those from
-// returnTo:'manage'; the page never sees them as anything but opaque fields).
+// returnTo:'manage'; the page never sees them as anything but opaque fields). Status token only:
+// the manage token never rides in a URL sent to PayHere.
 function payhereFields(origin, amountCents) {
-  const back = `${origin}/manage.html?t=e2e-manage-token&rt=e2e-pay-return-token`;
+  const back = `${origin}/manage.html?rt=e2e-pay-return-token`;
   return {
     merchant_id: 'TEST', return_url: back, cancel_url: `${back}&c=1`,
     notify_url: 'https://api.example.test/webhooks/payments', order_id: 'CH-E2E01',

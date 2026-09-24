@@ -48,6 +48,8 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
+<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
+<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
      payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
@@ -92,13 +94,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // mode, storage disabled). If it does, we DON'T strip: a token in the URL is a privacy
   // problem, but a customer who cannot reload their own booking is a broken page. Function
   // first, privacy wherever it is free.
-  var TOKEN_KEY = 'chManageToken';
+  // The key's name is shared with booking.html, which hands a website customer's token over here.
+  var TOKEN_KEY = window.CH_MANAGE_TOKEN_KEY;
   var q = new URLSearchParams(location.search);
   var t = q.get('t');
   // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
   // `rt` is a status-only token for /bookings/pay-return; `c=1` means the gateway used cancel_url,
   // a display hint and NEVER an outcome. Both are read once and taken out of the address bar with
-  // `t`, so a reload after the return simply shows the booking as it now stands.
+  // `t`, so a reload after the return simply shows the booking as it now stands. That address
+  // carries NO `t`: this page (or booking.html, for a website checkout) stashes it right before
+  // the hand-off, and it is read back below like any reload.
   var rt = q.get('rt');
   var cameFromCancel = q.get('c') === '1';
   var strip = [];
@@ -142,17 +147,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   // Same gates as pay.html: `purchase` becomes revenue and GA4 cannot take it back, so a
   // sandbox checkout must never reach it. The return leg never sees the checkout URL, so WHICH
-  // gateway we handed off to is recorded at hand-off time; and it fires once per booking whatever
-  // the customer does with the back button.
+  // gateway took the money comes from our server's pay-return answer (`sandbox`, the payment
+  // adapter's mode) — only an explicit `false` counts, so an answer that doesn't say fails closed.
+  // And it fires once per booking whatever the customer does with the back button.
   var STORE = 'ch_manage_pay_v1';
-  function markSandbox(isSandbox){
-    try { sessionStorage.setItem(STORE + ':sandbox', isSandbox ? '1' : '0'); } catch (e) {}
-  }
-  function sandboxUsed(){
-    try { return sessionStorage.getItem(STORE + ':sandbox') === '1'; } catch (e) { return false; }
-  }
-  function trackPurchase(v){
-    if (sandboxUsed()) return;
+  function trackPurchase(v, sandbox){
+    if (sandbox !== false) return;
     if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
     var seen = STORE + ':purchased';
     try {
@@ -303,13 +303,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // that already names the booking saves them finding the reference. Since the website checkout
   // became a redirect (2026-09-24) a failed payment is answered HERE, so the link is shown on the
   // two states that mean it didn't work — a decline and the cancel leg — and nowhere else.
-  function waTellUsHref(v){
-    return 'https://wa.me/94779669662?text=' + encodeURIComponent(
-      'Hi Ceylon Hop, my payment' + (v && v.reference ? ' for booking ' + v.reference : '') + ' didn\'t go through. What I saw: ');
-  }
+  function waTellUsHref(v){ return window.chTellUsHref(v && v.reference, 'failed'); }
   function showTellUs(){
     var a = document.getElementById('paywa');
     if (a) a.hidden = false;
+  }
+  // The same link, standalone, for the screens that have no booking to rebuild.
+  function tellUsLink(reference){
+    return '<a class="btn btn-ghost pp-cta pp-tellus" id="paywa" href="' + esc(waTellUsHref({ reference: reference }))
+      + '" target="_blank" rel="noopener">Tell us what happened on WhatsApp</a>';
   }
 
   function render(v, errMsg, help, quiet, tellUs){
@@ -407,27 +409,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // whatever it returned rather than pretending on this page that money moved.
         if (!/payhere\.lk/.test(checkout.checkoutUrl)) { location.href = checkout.checkoutUrl; return; }
         if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
-        // Record WHICH gateway we are handing off to — the return leg never sees the URL, and a
-        // sandbox settlement reported as revenue is permanent in GA4.
-        markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
         // The last thing we know for certain: they left for the gateway. Everything after this
         // is what our own server tells us on the way back.
         track('payment_initiated', moneyOf(v));
-        // A TOP-LEVEL form POST, exactly as pay.html does it. The fields are the server's
-        // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
-        // side, so reordering, renaming or adding anything here would be refused by the gateway.
-        var form = document.createElement('form');
-        form.method = 'POST';
-        form.action = checkout.checkoutUrl;
-        Object.keys(checkout.fields).forEach(function(k){
-          var input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = k;
-          input.value = checkout.fields[k];
-          form.appendChild(input);
-        });
-        document.body.appendChild(form);
-        form.submit();
+        // The way back carries only the status token `rt`, never `t` (a bearer credential in a URL
+        // PayHere stores). The return leg reads `t` from this tab's storage, so make sure it is
+        // there now, whatever happened to the copy stashed at load.
+        try { sessionStorage.setItem(TOKEN_KEY, t); } catch (e) {}
+        // A TOP-LEVEL form POST with the server's fields verbatim (checkout-handoff.js, shared
+        // with booking.html).
+        window.chSubmitToGateway(checkout);
       })
       .catch(function(e){
         track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
@@ -449,6 +440,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var FIRST_PAINT_MS = 1400;
   var stopReturn = function(){};
   var handedOff = false;
+  // The booking reference as the last pay-return answer gave it — all a token-less screen knows.
+  var returnRef = null;
+  // The poll budget ran out and our server still says `pending`. That is NOT "awaiting
+  // confirmation": PayHere sends no notify at all for a "3ds Authentication Failed" decline (review
+  // of #774), so a declined customer would wait for ever on a screen that implied it worked. Say the
+  // two things we can honestly say, open the decline steps, and offer the tell-us link — on either
+  // leg, because nobody knows which one a decline comes back on. Still not an outcome: no
+  // `payment_failed`, no purchase.
+  var NO_VERDICT = 'We haven’t heard back from your bank. If PayHere showed Declined, nothing was charged — '
+    + 'you can try again below. If it showed Approved, your confirmation email is on its way.';
 
   function renderReturn(){
     paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
@@ -489,10 +490,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         return r.json();
       }).then(function(x){
         if (settled) return;
+        if (x.reference) returnRef = x.reference;
         if (x.status === 'paid') {
           stop();
           if (!t) return renderPaidMinimal(x.reference);
-          return loadView().then(function(v){ lastView = v; trackPurchase(v); render(v); })
+          return loadView().then(function(v){ lastView = v; trackPurchase(v, x.sandbox); render(v); })
             .catch(function(){ renderPaidMinimal(x.reference); });
         }
         // A refusal must never read as an endless "confirming".
@@ -508,16 +510,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // "checking" line in place rather than re-rendering under someone about to press Pay.
         if (fellBack) {
           var e = document.getElementById('payerr');
-          if (e) {
-            e.textContent = cameFromCancel
-              ? 'You came back without finishing the payment — nothing was charged.'
-              : 'We haven’t had confirmation yet — nothing was charged unless you completed the payment. We’ll email you if it lands.';
-          }
-          if (cameFromCancel) showTellUs();
+          if (e) e.textContent = NO_VERDICT;
+          var h = document.getElementById('payhelp');
+          if (h && DECLINE_HELP.length) { h.innerHTML = helpHtml(DECLINE_HELP, false); h.hidden = false; }
+          showTellUs();
           return;
         }
-        if (cameFromCancel) return resume('You came back without finishing the payment — nothing was charged.', DECLINE_HELP, true, true);
-        renderStillWaiting();
+        if (t) return resume(NO_VERDICT, DECLINE_HELP, false, true);
+        renderStillWaiting(x.reference);
       }).catch(function(e){
         if (settled) return;
         if (tries < budget) { setTimeout(poll, 2000); return; }
@@ -539,18 +539,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div>' + waLine());
   }
 
-  function renderStillWaiting(){
+  // No answer we can act on, and no booking on screen to act from (no manage token in this tab, or
+  // our server was unreachable). The same two honest readings as NO_VERDICT, with the way to retry
+  // being the booking link rather than a button that isn't here.
+  function renderStillWaiting(reference){
     paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
-      + '<h1 class="st-title">Payment received?</h1>'
-      + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
-      + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine());
+      + '<h1 class="st-title">Still waiting to hear from your bank</h1>'
+      + '<p class="st-sub">We haven’t heard back from your bank.</p>'
+      + '<p class="st-sub">If PayHere showed Declined, nothing was charged — open your booking link again to retry. '
+      + 'If it showed Approved, your confirmation email is on its way.</p>'
+      + tellUsLink(reference) + '</div>' + waLine());
   }
 
+  // Declined, but this tab has no manage token to rebuild the booking from (storage blocked, or a
+  // different browser than the one that paid).
   function renderCannotResume(){
     paint('<div class="st-wrap"><div class="st-badge ok">!</div>'
       + '<h1 class="st-title">That payment didn’t go through</h1>'
       + '<p class="st-sub"><strong>Nothing has been charged.</strong> Open your booking link again to retry, '
-      + 'or message us on WhatsApp and we’ll sort it out.</p></div>' + waLine());
+      + 'or message us on WhatsApp and we’ll sort it out.</p>'
+      + tellUsLink(returnRef) + '</div>' + waLine());
   }
 
   function loadView(){

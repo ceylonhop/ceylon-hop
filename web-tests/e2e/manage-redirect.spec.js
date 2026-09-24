@@ -62,6 +62,33 @@ test('paying hands off with a top-level form POST carrying the server’s fields
   expect(sdk).toEqual([]);
 });
 
+// The return URL carries only the status token now (review of #774, finding 3): the manage token
+// crosses the round trip in this tab's sessionStorage, stashed again right before the hand-off.
+test('a manage-link round trip rebuilds the booking from the stashed token, not the URL', async ({ page }) => {
+  await offline(page);
+  const viewTokens = [];
+  await page.route('**/bookings/view?*', (r) => {
+    viewTokens.push(new URL(r.request().url()).searchParams.get('t'));
+    return r.fulfill(json(viewTokens.length > 1 ? { ...BOOKING, status: 'paid' } : BOOKING));
+  });
+  await page.route('**/bookings/view/checkout-token', (r) => r.fulfill(json({ bookingId: 'b-1', checkoutToken: 'ct-1' })));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout',
+    fields: { merchant_id: 'm-1', return_url: 'http://x.test/manage.html?rt=b', order_id: 'CH-HAFDZ', hash: 'H' } })));
+  await page.route('https://sandbox.payhere.lk/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
+  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'paid', reference: 'CH-HAFDZ' })));
+
+  await page.goto('/manage.html?t=test-token');
+  await expect(page.locator('#paybtn')).toBeVisible();
+  // Whatever happened to the load-time stash, the hand-off writes it again.
+  await page.evaluate(() => sessionStorage.removeItem(window.CH_MANAGE_TOKEN_KEY));
+  await page.locator('#paybtn').click();
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+
+  await page.goto('/manage.html?rt=return-token-1');
+  await expect(page.locator('.t-stat')).toHaveText('Confirmed');
+  expect(viewTokens).toEqual(['test-token', 'test-token']);
+});
+
 test('coming back paid asks our server, then shows the booking confirmed', async ({ page }) => {
   await offline(page, { ...BOOKING, status: 'paid' });
   let polls = 0;
@@ -96,35 +123,72 @@ test('a webhook that has not landed yet keeps confirming rather than claiming an
   await expect(page.locator('#payhelp')).toHaveCount(0);
 });
 
-// The poll budget runs out with no verdict: not a decline, not a success. Driven on a fake clock —
+// The poll budget runs out with no verdict. PayHere sends NO notify for a "3ds Authentication
+// Failed" decline (review of #774), so after one of those our server keeps answering `pending` for
+// ever — and "awaiting confirmation" read to a declined customer as "it worked, wait". The copy says
+// both things it can honestly say, the decline steps are OPEN, and the tell-us link is there — on
+// both legs. Still no outcome claimed: no `payment_failed`, no purchase. Driven on a fake clock —
 // the real budget is a minute.
-test('still pending after the poll budget says so, and claims no outcome', async ({ page }) => {
+const NO_VERDICT = [
+  'We haven’t heard back from your bank.',
+  'If PayHere showed Declined, nothing was charged — you can try again below.',
+  'If it showed Approved, your confirmation email is on its way.',
+];
+
+async function runOutTheBudget(page, polls, budget) {
+  for (let i = 0; i < budget + 10 && polls() < budget; i++) {
+    await page.clock.runFor(2100);
+    await page.waitForTimeout(30);
+  }
+}
+
+test('still pending after the poll budget says both honest things, opens the decline help, offers the link', async ({ page }) => {
   await page.clock.install();
   await offline(page);
   let polls = 0;
   await page.route('**/bookings/pay-return?rt=*', (r) => { polls++; return r.fulfill(json({ status: 'pending', reference: 'CH-HAFDZ' })); });
   await page.goto('/manage.html?t=test-token&rt=return-token-1');
   await expect(page.locator('.st-title')).toHaveText('Confirming your payment…');
-  for (let i = 0; i < 40 && polls < 30; i++) {
-    await page.clock.runFor(2100);
-    await page.waitForTimeout(30);
-  }
-  await expect(page.locator('#payerr')).toContainText('haven’t had confirmation yet');
-  await expect(page.locator('#payerr')).toContainText('nothing was charged');
-  // Not asserted as a decline: the steps are reachable, collapsed.
-  await expect(page.locator('#payhelp h3')).toHaveCount(0);
-  await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+  await runOutTheBudget(page, () => polls, 30);
+  for (const line of NO_VERDICT) await expect(page.locator('#payerr')).toContainText(line);
+  await expect(page.locator('#payerr')).not.toContainText('haven’t had confirmation yet');
+  // The steps are shown, not tucked behind a summary.
+  await expect(page.locator('#payhelp')).toBeVisible();
+  await expect(page.locator('#payhelp h3')).toContainText('declined');
+  await expect(page.locator('#payhelp .pp-quiet')).toHaveCount(0);
+  await expect(page.locator('#payhelp li')).toHaveCount(4);
+  await expectTellUsLink(page);
+  await expect(page.locator('#paybtn')).toBeVisible();
 });
 
-test('Back to Site (cancel leg) resumes the booking with the cancel wording', async ({ page }) => {
+test('Back to Site (cancel leg) that never hears back says the same, with the help open and the link', async ({ page }) => {
+  await page.clock.install();
   await offline(page);
-  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'pending', reference: 'CH-HAFDZ' })));
+  let polls = 0;
+  await page.route('**/bookings/pay-return?rt=*', (r) => { polls++; return r.fulfill(json({ status: 'pending', reference: 'CH-HAFDZ' })); });
   await page.goto('/manage.html?t=test-token&rt=return-token-1&c=1');
-  await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
-  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
-  await expect(page.locator('#payhelp h3')).toHaveCount(0);
+  await runOutTheBudget(page, () => polls, 8);
+  for (const line of NO_VERDICT) await expect(page.locator('#payerr')).toContainText(line);
+  await expect(page.locator('#payhelp h3')).toContainText('declined');
+  await expect(page.locator('#payhelp .pp-quiet')).toHaveCount(0);
+  await expectTellUsLink(page);
   await expect(page.locator('#paybtn')).toBeVisible();
   expect(page.url()).not.toContain('c=1');
+});
+
+// No manage token in this tab (storage blocked, a different browser): the booking cannot be
+// rebuilt, so the same words stand alone — with the link, since nothing else on screen can help.
+test('with no booking to rebuild, the still-waiting screen says both things and offers the link', async ({ page }) => {
+  await page.clock.install();
+  await offline(page);
+  let polls = 0;
+  await page.route('**/bookings/pay-return?rt=*', (r) => { polls++; return r.fulfill(json({ status: 'pending', reference: 'CH-HAFDZ' })); });
+  await page.goto('/manage.html?rt=return-token-1');
+  await runOutTheBudget(page, () => polls, 30);
+  await expect(page.locator('.st-sub').first()).toContainText('We haven’t heard back from your bank.');
+  await expect(page.locator('.st-wrap')).toContainText('If PayHere showed Declined, nothing was charged');
+  await expect(page.locator('.st-wrap')).toContainText('If it showed Approved, your confirmation email is on its way.');
+  await expectTellUsLink(page);
 });
 
 // ── "Tell us what happened on WhatsApp" (the website overlay's link, #766) ──────────────────────
@@ -160,7 +224,7 @@ test('the cancel leg offers it too, once the check comes back empty', async ({ p
   // While we are still checking with the bank, nothing has gone wrong yet.
   await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
   await expect(page.locator('#paywa')).toBeHidden();
-  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+  await expect(page.locator('#payerr')).toContainText('haven’t heard back from your bank', { timeout: 30000 });
   await expectTellUsLink(page);
 });
 

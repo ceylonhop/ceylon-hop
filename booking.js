@@ -2387,8 +2387,9 @@ async function continueToCheckout(booking){
   // didn't explain itself.
   //
   // `returnTo` states INTENT, never a URL: the server builds the return address — this booking's
-  // own manage page, carrying its manage token `t` and the status-only `rt` — from its own
-  // config. A gateway that redirects wherever the request body says is a phishing primitive.
+  // own manage page, carrying only the status-only `rt` (the manage token comes back in the
+  // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
+  // request body says is a phishing primitive.
   let checkout=null, refusal=null;
   try{
     const checkoutHeaders = booking.checkoutToken
@@ -2493,13 +2494,13 @@ function checkoutRefusal(body){
   if(err==='awaiting_price'){
     return ['error', body.message
       || 'We’re confirming the price for this trip by hand — we’ll message you shortly with the final amount.',
-      {retry:false}];
+      {retry:false, contact:true}];
   }
   if(err==='already_paid'){
-    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false}];
+    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false, contact:true}];
   }
   if(err==='not_chargeable'){
-    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false}];
+    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false, contact:true}];
   }
   return ['error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.'];
 }
@@ -2526,13 +2527,13 @@ function phShowLoading(msg){
 // states below hand the customer a one-tap WhatsApp message that already names the booking;
 // without a reference (the create itself failed) the message simply omits the clause.
 let payRef = null;
-function payWaText(){
-  return 'Hi Ceylon Hop, my payment' + (payRef ? ' for booking '+payRef : '') + ' didn\'t go through. What I saw: ';
-}
+// The prefilled text lives in checkout-handoff.js (chTellUsHref), shared with manage.html.
 // kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
 // opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
 //              gateway; a booking that never reached a card gets no bank advice.
 // opts.retry — false when trying again cannot possibly work (an already-paid booking).
+// opts.contact — nothing FAILED (already paid, awaiting a hand price, no longer payable): the
+//              WhatsApp link asks a neutral question instead of "my payment didn't go through".
 function phShowEnd(kind, msg, opts){
   // Terminal state: re-arm the latch here, where the retry button appears. Without this a
   // refused card would leave Pay locked with no way to try again — strictly worse than the
@@ -2565,7 +2566,11 @@ function phShowEnd(kind, msg, opts){
   const retry=document.getElementById('ph-retry');
   if(retry) retry.hidden = o.retry === false;
   const wa=document.getElementById('ph-wa');
-  if(wa){ wa.href=waHrefFor(payWaText()); wa.hidden=false; }
+  if(wa){
+    wa.href=window.chTellUsHref(payRef, o.contact ? 'contact' : 'failed');
+    wa.textContent = o.contact ? 'Message us on WhatsApp' : 'Tell us what happened on WhatsApp';
+    wa.hidden=false;
+  }
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }
@@ -2597,29 +2602,21 @@ function simulatePayThenConfirm(booking){
 // on-page boarding pass used to.
 let payHandedOff=false;
 function redirectToPayHere(checkout, booking){
-  // manage.html's purchase gate never sees the gateway URL on the way back, so it reads WHICH
-  // gateway this tab handed off to from here — the same key its own hand-off writes. A sandbox
-  // settlement reported as revenue is permanent in GA4.
-  try{ sessionStorage.setItem('ch_manage_pay_v1:sandbox', /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) ? '1' : '0'); }catch(e){}
-  // The fields are the server's verbatim: `hash` covers merchant_id + order_id + amount +
-  // currency and is signed server side, so reordering, renaming or adding anything here would
-  // be refused by the gateway.
-  const form=document.createElement('form');
-  form.method='POST';
-  form.action=checkout.checkoutUrl;
-  Object.keys(checkout.fields).forEach(function(k){
-    const input=document.createElement('input');
-    input.type='hidden';
-    input.name=k;
-    input.value=checkout.fields[k];
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
+  // (Which gateway took the money is NOT recorded here: manage.html's purchase gate reads it from
+  // our server's pay-return answer, `sandbox`.)
+  // PayHere sends the customer back to their manage page with only the status-only `rt` in the
+  // URL — the manage token is a bearer credential and never rides in a URL the gateway stores. So
+  // hand it to manage.html through this tab's sessionStorage, under the key it reads
+  // (checkout-handoff.js). Storage blocked: manage.html still answers from `rt` alone.
+  if(checkout.manageToken){
+    try{ sessionStorage.setItem(window.CH_MANAGE_TOKEN_KEY, checkout.manageToken); }catch(e){}
+  }
   payHandedOff=true;
   // Logged the instant before we leave: a sendBeacon survives the navigation.
   sendCheckoutEvent(checkout, booking, 'opened');
-  // The overlay keeps saying "Opening secure payment…" until the browser actually leaves.
-  form.submit();
+  // The overlay keeps saying "Opening secure payment…" until the browser actually leaves. The
+  // form POST itself — the server's fields verbatim — is checkout-handoff.js, shared with manage.html.
+  window.chSubmitToGateway(checkout);
 }
 
 // Checkout diagnostics, sent to our own attempt log (POST /bookings/:id/checkout-events).

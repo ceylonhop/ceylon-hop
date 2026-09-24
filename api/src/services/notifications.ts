@@ -389,6 +389,8 @@ const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Chat on WhatsApp', bg: '#0B7A4
 // went wrong — asking them to type the reference is one more step than most take. The
 // apostrophe is encoded by hand: encodeURIComponent leaves it bare, and plain-text mail clients
 // stop linkifying a URL at a bare quote.
+// The OTHER copy of this text is the site's checkout-handoff.js (chTellUsHref 'failed'), which
+// booking.html and manage.html use; web-tests/unit/checkout-handoff.test.js keeps the two identical.
 function paymentTroubleWhatsApp(booking: Booking): Cta {
   const msg = `Hi Ceylon Hop, my payment for booking ${booking.reference} didn't go through. What I saw: `;
   return { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };

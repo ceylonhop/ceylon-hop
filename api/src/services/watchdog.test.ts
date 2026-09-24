@@ -7,6 +7,7 @@ import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { SendBudget } from './sendBudget';
+import { futureIsoDate } from '../testSupport/dates';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -245,6 +246,39 @@ describe('runWatchdog — burst cap', () => {
     expect(budget.report().kinds).toEqual({ payment_recovery: 3 });
   });
 
+  // Review of #774, finding 5: a send that did not deliver is not a send. Burning the burst budget
+  // on it meant a kill-switched or allowlisted booking could starve a real customer's recovery mail.
+  for (const [how, first] of [
+    ['suppressed', async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const })],
+    ['thrown', async () => { throw new Error('smtp down'); }],
+  ] as const) {
+    it(`a ${how} recovery send gives its budget slot back, so the next booking is still mailed`, async () => {
+      const bookings = await seedManyPending(2);
+      const budget = new SendBudget(1);
+      const delivered: string[] = [];
+      let calls = 0;
+      const email = {
+        send: async (m: { to: string; subject: string }) => {
+          calls += 1;
+          if (calls === 1) return first();
+          delivered.push(m.subject);
+          return { delivered: true as const };
+        },
+      };
+
+      const res = await runWatchdog(later(45), {
+        bookings, log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(),
+        email, baseUrl: 'https://ceylonhop.com', linkSecret: 's', budget,
+      });
+
+      expect(calls).toBe(2);
+      expect(delivered).toHaveLength(1);
+      expect(res.recoveryEmails).toBe(1);
+      expect(budget.sent).toBe(1);
+      expect(budget.report().suppressed).toBe(0);
+    });
+  }
+
   it('never caps ops ALERTS — suppressing the page would hide the problem', async () => {
     const bookings = await seedManyPending(5);
     const alerts = new FakeAlertAdapter();
@@ -321,6 +355,23 @@ describe('watchdog — the stuck-pending alert says what it knows', () => {
     expect(body).toContain('PayHere has not called back');
     expect(body).toContain('Recovery email: sent just now');
     expect(body).toContain(`https://ops.example/ops?booking=${booking.id}`);
+  });
+
+  // A still-pending payment does NOT mean "closed the gateway or the notify was lost": PayHere
+  // sends no notify at all for a "3ds Authentication Failed" decline (confirmed in the merchant
+  // dashboard for CH-Y5RXW and CH-V43ZU, 2026-09-24). The alert must name that, and where to look.
+  it('names all three reasons a gateway payment can still be pending, and where to check a 3-D Secure decline', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments, ...mailDeps });
+    const body = alerts.sent[0].body;
+    expect(body).toContain('the customer closed the gateway without paying');
+    expect(body).toContain('their bank declined the 3-D Secure check');
+    expect(body).toContain('PayHere does not notify for those');
+    expect(body).toContain(`check the PayHere dashboard’s declined list for order ${booking.reference}`);
+    expect(body).toContain('or the notify never arrived');
+    // The old wording claimed any decline would have produced a notify. It does not.
+    expect(body).not.toContain('any notify, paid or not');
   });
 
   it('says so when checkout was never started (no gateway payment at all)', async () => {
@@ -433,4 +484,142 @@ describe('checkWatchdogLiveness', () => {
     expect(r.stale).toBe(false);
     expect(alerts.sent).toHaveLength(0);
   });
+});
+
+// Review of #774, finding 7. TEAM_EMAILS (#764) marks the owner's and team's own test bookings;
+// the ops queue and the digest leave them out, but the watchdog still chased them — a recovery
+// email to the owner and a critical page about the owner's own test checkout.
+describe('runWatchdog — team test bookings', () => {
+  async function seedFor(email: string) {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, input: { ...sample.input, customer: { ...sample.input.customer, email } } } as NewBooking);
+    await bookings.setStatus(b.id, 'payment_pending');
+    return { bookings, booking: b };
+  }
+  const mail = { baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+  it('skips a stuck booking made under a team address: no recovery email, no alert', async () => {
+    const { bookings } = await seedFor(' Owner@CeylonHop.com ');
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const log = new InMemoryNotificationLogRepo();
+    const res = await runWatchdog(later(31), {
+      bookings, log, alerts, email, ...mail, teamEmails: new Set(['owner@ceylonhop.com']),
+    });
+    expect(res.stuckPending).toBe(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(email.sent).toHaveLength(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  it('still chases a customer booking alongside it', async () => {
+    const { bookings, booking } = await seedFor('maya@example.com');
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const res = await runWatchdog(later(31), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail, teamEmails: new Set(['owner@ceylonhop.com']),
+    });
+    expect(res.stuckPending).toBe(1);
+    expect(email.sent).toHaveLength(1);
+    expect(alerts.sent[0].body).toContain(booking.reference);
+  });
+
+  it('an empty team set (or none) changes nothing', async () => {
+    for (const teamEmails of [new Set<string>(), undefined]) {
+      const { bookings } = await seedFor('owner@ceylonhop.com');
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      const res = await runWatchdog(later(31), {
+        bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail, ...(teamEmails ? { teamEmails } : {}),
+      });
+      expect(res.stuckPending).toBe(1);
+      expect(email.sent).toHaveLength(1);
+      expect(alerts.sent).toHaveLength(1);
+    }
+  });
+});
+
+// Review of #774, finding 11. CH-Y5RXW's customer retried and PAID the same shared seat on a new
+// booking, CH-L72HX, ~20 min later — and three hours after that the watchdog emailed her to
+// "finish your booking" on the abandoned one. Every booking inserts its own customer row, so the
+// person is matched by email (lower/trim, as the DB's person_key is).
+describe('runWatchdog — the customer already paid for the same trip on a later booking', () => {
+  const T0 = Date.now();
+  const TRAVEL = futureIsoDate(7);
+  const at = (min: number) => new Date(T0 + min * MIN).toISOString();
+  const customer = { firstName: 'Ana', lastName: 'K', email: 'ana@example.com', whatsapp: '+491700000000', country: 'Germany' };
+  const shared = (over: Partial<{ date: string; time: string; corridorId: string; email: string }> = {}) => ({
+    mode: 'shared' as const,
+    input: {
+      corridorId: over.corridorId ?? 'ella-arugam', fromPlace: 'Ella', toPlace: 'Arugam Bay', date: over.date ?? TRAVEL,
+      time: over.time ?? '09:00', seats: 1, bags: 1, customer: { ...customer, email: over.email ?? customer.email },
+    },
+  });
+  function mk(reference: string, status: string, createdAt: string, trip: ReturnType<typeof shared>) {
+    return {
+      id: `id-${reference}`, reference, status, createdAt, channel: 'website', currency: 'USD', total: 5498, amountDueNow: 5498,
+      ...trip,
+    } as never;
+  }
+  function repo(rows: unknown[]) {
+    const all = rows as { status: string }[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r: any = {
+      list: async ({ status }: { status?: string | string[] } = {}) => {
+        const want = Array.isArray(status) ? status : status ? [status] : null;
+        return all.filter((b) => !want || want.includes(b.status));
+      },
+      get: async () => null,
+    };
+    return r;
+  }
+  const mail = { baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+  it('sends no recovery email, and pages a WARNING that names the paid booking', async () => {
+    const bookings = repo([
+      mk('CH-Y5RXW', 'payment_pending', at(0), shared()),
+      mk('CH-L72HX', 'paid', at(20), shared({ email: '  ANA@example.com ' })),
+    ]);
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const log = new InMemoryNotificationLogRepo();
+    const res = await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log, alerts, email, ...mail });
+    expect(email.sent).toHaveLength(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(await log.wasSent('id-CH-Y5RXW', 'payment_recovery')).toBe(false);
+    const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+    expect(stuck).toHaveLength(1);
+    expect(stuck[0].severity).toBe('warning');
+    expect(stuck[0].title).toContain('CH-Y5RXW');
+    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX, cancel this duplicate.');
+  });
+
+  it('counts any later lifecycle status as paid (confirmed, in progress, completed)', async () => {
+    for (const status of ['confirmed', 'in_progress', 'completed']) {
+      const bookings = repo([mk('CH-Y5RXW', 'payment_pending', at(0), shared()), mk('CH-L72HX', status, at(20), shared())]);
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), email, ...mail });
+      expect(email.sent, status).toHaveLength(0);
+    }
+  });
+
+  // Anything that is not the same person on the same trip, paid AFTER the stuck one, changes nothing.
+  for (const [what, paid] of [
+    ['a different travel date', () => mk('CH-L72HX', 'paid', at(20), shared({ date: futureIsoDate(8) }))],
+    ['a different customer', () => mk('CH-L72HX', 'paid', at(20), shared({ email: 'someone@else.com' }))],
+    ['a different departure time', () => mk('CH-L72HX', 'paid', at(20), shared({ time: '14:00' }))],
+    ['a different corridor', () => mk('CH-L72HX', 'paid', at(20), shared({ corridorId: 'kandy-ella' }))],
+    ['a paid booking made BEFORE the stuck one', () => mk('CH-L72HX', 'paid', at(-20), shared())],
+  ] as const) {
+    it(`${what}: the usual recovery email and critical page`, async () => {
+      const bookings = repo([mk('CH-Y5RXW', 'payment_pending', at(0), shared()), paid()]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail });
+      expect(email.sent).toHaveLength(1);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck[0].severity).toBe('critical');
+      expect(stuck[0].body).not.toContain('cancel this duplicate');
+    });
+  }
 });

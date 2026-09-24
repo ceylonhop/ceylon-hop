@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
+import { PayHerePaymentAdapter } from '../adapters/payhere';
 import { isoToday } from '../domain/dateRules';
 import { signPayReturnToken, signBookingToken, signCheckoutToken } from '../lib/bookingToken';
 
@@ -63,7 +64,7 @@ describe('GET /bookings/pay-return', () => {
     const b = await book(app);
     const res = await ret(app, signPayReturnToken(b.id, SECRET));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'pending', reference: b.reference });
+    expect(await res.json()).toEqual({ status: 'pending', reference: b.reference, sandbox: true });
   });
 
   // THE case the spec exists for: the customer came back and the webhook has settled them.
@@ -103,10 +104,30 @@ describe('GET /bookings/pay-return', () => {
   });
 
   // It authorises reading a status and nothing else — no customer details, no trip, no amounts.
-  it('leaks nothing beyond the status and the reference', async () => {
+  // `sandbox` is the payment GATEWAY's mode (this deployment's adapter), not booking data: the
+  // same for every booking on the server, and what manage.html's purchase gate needs to keep a
+  // sandbox settlement out of GA4 revenue (review of #774, finding 6).
+  it('leaks nothing beyond the status, the reference and the gateway mode', async () => {
     const app = createApp();
     const b = await book(app);
     const body = await (await ret(app, signPayReturnToken(b.id, SECRET))).json();
-    expect(Object.keys(body).sort()).toEqual(['reference', 'status']);
+    expect(Object.keys(body).sort()).toEqual(['reference', 'sandbox', 'status']);
+  });
+
+  describe('sandbox — the gateway mode, from the payment adapter', () => {
+    const payhere = (mode: 'sandbox' | 'live') => new PayHerePaymentAdapter('1211149', 'secret', {
+      mode, notifyUrl: 'https://api.example.com/webhooks/payments',
+      returnUrl: 'https://example.com/booking.html', cancelUrl: 'https://example.com/booking.html',
+    });
+    it.each([
+      { name: 'the fake gateway', make: () => new FakePaymentAdapter(), sandbox: true },
+      { name: 'PayHere sandbox', make: () => payhere('sandbox'), sandbox: true },
+      { name: 'PayHere live', make: () => payhere('live'), sandbox: false },
+    ])('$name → sandbox: $sandbox', async ({ make, sandbox }) => {
+      const app = createApp({ adapter: make() });
+      const b = await book(app);
+      const body = await (await ret(app, signPayReturnToken(b.id, SECRET))).json();
+      expect(body.sandbox).toBe(sandbox);
+    });
   });
 });

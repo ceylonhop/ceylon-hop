@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..', '..');
 const read = (f) => readFileSync(path.join(ROOT, f), 'utf8');
 const HTML = read('booking.html');
-const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js'].map(read);
+const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'checkout-handoff.js', 'ch-map.js', 'ch-pricing.js'].map(read);
 const BOOKING_SRC = read('booking.js');
 
 function loadBooking(query) {
