@@ -2526,9 +2526,7 @@ function phShowLoading(msg){
 // states below hand the customer a one-tap WhatsApp message that already names the booking;
 // without a reference (the create itself failed) the message simply omits the clause.
 let payRef = null;
-function payWaText(){
-  return 'Hi Ceylon Hop, my payment' + (payRef ? ' for booking '+payRef : '') + ' didn\'t go through. What I saw: ';
-}
+// The prefilled text lives in checkout-handoff.js (chTellUsHref), shared with manage.html.
 // kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
 // opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
 //              gateway; a booking that never reached a card gets no bank advice.
@@ -2565,7 +2563,7 @@ function phShowEnd(kind, msg, opts){
   const retry=document.getElementById('ph-retry');
   if(retry) retry.hidden = o.retry === false;
   const wa=document.getElementById('ph-wa');
-  if(wa){ wa.href=waHrefFor(payWaText()); wa.hidden=false; }
+  if(wa){ wa.href=window.chTellUsHref(payRef,'failed'); wa.hidden=false; }
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }
@@ -2601,25 +2599,12 @@ function redirectToPayHere(checkout, booking){
   // gateway this tab handed off to from here — the same key its own hand-off writes. A sandbox
   // settlement reported as revenue is permanent in GA4.
   try{ sessionStorage.setItem('ch_manage_pay_v1:sandbox', /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) ? '1' : '0'); }catch(e){}
-  // The fields are the server's verbatim: `hash` covers merchant_id + order_id + amount +
-  // currency and is signed server side, so reordering, renaming or adding anything here would
-  // be refused by the gateway.
-  const form=document.createElement('form');
-  form.method='POST';
-  form.action=checkout.checkoutUrl;
-  Object.keys(checkout.fields).forEach(function(k){
-    const input=document.createElement('input');
-    input.type='hidden';
-    input.name=k;
-    input.value=checkout.fields[k];
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
   payHandedOff=true;
   // Logged the instant before we leave: a sendBeacon survives the navigation.
   sendCheckoutEvent(checkout, booking, 'opened');
-  // The overlay keeps saying "Opening secure payment…" until the browser actually leaves.
-  form.submit();
+  // The overlay keeps saying "Opening secure payment…" until the browser actually leaves. The
+  // form POST itself — the server's fields verbatim — is checkout-handoff.js, shared with manage.html.
+  window.chSubmitToGateway(checkout);
 }
 
 // Checkout diagnostics, sent to our own attempt log (POST /bookings/:id/checkout-events).

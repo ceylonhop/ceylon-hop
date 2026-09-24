@@ -48,6 +48,8 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
+<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
+<script src="checkout-handoff.js?v=281dd16e25"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
      payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
@@ -92,7 +94,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // mode, storage disabled). If it does, we DON'T strip: a token in the URL is a privacy
   // problem, but a customer who cannot reload their own booking is a broken page. Function
   // first, privacy wherever it is free.
-  var TOKEN_KEY = 'chManageToken';
+  // The key's name is shared with booking.html, which hands a website customer's token over here.
+  var TOKEN_KEY = window.CH_MANAGE_TOKEN_KEY;
   var q = new URLSearchParams(location.search);
   var t = q.get('t');
   // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
@@ -303,10 +306,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // that already names the booking saves them finding the reference. Since the website checkout
   // became a redirect (2026-09-24) a failed payment is answered HERE, so the link is shown on the
   // two states that mean it didn't work — a decline and the cancel leg — and nowhere else.
-  function waTellUsHref(v){
-    return 'https://wa.me/94779669662?text=' + encodeURIComponent(
-      'Hi Ceylon Hop, my payment' + (v && v.reference ? ' for booking ' + v.reference : '') + ' didn\'t go through. What I saw: ');
-  }
+  function waTellUsHref(v){ return window.chTellUsHref(v && v.reference, 'failed'); }
   function showTellUs(){
     var a = document.getElementById('paywa');
     if (a) a.hidden = false;
@@ -413,21 +413,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // The last thing we know for certain: they left for the gateway. Everything after this
         // is what our own server tells us on the way back.
         track('payment_initiated', moneyOf(v));
-        // A TOP-LEVEL form POST, exactly as pay.html does it. The fields are the server's
-        // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
-        // side, so reordering, renaming or adding anything here would be refused by the gateway.
-        var form = document.createElement('form');
-        form.method = 'POST';
-        form.action = checkout.checkoutUrl;
-        Object.keys(checkout.fields).forEach(function(k){
-          var input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = k;
-          input.value = checkout.fields[k];
-          form.appendChild(input);
-        });
-        document.body.appendChild(form);
-        form.submit();
+        // A TOP-LEVEL form POST with the server's fields verbatim (checkout-handoff.js, shared
+        // with booking.html).
+        window.chSubmitToGateway(checkout);
       })
       .catch(function(e){
         track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });

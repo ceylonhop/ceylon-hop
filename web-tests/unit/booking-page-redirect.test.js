@@ -37,13 +37,17 @@ describe('booking page uses a top-level redirect, not the PayHere iframe SDK', (
     expect(js).not.toMatch(/function\s+startPayHere\b/);
   });
 
+  // The form itself lives in checkout-handoff.js, shared by booking.html and manage.html
+  // (checkout-handoff.test.js drives it); this page must hand the server's answer over untouched.
   it('submits a real top-level form POST to the gateway’s own URL, fields verbatim', () => {
-    expect(js).toMatch(/createElement\('form'\)/);
-    expect(js).toMatch(/\.method\s*=\s*'POST'/);
-    expect(js).toMatch(/\.action\s*=\s*checkout\.checkoutUrl/);
-    expect(js).toMatch(/Object\.keys\(checkout\.fields\)/);
+    const shared = readFileSync(path.join(__dirname, '..', '..', 'checkout-handoff.js'), 'utf8');
+    expect(shared).toMatch(/createElement\('form'\)/);
+    expect(shared).toMatch(/\.method\s*=\s*'POST'/);
+    expect(shared).toMatch(/\.action\s*=\s*checkout\.checkoutUrl/);
+    expect(shared).toMatch(/Object\.keys\(checkout\.fields\)/);
+    expect(shared).toMatch(/\.submit\(\)/);
+    expect(js).toMatch(/chSubmitToGateway\(checkout\)/);
     expect(js).not.toMatch(/fields\.(amount|hash|merchant_id|order_id)\s*=/);
-    expect(js).toMatch(/\.submit\(\)/);
   });
 
   it('asks the server for a manage-page return, stating intent rather than a URL', () => {
@@ -75,7 +79,7 @@ describe('booking page analytics for a real-gateway payment', () => {
 });
 
 // ── behaviour, in jsdom: the real page and booking.js, the gateway call stubbed ─────────────────
-const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'ch-map.js', 'ch-pricing.js']
+const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'checkout-handoff.js', 'ch-map.js', 'ch-pricing.js']
   .map((f) => readFileSync(path.join(ROOT, f), 'utf8'));
 
 function loadBooking() {

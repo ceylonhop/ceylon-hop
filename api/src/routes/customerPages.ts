@@ -71,6 +71,7 @@ const ASSETS: [string, string][] = [
   ['analytics.js', JS],
   ['phone-countries.js', JS],
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
+  ['checkout-handoff.js', JS], // the PayHere hand-off manage.html shares with booking.html
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
   ['img/brand-c.svg', 'image/svg+xml'], // the header logo glyph — same file site.js's cmark() uses
