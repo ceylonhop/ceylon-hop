@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isInternationalNumber, INTERNATIONAL_NUMBER_RULE } from './phone';
 
 // ============================================================================
 // Ride Board domain — demand-pooling "lists" layered ON TOP OF the shared-taxi
@@ -107,6 +108,18 @@ export function popularTime(prefs: Array<string | null | undefined>, slot: Slot)
 
 // ---- HTTP input shapes -----------------------------------------------------
 
+// The billing details PayHere needs for the card approval, sent with every NEW commitment
+// (the routes insist on the phone — phone_required). Since #755 the phone is also STORED on the
+// member, shown to ops and dialled by the wa.me links, so it carries the one phone rule
+// (domain/phone.ts): + then 6–15 digits, read off the digits, kept exactly as typed. Until
+// CH-T74DT this box bounded only the length (5–32 characters of anything) and a 26-digit
+// number went straight through.
+const PaymentDetailsInput = z.object({
+  phone: z.string().trim().max(32, INTERNATIONAL_NUMBER_RULE).refine(isInternationalNumber, INTERNATIONAL_NUMBER_RULE),
+  address: z.string().trim().min(3).max(200),
+  city: z.string().trim().min(2).max(100),
+});
+
 // Create a list. The website sends place NAMES (from/to) exactly like the booking
 // flow; a corridorId is also accepted. Threshold/capacity/price are derived
 // server-side from the corridor — never trusted from the client.
@@ -120,11 +133,7 @@ export const CreateListInput = z
     note: z.string().max(140).optional(),
     preferredTime: z.string().min(1).optional(),
     seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
-    payment: z.object({
-      phone: z.string().trim().min(5).max(32),
-      address: z.string().trim().min(3).max(200),
-      city: z.string().trim().min(2).max(100),
-    }).optional(),
+    payment: PaymentDetailsInput.optional(),
   })
   .refine((d) => Boolean(d.corridorId) || Boolean(d.from && d.to), {
     message: 'from and to (or corridorId) are required',
@@ -138,11 +147,7 @@ export type CreateListInput = z.infer<typeof CreateListInput>;
 export const JoinInput = z.object({
   preferredTime: z.string().min(1).optional(),
   seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
-  payment: z.object({
-    phone: z.string().trim().min(5).max(32),
-    address: z.string().trim().min(3).max(200),
-    city: z.string().trim().min(2).max(100),
-  }).optional(),
+  payment: PaymentDetailsInput.optional(),
 });
 export type JoinInput = z.infer<typeof JoinInput>;
 
