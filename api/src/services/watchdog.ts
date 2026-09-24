@@ -11,6 +11,7 @@ import type { Payment } from '../db/paymentRepo';
 import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './notifications';
 import { bookingDeepLink } from './opsNotifications';
+import { isTeamEmail } from './testBookings';
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -73,6 +74,9 @@ export async function runWatchdog(
     alertLog?: AlertLogRepo;
     // Deep link in the stuck-pending alert. '' without OPS_BASE_URL, as everywhere else.
     opsBaseUrl?: string;
+    // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
+    // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
+    teamEmails?: ReadonlySet<string>;
   },
 ): Promise<{
   stuckPending: number;
@@ -81,12 +85,16 @@ export async function runWatchdog(
   stuckRefunds: number;
 }> {
   const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, alertLog, opsBaseUrl } = deps;
+  const teamEmails = deps.teamEmails ?? new Set<string>();
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
   for (const b of pending) {
     const age = now.getTime() - Date.parse(b.createdAt);
     if (age < STUCK_PENDING_MS || age >= STUCK_PENDING_MAX_MS) continue;
+    // The owner's and team's own test bookings (#764): the ops queue and the digest already leave
+    // them out; chasing them mailed the owner and paged the founder about their own test.
+    if (isTeamEmail(b.input.customer.email, teamEmails)) continue;
     // Ops-booked bookings (channel 'whatsapp') were exempt wholesale when every one of
     // them was settled by hand. Pay links (2026-07-31) changed that: once a customer has
     // STARTED a gateway checkout on one, an abandoned payment is a real event again — the

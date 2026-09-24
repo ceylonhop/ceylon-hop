@@ -467,3 +467,56 @@ describe('checkWatchdogLiveness', () => {
     expect(alerts.sent).toHaveLength(0);
   });
 });
+
+// Review of #774, finding 7. TEAM_EMAILS (#764) marks the owner's and team's own test bookings;
+// the ops queue and the digest leave them out, but the watchdog still chased them — a recovery
+// email to the owner and a critical page about the owner's own test checkout.
+describe('runWatchdog — team test bookings', () => {
+  async function seedFor(email: string) {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, input: { ...sample.input, customer: { ...sample.input.customer, email } } } as NewBooking);
+    await bookings.setStatus(b.id, 'payment_pending');
+    return { bookings, booking: b };
+  }
+  const mail = { baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+  it('skips a stuck booking made under a team address: no recovery email, no alert', async () => {
+    const { bookings } = await seedFor(' Owner@CeylonHop.com ');
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const log = new InMemoryNotificationLogRepo();
+    const res = await runWatchdog(later(31), {
+      bookings, log, alerts, email, ...mail, teamEmails: new Set(['owner@ceylonhop.com']),
+    });
+    expect(res.stuckPending).toBe(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(email.sent).toHaveLength(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  it('still chases a customer booking alongside it', async () => {
+    const { bookings, booking } = await seedFor('maya@example.com');
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const res = await runWatchdog(later(31), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail, teamEmails: new Set(['owner@ceylonhop.com']),
+    });
+    expect(res.stuckPending).toBe(1);
+    expect(email.sent).toHaveLength(1);
+    expect(alerts.sent[0].body).toContain(booking.reference);
+  });
+
+  it('an empty team set (or none) changes nothing', async () => {
+    for (const teamEmails of [new Set<string>(), undefined]) {
+      const { bookings } = await seedFor('owner@ceylonhop.com');
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      const res = await runWatchdog(later(31), {
+        bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail, ...(teamEmails ? { teamEmails } : {}),
+      });
+      expect(res.stuckPending).toBe(1);
+      expect(email.sent).toHaveLength(1);
+      expect(alerts.sent).toHaveLength(1);
+    }
+  });
+});
