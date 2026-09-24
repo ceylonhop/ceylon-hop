@@ -5,23 +5,32 @@ name: keep-alive
 #
 # WHY THIS LOOPS INSTEAD OF JUST USING cron
 # The schedule below asks for every 13 min. GitHub does not honour that on a free runner —
-# measured over 62 h on 2026-07-25, the actual gap between runs was a median of 84 min
-# (min 52, max 208). Every single gap exceeded the ~15 min sleep threshold, so the API was
-# asleep ~84% of the time and roughly five in six visitors hit a cold start.
+# measured 2026-09-24 over the last 60 scheduled runs (2026-09-15 → 24, via
+# `gh run list --workflow=keepalive.yml --limit 60 --json createdAt,event`), the gap between
+# triggers was a median of 216 min (min 111, p90 315, max 403). Every one of the 59 gaps
+# exceeded the ~15 min sleep threshold, so a single ping per trigger would leave the API
+# asleep for most of the day.
 #
 # So a triggered run can't be a single ping — it has to keep pinging until the next trigger
-# shows up. Each run pings every 5 min for up to 3.5 h, which covers the worst observed gap
-# (208 min). concurrency cancels any older run so the newest trigger takes over rather than
-# stacking runs on top of each other.
+# shows up. Each run pings every 5 min for 5 h 45 min, the most a hosted job can do before
+# GitHub kills it at 6 h. The 3.5 h loop this replaces was sized for the worst gap seen in
+# July (208 min); 32 of the 59 September gaps outran it, so the instance was spinning down
+# for a large share of the day again. Only 1 of those 59 gaps outruns 5 h 45 min.
+# concurrency cancels any older run so the newest trigger takes over rather than stacking
+# runs on top of each other. The repo is public, so the always-on runner costs nothing.
 #
 # THIS IS A MITIGATION, NOT THE FIX. It still depends on GitHub triggering the workflow at
 # all, and the schedule pauses entirely after 60 days of repo inactivity. The real fixes are
 # an external pinger (cron-job.org -> /health every ~10 min) or moving off the Render free
-# tier — both need account access, see docs/go-live-checklist.md.
+# tier — both need account access, see the "Keep the API warm" item in
+# docs/go-live-checklist.md.
+#
+# Scheduled runs use the copy of this file on the default branch (main), so a merge to main
+# is the release — the production branch promote does not apply here.
 on:
   schedule:
-    - cron: '*/13 * * * *' # asks for 13 min; GitHub delivers ~84 min, hence the loop below
-  workflow_dispatch: {}
+    - cron: '*/13 * * * *' # asks for 13 min; GitHub delivers a median 216 min, hence the loop below
+  workflow_dispatch: {} # a manual run loops too — cancel it when you have seen enough
 
 # Newest run wins; an in-flight loop from the previous trigger is cancelled.
 concurrency:
@@ -31,16 +40,18 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 215 # just over the 3.5 h loop, so a wedged run can't hold the slot
+    timeout-minutes: 355 # the loop's last ping starts before 5 h 45 min; hosted jobs die at 6 h
     steps:
-      - name: Ping API health every 5 minutes
+      - name: Ping API health every 5 minutes for 5 h 45 min
         run: |
-          END=$(( $(date +%s) + 3*3600 + 1800 ))   # 3.5 h from now
+          END=$(( $(date +%s) + 5*3600 + 45*60 ))   # 5 h 45 min from now
           n=0
-          while [ "$(date +%s)" -lt "$END" ]; do
+          while :; do
             n=$((n+1))
             code=$(curl -fsS --max-time 90 -o /dev/null -w '%{http_code}' \
               https://ceylon-hop-api.onrender.com/health || echo "ERR")
             echo "$(date -u +%H:%M:%S)  ping #$n -> $code"
+            # Only sleep if the next ping still fits inside the window.
+            [ $(( $(date +%s) + 300 )) -lt "$END" ] || break
             sleep 300
           done
