@@ -1060,3 +1060,74 @@ describe('Ride Board phone never reaches the public board', () => {
     }
   });
 });
+
+// CH-T74DT (website, 2026-08-27): a 26-digit WhatsApp number was banked because the customer
+// schema checked for presence only. The Ride Board's payment.phone had the same hole — 5–32
+// characters of anything — and since #755 the number it takes is STORED (ride_list_member.phone),
+// shown to ops and dialled by the wa.me links. Same rule as the customer schema: + then 6–15
+// digits, punctuation ignored, stored as sent. board.js already posts "+digits" (joinedPhone), so
+// a real traveller never trips this; like phone_required it holds the line for any other client.
+describe('Ride Board refuses an unusable phone number (CH-T74DT)', () => {
+  const CH_T74DT = '+94123134124123412312312312'; // the prod row, verbatim: 26 digits
+  const withPhone = (phone: string) => ({ ...paymentDetails, phone });
+
+  it('a new ride: 400 phone_invalid naming the rule, and nothing is created', async () => {
+    const { app, rideLists } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: withPhone(CH_T74DT),
+    }));
+    expect(res.status).toBe(400);
+    const out = await res.json();
+    expect(out.error).toBe('phone_invalid');
+    expect(out.message).toMatch(/6.15 digits/);
+    expect(await rideLists.listForMember('roshen-sub')).toEqual([]);
+  });
+
+  it('a join: 400 phone_invalid, and no seat is held', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${list.code}/join`, json(cookie, { payment: withPhone(CH_T74DT) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('phone_invalid');
+    expect((await rideLists.getByCode(list.code))!.members).toEqual([]);
+  });
+
+  it.each([
+    ['16 digits', '+1234567890123456'],
+    ['5 digits', '+94771'],
+    ['no +', '94771234567'],
+    ['letters', '+94abc1234'],
+  ])('refuses %s (%s) the same way', async (_what, phone) => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${list.code}/join`, json(cookie, { payment: withPhone(phone) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('phone_invalid');
+  });
+
+  // Guard (green before this rule too): the check must read the digits, not the raw string, or
+  // a number typed with spaces would be turned away — and the stored value stays as sent.
+  it('still takes a real number typed with spaces and dashes, stored as sent', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${list.code}/join`, json(cookie, { payment: withPhone('+94 77-123 4567') }));
+    expect(res.status).toBeLessThan(300);
+    const m = (await rideLists.getByCode(list.code))!.members.find((x) => x.sub === 'roshen-sub');
+    expect(m?.phone).toBe('+94 77-123 4567');
+  });
+
+  // Guard for refusalFor's boundary (green before too): a payment that carries no number at all
+  // is a malformed body, not an unusable number — invalid_request, as before.
+  it('a payment without a number is still invalid_request, not phone_invalid', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${list.code}/join`, json(cookie, { payment: { address: '12 Galle Road', city: 'Colombo' } }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+});
