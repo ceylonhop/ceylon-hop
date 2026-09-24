@@ -121,3 +121,21 @@ describe('ops row — a shared seat shows the leg it sold', () => {
     expect(toOpsRow(legacy, { paid: true }).route).toBe('Shared · airport-cultural');
   });
 });
+
+// Test bookings (2026-09-24): a row whose customer email is one of the team's is labelled so
+// the queue can show it and leave it out of its counts. Inert when no team set is given.
+describe('opsView — isTest', () => {
+  const team = new Set(['m@x.com']);
+  it('is true when the customer email is a team address (case-insensitive)', () => {
+    expect(toOpsRow(base, { paid: true, teamEmails: team }).isTest).toBe(true);
+    const upper = { ...base, input: { ...base.input, customer: { ...base.input.customer, email: 'M@X.com' } } } as Booking;
+    expect(toOpsRow(upper, { paid: true, teamEmails: team }).isTest).toBe(true);
+  });
+  it('is false for a customer address', () => {
+    expect(toOpsRow(base, { paid: true, teamEmails: new Set(['owner@ceylonhop.com']) }).isTest).toBe(false);
+  });
+  it('is false when the team set is empty or omitted', () => {
+    expect(toOpsRow(base, { paid: true, teamEmails: new Set() }).isTest).toBe(false);
+    expect(toOpsRow(base, { paid: true }).isTest).toBe(false);
+  });
+});

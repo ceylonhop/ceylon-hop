@@ -57,3 +57,31 @@ describe('buildDigest — watchdog heartbeat', () => {
     expect(d.text).toContain('Watchdog last ran: never');
   });
 });
+
+// Test bookings (2026-09-24): the owner's and team's own bookings must not inflate the digest's
+// status counts — every "Payment pending" in the August digests was an owner test.
+describe('buildDigest — team test bookings', () => {
+  it('leaves a team-email booking out of the status counts', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const real = await bookings.create(booking);
+    await bookings.setStatus(real.id, 'payment_pending');
+    const test = await bookings.create({
+      ...booking,
+      input: { ...booking.input, customer: { ...booking.input.customer, email: 'Owner@CeylonHop.com' } },
+    });
+    await bookings.setStatus(test.id, 'payment_pending');
+    const d = await buildDigest(new Date(), { bookings, teamEmails: new Set(['owner@ceylonhop.com']) });
+    expect(d.text).toContain('Payment pending: 1');
+  });
+
+  it('counts everything when no team set is given (inert by default)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({
+      ...booking,
+      input: { ...booking.input, customer: { ...booking.input.customer, email: 'owner@ceylonhop.com' } },
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const d = await buildDigest(new Date(), { bookings });
+    expect(d.text).toContain('Payment pending: 1');
+  });
+});
