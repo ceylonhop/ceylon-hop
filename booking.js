@@ -2344,9 +2344,11 @@ async function runPayment(){
     if(m && document.getElementById('ph-actions').hidden) m.textContent='Just waking up our booking system — one moment…';
   }, 6000);
   let booking;
+  payRef = null; // a fresh attempt: no reference until the create answers
   try { booking = await createApiBooking(); }
   catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
   clearTimeout(slow);
+  payRef = (booking && booking.reference) || null;
   if(!booking){ return simulatePayThenConfirm(null); }
 
   // Adopt the server's authoritative price so the overlay, PayHere and confirmation all show
@@ -2512,8 +2514,18 @@ function phShowLoading(msg){
   // steps and its suppressed retry button.
   const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
   const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=false;
+  const wa=document.getElementById('ph-wa'); if(wa) wa.hidden=true;
   document.getElementById('ph-actions').hidden=true;
   document.getElementById('ph-overlay').classList.add('show');
+}
+// The reference of the draft booking the current payment attempt is for — set by runPayment
+// once the create answers, cleared at the start of the next attempt. Every incomplete PayHere
+// payment ends silently on our side (no decline webhook, nothing on this page), so the end
+// states below hand the customer a one-tap WhatsApp message that already names the booking;
+// without a reference (the create itself failed) the message simply omits the clause.
+let payRef = null;
+function payWaText(){
+  return 'Hi Ceylon Hop, my payment' + (payRef ? ' for booking '+payRef : '') + ' didn\'t go through. What I saw: ';
 }
 // kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
 // opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
@@ -2550,6 +2562,8 @@ function phShowEnd(kind, msg, opts){
   }
   const retry=document.getElementById('ph-retry');
   if(retry) retry.hidden = o.retry === false;
+  const wa=document.getElementById('ph-wa');
+  if(wa){ wa.href=waHrefFor(payWaText()); wa.hidden=false; }
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }
