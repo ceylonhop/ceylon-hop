@@ -23,18 +23,19 @@ test('a booking-API failure shows an error state inside the overlay (not a stray
   await expect(page.locator('#details-error')).toBeHidden();
 });
 
-test('cancelling PayHere shows the cancelled state with a retry option', async ({ page }) => {
-  await gotoBooking(page, { checkout: 'payhere', payhere: 'dismissed' });
+// Backing out at PayHere used to be the SDK's onDismissed, shown in this overlay. Since the
+// website left the iframe SDK (2026-09-24) the customer is ON PayHere's page, and "Back to Site"
+// takes the cancel leg to their booking's manage page: it must say nothing was completed and
+// offer the payment again — the retry the overlay used to carry.
+test('cancelling at PayHere returns to the booking with a way to pay again', async ({ page }) => {
+  const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['pending'] });
   await fillContact(page);
   await page.click('#pay-btn');
+  await page.waitForURL(/sandbox\.payhere\.lk/);
 
-  await expect(page.locator('#ph-overlay')).toBeVisible();
-  await expect(page.locator('#ph-msg')).toContainText('cancelled');
-  await expect(page.locator('#ph-retry')).toBeVisible();
-
-  // Close dismisses the overlay
-  await page.click('#ph-close');
-  await expect(page.locator('#ph-overlay')).toBeHidden();
+  await page.goto(fields.cancel_url);
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+  await expect(page.locator('#paybtn')).toBeVisible();
 });
 
 test('demo mode (api=off) completes to a confirmation reference', async ({ page }) => {
@@ -63,15 +64,16 @@ test('confirmation shows the server-authoritative amount, not the wizard estimat
   await expect(page.locator('#pass-paid')).toHaveText('$115');
 });
 
+// The real gateway is handed the SERVER's amount, and the overlay the customer sees right before
+// the hand-off shows that same figure — never the wizard's $121 estimate. (The on-page pass this
+// used to read is gone for real-gateway payments; the manage page and the email carry it now.)
 test('server-authoritative amount also flows through the real PayHere path', async ({ page }) => {
-  await gotoBooking(page, { checkout: 'payhere', payhere: 'completed', bookingTotal: 11500 });
+  const { gateway } = await gotoBooking(page, { checkout: 'payhere', bookingTotal: 11500, checkoutDelayMs: 1500 });
   await fillContact(page);
   await page.click('#pay-btn');
-  await expect.poll(
-    () => page.locator('#pass-ref').textContent(),
-    { timeout: 8000 },
-  ).toMatch(/CH-/);
-  await expect(page.locator('#pass-paid')).toHaveText('$115');
+  await expect(page.locator('#ph-amt')).toHaveText('$115');
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+  expect(new URLSearchParams(gateway[0].postData).get('amount')).toBe('115.00');
 });
 
 // A mobile double-tap lands two clicks before the first repaint, so the overlay that normally

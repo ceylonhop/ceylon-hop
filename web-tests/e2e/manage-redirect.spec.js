@@ -126,3 +126,49 @@ test('Back to Site (cancel leg) resumes the booking with the cancel wording', as
   await expect(page.locator('#paybtn')).toBeVisible();
   expect(page.url()).not.toContain('c=1');
 });
+
+// ── "Tell us what happened on WhatsApp" (the website overlay's link, #766) ──────────────────────
+// Since 2026-09-24 a website payment that fails at PayHere is answered HERE, not in booking.html's
+// overlay — so the one-tap link whose prefilled message names the booking comes here too. Only on
+// the two states that mean "it didn't work": a decline, and the cancel leg. Never on paid.
+const WA_PREFIX = 'https://wa.me/94779669662?text=';
+const WA_TEXT = 'Hi Ceylon Hop, my payment for booking CH-HAFDZ didn\'t go through. What I saw: ';
+
+async function expectTellUsLink(page) {
+  const a = page.locator('#paywa');
+  await expect(a).toBeVisible();
+  await expect(a).toHaveText('Tell us what happened on WhatsApp');
+  await expect(a).toHaveAttribute('target', '_blank');
+  await expect(a).toHaveAttribute('rel', /noopener/);
+  const href = await a.getAttribute('href');
+  expect(href).toBe(WA_PREFIX + encodeURIComponent(WA_TEXT));
+  expect(decodeURIComponent(href.slice(WA_PREFIX.length))).toBe(WA_TEXT);
+}
+
+test('a declined return offers the prefilled WhatsApp link, naming the booking', async ({ page }) => {
+  await offline(page);
+  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'failed', reference: 'CH-HAFDZ' })));
+  await page.goto('/manage.html?t=test-token&rt=return-token-1');
+  await expect(page.locator('#payerr')).toContainText('didn’t go through');
+  await expectTellUsLink(page);
+});
+
+test('the cancel leg offers it too, once the check comes back empty', async ({ page }) => {
+  await offline(page);
+  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'pending', reference: 'CH-HAFDZ' })));
+  await page.goto('/manage.html?t=test-token&rt=return-token-1&c=1');
+  // While we are still checking with the bank, nothing has gone wrong yet.
+  await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
+  await expect(page.locator('#paywa')).toBeHidden();
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+  await expectTellUsLink(page);
+});
+
+test('a paid return shows no such link', async ({ page }) => {
+  await offline(page, { ...BOOKING, status: 'paid' });
+  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'paid', reference: 'CH-HAFDZ' })));
+  await page.goto('/manage.html?t=test-token&rt=return-token-1');
+  await expect(page.locator('.t-stat')).toHaveText('Confirmed');
+  await expect(page.locator('#paywa')).toHaveCount(0);
+  await expect(page.locator('a[href*="didn"]')).toHaveCount(0);
+});

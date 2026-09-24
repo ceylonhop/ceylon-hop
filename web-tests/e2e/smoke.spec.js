@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { gotoBooking } from './_stubs.js';
 
 // Loading every key page should not throw uncaught JS errors. Aborted stub
-// resources (payhere.js, maps) produce benign "failed to load" console noise,
+// resources (maps; payhere.lk, which no page loads since 2026-09-24) produce benign "failed to load" console noise,
 // which we filter — the real signal is uncaught exceptions + genuine errors.
 const PAGES = [
   { path: '/index.html', query: '' },

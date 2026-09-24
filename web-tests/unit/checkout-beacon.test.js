@@ -5,17 +5,21 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 // ────────────────────────────────────────────────────────────────────────────
-//  booking.js — the PayHere SDK's outcome is beaconed to the API (2026-09-24).
+//  booking.js — the hand-off to PayHere is beaconed to the API (2026-09-24).
 //
-//  Audit: every incomplete PayHere payment in 60 days ended silently. The SDK's onError message
-//  was discarded (`payhere.onError = function(){ showPayFailed(); }`), so when a customer
+//  Audit: every incomplete PayHere payment in 60 days ended silently. When a customer
 //  (CH-8UVYG) reached the gateway twice and pressed "Try again" twice, nobody could say what he
-//  saw. startPayHere now sends `opened` / `dismissed` / `error` (with the SDK's reason) to
-//  POST /bookings/:id/checkout-events, carrying the checkout token in the body because a
-//  sendBeacon cannot set an Authorization header.
+//  saw. #770 made the page send what happened to POST /bookings/:id/checkout-events, carrying the
+//  checkout token in the body because a sendBeacon cannot set an Authorization header.
+//
+//  Since the website left PayHere's iframe SDK for a top-level redirect (same day,
+//  booking-page-redirect.test.js), the page can report only one thing: `opened`, sent the instant
+//  before the browser leaves for PayHere (a sendBeacon survives the navigation). There are no SDK
+//  dismissed/error callbacks any more; the outcome is logged server side when the customer comes
+//  back through GET /bookings/pay-return.
 //
 //  Same jsdom harness as booking-create-error.test.js: load the real page + its script deps and
-//  reach the top-level bindings through window.eval. The SDK itself is a stub.
+//  reach the top-level bindings through window.eval. The form's submit() is a stub.
 // ────────────────────────────────────────────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,18 +43,19 @@ function loadBooking() {
 }
 
 const BOOKING = { id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' };
-const CHECKOUT = { checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'CH-8UVYG' }, attempt: 2 };
+const CHECKOUT = { checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'CH-8UVYG', hash: 'H' }, attempt: 2 };
 
-// Install the SDK stub and the beacon spy; returns the recorded beacons.
+// Stub the form submit and the beacon; both record into one ordered log.
 function arm(w, { beaconThrows = false } = {}) {
   w.eval(`
     window.CEYLON_HOP_API = 'https://api.test/';
+    window.__log = [];
     window.__beacons = [];
-    window.__started = 0;
     window.__fetches = [];
-    window.payhere = { startPayment: function(){ window.__started++; } };
+    HTMLFormElement.prototype.submit = function(){ window.__log.push('submit'); };
     navigator.sendBeacon = function(url, data){
       if (${beaconThrows}) throw new Error('beacon exploded');
+      window.__log.push('beacon');
       window.__beacons.push({ url: String(url), data: data });
       return true;
     };
@@ -74,12 +79,14 @@ async function decoded(w, i) {
   return { url: b.url, type: b.data.type, body: JSON.parse(await blobText(w, b.data)) };
 }
 
-describe('startPayHere beacons the gateway outcome', () => {
-  it('reports `opened` right before the SDK is handed the payment, with the token and attempt', async () => {
+const handOff = (w) => w.eval(`redirectToPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
+
+describe('redirectToPayHere beacons the hand-off', () => {
+  it('reports ONE `opened`, with the token and attempt, before the browser leaves', async () => {
     const w = loadBooking();
     arm(w);
-    w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
-    expect(w.__started).toBe(1);
+    handOff(w);
+    expect(w.__log).toEqual(['beacon', 'submit']);
     expect(w.__beacons).toHaveLength(1);
     const b = await decoded(w, 0);
     expect(b.url).toBe('https://api.test/bookings/b-123/checkout-events');
@@ -87,56 +94,36 @@ describe('startPayHere beacons the gateway outcome', () => {
     expect(b.body).toEqual({ outcome: 'opened', token: 'tok.abc', attempt: 2 });
   });
 
-  it('reports `dismissed` when the customer closes the gateway, then shows the dismissed screen', async () => {
-    const w = loadBooking();
-    arm(w);
-    w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
-    w.eval('payhere.onDismissed()');
-    expect(w.__beacons).toHaveLength(2);
-    expect((await decoded(w, 1)).body).toMatchObject({ outcome: 'dismissed', token: 'tok.abc' });
-    expect(w.document.getElementById('ph-msg').textContent).toMatch(/cancelled/i);
+  it('no longer claims a dismissed or error outcome — there is no SDK to report one', () => {
+    const src = BOOKING_SRC.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(src).not.toMatch(/sendCheckoutEvent\([^)]*'(dismissed|error)'/);
+    expect(src.match(/sendCheckoutEvent\(checkout, booking, 'opened'\)/g) || []).toHaveLength(1);
   });
 
-  it('reports `error` with the SDK’s reason (PH-0014 …) instead of discarding it', async () => {
+  it('caps a reason at 200 characters and copes with an Error object', async () => {
     const w = loadBooking();
     arm(w);
-    w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
-    w.eval("payhere.onError('PH-0014 Unauthorized payment request. Hash mismatch.')");
-    expect(w.__beacons).toHaveLength(2);
-    expect((await decoded(w, 1)).body).toMatchObject({
-      outcome: 'error',
-      reason: 'PH-0014 Unauthorized payment request. Hash mismatch.',
-      token: 'tok.abc',
-    });
-    expect(w.document.getElementById('ph-msg').textContent).toMatch(/didn’t go through/);
-  });
-
-  it('caps the reason at 200 characters and copes with an Error object', async () => {
-    const w = loadBooking();
-    arm(w);
-    w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
-    w.eval("payhere.onError(new Error('x'.repeat(500)))");
-    expect((await decoded(w, 1)).body.reason).toHaveLength(200);
+    w.eval(`sendCheckoutEvent(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)}, 'opened', new Error('x'.repeat(500)))`);
+    expect((await decoded(w, 0)).body.reason).toHaveLength(200);
   });
 
   it('falls back to a keepalive fetch when sendBeacon is missing', () => {
     const w = loadBooking();
     arm(w);
     w.eval('delete navigator.sendBeacon; navigator.sendBeacon = undefined;');
-    w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`);
+    handOff(w);
     expect(w.__beacons).toHaveLength(0);
     expect(w.__fetches).toHaveLength(1);
     expect(w.__fetches[0].url).toBe('https://api.test/bookings/b-123/checkout-events');
     expect(w.__fetches[0].opts).toMatchObject({ method: 'POST', keepalive: true });
     expect(JSON.parse(w.__fetches[0].opts.body)).toMatchObject({ outcome: 'opened', token: 'tok.abc' });
+    expect(w.__log).toEqual(['submit']);
   });
 
   it('never lets the beacon touch the payment flow', () => {
     const w = loadBooking();
     arm(w, { beaconThrows: true });
-    expect(() => w.eval(`startPayHere(${JSON.stringify(CHECKOUT)}, ${JSON.stringify(BOOKING)})`)).not.toThrow();
-    expect(w.__started).toBe(1);
-    expect(() => w.eval("payhere.onError('boom')")).not.toThrow();
-    expect(w.document.getElementById('ph-msg').textContent).toMatch(/didn’t go through/);
+    expect(() => handOff(w)).not.toThrow();
+    expect(w.__log).toEqual(['submit']);
   });
 });
