@@ -101,7 +101,7 @@ const FIELDS = {
   amount: '121.00', first_name: 'Maya', hash: 'HASHVALUE',
 };
 
-function arm(w, checkoutUrl) {
+function arm(w, checkoutUrl, extra = {}) {
   w.eval(`
     window.CEYLON_HOP_API = 'https://api.test/';
     window.__fetches = [];
@@ -120,7 +120,8 @@ function arm(w, checkoutUrl) {
     window.fetch = function(url, opts){
       window.__fetches.push({ url: String(url), opts: opts });
       return Promise.resolve({ ok: true, json: function(){ return Promise.resolve({
-        checkoutUrl: ${JSON.stringify(checkoutUrl)}, payReturnToken: 'rt-1', attempt: 1, fields: ${JSON.stringify(FIELDS)} }); } });
+        checkoutUrl: ${JSON.stringify(checkoutUrl)}, payReturnToken: 'rt-1', attempt: 1, fields: ${JSON.stringify(FIELDS)},
+        ...${JSON.stringify(extra)} }); } });
     };
   `);
 }
@@ -183,6 +184,30 @@ describe('continueToCheckout hands the browser to PayHere', () => {
     live.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
     await flush(live);
     expect(live.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBe('0');
+  });
+
+  // Review of #774, finding 3: the return URL no longer carries the manage token, so the website
+  // (which has none of its own) stashes the one the checkout answer hands it, under manage.html's
+  // key, BEFORE it leaves — or the customer comes back to a page that cannot show their booking.
+  it('stashes the checkout’s manage token under manage.html’s key before handing off', async () => {
+    const w = loadBooking();
+    arm(w, 'https://www.payhere.lk/pay/checkout', { manageToken: 'mt-123' });
+    w.eval(`HTMLFormElement.prototype.submit = (function(orig){ return function(){
+      window.__stashAtSubmit = sessionStorage.getItem(window.CH_MANAGE_TOKEN_KEY); return orig.call(this); }; })(HTMLFormElement.prototype.submit);`);
+    w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+    await flush(w);
+    expect(w.CH_MANAGE_TOKEN_KEY).toBe('chManageToken');
+    expect(w.__stashAtSubmit).toBe('mt-123');
+    expect(w.__submitted).toHaveLength(1);
+  });
+
+  it('still hands off when storage refuses the token — manage.html has minimal states for that', async () => {
+    const w = loadBooking();
+    arm(w, 'https://www.payhere.lk/pay/checkout', { manageToken: 'mt-123' });
+    w.eval(`Storage.prototype.setItem = function(){ throw new Error('SecurityError'); };`);
+    w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+    await flush(w);
+    expect(w.__submitted).toHaveLength(1);
   });
 
   // Back from PayHere with the browser's Back button restores this page from the back/forward

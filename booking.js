@@ -2387,8 +2387,9 @@ async function continueToCheckout(booking){
   // didn't explain itself.
   //
   // `returnTo` states INTENT, never a URL: the server builds the return address — this booking's
-  // own manage page, carrying its manage token `t` and the status-only `rt` — from its own
-  // config. A gateway that redirects wherever the request body says is a phishing primitive.
+  // own manage page, carrying only the status-only `rt` (the manage token comes back in the
+  // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
+  // request body says is a phishing primitive.
   let checkout=null, refusal=null;
   try{
     const checkoutHeaders = booking.checkoutToken
@@ -2605,6 +2606,13 @@ function redirectToPayHere(checkout, booking){
   // gateway this tab handed off to from here — the same key its own hand-off writes. A sandbox
   // settlement reported as revenue is permanent in GA4.
   try{ sessionStorage.setItem('ch_manage_pay_v1:sandbox', /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) ? '1' : '0'); }catch(e){}
+  // PayHere sends the customer back to their manage page with only the status-only `rt` in the
+  // URL — the manage token is a bearer credential and never rides in a URL the gateway stores. So
+  // hand it to manage.html through this tab's sessionStorage, under the key it reads
+  // (checkout-handoff.js). Storage blocked: manage.html still answers from `rt` alone.
+  if(checkout.manageToken){
+    try{ sessionStorage.setItem(window.CH_MANAGE_TOKEN_KEY, checkout.manageToken); }catch(e){}
+  }
   payHandedOff=true;
   // Logged the instant before we leave: a sendBeacon survives the navigation.
   sendCheckoutEvent(checkout, booking, 'opened');

@@ -62,6 +62,33 @@ test('paying hands off with a top-level form POST carrying the server’s fields
   expect(sdk).toEqual([]);
 });
 
+// The return URL carries only the status token now (review of #774, finding 3): the manage token
+// crosses the round trip in this tab's sessionStorage, stashed again right before the hand-off.
+test('a manage-link round trip rebuilds the booking from the stashed token, not the URL', async ({ page }) => {
+  await offline(page);
+  const viewTokens = [];
+  await page.route('**/bookings/view?*', (r) => {
+    viewTokens.push(new URL(r.request().url()).searchParams.get('t'));
+    return r.fulfill(json(viewTokens.length > 1 ? { ...BOOKING, status: 'paid' } : BOOKING));
+  });
+  await page.route('**/bookings/view/checkout-token', (r) => r.fulfill(json({ bookingId: 'b-1', checkoutToken: 'ct-1' })));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout',
+    fields: { merchant_id: 'm-1', return_url: 'http://x.test/manage.html?rt=b', order_id: 'CH-HAFDZ', hash: 'H' } })));
+  await page.route('https://sandbox.payhere.lk/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
+  await page.route('**/bookings/pay-return?rt=*', (r) => r.fulfill(json({ status: 'paid', reference: 'CH-HAFDZ' })));
+
+  await page.goto('/manage.html?t=test-token');
+  await expect(page.locator('#paybtn')).toBeVisible();
+  // Whatever happened to the load-time stash, the hand-off writes it again.
+  await page.evaluate(() => sessionStorage.removeItem(window.CH_MANAGE_TOKEN_KEY));
+  await page.locator('#paybtn').click();
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+
+  await page.goto('/manage.html?rt=return-token-1');
+  await expect(page.locator('.t-stat')).toHaveText('Confirmed');
+  expect(viewTokens).toEqual(['test-token', 'test-token']);
+});
+
 test('coming back paid asks our server, then shows the booking confirmed', async ({ page }) => {
   await offline(page, { ...BOOKING, status: 'paid' });
   let polls = 0;

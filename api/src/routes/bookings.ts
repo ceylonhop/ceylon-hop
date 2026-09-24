@@ -890,17 +890,24 @@ function invalidRequest(error: ZodError) {
         : body?.returnTo === 'manage' && deps.manageBaseUrl
           ? (() => {
               // manage.html (the watchdog's "Finish your booking" email, the ops drawer's pay
-              // link) left PayHere's iframe SDK for the same redirect on 2026-09-24. Back to the
-              // manage link's own origin, carrying the manage token `t` — the page rebuilds the
-              // booking view from it, exactly as the link in the email does — plus the
-              // status-only `rt` it polls /bookings/pay-return with. Same two-legs rule as above.
-              const t = signBookingToken(booking.id, deps.linkSecret);
+              // link) and the website checkout left PayHere's iframe SDK for the same redirect on
+              // 2026-09-24. Back to the manage link's own origin carrying ONLY the status-only
+              // `rt` it polls /bookings/pay-return with. NOT the manage token `t`: return_url is
+              // sent to PayHere, stored in their systems and walked through a redirect chain
+              // (spec §D4), and `t` can view this booking and start its payment. The page keeps
+              // `t` in the tab's sessionStorage across the round trip instead (manageToken below,
+              // for the website, which has none of its own). Same two-legs rule as above.
               const rt = signPayReturnToken(booking.id, deps.linkSecret);
-              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html`
-                + `?t=${encodeURIComponent(t)}&rt=${encodeURIComponent(rt)}`;
+              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=${encodeURIComponent(rt)}`;
               return { returnUrl: base, cancelUrl: `${base}&c=1` };
             })()
           : {};
+    // The website checkout (booking.js) arrives with only a checkout token, so a manage return
+    // hands it the booking's manage token to stash for the page it is about to land on. Nothing
+    // new is disclosed: the caller has just proved it owns this booking with the checkout token,
+    // and this is the same token the confirmation email carries.
+    const manageToken =
+      body?.returnTo === 'manage' && deps.manageBaseUrl ? signBookingToken(booking.id, deps.linkSecret) : null;
 
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
@@ -960,6 +967,7 @@ function invalidRequest(error: ZodError) {
         payReturnToken: signPayReturnToken(booking.id, deps.linkSecret),
         // Which attempt this is (1 = first). The page echoes it on its gateway beacons.
         ...(attemptNo != null ? { attempt: attemptNo } : {}),
+        ...(manageToken ? { manageToken } : {}),
       },
       200,
     );

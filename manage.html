@@ -101,7 +101,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
   // `rt` is a status-only token for /bookings/pay-return; `c=1` means the gateway used cancel_url,
   // a display hint and NEVER an outcome. Both are read once and taken out of the address bar with
-  // `t`, so a reload after the return simply shows the booking as it now stands.
+  // `t`, so a reload after the return simply shows the booking as it now stands. That address
+  // carries NO `t`: this page (or booking.html, for a website checkout) stashes it right before
+  // the hand-off, and it is read back below like any reload.
   var rt = q.get('rt');
   var cameFromCancel = q.get('c') === '1';
   var strip = [];
@@ -418,6 +420,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // The last thing we know for certain: they left for the gateway. Everything after this
         // is what our own server tells us on the way back.
         track('payment_initiated', moneyOf(v));
+        // The way back carries only the status token `rt`, never `t` (a bearer credential in a URL
+        // PayHere stores). The return leg reads `t` from this tab's storage, so make sure it is
+        // there now, whatever happened to the copy stashed at load.
+        try { sessionStorage.setItem(TOKEN_KEY, t); } catch (e) {}
         // A TOP-LEVEL form POST with the server's fields verbatim (checkout-handoff.js, shared
         // with booking.html).
         window.chSubmitToGateway(checkout);
@@ -442,6 +448,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var FIRST_PAINT_MS = 1400;
   var stopReturn = function(){};
   var handedOff = false;
+  // The booking reference as the last pay-return answer gave it — all a token-less screen knows.
+  var returnRef = null;
   // The poll budget ran out and our server still says `pending`. That is NOT "awaiting
   // confirmation": PayHere sends no notify at all for a "3ds Authentication Failed" decline (review
   // of #774), so a declined customer would wait for ever on a screen that implied it worked. Say the
@@ -490,6 +498,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         return r.json();
       }).then(function(x){
         if (settled) return;
+        if (x.reference) returnRef = x.reference;
         if (x.status === 'paid') {
           stop();
           if (!t) return renderPaidMinimal(x.reference);
@@ -550,11 +559,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + tellUsLink(reference) + '</div>' + waLine());
   }
 
+  // Declined, but this tab has no manage token to rebuild the booking from (storage blocked, or a
+  // different browser than the one that paid).
   function renderCannotResume(){
     paint('<div class="st-wrap"><div class="st-badge ok">!</div>'
       + '<h1 class="st-title">That payment didn’t go through</h1>'
       + '<p class="st-sub"><strong>Nothing has been charged.</strong> Open your booking link again to retry, '
-      + 'or message us on WhatsApp and we’ll sort it out.</p></div>' + waLine());
+      + 'or message us on WhatsApp and we’ll sort it out.</p>'
+      + tellUsLink(returnRef) + '</div>' + waLine());
   }
 
   function loadView(){
