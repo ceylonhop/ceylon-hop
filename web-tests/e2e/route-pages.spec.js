@@ -52,7 +52,7 @@ test('a route we DO sell shared states the seat price and its boarding points', 
 
 test('/trip/ index lists route cards that link to pages', async ({ page }) => {
   await page.goto('/trip/');
-  await expect(page.locator('h1')).toContainText('Sri Lanka transfer routes');
+  await expect(page.locator('h1')).toContainText('Sri Lanka shared taxi & transfer routes');
   const card = page.getByRole('link', { name: /Kandy → Ella/ }).first();
   await expect(card).toBeVisible();
   await expect(card).toContainText('Approx. 135 km · 3h 45m');
