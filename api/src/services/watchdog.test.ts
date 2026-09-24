@@ -356,6 +356,23 @@ describe('watchdog — the stuck-pending alert says what it knows', () => {
     expect(body).toContain(`https://ops.example/ops?booking=${booking.id}`);
   });
 
+  // A still-pending payment does NOT mean "closed the gateway or the notify was lost": PayHere
+  // sends no notify at all for a "3ds Authentication Failed" decline (confirmed in the merchant
+  // dashboard for CH-Y5RXW and CH-V43ZU, 2026-09-24). The alert must name that, and where to look.
+  it('names all three reasons a gateway payment can still be pending, and where to check a 3-D Secure decline', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments, ...mailDeps });
+    const body = alerts.sent[0].body;
+    expect(body).toContain('the customer closed the gateway without paying');
+    expect(body).toContain('their bank declined the 3-D Secure check');
+    expect(body).toContain('PayHere does not notify for those');
+    expect(body).toContain(`check the PayHere dashboard’s declined list for order ${booking.reference}`);
+    expect(body).toContain('or the notify never arrived');
+    // The old wording claimed any decline would have produced a notify. It does not.
+    expect(body).not.toContain('any notify, paid or not');
+  });
+
   it('says so when checkout was never started (no gateway payment at all)', async () => {
     const { bookings } = await seed('payment_pending');
     const alerts = new FakeAlertAdapter();

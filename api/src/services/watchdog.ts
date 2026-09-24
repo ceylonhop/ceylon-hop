@@ -224,9 +224,11 @@ export async function runWatchdog(
 }
 
 // Everything the reader used to have to open three tables for (CH-V43ZU). The one fact
-// the gateway line leans on: EVERY verified PayHere notify — success, cancel, decline —
+// the gateway line leans on: every verified PayHere notify — success, cancel, decline —
 // moves a payment off 'pending' (paymentSettlementRepo), so a payment still pending means
-// PayHere has not called back at all, not that it called back with bad news.
+// PayHere has not called back at all. That is NOT proof nothing happened at the gateway:
+// PayHere sends no notify for a "3ds Authentication Failed" decline (confirmed in the merchant
+// dashboard for CH-Y5RXW and CH-V43ZU, 2026-09-24), so the line names that case and where to look.
 function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, recovery: string, opsBaseUrl: string): string {
   const minutes = Math.round((now.getTime() - Date.parse(b.createdAt)) / 60_000);
   const due = b.amountDueNow ?? b.total;
@@ -237,9 +239,15 @@ function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, reco
         ? ['Gateway: no gateway payment was ever created — the customer never reached PayHere (checkout was not started).']
         : [
             ...gateway.map((p) => `Gateway: ${p.provider} · ${p.status} · order ${p.orderId} · ${b.currency} ${(p.amount / 100).toFixed(2)}`),
-            ...(gateway.some((p) => p.status === 'pending')
-              ? ['PayHere has not called back for the pending payment at all (any notify, paid or not, would have moved it off pending): the customer closed the gateway without paying, or the notify never arrived.']
-              : []),
+            ...gateway
+              .filter((p) => p.status === 'pending')
+              .slice(0, 1)
+              .map(
+                (p) =>
+                  'PayHere has not called back for the pending payment. Either the customer closed the gateway without paying; ' +
+                  'or their bank declined the 3-D Secure check (PayHere does not notify for those — ' +
+                  `check the PayHere dashboard’s declined list for order ${p.orderId}); or the notify never arrived.`,
+              ),
           ];
   const link = bookingDeepLink(b.id, opsBaseUrl);
   return [
