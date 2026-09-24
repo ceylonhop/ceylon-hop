@@ -99,3 +99,25 @@ describe('code generation', () => {
     expect(makeCode('Ella', 'Mirissa', '4821')).toBe('EM-4821');
   });
 });
+
+// CH-T74DT: the phone the board takes is stored and dialled, so it carries the same rule as the
+// customer schema (domain/phone.ts) — + then 6–15 digits, punctuation ignored, stored as sent.
+describe('payment.phone is bounded on both input shapes', () => {
+  const payment = (phone: string) => ({ phone, address: '12 Galle Road', city: 'Colombo' });
+  const join = (phone: string) => JoinInput.safeParse({ payment: payment(phone) });
+  const create = (phone: string) =>
+    CreateListInput.safeParse({ from: 'Ella', to: 'Mirissa', date: '2026-08-08', slot: 'morning', payment: payment(phone) });
+
+  it('refuses the CH-T74DT number, a missing +, or letters', () => {
+    for (const bad of ['+94123134124123412312312312', '94771234567', '+94abc1234']) {
+      expect(join(bad).success).toBe(false);
+      expect(create(bad).success).toBe(false);
+    }
+  });
+
+  it('accepts a real number, spaced or not, and keeps it as typed', () => {
+    const r = join('+94 77 123 4567');
+    expect(r.success && r.data.payment?.phone).toBe('+94 77 123 4567');
+    expect(create('+94771234567').success).toBe(true);
+  });
+});
