@@ -108,6 +108,8 @@ export function rideListToOpsRow(
     customerUpdated: false,
     opsNotes: list.note,
     source: 'ride_board',
+    // A van row is a projection of many travellers, not one customer email.
+    isTest: false,
     board: {
       code: list.code,
       listStatus: list.status,

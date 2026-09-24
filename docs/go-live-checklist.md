@@ -98,6 +98,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
 - [ ] **Observability & alerting (M17) — BUILT + PARTLY ACTIVATED in prod 2026-07-05.** Code shipped 2026-07-03: throttled email alerts (30-min dedupe via `alert_log`), env-gated Sentry on the API, front-end error beacon → `/errors/client`, payment-webhook failure alerts, watchdog sweep, `/health/deep`, Resend bounce webhook, daily ops digest. Spec: [`superpowers/specs/2026-07-03-m17-observability-design.md`](./superpowers/specs/2026-07-03-m17-observability-design.md). **Launch activation steps:**
+  - [ ] set `TEAM_EMAILS` on Render (owner + team addresses, comma-separated) so test bookings are labelled — the ops queue shows a "test" pill and leaves them out of its counts, the daily digest leaves them out of its status counts (2026-09-24)
   - [x] set `ALERT_EMAIL` on Render — **DONE 2026-07-05** (alert emails currently send from a test sender until the `ceylonhop.com` domain is verified in Resend)
   - [x] create the free **Sentry** project → set `SENTRY_DSN` on Render — **DONE 2026-07-05** (verified via a real event; project `ceylonhop/env production`)
   - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
