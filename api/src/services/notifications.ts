@@ -680,7 +680,7 @@ export async function sendPaymentIncomplete(
   booking: Booking,
   email: EmailAdapter,
   links: { resume?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
   const first = esc(booking.input.customer.firstName);
   const due = money(booking.amountDueNow ?? booking.total, booking.currency);
   const wa = paymentTroubleWhatsApp(booking);
@@ -710,7 +710,9 @@ export async function sendPaymentIncomplete(
     '',
     `Tell us what happened on WhatsApp: ${wa.href}`,
   ]);
-  await email.send({
+  // Returns the adapter's outcome so the watchdog counts — and keeps the one-shot claim
+  // for — only a recovery email that actually left (same rule as sendBookingConfirmation).
+  return email.send({
     to: booking.input.customer.email,
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
     html,
