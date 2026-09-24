@@ -743,9 +743,12 @@ function invalidRequest(error: ZodError) {
   // the money is in, `failed` when the attempt reached a terminal refusal, `pending` while the
   // webhook has not landed yet — which is also, correctly, the answer before any attempt.
   //
-  // Deliberately returns TWO fields. The token authorises reading a settlement status, so that
+  // Deliberately returns THREE fields. The token authorises reading a settlement status, so that
   // is all it may read: no customer details, no itinerary, no amounts. The reference is included
   // because the page shows it and the customer already has it in their email and their link.
+  // `sandbox` is not booking data at all: it is this deployment's payment-gateway mode, which
+  // manage.html's purchase gate needs (a sandbox settlement must never become GA4 revenue) and
+  // which the return leg cannot see for itself — it never sees the checkout URL.
   r.get('/pay-return', async (c) => {
     const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
     if (!id) return c.json({ error: 'invalid_link' }, 401);
@@ -762,7 +765,7 @@ function invalidRequest(error: ZodError) {
         : 'pending';
     track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
       reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
-    return c.json({ status, reference: booking.reference }, 200);
+    return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the

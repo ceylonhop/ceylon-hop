@@ -170,20 +170,16 @@ describe('continueToCheckout hands the browser to PayHere', () => {
     expect(events).not.toContain('payment_dismissed');
   });
 
-  // manage.html's purchase gate reads which gateway it handed off to from this tab's storage (the
-  // return leg never sees the URL); a website hand-off must record it the same way, or a sandbox
-  // payment returning to a production host would be counted as revenue.
-  it('records a sandbox hand-off where manage.html’s purchase gate looks for it', async () => {
+  // manage.html's purchase gate used to read which gateway this tab handed off to from a private
+  // storage key booking.js wrote. The server's pay-return answer says it now (`sandbox`, from the
+  // payment adapter — manage-purchase-sandbox.test.js), so the website writes no such key.
+  it('writes no gateway-mode key for manage.html — the server reports the mode', async () => {
     const w = loadBooking();
     arm(w, 'https://sandbox.payhere.lk/pay/checkout');
     w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
     await flush(w);
-    expect(w.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBe('1');
-    const live = loadBooking();
-    arm(live, 'https://www.payhere.lk/pay/checkout');
-    live.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
-    await flush(live);
-    expect(live.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBe('0');
+    expect(w.__submitted).toHaveLength(1);
+    expect(w.sessionStorage.getItem('ch_manage_pay_v1:sandbox')).toBeNull();
   });
 
   // Review of #774, finding 3: the return URL no longer carries the manage token, so the website

@@ -147,17 +147,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   // Same gates as pay.html: `purchase` becomes revenue and GA4 cannot take it back, so a
   // sandbox checkout must never reach it. The return leg never sees the checkout URL, so WHICH
-  // gateway we handed off to is recorded at hand-off time; and it fires once per booking whatever
-  // the customer does with the back button.
+  // gateway took the money comes from our server's pay-return answer (`sandbox`, the payment
+  // adapter's mode) — only an explicit `false` counts, so an answer that doesn't say fails closed.
+  // And it fires once per booking whatever the customer does with the back button.
   var STORE = 'ch_manage_pay_v1';
-  function markSandbox(isSandbox){
-    try { sessionStorage.setItem(STORE + ':sandbox', isSandbox ? '1' : '0'); } catch (e) {}
-  }
-  function sandboxUsed(){
-    try { return sessionStorage.getItem(STORE + ':sandbox') === '1'; } catch (e) { return false; }
-  }
-  function trackPurchase(v){
-    if (sandboxUsed()) return;
+  function trackPurchase(v, sandbox){
+    if (sandbox !== false) return;
     if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
     var seen = STORE + ':purchased';
     try {
@@ -414,9 +409,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // whatever it returned rather than pretending on this page that money moved.
         if (!/payhere\.lk/.test(checkout.checkoutUrl)) { location.href = checkout.checkoutUrl; return; }
         if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
-        // Record WHICH gateway we are handing off to — the return leg never sees the URL, and a
-        // sandbox settlement reported as revenue is permanent in GA4.
-        markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
         // The last thing we know for certain: they left for the gateway. Everything after this
         // is what our own server tells us on the way back.
         track('payment_initiated', moneyOf(v));
@@ -502,7 +494,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if (x.status === 'paid') {
           stop();
           if (!t) return renderPaidMinimal(x.reference);
-          return loadView().then(function(v){ lastView = v; trackPurchase(v); render(v); })
+          return loadView().then(function(v){ lastView = v; trackPurchase(v, x.sandbox); render(v); })
             .catch(function(){ renderPaidMinimal(x.reference); });
         }
         // A refusal must never read as an endless "confirming".

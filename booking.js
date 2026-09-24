@@ -2602,10 +2602,8 @@ function simulatePayThenConfirm(booking){
 // on-page boarding pass used to.
 let payHandedOff=false;
 function redirectToPayHere(checkout, booking){
-  // manage.html's purchase gate never sees the gateway URL on the way back, so it reads WHICH
-  // gateway this tab handed off to from here — the same key its own hand-off writes. A sandbox
-  // settlement reported as revenue is permanent in GA4.
-  try{ sessionStorage.setItem('ch_manage_pay_v1:sandbox', /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) ? '1' : '0'); }catch(e){}
+  // (Which gateway took the money is NOT recorded here: manage.html's purchase gate reads it from
+  // our server's pay-return answer, `sandbox`.)
   // PayHere sends the customer back to their manage page with only the status-only `rt` in the
   // URL — the manage token is a bearer credential and never rides in a URL the gateway stores. So
   // hand it to manage.html through this tab's sessionStorage, under the key it reads
