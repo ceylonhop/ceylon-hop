@@ -977,11 +977,11 @@ function tripIndex(T, photos) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sri Lanka transfer routes — fixed-price private &amp; shared rides | Ceylon Hop</title>
-<meta name="description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
+<title>Sri Lanka shared taxi &amp; private transfer routes — fixed prices | Ceylon Hop</title>
+<meta name="description" content="Shared taxi seats and fixed-price private transfers on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
 <link rel="canonical" href="${url}">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Sri Lanka transfer routes — Ceylon Hop">
+<meta property="og:title" content="Sri Lanka shared taxi &amp; transfer routes — Ceylon Hop">
 <meta property="og:description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes.">
 <meta property="og:url" content="${url}">
 <meta property="og:site_name" content="Ceylon Hop">
@@ -1185,7 +1185,7 @@ ${header}
     <div class="wrap">
       <div class="hero-copy">
         <span class="eyebrow">Sri Lanka, door to door</span>
-        <h1>Sri Lanka transfer routes</h1>
+        <h1>Sri Lanka shared taxi &amp; transfer routes</h1>
         <p class="hero-sub">Fixed-price private transfers on the island's most-travelled roads — and a shared seat where we run one. Pick a route for the price, the distance and what the drive is like.</p>
         <ul class="chips">
           <li>${IX_ICON.pin}${dirs.length} routes</li>
