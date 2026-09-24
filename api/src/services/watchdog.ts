@@ -5,8 +5,25 @@ import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
 import { hasDeliverableAddress } from '../adapters/email';
+import type { AlertLogRepo } from '../db/alertLogRepo';
+import type { Booking } from '../db/bookingRepo';
+import type { Payment } from '../db/paymentRepo';
 import type { SendBudget } from './sendBudget';
-import { sendPaymentIncomplete, manageUrl } from './notifications';
+import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './notifications';
+import { bookingDeepLink } from './opsNotifications';
+
+// Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
+// the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
+// else in this repo knows the cron's schedule — the daily tick reads this row to find out
+// whether the cron is alive, and the digest shows it.
+export const WATCHDOG_TICK = { kind: 'watchdog_tick', key: 'last' } as const;
+// The cron is meant to fire every ~15 min; an hour of silence is four missed ticks.
+const WATCHDOG_STALE_MS = 60 * 60_000;
+
+export function agoText(now: Date, at: Date | null): string {
+  if (!at) return 'never';
+  return `${Math.round((now.getTime() - at.getTime()) / 60_000)} min ago (${at.toISOString()})`;
+}
 
 // M17 payments watchdog — the periodic sweep behind POST /admin/jobs/watchdog. Catches
 // the two silent money-path failures the inline webhook alerts can't see:
@@ -50,6 +67,11 @@ export async function runWatchdog(
     // are never capped: they are how a human finds out anything is wrong, so throttling
     // them would hide the very burst this budget exists to surface.
     budget?: SendBudget;
+    // Heartbeat ledger (see WATCHDOG_TICK). Optional so existing callers/tests keep working;
+    // without it the sweep leaves no footprint and the liveness check has nothing to read.
+    alertLog?: AlertLogRepo;
+    // Deep link in the stuck-pending alert. '' without OPS_BASE_URL, as everywhere else.
+    opsBaseUrl?: string;
   },
 ): Promise<{
   stuckPending: number;
@@ -57,7 +79,7 @@ export async function runWatchdog(
   recoveryEmails: number;
   stuckRefunds: number;
 }> {
-  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget } = deps;
+  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, alertLog, opsBaseUrl } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
@@ -81,33 +103,41 @@ export async function runWatchdog(
   }
   let recoveryEmails = 0;
   for (const b of stuck) {
+    // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
+    // sweep (the ops alert below fires regardless). Idempotent via notification_log.
+    // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
+    // a manual sweep. Every path that does not send hands the claim back.
+    // Runs BEFORE the alert so the alert can say what became of it (CH-V43ZU).
+    let recovery: string;
+    if (!(email && baseUrl && linkSecret)) {
+      recovery = 'not configured on this deployment';
+    } else if (!(await log.claim(b.id, 'payment_recovery'))) {
+      recovery = 'already sent (an earlier sweep, or one running right now)';
+    } else if (budget && !budget.tryClaim()) {
+      // Over the cap: the ops alert below still fires, so nothing is lost — only the
+      // customer email waits for the next run.
+      await log.release(b.id, 'payment_recovery');
+      budget.suppress('payment_recovery', b.reference);
+      recovery = 'held back by the burst cap — the next sweep retries';
+    } else {
+      try {
+        await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
+        recoveryEmails += 1;
+        recovery = 'sent just now';
+      } catch (err) {
+        await log.release(b.id, 'payment_recovery');
+        console.error(`payment-recovery email failed for ${b.reference}:`, err);
+        recovery = `FAILED to send (${err instanceof Error ? err.message : String(err)}) — the next sweep retries`;
+      }
+    }
+    const gateway = payments ? await payments.findByBookingId(b.id) : null;
     await alerts.send({
       severity: 'critical',
       kind: 'watchdog_stuck_pending',
       title: `Booking ${b.reference} stuck in payment_pending`,
-      body: `Booking ${b.reference} (${b.currency} ${(b.amountDueNow ?? b.total) / 100}) has been payment_pending since ${b.createdAt}. PayHere may have failed to notify, or the customer abandoned at the gateway.`,
+      body: stuckPendingBody(b, now, gateway, recovery, opsBaseUrl ?? ''),
       dedupeKey: b.id,
     });
-    // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
-    // sweep (the ops alert above already fired). Idempotent via notification_log.
-    // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
-    // a manual sweep. Every path that does not send hands the claim back.
-    if (email && baseUrl && linkSecret && (await log.claim(b.id, 'payment_recovery'))) {
-      // Over the cap: the ops alert above still fired, so nothing is lost — only the
-      // customer email waits for the next run.
-      if (budget && !budget.tryClaim()) {
-        await log.release(b.id, 'payment_recovery');
-        budget.suppress('payment_recovery', b.reference);
-        continue;
-      }
-      try {
-        await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
-        recoveryEmails += 1;
-      } catch (err) {
-        await log.release(b.id, 'payment_recovery');
-        console.error(`payment-recovery email failed for ${b.reference}:`, err);
-      }
-    }
   }
 
   const paid = await bookings.list({ status: 'paid' });
@@ -164,5 +194,63 @@ export async function runWatchdog(
     }
   }
 
+  // Footprint. Last, so a sweep that threw halfway leaves no heartbeat — a crashing cron is
+  // not a live one, and the liveness alert's wording covers both readings.
+  await alertLog?.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, now);
+
   return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
+}
+
+// Everything the reader used to have to open three tables for (CH-V43ZU). The one fact
+// the gateway line leans on: EVERY verified PayHere notify — success, cancel, decline —
+// moves a payment off 'pending' (paymentSettlementRepo), so a payment still pending means
+// PayHere has not called back at all, not that it called back with bad news.
+function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, recovery: string, opsBaseUrl: string): string {
+  const minutes = Math.round((now.getTime() - Date.parse(b.createdAt)) / 60_000);
+  const due = b.amountDueNow ?? b.total;
+  const gatewayLines =
+    gateway === null
+      ? ['Gateway: unknown — no payment ledger wired into this sweep']
+      : gateway.length === 0
+        ? ['Gateway: no gateway payment was ever created — the customer never reached PayHere (checkout was not started).']
+        : [
+            ...gateway.map((p) => `Gateway: ${p.provider} · ${p.status} · order ${p.orderId} · ${b.currency} ${(p.amount / 100).toFixed(2)}`),
+            ...(gateway.some((p) => p.status === 'pending')
+              ? ['PayHere has not called back for the pending payment at all (any notify, paid or not, would have moved it off pending): the customer closed the gateway without paying, or the notify never arrived.']
+              : []),
+          ];
+  const link = bookingDeepLink(b.id, opsBaseUrl);
+  return [
+    `Booking ${b.reference} (${b.currency} ${(due / 100).toFixed(2)}) has been payment_pending for ${minutes} min (since ${b.createdAt}).`,
+    `Route: ${routeText(b)} · travels ${travelWhenText(b)}`,
+    `Channel: ${b.channel}`,
+    ...gatewayLines,
+    `Recovery email: ${recovery}`,
+    ...(link ? [`Open: ${link}`] : []),
+  ].join('\n');
+}
+
+// The monitor, monitored. Called from the daily notifications tick — the only other
+// scheduled thing — because the watchdog cron lives outside this repo and its silence is
+// otherwise indistinguishable from a quiet day.
+export async function checkWatchdogLiveness(
+  now: Date,
+  deps: { alertLog: AlertLogRepo; alerts: AlertAdapter; maxAgeMs?: number },
+): Promise<{ stale: boolean; lastRunAt: Date | null }> {
+  const lastRunAt = await deps.alertLog.lastSentAt(WATCHDOG_TICK.kind, WATCHDOG_TICK.key);
+  const stale = !lastRunAt || now.getTime() - lastRunAt.getTime() > (deps.maxAgeMs ?? WATCHDOG_STALE_MS);
+  if (stale) {
+    await deps.alerts.send({
+      severity: 'warning',
+      kind: 'watchdog_stale',
+      title: 'Payments watchdog is not running',
+      body:
+        `The payments watchdog (POST /admin/jobs/watchdog) last completed ${agoText(now, lastRunAt)}; it should run every ~15 min. ` +
+        `While it is down, abandoned checkouts, paid-but-unconfirmed bookings and stuck refunds go unseen.\n\n` +
+        `Either the external cron is not calling it, or every call is failing before the sweep completes — ` +
+        `check the cron service's run history and the API logs for "watchdog_tick".`,
+      dedupeKey: 'watchdog',
+    });
+  }
+  return { stale, lastRunAt };
 }
