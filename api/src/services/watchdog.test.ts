@@ -331,6 +331,48 @@ describe('watchdog — the stuck-pending alert says what it knows', () => {
     expect(alerts.sent[0].body).toContain('Recovery email: not configured');
   });
 
+  // A suppressed send (kill switch / allowlist) is not a delivery: counting it and keeping
+  // its one-shot claim would tell ops the customer was chased when nobody was, and burn the
+  // only recovery email that booking will ever get.
+  it('a suppressed recovery email is not counted, hands back its claim, and the alert says why', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const email = { send: async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const }) };
+    const res = await runWatchdog(later(31), { bookings, log, alerts, payments, ...mailDeps, email });
+    expect(res.recoveryEmails).toBe(0);
+    expect(await log.wasSent(booking.id, 'payment_recovery')).toBe(false);
+    expect(alerts.sent[0].body).toContain('Recovery email: NOT delivered (suppressed_allowlist');
+  });
+
+  it('a delivered recovery email is counted and keeps its claim', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), { bookings, log, alerts, payments, ...mailDeps, email: new FakeEmailAdapter() });
+    expect(res.recoveryEmails).toBe(1);
+    expect(await log.wasSent(booking.id, 'payment_recovery')).toBe(true);
+  });
+
+  // No address is a fact about the customer, not a failure: nothing to count, nothing to
+  // retry. Checked before claiming so no ledger row asserts a send that never happened.
+  it('a customer with no email address gets no recovery attempt, now or on later sweeps', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, input: { ...sample.input, customer: { ...sample.input.customer, email: '' } } });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    let attempts = 0;
+    const email = { send: async () => { attempts += 1; return { delivered: false as const, reason: 'no_address' as const }; } };
+    const deps = { bookings, log, alerts, ...mailDeps, email };
+    const res = await runWatchdog(later(31), deps);
+    await runWatchdog(later(46), deps);
+    expect(res.recoveryEmails).toBe(0);
+    expect(attempts).toBe(0);
+    expect(await log.wasSent(b.id, 'payment_recovery')).toBe(false);
+    expect(alerts.sent[0].body).toContain('Recovery email: none — the customer has no email address');
+  });
+
   it('reports a recovery email that went out on an earlier sweep', async () => {
     const { bookings, booking, payments } = await seedWithGatewayPayment();
     const log = new InMemoryNotificationLogRepo();
