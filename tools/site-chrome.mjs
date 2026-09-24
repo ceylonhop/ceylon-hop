@@ -12,12 +12,15 @@ const WA = 'https://wa.me/94779669662';
 const WA_DISPLAY = '+94 77 966 9662';
 const YEAR = 2026;
 
+// The five links Google should show as the homepage's sitelinks — owner decision 2026-09-22.
+// The pages a customer buys from, first; the blog and Why us live in the footer instead, so they
+// are still crawled without competing for a slot. web-tests/unit/nav-links-parity.test.js pins
+// the set and keeps the three copies (site.js, here, board.html) identical.
 const NAVLINKS = [
-  ['Plan a trip', 'plan.html'],
+  ['Routes & prices', 'trip/'],
   ['Share a ride', 'board.html'],
+  ['Plan a trip', 'plan.html'],
   ['Tours', 'tours.html'],
-  ['Travel Guide', 'blog.html'],
-  ['Why us', 'why.html'],
   ['About', 'about.html'],
 ];
 
@@ -141,10 +144,13 @@ ${analyticsSnippet}
 ${errorBeaconSnippet}`;
 }
 
-export function renderHeader(p, active = '') {
+// `onDark` mirrors mountHeader's second argument: pages with a dark hero (about, blog, why) paint
+// the header white until scrolled. The baked copy must carry it too, or the header flashes ink
+// on a dark hero for the tick before site.js replaces it.
+export function renderHeader(p, active = '', onDark = false) {
   const links = NAVLINKS.map(([t, h]) => `<a href="${p}${h}"${active === h ? ' class="active"' : ''}>${t}</a>`).join('');
   const mlinks = NAVLINKS.map(([t, h]) => `<a href="${p}${h}">${t}</a>`).join('');
-  return `<header class="nav" data-nav>
+  return `<header class="nav${onDark ? ' on-dark' : ''}" data-nav>
   <div class="wrap nav-inner">
     <a href="${p}index.html" class="brand">${cmark(34, p)}<span>Ceylon Hop</span></a>
     <nav class="nav-links">${links}</nav>

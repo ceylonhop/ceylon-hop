@@ -18,7 +18,7 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=2ed715a073">
+<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
 <!-- Engine prices for routes that aren't in the baked catalogue come from here (search.js).
      `?api=off` disables it, and `?api=<origin>` points it elsewhere — same contract as
      booking.html, so a local API can be driven from either page the same way. -->
@@ -145,6 +145,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .veh{display:grid;gap:12px;margin-bottom:8px}
   .veh-row{display:flex;align-items:center;gap:14px;border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;transition:.15s}
   .veh-row:hover{border-color:var(--accent)}
+  /* the whole row / scheduled shared card follows its button (search.js) */
+  .veh-row:has(a.btn),#shared-option:not(.is-offday){cursor:pointer}
   .veh-row .v-ico{width:42px;height:42px;border-radius:10px;background:var(--cream-deep);display:grid;place-items:center;flex:none;color:var(--ink)}
   .veh-row .v-ico svg{width:24px;height:24px}
   /* The dot rides inside the cabin on these two — it is what separates a private vehicle from
@@ -285,7 +287,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </style>
 </head>
 <body data-page="search">
-<div data-header></div>
+<div data-header><header class="nav" data-nav>
+  <div class="wrap nav-inner">
+    <a href="index.html" class="brand"><img class="cmark" src="img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
+    <nav class="nav-links"><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></nav>
+    <div class="nav-cta">
+      <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" data-mobile><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></div></div>
 <div data-breadcrumbs></div>
 
 <section class="section" style="padding-top:clamp(34px,4vw,52px)">
@@ -347,9 +358,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
   </div>
 </footer></div>
-<script src="site.js?v=15ea8710a4"></script>
+<script src="site.js?v=4d9960d50b"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=0ef73c634c"></script>
+<script src="transfers-data.js?v=a00d86c790"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <!-- engine prices for routes that aren't in the baked table (see search.js) -->
 <script src="ch-pricing.js?v=74a30546ee"></script>
@@ -357,6 +368,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
 <script src="shared-day.js?v=cbcec2fb62"></script>
-<script src="search.js?v=3fc898f9ea"></script>
+<script src="search.js?v=71197df02e"></script>
 </body>
 </html>

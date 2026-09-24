@@ -4,6 +4,7 @@ import type { EmailAdapter } from '../adapters/email';
 import { committedSeats, isSeedMember, popularTime, type Slot, type RideMember } from '../domain/rideList';
 import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideCalledOffRefundDue } from './rideBoardEmails';
 import type { AlertAdapter } from '../adapters/alerts';
+import { teamRideLockedEmail } from './opsNotifications';
 import { logEvent } from '../observability/events';
 import type { SendBudget } from './sendBudget';
 
@@ -25,6 +26,8 @@ export interface RideBoardCutoffDeps {
   // Optional: without it a call-off that already charged cards is silent apart from a log
   // line, which is how money gets owed back and nobody finds out.
   alerts?: AlertAdapter;
+  // Deep link in the team's "Paid: Locked in" mail. Unset → the mail says where to look.
+  opsBaseUrl?: string;
   currency?: string;
   // Blast-radius cap (R1) — here it guards MONEY as well as mail, since this sweep charges
   // cards. A list is all-or-nothing: rather than charge half a van and stop at the cap, the
@@ -145,6 +148,23 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       });
       for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
       for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
+      // The team's copy (owner, 2026-09-23): until this, a van locking in and cards being charged
+      // reached only the travellers. Best-effort and after their emails; dedupeKey is the code,
+      // and a confirmed list never comes due again, so this sends once.
+      if (chargedOk.length > 0 && deps.alerts) {
+        try {
+          const unknown = indeterminate.map((i) => i.member);
+          const mail = teamRideLockedEmail({ list, time, charged: chargedOk, declined: failed, unknown, seedSeats, currency }, deps.opsBaseUrl ?? '');
+          await deps.alerts.send({
+            severity: 'info',
+            kind: 'ride_board_locked',
+            title: mail.subject,
+            body: `Ride ${list.code} locked in at ${time}: ${chargedOk.length} traveller(s) charged, ${failed.length} declined.`,
+            email: mail,
+            dedupeKey: list.code,
+          });
+        } catch { /* the travellers' emails already went; this is the team's copy */ }
+      }
       // A seeded list that a real traveller is now confirmed on is a van we have promised to
       // run — and the board's head-count for it is mostly placeholders. Nothing else tells
       // ops that; without this the first they hear of it is a traveller waiting at a pickup.

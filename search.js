@@ -40,6 +40,8 @@ const ICONS = {
   flexi:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>',
   stops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg>',
+  // The same calendar-refresh mark as the page's own "Free cancellation" reassurance row.
+  cancel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg>',
   // img/icons/line/{closes-soon,live-count}.svg — the shared service's departure and its
   // seat availability.
   departs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.6 1.8"/><path d="M9.5 3h5"/><path d="M17.5 5.5l1.5 1.5" stroke-dasharray="2 2.6"/><circle class="wp" cx="12" cy="13" r="1.3"/></svg>',
@@ -312,6 +314,7 @@ function privateCardHtml(pending) {
       <span class="chip">${ICONS.flexi} Pick your own time</span>
       <span class="chip">${ICONS.stops} Stops on request</span>
       <span class="chip">${ICONS.lock} Fixed price, no meter</span>
+      <span class="chip">${ICONS.cancel} Free cancellation up to 24h before</span>
     </div>
   </article>`;
 }
@@ -450,6 +453,7 @@ if (shared) {
       <span class="chip">${ICONS.ck} Air-conditioned</span>
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
       <span class="chip">${ICONS.ck} Meet other travellers</span>
+      <span class="chip">${ICONS.cancel} Free cancellation up to 24h before</span>
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
     ${runs === null ? `<a class="sb-other" href="${boardStart(false)}">Other days? Start a ride ${ICON.arrow}</a>` : ''}
@@ -513,9 +517,42 @@ function renderResults(state) {
   // browser's own jump to the hash finds nothing. Do it once the card exists.
   if (location.hash === '#shared-option' && !renderResults.jumped) {
     renderResults.jumped = true;
-    const el = document.getElementById('shared-option');
-    if (el) el.scrollIntoView({ block: 'start' });
+    jumpToShared();
   }
+}
+
+/* Land on the shared card — and stay there while the page finishes settling.
+
+   The card is drawn before the rest of the page has stopped growing: the private card above it
+   swaps its pricing skeleton for the priced one (+26px) and the load-time reflow above that adds
+   the rest, so between the jump and the last reflow the card slides ~67px further down. A SMOOTH
+   scroll fixes its target on its first frame, so a reflow that lands mid-flight leaves the scroll
+   short by exactly that much — and the card is 823px tall in an 812px phone viewport, so those
+   67px are the whole margin. "Book a seat" ends up just under the fold, which is the one thing
+   this landing exists to prevent. (Seen on a fast machine 3 runs in 10; a slow phone is worse.)
+
+   So: land instantly — which is what the browser's own hash jump, the thing this stands in for,
+   would have done — and re-assert the position for as long as the page keeps moving under it.
+   The moment the traveller scrolls for themselves we let go and never pull them back. */
+function jumpToShared() {
+  const el = document.getElementById('shared-option');
+  if (!el) return;
+  let want = -1;   // where we last asked the card's top to sit, in document coordinates
+  let left = -1;   // where that actually left the page — scrollTo clamps at the bottom
+  const until = Date.now() + 1200;
+  const hold = () => {
+    if (left >= 0 && Math.abs(window.scrollY - left) > 2) return;   // they took over: let go
+    const top = Math.round(el.getBoundingClientRect().top + window.scrollY);
+    if (top !== want) {
+      want = top;
+      // 'instant' and not 'auto': site.css sets scroll-behavior:smooth on the root, and an
+      // animated correction would be a moving target all over again.
+      window.scrollTo({ top: top, behavior: 'instant' });
+      left = Math.round(window.scrollY);
+    }
+    if (Date.now() < until) requestAnimationFrame(hold);
+  };
+  hold();
 }
 
 /* Someone may already have started a ride for this route and date. The board's public dupe
@@ -580,7 +617,7 @@ function showAlreadyGoing() {
     const need = Math.max(0, (L.minSeats || 3) - (L.committed || 0));
     wrap.innerHTML = `<div class="sb-going"><b>${L.committed} of ${L.minSeats} going ${dateText}</b>
       <small>${need > 0 ? `needs ${need} more` : 'enough to run'} · $0 until it's confirmed</small></div>
-      <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Hop on ${ICON.arrow}</a>`;
+      <a class="btn btn-primary o-cta sb-hop" href="board.html#/${encodeURIComponent(L.code)}">Join ${ICON.arrow}</a>`;
   };
   if (goingList !== undefined) { apply(); return; }
   const api = window.CEYLON_HOP_API;
@@ -592,6 +629,30 @@ function showAlreadyGoing() {
     .catch(() => {});
 }
 renderResults(askEngine ? 'pending' : 'priced');
+
+/* People treat a result card as the button. Clarity (21–23 Sep 2026): the most dead-clicked
+   text on the site was the shared card's badge, price and description, and the private
+   card's vehicle rows. So a click on the scheduled shared card follows its "Book a seat", and
+   a click on a priced vehicle row follows that row's Select — by clicking the real link, so
+   select_item still fires. The private card as a whole stays inert (two vehicles, no single
+   meaning), and so does an off-day shared card (several ways forward). A still-pricing row has
+   no link yet, and a drag to select text is not a click. Delegated: #results is redrawn. */
+(function () {
+  const box = document.getElementById('results');
+  if (!box) return;
+  box.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!t || !t.closest || e.defaultPrevented || e.button !== 0) return;
+    if (t.closest('a, button, input, select, textarea, label')) return;
+    const sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).trim()) return;
+    const row = t.closest('.opt-private .veh-row');
+    const card = row ? null : t.closest('#shared-option:not(.is-offday)');
+    const link = row ? row.querySelector('a.btn')
+      : card ? card.querySelector('a.btn-primary.o-cta') : null;
+    if (link) link.click();
+  });
+})();
 
 // ---- funnel: search + results view (Phase 0 analytics) ----
 // Called once prices exist. An engine route reports after its estimate lands, so view_item_list

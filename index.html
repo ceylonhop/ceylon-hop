@@ -17,7 +17,7 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=2ed715a073">
+<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -525,7 +525,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </style>
 </head>
 <body data-page="home">
-<div data-header></div>
+<div data-header><header class="nav" data-nav>
+  <div class="wrap nav-inner">
+    <a href="index.html" class="brand"><img class="cmark" src="img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
+    <nav class="nav-links"><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></nav>
+    <div class="nav-cta">
+      <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+<div class="mobile-menu" data-mobile><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></div></div>
 
 <!-- HERO -->
 <section class="hero hero-pc" id="hero-sec" data-screen-label="Home hero">
@@ -553,19 +562,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
            are the same…"). goBook() validates both fields and the same-place case itself, and
            marks the offending field, so nothing is lost by turning the native pass off. The
            inputs keep `required` for semantics and assistive tech. -->
-      <form class="booker mode-single" id="form-go" novalidate onsubmit="return goBook(event)">
+      <!-- goBook is assigned at the END of this page's main script, so until that has run — or if
+           anything above it threw — calling it threw "goBook is not defined" and, with no action,
+           the page reloaded and the search was lost (Clarity, 21–22 Sep 2026). Without goBook the
+           form now falls back to a plain GET to search.html, which prices places by name. -->
+      <form class="booker mode-single" id="form-go" action="search.html" method="get" novalidate onsubmit="return window.goBook ? goBook(event) : true">
         <div class="bk-tabs" role="tablist" aria-label="Booking type">
           <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
           <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
         </div>
         <div class="od-group full" id="od-group">
           <div class="field pickup-field place-field"><label for="q-from">Pick-up</label>
-            <input id="q-from" required placeholder="Where from?"></div>
+            <input id="q-from" name="from" required placeholder="Where from?"></div>
           <button type="button" class="swap" id="swap" aria-label="Swap pick-up and drop-off" title="Swap">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
           </button>
           <div class="field dropoff-field place-field"><label for="q-to" id="q-to-label">Drop-off</label>
-            <input id="q-to" required placeholder="Where to?"></div>
+            <input id="q-to" name="to" required placeholder="Where to?"></div>
           <div id="mid-stops"></div>
         </div>
         <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> <span id="add-stop-label">Add a stop</span></button>
@@ -725,10 +738,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
   </div>
 </footer></div>
-<script src="site.js?v=15ea8710a4"></script>
+<script src="site.js?v=4d9960d50b"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=4273085929"></script>
-<script src="transfers-data.js?v=0ef73c634c"></script>
+<script src="transfers-data.js?v=a00d86c790"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="image-slot.js?v=f20592da50"></script>

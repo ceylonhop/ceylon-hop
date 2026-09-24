@@ -21,7 +21,7 @@
 <meta property="og:url" content="https://ceylonhop.com/booking.html">
 <meta property="og:title" content="Book your hop — Ceylon Hop">
 <meta property="og:description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, confirmation by email after payment and a Pro Hopper driver.">
-<link rel="stylesheet" href="site.css?v=2ed715a073">
+<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -309,6 +309,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .svc.disabled:hover,.svc:disabled:hover{border-color:var(--line)}
   /* Inactive but still pressable: the only thing missing is dates, and pressing goes to collect
      them. Reads as unavailable, invites the press that fixes it. */
+  /* inside the notice window the card stays pressable — pressing it opens the explainer below */
+  .svc.too-soon{cursor:pointer}
+  /* The notice-window explainer: information about a website rule, not an error the traveller
+     made — so calm teal, no red, and it only appears once they reach for the chauffeur card. */
+  .cx-note{margin:-6px 0 18px;padding:14px 16px;border-radius:14px;background:var(--pc-teal);font-size:.9rem;color:var(--ink-soft);line-height:1.45}
+  .cx-note[hidden]{display:none}
+  .cx-note .cx-h{display:flex;align-items:center;gap:.5rem;font-weight:700;color:var(--accent-deep)}
+  .cx-note .cx-h svg{width:18px;height:18px;flex:none}
+  .cx-note p{margin:6px 0 0}
+  .cx-note p.cx-alt a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
+  .cx-note .cx-btn{margin-top:12px;background:none;color:var(--accent-deep);border:1.5px solid var(--accent-deep);border-radius:999px;padding:.5rem 1rem;font:inherit;font-weight:700;cursor:pointer}
+  .cx-note .cx-btn:hover{background:var(--accent-deep);color:#fff}
   .svc.needs-dates{cursor:pointer}
   .svc.needs-dates:hover{border-color:var(--accent);opacity:.78}
   .svc.needs-dates .svc-tag{text-decoration:underline;text-underline-offset:2px}
@@ -318,6 +330,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .svc b{display:block;font-size:1rem}
   .svc small{display:block;color:var(--ink-soft);font-size:.82rem;margin-top:3px;line-height:1.4}
   .svc .svc-tag{display:inline-block;margin-top:auto;padding-top:10px;font-size:.74rem;font-weight:700;color:var(--accent-deep)}
+  /* each service's free-cancellation window, stated where the choice is made (terms.html §7) */
+  .svc .svc-cancel{display:block;margin-top:8px;font-size:.78rem;font-weight:600;color:var(--ink-soft)}
+  .svc .svc-cancel+.svc-tag{padding-top:6px}
+  /* Pay step: the refund policy in full, collapsed under its one-line headline */
+  .pay-pol{margin:0 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--pc-teal);font-size:.88rem}
+  .pay-pol summary{cursor:pointer;font-weight:700;color:var(--accent-deep)}
+  .pay-pol ul{margin:8px 0 0;padding-left:18px;color:var(--ink-soft);line-height:1.5}
+  .pay-pol a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
 
   /* itinerary route summary (trip mode) */
   .trip-route{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:20px;background:var(--white)}
@@ -768,15 +788,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg></span>
           <b>I just want pick-up &amp; drop-off</b>
           <small>A private car &amp; driver moves you from each stop to the next, door to door. You don&rsquo;t keep the car in between — it&rsquo;s a fresh transfer each leg.</small>
+          <span class="svc-cancel">Free cancellation up to 24h before</span>
           <span class="svc-tag" id="svc-private-tag"></span>
         </button>
         <button type="button" class="svc" data-svc="chauffeur" onclick="pickSvc('chauffeur')">
           <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.6 12h6.2M14.2 12h6.2M12 14.2v6.2"/><circle class="wp" cx="12" cy="12" r="2.2"/></svg></span>
           <b>Keep the car &amp; driver the whole trip</b>
           <small>Your own car &amp; driver-guide stays with you start to finish — same friendly face every day, flexible stops and local tips along the way.</small>
+          <span class="svc-cancel">Free cancellation up to 10 days before</span>
           <span class="svc-tag" id="svc-chauffeur-tag"></span>
         </button>
       </div>
+      <!-- chauffeur notice-window explainer: opens beside the card only when it's pressed (filled by render) -->
+      <div class="cx-note" id="chauffeur-notice" role="status" hidden></div>
 
       <!-- itinerary route (multi-day trips only) -->
       <div class="trip-route" id="trip-route" style="display:none"></div>
@@ -939,6 +963,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </div>
       </div>
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
+      <!-- the refund policy in full for the service chosen (filled by booking.js payPolicyHtml) -->
+      <details class="pay-pol" id="pay-pol"></details>
       <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a> and confirm my travel details are correct.</span></label>
       <div class="concierge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5a2 2 0 0 1-2 2H7.5l-4 3.5V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><circle cx="8.5" cy="10" r=".4"/><circle cx="15.5" cy="10" r=".4"/><circle class="wp" cx="12" cy="10" r="1.3"/></svg>
@@ -1068,10 +1094,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
 </div>
 
-<script src="site.js?v=15ea8710a4"></script>
+<script src="site.js?v=4d9960d50b"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=0ef73c634c"></script>
+<script src="transfers-data.js?v=a00d86c790"></script>
 <!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
      it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
@@ -1081,6 +1107,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=3daed01ac4"></script>
+<script src="booking.js?v=32bfcf3832"></script>
 </body>
 </html>

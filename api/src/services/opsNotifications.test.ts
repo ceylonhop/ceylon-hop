@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, type AssignedQuote } from './opsNotifications';
+import { sampleBooking } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
   id: 'q1',
@@ -153,5 +154,85 @@ describe('sendRideSeatHeld', () => {
     expect(msg.html).toContain('&lt;b&gt;Léa&lt;/b&gt;');
     expect(msg.html).not.toContain('?booking=board:');
     expect(msg.html).toMatch(/ops dashboard/i);
+  });
+});
+
+// ── Team "Paid:" email (owner, 2026-09-23) ─────────────────────────────────
+// The paid mail used to be a monospace alert dump with no vehicle and no head-count. The owner
+// forwards it from Gmail on the "Paid:" subject prefix, so that prefix is load-bearing.
+describe('teamPaidEmail', () => {
+  it('a transfer: vehicle + passengers in the subject and the body', () => {
+    const m = teamPaidEmail(sampleBooking('single'), 'https://ops.example');
+    expect(m.subject.startsWith('Paid: ')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('AC car · 2 pax');
+    expect(m.subject).toContain('LKR 18500.00');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('AC car');
+      expect(part).toContain('Passengers');
+      expect(part).toContain('2 adults');
+      expect(part).toContain('Priya Fernando');
+      expect(part).toContain('+94771234567');
+      expect(part).toContain('CH-7QK2P');
+      expect(part).toContain('Sightseeing stops');
+    }
+  });
+
+  it('a chauffeur trip: vehicle, head-count and days', () => {
+    const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
+    expect(m.subject.startsWith('Paid: ')).toBe(true);
+    expect(m.subject).toContain('AC van · 3 pax');
+    expect(m.subject).toContain('Colombo Airport → … → Ella');
+    expect(m.html).toContain('Chauffeur-guide');
+    expect(m.html).toContain('7 days');
+  });
+
+  it('a shared seat: seats instead of a vehicle', () => {
+    const m = teamPaidEmail(sampleBooking('shared'), 'https://ops.example');
+    expect(m.subject.startsWith('Paid: ')).toBe(true);
+    expect(m.subject).toContain('2 seats');
+    expect(m.subject).not.toContain('AC ');
+    expect(m.html).toContain('Seats');
+    expect(m.html).not.toContain('>Vehicle<');
+  });
+
+  it('a deposit says what landed and what is still owed', () => {
+    const b = { ...sampleBooking('single'), amountDueNow: 185_000 };
+    const m = teamPaidEmail(b, '');
+    expect(m.subject).toContain('LKR 1850.00');
+    expect(m.text).toContain('Balance due');
+    expect(m.text).toContain('LKR 16650.00');
+  });
+
+  it('links straight to the booking sheet, or says where to look without a base URL', () => {
+    expect(teamPaidEmail(sampleBooking('single'), 'https://ops.example/').html).toContain('https://ops.example/ops?booking=sample-id');
+    const bare = teamPaidEmail(sampleBooking('single'), '');
+    expect(bare.html).not.toContain('href=');
+    expect(bare.text).toContain('Bookings');
+  });
+
+  it('escapes what the customer typed', () => {
+    const b = sampleBooking('single');
+    const evil = { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<img src=x>' } } } as typeof b;
+    expect(teamPaidEmail(evil, '').html).not.toContain('<img src=x>');
+  });
+});
+
+describe('teamCancelledEmail / teamRefundedEmail', () => {
+  it('a paid shared seat: seats released, refund still owed, never a "Paid:" subject', () => {
+    const m = teamCancelledEmail(sampleBooking('shared'), { by: 'r@x.com', reason: 'Duplicate', statusBefore: 'paid', refundedCents: 0 }, '');
+    expect(m.subject.startsWith('Cancelled: ')).toBe(true);
+    expect(m.subject).toContain('2 seats released');
+    expect(m.text).toContain('Not refunded yet');
+    expect(m.text).toContain('back on sale');
+  });
+
+  it('a full refund reads as full, and says how it was made', () => {
+    const b = sampleBooking('single');
+    const m = teamRefundedEmail(b, { amountCents: b.total, currency: b.currency, full: true, by: 'f@x.com', reason: 'Sick', gatewayRef: 'R1', viaApi: true }, '');
+    expect(m.subject.startsWith('Refunded: ')).toBe(true);
+    expect(m.subject).not.toContain('partial');
+    expect(m.text).toContain('(full)');
+    expect(m.text).toContain('PayHere (automatic)');
   });
 });

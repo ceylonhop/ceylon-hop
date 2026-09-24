@@ -408,7 +408,7 @@ function routePage(T, content, from, to, forward, photos) {
   const highlights = (!forward && c.highlightsBack) ? c.highlightsBack : c.highlights;
   const estimate = routeEstimate(q);
   const url = `${ORIGIN}/trip/${slug(from, to)}/`;
-  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2 });
+  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2, active: 'trip/' });
   const p = '../../';
 
   // Private-only routes must never promise a seat in the SERP, so the shared half is added ONLY
@@ -959,7 +959,7 @@ function faresForm(T, p) {
 }
 
 function tripIndex(T, photos) {
-  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 1 });
+  const { header, footer, headAssets, bootScript } = renderChrome({ depth: 1, active: 'trip/' });
   const p = '../';
   const dirs = allDirections();
   for (const d of dirs) {
@@ -977,11 +977,11 @@ function tripIndex(T, photos) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sri Lanka transfer routes — fixed-price private &amp; shared rides | Ceylon Hop</title>
-<meta name="description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
+<title>Sri Lanka shared taxi &amp; private transfer routes — fixed prices | Ceylon Hop</title>
+<meta name="description" content="Shared taxi seats and fixed-price private transfers on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
 <link rel="canonical" href="${url}">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Sri Lanka transfer routes — Ceylon Hop">
+<meta property="og:title" content="Sri Lanka shared taxi &amp; transfer routes — Ceylon Hop">
 <meta property="og:description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes.">
 <meta property="og:url" content="${url}">
 <meta property="og:site_name" content="Ceylon Hop">
@@ -1185,7 +1185,7 @@ ${header}
     <div class="wrap">
       <div class="hero-copy">
         <span class="eyebrow">Sri Lanka, door to door</span>
-        <h1>Sri Lanka transfer routes</h1>
+        <h1>Sri Lanka shared taxi &amp; transfer routes</h1>
         <p class="hero-sub">Fixed-price private transfers on the island's most-travelled roads — and a shared seat where we run one. Pick a route for the price, the distance and what the drive is like.</p>
         <ul class="chips">
           <li>${IX_ICON.pin}${dirs.length} routes</li>
@@ -1232,6 +1232,12 @@ ${header}
 </main>
 ${footer}
 ${bootScript}
+<!-- The hero form's place picker is site.js's shared attachLocalPlaceAutocomplete (the one the
+     home hero uses), fed by transfers-data.js. trip-index.js wires it; without these files the
+     form keeps its datalist. No Maps key on this page yet, so the menu offers catalogue places
+     only — anything else is still typed and priced by search.html's engine path. -->
+<script src="${p}${assetV('transfers-data.js')}"></script>
+<script src="${p}${assetV('site.js')}"></script>
 <script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('trip-index.js')}"></script>
 </body>
@@ -1242,7 +1248,7 @@ ${bootScript}
 function sitemap(extraPaths = []) {
   const urls = [`${ORIGIN}/`, `${ORIGIN}/trip/`];
   for (const [a, b] of BASE_PAIRS) { urls.push(`${ORIGIN}/trip/${slug(a, b)}/`); urls.push(`${ORIGIN}/trip/${slug(b, a)}/`); }
-  for (const f of ['about.html', 'why.html', 'plan.html', 'tours.html', 'blog.html', ...extraPaths]) urls.push(`${ORIGIN}/${f}`);
+  for (const f of ['about.html', 'why.html', 'plan.html', 'board.html', 'tours.html', 'blog.html', ...extraPaths]) urls.push(`${ORIGIN}/${f}`);
   const body = urls.map(u => `  <url><loc>${u}</loc></url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
