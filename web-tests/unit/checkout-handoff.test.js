@@ -61,6 +61,12 @@ describe('chTellUsHref', () => {
     expect(decoded(w.chTellUsHref(null, 'failed'))).toBe('Hi Ceylon Hop, my payment didn\'t go through. What I saw: ');
   });
 
+  it("'contact' is a neutral question naming the booking — nothing failed", () => {
+    const w = load();
+    expect(decoded(w.chTellUsHref('CH-HAFDZ', 'contact'))).toBe('Hi Ceylon Hop, a question about booking CH-HAFDZ: ');
+    expect(decoded(w.chTellUsHref(null, 'contact'))).toBe('Hi Ceylon Hop, a question about my booking: ');
+  });
+
   // The payment-failure EMAILS carry the other copy of this text. Read as source: the API is
   // TypeScript and this suite has no loader for it.
   it('matches the payment-failure emails’ copy in api/src/services/notifications.ts', () => {

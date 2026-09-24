@@ -36,7 +36,11 @@ window.chSubmitToGateway = function (checkout) {
 //   'failed'  — a payment that didn't work (or may not have). The OTHER copy of this text is
 //               api/src/services/notifications.ts paymentTroubleWhatsApp(), in the payment-failure
 //               emails; web-tests/unit/checkout-handoff.test.js keeps the two identical.
+//   'contact' — a neutral question, for states where nothing failed (already paid, awaiting a
+//               hand price, no longer payable): "my payment didn't go through" would be untrue.
 window.chTellUsHref = function (reference, kind) {
-  var text = 'Hi Ceylon Hop, my payment' + (reference ? ' for booking ' + reference : '') + ' didn\'t go through. What I saw: ';
+  var text = kind === 'contact'
+    ? 'Hi Ceylon Hop, a question about ' + (reference ? 'booking ' + reference : 'my booking') + ': '
+    : 'Hi Ceylon Hop, my payment' + (reference ? ' for booking ' + reference : '') + ' didn\'t go through. What I saw: ';
   return 'https://wa.me/94779669662?text=' + encodeURIComponent(text);
 };

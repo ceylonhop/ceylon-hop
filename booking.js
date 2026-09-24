@@ -2493,13 +2493,13 @@ function checkoutRefusal(body){
   if(err==='awaiting_price'){
     return ['error', body.message
       || 'We’re confirming the price for this trip by hand — we’ll message you shortly with the final amount.',
-      {retry:false}];
+      {retry:false, contact:true}];
   }
   if(err==='already_paid'){
-    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false}];
+    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false, contact:true}];
   }
   if(err==='not_chargeable'){
-    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false}];
+    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false, contact:true}];
   }
   return ['error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.'];
 }
@@ -2531,6 +2531,8 @@ let payRef = null;
 // opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
 //              gateway; a booking that never reached a card gets no bank advice.
 // opts.retry — false when trying again cannot possibly work (an already-paid booking).
+// opts.contact — nothing FAILED (already paid, awaiting a hand price, no longer payable): the
+//              WhatsApp link asks a neutral question instead of "my payment didn't go through".
 function phShowEnd(kind, msg, opts){
   // Terminal state: re-arm the latch here, where the retry button appears. Without this a
   // refused card would leave Pay locked with no way to try again — strictly worse than the
@@ -2563,7 +2565,11 @@ function phShowEnd(kind, msg, opts){
   const retry=document.getElementById('ph-retry');
   if(retry) retry.hidden = o.retry === false;
   const wa=document.getElementById('ph-wa');
-  if(wa){ wa.href=window.chTellUsHref(payRef,'failed'); wa.hidden=false; }
+  if(wa){
+    wa.href=window.chTellUsHref(payRef, o.contact ? 'contact' : 'failed');
+    wa.textContent = o.contact ? 'Message us on WhatsApp' : 'Tell us what happened on WhatsApp';
+    wa.hidden=false;
+  }
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }

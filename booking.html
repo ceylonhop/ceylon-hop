@@ -1098,7 +1098,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <button type="button" class="ph-btn ph-btn-primary" id="ph-retry">Try again</button>
       <!-- An incomplete payment ends silently on our side (no decline webhook), so the customer
            is the only witness. booking.js fills the href with a prefilled message naming the
-           booking reference, and shows it ONLY on the failed/cancelled end states. -->
+           booking reference, and shows it ONLY on the end states — as a neutral "Message us"
+           question where nothing failed (already paid, awaiting a price, no longer payable). -->
       <a class="ph-btn ph-btn-ghost" id="ph-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener" hidden>Tell us what happened on WhatsApp</a>
       <button type="button" class="ph-btn ph-btn-ghost" id="ph-close">Close</button>
     </div>
@@ -1117,12 +1118,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      that pay.html and manage.html do, and the customer comes back to their booking's manage page. -->
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with manage.html. -->
-<script src="checkout-handoff.js?v=281dd16e25"></script>
+<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="ch-pricing.js?v=74a30546ee"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=d37b63f2a2"></script>
+<script src="booking.js?v=60af1707c8"></script>
 </body>
 </html>
