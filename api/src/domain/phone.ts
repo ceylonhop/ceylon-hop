@@ -16,3 +16,8 @@ export const isInternationalNumber = (v: string) => INTERNATIONAL_NUMBER.test(di
 
 // Names the rule and an example, the way the booker's overlay and pay.html already show it.
 export const INTERNATIONAL_NUMBER_RULE = 'Phone number must be + followed by 6–15 digits (e.g. +94771234567)';
+
+// The customer schema's two display-only parts: a dial code (checked as typed — E.164 caps it at
+// 3 digits) and a national number (checked on its digits; the floor keeps out "123").
+export const DIAL_CODE = /^\+\d{1,3}$/;
+export const NATIONAL_NUMBER = /^\d{4,15}$/;
