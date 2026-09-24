@@ -211,6 +211,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-route b{color:var(--ink);font-weight:700}.tk-route .md{color:var(--ink-faint)}
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
+  .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
@@ -463,6 +464,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .mn{width:23px;height:23px;border-radius:8px;background:var(--cream-deep);display:grid;place-items:center;font-family:var(--mono);font-size:.64rem;font-weight:700;color:var(--ink-soft);flex:none}
   .mrow .who{flex:1;min-width:0;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mrow .who small{font-weight:500;color:var(--ink-faint);margin-left:6px}
+  .mrow .who .mph{display:block;font-family:var(--mono);font-size:.74rem;font-weight:500;color:var(--teal-deep);text-decoration:none;margin-top:1px}
+  .mrow .who a.mph:hover{text-decoration:underline}
+  .mrow .who .mph.none{color:var(--ink-faint);font-family:inherit}
   .mrow .mseats{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);flex:none}
   .mrow .mst{font-size:.64rem;font-weight:800;padding:3px 8px;border-radius:999px;flex:none;color:var(--wait);background:var(--wait-bg)}
   .mrow .mst.charged{color:var(--ok);background:var(--ok-bg)}
@@ -2069,7 +2073,7 @@ const adminApi={
 /* ── row → ticket mapping (backend OpsBookingRow → view model) ── */
 function rowToTicket(row){
   return {
-    id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName,
+    id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
@@ -2300,7 +2304,7 @@ function ticketRow(t,i){
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
      advance. The box swallows its own click so ticking never opens the drawer. */
@@ -3282,6 +3286,17 @@ function morphSheet(sh,html){
     },
   });
 }
+/* A Ride Board traveller's number (owner, 2026-09-23), under their name, tapping through to a
+   WhatsApp chat. Travellers who joined before numbers were stored show a dash. */
+function memberPhoneHtml(phone){
+  const p=String(phone||'').trim();
+  if(!p)return '<span class="mph none">No number on file</span>';
+  const digits=p.replace(/\D/g,'');
+  return digits.length>=8
+    ?`<a class="mph" href="https://wa.me/${digits}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Message on WhatsApp">${esc(p)}</a>`
+    :`<span class="mph">${esc(p)}</span>`;
+}
+
 function boardSheetHtml(t,st){
   const b=t.board||{seatsCommitted:0,minSeats:0,capacity:0,members:[],seatPrice:0};
   const runs=b.seatsCommitted>=b.minSeats;
@@ -3289,7 +3304,7 @@ function boardSheetHtml(t,st){
   const pct=b.minSeats?Math.min(100,Math.round(b.seatsCommitted/b.minSeats*100)):0;
   const rows=(b.members||[]).map(m=>
     `<div class="mrow"><span class="mn">${esc(String(m.position))}</span>`
-    +`<span class="who">${esc(m.firstName)}${m.country?`<small>${esc(m.country)}</small>`:''}</span>`
+    +`<span class="who">${esc(m.firstName)}${m.country?`<small>${esc(m.country)}</small>`:''}${memberPhoneHtml(m.phone)}</span>`
     +`<span class="mseats">${m.seats} seat${m.seats===1?'':'s'}</span>`
     +`<span class="mst ${esc(m.status)}">${esc(MEMBER_STATE[m.status]||m.status)}</span></div>`
   ).join('')||'<p class="muted" style="padding:0">Nobody on this van yet.</p>';

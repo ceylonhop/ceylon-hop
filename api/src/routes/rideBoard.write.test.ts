@@ -118,7 +118,7 @@ describe('POST /board/:code/join', () => {
     const { app, rideLists, paygw } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { preferredTime: '09:00', seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, preferredTime: '09:00', seats: 1 }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.list.committed).toBe(1);
@@ -131,8 +131,8 @@ describe('POST /board/:code/join', () => {
     const { app, rideLists, paygw } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, {}));
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     expect(res.status).toBe(200);
     expect((await res.json()).list.committed).toBe(1);
     expect(paygw.preapprovals).toHaveLength(1);
@@ -144,7 +144,7 @@ describe('POST /board/:code/join', () => {
     await rideLists.addMember(l.id, { sub: 'a', firstName: 'A', country: 'US', email: 'a@x.com', seats: 1 });
     await rideLists.addMember(l.id, { sub: 'b', firstName: 'B', country: 'GB', email: 'b@x.com', seats: 1 });
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, json(cookie, {}))).status).toBe(409);
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}))).status).toBe(409);
   });
 
   it('409s a closed (expired) list', async () => {
@@ -152,7 +152,7 @@ describe('POST /board/:code/join', () => {
     const l = await rideLists.createList(listArgs());
     await rideLists.setStatus(l.id, 'expired');
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, json(cookie, {}))).status).toBe(409);
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}))).status).toBe(409);
   });
 });
 
@@ -174,7 +174,7 @@ describe('POST /board/:code/join — never admit a traveller the sweep will not 
     await rideLists.setStatus(l.id, 'confirmed');
     const cookie = await loginCookie(app);
 
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('closed');
     // Nothing was taken from them either: no seat, and no card approval to strand.
@@ -188,7 +188,7 @@ describe('POST /board/:code/join — never admit a traveller the sweep will not 
     expect(l.status).toBe('gathering'); // exactly the state the sweep leaves it in while charging
     const cookie = await loginCookie(app);
 
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('closed');
     expect(paygw.preapprovals).toHaveLength(0);
@@ -336,7 +336,7 @@ describe('POST /board/:code/join — more than one seat', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 3 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 3 }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.list.committed).toBe(3);
@@ -348,7 +348,7 @@ describe('POST /board/:code/join — more than one seat', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, json(cookie, { seats: 4 }))).status).toBe(400);
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 4 }))).status).toBe(400);
   });
 
   // Changing your seat count is a scratch-and-re-add underneath, but the traveller should
@@ -358,8 +358,8 @@ describe('POST /board/:code/join — more than one seat', () => {
     const l = await rideLists.createList(listArgs());
     await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 1 });
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.list.committed).toBe(3); // Ada's 1 + my 2
@@ -378,20 +378,20 @@ describe('POST /board/:code/join — more than one seat', () => {
     await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 3 });
     await rideLists.addMember(l.id, { sub: 'b', firstName: 'Bo', country: 'GB', email: 'b@x.com', seats: 1 });
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 })); // van now 5 of 6
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 })); // van now 5 of 6
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }));
     expect(res.status).toBe(200);
     expect((await res.json()).list.committed).toBe(6);
     // ...and one seat past the van is still a full van
-    expect((await app.request(`/board/${l.code}/join`, json(cookie, { seats: 3 }))).status).toBe(409);
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 3 }))).status).toBe(409);
   });
 
   it('leaves your seats and your preferred time alone when a later join omits them', async () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2, preferredTime: '09:00' }));
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2, preferredTime: '09:00' }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     expect(res.status).toBe(200);
     expect((await res.json()).list.committed).toBe(2); // not silently reset to one seat
     const fresh = await rideLists.getByCode(l.code);
@@ -403,7 +403,7 @@ describe('POST /board/:code/join — more than one seat', () => {
     const l = await rideLists.createList(listArgs());
     await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 1 });
     const cookie = await loginCookie(app);
-    const body = await (await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }))).json();
+    const body = await (await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }))).json();
     const mine = body.list.members.filter((m: { isYou: boolean }) => m.isYou);
     expect(mine).toHaveLength(1);
     expect(mine[0].firstName).toBe('Roshen');
@@ -415,7 +415,7 @@ describe('POST /board/:code/scratch', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     const res = await app.request(`/board/${l.code}/scratch`, json(cookie));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -427,7 +427,7 @@ describe('POST /board/:code/scratch', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    const joined = await (await app.request(`/board/${l.code}/join`, json(cookie, {}))).json();
+    const joined = await (await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}))).json();
     const res = await app.request(`/board/${l.code}/scratch?t=${encodeURIComponent(joined.manageToken)}`, { method: 'POST' });
     expect(res.status).toBe(200);
     expect((await res.json()).removed).toBe(true);
@@ -449,7 +449,7 @@ describe('POST /board/:code/join — the traveller gets a receipt', () => {
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
 
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
     expect(res.status).toBe(200);
 
     const sent = (email as FakeEmailAdapter).sent;
@@ -466,8 +466,8 @@ describe('POST /board/:code/join — the traveller gets a receipt', () => {
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
 
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
-    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
 
     // The route treats a repeat join as a seat change; an unchanged one is not
     // news, and mailing it would make a refresh look like a second booking.
@@ -479,8 +479,8 @@ describe('POST /board/:code/join — the traveller gets a receipt', () => {
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
 
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }));
 
     const sent = (email as FakeEmailAdapter).sent;
     expect(sent).toHaveLength(2);
@@ -497,7 +497,7 @@ describe('POST /board/:code/join — the traveller gets a receipt', () => {
 
     // The card is already preapproved by this point. Losing the seat because the
     // mail provider blinked would be strictly worse than a missing email.
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
     expect(res.status).toBe(200);
     expect((await res.json()).list.committed).toBe(1);
   });
@@ -508,7 +508,7 @@ describe('POST /board (create) — the starter gets a receipt too', () => {
     const { app, email } = mailApp();
     const cookie = await loginCookie(app);
 
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
     }));
     expect(res.status).toBe(201);
@@ -531,7 +531,7 @@ describe('Ride Board — ops is told when a seat is held', () => {
   it('mails ops when a traveller starts a list, alongside the starter receipt', async () => {
     const { app, email } = opsMailApp();
     const cookie = await loginCookie(app, 'FR');
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
     }));
     expect(res.status).toBe(201);
@@ -556,7 +556,7 @@ describe('Ride Board — ops is told when a seat is held', () => {
     await rideLists.addMember(l.id, { sub: 'lea-sub', firstName: 'Léa', country: 'FR', email: 'lea@x.com', seats: 1 });
     const cookie = await loginCookie(app);
 
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }));
     expect(res.status).toBe(200);
 
     const ops = opsMail(email);
@@ -595,11 +595,11 @@ describe('Ride Board — ops is told when a seat is held', () => {
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
 
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
-    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     expect(opsMail(email)).toHaveLength(1);
 
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 2 }));
     const ops = opsMail(email);
     expect(ops).toHaveLength(2);
     expect(ops[1].subject).toMatch(/^Seats changed: Ella → Mirissa/);
@@ -609,7 +609,7 @@ describe('Ride Board — ops is told when a seat is held', () => {
     const { app, rideLists, email } = mailApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
     expect((email as FakeEmailAdapter).sent.map((m) => m.to)).toEqual(['roshen@x.com']);
   });
 
@@ -625,7 +625,7 @@ describe('Ride Board — ops is told when a seat is held', () => {
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
 
-    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
     expect(res.status).toBe(200);
     expect(flaky.sent.map((m) => m.to)).toEqual(['ops@x.com']);
   });
@@ -640,7 +640,7 @@ describe('POST /board (create) — a ride must still be open when it is started'
     const { app, paygw, email } = opsMailApp();
     const cookie = await loginCookie(app);
 
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       // TODAY in Colombo — the same function the route measures "past" with, so this is never
       // a date_in_past. Its morning window opened hours ago, so its cutoff passed yesterday: true
       // at every hour, unlike "tomorrow", which stays open until 01:30 UTC and would make this
@@ -658,7 +658,7 @@ describe('POST /board (create) — a ride must still be open when it is started'
   it('still accepts a date far enough out to gather names', async () => {
     const { app } = opsMailApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
     }));
     expect(res.status).toBe(201);
@@ -685,7 +685,7 @@ describe('POST /board (create) — catalogue legs', () => {
   it('prices a catalogue leg from the catalogue, without asking Google', async () => {
     const app = catalogueApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Negombo', to: 'Sigiriya / Dambulla', date: '2999-08-08', slot: 'morning',
     }));
     expect(res.status).toBe(201);
@@ -696,7 +696,7 @@ describe('POST /board (create) — catalogue legs', () => {
   it('gives a second catalogue leg on the same corridor its own price', async () => {
     const app = catalogueApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Sigiriya / Dambulla', to: 'Kandy', date: '2999-08-08', slot: 'morning',
     }));
     expect(res.status).toBe(201);
@@ -715,7 +715,7 @@ describe('POST /board (create) — catalogue legs', () => {
     for (const to of ['Weligama', 'Ahangama']) {
       const app = catalogueApp();
       const cookie = await loginCookie(app);
-      const res = await app.request('/board', json(cookie, {
+      const res = await app.request('/board', json(cookie, { payment: paymentDetails,
         from: 'Ella', to, date: '2999-08-08', slot: 'morning',
       }));
       expect(res.status, `Ella -> ${to}`).toBe(201);
@@ -726,7 +726,7 @@ describe('POST /board (create) — catalogue legs', () => {
   it('does NOT sell Ella -> Mirissa as a catalogue seat', async () => {
     const app = catalogueApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
     }));
     // The road is still a corridor, so a list can exist — it just must not take the $24
@@ -743,7 +743,7 @@ describe('POST /board (create) — catalogue legs', () => {
     // Kandy -> Ella pins to the floor and would pass on any wrong distance.
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning',
     }));
     expect(res.status).toBe(201);
@@ -754,7 +754,7 @@ describe('POST /board (create) — catalogue legs', () => {
     // Sigiriya -> Negombo is not sold; pooling it is fine, but at the distance price.
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, {
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
       from: 'Sigiriya / Dambulla', to: 'Negombo', date: '2999-08-08', slot: 'morning',
     }));
     expect(res.status).toBe(201);
@@ -779,7 +779,7 @@ describe('POST /board (create) — pricing', () => {
     const cookie = await loginCookie(app);
     // Must be an OFF-catalogue leg: a catalogue leg is priced without asking Google at all,
     // so it would never reach the outage path this test exists to cover.
-    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails, from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
     expect((await res.json()).error).toBe('cannot_price_route');
   });
@@ -794,7 +794,7 @@ describe('POST /board (create) — pricing', () => {
       maps: { ...outage, distance: async () => ({ km: 164, durationMin: 240, estimated: true }) } as never,
     });
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails, from: 'Kandy', to: 'Ella', date: '2999-08-08', slot: 'morning' }));
     expect(res.status).toBe(503);
   });
 });
@@ -803,7 +803,7 @@ describe('POST /board (create)', () => {
   it('creates a list and auto-joins the creator as name #1', async () => {
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    const res = await app.request('/board', json(cookie, { from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails, from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning', note: 'surfers' }));
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.list.from).toBe('Colombo Airport (CMB)');
@@ -821,8 +821,8 @@ describe('POST /board (create)', () => {
   it('rejects a past date and an unknown corridor', async () => {
     const { app } = makeApp();
     const cookie = await loginCookie(app);
-    expect((await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2000-01-01', slot: 'morning' }))).status).toBe(400);
-    expect((await app.request('/board', json(cookie, { from: 'Nowhere', to: 'Void', date: '2999-08-08', slot: 'morning' }))).status).toBe(400);
+    expect((await app.request('/board', json(cookie, { payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: '2000-01-01', slot: 'morning' }))).status).toBe(400);
+    expect((await app.request('/board', json(cookie, { payment: paymentDetails, from: 'Nowhere', to: 'Void', date: '2999-08-08', slot: 'morning' }))).status).toBe(400);
   });
 });
 
@@ -831,7 +831,7 @@ describe('GET /board/mine & /board/dupe', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails,}));
     const res = await app.request('/board/mine', { headers: { cookie } });
     expect(res.status).toBe(200);
     expect((await res.json()).lists).toHaveLength(1);
@@ -855,7 +855,7 @@ describe('ride board CSRF', () => {
     const { app, rideLists } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { preferredTime: '09:00', seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, preferredTime: '09:00', seats: 1 }));
     return { app, code: l.code, cookie };
   };
   const names = async (app: ReturnType<typeof makeApp>['app'], code: string) => {
@@ -903,7 +903,7 @@ describe('PayHere return_url — back to the board the traveller was on', () => 
     const { app, rideLists, paygw } = makeApp();
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1 }))).status).toBe(200);
+    expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1, payment: paymentDetails }))).status).toBe(200);
     expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
     expect(paygw.preapprovals[0].cancelUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=.*&cancelled=1$`));
   });
@@ -922,7 +922,7 @@ describe('PayHere return_url — back to the board the traveller was on', () => 
     const { app, rideLists, paygw } = makeApp({}, { bookingBaseUrl: 'https://ceylonhop.com' });
     const l = await rideLists.createList(listArgs());
     const cookie = await loginCookie(app);
-    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails, seats: 1 }));
     expect(paygw.preapprovals[0].returnUrl).toMatch(/^https:\/\/ceylonhop\.com\/board\.html\?ridePayment=/);
   });
 
@@ -991,5 +991,72 @@ describe('POST /board (create) — a day the scheduled van already runs', () => 
       from: 'Colombo Airport (CMB)', to: 'Kandy', date: nextIsoWeekday(WED), slot: 'morning', payment: paymentDetails,
     }));
     expect(res.status).toBe(201);
+  });
+});
+
+// Owner 2026-09-23: the traveller's phone number is REQUIRED on every new commitment, and it is
+// stored — until now the board form sent it only to PayHere and it was thrown away, so ops had
+// no way to reach a Ride Board traveller on WhatsApp.
+describe('Ride Board keeps the traveller phone number', () => {
+  it('stores the number from the join form', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    expect(res.status).toBeLessThan(300);
+    const m = (await rideLists.getByCode(list.code))!.members.find((x) => x.sub === 'roshen-sub');
+    expect(m?.phone).toBe('+94771234567');
+  });
+
+  it('stores it for the traveller who STARTS a ride too', async () => {
+    const { app, rideLists } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: paymentDetails,
+    }));
+    expect(res.status).toBeLessThan(300);
+    const mine = (await rideLists.listForMember('roshen-sub')).flatMap((l) => l.members).find((m) => m.sub === 'roshen-sub');
+    expect(mine?.phone).toBe('+94771234567');
+  });
+
+  it('refuses a new join or a new ride without a phone number', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const join = await app.request(`/board/${list.code}/join`, json(cookie, { seats: 1 }));
+    expect(join.status).toBe(400);
+    expect((await join.json()).error).toBe('phone_required');
+    const start = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning' }));
+    expect(start.status).toBe(400);
+    expect((await start.json()).error).toBe('phone_required');
+  });
+
+  it('a seat change needs no number and keeps the one on file', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    const change = await app.request(`/board/${list.code}/join`, json(cookie, { seats: 2 }));
+    expect(change.status).toBeLessThan(300);
+    const m = (await rideLists.getByCode(list.code))!.members.find((x) => x.sub === 'roshen-sub');
+    expect(m?.seats).toBe(2);
+    expect(m?.phone).toBe('+94771234567');
+  });
+});
+
+describe('Ride Board phone never reaches the public board', () => {
+  it('is absent from the public list and the public ride page data', async () => {
+    const { app, rideLists } = makeApp();
+    const list = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${list.code}/join`, json(cookie, { payment: paymentDetails }));
+    for (const path of ['/board', `/board/${list.code}`]) {
+      const res = await app.request(path, { headers: { cookie } });
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain('Roshen'); // the member IS in there…
+      expect(body).not.toContain('771234567'); // …but never their number
+      expect(body).not.toContain('"phone"');
+    }
   });
 });

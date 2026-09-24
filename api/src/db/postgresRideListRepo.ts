@@ -34,7 +34,7 @@ interface ListRow {
 }
 interface MemberRow {
   id: string; list_id: string; position: number; sub: string; first_name: string; country: string;
-  email: string; photo_url: string | null; preferred_time: string | null; seats: number;
+  email: string; phone: string | null; photo_url: string | null; preferred_time: string | null; seats: number;
   preapproval_ref: string | null; status: string; joined_at: Date;
   preapproval_order_id: string | null; preapproval_expires_at: Date | null;
 }
@@ -48,7 +48,7 @@ const toList = (r: ListRow): RideList => ({
 });
 const toMember = (r: MemberRow): RideMember => ({
   id: r.id, listId: r.list_id, position: r.position, sub: r.sub, firstName: r.first_name,
-  country: r.country, email: r.email, photoUrl: r.photo_url, preferredTime: r.preferred_time,
+  country: r.country, email: r.email, phone: r.phone ?? null, photoUrl: r.photo_url, preferredTime: r.preferred_time,
   seats: r.seats, preapprovalRef: r.preapproval_ref, status: r.status as MemberStatus,
   preapprovalOrderId: r.preapproval_order_id,
   preapprovalExpiresAt: r.preapproval_expires_at ? new Date(r.preapproval_expires_at) : null,
@@ -164,11 +164,11 @@ export class PostgresRideListRepo implements RideListRepo {
     // their position; an omitted preferred time leaves their existing vote standing.
     const rows = await this.sql<MemberRow[]>`
       insert into ride_list_member
-        (list_id, position, sub, first_name, country, email, photo_url, preferred_time, seats, preapproval_ref, status, joined_at)
+        (list_id, position, sub, first_name, country, email, phone, photo_url, preferred_time, seats, preapproval_ref, status, joined_at)
       select
         ${listId},
         (select coalesce(max(position), 0) + 1 from ride_list_member where list_id = ${listId}),
-        ${args.sub}, ${args.firstName}, ${args.country}, ${args.email}, ${args.photoUrl ?? null},
+        ${args.sub}, ${args.firstName}, ${args.country}, ${args.email}, ${args.phone ?? null}, ${args.photoUrl ?? null},
         ${args.preferredTime ?? null}, ${args.seats}, ${args.preapprovalRef ?? null}, 'held', ${now}
       where (
         select coalesce(sum(seats), 0) from ride_list_member
@@ -182,6 +182,7 @@ export class PostgresRideListRepo implements RideListRepo {
         seats = excluded.seats,
         preferred_time = coalesce(excluded.preferred_time, ride_list_member.preferred_time),
         preapproval_ref = coalesce(excluded.preapproval_ref, ride_list_member.preapproval_ref),
+        phone = coalesce(excluded.phone, ride_list_member.phone),
         joined_at = excluded.joined_at
       returning *`;
     if (!rows[0]) return null;
@@ -207,12 +208,12 @@ export class PostgresRideListRepo implements RideListRepo {
   ): Promise<RideMember | null> {
     const rows = await this.sql<MemberRow[]>`
       insert into ride_list_member
-        (list_id, position, sub, first_name, country, email, photo_url, preferred_time, seats,
+        (list_id, position, sub, first_name, country, email, phone, photo_url, preferred_time, seats,
          preapproval_ref, preapproval_order_id, preapproval_expires_at, status, joined_at)
       select
         ${listId},
         (select coalesce(max(position), 0) + 1 from ride_list_member where list_id = ${listId}),
-        ${args.sub}, ${args.firstName}, ${args.country}, ${args.email}, ${args.photoUrl ?? null},
+        ${args.sub}, ${args.firstName}, ${args.country}, ${args.email}, ${args.phone ?? null}, ${args.photoUrl ?? null},
         ${args.preferredTime ?? null}, ${args.seats}, null, ${orderId}, ${expiresAt},
         'preapproval_pending', ${now}
       where (
@@ -224,6 +225,7 @@ export class PostgresRideListRepo implements RideListRepo {
         first_name = excluded.first_name,
         country = excluded.country,
         email = excluded.email,
+        phone = coalesce(excluded.phone, ride_list_member.phone),
         photo_url = excluded.photo_url,
         preferred_time = coalesce(excluded.preferred_time, ride_list_member.preferred_time),
         seats = excluded.seats,

@@ -207,7 +207,7 @@ describe('teamPaidEmail', () => {
   it('links straight to the booking sheet, or says where to look without a base URL', () => {
     expect(teamPaidEmail(sampleBooking('single'), 'https://ops.example/').html).toContain('https://ops.example/ops?booking=sample-id');
     const bare = teamPaidEmail(sampleBooking('single'), '');
-    expect(bare.html).not.toContain('href=');
+    expect(bare.html).not.toContain('/ops?booking='); // the WhatsApp link is still there, and should be
     expect(bare.text).toContain('Bookings');
   });
 
@@ -234,5 +234,62 @@ describe('teamCancelledEmail / teamRefundedEmail', () => {
     expect(m.subject).not.toContain('partial');
     expect(m.text).toContain('(full)');
     expect(m.text).toContain('PayHere (automatic)');
+  });
+});
+
+// Owner 2026-09-23: one tap from the team email to a WhatsApp chat with the customer.
+describe('Message on WhatsApp button', () => {
+  it('sits next to the number on the paid email, html and text', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '');
+    expect(m.html).toContain('href="https://wa.me/94771234567"');
+    expect(m.html).toContain('Message on WhatsApp');
+    expect(m.text).toContain('https://wa.me/94771234567');
+  });
+
+  it('normalises a spaced / dashed number to digits', () => {
+    const b = sampleBooking('single');
+    const spaced = { ...b, input: { ...b.input, customer: { ...b.input.customer, whatsapp: '+44 (0)7700-900 123' } } } as typeof b;
+    expect(teamPaidEmail(spaced, '').html).toContain('https://wa.me/4407700900123');
+  });
+
+  it('shows no button for something that is not a phone number', () => {
+    const b = sampleBooking('single');
+    const junk = { ...b, input: { ...b.input, customer: { ...b.input.customer, whatsapp: 'n/a' } } } as typeof b;
+    const m = teamPaidEmail(junk, '');
+    expect(m.html).not.toContain('wa.me');
+    expect(m.html).toContain('n/a');
+  });
+
+  it('is on the cancelled and refunded emails too (same customer block)', () => {
+    const b = sampleBooking('single');
+    expect(teamCancelledEmail(b, { by: 'x', reason: 'y', statusBefore: 'paid', refundedCents: 0 }, '').html).toContain('wa.me/94771234567');
+    expect(teamRefundedEmail(b, { amountCents: 1, currency: b.currency, full: false, by: 'x', reason: 'y', gatewayRef: null, viaApi: false }, '').html).toContain('wa.me/94771234567');
+  });
+});
+
+describe('sendRideSeatHeld — team email layout', () => {
+  it('uses the same layout as the other team emails', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member(), committed: 2, kind: 'joined' }, email, '');
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member(), committed: 1, kind: 'started' }, email, '');
+    expect(email.sent[0].html).toContain('SEAT HELD');
+    expect(email.sent[0].html).toContain('Ella → Mirissa');
+    expect(email.sent[0].html).toContain('background:#F6F4EE'); // the key-fact boxes
+    expect(email.sent[1].html).toContain('NEW SHARED RIDE');
+  });
+});
+
+describe('Ride Board team emails — WhatsApp the traveller', () => {
+  it('seat-held email shows the number with a Message on WhatsApp button', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member({ phone: '+33 6 12 34 56 78' }), committed: 2, kind: 'joined' }, email, '');
+    expect(email.sent[0].html).toContain('href="https://wa.me/33612345678"');
+    expect(email.sent[0].text).toContain('https://wa.me/33612345678');
+  });
+
+  it('a traveller with no number on file (joined before 2026-09-23) shows a dash and no button', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member({ phone: null }), committed: 2, kind: 'joined' }, email, '');
+    expect(email.sent[0].html).not.toContain('wa.me');
   });
 });

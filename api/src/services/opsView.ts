@@ -23,8 +23,9 @@ export interface OpsBoardDetail {
   capacity: number;
   seatPrice: number; // minor units, per seat
   cutoffAt: string; // ISO
-  /** Live manifest — first name + country only, never email or subject. */
-  members: Array<{ position: number; firstName: string; country: string; seats: number; status: string }>;
+  /** Live manifest — first name, country and the phone number they joined with (owner,
+   *  2026-09-23: ops must be able to WhatsApp them). Never email or subject. */
+  members: Array<{ position: number; firstName: string; country: string; phone: string | null; seats: number; status: string }>;
 }
 
 export interface OpsBookingRow {
@@ -39,6 +40,8 @@ export interface OpsBookingRow {
   currency: string;
   customerFirstName: string;
   customerName: string;
+  /** The number the customer gave (their WhatsApp), shown on the queue row. Null when blank. */
+  customerPhone: string | null;
   route: string;
   travelDate: string | null;
   travelTime: string | null;
@@ -90,6 +93,7 @@ export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boo
     bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
+    customerPhone: c.whatsapp?.trim() || null,
     route: route(b), travelDate: t.date, travelTime: t.time, pax: pax(b),
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,

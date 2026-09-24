@@ -46,6 +46,23 @@ describe.skipIf(!TEST_URL)('PostgresRideListRepo (integration)', () => {
     lists = new PostgresRideListRepo(sql);
   });
 
+  // Owner 2026-09-23 (migration 0054): the number from the join form is stored, through both
+  // insert paths, and a later seat change that sends no number keeps the one on file.
+  it('stores the traveller phone and keeps it across a seat change', async () => {
+    const list = await lists.createList(args());
+    const pending = await lists.beginMemberPreapproval(
+      list.id, { ...member('ph-a', 1), phone: '+65 9123 4567' }, `RBPA-ph-${list.id}`, new Date(Date.now() + 60_000),
+    );
+    expect(pending?.phone).toBe('+65 9123 4567');
+    const held = await lists.addMember(list.id, { ...member('ph-b', 1), phone: '+94 77 111 2222' });
+    expect(held?.phone).toBe('+94 77 111 2222');
+    const changed = await lists.addMember(list.id, member('ph-b', 2));
+    expect(changed?.seats).toBe(2);
+    expect(changed?.phone).toBe('+94 77 111 2222');
+    const noPhone = await lists.addMember(list.id, member('ph-c', 1));
+    expect(noPhone?.phone).toBeNull();
+  });
+
   // This is the exact call POST /board makes, Dates and all.
   it('creates a list, binding the Date and text columns the route actually passes', async () => {
     const now = new Date('2026-08-17T09:00:00Z');

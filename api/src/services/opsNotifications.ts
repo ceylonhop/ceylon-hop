@@ -1,5 +1,5 @@
 import type { EmailAdapter } from '../adapters/email';
-import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP, MUTED } from './opsEmail';
+import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP, MUTED, whatsappButton, whatsappLink, type SectionRow } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
 import type { Booking } from '../db/bookingRepo';
@@ -171,38 +171,53 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
   const subject = `${headline}: ${route}, ${day} (${committed} of ${list.minSeats} seats) — Ceylon Hop ops`;
   const lead =
     kind === 'started'
-      ? `${esc(member.firstName)} started a shared ride and holds the first seat.`
+      ? `${member.firstName} started a shared ride and holds the first seat.`
       : kind === 'changed'
-        ? `${esc(member.firstName)} now holds ${seatsWord(member.seats)} on this ride.`
-        : `${esc(member.firstName)} added their name to this ride.`;
+        ? `${member.firstName} now holds ${seatsWord(member.seats)} on this ride.`
+        : `${member.firstName} added their name to this ride.`;
+  const pill = kind === 'started' ? 'NEW SHARED RIDE' : kind === 'changed' ? 'SEATS CHANGED' : 'SEAT HELD';
   const fill = `${committed} of ${list.minSeats} needed · ${list.capacity} max`;
   const viableLine = viable ? 'The van is viable — enough names to run at the cutoff.' : 'Still short of the minimum.';
   const link = boardDeepLink(list.code, opsBaseUrl);
+  const fallback = 'Find it under Bookings in the ops dashboard.';
 
-  const rows: [string, string][] = [
-    ['Traveller', `${member.firstName} (${member.country}) · ${member.email}`],
-    ['Seats', seatsWord(member.seats)],
-    ['Committed', fill],
+  const rideRows: [string, string][] = [
     ['Departs', `${day} · ${list.slot}`],
+    ['Committed', fill],
     ['Cutoff', colomboStamp(list.cutoffAt)],
     ['Seat price', money(list.seatPrice, 'USD')],
   ];
+  const phone = member.phone?.trim() || '';
+  const wa = whatsappLink(phone);
+  const travellerRows: SectionRow[] = [
+    ['Traveller', `${member.firstName} (${member.country})`],
+    ['Email', member.email],
+    ['WhatsApp', phone || '—', whatsappButton(phone)],
+    ['Seats', seatsWord(member.seats)],
+  ];
   const html = [
-    `<p style="font-size:16px;margin:0 0 4px">${lead}</p>`,
-    heroRef(list.code),
-    detailTable(rows),
-    `<p style="margin:0 0 20px;font-weight:500">${esc(viableLine)}</p>`,
-    ctaBlock('Open the van', link, 'Find it under Bookings in the ops dashboard.'),
+    `<p style="margin:0 0 10px">${statusPill(pill, TEAL_DEEP, '#e2f0f3')}</p>`,
+    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(route)}</p>`,
+    `<p style="font-size:15px;font-weight:600;color:${TEAL_DEEP};margin:0 0 12px">${esc(list.code)}</p>`,
+    `<p style="font-size:15px;margin:0 0 16px">${esc(lead)}</p>`,
+    keyFacts([['Seats', String(member.seats)], ['Filled', `${committed} of ${list.minSeats}`], ['Departs', `${shortDay(list.date)} · ${list.slot}`]]),
+    `<p style="margin:0 0 18px;padding:12px 14px;background:#F0EEE5;border-radius:6px;font-size:14px;font-weight:500">${esc(viableLine)}</p>`,
+    section('Ride', rideRows),
+    section('Traveller', travellerRows),
+    ctaBlock('Open the van', link, fallback),
   ].join('');
+  const rows = (title: string, r: SectionRow[]) =>
+    [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(12)}${k === 'WhatsApp' && wa ? `${v} · ${wa}` : v}`), ''];
   const text = [
-    lead.replace(/<[^>]+>/g, ''),
-    '',
-    `Ride:       ${list.code}`,
-    ...rows.map(([k, v]) => `${(k + ':').padEnd(12)}${v}`),
+    `${pill} · ${list.code}`,
+    route,
+    lead,
     '',
     viableLine,
     '',
-    link ? `Open the van: ${link}` : 'Find it under Bookings in the ops dashboard.',
+    ...rows('Ride', rideRows),
+    ...rows('Traveller', travellerRows),
+    link ? `Open the van: ${link}` : fallback,
   ].join('\n');
   const wrapped = opsEmailShell(html, text);
   await email.send({ to: args.to, subject, html: wrapped.html, text: wrapped.text, audience: 'ops' });
@@ -255,10 +270,10 @@ function bookingFacts(b: Booking) {
   // The customer email's own fact rows, in the team's word for travellers.
   const tripRows = factRows(b).map(([k, v]): [string, string] => [k === 'Travellers' ? 'Passengers' : k, v]);
   if (b.mode === 'trip') tripRows.unshift(['Stops', route]);
-  const customerRows: [string, string][] = [
+  const customerRows: SectionRow[] = [
     ['Name', `${c.firstName} ${c.lastName}`],
     ['Email', c.email],
-    ['WhatsApp', c.whatsapp],
+    ['WhatsApp', c.whatsapp, whatsappButton(c.whatsapp)],
   ];
   // What a paid booking actually took: a deposit booking charges amountDueNow, not the total.
   const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;
@@ -300,14 +315,16 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
     section(p.moneyTitle, p.moneyRows, p.strong),
     ctaBlock('Open the booking', link, fallback),
   ].join('');
-  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(13)}${v}`), ''];
+  const rows = (title: string, r: SectionRow[]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(13)}${v}`), ''];
+  const wa = whatsappLink(b.input.customer.whatsapp);
+  const customerText: SectionRow[] = f.customerRows.map(([k, v]) => [k, k === 'WhatsApp' && wa ? `${v} · ${wa}` : v]);
   const text = [
     `${p.pill[0]} · ${b.reference}${p.lead ? ` · ${p.lead}` : ''}`,
     f.route,
     '',
     ...(p.note ? [p.note, ''] : []),
     ...rows('Trip', f.tripRows),
-    ...rows('Customer', f.customerRows),
+    ...rows('Customer', customerText),
     ...rows(p.moneyTitle, p.moneyRows),
     link ? `Open the booking: ${link}` : fallback,
   ].join('\n');
@@ -464,10 +481,14 @@ export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { su
     ['Passengers', `${pax} paid${a.seedSeats ? ` + ${a.seedSeats} placeholder seat${a.seedSeats === 1 ? '' : 's'} (not people)` : ''}`],
     ['Seat price', money(list.seatPrice, a.currency)],
   ];
-  const onBoard: [string, string][] = a.charged.map((m) => [
-    `${m.firstName} (${m.country})`,
-    `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}`,
-  ]);
+  const onBoard: SectionRow[] = a.charged.map((m) => {
+    const phone = m.phone?.trim() || '';
+    return [
+      `${m.firstName} (${m.country})`,
+      `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}${phone ? ` · ${phone}` : ''}`,
+      whatsappButton(phone),
+    ];
+  });
   const moneyRows: [string, string][] = [
     ['Collected', `${collected} (${seatsWord(pax)})`],
     ...(a.unknown.length ? [['Unconfirmed', `${a.unknown.length} charge(s) — check PayHere before chasing`] as [string, string]] : []),
@@ -486,13 +507,18 @@ export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { su
     section('Money', moneyRows, ['Collected']),
     ctaBlock('Open the ride', link, fallback),
   ].join('');
-  const rows = (title: string, r: [string, string][]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
+  const rows = (title: string, r: SectionRow[]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
+  // The text version: each traveller's WhatsApp link on the line after them.
+  const onBoardText = onBoard.flatMap((row, i): SectionRow[] => {
+    const wa = whatsappLink(a.charged[i].phone);
+    return wa ? [row, ['', wa]] : [row];
+  });
   const text = [
     `PAID · RIDE LOCKED IN · ${list.code}`,
     route,
     '',
     ...rows('Ride', rideRows),
-    ...rows('On board', onBoard),
+    ...rows('On board', onBoardText),
     ...rows('Money', moneyRows),
     link ? `Open the ride: ${link}` : fallback,
   ].join('\n');

@@ -232,3 +232,19 @@ describe('boardRowsForOps', () => {
     expect(rows[0].pax).toBe(1);
   });
 });
+
+// Owner 2026-09-23: ops must be able to reach a Ride Board traveller on WhatsApp, so the
+// manifest now carries the number they gave when they joined. Email and Google subject still
+// never cross this boundary.
+describe('rideListToOpsRow — traveller phone', () => {
+  it('carries each member phone (null when none on file) and still no email or subject', () => {
+    const row = rideListToOpsRow(
+      { list: list(), members: [member({ position: 1, phone: '+94 77 111 2222' }), member({ id: 'm2', sub: 's2', position: 9, firstName: 'Bo', phone: null })] },
+      { currency: 'USD' },
+    );
+    expect(row.board?.members.map((m) => m.phone)).toEqual(['+94 77 111 2222', null]);
+    const json = JSON.stringify(row.board?.members);
+    expect(json).not.toContain('@');
+    expect(json).not.toContain('"sub"');
+  });
+});

@@ -38,6 +38,8 @@ export interface AddMemberArgs {
   firstName: string;
   country: string;
   email: string;
+  // Omitted on a seat change: the number already on file stands.
+  phone?: string | null;
   photoUrl?: string | null;
   preferredTime?: string | null;
   seats: number;
@@ -212,6 +214,7 @@ export class InMemoryRideListRepo implements RideListRepo {
       existing.seats = args.seats;
       existing.preferredTime = args.preferredTime ?? existing.preferredTime;
       existing.preapprovalRef = args.preapprovalRef ?? existing.preapprovalRef;
+      existing.phone = args.phone ?? existing.phone ?? null;
       existing.joinedAt = now;
       list.updatedAt = now;
       return { ...existing };
@@ -226,6 +229,7 @@ export class InMemoryRideListRepo implements RideListRepo {
       firstName: args.firstName,
       country: args.country,
       email: args.email,
+      phone: args.phone ?? null,
       photoUrl: args.photoUrl ?? null,
       preferredTime: args.preferredTime ?? null,
       seats: args.seats,
@@ -261,6 +265,7 @@ export class InMemoryRideListRepo implements RideListRepo {
       existing.firstName = args.firstName;
       existing.country = args.country;
       existing.email = args.email;
+      existing.phone = args.phone ?? existing.phone ?? null;
       existing.photoUrl = args.photoUrl ?? null;
       existing.preferredTime = args.preferredTime ?? existing.preferredTime;
       existing.seats = args.seats;
@@ -273,7 +278,7 @@ export class InMemoryRideListRepo implements RideListRepo {
     const position = members.reduce((max, m) => Math.max(max, m.position), 0) + 1;
     const member: RideMember = {
       id: randomUUID(), listId, position, sub: args.sub, firstName: args.firstName,
-      country: args.country, email: args.email, photoUrl: args.photoUrl ?? null,
+      country: args.country, email: args.email, phone: args.phone ?? null, photoUrl: args.photoUrl ?? null,
       preferredTime: args.preferredTime ?? null, seats: args.seats, preapprovalRef: null,
       preapprovalOrderId: orderId, preapprovalExpiresAt: expiresAt,
       status: 'preapproval_pending', joinedAt: now,
