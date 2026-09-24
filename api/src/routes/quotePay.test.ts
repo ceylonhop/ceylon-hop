@@ -439,6 +439,22 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
     expect((await co.json()).amount).toBe(21900);
   });
 
+  // CH-T74DT: the pay page shares CustomerInput with the website booker, so it refuses the same
+  // impossible number — and /start already words the refusal per field, which pay.html shows.
+  it('refuses an impossible WhatsApp number before any booking is born (CH-T74DT)', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const res = await start(app, t, { ...CUSTOMER, whatsapp: '+94123134124123412312312312' });
+    expect(res.status).toBe(400);
+    const out = await res.json();
+    expect(out.error).toBe('bad_request');
+    expect(out.message).toContain('customer.whatsapp');
+    expect((await quotes.get(q.id))?.convertedBookingId).toBeFalsy();
+  });
+
   it('is idempotent — a double tap returns the same booking with 200', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();

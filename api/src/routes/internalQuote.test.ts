@@ -1724,6 +1724,24 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(await bookings.get(b.id)).not.toBeNull();
   });
 
+  // CH-T74DT: the shared CustomerInput now bounds every phone field, so the ops "Mark booked"
+  // form refuses the same junk the website does — and `message` names the box, the way the
+  // toast already expects. Operators type the WhatsApp box freely ("+94 77 123 4567"): spaces
+  // are fine, but a missing "+" or an impossible length is not.
+  it('refuses an impossible WhatsApp number and names the box (CH-T74DT)', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings: new InMemoryBookingRepo() });
+    const res = await book(app, id, { ...BODY, customer: { ...BODY.customer, whatsapp: '+94123134124123412312312312' } });
+    expect(res.status).toBe(400);
+    const out = await res.json();
+    expect(out.error).toBe('bad_request');
+    expect(out.message).toContain('customer.whatsapp');
+    // A spaced-but-real number, as operators type it, still books.
+    const ok = await book(app, id, { ...BODY, customer: { ...BODY.customer, whatsapp: '+94 77 123 4567' } });
+    expect(ok.status).toBe(201);
+  });
+
   it('names the offending field when the modal payload is rejected', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await sentQuote(quotes);
