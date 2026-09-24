@@ -311,6 +311,17 @@ describe('sendPaymentIncomplete — abandoned checkout recovery', () => {
     await sendPaymentIncomplete(pending, email);
     expect(email.sent[0].html).not.toContain('href="undefined"');
   });
+
+  // Incomplete payments end silently (no decline webhook, nothing on our page), so the
+  // customer is the only witness: the WhatsApp CTA prefills a message naming the booking.
+  it('prefills the WhatsApp CTA with the booking reference, in html and text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentIncomplete(pending, email);
+    const m = email.sent[0];
+    const encoded = 'wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20my%20payment%20for%20booking%20CH-PEND1%20didn%27t%20go%20through.%20What%20I%20saw%3A%20';
+    expect(m.html).toContain(encoded);
+    expect(m.text).toContain(encoded);
+  });
 });
 
 describe('sendBookingConfirmed — driver arranged', () => {
@@ -432,6 +443,18 @@ describe('sendPaymentFailed', () => {
     expect(m.html).toContain('$50.00');
     expect(m.text).toContain('https://ceylonhop.com/booking.html?id=x');
     expect(m.text).not.toContain('<');
+  });
+
+  it('prefills the WhatsApp CTA with the booking reference, in html and text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentFailed(single, email, { resume: 'https://ceylonhop.com/booking.html?id=x' });
+    const m = email.sent[0];
+    const encoded = 'wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20my%20payment%20for%20booking%20CH-ABC12%20didn%27t%20go%20through.%20What%20I%20saw%3A%20';
+    expect(m.html).toContain(encoded);
+    expect(m.text).toContain(encoded);
+    // The CTA keeps its label and colour — only the href gained a prefilled message.
+    expect(m.html).toContain('Chat on WhatsApp');
+    expect(m.html).toContain('bgcolor="#0B7A44"');
   });
 });
 

@@ -97,13 +97,18 @@ comes up, so launch is a clean, mechanical switch-over.
   - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
   - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage). **Add a second monitor for `https://ceylonhop.com/` with a keyword check** — since the cutover the apex is the product, and a 200 alone does not prove it: a Cloudflare error page and a reverted CNAME both return 200. A 5-min ping also keeps the API warm, which is the other unticked item above.
   - Partial cover exists meanwhile: `.github/workflows/site-health.yml` (added 2026-09-20) checks daily that the apex serves OUR build (stamped `site.css`, no `wp-content`), that `/trip/` and the sitemap resolve, and that the **Pages certificate has >21 days left**. That last one matters because the apex is Cloudflare-proxied, so GitHub renews against a domain that no longer resolves to it — and an uptime monitor cannot see it, because it reads Cloudflare's edge certificate, not the origin's. The workflow asks Pages directly by IP with SNI.
-  - [x] **payments watchdog now has a scheduler** — `.github/workflows/watchdog.yml` (added
-        2026-09-20). Until then NOTHING called `/admin/jobs/watchdog`: no workflow, no cron. So
-        every abandoned-checkout recovery email since M17 went unsent and every stuck payment
-        went unalerted. **This is a stopgap** — GitHub's scheduler is throttled (measured here
-        at a median 84 min against a requested 13), and the sweep is idempotent so a late tick
-        is harmless but a missed hour is still a missed hour. **cron-job.org at ~15 min, or a
-        paid tier, is still the real answer** — same service that solves the keep-warm problem.
+  - [x] **payments watchdog has a scheduler** — `.github/workflows/watchdog.yml` (added
+        2026-09-20, #673). Until then NOTHING called `/admin/jobs/watchdog`: no workflow, no
+        cron. So every abandoned-checkout recovery email since M17 went unsent and every stuck
+        payment went unalerted. The first cut was one POST per `*/30` trigger, and GitHub
+        delivered those 2.6–7.2 h apart (18 runs, 2026-09-21 → 24, median 4.7 h) against the
+        sweep's 30 min – 6 h recovery window, so it missed about as often as it caught. It now
+        loops like `keepalive.yml`: each trigger sweeps every 15 min for 5 h 45 min (the 6 h job
+        cap), newest trigger wins, so the recovery email goes ~30–45 min after the checkout is
+        abandoned. **Still a mitigation** — a trigger gap longer than the loop (2 of the 17
+        measured) leaves a hole, and the schedule pauses after 60 idle days. **cron-job.org at
+        ~15 min, or a paid tier, is still the real answer** — same service that solves the
+        keep-warm problem.
   - [ ] **Resend dashboard**: add a webhook → `https://ceylon-hop-api.onrender.com/webhooks/resend` (events: bounced, complained) → set `RESEND_WEBHOOK_SECRET`
   - [ ] **Supabase**: toggle the built-in DB alerts on
 

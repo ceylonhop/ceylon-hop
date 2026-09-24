@@ -2,45 +2,83 @@ name: payments-watchdog
 
 # Drives the M17 payments watchdog (POST /admin/jobs/watchdog): the sweep that emails a
 # recovery link for an abandoned checkout, and raises the critical alerts for payments stuck
-# between "customer paid" and "we recorded it".
+# between "customer paid" and "we recorded it", and for refunds that never resolved.
 #
-# WHY THIS FILE EXISTS. The endpoint has shipped since M17 and nothing has ever called it on a
-# schedule. go-live-checklist.md §3 assigns it to an external cron (cron-job.org) at ~15 min,
-# and that box is still unticked — confirmed 2026-09-20 by grepping the repo: no workflow, no
-# caller. So every abandoned-payment recovery email since M17 has gone unsent, and every stuck
-# payment has gone unalerted. That mattered less while WordPress served customers; the apex
-# cutover the same day makes it live money.
+# HISTORY. The endpoint shipped with M17 and nothing called it on a schedule until this file
+# landed on 2026-09-20 (#673) as one POST per '*/30' cron trigger. That proved the plumbing
+# (18 green runs, two recovery emails sent) and exposed the cadence: GitHub delivered those
+# triggers 2.6–7.2 h apart (2026-09-21 → 24, median 4.7 h). The recovery email only fires for
+# a checkout abandoned between 30 min and 6 h ago, so a sweep every ~4.7 h misses that window
+# about as often as it catches it, and when it does catch it the email is hours late instead
+# of the ~30–45 min the sweep was designed for.
 #
-# THIS IS A STOPGAP, NOT THE DESIGN. GitHub's scheduler is approximate and heavily throttled —
-# measured on this repo's own keepalive at a median 84 min against a requested 13. The watchdog
-# is idempotent (alerts dedupe per booking inside their cooldown), so a late or repeated tick is
-# harmless, and a 30-minute request that lands hourly still beats never. An external pinger or a
-# paid tier remains the real answer; see the keep-warm note in the go-live checklist, which has
-# the same root cause and would be solved by the same service.
+# WHY THIS LOOPS INSTEAD OF JUST USING cron — same reasoning as keepalive.yml. A trigger
+# cannot be a single sweep; it has to keep sweeping until the next trigger arrives. So each
+# run sweeps every 15 min for 5 h 45 min, the most a hosted job can do before GitHub kills it
+# at 6 h, and concurrency lets the newest trigger take over rather than stacking runs. A gap
+# between triggers longer than the loop (2 of the 17 measured) still leaves a hole — and the
+# schedule pauses entirely after 60 days of repo inactivity — so this remains a mitigation:
+# cron-job.org at ~15 min, or a paid tier, is still the real answer, see the go-live checklist.
+# The repo is public, so the always-on runner costs nothing.
+#
+# FAILURE POLICY. -f makes curl exit non-zero on any non-2xx. A 401/403 means the secret is
+# missing or mismatched: nothing later in the run would fare better, so the job fails at once,
+# loudly, the way scheduled-notifications does (that exact failure hid the notifications tick
+# for 42 consecutive runs — docs/known-bugs.md). Any other failure — a Render cold start, a
+# 5xx, a timeout — is logged and the loop keeps sweeping, because giving up would reopen the
+# hours-long hole this loop exists to close; the run still goes red at the end so it is seen.
+# Overlap and cancellation are safe: alerts dedupe per booking, and the recovery email claims
+# its notification_log row before sending, so a repeated or cut-off tick cannot double-send.
+#
+# KNOWN GAP DOWNSTREAM. The recovery email's "Finish your booking" button lands on
+# manage.html, which still checks out through the PayHere iframe SDK — the flow pay.html was
+# redesigned away from (docs/known-bugs.md, 2026-08-07 row). Whether to move that page or
+# the link to the redirect flow is a separate decision; this file only makes the sweep run.
 #
 # Requires the repo secret `ADMIN_API_KEY` to match ADMIN_API_KEY on the ceylon-hop-api Render
-# service. Mismatched or unset, the endpoint 401s and this job goes red — which is the signal.
-# That exact failure hid the notifications tick for 42 consecutive runs (docs/known-bugs.md),
-# so this job fails loudly rather than swallowing a non-2xx.
+# service. Scheduled runs use the copy of this file on the default branch (main), so a merge
+# to main is the release — the production branch promote does not apply here.
 on:
   schedule:
-    - cron: '*/30 * * * *' # every 30 min; GitHub will deliver it less often than that
-  workflow_dispatch: {}
+    - cron: '*/15 * * * *' # asks for 15 min; GitHub delivers hours apart, hence the loop below
+  workflow_dispatch: {} # a manual run loops too — cancel it when you have seen enough
 
-# A slow tick overlapping the next one would double-send nothing (the sweep is idempotent), but
-# there is no value in piling them up either.
+# Newest run wins; the loop from the previous trigger is cancelled so runs never stack.
 concurrency:
   group: payments-watchdog
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sweep:
     runs-on: ubuntu-latest
+    timeout-minutes: 355 # the loop's last sweep starts before 5 h 45 min; hosted jobs die at 6 h
     steps:
-      - name: Run the payments watchdog sweep
+      - name: Sweep every 15 minutes for 5 h 45 min
+        env:
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
         run: |
-          # -f makes curl exit non-zero on 4xx/5xx: a 401 from a missing secret must go red,
-          # not print a JSON error body and pass.
-          curl -fsS --max-time 120 -X POST \
-            -H "x-admin-key: ${{ secrets.ADMIN_API_KEY }}" \
-            https://ceylon-hop-api.onrender.com/admin/jobs/watchdog
+          END=$(( $(date +%s) + 5*3600 + 45*60 ))   # 5 h 45 min from now
+          n=0
+          failed=0
+          while :; do
+            n=$((n+1))
+            # -w appends the HTTP status as the last line of $out, on success and on failure
+            # alike; with -f a non-2xx also makes curl exit non-zero, which is the branch below.
+            if out=$(curl -fsS --max-time 120 -X POST \
+                  -H "x-admin-key: $ADMIN_API_KEY" \
+                  -w '\n%{http_code}' \
+                  https://ceylon-hop-api.onrender.com/admin/jobs/watchdog 2>&1); then
+              echo "$(date -u +%H:%M:%S)  sweep #$n -> HTTP ${out##*$'\n'} ${out%$'\n'*}"
+            else
+              status=${out##*$'\n'}
+              echo "::error::$(date -u +%H:%M:%S)  sweep #$n failed (HTTP $status): ${out%%$'\n'*}"
+              case "$status" in
+                401|403) exit 1 ;;   # auth misconfig — fail fast, see FAILURE POLICY above
+              esac
+              failed=$((failed+1))
+            fi
+            # Only sleep if the next sweep still fits inside the window.
+            [ $(( $(date +%s) + 900 )) -lt "$END" ] || break
+            sleep 900
+          done
+          [ "$failed" -eq 0 ] || { echo "::error::$failed of $n sweeps failed"; exit 1; }
