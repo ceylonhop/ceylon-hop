@@ -20,6 +20,13 @@ describe('opsView', () => {
     expect(row.customerFirstName).toBe('Maya');
   });
 
+  // Owner 2026-09-23: the customer's number on every booking row in the ops queue.
+  it('carries the customer phone number, or null when there is none', () => {
+    expect(toOpsRow(base, { paid: true }).customerPhone).toBe('+34600');
+    const none = { ...base, input: { ...base.input, customer: { ...base.input.customer, whatsapp: '  ' } } } as Booking;
+    expect(toOpsRow(none, { paid: true }).customerPhone).toBeNull();
+  });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });

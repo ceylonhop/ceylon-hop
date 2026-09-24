@@ -96,6 +96,8 @@ export function rideListToOpsRow(
     currency: opts.currency,
     customerFirstName: name.first,
     customerName: name.full,
+    // One row per VAN, not per customer — and the board never stores a phone number.
+    customerPhone: null,
     route: `${list.fromPlace} → ${list.toPlace}`,
     travelDate: list.date,
     travelTime: departureTime(list),

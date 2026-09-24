@@ -211,6 +211,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-route b{color:var(--ink);font-weight:700}.tk-route .md{color:var(--ink-faint)}
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
+  .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
@@ -2069,7 +2070,7 @@ const adminApi={
 /* ── row → ticket mapping (backend OpsBookingRow → view model) ── */
 function rowToTicket(row){
   return {
-    id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName,
+    id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
@@ -2300,7 +2301,7 @@ function ticketRow(t,i){
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
      advance. The box swallows its own click so ticking never opens the drawer. */
