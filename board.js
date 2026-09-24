@@ -505,6 +505,13 @@
     return day.toISOString().slice(0, 10);
   }
 
+  // The number the API will take for payment.phone: + then 6–15 digits (#761, after CH-T74DT
+  // banked a 26-digit one). MIRRORS INTERNATIONAL_NUMBER in api/src/domain/phone.ts, which strips
+  // spaces and dashes first; joinedPhone() only ever emits '+' + digits, so none reach this.
+  function isInternationalNumber(phone) {
+    return typeof phone === 'string' && /^\+\d{6,15}$/.test(phone);
+  }
+
   var RideBoard = {
     shouldReport: shouldReport,
     errorPayload: errorPayload,
@@ -537,6 +544,7 @@
     resolvePlaceId: resolvePlaceId,
     filterOptions: filterOptions,
     earliestStartDate: earliestStartDate,
+    isInternationalNumber: isInternationalNumber,
     closesAt: closesAtMs,
     SLOTS: SLOTS,
     MIN_DEFAULT: MIN_DEFAULT,
@@ -1741,6 +1749,14 @@
     return number ? '+' + code + number : '';
   }
 
+  // One answer for every "that number won't work": the API's phone_required / phone_invalid
+  // refusals (#755, #761) and the same bound paymentDetails() checks before anything is sent.
+  // Retyping is the fix, so the cursor goes back into the number instead of "try again later".
+  function phoneError() {
+    sheetError('Check your phone number', 'Use your country code and number, e.g. +94 77 123 4567.');
+    document.getElementById('pay-phone').focus();
+  }
+
   function paymentDetails() {
     var sel = document.getElementById('pay-cc');
     var rawPhone = (document.getElementById('pay-phone').value || '').trim();
@@ -1754,6 +1770,9 @@
       document.getElementById(missing).focus();
       return null;
     }
+    // A number that cannot pass is refused here, before the hand-off screen goes up, rather than
+    // after a round trip. The API's own check stays the backstop.
+    if (!isInternationalNumber(phone)) { phoneError(); return null; }
     return { phone: phone, city: city, address: address };
   }
 
@@ -1880,6 +1899,9 @@
       }
       else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
+      // A number the traveller has to retype (#761). "Try again in a moment" cannot fix it, and it
+      // is a refusal they can act on, not a fault: counted above as ride_board_refused, never report()ed.
+      else if (e.status === 400 && e.body && (e.body.error === 'phone_invalid' || e.body.error === 'phone_required')) { phoneError(); }
       else { sheetError("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
