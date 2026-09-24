@@ -151,12 +151,12 @@ describe('bookings queue filter chips', () => {
   // The subhead used to count attention across every ticket, closed and expired included —
   // "32 need attention" out of 33 rows says nothing at all. It describes the visible list now.
   it('counts "need attention" over the rows on screen, not every ticket ever', () => {
-    expect(html).toContain('${list.filter(isAttn).length} need attention');
+    expect(html).toContain('${list.filter(t=>isAttn(t)&&!t.test).length} need attention');
   });
 
   // The nav badge has to count the same rows the list shows, or it points somewhere the reader
   // cannot get to. Against the real queue the unscoped version read ~60 for a forward book of 10.
   it('scopes the nav badge to open work', () => {
-    expect(html).toContain("const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)).length;");
+    expect(html).toContain("const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;");
   });
 });

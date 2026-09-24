@@ -53,6 +53,8 @@ export function adminRoutes(deps: {
   digestTo?: string;
   // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
+  // Test bookings (2026-09-24): config.TEAM_EMAILS, left out of the digest's status counts.
+  teamEmails?: ReadonlySet<string>;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
   linkSecret: string;
@@ -618,7 +620,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {

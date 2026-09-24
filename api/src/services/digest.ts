@@ -3,6 +3,7 @@ import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { opsEmailShell, detailTable, money } from './opsEmail';
 import { WATCHDOG_TICK, agoText } from './watchdog';
+import { isTeamEmail } from './testBookings';
 
 // M17 daily ops digest — one compact founder email per day riding the notifications
 // tick: what the business did in the last 24 h and whether the watchdog barked. Pure
@@ -20,12 +21,15 @@ const alertLabel = (kind: string): string => ALERT_LABELS[kind] ?? kind;
 
 export async function buildDigest(
   now: Date,
-  deps: { bookings: BookingRepo; alertLog?: AlertLogRepo; quotes?: QuoteRepo; opsBaseUrl?: string },
+  deps: { bookings: BookingRepo; alertLog?: AlertLogRepo; quotes?: QuoteRepo; opsBaseUrl?: string; teamEmails?: ReadonlySet<string> },
 ): Promise<{ subject: string; text: string; html: string }> {
   const since = new Date(now.getTime() - 24 * 60 * 60_000);
   const all = await deps.bookings.list();
   const recent = all.filter((b) => Date.parse(b.createdAt) >= since.getTime());
-  const byStatus = (s: string) => all.filter((b) => b.status === s).length;
+  // Status counts leave the team's own test bookings out (config.TEAM_EMAILS): every "Payment
+  // pending" in the August digests was an owner test. The 24h created/value lines are untouched.
+  const team = deps.teamEmails ?? new Set<string>();
+  const byStatus = (s: string) => all.filter((b) => b.status === s && !isTeamEmail(b.input.customer.email, team)).length;
   // USD-only assumption: bookings are USD today, so we sum minor units and label them $.
   // Revisit if a non-USD booking currency is ever introduced (would need per-currency grouping).
   const valueBooked = recent.reduce((sum, b) => sum + b.total, 0);

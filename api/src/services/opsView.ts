@@ -2,6 +2,7 @@ import type { Booking } from '../db/bookingRepo';
 import type { RideOps } from '../db/rideOpsRepo';
 import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
+import { isTeamEmail } from './testBookings';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -51,7 +52,12 @@ export interface OpsBookingRow {
   opsNotes: string | null;
   source: OpsRowSource;
   board?: OpsBoardDetail;
+  /** Customer email is one of the team's (config.TEAM_EMAILS) — a test booking, not a customer.
+   *  The queue labels it and leaves it out of its counts; the row itself stays. */
+  isTest: boolean;
 }
+
+const NO_TEAM: ReadonlySet<string> = new Set();
 
 function route(b: Booking): string {
   if (b.mode === 'trip') return b.input.stops.join(' → ');
@@ -85,7 +91,10 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
   return rideOps?.fulfilmentStatus ?? 'paid';
 }
 
-export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boolean }): OpsBookingRow {
+export function toOpsRow(
+  b: Booking,
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string> },
+): OpsBookingRow {
   const t = travel(b);
   const c = b.input.customer;
   return {
@@ -99,5 +108,6 @@ export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boo
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,
     source: 'booking',
+    isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),
   };
 }

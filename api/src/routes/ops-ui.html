@@ -2081,6 +2081,8 @@ function rowToTicket(row){
     /* Ride-board vans ride in the same queue as bookings but are read-only
        projections — `source` is what every branch below keys off. */
     source:row.source||'booking', board:row.board||null,
+    /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
+    test:!!row.isTest,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
@@ -2287,7 +2289,7 @@ function setNav(){
      shows, or it points at a list that does not contain them. Counting every ticket made it
      read ~60 against a queue whose forward book was 10. Badge only when there's something to
      act on — a red "0" is noise. */
-  const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)).length;
+  const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
@@ -2315,7 +2317,7 @@ function ticketRow(t,i){
   return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     ${tick}${lead}
     <div class="tk-main">
-      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
+      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}</div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
       <div class="tk-meta">${meta}</div>
     </div>
@@ -2377,8 +2379,8 @@ function viewTickets(){
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="pagehead"><h1>Bookings</h1></div>
-    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${list.filter(isAttn).length} need attention</span></p>
-    <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
+    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
+    <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
   DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;

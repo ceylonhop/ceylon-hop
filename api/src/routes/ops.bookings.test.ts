@@ -335,3 +335,34 @@ describe('ops bookings list — payments are fetched in one batch, not per booki
     );
   });
 });
+
+// Test bookings (2026-09-24): every ops row says whether its customer email is one of the
+// team's (TEAM_EMAILS), so the queue can label it and leave it out of its counts.
+describe('ops bookings rows — isTest', () => {
+  it('flags a team-email booking and leaves a customer booking unflagged', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey', teamEmails: new Set(['m@x.com']) });
+    const mine = await seed(bookings);
+    await bookings.setStatus(mine.id, 'payment_pending');
+    const theirs = await bookings.create({
+      ...bookingInput(),
+      input: { ...bookingInput().input, customer: { ...bookingInput().input.customer, email: 'real@customer.example' } },
+    });
+    await bookings.setStatus(theirs.id, 'payment_pending');
+    const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
+    const rows: Array<{ id: string; isTest: boolean }> = await res.json();
+    expect(rows.find((r) => r.id === mine.id)?.isTest).toBe(true);
+    expect(rows.find((r) => r.id === theirs.id)?.isTest).toBe(false);
+  });
+
+  it('is false on every row when TEAM_EMAILS is unset', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
+    const rows: Array<{ isTest: boolean }> = await res.json();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].isTest).toBe(false);
+  });
+});

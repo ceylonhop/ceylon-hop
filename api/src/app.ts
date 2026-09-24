@@ -59,6 +59,7 @@ import {
 } from './db/customerShortLinkRepo';
 import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
+import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -137,6 +138,9 @@ export interface AppDeps {
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
+  // Reaches the ops queue rows (isTest) and the daily digest's status counts.
+  teamEmails?: ReadonlySet<string>;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
@@ -368,11 +372,27 @@ export function createApp(deps: AppDeps = {}) {
   );
   // M17: the uptime monitor's target — proves the DB answers, unlike the static /health
   // (which stays fast for keep-warm pings and the booking page's warm-up call).
+  //
+  // `watchdog` is the payments watchdog's heartbeat (the same ledger row the daily tick
+  // checks), so an uptime monitor can see a dead cron. Reported only — it deliberately does
+  // NOT affect the status code yet: the cron still lands hours apart, and a red health check
+  // on every gap would page constantly. Status is the DB check alone. Omitted when no alert
+  // ledger is wired (in-memory dev/tests) or it can't be read.
+  const watchdogHealth = async (): Promise<{ watchdog?: { lastRunAt: string | null; stale: boolean } }> => {
+    if (!deps.alertLog) return {};
+    try {
+      const last = await deps.alertLog.lastSentAt(WATCHDOG_TICK.kind, WATCHDOG_TICK.key);
+      const stale = !last || Date.now() - last.getTime() > WATCHDOG_STALE_MS;
+      return { watchdog: { lastRunAt: last ? last.toISOString() : null, stale } };
+    } catch (err) {
+      console.error('/health/deep watchdog heartbeat read failed:', err);
+      return {};
+    }
+  };
   app.get('/health/deep', async (c) => {
-    if (!deps.pingDb) return c.json({ status: 'ok', db: 'skipped' });
+    if (!deps.pingDb) return c.json({ status: 'ok', db: 'skipped', ...(await watchdogHealth()) });
     try {
       await deps.pingDb();
-      return c.json({ status: 'ok', db: 'ok' });
     } catch (err) {
       console.error('/health/deep DB check failed:', err);
       void alerts.send({
@@ -383,6 +403,7 @@ export function createApp(deps: AppDeps = {}) {
       });
       return c.json({ status: 'degraded', db: 'down' }, 503);
     }
+    return c.json({ status: 'ok', db: 'ok', ...(await watchdogHealth()) });
   });
   app.route(
     '/bookings',
@@ -490,6 +511,7 @@ export function createApp(deps: AppDeps = {}) {
     email, notificationLog, rideLists, quotes,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+    teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
@@ -567,6 +589,7 @@ export function createApp(deps: AppDeps = {}) {
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+      teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,

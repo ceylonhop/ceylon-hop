@@ -322,6 +322,14 @@ describe('sendPaymentIncomplete — abandoned checkout recovery', () => {
     expect(m.html).toContain(encoded);
     expect(m.text).toContain(encoded);
   });
+
+  // The watchdog may only count (and keep the one-shot claim for) a recovery email that
+  // actually left — so the sender has to hand back what the adapter said happened.
+  it("returns the adapter's outcome — delivered, and suppressed", async () => {
+    expect(await sendPaymentIncomplete(pending, new FakeEmailAdapter())).toEqual({ delivered: true });
+    const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const }) };
+    expect(await sendPaymentIncomplete(pending, suppressed)).toEqual({ delivered: false, reason: 'suppressed_allowlist' });
+  });
 });
 
 describe('sendBookingConfirmed — driver arranged', () => {
