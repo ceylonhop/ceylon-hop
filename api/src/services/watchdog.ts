@@ -132,11 +132,13 @@ export async function runWatchdog(
           recovery = 'sent just now';
         } else {
           // Suppressed (kill switch / allowlist): nobody was chased, so neither count it nor
-          // burn the one-shot claim on it — the next sweep tries again.
+          // burn the one-shot claim — or the burst budget — on it. The next sweep tries again.
+          budget?.refund();
           await log.release(b.id, 'payment_recovery');
           recovery = `NOT delivered (${outcome && !outcome.delivered ? outcome.reason : 'unknown'}) — the next sweep retries`;
         }
       } catch (err) {
+        budget?.refund();
         await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);
         recovery = `FAILED to send (${err instanceof Error ? err.message : String(err)}) — the next sweep retries`;

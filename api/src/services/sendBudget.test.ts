@@ -22,6 +22,22 @@ describe('SendBudget', () => {
     expect(b.sent).toBe(3);
   });
 
+  // A claim whose send did not happen (suppressed by the kill switch / allowlist, or thrown) hands
+  // its slot back — otherwise a non-delivery burns budget a real send needed (review of #774).
+  it('refunds claimed slots, never below nothing used', () => {
+    const b = new SendBudget(2);
+    expect(b.tryClaim()).toBe(true);
+    expect(b.tryClaim()).toBe(true);
+    expect(b.exhausted).toBe(true);
+    b.refund();
+    expect(b.remaining).toBe(1);
+    expect(b.sent).toBe(1);
+    expect(b.tryClaim()).toBe(true);
+    b.refund(5);
+    expect(b.sent).toBe(0);
+    expect(b.remaining).toBe(2);
+  });
+
   it('tallies suppressed sends by kind and keeps a bounded sample of references', () => {
     const b = new SendBudget(0);
     for (let i = 0; i < 8; i++) b.suppress('review_request', `CH-R${i}`);

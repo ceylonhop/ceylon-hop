@@ -245,6 +245,39 @@ describe('runWatchdog — burst cap', () => {
     expect(budget.report().kinds).toEqual({ payment_recovery: 3 });
   });
 
+  // Review of #774, finding 5: a send that did not deliver is not a send. Burning the burst budget
+  // on it meant a kill-switched or allowlisted booking could starve a real customer's recovery mail.
+  for (const [how, first] of [
+    ['suppressed', async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const })],
+    ['thrown', async () => { throw new Error('smtp down'); }],
+  ] as const) {
+    it(`a ${how} recovery send gives its budget slot back, so the next booking is still mailed`, async () => {
+      const bookings = await seedManyPending(2);
+      const budget = new SendBudget(1);
+      const delivered: string[] = [];
+      let calls = 0;
+      const email = {
+        send: async (m: { to: string; subject: string }) => {
+          calls += 1;
+          if (calls === 1) return first();
+          delivered.push(m.subject);
+          return { delivered: true as const };
+        },
+      };
+
+      const res = await runWatchdog(later(45), {
+        bookings, log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(),
+        email, baseUrl: 'https://ceylonhop.com', linkSecret: 's', budget,
+      });
+
+      expect(calls).toBe(2);
+      expect(delivered).toHaveLength(1);
+      expect(res.recoveryEmails).toBe(1);
+      expect(budget.sent).toBe(1);
+      expect(budget.report().suppressed).toBe(0);
+    });
+  }
+
   it('never caps ops ALERTS — suppressing the page would hide the problem', async () => {
     const bookings = await seedManyPending(5);
     const alerts = new FakeAlertAdapter();

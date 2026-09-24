@@ -60,6 +60,15 @@ export class SendBudget {
     return true;
   }
 
+  /**
+   * Hand back `n` claimed slots whose send did not happen (suppressed by the kill switch or
+   * allowlist, or thrown). The cap bounds what actually leaves the building; a non-delivery that
+   * kept its slot would starve a real send later in the same tick. Never below nothing used.
+   */
+  refund(n = 1): void {
+    this.used = Math.max(0, this.used - n);
+  }
+
   /** Record a send that was decided on but not made, so the alert can describe it. */
   suppress(kind: string, ref: string, count = 1): void {
     this.tally.set(kind, (this.tally.get(kind) ?? 0) + count);
