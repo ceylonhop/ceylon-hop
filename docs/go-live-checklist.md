@@ -52,16 +52,22 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Resend:** verify a sending domain — recommend **`send.ceylonhop.com`** (subdomain keeps existing `@ceylonhop.com` mail/SPF untouched). Add the SPF/DKIM/return-path records. Until done, email only delivers to the account owner.
 - [ ] **Google Cloud console:** add `ceylonhop.com` (+ `www`) to the **front-end Maps/Places key** *Website restrictions* (today: `ceylonhop.github.io` + localhost). Key powers Maps JS + Places Autocomplete + Directions on `booking.html` / `plan.html`.
 - [x] **PayHere dashboard:** approved/live domain ✅ **Done 2026-08-02.** ⚠️ **The apex-only rule recorded here was wrong** — it held on 2026-08-01 (every live payment died at `PH-0013`) and PayHere then approved the **subdomain**. Real money now settles on `pay.ceylonhop.com`: booking `CH-RKWNW`, payment `320048261124`. Do not re-derive the apex-only wall.
-- [ ] **Keep the API warm:** `keepalive.yml` (GHA, 13-min `/health` ping) exists but GitHub Actions cron is throttled and not reliable enough alone — still set up an external pinger (e.g. cron-job.org → `https://ceylon-hop-api.onrender.com/health` every ~10 min) **or** upgrade Render off the free tier.
+- [ ] **Keep the API warm:** `keepalive.yml` (GHA: each cron trigger pings `/health` every 5 min for 5 h 45 min, the most a hosted job allows; newest trigger wins) exists but GitHub Actions cron is throttled and not reliable enough alone — still set up an external pinger (e.g. cron-job.org → `https://ceylon-hop-api.onrender.com/health` every ~10 min) **or** upgrade Render off the free tier.
   - **Measured 2026-07-25 — this is live, not theoretical.** Over a 62 h window the workflow's
     actual gap between runs was a **median of 84 min** (min 52, max 208) against the 13 min it
     asks for. **All 39 gaps** exceeded the ~15 min sleep threshold, so the API was asleep
     **~84% of the time** and roughly five in six visitors hit a ~50 s cold start. The cold path
     is expensive here because `server.ts` runs `migrate()` + `seedCorridors()` before it listens.
-  - `keepalive.yml` now loops (pings every 5 min for up to 3.5 h per trigger) to cover those
-    gaps. **That is a mitigation, not the fix** — it still depends on GitHub triggering the
-    workflow at all, and the schedule pauses after 60 days of repo inactivity. The external
-    pinger or a paid tier is still the real answer, and both need account access.
+  - **Re-measured 2026-09-24** (`gh run list --workflow=keepalive.yml --limit 60`, 59 gaps,
+    2026-09-15 → 24): the gap between triggers is now a **median of 216 min** (min 111,
+    p90 315, max 403). The loop had been sized at 3.5 h for July's worst case (208 min), and
+    **32 of the 59 gaps outran it**, so the instance was spinning down for a large share of the
+    day again.
+  - `keepalive.yml` now loops for the most a hosted job allows: each trigger pings every 5 min
+    for **5 h 45 min** (GitHub kills a job at 6 h), which covers 58 of those 59 gaps. **That is
+    a mitigation, not the fix** — it still depends on GitHub triggering the workflow at all,
+    and the schedule pauses after 60 days of repo inactivity. The external pinger or a paid
+    tier is still the real answer, and both need account access.
 - [ ] **Revisit the Render tier under real payment traffic.** Owner decision 2026-07-16: staying on the **free tier** for now — ~400–500 ms per debounced reprice judged acceptable for a travel site (see `docs/superpowers/specs/2026-07-16-server-authoritative-pricing-design.md` §10). At go-live, re-measure quote latency from a Sri Lankan connection and reconsider paid tier (+ Singapore region) if the warm jitter band (250 ms–1.3 s) hurts conversion or webhook reliability.
 
 ## 3. Hosting / code / data
@@ -92,10 +98,12 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
 - [ ] **Observability & alerting (M17) — BUILT + PARTLY ACTIVATED in prod 2026-07-05.** Code shipped 2026-07-03: throttled email alerts (30-min dedupe via `alert_log`), env-gated Sentry on the API, front-end error beacon → `/errors/client`, payment-webhook failure alerts, watchdog sweep, `/health/deep`, Resend bounce webhook, daily ops digest. Spec: [`superpowers/specs/2026-07-03-m17-observability-design.md`](./superpowers/specs/2026-07-03-m17-observability-design.md). **Launch activation steps:**
+  - [ ] set `TEAM_EMAILS` on Render (owner + team addresses, comma-separated) so test bookings are labelled — the ops queue shows a "test" pill and leaves them out of its counts, the daily digest leaves them out of its status counts (2026-09-24)
   - [x] set `ALERT_EMAIL` on Render — **DONE 2026-07-05** (alert emails currently send from a test sender until the `ceylonhop.com` domain is verified in Resend)
   - [x] create the free **Sentry** project → set `SENTRY_DSN` on Render — **DONE 2026-07-05** (verified via a real event; project `ceylonhop/env production`)
   - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
   - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage). **Add a second monitor for `https://ceylonhop.com/` with a keyword check** — since the cutover the apex is the product, and a 200 alone does not prove it: a Cloudflare error page and a reverted CNAME both return 200. A 5-min ping also keeps the API warm, which is the other unticked item above.
+  - Watchdog heartbeat: `/health/deep` now reports `watchdog: { lastRunAt, stale }` (stale = no sweep in the last hour) without changing its status code. Once the watchdog runs on a reliable 15-min scheduler (not GitHub's cron), add a UptimeRobot **keyword monitor on `"stale":false`** against the same URL.
   - Partial cover exists meanwhile: `.github/workflows/site-health.yml` (added 2026-09-20) checks daily that the apex serves OUR build (stamped `site.css`, no `wp-content`), that `/trip/` and the sitemap resolve, and that the **Pages certificate has >21 days left**. That last one matters because the apex is Cloudflare-proxied, so GitHub renews against a domain that no longer resolves to it — and an uptime monitor cannot see it, because it reads Cloudflare's edge certificate, not the origin's. The workflow asks Pages directly by IP with SNI.
   - [x] **payments watchdog has a scheduler** — `.github/workflows/watchdog.yml` (added
         2026-09-20, #673). Until then NOTHING called `/admin/jobs/watchdog`: no workflow, no

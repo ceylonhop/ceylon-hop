@@ -34,6 +34,9 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
       ({
         id: reference,
         reference,
+        mode: 'single',
+        channel: 'website',
+        input: { from: 'Colombo Airport', to: 'Ella', customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94', country: 'LK' } },
         status: 'payment_pending',
         createdAt: new Date(now.getTime() - minsAgo * 60_000).toISOString(),
         currency: 'USD',
@@ -75,6 +78,32 @@ describe('GET /health/deep (M17)', () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ status: 'degraded', db: 'down' });
     expect(alerts.sent[0]?.kind).toBe('db_down');
+  });
+
+  // The watchdog heartbeat, where an uptime monitor can see it. Staleness is reported
+  // but does NOT move the status code yet: the cron still lands hours apart, and a red
+  // health check on every gap would page constantly.
+  it('reports the watchdog heartbeat when the alert ledger is wired', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const ranAt = new Date(Date.now() - 5 * 60_000);
+    await runWatchdog(ranAt, { bookings: { list: async () => [] } as never, log: {} as never, alerts: new FakeAlertAdapter(), alertLog });
+    const app = createApp({ alertLog, pingDb: async () => {} });
+    const res = await app.request('/health/deep');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok', db: 'ok', watchdog: { lastRunAt: ranAt.toISOString(), stale: false } });
+  });
+
+  it('a stale (or never-run) watchdog is reported but leaves the status 200', async () => {
+    const app = createApp({ alertLog: new InMemoryAlertLogRepo(), pingDb: async () => {} });
+    const res = await app.request('/health/deep');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok', db: 'ok', watchdog: { lastRunAt: null, stale: true } });
+
+    const alertLog = new InMemoryAlertLogRepo();
+    await runWatchdog(new Date(Date.now() - 3 * 3600_000), { bookings: { list: async () => [] } as never, log: {} as never, alerts: new FakeAlertAdapter(), alertLog });
+    const res2 = await createApp({ alertLog, pingDb: async () => {} }).request('/health/deep');
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toMatchObject({ status: 'ok', watchdog: { stale: true } });
   });
 
   it('plain /health stays static and never touches the DB', async () => {
@@ -141,5 +170,18 @@ describe('daily ops digest rides /admin/jobs/notifications (M17)', () => {
     const body = await res.json();
     expect(body.digest).toBe(false);
     expect(body).toHaveProperty('staleSharedHolds');
+  });
+});
+
+describe('POST /admin/jobs/watchdog — heartbeat', () => {
+  it('stamps the alert ledger so the daily tick can tell whether the cron is alive', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, alertLog });
+    const before = Date.now();
+    const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const at = await alertLog.lastSentAt('watchdog_tick', 'last');
+    expect(at).not.toBeNull();
+    expect(at!.getTime()).toBeGreaterThanOrEqual(before);
   });
 });

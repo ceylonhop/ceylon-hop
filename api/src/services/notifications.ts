@@ -383,6 +383,16 @@ interface Cta { href: string; label: string; bg: string }
 // #0B7A44, not WhatsApp's own #25D366 — white text on the raw green is 1.98:1. Same
 // decision as site.css's .btn-wa, and the same label the site settled on in #462.
 const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Chat on WhatsApp', bg: '#0B7A44' };
+// The two payment-failure emails only: the same label and colour, but the href opens WhatsApp
+// with a message that already names the booking. An incomplete payment ends silently on our
+// side (no decline webhook, nothing on the page), so the customer is the only witness to what
+// went wrong — asking them to type the reference is one more step than most take. The
+// apostrophe is encoded by hand: encodeURIComponent leaves it bare, and plain-text mail clients
+// stop linkifying a URL at a bare quote.
+function paymentTroubleWhatsApp(booking: Booking): Cta {
+  const msg = `Hi Ceylon Hop, my payment for booking ${booking.reference} didn't go through. What I saw: `;
+  return { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };
+}
 
 function infoBox(title: string, body: string, note?: string, cta: Cta = CTA_WHATSAPP): string {
   return `<tr><td style="padding:26px 34px 0">
@@ -670,9 +680,10 @@ export async function sendPaymentIncomplete(
   booking: Booking,
   email: EmailAdapter,
   links: { resume?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
   const first = esc(booking.input.customer.firstName);
   const due = money(booking.amountDueNow ?? booking.total, booking.currency);
+  const wa = paymentTroubleWhatsApp(booking);
   const html = page(
     brandHeader() +
       introBlock(
@@ -687,6 +698,8 @@ export async function sendPaymentIncomplete(
       infoBox(
         'Finish in a minute',
         'Pick up where you left off — your details are saved. Once payment clears we’ll confirm everything by email. Trouble paying? Just reply or message us on WhatsApp.',
+        undefined,
+        wa,
       ) +
       footer(),
   );
@@ -694,8 +707,12 @@ export async function sendPaymentIncomplete(
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Finish your booking: ${links.resume}`] : []),
+    '',
+    `Tell us what happened on WhatsApp: ${wa.href}`,
   ]);
-  await email.send({
+  // Returns the adapter's outcome so the watchdog counts — and keeps the one-shot claim
+  // for — only a recovery email that actually left (same rule as sendBookingConfirmation).
+  return email.send({
     to: booking.input.customer.email,
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
     html,
@@ -714,6 +731,7 @@ export async function sendPaymentFailed(
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
   const due = money(booking.amountDueNow ?? booking.total, booking.currency);
+  const wa = paymentTroubleWhatsApp(booking);
   const html = page(
     brandHeader() +
       introBlock(
@@ -732,6 +750,8 @@ export async function sendPaymentFailed(
       infoBox(
         'If your card was declined',
         'Most declined cards are a foreign-payment block, not a problem with your booking. Check your banking app first — a blocked charge usually shows up with an “approve” prompt, and paying again straight after works. Failing that, call the number on the back of your card and say you’re authorising a payment to a travel company in Sri Lanka, or try a different card. You can also message us on WhatsApp and we’ll send another way to pay.',
+        undefined,
+        wa,
       ) +
       footer(),
   );
@@ -739,6 +759,8 @@ export async function sendPaymentFailed(
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Try payment again: ${links.resume}`] : []),
+    '',
+    `Tell us what happened on WhatsApp: ${wa.href}`,
   ]);
   await email.send({
     to: booking.input.customer.email,

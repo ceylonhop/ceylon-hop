@@ -132,6 +132,10 @@ export const payments = pgTable(
     // Who recorded an out-of-band payment. Immutable by contract: the free-text ops note that
     // used to carry this is editable by the `ops` role, which is denied payments:act (0043).
     settledBy: text('settled_by'),
+    // 0055 — how many checkouts were started against this row, and when the last one was. A
+    // retry reuses the row (idempotent per booking), so until then the count was invisible.
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -479,6 +483,33 @@ export const rideBoardEvents = pgTable(
     orderId: text('order_id'),
   },
   (t) => [index('ride_board_event_at_idx').on(t.at), index('ride_board_event_list_code_idx').on(t.listCode)],
+);
+
+// Booking checkout attempt log (0055): one append-only row per thing that happened on the way
+// from "create" to "settled", whatever the outcome. bookings / payments hold only where things
+// ended up. No foreign key: a refused create has no booking to point at.
+export const bookingCheckoutEvents = pgTable(
+  'booking_checkout_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+    bookingId: uuid('booking_id'),
+    reference: text('reference'),
+    orderId: text('order_id'),
+    channel: text('channel'),
+    action: text('action').notNull(), // create | checkout | gateway | webhook | return
+    outcome: text('outcome').notNull(), // succeeded | refused | error | opened | dismissed | failed | settled | pending
+    reason: text('reason'),
+    httpStatus: integer('http_status'),
+    attempt: integer('attempt'),
+    ua: text('ua'),
+    source: text('source').notNull(), // server | client
+  },
+  (t) => [
+    index('booking_checkout_event_at_idx').on(t.at),
+    index('booking_checkout_event_booking_id_idx').on(t.bookingId),
+    index('booking_checkout_event_order_id_idx').on(t.orderId),
+  ],
 );
 
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { isoToday } from '../domain/dateRules';
-import { signCheckoutToken, verifyPayReturnToken } from '../lib/bookingToken';
+import { signCheckoutToken, verifyBookingToken, verifyPayReturnToken } from '../lib/bookingToken';
+import { PayHerePaymentAdapter } from '../adapters/payhere';
 import { FakePaymentAdapter, type PaymentAdapter, type CreateCheckoutArgs } from '../adapters/payments';
 
 const SECRET = 'dev-booking-link-secret-change-me';
@@ -209,5 +210,75 @@ describe('POST /bookings/:id/checkout — return URLs for a pay-link checkout', 
     const b = await book(app);
     const res = await checkout(app, b);
     expect(res.status).toBe(200);
+  });
+});
+
+// manage.html's checkout moved off PayHere's iframe SDK onto the same top-level redirect pay.html
+// uses (docs/checkout-redirect-spec.md §1.4): two 2026-09-24 website failures were declined as
+// "3ds Authentication Failed" with no notify ever reaching us — the 3-D Secure challenge dying
+// inside the cross-origin frame. The customer the watchdog's "Finish your booking" email and the
+// ops drawer's pay link send there must come BACK there, to the same origin the manage link uses.
+describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout', () => {
+  const SITE = 'https://site.example.com';
+  const PAY = 'https://pay.example.com';
+
+  function payhereApp(extra: Parameters<typeof createApp>[0] = {}) {
+    const adapter = new PayHerePaymentAdapter('1211149', 'secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://api.example.com/webhooks/payments',
+      returnUrl: 'https://default.example.com/booking.html',
+      cancelUrl: 'https://default.example.com/booking.html?cancelled=1',
+    });
+    return createApp({ adapter, bookingBaseUrl: SITE, payBaseUrl: PAY, ...extra });
+  }
+
+  async function fieldsFor(app: ReturnType<typeof createApp>, body: unknown) {
+    const b = await book(app);
+    const res = await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(200);
+    const co = (await res.json()) as { fields: Record<string, string> };
+    return { b, fields: co.fields };
+  }
+
+  it('sends the customer back to manage.html on the manage link’s own origin', async () => {
+    const { b, fields } = await fieldsFor(payhereApp(), { returnTo: 'manage' });
+    const ret = new URL(fields.return_url);
+    const cancel = new URL(fields.cancel_url);
+    // The manage link's base (bookingBaseUrl ?? APP_BASE_URL), NOT the pay domain.
+    expect(ret.origin + ret.pathname).toBe(`${SITE}/manage.html`);
+    expect(cancel.origin + cancel.pathname).toBe(`${SITE}/manage.html`);
+    // The manage token, so the page can rebuild the booking view after the round trip…
+    expect(verifyBookingToken(ret.searchParams.get('t') ?? undefined, SECRET)).toBe(b.id);
+    expect(verifyBookingToken(cancel.searchParams.get('t') ?? undefined, SECRET)).toBe(b.id);
+    // …and the purpose-scoped status token the page polls /bookings/pay-return with.
+    expect(verifyPayReturnToken(ret.searchParams.get('rt') ?? undefined, SECRET)).toBe(b.id);
+    expect(verifyPayReturnToken(cancel.searchParams.get('rt') ?? undefined, SECRET)).toBe(b.id);
+    // `c=1` marks the cancel leg only — a display hint, never an outcome.
+    expect(ret.searchParams.has('c')).toBe(false);
+    expect(cancel.searchParams.get('c')).toBe('1');
+  });
+
+  it('ignores a client-supplied URL alongside the manage intent', async () => {
+    const { fields } = await fieldsFor(payhereApp(), { returnTo: 'manage', returnUrl: 'https://evil.example/x' });
+    expect(fields.return_url.startsWith(`${SITE}/manage.html?`)).toBe(true);
+    expect(fields.cancel_url.startsWith(`${SITE}/manage.html?`)).toBe(true);
+  });
+
+  it('keeps the adapter defaults for an unknown or absent returnTo', async () => {
+    for (const body of [{}, { returnTo: 'website' }, { returnTo: `${SITE}/manage.html` }, null]) {
+      const { fields } = await fieldsFor(payhereApp(), body);
+      expect(fields.return_url).toBe('https://default.example.com/booking.html');
+      expect(fields.cancel_url).toBe('https://default.example.com/booking.html?cancelled=1');
+    }
+  });
+
+  it('leaves a pay-link checkout returning to the pay page, with no manage token', async () => {
+    const { fields } = await fieldsFor(payhereApp(), { returnTo: 'pay-link' });
+    expect(fields.return_url).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=[^&]+$/);
+    expect(fields.cancel_url).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=[^&]+&c=1$/);
   });
 });

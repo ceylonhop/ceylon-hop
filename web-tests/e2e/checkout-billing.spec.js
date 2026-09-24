@@ -128,23 +128,33 @@ test.describe('billing is required before a card is charged', () => {
 });
 
 test.describe('a declined card gets something to do about it', () => {
-  test('a PayHere error shows the decline steps', async ({ page }) => {
-    await gotoBooking(page, { checkout: 'payhere', payhere: 'error' });
+  // The decline steps used to appear in this page's overlay from the SDK's onError. The card form
+  // now lives on PayHere's own page (2026-09-24), so the steps appear where the customer lands
+  // back: their booking's manage page, once OUR server says the payment failed.
+  test('a declined payment shows the decline steps on the way back', async ({ page }) => {
+    const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['failed'] });
     await fillContact(page);
     await page.click('#pay-btn');
+    await page.waitForURL(/sandbox\.payhere\.lk/);
+    await page.goto(fields.return_url);
 
-    await expect(page.locator('#ph-help')).toBeVisible();
-    await expect(page.locator('#ph-help')).toContainText('banking app');
-    await expect(page.locator('#ph-help li')).toHaveCount(4);
+    await expect(page.locator('#payhelp')).toBeVisible();
+    await expect(page.locator('#payhelp')).toContainText('banking app');
+    await expect(page.locator('#payhelp li')).toHaveCount(4);
   });
 
-  test('a closed PayHere window shows them too — the SDK cannot tell the two apart', async ({ page }) => {
-    await gotoBooking(page, { checkout: 'payhere', payhere: 'dismissed' });
+  // A declined card also sends people back without a verdict — PayHere parks every payer behind
+  // "Back to Site" — so the cancel leg keeps the steps within reach, collapsed rather than asserted.
+  test('coming back without finishing keeps them within reach — a decline can look the same', async ({ page }) => {
+    const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['pending'] });
     await fillContact(page);
     await page.click('#pay-btn');
+    await page.waitForURL(/sandbox\.payhere\.lk/);
+    await page.goto(fields.cancel_url);
 
-    await expect(page.locator('#ph-msg')).toContainText('cancelled');
-    await expect(page.locator('#ph-help')).toBeVisible();
+    await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+    await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+    await expect(page.locator('#payhelp li')).toHaveCount(4);
   });
 
   test('a failure BEFORE the gateway gets no bank advice', async ({ page }) => {
@@ -158,19 +168,18 @@ test.describe('a declined card gets something to do about it', () => {
   });
 });
 
-test.describe('a completed PayHere popup is not treated as a paid booking', () => {
+test.describe('returning from PayHere is not treated as a paid booking', () => {
   test('the booked screen waits for the server webhook state', async ({ page }) => {
-    await gotoBooking(page, {
-      checkout: 'payhere',
-      payhere: 'completed',
-      settlementStatuses: ['pending', 'paid'],
-    });
+    const { fields } = await gotoBooking(page, { checkout: 'payhere', settlementStatuses: ['pending', 'paid'] });
     await fillContact(page);
     await page.click('#pay-btn');
+    // The wizard never shows its own confirmation for a real-gateway payment.
+    await page.waitForURL(/sandbox\.payhere\.lk/);
+    await page.goto(fields.return_url);
 
-    await expect(page.locator('#ph-msg')).toContainText('Confirming your payment');
-    await expect(page.locator('#confirm')).toBeHidden();
-    await expect(page.locator('#confirm')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.st-title')).toContainText('Confirming your payment');
+    await expect(page.locator('.t-stat')).toHaveCount(0);
+    await expect(page.locator('.t-stat')).toHaveText('Confirmed', { timeout: 8000 });
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runWatchdog } from './watchdog';
+import { runWatchdog, checkWatchdogLiveness } from './watchdog';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
@@ -288,5 +288,149 @@ describe('watchdog — a customer with no email address is not a missing confirm
     const alerts = new FakeAlertAdapter();
     const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
     expect(res.paidUnconfirmed).toBe(1);
+  });
+});
+
+// ── Instrumentation (CH-V43ZU, 2026-09-24) ─────────────────────────────────
+// The alert used to say "pending since <timestamp>" and nothing else, so the reader had to
+// open three tables to learn whether the customer ever reached the gateway, whether PayHere
+// ever answered, and whether the recovery email went out. Now the email says it.
+describe('watchdog — the stuck-pending alert says what it knows', () => {
+  async function seedWithGatewayPayment() {
+    const { bookings, booking } = await seed('payment_pending');
+    const payments = new InMemoryPaymentRepo();
+    await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `checkout:${booking.id}`,
+    });
+    return { bookings, booking, payments };
+  }
+  const mailDeps = { baseUrl: 'https://ceylonhop.com', linkSecret: 'sek' };
+
+  it('names the route, the gateway payment, the recovery email and the ops link', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts, payments, ...mailDeps,
+      email: new FakeEmailAdapter(), opsBaseUrl: 'https://ops.example',
+    });
+    const body = alerts.sent[0].body;
+    expect(body).toContain('→ Ella');
+    expect(body).toContain('Channel: website');
+    expect(body).toMatch(/Gateway: payhere · pending · order CH-/);
+    expect(body).toContain('PayHere has not called back');
+    expect(body).toContain('Recovery email: sent just now');
+    expect(body).toContain(`https://ops.example/ops?booking=${booking.id}`);
+  });
+
+  it('says so when checkout was never started (no gateway payment at all)', async () => {
+    const { bookings } = await seed('payment_pending');
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments: new InMemoryPaymentRepo() });
+    expect(alerts.sent[0].body).toContain('no gateway payment was ever created');
+    expect(alerts.sent[0].body).toContain('Recovery email: not configured');
+  });
+
+  // A suppressed send (kill switch / allowlist) is not a delivery: counting it and keeping
+  // its one-shot claim would tell ops the customer was chased when nobody was, and burn the
+  // only recovery email that booking will ever get.
+  it('a suppressed recovery email is not counted, hands back its claim, and the alert says why', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const email = { send: async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const }) };
+    const res = await runWatchdog(later(31), { bookings, log, alerts, payments, ...mailDeps, email });
+    expect(res.recoveryEmails).toBe(0);
+    expect(await log.wasSent(booking.id, 'payment_recovery')).toBe(false);
+    expect(alerts.sent[0].body).toContain('Recovery email: NOT delivered (suppressed_allowlist');
+  });
+
+  it('a delivered recovery email is counted and keeps its claim', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), { bookings, log, alerts, payments, ...mailDeps, email: new FakeEmailAdapter() });
+    expect(res.recoveryEmails).toBe(1);
+    expect(await log.wasSent(booking.id, 'payment_recovery')).toBe(true);
+  });
+
+  // No address is a fact about the customer, not a failure: nothing to count, nothing to
+  // retry. Checked before claiming so no ledger row asserts a send that never happened.
+  it('a customer with no email address gets no recovery attempt, now or on later sweeps', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, input: { ...sample.input, customer: { ...sample.input.customer, email: '' } } });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const log = new InMemoryNotificationLogRepo();
+    const alerts = new FakeAlertAdapter();
+    let attempts = 0;
+    const email = { send: async () => { attempts += 1; return { delivered: false as const, reason: 'no_address' as const }; } };
+    const deps = { bookings, log, alerts, ...mailDeps, email };
+    const res = await runWatchdog(later(31), deps);
+    await runWatchdog(later(46), deps);
+    expect(res.recoveryEmails).toBe(0);
+    expect(attempts).toBe(0);
+    expect(await log.wasSent(b.id, 'payment_recovery')).toBe(false);
+    expect(alerts.sent[0].body).toContain('Recovery email: none — the customer has no email address');
+  });
+
+  it('reports a recovery email that went out on an earlier sweep', async () => {
+    const { bookings, booking, payments } = await seedWithGatewayPayment();
+    const log = new InMemoryNotificationLogRepo();
+    await log.markSent(booking.id, 'payment_recovery');
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log, alerts, payments, ...mailDeps, email: new FakeEmailAdapter() });
+    expect(alerts.sent[0].body).toContain('Recovery email: already sent');
+  });
+});
+
+// Nothing recorded when the watchdog ran, so "why did this alert arrive 3 h in, not 30 min?"
+// (CH-V43ZU) had no answer. Every sweep now stamps the alert ledger, and the daily tick
+// checks the stamp — the monitor is itself monitored.
+describe('watchdog — every sweep leaves a footprint', () => {
+  it('records the tick in the alert ledger', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const now = later(0);
+    await runWatchdog(now, { bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), alertLog });
+    expect(await alertLog.lastSentAt('watchdog_tick', 'last')).toEqual(now);
+  });
+
+  it('a later tick overwrites the earlier one, however close together', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const deps = { bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), alertLog };
+    const first = later(0);
+    const second = new Date(first.getTime() + 1_000);
+    await runWatchdog(first, deps);
+    await runWatchdog(second, deps);
+    expect(await alertLog.lastSentAt('watchdog_tick', 'last')).toEqual(second);
+  });
+});
+
+describe('checkWatchdogLiveness', () => {
+  it('alerts when no tick was ever recorded', async () => {
+    const alerts = new FakeAlertAdapter();
+    const r = await checkWatchdogLiveness(later(0), { alertLog: new InMemoryAlertLogRepo(), alerts });
+    expect(r.stale).toBe(true);
+    expect(alerts.sent[0].kind).toBe('watchdog_stale');
+    expect(alerts.sent[0].body).toContain('never');
+  });
+
+  it('alerts when the last tick is older than an hour', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const t0 = later(0);
+    await runWatchdog(t0, { bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), alertLog });
+    const r = await checkWatchdogLiveness(new Date(t0.getTime() + 61 * MIN), { alertLog, alerts });
+    expect(r.stale).toBe(true);
+    expect(alerts.sent[0].body).toContain('61 min ago');
+  });
+
+  it('stays quiet when the watchdog ran recently', async () => {
+    const alertLog = new InMemoryAlertLogRepo();
+    const alerts = new FakeAlertAdapter();
+    const t0 = later(0);
+    await runWatchdog(t0, { bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(), alertLog });
+    const r = await checkWatchdogLiveness(new Date(t0.getTime() + 20 * MIN), { alertLog, alerts });
+    expect(r.stale).toBe(false);
+    expect(alerts.sent).toHaveLength(0);
   });
 });

@@ -1045,3 +1045,25 @@ describe('POST /admin/jobs/notifications?dryRun=1', () => {
     expect((await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST' })).status).toBe(401);
   });
 });
+
+// The monitor is monitored (CH-V43ZU, 2026-09-24): the watchdog is driven by an external
+// cron nothing in this repo can see, so the daily tick checks its heartbeat.
+describe('POST /admin/jobs/notifications — watchdog liveness', () => {
+  it('warns when the payments watchdog has never run', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo() });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).watchdogStale).toBe(true);
+    expect(alerts.sent.map((a) => a.kind)).toContain('watchdog_stale');
+  });
+
+  it('stays quiet when the watchdog ticked recently', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo() });
+    expect((await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } })).status).toBe(200);
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await res.json()).watchdogStale).toBe(false);
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('watchdog_stale');
+  });
+});

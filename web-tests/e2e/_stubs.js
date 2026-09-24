@@ -1,4 +1,6 @@
-// Shared e2e harness: stubs Google Maps + PayHere in the page and mocks the API,
+import { futureIsoDate } from '../dates.js';
+
+// Shared e2e harness: stubs Google Maps in the page, and the PayHere gateway and the API on the wire,
 // so the booking journeys are deterministic and run fully offline.
 
 // Runs in the PAGE before any site script. Must be self-contained (no closures).
@@ -82,18 +84,9 @@ export function installStubs() {
     },
   };
 
-  // PayHere SDK stub — outcome controlled by window.__E2E_PAYHERE.
-  window.payhere = {
-    onCompleted: null, onDismissed: null, onError: null,
-    startPayment() {
-      const r = window.__E2E_PAYHERE || 'completed';
-      setTimeout(() => {
-        if (r === 'completed' && this.onCompleted) this.onCompleted('TEST-PAY-ID');
-        else if (r === 'dismissed' && this.onDismissed) this.onDismissed();
-        else if (r === 'error' && this.onError) this.onError('e2e-error');
-      }, 30);
-    },
-  };
+  // (No PayHere SDK stub: since 2026-09-24 no customer page loads payhere.js. booking.html hands
+  // off with a top-level form POST like pay.html and manage.html — see gotoBooking's
+  // `checkout: 'payhere'` mode, which stands in for the gateway itself.)
 }
 
 const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
@@ -162,8 +155,16 @@ export async function installEstimateStub(page, opts = {}) {
  *   routeKm      - distance the stubbed Route.computeRoutes reports (default 100)
  *   bookingStatus- HTTP status for POST /bookings/* (default 201)
  *   checkout     - 'fake' (default, simulate path) | 'payhere'
- *   payhere      - 'completed' (default) | 'dismissed' | 'error'
- *   settlementStatuses - server payment states returned after PayHere completes
+ *   settlementStatuses - server payment states GET /bookings/pay-return answers with, in order
+ *                  (the last repeats), on the way back from the gateway
+ *   checkoutDelayMs - hold POST /bookings/:id/checkout this long before answering
+ *
+ * Returns handles for the real-gateway round trip (`checkout: 'payhere'`):
+ *   gateway      - every request the PayHere stub received: {method, url, postData}
+ *   sdk          - every request for PayHere's JS SDK (must stay empty)
+ *   checkoutBodies - the parsed JSON body of each POST /bookings/:id/checkout
+ *   fields       - the checkout fields the stub API hands the page (return_url/cancel_url are
+ *                  this server's manage.html, carrying a manage token `t` and `rt`)
  */
 export async function gotoBooking(page, opts = {}) {
   const {
@@ -172,21 +173,20 @@ export async function gotoBooking(page, opts = {}) {
     routeKm = 100,
     bookingStatus = 201,
     checkout = 'fake',
-    payhere = 'completed',
     bookingTotal = 12100,            // server-authoritative total (minor units) from /bookings/single
     bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
     googleDelay = 0,
     pickGeo = null,                  // {lat,lng}: pin Google picks inside a drop-off area
     checkoutError = null,            // {status, body}: make POST /bookings/:id/checkout refuse
     estimate = null,                 // installEstimateStub opts: switches this spec into the engine-priced world
-    settlementStatuses = ['paid'],   // webhook-owned state polled after the PayHere popup finishes
+    settlementStatuses = ['paid'],   // webhook-owned state polled on the way back from PayHere
+    checkoutDelayMs = 0,
   } = opts;
 
   await page.addInitScript(installStubs);
-  await page.addInitScript(([km, ph]) => {
+  await page.addInitScript((km) => {
     window.__E2E_ROUTE_KM = km;
-    window.__E2E_PAYHERE = ph;
-  }, [routeKm, payhere]);
+  }, routeKm);
   await page.addInitScript((delay) => {
     window.__E2E_GOOGLE_DELAY = delay;
   }, googleDelay);
@@ -200,6 +200,19 @@ export async function gotoBooking(page, opts = {}) {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.route('**/www.payhere.lk/**', (r) => r.abort());
   await page.route('**/*sandbox.payhere.lk/**', (r) => r.abort());
+  // Counted, not just blocked: no page may request PayHere's SDK any more, so a re-added
+  // <script> shows up here.
+  const sdk = [];
+  await page.route('**/www.payhere.lk/lib/**', (r) => { sdk.push(r.request().url()); return r.abort(); });
+  // The gateway itself, for the real-PayHere round trip: records the top-level POST the page
+  // makes and shows a stand-in page, as manage-redirect.spec.js does.
+  const gateway = [];
+  if (checkout === 'payhere') {
+    await page.route('https://sandbox.payhere.lk/**', (r) => {
+      gateway.push({ method: r.request().method(), url: r.request().url(), postData: r.request().postData() });
+      return r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' });
+    });
+  }
   // Belt and braces with the hostname gate in site-chrome.mjs's analyticsSnippet: the
   // gate already stops the loader firing off localhost, but a spec that stubs its own
   // page or hard-codes a real host would slip past it. GTM loading here is not a
@@ -238,7 +251,11 @@ export async function gotoBooking(page, opts = {}) {
   await installEstimateStub(page, estimate ? { ...estimate } : { status: 404 });
 
   // checkout params
-  await page.route('**/bookings/*/checkout', (r) => {
+  const checkoutBodies = [];
+  const fields = {}; // filled when the page asks, once its origin is known
+  await page.route('**/bookings/*/checkout', async (r) => {
+    try { checkoutBodies.push(JSON.parse(r.request().postData() || 'null')); } catch { checkoutBodies.push(r.request().postData()); }
+    if (checkoutDelayMs) await new Promise((res) => setTimeout(res, checkoutDelayMs));
     // The API refuses a checkout with a 409 and a reason (awaiting_price, already_paid,
     // not_chargeable). Tests pass the body they want so the page's handling of each is real.
     if (checkoutError) {
@@ -249,19 +266,48 @@ export async function gotoBooking(page, opts = {}) {
       });
     }
     if (checkout === 'payhere') {
-      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', payReturnToken: 'e2e-pay-return-token', fields: { merchant_id: 'TEST', order_id: 'CH-E2E01', amount: '121.00', currency: 'USD', hash: 'X' } }));
+      Object.assign(fields, payhereFields(new URL(page.url()).origin, bookingAmountDueNow ?? bookingTotal));
+      return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', payReturnToken: 'e2e-pay-return-token', attempt: 1, fields }));
     }
     return r.fulfill(json({ checkoutUrl: 'https://example.test/fake-gateway', fields: {} }));
   });
 
   let settlementCall = 0;
+  let settled = null;
   await page.route('**/bookings/pay-return?rt=*', (r) => {
     const status = settlementStatuses[Math.min(settlementCall, settlementStatuses.length - 1)] || 'pending';
     settlementCall += 1;
+    if (status === 'paid' || status === 'failed') settled = status;
     return r.fulfill(json({ status, reference: 'CH-E2E01' }));
   });
 
+  // The booking's manage page, where the gateway sends the customer back: it rebuilds the booking
+  // from the manage token. Paid once the webhook (pay-return) has said so, owing until then.
+  if (checkout === 'payhere') {
+    const due = bookingAmountDueNow ?? bookingTotal;
+    await page.route('**/bookings/view?*', (r) => r.fulfill(json({
+      reference: 'CH-E2E01', status: settled === 'paid' ? 'paid' : 'payment_pending', firstName: 'Roshen',
+      from: 'Colombo Airport (CMB)', to: 'Hikkaduwa', date: futureIsoDate(30), time: null,
+      travellers: 2, vehicleType: 'car', totalCents: bookingTotal, balanceDueCents: 0,
+      amountDueNowCents: due, currency: 'USD',
+    })));
+  }
+
   await page.goto(`${path}?${query}`);
+  return { gateway, sdk, checkoutBodies, fields };
+}
+
+// What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the
+// return and cancel legs pointing at THIS server's manage.html (the server builds those from
+// returnTo:'manage'; the page never sees them as anything but opaque fields).
+function payhereFields(origin, amountCents) {
+  const back = `${origin}/manage.html?t=e2e-manage-token&rt=e2e-pay-return-token`;
+  return {
+    merchant_id: 'TEST', return_url: back, cancel_url: `${back}&c=1`,
+    notify_url: 'https://api.example.test/webhooks/payments', order_id: 'CH-E2E01',
+    items: 'Ceylon Hop CH-E2E01', currency: 'USD', amount: (amountCents / 100).toFixed(2),
+    first_name: 'Roshen', last_name: 'W', email: 'roshenw@gmail.com', hash: 'E2EHASH',
+  };
 }
 
 // Fill the lead-traveller form, the billing block and the terms tick — everything the page

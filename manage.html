@@ -10,6 +10,24 @@
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css?v=6e5bdb2df7">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
+<style>
+  /* What to DO about a decline — pay.html's panel, verbatim. Rendered only after a real attempt
+     at the gateway (the return leg), never on the first paint. */
+  .pp-help{margin:10px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--wash,#faf8f5)}
+  .pp-help[hidden]{display:none}
+  /* The "tell us what happened" link after a failed payment: the site's secondary button, under
+     the decline help. .btn sets a display, so [hidden] needs saying. */
+  .pp-tellus{text-decoration:none}
+  .pp-tellus[hidden]{display:none}
+  .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
+  .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
+  .pp-help li+li{margin-top:6px}
+  .pp-quiet summary{font-size:.8rem;font-weight:700;color:var(--accent-deep);cursor:pointer;list-style:none}
+  .pp-quiet summary::-webkit-details-marker{display:none}
+  .pp-quiet summary:after{content:' \25BE'}
+  .pp-quiet[open] summary:after{content:' \25B4'}
+  .pp-quiet ol{margin-top:9px}
+</style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -29,7 +47,12 @@ window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<script src="decline-help.js?v=c0dbcda42b"></script>
+<!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
+     It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
+     payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
+     This page now does the same top-level form POST to PayHere's hosted checkout that pay.html
+     does, and asks our own server for the outcome on the way back. -->
 </head>
 <body>
 <header class="pp-top"><div class="pp-topin">
@@ -70,19 +93,30 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // problem, but a customer who cannot reload their own booking is a broken page. Function
   // first, privacy wherever it is free.
   var TOKEN_KEY = 'chManageToken';
-  var t = new URLSearchParams(location.search).get('t');
+  var q = new URLSearchParams(location.search);
+  var t = q.get('t');
+  // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
+  // `rt` is a status-only token for /bookings/pay-return; `c=1` means the gateway used cancel_url,
+  // a display hint and NEVER an outcome. Both are read once and taken out of the address bar with
+  // `t`, so a reload after the return simply shows the booking as it now stands.
+  var rt = q.get('rt');
+  var cameFromCancel = q.get('c') === '1';
+  var strip = [];
+  if (rt !== null) strip.push('rt');
+  if (q.has('c')) strip.push('c');
   if (t) {
     var stashed = false;
     try { sessionStorage.setItem(TOKEN_KEY, t); stashed = true; } catch (e) {}
-    if (stashed) {
-      try {
-        var url = new URL(location.href);
-        url.searchParams.delete('t');
-        history.replaceState(null, '', url.pathname + url.search + url.hash);
-      } catch (e) {}
-    }
+    if (stashed) strip.push('t');
   } else {
     try { t = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
+  }
+  if (strip.length) {
+    try {
+      var url = new URL(location.href);
+      strip.forEach(function(k){ url.searchParams.delete(k); });
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch (e) {}
   }
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
 
@@ -106,16 +140,33 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       window.chReportError('[manage] ' + what + (x.message ? ' — ' + x.message : ''), x.stack);
     }
   }
-  // Same gate as pay.html: `purchase` becomes revenue and GA4 cannot take it back, so a
-  // sandbox checkout must never reach it.
-  function trackPurchase(v, sandbox){
-    if (sandbox) return;
+  // Same gates as pay.html: `purchase` becomes revenue and GA4 cannot take it back, so a
+  // sandbox checkout must never reach it. The return leg never sees the checkout URL, so WHICH
+  // gateway we handed off to is recorded at hand-off time; and it fires once per booking whatever
+  // the customer does with the back button.
+  var STORE = 'ch_manage_pay_v1';
+  function markSandbox(isSandbox){
+    try { sessionStorage.setItem(STORE + ':sandbox', isSandbox ? '1' : '0'); } catch (e) {}
+  }
+  function sandboxUsed(){
+    try { return sessionStorage.getItem(STORE + ':sandbox') === '1'; } catch (e) { return false; }
+  }
+  function trackPurchase(v){
+    if (sandboxUsed()) return;
     if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
+    var seen = STORE + ':purchased';
+    try {
+      if (sessionStorage.getItem(seen) === String(v.reference || '1')) return;
+      sessionStorage.setItem(seen, String(v.reference || '1'));
+    } catch (e) { /* private mode — better a possible double than a missing purchase */ }
     track('purchase', {
       transaction_id: String(v.reference || ''),
       value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
       currency: v.currency || 'USD',
     });
+  }
+  function moneyOf(v){
+    return { value: Math.round(Number(v && v.amountDueNowCents || 0)) / 100, currency: (v && v.currency) || 'USD' };
   }
 
   // Money the way the pay page shows it: USD gets its symbol and both decimals, so $229.00
@@ -235,7 +286,33 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }).join('');
   }
 
-  function render(v, errMsg){
+  // Shared with pay.html and booking.html — see decline-help.js for why this copy says what it says.
+  var DECLINE_HELP = window.CH_DECLINE_HELP || [];
+  // `quiet` collapses the steps behind a summary: available, not asserted — for a return with no
+  // verdict, where most people simply changed their mind (pay.html's fail() explains the case).
+  function helpHtml(help, quiet){
+    if (!help || !help.length) return '';
+    var steps = '<ol>' + help.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>';
+    return quiet
+      ? '<details class="pp-quiet"><summary>Card refused? Here’s what usually fixes it</summary>' + steps + '</details>'
+      : '<h3>If your card was declined</h3>' + steps;
+  }
+
+  // The one-tap "tell us what happened" link booking.html's payment overlay carries (#766): the
+  // only source that can say what a customer saw at the gateway is the customer, and a message
+  // that already names the booking saves them finding the reference. Since the website checkout
+  // became a redirect (2026-09-24) a failed payment is answered HERE, so the link is shown on the
+  // two states that mean it didn't work — a decline and the cancel leg — and nowhere else.
+  function waTellUsHref(v){
+    return 'https://wa.me/94779669662?text=' + encodeURIComponent(
+      'Hi Ceylon Hop, my payment' + (v && v.reference ? ' for booking ' + v.reference : '') + ' didn\'t go through. What I saw: ');
+  }
+  function showTellUs(){
+    var a = document.getElementById('paywa');
+    if (a) a.hidden = false;
+  }
+
+  function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
     var html =
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
@@ -264,7 +341,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         + '<div class="paysub">Pay securely to confirm. ' + esc(money(v.amountDueNowCents, v.currency)) + ' — no extra fees.</div>'
         + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
         + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
-        + '<p class="pp-err" id="payerr"' + (errMsg ? '' : ' hidden') + '>' + esc(errMsg || '') + '</p>';
+        + '<p class="pp-err" id="payerr"' + (errMsg ? '' : ' hidden') + '>' + esc(errMsg || '') + '</p>'
+        // Only after a real attempt at the gateway — see helpHtml().
+        + '<div class="pp-help" id="payhelp"' + (help && help.length ? '' : ' hidden') + '>' + helpHtml(help, quiet) + '</div>'
+        + '<a class="btn btn-ghost pp-cta pp-tellus" id="paywa" href="' + esc(waTellUsHref(v)) + '" target="_blank" rel="noopener"'
+        + (tellUs ? '' : ' hidden') + '>Tell us what happened on WhatsApp</a>';
     }
     html += '</div></div>' + waLine();
     paint(html);
@@ -278,17 +359,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     });
   }
 
-  // The same interstitial as the pay page: PayHere's window takes a moment to appear, and a
-  // button that simply goes quiet reads as broken.
+  // Shown between the press and the browser leaving for payhere.lk. It no longer says "don't
+  // close this page": the customer is being sent TO PayHere, not shown a window on top of us.
   function renderLoading(v){
     paint('<div class="pp-loading"><div class="pp-spin"></div>'
       + '<h2>Taking you to PayHere…</h2>'
-      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
+      + '<p>You’ll finish paying on PayHere’s own secure page, then come straight back here. We never see your card details.</p>'
       + '<div class="amt">' + esc(money(v.amountDueNowCents, v.currency)) + '</div>'
-      + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p></div>');
+      + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p>'
+      // Owner-observed on the live gateway (2026-08-05, pay.html): PayHere parks the payer on
+      // "Payment Approved"/"Declined" behind a manual "Back to Site" link rather than redirecting.
+      + '<p>When PayHere is done, tap <strong>Back to Site</strong> to see your booking.</p></div>');
   }
 
   function pay(v){
+    // A return-leg poll still running underneath must not repaint over the hand-off.
+    handedOff = true;
+    stopReturn();
     renderLoading(v);
     // A failure rebuilds the whole booking view with the error named on it — never a dead
     // screen, and never a button whose label has quietly become the error.
@@ -304,7 +391,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         });
       })
       .then(function(x){
-        return fetch(A + '/bookings/' + x.bookingId + '/checkout', { method: 'POST', headers: { authorization: 'Bearer ' + x.checkoutToken } })
+        // `returnTo` states INTENT, never a URL: the server builds the return address (back to
+        // this page, on the manage link's own origin) from its own config — a gateway that
+        // redirects wherever the request body says is a phishing primitive.
+        return fetch(A + '/bookings/' + x.bookingId + '/checkout', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + x.checkoutToken, 'content-type': 'application/json' },
+          body: JSON.stringify({ returnTo: 'manage' }),
+        })
           .then(function(r){ if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.'); return r.json(); });
       })
       .then(function(checkout){
@@ -312,17 +406,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // Anything that isn't real PayHere is the dev/fake gateway: send the browser to
         // whatever it returned rather than pretending on this page that money moved.
         if (!/payhere\.lk/.test(checkout.checkoutUrl)) { location.href = checkout.checkoutUrl; return; }
-        if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
-        var sandbox = /sandbox\.payhere\.lk/.test(checkout.checkoutUrl);
-        var money = { value: Math.round(Number(v.amountDueNowCents || 0)) / 100, currency: v.currency || 'USD' };
-        track('payment_initiated', money);
-        // These three are the SDK's own callbacks — the iframe flow pay.html moved away from
-        // (docs/checkout-redirect-spec.md). Instrumenting them is the only way to see an
-        // outcome on this page at all; see docs/known-bugs.md for the flow itself.
-        payhere.onCompleted = function(){ trackPurchase(v, sandbox); location.reload(); };   // the webhook is the source of truth
-        payhere.onDismissed = function(){ track('payment_dismissed', money); fail('Payment window closed — nothing was charged.'); };
-        payhere.onError = function(){ track('payment_failed', money); fail('The payment didn’t go through. No charge was made.'); };
-        payhere.startPayment(Object.assign({ sandbox: sandbox }, checkout.fields));
+        if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
+        // Record WHICH gateway we are handing off to — the return leg never sees the URL, and a
+        // sandbox settlement reported as revenue is permanent in GA4.
+        markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
+        // The last thing we know for certain: they left for the gateway. Everything after this
+        // is what our own server tells us on the way back.
+        track('payment_initiated', moneyOf(v));
+        // A TOP-LEVEL form POST, exactly as pay.html does it. The fields are the server's
+        // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
+        // side, so reordering, renaming or adding anything here would be refused by the gateway.
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = checkout.checkoutUrl;
+        Object.keys(checkout.fields).forEach(function(k){
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = k;
+          input.value = checkout.fields[k];
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
       })
       .catch(function(e){
         track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
@@ -330,6 +435,132 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         fail(e.message);
       });
   }
+
+  // ── the return leg ──────────────────────────────────────────────────────────────────────
+  // pay.html's renderReturn(), for this page. PayHere passes NO payment status back on the
+  // redirect, so nothing in the URL is read as an outcome: we poll our own server, which the
+  // webhook owns. Both legs poll identically — PayHere does not document where a DECLINE lands,
+  // and parks every payer behind "Back to Site" — `c=1` only shortens the wait and the words.
+  var RETURN_TRIES = 30;
+  var CANCEL_TRIES = 8;
+  // After this long the booking (and its Pay button) comes back and checking continues
+  // underneath, upgrading the moment an answer arrives — owner-reported on pay.html: a spinner
+  // held far too long before showing anything useful.
+  var FIRST_PAINT_MS = 1400;
+  var stopReturn = function(){};
+  var handedOff = false;
+
+  function renderReturn(){
+    paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+      + '<h1 class="st-title">' + (cameFromCancel ? 'Checking where that left things…' : 'Confirming your payment…') + '</h1>'
+      + '<p class="st-sub">This usually takes a few seconds.</p></div>');
+    var tries = 0;
+    var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
+    // Which leg we came back on, for reporting ONLY — never near the code that decides an outcome.
+    var leg = cameFromCancel ? 'cancel' : 'return';
+    var settled = false;
+    var fellBack = false;
+    var lastView = null;
+    var fallback = setTimeout(function(){
+      if (settled || !t) return;
+      fellBack = true;
+      resume('Just checking your payment with the bank — nothing has been charged unless you completed it on PayHere.', DECLINE_HELP, true);
+    }, FIRST_PAINT_MS);
+    function stop(){ settled = true; clearTimeout(fallback); }
+    stopReturn = stop;
+
+    // Put them back on their booking with the reason they are back. A booking that is no longer
+    // payable (the webhook landed meanwhile) simply renders as it now stands.
+    function resume(message, help, quiet, tellUs){
+      if (!t) return renderCannotResume();
+      loadView().then(function(v){
+        if (handedOff) return;
+        lastView = v;
+        if (!payable(v)) return render(v);
+        render(v, message, help, quiet, tellUs);
+      }).catch(function(){ renderCannotResume(); });
+    }
+
+    (function poll(){
+      if (settled) return;
+      tries++;
+      fetch(A + '/bookings/pay-return?rt=' + encodeURIComponent(rt)).then(function(r){
+        if (!r.ok) throw new Error('pay-return ' + r.status);
+        return r.json();
+      }).then(function(x){
+        if (settled) return;
+        if (x.status === 'paid') {
+          stop();
+          if (!t) return renderPaidMinimal(x.reference);
+          return loadView().then(function(v){ lastView = v; trackPurchase(v); render(v); })
+            .catch(function(){ renderPaidMinimal(x.reference); });
+        }
+        // A refusal must never read as an endless "confirming".
+        if (x.status === 'failed') {
+          stop();
+          track('payment_failed', Object.assign(moneyOf(lastView), { leg: leg }));
+          return resume('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP, false, true);
+        }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        stop();
+        track(cameFromCancel ? 'payment_cancelled' : 'payment_unconfirmed', Object.assign(moneyOf(lastView), { leg: leg, tries: tries }));
+        // Nothing terminal arrived. If the booking is already back on screen, retire the
+        // "checking" line in place rather than re-rendering under someone about to press Pay.
+        if (fellBack) {
+          var e = document.getElementById('payerr');
+          if (e) {
+            e.textContent = cameFromCancel
+              ? 'You came back without finishing the payment — nothing was charged.'
+              : 'We haven’t had confirmation yet — nothing was charged unless you completed the payment. We’ll email you if it lands.';
+          }
+          if (cameFromCancel) showTellUs();
+          return;
+        }
+        if (cameFromCancel) return resume('You came back without finishing the payment — nothing was charged.', DECLINE_HELP, true, true);
+        renderStillWaiting();
+      }).catch(function(e){
+        if (settled) return;
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        stop();
+        // Every poll failed. The customer may well have paid; we simply cannot ask.
+        report('pay-return unreachable', e);
+        track('payment_unconfirmed', Object.assign(moneyOf(lastView), { leg: leg, tries: tries, reason: 'unreachable' }));
+        if (!fellBack) renderStillWaiting();
+      });
+    })();
+  }
+
+  // Paid, but this tab has no manage token to rebuild the booking from.
+  function renderPaidMinimal(reference){
+    paint('<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">You’re booked.</h1>'
+      + '<p class="st-sub">Payment received. Your confirmation is on its way by email.</p>'
+      + (reference ? '<p class="st-sub">Booking ref <strong>' + esc(reference) + '</strong></p>' : '')
+      + '</div>' + waLine());
+  }
+
+  function renderStillWaiting(){
+    paint('<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+      + '<h1 class="st-title">Payment received?</h1>'
+      + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
+      + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine());
+  }
+
+  function renderCannotResume(){
+    paint('<div class="st-wrap"><div class="st-badge ok">!</div>'
+      + '<h1 class="st-title">That payment didn’t go through</h1>'
+      + '<p class="st-sub"><strong>Nothing has been charged.</strong> Open your booking link again to retry, '
+      + 'or message us on WhatsApp and we’ll sort it out.</p></div>' + waLine());
+  }
+
+  function loadView(){
+    return fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(r){
+      if (!r.ok) throw new Error('view ' + r.status);
+      return r.json();
+    });
+  }
+
+  if (rt) { renderReturn(); return; }
 
   if (!t) { track('manage_link_invalid', { reason: 'no_token' }); errView('This link isn’t valid.'); return; }
   fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(res){

@@ -671,30 +671,6 @@
         "accountId": "0",
         "containerId": "0",
         "triggerId": "4",
-        "name": "CE - payment_dismissed",
-        "type": "CUSTOM_EVENT",
-        "customEventFilter": [
-          {
-            "type": "EQUALS",
-            "parameter": [
-              {
-                "type": "TEMPLATE",
-                "key": "arg0",
-                "value": "{{_event}}"
-              },
-              {
-                "type": "TEMPLATE",
-                "key": "arg1",
-                "value": "payment_dismissed"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "accountId": "0",
-        "containerId": "0",
-        "triggerId": "5",
         "name": "CE - payment_start_failed",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -718,7 +694,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "6",
+        "triggerId": "5",
         "name": "CE - payment_unconfirmed",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -742,7 +718,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "7",
+        "triggerId": "6",
         "name": "CE - pay_link_opened",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -766,7 +742,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "8",
+        "triggerId": "7",
         "name": "CE - pay_form_invalid",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -790,7 +766,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "9",
+        "triggerId": "8",
         "name": "CE - quote_link_opened",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -814,7 +790,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "10",
+        "triggerId": "9",
         "name": "CE - quote_lapsed_shown",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -838,7 +814,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "11",
+        "triggerId": "10",
         "name": "CE - manage_opened",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -862,7 +838,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "12",
+        "triggerId": "11",
         "name": "CE - manage_link_invalid",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -886,7 +862,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "13",
+        "triggerId": "12",
         "name": "CE - login",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -910,7 +886,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "14",
+        "triggerId": "13",
         "name": "CE - scratch_ride",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -934,7 +910,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "15",
+        "triggerId": "14",
         "name": "CE - ride_board_refused",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -958,7 +934,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "16",
+        "triggerId": "15",
         "name": "CE - ride_board_payment_failed",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -982,7 +958,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "17",
+        "triggerId": "16",
         "name": "CE - reprice_shown",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1006,7 +982,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "18",
+        "triggerId": "17",
         "name": "CE - reprice_accepted",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1030,7 +1006,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "19",
+        "triggerId": "18",
         "name": "CE - route_estimate_update",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1054,7 +1030,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "20",
+        "triggerId": "19",
         "name": "CE - route_estimate_unavailable",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1078,7 +1054,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "21",
+        "triggerId": "20",
         "name": "CE - exact_location_deferred",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1102,7 +1078,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "22",
+        "triggerId": "21",
         "name": "CE - exact_location_out_of_range",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1402,97 +1378,6 @@
         "accountId": "0",
         "containerId": "0",
         "tagId": "4",
-        "name": "GA4 - payment_dismissed",
-        "type": "gaawe",
-        "notes": "Customer closed the payment overlay — hesitation, not an error.",
-        "parameter": [
-          {
-            "type": "BOOLEAN",
-            "key": "sendEcommerceData",
-            "value": "false"
-          },
-          {
-            "type": "TEMPLATE",
-            "key": "eventName",
-            "value": "payment_dismissed"
-          },
-          {
-            "type": "LIST",
-            "key": "eventSettingsTable",
-            "list": [
-              {
-                "type": "MAP",
-                "map": [
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameter",
-                    "value": "payment_type"
-                  },
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameterValue",
-                    "value": "{{DLV - payment_type}}"
-                  }
-                ]
-              },
-              {
-                "type": "MAP",
-                "map": [
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameter",
-                    "value": "value"
-                  },
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameterValue",
-                    "value": "{{DLV - value}}"
-                  }
-                ]
-              },
-              {
-                "type": "MAP",
-                "map": [
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameter",
-                    "value": "currency"
-                  },
-                  {
-                    "type": "TEMPLATE",
-                    "key": "parameterValue",
-                    "value": "{{DLV - currency}}"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "type": "TEMPLATE",
-            "key": "measurementIdOverride",
-            "value": "G-XEW62ZD7B3"
-          }
-        ],
-        "consentSettings": {
-          "consentStatus": "NEEDED",
-          "consentType": {
-            "type": "LIST",
-            "list": [
-              {
-                "type": "TEMPLATE",
-                "value": "analytics_storage"
-              }
-            ]
-          }
-        },
-        "firingTriggerId": [
-          "4"
-        ]
-      },
-      {
-        "accountId": "0",
-        "containerId": "0",
-        "tagId": "5",
         "name": "GA4 - payment_start_failed",
         "type": "gaawe",
         "notes": "Checkout could not even be started; `reason` carries the message.",
@@ -1547,13 +1432,13 @@
           }
         },
         "firingTriggerId": [
-          "5"
+          "4"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "6",
+        "tagId": "5",
         "name": "GA4 - payment_unconfirmed",
         "type": "gaawe",
         "notes": "Paid but we never confirmed — the case where a customer is charged and left unsure.",
@@ -1668,13 +1553,13 @@
           }
         },
         "firingTriggerId": [
-          "6"
+          "5"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "7",
+        "tagId": "6",
         "name": "GA4 - pay_link_opened",
         "type": "gaawe",
         "notes": "A pay link you sent was opened. The only measure of that channel working.",
@@ -1759,13 +1644,13 @@
           }
         },
         "firingTriggerId": [
-          "7"
+          "6"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "8",
+        "tagId": "7",
         "name": "GA4 - pay_form_invalid",
         "type": "gaawe",
         "notes": "The pay page rejected the form before PayHere saw it.",
@@ -1850,13 +1735,13 @@
           }
         },
         "firingTriggerId": [
-          "8"
+          "7"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "9",
+        "tagId": "8",
         "name": "GA4 - quote_link_opened",
         "type": "gaawe",
         "notes": "A customer opened a quote you sent on WhatsApp.",
@@ -1911,13 +1796,13 @@
           }
         },
         "firingTriggerId": [
-          "9"
+          "8"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "10",
+        "tagId": "9",
         "name": "GA4 - quote_lapsed_shown",
         "type": "gaawe",
         "notes": "They opened it after it expired — you are losing sales to the 7-day window.",
@@ -1972,13 +1857,13 @@
           }
         },
         "firingTriggerId": [
-          "10"
+          "9"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "11",
+        "tagId": "10",
         "name": "GA4 - manage_opened",
         "type": "gaawe",
         "notes": "Customer opened their booking. `has_balance` flags who still owes money.",
@@ -2078,13 +1963,13 @@
           }
         },
         "firingTriggerId": [
-          "11"
+          "10"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "12",
+        "tagId": "11",
         "name": "GA4 - manage_link_invalid",
         "type": "gaawe",
         "notes": "A manage link failed to open — a broken link in a real confirmation email.",
@@ -2139,13 +2024,13 @@
           }
         },
         "firingTriggerId": [
-          "12"
+          "11"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "13",
+        "tagId": "12",
         "name": "GA4 - login",
         "type": "gaawe",
         "notes": "Google sign-in on the ride board; the gate every join must pass.",
@@ -2179,13 +2064,13 @@
           }
         },
         "firingTriggerId": [
-          "13"
+          "12"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "14",
+        "tagId": "13",
         "name": "GA4 - scratch_ride",
         "type": "gaawe",
         "notes": "A traveller withdrew from a list — the board's churn signal.",
@@ -2240,13 +2125,13 @@
           }
         },
         "firingTriggerId": [
-          "14"
+          "13"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "15",
+        "tagId": "14",
         "name": "GA4 - ride_board_refused",
         "type": "gaawe",
         "notes": "The board turned a traveller away (list closed, van full, date too soon). `reason` is the API error code.",
@@ -2361,13 +2246,13 @@
           }
         },
         "firingTriggerId": [
-          "15"
+          "14"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "16",
+        "tagId": "15",
         "name": "GA4 - ride_board_payment_failed",
         "type": "gaawe",
         "notes": "A card approval for a board seat did not complete — cancelled, expired, or still pending.",
@@ -2437,13 +2322,13 @@
           }
         },
         "firingTriggerId": [
-          "16"
+          "15"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "17",
+        "tagId": "16",
         "name": "GA4 - reprice_shown",
         "type": "gaawe",
         "notes": "We told the customer the price moved. Pair with reprice_accepted for the accept rate.",
@@ -2498,13 +2383,13 @@
           }
         },
         "firingTriggerId": [
-          "17"
+          "16"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "18",
+        "tagId": "17",
         "name": "GA4 - reprice_accepted",
         "type": "gaawe",
         "notes": "They accepted the new price. The other half of the reprice rate.",
@@ -2574,13 +2459,13 @@
           }
         },
         "firingTriggerId": [
-          "18"
+          "17"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "19",
+        "tagId": "18",
         "name": "GA4 - route_estimate_update",
         "type": "gaawe",
         "notes": "A live estimate replaced a catalogue one. Tells you if the engine is answering in time.",
@@ -2680,13 +2565,13 @@
           }
         },
         "firingTriggerId": [
-          "19"
+          "18"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "20",
+        "tagId": "19",
         "name": "GA4 - route_estimate_unavailable",
         "type": "gaawe",
         "notes": "The engine did not answer and the customer saw a fallback price.",
@@ -2756,13 +2641,13 @@
           }
         },
         "firingTriggerId": [
-          "20"
+          "19"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "21",
+        "tagId": "20",
         "name": "GA4 - exact_location_deferred",
         "type": "gaawe",
         "notes": "Customer skipped giving an exact pickup/drop — a driver-side problem later.",
@@ -2817,13 +2702,13 @@
           }
         },
         "firingTriggerId": [
-          "21"
+          "20"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "22",
+        "tagId": "21",
         "name": "GA4 - exact_location_out_of_range",
         "type": "gaawe",
         "notes": "The pin was outside the serviceable radius; `km` sizes the demand you are refusing.",
@@ -2893,7 +2778,7 @@
           }
         },
         "firingTriggerId": [
-          "22"
+          "21"
         ]
       }
     ]

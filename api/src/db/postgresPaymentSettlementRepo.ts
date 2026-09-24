@@ -23,6 +23,8 @@ function toPayment(row: PaymentRow): Payment {
     currency: row.currency,
     status: row.status as PaymentStatus,
     idempotencyKey: row.idempotencyKey,
+    attemptCount: row.attemptCount,
+    lastAttemptAt: row.lastAttemptAt,
   };
 }
 

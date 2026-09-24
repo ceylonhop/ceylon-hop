@@ -42,6 +42,9 @@ export interface OpsDeps {
   // Partial pay links (spec 2026-08-04): lets the booking drawer say "covers 2 of 4 legs" for a
   // booking sold through a partial link. Optional so every existing ops test keeps working.
   quotes?: QuoteRepo;
+  // Test bookings (2026-09-24): config.TEAM_EMAILS. Optional so every existing ops test keeps
+  // working; absent = no row is a test.
+  teamEmails?: ReadonlySet<string>;
 }
 
 // Every status a booking can hold once it has left the website's cart. 'draft' and
@@ -206,7 +209,7 @@ export function opsRoutes(deps: OpsDeps) {
     const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const rows: OpsBookingRow[] = [];
     for (const b of all) {
-      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id) });
+      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;

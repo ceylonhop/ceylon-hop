@@ -46,6 +46,15 @@ export class PostgresAlertLogRepo implements AlertLogRepo {
       );
   }
 
+  async lastSentAt(kind: string, dedupeKey: string): Promise<Date | null> {
+    const rows = await this.db
+      .select({ lastSentAt: alertLog.lastSentAt })
+      .from(alertLog)
+      .where(and(eq(alertLog.kind, kind), eq(alertLog.dedupeKey, dedupeKey)))
+      .limit(1);
+    return rows[0]?.lastSentAt ?? null;
+  }
+
   // Digest approximation: kinds whose most recent delivery falls in the window. (The
   // table keeps one row per key, not a send history — good enough for a daily digest.)
   async countsSince(since: Date): Promise<Record<string, number>> {

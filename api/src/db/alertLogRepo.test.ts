@@ -56,4 +56,14 @@ describe('InMemoryAlertLogRepo', () => {
     expect(await repo.countsSince(new Date(0))).toEqual({ payments: 2, errors: 1 });
     expect(await repo.countsSince(new Date(2_500))).toEqual({ errors: 1 });
   });
+
+  // The watchdog heartbeat (CH-V43ZU, 2026-09-24) reads the ledger back.
+  it('lastSentAt is null for an unknown key, the reserved time after a send, null again after rollback', async () => {
+    const repo = new InMemoryAlertLogRepo();
+    expect(await repo.lastSentAt('k', 'x')).toBeNull();
+    await repo.shouldSend('k', 'x', 0, new Date(5_000));
+    expect(await repo.lastSentAt('k', 'x')).toEqual(new Date(5_000));
+    await repo.rollback('k', 'x', new Date(5_000));
+    expect(await repo.lastSentAt('k', 'x')).toBeNull();
+  });
 });

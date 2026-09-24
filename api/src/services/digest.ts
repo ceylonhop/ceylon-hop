@@ -2,6 +2,8 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { opsEmailShell, detailTable, money } from './opsEmail';
+import { WATCHDOG_TICK, agoText } from './watchdog';
+import { isTeamEmail } from './testBookings';
 
 // M17 daily ops digest — one compact founder email per day riding the notifications
 // tick: what the business did in the last 24 h and whether the watchdog barked. Pure
@@ -10,18 +12,24 @@ import { opsEmailShell, detailTable, money } from './opsEmail';
 const ALERT_LABELS: Record<string, string> = {
   watchdog_stuck_pending: 'Payments stuck in pending',
   watchdog_paid_unconfirmed: 'Paid, no confirmation sent',
+  watchdog_stale: 'Watchdog not running',
   payment_failed: 'Payment failed',
 };
+// Ledger rows that are bookkeeping, not alerts anyone received.
+const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind]);
 const alertLabel = (kind: string): string => ALERT_LABELS[kind] ?? kind;
 
 export async function buildDigest(
   now: Date,
-  deps: { bookings: BookingRepo; alertLog?: AlertLogRepo; quotes?: QuoteRepo; opsBaseUrl?: string },
+  deps: { bookings: BookingRepo; alertLog?: AlertLogRepo; quotes?: QuoteRepo; opsBaseUrl?: string; teamEmails?: ReadonlySet<string> },
 ): Promise<{ subject: string; text: string; html: string }> {
   const since = new Date(now.getTime() - 24 * 60 * 60_000);
   const all = await deps.bookings.list();
   const recent = all.filter((b) => Date.parse(b.createdAt) >= since.getTime());
-  const byStatus = (s: string) => all.filter((b) => b.status === s).length;
+  // Status counts leave the team's own test bookings out (config.TEAM_EMAILS): every "Payment
+  // pending" in the August digests was an owner test. The 24h created/value lines are untouched.
+  const team = deps.teamEmails ?? new Set<string>();
+  const byStatus = (s: string) => all.filter((b) => b.status === s && !isTeamEmail(b.input.customer.email, team)).length;
   // USD-only assumption: bookings are USD today, so we sum minor units and label them $.
   // Revisit if a non-USD booking currency is ever introduced (would need per-currency grouping).
   const valueBooked = recent.reduce((sum, b) => sum + b.total, 0);
@@ -46,9 +54,15 @@ export async function buildDigest(
     rows.push(['Open pipeline', `ready: ${qByStatus('ready')} · sent: ${qByStatus('sent')}`]);
   }
 
+  // The watchdog's heartbeat (CH-V43ZU): "did the monitor run?" is a fact the founder
+  // should see every day, whether or not it barked.
+  if (deps.alertLog) {
+    rows.push(['Watchdog last ran', agoText(now, await deps.alertLog.lastSentAt(WATCHDOG_TICK.kind, WATCHDOG_TICK.key))]);
+  }
+
   const alertCounts = deps.alertLog ? await deps.alertLog.countsSince(since) : {};
   const alertRows: [string, string][] = Object.entries(alertCounts)
-    .filter(([kind]) => kind !== 'ops_digest')
+    .filter(([kind]) => !NOT_ALERTS.has(kind))
     .sort(([, a], [, b]) => b - a)
     .map(([kind, n]) => [alertLabel(kind), String(n)]);
 

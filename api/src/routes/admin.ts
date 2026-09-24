@@ -19,7 +19,7 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
-import { runWatchdog } from '../services/watchdog';
+import { runWatchdog, checkWatchdogLiveness } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
@@ -53,6 +53,8 @@ export function adminRoutes(deps: {
   digestTo?: string;
   // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
+  // Test bookings (2026-09-24): config.TEAM_EMAILS, left out of the digest's status counts.
+  teamEmails?: ReadonlySet<string>;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
   linkSecret: string;
@@ -595,6 +597,17 @@ export function adminRoutes(deps: {
         console.error('abandoned-draft sweep failed:', err);
       }
     }
+    // The monitor is monitored (CH-V43ZU, 2026-09-24): the payments watchdog is driven by an
+    // external cron nothing in this repo can see, so this tick — the only other scheduled
+    // thing — checks its heartbeat. Best-effort like every rider here.
+    let watchdogStale = false;
+    if (deps.alertLog) {
+      try {
+        watchdogStale = (await checkWatchdogLiveness(new Date(), { alertLog: deps.alertLog, alerts })).stale;
+      } catch (err) {
+        console.error('watchdog liveness check failed:', err);
+      }
+    }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
     // failure must never block the customer notifications the caller asked for.
     let digest = false;
@@ -607,7 +620,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {
@@ -620,7 +633,7 @@ export function adminRoutes(deps: {
     const burst = budget && burstAlert(budget, 'notifications');
     if (burst) await alerts.send(burst);
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
@@ -647,7 +660,13 @@ export function adminRoutes(deps: {
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
-    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget });
+    const result = await runWatchdog(new Date(), {
+      bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget,
+      alertLog: deps.alertLog, opsBaseUrl: deps.opsBaseUrl,
+    });
+    // One line per sweep in the server log, so "when did the watchdog run, and what did it
+    // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).
+    console.log(JSON.stringify({ event: 'watchdog_tick', at: new Date().toISOString(), ...result }));
     const burst = budget && burstAlert(budget, 'watchdog');
     if (burst) await alerts.send(burst);
     return c.json({ ...result, suppressed: budget?.report().suppressed ?? 0 }, 200);
