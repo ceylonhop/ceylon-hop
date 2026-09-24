@@ -663,3 +663,54 @@ describe('POST /bookings/shared — a padded departure time must not strand seat
     expect(after).not.toBeNull();
   });
 });
+
+// CH-T74DT (website, 2026-08-27): every create route banked a 26-digit WhatsApp number. The
+// schema now refuses it (singleTransfer.test.ts); this pins the ROUTE side — all three doors
+// answer the same way, and the body carries `message`, because booking.js shows only that and
+// otherwise falls back to "try again in a moment", which cannot work for a number the customer
+// has to retype. `details` is unchanged (additive) — the same shape POST /admin/quote/:id/book
+// and /quotes/pay/start already answer with.
+describe('POST /bookings/* — an unusable phone number is refused with a message the customer can act on', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  // The prod row, verbatim.
+  const junk = {
+    ...valid.customer,
+    phoneCountryCode: '+94',
+    phoneNumber: '123134124123412312312312',
+    whatsapp: '+94123134124123412312312312',
+  };
+
+  const bodies: Array<[string, Record<string, unknown>]> = [
+    ['/bookings/single', { ...valid, customer: junk }],
+    ['/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Kandy'], nights: [1, 0], dates: [futureIsoDate(20)],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: junk,
+    }],
+    ['/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureIsoDate(20), time: '07:30', seats: 2, customer: junk,
+    }],
+  ];
+
+  it.each(bodies)('%s → 400 invalid_request naming customer.whatsapp', async (path, body) => {
+    const app = createApp();
+    const res = await jpost(app, path, body);
+    expect(res.status).toBe(400);
+    const out = await res.json();
+    expect(out.error).toBe('invalid_request');
+    expect(out.message).toContain('customer.whatsapp');
+    expect(out.message).toMatch(/digits/);
+    expect(out.details?.fieldErrors?.customer).toBeTruthy(); // additive: the flatten is still there
+  });
+
+  it('the same door still accepts a real number written with spaces, stored as sent', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/single', {
+      ...valid,
+      customer: { ...valid.customer, phoneCountryCode: '+94', phoneNumber: '77 123 4567', whatsapp: '+94 77 123 4567' },
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).input.customer.whatsapp).toBe('+94 77 123 4567');
+  });
+});
