@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { PaymentAdapter, WebhookRejection } from '../adapters/payments';
 import type { EmailAdapter } from '../adapters/email';
@@ -15,7 +15,13 @@ import { money as fmtMoney } from '../services/opsEmail';
 import { teamPaidEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import {
+  recordCheckoutEvent,
+  type BookingCheckoutEventInput,
+  type BookingCheckoutEventRepo,
+  type CheckoutOutcome,
+} from '../db/bookingCheckoutEventRepo';
+import type { ProviderPaymentStatus } from '../adapters/payments';
 import { claimWonQuote } from '../services/quoteOutcome';
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
@@ -74,6 +80,20 @@ function teamPaidBody(b: Booking): string {
   ].join('\n');
 }
 
+// What PayHere's notify said, in the attempt log's words (0055). Recorded whatever the
+// settlement then made of it: a duplicate or a reversal is still "the gateway said 2".
+const NOTIFY_OUTCOME: Record<ProviderPaymentStatus, CheckoutOutcome> = {
+  succeeded: 'settled', // 2
+  failed: 'failed', // -2
+  cancelled: 'dismissed', // -1
+  pending: 'pending', // 0
+  charged_back: 'failed', // -3
+};
+
+// The attempt-log row a webhook request will write, set by the handler where the outcome is
+// decided and written once the response is known (so http_status is the real one).
+type WebhookVars = { Variables: { checkoutEvent?: Omit<BookingCheckoutEventInput, 'source' | 'httpStatus' | 'ua'> } };
+
 export function webhookRoutes(deps: {
   settlements: PaymentSettlementRepo;
   // Pay links (2026-07-31): settlement is what wins a quote, so the webhook needs the
@@ -98,12 +118,27 @@ export function webhookRoutes(deps: {
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
-  const r = new Hono();
+  const r = new Hono<WebhookVars>();
+
+  // Writes the row the handler prepared, after the response exists. Best-effort, never awaited.
+  const logAttempt: MiddlewareHandler<WebhookVars> = async (c, next) => {
+    await next();
+    const e = c.get('checkoutEvent');
+    if (!e) return;
+    const status = c.res.status;
+    recordCheckoutEvent(deps.checkoutEvents, {
+      ...e,
+      ...(status >= 500 ? { outcome: 'error', reason: c.error?.message ?? 'server_error' } : {}),
+      httpStatus: status,
+      ua: c.req.header('user-agent')?.slice(0, 300) ?? null,
+      source: 'server',
+    });
+  };
 
   // 5.3 — payment webhook. Verifies signature, reconciles the amount, marks the payment
   // succeeded and the booking paid — idempotently — then sends the confirmation (5.4).
   // M17: the silent failure paths now raise throttled ops alerts.
-  r.post('/payments', async (c) => {
+  r.post('/payments', logAttempt, async (c) => {
     const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     const isExpectedContentType = adapter.provider !== 'payhere' || contentType === 'application/x-www-form-urlencoded';
     const rawBody = await c.req.text();
@@ -128,6 +163,7 @@ export function webhookRoutes(deps: {
         : { reason: 'content_type_unexpected', bodySha256: sha256(rawBody) };
       const reason = rejection?.reason ?? 'unknown';
       const isSignature = reason === 'signature_mismatch';
+      c.set('checkoutEvent', { action: 'webhook', outcome: 'refused', reason, orderId: rejection?.orderId ?? null });
       void alerts.send({
         severity: 'critical',
         kind: isSignature ? 'payhere_signature' : 'payhere_webhook_rejected',
@@ -148,6 +184,10 @@ export function webhookRoutes(deps: {
       outcome = await settlements.acceptVerifiedEvent(event);
     } catch (error) {
       if (!(error instanceof PaymentSettlementError)) throw error;
+      c.set('checkoutEvent', {
+        action: 'webhook', outcome: 'refused', reason: error.code, orderId: event.orderId,
+        bookingId: error.payment?.bookingId ?? null,
+      });
       if (error.code === 'unknown_order') return c.json({ error: 'unknown_order' }, 404);
       const payment = error.payment;
       void alerts.send({
@@ -161,6 +201,12 @@ export function webhookRoutes(deps: {
       });
       return c.json({ error: 'amount_mismatch' }, 400);
     }
+
+    c.set('checkoutEvent', {
+      action: 'webhook', outcome: NOTIFY_OUTCOME[event.status], orderId: event.orderId,
+      bookingId: outcome.booking.id, reference: outcome.booking.reference, channel: outcome.booking.channel,
+      reason: event.status === 'charged_back' ? 'charged_back' : null,
+    });
 
     if (outcome.kind === 'duplicate') {
       return c.json({ ok: true, idempotent: true }, 200);

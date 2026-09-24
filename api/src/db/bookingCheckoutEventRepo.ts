@@ -91,6 +91,17 @@ export function toCheckoutEvent(e: BookingCheckoutEventInput, now: Date): Bookin
   };
 }
 
+// The one way a route writes the log: never awaited, never thrown. A missing repo (tests, a
+// caller that opted out) records nothing; a failing one logs and the request never notices.
+export function recordCheckoutEvent(repo: BookingCheckoutEventRepo | undefined, e: BookingCheckoutEventInput): void {
+  if (!repo) return;
+  try {
+    repo.record(e).catch((err: unknown) => console.error('booking_checkout_event_failed', err));
+  } catch (err) {
+    console.error('booking_checkout_event_failed', err);
+  }
+}
+
 export class InMemoryBookingCheckoutEventRepo implements BookingCheckoutEventRepo {
   private readonly rows: BookingCheckoutEvent[] = [];
 
