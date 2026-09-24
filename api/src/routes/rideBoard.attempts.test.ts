@@ -252,6 +252,19 @@ describe('ride board attempt log — the PayHere path (production)', () => {
       expect.objectContaining({ action: 'join', outcome: 'refused', reason: 'phone_required' }),
     ]);
   });
+
+  // A number that cannot be dialled is refused the same way, under its own reason — so the log
+  // (and GA4's ride_board_refused) can tell "left it blank" from "typed 26 digits" (CH-T74DT).
+  it('records an unusable number as phone_invalid', async () => {
+    const { app, rideLists, events } = payHereApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const body = { payment: { ...paymentDetails, phone: '+94123134124123412312312312' } };
+    expect((await app.request(`/board/${l.code}/join`, post(cookie, body))).status).toBe(400);
+    expect(events.all()).toEqual([
+      expect.objectContaining({ action: 'join', outcome: 'refused', reason: 'phone_invalid' }),
+    ]);
+  });
 });
 
 describe('ride board attempt log — never gets in the way', () => {

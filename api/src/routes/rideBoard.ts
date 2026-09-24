@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
+import type { ZodError } from 'zod';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor } from '../db/departureRepo';
@@ -107,6 +108,18 @@ export function projectList({ list, members }: RideListWithMembers, viewerSub?: 
 
 const firstNameOf = (name: string): string => name.trim().split(/\s+/)[0] || name;
 const lastNameOf = (name: string): string => name.trim().split(/\s+/).slice(1).join(' ') || '-';
+
+// A Zod refusal, sorted for the client. A phone that is PRESENT but cannot be dialled gets its
+// own code, so board.js and the attempt log (GA4's ride_board_refused reason) can tell it from a
+// malformed body: CH-T74DT put 26 digits through the customer schema, and the board's box had
+// the same hole. A missing number is unchanged — no `payment` at all is phone_required in the
+// route, a payment without one stays invalid_request. `message` names the rule, the way the
+// booking routes' refusals do.
+function refusalFor(error: ZodError) {
+  const phone = error.issues.find((i) => i.path.join('.') === 'payment.phone' && i.code !== 'invalid_type');
+  return phone ? { error: 'phone_invalid', message: phone.message } : { error: 'invalid_request' };
+}
+
 const PREAPPROVAL_TTL_MS = 30 * 60_000;
 
 function countryName(code: string): string {
@@ -463,7 +476,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   r.post('/', attempt('start'), requireCustomer(), async (c) => {
     const cust = c.get('customer')!;
     const parsed = CreateListInput.safeParse(await c.req.json().catch(() => ({})));
-    if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+    if (!parsed.success) return c.json(refusalFor(parsed.error), 400);
     const input = parsed.data;
     // Required on every new commitment (owner, 2026-09-23): the number is how ops reaches a
     // traveller on WhatsApp. board.js already insists on it; this holds the line for any client.
@@ -615,7 +628,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   r.post('/:code/join', attempt('join'), requireCustomer(), async (c) => {
     const cust = c.get('customer')!;
     const parsed = JoinInput.safeParse(await c.req.json().catch(() => ({})));
-    if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
+    if (!parsed.success) return c.json(refusalFor(parsed.error), 400);
     const { preferredTime } = parsed.data;
 
     const found = await deps.rideLists.getByCode(c.req.param('code'));
