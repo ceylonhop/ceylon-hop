@@ -11,10 +11,12 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './tok
 // like) has to be pinned down or the ride-board tests are asserting against
 // sand.
 //
-// Several tests below deliberately pin behaviour that is NOT safe for real
-// money (empty refs succeed, repeat orderIds double-charge, negative amounts
-// are accepted). They are marked "documents:" — they exist so that whoever
-// swaps in the real gateway sees exactly which guarantees the Fake never made.
+// The Fake validates a charge the way PayHereTokenizedPaymentAdapter does (an
+// empty ref, a missing orderId or a non-positive amount is a 'failed'
+// invalid_charge_request that never reaches the gateway) and replays a repeat
+// orderId instead of charging it twice (hardening 2026-09-25). Tests still
+// marked "documents:" pin behaviour the Fake cannot know better about (it has
+// no token registry, so an unknown-but-non-empty ref still succeeds).
 // ============================================================================
 
 describe('FakeTokenizedPaymentAdapter — interface shape', () => {
@@ -145,47 +147,49 @@ describe('FakeTokenizedPaymentAdapter — charging', () => {
 });
 
 describe('FakeTokenizedPaymentAdapter — money edge cases', () => {
-  // documents: the Fake never validates the token. rideBoardCutoff.ts charges
-  // `ref: m.preapprovalRef ?? ''` — a member row with a NULL preapproval ref
-  // therefore charges an empty token and is reported as paid. Under the Fake
-  // that is silently "succeeded"; a real gateway would decline. Pinned so the
-  // real adapter is not written to match this.
-  it('documents: charging an unknown ref still succeeds (the fake does not validate tokens)', async () => {
+  // documents: the Fake keeps no token registry, so a non-empty ref it never issued still
+  // charges. The real gateway would decline; the Fake cannot know.
+  it('documents: charging an unknown (non-empty) ref still succeeds', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const res = await a.charge({ ref: 'pa_never_issued', amountCents: 4500, currency: 'USD', orderId: 'RB-AAA-x' });
     expect(res.status).toBe('succeeded');
     expect(a.charges).toHaveLength(1);
   });
 
-  it('documents: charging an EMPTY ref succeeds — the missing-preapproval case is not caught', async () => {
+  // Mirrors PayHereTokenizedPaymentAdapter.charge(): these requests are refused before they
+  // could reach a gateway, so no money moved — a POSITIVE 'failed', never 'succeeded'.
+  it('fails an EMPTY ref as invalid_charge_request — the missing-preapproval case is caught', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const res = await a.charge({ ref: '', amountCents: 4500, currency: 'USD', orderId: 'RB-AAA-x' });
-    expect(res.status).toBe('succeeded');
+    expect(res).toEqual({ status: 'failed', failureReason: 'invalid_charge_request' });
   });
 
-  it('documents: a zero-amount charge is accepted and reported as succeeded', async () => {
+  it('fails a charge with no orderId as invalid_charge_request', async () => {
+    const a = new FakeTokenizedPaymentAdapter();
+    const { ref } = await a.preapprove({ customerRef: 'sub-1' });
+    const res = await a.charge({ ref, amountCents: 4500, currency: 'USD', orderId: '' });
+    expect(res).toEqual({ status: 'failed', failureReason: 'invalid_charge_request' });
+  });
+
+  it('fails a zero-amount charge as invalid_charge_request', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const { ref } = await a.preapprove({ customerRef: 'sub-1' });
     const res = await a.charge({ ref, amountCents: 0, currency: 'USD', orderId: 'RB-AAA-sub-1' });
-    expect(res.status).toBe('succeeded');
-    expect(a.charges[0]?.amountCents).toBe(0);
+    expect(res).toEqual({ status: 'failed', failureReason: 'invalid_charge_request' });
   });
 
-  it('documents: a NEGATIVE amount is accepted and reported as succeeded', async () => {
+  it('fails a NEGATIVE amount as invalid_charge_request', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const { ref } = await a.preapprove({ customerRef: 'sub-1' });
     const res = await a.charge({ ref, amountCents: -4500, currency: 'USD', orderId: 'RB-AAA-sub-1' });
-    expect(res.status).toBe('succeeded');
-    expect(a.charges[0]?.amountCents).toBe(-4500);
+    expect(res).toEqual({ status: 'failed', failureReason: 'invalid_charge_request' });
   });
 
-  // documents: there is NO idempotency key. Re-running the cutoff sweep against
-  // a member whose status write failed after a successful charge would charge
-  // the same orderId a second time, and the Fake would happily succeed with a
-  // DIFFERENT providerTxnId — i.e. a silent double charge. rideBoardCutoff.ts
-  // relies on list/member status to avoid this; the adapter itself offers no
-  // protection.
-  it('documents: charging the same orderId twice double-charges (no idempotency)', async () => {
+  // Adapter-level idempotency: re-running the sweep against a member whose status write failed
+  // after a successful charge would send the same orderId again. The Fake replays the first
+  // outcome instead of charging twice. (Whether PayHere's own Charging API dedupes on order_id
+  // is unknown — see payhereTokenized.ts; production relies on rideBoardCutoff.ts bookkeeping.)
+  it('replays the first result when the same orderId is charged twice (no double charge)', async () => {
     const a = new FakeTokenizedPaymentAdapter();
     const { ref } = await a.preapprove({ customerRef: 'sub-1' });
     const args = { ref, amountCents: 4500, currency: 'USD', orderId: 'RB-AAA-sub-1' };
@@ -194,9 +198,19 @@ describe('FakeTokenizedPaymentAdapter — money edge cases', () => {
     const second = await a.charge({ ...args });
 
     expect(first.status).toBe('succeeded');
-    expect(second.status).toBe('succeeded');
-    expect(second.providerTxnId).not.toBe(first.providerTxnId);
-    expect(a.charges).toHaveLength(2); // two real charge attempts, not a replayed one
+    expect(second).toEqual(first); // same providerTxnId: one charge, replayed
+    expect(a.charges).toHaveLength(2); // both CALLS are still recorded, so a sweep bug stays visible
+  });
+
+  it('replays an indeterminate first outcome too — the card may already have been debited', async () => {
+    const a = new FakeTokenizedPaymentAdapter();
+    const { ref } = await a.preapprove({ customerRef: 'sub-1' });
+    a.markRefWillBeUnknown(ref);
+    const args = { ref, amountCents: 4500, currency: 'USD', orderId: 'RB-AAA-sub-1' };
+    const first = await a.charge({ ...args });
+    const second = await a.charge({ ...args });
+    expect(first.status).toBe('unknown');
+    expect(second).toEqual(first);
   });
 
   it('does not reuse a provider transaction id across different orders', async () => {

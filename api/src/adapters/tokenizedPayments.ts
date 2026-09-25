@@ -80,6 +80,8 @@ export class FakeTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
   readonly charges: ChargeArgs[] = [];
   private readonly failRefs = new Set<string>();
   private readonly unknownRefs = new Set<string>();
+  // orderId → the outcome of the first charge that may have moved money (succeeded / unknown).
+  private readonly settled = new Map<string, ChargeResult>();
   private seq = 0;
 
   constructor() {
@@ -114,13 +116,25 @@ export class FakeTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
   }
 
   async charge(args: ChargeArgs): Promise<ChargeResult> {
+    // Every call is recorded, replays included, so a caller that charges twice stays visible.
     this.charges.push(args);
+    // Same pre-flight contract as PayHereTokenizedPaymentAdapter.charge(): a request that
+    // could never be a real charge is a positive 'failed' — no money moved — never 'succeeded'.
+    if (!args.ref || !args.orderId || !Number.isSafeInteger(args.amountCents) || args.amountCents <= 0) {
+      return { status: 'failed', failureReason: 'invalid_charge_request' };
+    }
+    // Idempotency on orderId: a repeat of a charge that took (or may have taken) money replays
+    // the first outcome instead of charging again. A decline moved no money, so it is not
+    // remembered and a retry is a genuine new attempt.
+    const prior = this.settled.get(args.orderId);
+    if (prior) return { ...prior };
     if (this.failRefs.has(args.ref)) {
       return { status: 'failed', failureReason: 'card_declined' };
     }
-    if (this.unknownRefs.has(args.ref)) {
-      return { status: 'unknown', failureReason: 'charge_result_unknown:simulated timeout' };
-    }
-    return { status: 'succeeded', providerTxnId: `txn_${args.orderId}_${this.charges.length}` };
+    const result: ChargeResult = this.unknownRefs.has(args.ref)
+      ? { status: 'unknown', failureReason: 'charge_result_unknown:simulated timeout' }
+      : { status: 'succeeded', providerTxnId: `txn_${args.orderId}_${this.charges.length}` };
+    this.settled.set(args.orderId, result);
+    return { ...result };
   }
 }
