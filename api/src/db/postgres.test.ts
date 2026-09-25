@@ -741,6 +741,46 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
   });
 
+  it('keeps a pending payment pending on a PayHere "pending" notify, then settles on success', async () => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `pending-${booking.id}`,
+    });
+    const success = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-PENDING-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: '4'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+
+    const pending = await settlement.acceptVerifiedEvent({
+      ...success,
+      status: 'pending' as const,
+      providerStatusCode: '0',
+      payloadSha256: '5'.repeat(64),
+    });
+    expect(pending.kind).toBe('pending');
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('pending');
+    expect((await bookings.get(booking.id))?.status).toBe('payment_pending');
+
+    expect((await settlement.acceptVerifiedEvent(success)).kind).toBe('settled');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
   it('reports a second capture on the same order as a double capture and keeps the first capture id', async () => {
     const { booking, payment, event, settlement } = await settledGatewayOrder('second');
 

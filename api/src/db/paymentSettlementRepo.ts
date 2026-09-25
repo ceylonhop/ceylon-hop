@@ -15,6 +15,9 @@ export type PaymentSettlementOutcome =
   // decline can land after a later attempt was paid. The event is recorded as evidence; nothing
   // about the payment or booking changes, and it is not a reversal.
   | { kind: 'stale_attempt'; payment: Payment; booking: Booking }
+  // PayHere status 0: the attempt is still in flight. Recorded as evidence; the payment stays as it
+  // was. Not a decline — a "failed" here told the customer to pay again while the money could land.
+  | { kind: 'pending'; payment: Payment; booking: Booking }
   // A SECOND capture: some other payment on this booking had already settled when this one
   // arrived (a late PayHere notify on a booking ops settled in cash). The money is real and is
   // recorded — refundRepo sums succeeded payments, so dropping it would cap a refund below what
@@ -123,14 +126,19 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     const captured = recordedCaptureId(paymentRecord);
     if (event.status !== 'succeeded') {
       if (paymentRecord.status === 'succeeded') {
-        // Only a chargeback, or a non-success on the very capture we recorded, is a reversal.
+        // Only a chargeback, or a non-success on the very capture we recorded, is a reversal. A
+        // "pending" never is: it cannot take money back, whichever attempt it names.
         const staleAttempt =
-          event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId;
+          event.status === 'pending' ||
+          (event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId);
         return {
           kind: staleAttempt ? 'stale_attempt' : 'reversal',
           payment: this.requirePayment(event.orderId),
           booking,
         };
+      }
+      if (event.status === 'pending') {
+        return { kind: 'pending', payment: this.requirePayment(event.orderId), booking };
       }
       this.deps.payments.putForSettlement({
         ...paymentRecord,

@@ -233,6 +233,12 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, staleAttempt: true }, 200);
     }
 
+    // PayHere status 0: still in flight. No "payment failed" email — the attempt may yet succeed,
+    // and telling the customer it failed is how they end up paying twice.
+    if (outcome.kind === 'pending') {
+      return c.json({ ok: true, status: 'pending' }, 200);
+    }
+
     if (outcome.kind === 'failed') {
       // Immediate best-effort nudge so the customer can retry. Idempotent (once per booking),
       // and never fails the webhook — PayHere must not retry over a mail hiccup.

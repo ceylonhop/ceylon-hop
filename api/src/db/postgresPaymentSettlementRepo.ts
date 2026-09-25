@@ -86,14 +86,19 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       const captured = recordedCaptureId(payment);
       if (event.status !== 'succeeded') {
         if (payment.status === 'succeeded') {
-          // Only a chargeback, or a non-success on the very capture we recorded, is a reversal.
+          // Only a chargeback, or a non-success on the very capture we recorded, is a reversal. A
+          // "pending" never is: it cannot take money back, whichever attempt it names.
           const staleAttempt =
-            event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId;
+            event.status === 'pending' ||
+            (event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId);
           return {
             kind: staleAttempt ? ('stale_attempt' as const) : ('reversal' as const),
             payment,
             bookingId: booking.id,
           };
+        }
+        if (event.status === 'pending') {
+          return { kind: 'pending' as const, payment, bookingId: booking.id };
         }
         const [failed] = await tx
           .update(payments)

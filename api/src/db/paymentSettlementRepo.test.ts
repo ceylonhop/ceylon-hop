@@ -256,4 +256,51 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect(await f.payments.gatewayPaymentIdFor(f.payment.id)).toBe('PAY-123');
     expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(2);
   });
+
+  // PayHere status 0 = "pending": the money has not moved yet, and may still. Treating it like a
+  // decline marked the payment failed and emailed the customer "your payment didn't go through"
+  // while the original attempt could still succeed — an invitation to pay twice.
+  const pendingOf = (e: VerifiedPaymentEvent, txn = e.providerTxnId): VerifiedPaymentEvent => ({
+    ...e,
+    providerTxnId: txn,
+    status: 'pending',
+    providerStatusCode: '0',
+    payloadSha256: '0'.repeat(64),
+    sanitizedPayload: { ...e.sanitizedPayload, status_code: '0' },
+  });
+
+  it('keeps a pending payment pending on a PayHere "pending" notify', async () => {
+    const f = await fixture();
+
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(pendingOf(f.event));
+
+    expect(outcome.kind).toBe('pending');
+    expect(outcome.payment.status).toBe('pending');
+    expect(outcome.booking.status).toBe('payment_pending');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(1);
+  });
+
+  it('settles normally when the pending attempt later succeeds', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(pendingOf(f.event));
+
+    const later = await repo.acceptVerifiedEvent(f.event);
+
+    expect(later.kind).toBe('settled');
+    expect(later.booking.status).toBe('paid');
+  });
+
+  it('never reads a "pending" notify on a captured payment as a reversal', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(f.event);
+
+    // Same payment_id as the recorded capture: out-of-order delivery, not money going back.
+    const late = await repo.acceptVerifiedEvent(pendingOf(f.event));
+
+    expect(late.kind).toBe('stale_attempt');
+    expect(late.payment.status).toBe('succeeded');
+    expect(late.booking.status).toBe('paid');
+  });
 });

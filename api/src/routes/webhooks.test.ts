@@ -670,6 +670,27 @@ describe('payment webhook rejection alerts', () => {
       body,
     });
 
+  // PayHere status 0 = pending. Not a decline: no "payment failed" email, booking still awaiting
+  // payment, and the later success still confirms the booking.
+  it('treats a PayHere "pending" notify as in flight, not failed', async () => {
+    const adapter = payhere();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, alerts, bookings });
+    const b = await bookAndCheckout(app);
+
+    const res = await post(app, adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency, statusCode: '0' }));
+
+    expect(res.status).toBe(200);
+    expect(email.sent).toHaveLength(0);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+
+    await post(app, adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency }));
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('payment_reversed');
+  });
+
   it('still calls a genuine signature failure what it is', async () => {
     const adapter = payhere();
     const alerts = new FakeAlertAdapter();
