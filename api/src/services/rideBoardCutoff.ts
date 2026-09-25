@@ -96,6 +96,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
     // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
     // can be told; for every decision below these count as charged (see the alert further down).
     const indeterminate: { member: RideMember; orderId: string; reason?: string }[] = [];
+    // Set when another sweep turns out to be working this list (see the claim below).
+    let yielded = false;
     for (const m of real) {
       if (m.status === 'charged') {
         chargedOk.push(m);
@@ -112,6 +114,17 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         failed.push(m);
         continue;
       }
+      // Claim the card BEFORE charging it (held → charged, only if still held). The charge API
+      // has no idempotency key, so the old order — charge, then record — double-charged whenever
+      // two sweeps overlapped or the record write failed. If this claim loses, another sweep
+      // owns the list: step back from it entirely, no charges and no emails, and let that sweep
+      // finish it. The price of claiming first is that a crash between the claim and the charge
+      // leaves one seat marked charged and not paid — the same trade `unknown` makes below.
+      if (!(await deps.rideLists.claimMemberForCharge(list.id, m.sub))) {
+        logEvent('ride_board.sweep_yielded', { code: list.code, orderId });
+        yielded = true;
+        break;
+      }
       const charge = await deps.paygw.charge({
         ref: m.preapprovalRef,
         amountCents: list.seatPrice * m.seats,
@@ -119,7 +132,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         orderId,
       });
       if (charge.status === 'succeeded') {
-        await deps.rideLists.setMemberStatus(list.id, m.sub, 'charged');
+        // Already `charged` by the claim above: no second write for this to fail on.
         res.charged++;
         chargedOk.push(m);
       } else if (charge.status === 'unknown') {
@@ -127,8 +140,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // van that runs — bounded, alerted, chaseable. Being wrong the other way cancels a
         // probably-paid-for van and tells a debited traveller they weren't charged. Marking
         // them 'charged' also keeps a later sweep from charging the same card twice, since
-        // this API has no idempotency key.
-        await deps.rideLists.setMemberStatus(list.id, m.sub, 'charged');
+        // this API has no idempotency key. (The claim above already recorded it as charged.)
         res.chargeUnknown++;
         chargedOk.push(m);
         indeterminate.push({ member: m, orderId, reason: charge.failureReason });
@@ -137,6 +149,11 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         res.chargeFailed++;
         failed.push(m);
       }
+    }
+
+    if (yielded) {
+      res.processed--;
+      continue;
     }
 
     const ranThisList = chargedOk.reduce((n, m) => n + m.seats, 0) + seedSeats >= list.minSeats;
