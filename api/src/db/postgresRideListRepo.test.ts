@@ -131,4 +131,30 @@ describe.skipIf(!TEST_URL)('PostgresRideListRepo (integration)', () => {
       expect((await lists.addMember(list.id, member('gone-sub', 1)))?.status).toBe('held');
     });
   });
+
+  // The cutoff sweep claims each card before charging it. Only a real Postgres can prove the
+  // conditional UPDATE lets exactly one of two racing sweeps win the same member.
+  describe('claimMemberForCharge', () => {
+    it('lets exactly one of two concurrent claims win, and marks the member charged', async () => {
+      const list = await lists.createList(args());
+      await lists.addMember(list.id, member('claim-sub', 1));
+
+      const wins = await Promise.all([
+        lists.claimMemberForCharge(list.id, 'claim-sub'),
+        lists.claimMemberForCharge(list.id, 'claim-sub'),
+      ]);
+
+      expect(wins.filter(Boolean)).toHaveLength(1);
+      const after = await lists.getByCode(list.code);
+      expect(after?.members.find((m) => m.sub === 'claim-sub')?.status).toBe('charged');
+    });
+
+    it('refuses a member who is not held', async () => {
+      const list = await lists.createList(args());
+      await lists.addMember(list.id, member('failed-sub', 1));
+      await lists.setMemberStatus(list.id, 'failed-sub', 'charge_failed');
+
+      expect(await lists.claimMemberForCharge(list.id, 'failed-sub')).toBe(false);
+    });
+  });
 });

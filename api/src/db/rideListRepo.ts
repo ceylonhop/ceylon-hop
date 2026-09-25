@@ -90,6 +90,11 @@ export interface RideListRepo {
   setStatus(id: string, status: RideListStatus): Promise<void>;
   lockDeparture(id: string, time: string): Promise<void>;
   setMemberStatus(listId: string, sub: string, status: MemberStatus): Promise<void>;
+  // The cutoff sweep's claim on one card, taken BEFORE it is charged: held → charged, only if the
+  // member is still `held`. False means another sweep already claimed it (or it is no longer
+  // held) — the caller must not charge. Claiming first turns "charged, then the write failed" into
+  // a seat we failed to charge, never a card charged twice (this API has no idempotency key).
+  claimMemberForCharge(listId: string, sub: string): Promise<boolean>;
   // Gathering lists whose cutoff has passed (for the scheduler sweep).
   dueForCutoff(now: Date): Promise<RideListWithMembers[]>;
 }
@@ -369,6 +374,13 @@ export class InMemoryRideListRepo implements RideListRepo {
   async setMemberStatus(listId: string, sub: string, status: MemberStatus): Promise<void> {
     const m = (this.members.get(listId) ?? []).find((x) => x.sub === sub);
     if (m) m.status = status;
+  }
+
+  async claimMemberForCharge(listId: string, sub: string): Promise<boolean> {
+    const m = (this.members.get(listId) ?? []).find((x) => x.sub === sub);
+    if (!m || m.status !== 'held') return false;
+    m.status = 'charged';
+    return true;
   }
 
   async dueForCutoff(now: Date): Promise<RideListWithMembers[]> {
