@@ -502,9 +502,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     background-repeat:no-repeat;background-position:center;background-size:contain;
   }
   .destination-art > .wrap{position:relative;z-index:1}
-  .destination-art--sigiriya::after{
-    right:-62px;bottom:-42px;background-image:url("img/section-art/sigiriya-watercolor.webp")
-  }
   .destination-art--hiriketiya::after{
     left:-78px;bottom:-54px;background-image:url("img/section-art/hiriketiya-cove-watercolor.webp")
   }
@@ -517,7 +514,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   @media(max-width:600px){
     /* destination art: mobile restraint */
     .destination-art::after{width:68vw;max-width:260px;opacity:.18}
-    .destination-art--sigiriya::after{right:-64px;bottom:-18px}
     .destination-art--hiriketiya::after{left:-72px;bottom:-24px}
     .destination-art--hill-country-rail::after{right:-72px;top:20px}
     .destination-art--mirissa-whale::after{left:-72px;bottom:-22px}
@@ -618,7 +614,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </section>
 
 <!-- WHAT IS -->
-<section class="section-tight destination-art destination-art--sigiriya" id="what" data-destination-art="sigiriya">
+<section class="section-tight" id="what">
   <div class="wrap center">
     <span class="eyebrow" style="justify-content:center">What is Ceylon Hop?</span>
     <h2 style="max-width:26ch;margin:0 auto .55rem;font-size:clamp(1.6rem,2.8vw,2.3rem)">Private transfers across Sri Lanka &mdash; share a seat when it suits you</h2>
