@@ -73,11 +73,11 @@ describe('every page ships its footer in the HTML, not only via site.js', () => 
 describe('every page ships its header nav in the HTML, not only via site.js', () => {
   const HEADER_PAGES = ['index.html', 'about.html', 'blog.html', 'tours.html', 'why.html', 'plan.html', 'search.html'];
   const NAV = [
-    ['Routes & prices', 'trip/'],
-    ['Share a ride', 'board.html'],
-    ['Plan a trip', 'plan.html'],
-    ['Tours', 'tours.html'],
-    ['About', 'about.html'],
+    ['Shared taxi', 'board.html'],
+    ['Popular routes & prices', 'trip/'],
+    ['Plan a multi-stop trip', 'plan.html'],
+    ['Full tours', 'tours.html'],
+    ['About us', 'about.html'],
   ];
   const navLinks = (html) => {
     // board.html hand-writes its bar as a <div>; the rest render a <nav>.

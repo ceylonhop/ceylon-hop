@@ -15,7 +15,7 @@
      https://prod.ceylonhop.com added to its Authorized JavaScript origins. PayHere card
      approval is completed through the backend's signed preapproval callback. -->
 <script>window.GOOGLE_CLIENT_ID='369028158972-46hqkblk86qfk1rqemi7k681acm0gip2.apps.googleusercontent.com';</script>
-<title>Shared taxi board — split a ride across Sri Lanka | Ceylon Hop</title>
+<title>Shared taxi — split a ride across Sri Lanka | Ceylon Hop</title>
 <meta name="description" content="Sri Lanka shared taxi: share an air-con taxi with travellers heading your way — a fraction of a private car, far nicer than the bus. Add your name to a route; $0 unless it runs.">
 <link rel="canonical" href="https://ceylonhop.com/board.html">
 <meta name="theme-color" content="#63BFD6">
@@ -80,7 +80,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* This page's local .btn (above) comes after site.css in source order at the same specificity,
    so it beats site.css's .nav-burger display/padding. Restate them one level higher. */
 .nav-cta .nav-burger{display:none;background:none;padding:6px}
-@media(max-width:880px){.nav-links{display:none}.nav-cta .nav-burger{display:block}}
+/* 1000, not site.css's 880: "My rides" sits beside five longer labels here (2026-09-25 sitelink
+   names), and between 880 and ~980 they ran into each other. */
+@media(max-width:1000px){.nav-links{display:none}.nav-cta .nav-burger{display:block}}
 @media(max-width:600px){.nav-cta .nav-burger{padding:11px;margin-right:-6px}}
 
 /* ---------- compact intro: the board IS the page ---------- */
@@ -742,11 +744,11 @@ body.detail-open .detail{display:block}
     Ceylon Hop
   </a>
   <div class="nav-links">
-    <a href="trip/">Routes & prices</a>
-    <a href="board.html" class="active">Share a ride</a>
-    <a href="plan.html">Plan a trip</a>
-    <a href="tours.html">Tours</a>
-    <a href="about.html">About</a>
+    <a href="board.html" class="active">Shared taxi</a>
+    <a href="trip/">Popular routes & prices</a>
+    <a href="plan.html">Plan a multi-stop trip</a>
+    <a href="tours.html">Full tours</a>
+    <a href="about.html">About us</a>
   </div>
   <!-- This slot must stay in the flex flow even when the button is hidden: `hidden` takes the
        button out of the layout entirely, and space-between then flings the links to the right
@@ -759,11 +761,11 @@ body.detail-open .detail{display:block}
 <!-- site.css hides .nav-cta .btn:not(.nav-burger) below 880px, so "My rides" lives here on
      phones. board.js keeps this entry in sync with the desktop button. -->
 <div class="mobile-menu" data-mobile>
-  <a href="trip/">Routes & prices</a>
-  <a href="board.html">Share a ride</a>
-  <a href="plan.html">Plan a trip</a>
-  <a href="tours.html">Tours</a>
-  <a href="about.html">About</a>
+  <a href="board.html">Shared taxi</a>
+  <a href="trip/">Popular routes & prices</a>
+  <a href="plan.html">Plan a multi-stop trip</a>
+  <a href="tours.html">Full tours</a>
+  <a href="about.html">About us</a>
   <a href="#" class="mm-rides" id="mm-rides" hidden>My rides <span id="mm-rides-count">0</span></a>
 </div>
 
