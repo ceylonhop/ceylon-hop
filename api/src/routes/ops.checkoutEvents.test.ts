@@ -83,6 +83,7 @@ describe('GET /admin/ops/bookings/:id — checkoutEvents', () => {
     const broken: BookingCheckoutEventRepo = {
       record: () => Promise.resolve(),
       listByBookingId: () => Promise.reject(new Error('db down')),
+      summarySince: () => Promise.reject(new Error('db down')),
     };
     expect((await detail(broken)).checkoutEvents).toEqual([]);
   });
