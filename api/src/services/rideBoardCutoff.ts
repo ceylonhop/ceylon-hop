@@ -102,8 +102,18 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         continue;
       }
       const orderId = `${list.code}-${m.sub}`;
+      // A held member with no card token is a data bug, not a card to charge. Never send it to
+      // the gateway as `ref: ''` (the Fake used to report that as paid): no money can move, so
+      // it is a plain charge failure — marked, counted, and emailed "at risk" like a decline.
+      if (!m.preapprovalRef) {
+        logEvent('ride_board.charge_skipped_no_ref', { code: list.code, orderId, seats: m.seats });
+        await deps.rideLists.setMemberStatus(list.id, m.sub, 'charge_failed');
+        res.chargeFailed++;
+        failed.push(m);
+        continue;
+      }
       const charge = await deps.paygw.charge({
-        ref: m.preapprovalRef ?? '',
+        ref: m.preapprovalRef,
         amountCents: list.seatPrice * m.seats,
         currency,
         orderId,

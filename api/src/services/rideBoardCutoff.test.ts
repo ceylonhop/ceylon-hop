@@ -75,6 +75,25 @@ describe('runRideBoardCutoff', () => {
     expect(email.sent.some((e) => /at risk/i.test(e.subject))).toBe(true);
   });
 
+  // A held member with no card token is a data bug. It used to be charged `ref: ''`, which the
+  // Fake reported as succeeded — marked charged, counted, emailed "confirmed" with no money taken.
+  it('never charges a held member with no preapproval ref: skipped and marked charge_failed', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs({ minSeats: 4, capacity: 6 }));
+    await fill(repo, list.id, 4);
+    await repo.addMember(list.id, { ...joiner('u4', 'unused'), preapprovalRef: null });
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email });
+    expect(res).toMatchObject({ confirmed: 1, charged: 4, chargeFailed: 1 });
+    expect(paygw.charges).toHaveLength(4); // no charge call at all for the token-less member
+    expect(paygw.charges.map((c) => c.ref)).not.toContain('');
+    const after = await repo.getByCode(list.code);
+    expect(after?.members.find((m) => m.sub === 'u4')?.status).toBe('charge_failed');
+    expect(email.sent.filter((e) => e.to === 'u4@x.com').some((e) => /confirmed/i.test(e.subject))).toBe(false);
+  });
+
   // The money-safety case. Enough seats were HELD, so the sweep charges — then enough of
   // those charges fail to drop the list below its minimum, and it is called off. The cards
   // that DID charge are real money taken for a van that will not run.
