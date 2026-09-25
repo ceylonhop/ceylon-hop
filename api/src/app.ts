@@ -515,6 +515,7 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+    ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
