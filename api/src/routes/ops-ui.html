@@ -525,6 +525,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .act:last-child::after{display:none}
   .act .at{font-size:.76rem;color:var(--ink-faint)}
   .act .am{font-size:.9rem;margin-top:2px}.act .am b{font-weight:700}
+  /* payment attempts (booking_checkout_event) */
+  .pa-row{display:flex;align-items:baseline;gap:9px;padding:4px 0;font-size:.86rem}
+  .pa-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c,var(--idle));align-self:center}
+  .pa-when{flex:none;min-width:44px;font-size:.76rem;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+  .pa-what{min-width:0;overflow-wrap:anywhere}
+  .pa-hint{margin:8px 0 0;font-size:.8rem;color:var(--ink-soft)}
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
@@ -2966,6 +2972,48 @@ function openNewQuote(){
 }
 
 /* ── build the activity timeline from the detail payload ── */
+/* ── Payment attempts: the booking_checkout_event log, oldest first (GET /bookings/:id →
+   checkoutEvents, latest 50). Before this, debugging a failed payment took SQL. Shown only when
+   there is something to show; every string goes through esc(). ── */
+const PA_TONE={settled:'var(--ok)',succeeded:'var(--go)',opened:'var(--go)',pending:'var(--wait)',dismissed:'var(--wait)',failed:'var(--alert)',error:'var(--alert)',refused:'var(--alert)'};
+function paLabel(e){
+  const why=e.reason?': '+e.reason:'';
+  const k=e.action+'/'+e.outcome;
+  switch(k){
+    case 'create/succeeded':return 'Booking created';
+    case 'checkout/succeeded':return 'Checkout started'+(e.attempt!=null?' (attempt '+e.attempt+')':'');
+    case 'gateway/opened':return 'Sent to PayHere';
+    case 'gateway/dismissed':return 'Closed PayHere';
+    case 'gateway/error':return 'PayHere error'+why;
+    case 'webhook/settled':return 'PayHere: paid';
+    case 'webhook/failed':return 'PayHere: declined';
+    case 'webhook/dismissed':return 'PayHere: cancelled';
+    case 'webhook/refused':return 'PayHere notify rejected'+why;
+    case 'return/settled':return 'Customer returned — paid';
+    case 'return/failed':return 'Customer returned — declined';
+    case 'return/pending':return 'Customer returned — no answer yet';
+  }
+  /* create/checkout refused|error and anything newer than this list: still say what happened */
+  const act={create:'Booking create',checkout:'Checkout',gateway:'PayHere',webhook:'PayHere notify',return:'Customer returned'}[e.action]||e.action;
+  return act+' '+e.outcome+why;
+}
+function paWhen(iso){
+  const d=new Date(iso);if(isNaN(d.getTime()))return '—';
+  const hm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return d.toDateString()===new Date().toDateString()?hm:d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})+' '+hm;
+}
+function paymentAttemptsHtmlFor(d){
+  const evs=Array.isArray(d?.checkoutEvents)?d.checkoutEvents:[];
+  if(!evs.length)return '';
+  const rows=evs.map(e=>`<div class="pa-row"><span class="pa-dot" style="--c:${PA_TONE[e.outcome]||'var(--idle)'}"></span><span class="pa-when">${esc(paWhen(e.at))}</span><span class="pa-what">${esc(paLabel(e))}</span></div>`).join('');
+  /* The customer reached (or was about to reach) PayHere and nothing came back. A 3-D Secure
+     failure inside PayHere sends no notify at all (payment audit 2026-09-24). */
+  const last=evs[evs.length-1];
+  const silent=last.action==='checkout'||(last.action==='gateway'&&last.outcome==='opened');
+  const hint=silent?`<p class="pa-hint">${esc('No answer from PayHere — if this was a 3-D Secure decline it only shows in the PayHere dashboard (search the reference)')}</p>`:'';
+  return `<div class="block pay-attempts"><h4>Payment attempts</h4>${rows}${hint}</div>`;
+}
+
 function buildActivity(t,d){
   const acts=[];
   if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
@@ -3415,6 +3463,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
+      ${paymentAttemptsHtmlFor(d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
         <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
         <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
