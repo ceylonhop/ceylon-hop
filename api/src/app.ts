@@ -496,6 +496,7 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      duplicates: { bookings, departures, payments },
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({

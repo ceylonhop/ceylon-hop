@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
@@ -9,7 +9,8 @@ import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
-import { futureIsoDate } from '../testSupport/dates';
+import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
+import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
 
@@ -775,5 +776,135 @@ describe('POST /webhooks/payments — the ledger records only mail that actually
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
     });
     expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(true);
+  });
+});
+
+// Owner-approved 2026-09-25. Lea's first attempt (CH-Y5RXW) was declined at 3-D Secure and left
+// payment_pending; 20 min later she paid the same shared seat on CH-L72HX. The leftover sat in the
+// ops queue as "Payment not received" until ops cancelled it by hand — which emailed her a
+// cancellation for the trip she had paid for. The settle now closes it quietly.
+describe('POST /webhooks/payments — closes the same customer\'s older unpaid duplicate', () => {
+  const MIN = 60_000;
+  const shared = {
+    // Negombo → Sigiriya, a catalogue leg on airport-cultural
+    from: 'Negombo',
+    to: 'Sigiriya / Dambulla',
+    date: nextIsoWeekday(3), // a Wednesday — a shared service day
+    time: '07:30',
+    seats: 2,
+    customer: { firstName: 'Lea', lastName: 'M', email: 'lea@example.com', whatsapp: '+491700000000', country: 'Germany' },
+  };
+  afterEach(() => vi.useRealTimers());
+
+  async function bookShared(app: ReturnType<typeof createApp>, over: Record<string, unknown> = {}) {
+    const b = await (
+      await app.request('/bookings/shared', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...shared, ...over }),
+      })
+    ).json();
+    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${b.checkoutToken}` } });
+    return b;
+  }
+
+  function makeApp(bookings = new InMemoryBookingRepo()) {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const departures = new InMemoryDepartureRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, departures, payments });
+    return { app, adapter, email, alerts, departures, payments, bookings };
+  }
+
+  // Lea's shape: the declined attempt first, the paid one 20 minutes later.
+  async function leasTwoBookings(ctx: ReturnType<typeof makeApp>) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = Date.now();
+    const stale = await bookShared(ctx.app);
+    vi.setSystemTime(t0 + 20 * MIN);
+    const retry = await bookShared(ctx.app);
+    return { stale, retry };
+  }
+
+  const notify = (ctx: ReturnType<typeof makeApp>, b: { reference: string; total: number; currency: string }) =>
+    ctx.app.request('/webhooks/payments', {
+      method: 'POST',
+      body: ctx.adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+
+  it("Lea's shape: the older pending booking is cancelled, its seats released, no email to her, one ops alert", async () => {
+    const ctx = makeApp();
+    const { stale, retry } = await leasTwoBookings(ctx);
+    const release = vi.spyOn(ctx.departures, 'releaseSeats');
+
+    const res = await notify(ctx, retry);
+    expect(res.status).toBe(200);
+
+    await vi.waitFor(async () => expect((await ctx.bookings.get(stale.id))!.status).toBe('cancelled'));
+    const closed = (await ctx.bookings.get(stale.id))!;
+    expect(closed.cancellationReason).toBe(`duplicate — paid on ${retry.reference}`);
+    expect(closed.cancelledBy).toBe('system:duplicate-close');
+    expect(release).toHaveBeenCalledWith({ corridorId: 'airport-cultural', date: shared.date, time: '07:30', seats: 2 });
+    expect((await ctx.bookings.get(retry.id))!.status).toBe('paid');
+    // The only customer email is the paid booking's confirmation — nothing about the closed one.
+    expect(ctx.email.sent).toHaveLength(1);
+    expect(ctx.email.sent[0].subject).toContain(retry.reference);
+    expect(ctx.email.sent.some((m) => m.subject.includes(stale.reference) || (m.text ?? '').includes(stale.reference))).toBe(false);
+    const dup = ctx.alerts.sent.filter((a) => a.kind === 'duplicate_closed');
+    expect(dup).toHaveLength(1);
+    expect(dup[0].severity).toBe('info');
+    expect(`${dup[0].title}\n${dup[0].body}`).toContain(stale.reference);
+    expect(`${dup[0].title}\n${dup[0].body}`).toContain(retry.reference);
+  });
+
+  it('a replayed notify closes nothing twice', async () => {
+    const ctx = makeApp();
+    const { stale, retry } = await leasTwoBookings(ctx);
+    const release = vi.spyOn(ctx.departures, 'releaseSeats');
+    await notify(ctx, retry);
+    await vi.waitFor(async () => expect((await ctx.bookings.get(stale.id))!.status).toBe('cancelled'));
+    expect((await notify(ctx, retry)).status).toBe(200);
+    await new Promise((r) => setImmediate(r));
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(ctx.alerts.sent.filter((a) => a.kind === 'duplicate_closed')).toHaveLength(1);
+  });
+
+  it('a different travel date is not a duplicate — the older booking stays pending', async () => {
+    const ctx = makeApp();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = Date.now();
+    const other = await bookShared(ctx.app, { date: nextIsoWeekday(6) });
+    vi.setSystemTime(t0 + 20 * MIN);
+    const retry = await bookShared(ctx.app);
+    expect((await notify(ctx, retry)).status).toBe(200);
+    await new Promise((r) => setImmediate(r));
+    expect((await ctx.bookings.get(other.id))!.status).toBe('payment_pending');
+    expect(ctx.alerts.sent.filter((a) => a.kind === 'duplicate_closed')).toHaveLength(0);
+  });
+
+  it('a failure in the close path never fails the webhook or the confirmation', async () => {
+    // The close path's first read throws; everything the paid booking needs still works.
+    class BrokenDuplicateLookup extends InMemoryBookingRepo {
+      override async list(filter?: Parameters<InMemoryBookingRepo['list']>[0]) {
+        if (Array.isArray(filter?.status) && filter.status.includes('payment_pending')) throw new Error('db down');
+        return super.list(filter);
+      }
+    }
+    const ctx = makeApp(new BrokenDuplicateLookup());
+    const { stale, retry } = await leasTwoBookings(ctx);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await notify(ctx, retry);
+      expect(res.status).toBe(200);
+      expect((await ctx.bookings.get(retry.id))!.status).toBe('paid');
+      expect(ctx.email.sent).toHaveLength(1);
+      expect(ctx.email.sent[0].subject).toContain(retry.reference);
+      await vi.waitFor(() => expect(errors.mock.calls.some((c) => String(c[0]).includes('duplicate close'))).toBe(true));
+      expect((await ctx.bookings.get(stale.id))!.status).toBe('payment_pending');
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
