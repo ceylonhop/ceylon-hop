@@ -39,9 +39,12 @@ jobs:
         run: |
           set -euo pipefail
           body=$(curl -fsS --max-time 30 https://ceylonhop.com/)
-          echo "$body" | grep -q 'site\.css?v=' \
+          # A here-string, not `echo | grep -q`: the page is >64 KB, so grep -q exits on the
+          # match while echo is still writing, echo dies of SIGPIPE, and pipefail turns a
+          # found marker into a failure. That false red fired on every run until this fix.
+          grep -q 'site\.css?v=' <<<"$body" \
             || { echo "::error::ceylonhop.com answered, but not with our build (no stamped site.css)"; exit 1; }
-          echo "$body" | grep -qi 'wp-content' \
+          grep -qi 'wp-content' <<<"$body" \
             && { echo "::error::ceylonhop.com is serving WordPress — the apex has reverted"; exit 1; }
           echo "ok: apex serves the current build"
 
