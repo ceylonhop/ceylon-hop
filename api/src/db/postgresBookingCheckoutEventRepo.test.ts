@@ -40,6 +40,46 @@ describe.skipIf(!TEST_URL)('PostgresBookingCheckoutEventRepo (integration)', () 
     expect(rows[1]).toMatchObject({ outcome: 'succeeded', httpStatus: 201, orderId: null, attempt: null });
   });
 
+  it('summarises the checkouts started since a moment, per booking (digest payments line)', async () => {
+    // A window after every row already in the shared test DB, so the counts are exactly ours;
+    // the rows are removed again so the next run's window does not drift forward.
+    const [{ max }] = await sql<{ max: Date | null }[]>`SELECT max(at) AS max FROM booking_checkout_event`;
+    const since = new Date(Math.max(Date.now(), max ? new Date(max).getTime() : 0) + 86_400_000);
+    const at = (min: number) => new Date(since.getTime() + min * 60_000);
+    const [paid, declined, cancelled, silent, retried, old, team] = Array.from({ length: 7 }, () => randomUUID());
+    try {
+      const ev = (bookingId: string | null, action: 'create' | 'checkout' | 'webhook', outcome: 'succeeded' | 'refused' | 'error' | 'settled' | 'failed' | 'dismissed' | 'pending', min: number) =>
+        repo.record({ action, outcome, bookingId, source: 'server' }, at(min));
+      await ev(paid!, 'checkout', 'succeeded', 1);
+      await ev(paid!, 'webhook', 'settled', 2);
+      await ev(declined!, 'checkout', 'succeeded', 3);
+      await ev(declined!, 'webhook', 'failed', 4);
+      await ev(cancelled!, 'checkout', 'succeeded', 5);
+      await ev(cancelled!, 'webhook', 'dismissed', 6);
+      await ev(silent!, 'checkout', 'succeeded', 7);
+      await ev(silent!, 'webhook', 'pending', 8);
+      await ev(retried!, 'checkout', 'succeeded', 9);
+      await ev(retried!, 'webhook', 'failed', 10);
+      await ev(retried!, 'checkout', 'succeeded', 11);
+      await ev(retried!, 'webhook', 'settled', 12);
+      await ev(old!, 'checkout', 'succeeded', -5);
+      await ev(old!, 'webhook', 'settled', 1);
+      await ev(team!, 'checkout', 'succeeded', 13);
+      await ev(team!, 'webhook', 'settled', 14);
+      await ev(randomUUID(), 'checkout', 'refused', 2);
+      await ev(null, 'create', 'refused', 3);
+      await ev(null, 'create', 'error', 4);
+      await ev(null, 'create', 'refused', -10);
+
+      expect(await repo.summarySince(since, { excludeBookingIds: [team!] })).toEqual({
+        started: 5, paid: 2, declined: 1, cancelledAtGateway: 1, abandoned: 1, createRefused: 2,
+      });
+      expect((await repo.summarySince(since)).paid).toBe(3); // the team booking, when not excluded
+    } finally {
+      await sql`DELETE FROM booking_checkout_event WHERE at >= ${new Date(since.getTime() - 3_600_000)}`;
+    }
+  });
+
   it('refuses an action, outcome or source the code does not know', async () => {
     await expect(sql`INSERT INTO booking_checkout_event (action, outcome, source) VALUES ('create', 'maybe', 'server')`).rejects.toThrow();
     await expect(sql`INSERT INTO booking_checkout_event (action, outcome, source) VALUES ('hop', 'refused', 'server')`).rejects.toThrow();

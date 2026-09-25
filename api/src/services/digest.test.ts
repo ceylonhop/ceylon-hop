@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDigest } from './digest';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryBookingCheckoutEventRepo, type CheckoutSummary } from '../db/bookingCheckoutEventRepo';
 
 const booking: NewBooking = {
   mode: 'single',
@@ -83,5 +84,59 @@ describe('buildDigest — team test bookings', () => {
     await bookings.setStatus(b.id, 'payment_pending');
     const d = await buildDigest(new Date(), { bookings });
     expect(d.text).toContain('Payment pending: 1');
+  });
+});
+
+// Payments early warning (2026-09-24): the founder sees website checkouts failing in the one
+// daily email, read from booking_checkout_event (migration 0055), without running SQL.
+describe('buildDigest — payments (24h)', () => {
+  const summaryOf = (s: CheckoutSummary) => ({ summarySince: async () => s });
+  const base: CheckoutSummary = { started: 0, paid: 0, declined: 0, cancelledAtGateway: 0, abandoned: 0, createRefused: 0 };
+
+  it('renders the checkout funnel line from the attempt log', async () => {
+    const checkoutEvents = summaryOf({ started: 5, paid: 3, declined: 1, cancelledAtGateway: 0, abandoned: 1, createRefused: 2 });
+    const d = await buildDigest(new Date(), { bookings: new InMemoryBookingRepo(), checkoutEvents: checkoutEvents as never });
+    expect(d.text).toContain('Payments (24h)');
+    expect(d.text).toContain('Checkouts started: 5 · paid 3 · declined 1 · cancelled at PayHere 0 · no answer 1 · booking errors 2');
+    expect(d.html).toContain('Payments (24h)');
+    expect(d.html).toContain('cancelled at PayHere 0');
+    expect(d.text).not.toContain('⚠'); // 60% paid is not below the line
+  });
+
+  it('warns when at least 3 checkouts started and under 60% paid', async () => {
+    const checkoutEvents = summaryOf({ ...base, started: 4, paid: 2, abandoned: 2 });
+    const d = await buildDigest(new Date(), { bookings: new InMemoryBookingRepo(), checkoutEvents: checkoutEvents as never });
+    expect(d.text).toContain('⚠ Only 50% of checkouts paid in the last 24h — check booking_checkout_event');
+    expect(d.html).toContain('Only 50% of checkouts paid');
+  });
+
+  it('does not warn on fewer than 3 checkouts, however they went', async () => {
+    const checkoutEvents = summaryOf({ ...base, started: 2, declined: 2 });
+    const d = await buildDigest(new Date(), { bookings: new InMemoryBookingRepo(), checkoutEvents: checkoutEvents as never });
+    expect(d.text).toContain('Checkouts started: 2');
+    expect(d.text).not.toContain('⚠');
+  });
+
+  it('asks the log to leave the team’s test bookings out', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const real = await bookings.create(booking);
+    const test = await bookings.create({
+      ...booking,
+      input: { ...booking.input, customer: { ...booking.input.customer, email: 'owner@ceylonhop.com' } },
+    });
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    for (const b of [real, test]) {
+      await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', bookingId: b.id, source: 'server' });
+      await checkoutEvents.record({ action: 'webhook', outcome: 'settled', bookingId: b.id, source: 'server' });
+    }
+    const d = await buildDigest(new Date(Date.now() + 1000), { bookings, checkoutEvents, teamEmails: new Set(['owner@ceylonhop.com']) });
+    expect(d.text).toContain('Checkouts started: 1 · paid 1');
+  });
+
+  it('omits the section when no checkout log is wired', async () => {
+    const d = await buildDigest(new Date(), { bookings: new InMemoryBookingRepo() });
+    expect(d.text).not.toContain('Payments (24h)');
+    expect(d.text).not.toContain('Checkouts started');
+    expect(d.html).not.toContain('Payments (24h)');
   });
 });
