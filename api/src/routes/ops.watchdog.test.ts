@@ -4,6 +4,7 @@ import { runWatchdog } from '../services/watchdog';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
+import { InMemoryBookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 
 const KEY = 'test-admin-key';
 
@@ -149,6 +150,16 @@ describe('daily ops digest rides /admin/jobs/notifications (M17)', () => {
     expect(digest!.to).toBe('ops@ceylonhop.com');
     expect(digest!.text).toContain('payhere_amount: 1');
     expect(digest!.text).toContain('Bookings created (24h): 0');
+  });
+
+  it('carries the payments line when the checkout attempt log is wired', async () => {
+    const email = new FakeEmailAdapter();
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', bookingId: '11111111-1111-4111-8111-111111111111', source: 'server' }, new Date(Date.now() - 60_000));
+    const app = createApp({ adminApiKey: KEY, email, alertLog: new InMemoryAlertLogRepo(), checkoutEvents, digestTo: 'ops@ceylonhop.com' });
+    await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const digest = email.sent.find((m) => m.subject.includes('ops digest'));
+    expect(digest!.text).toContain('Checkouts started: 1 · paid 0');
   });
 
   it('sends the digest at most once per day across repeated ticks (BI4)', async () => {
