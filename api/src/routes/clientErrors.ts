@@ -31,6 +31,30 @@ const ClientErrorSchema = z.object({
   ua: z.string().max(300).optional(),
 });
 
+// pay.html, quote.html and manage.html are opened with a bearer token in the query (`t`; `rt` on
+// the leg back from PayHere), and every page's beacon posts location.href. So a JS error on a
+// payment page copied a live customer token into Sentry and the founder alert email. Tokens are
+// stripped HERE, server-side, so every page is covered — including copies cached before any
+// front-end change. Nothing past this point needs a query string or fragment to diagnose a fault.
+const REDACTED = '?[redacted]';
+
+/** The page url without its query string or fragment. */
+function redactPageUrl(url: string): string {
+  const cut = url.search(/[?#]/);
+  return cut === -1 ? url : url.slice(0, cut) + REDACTED;
+}
+
+/** Free text (message, stack) with every URL's query/fragment removed, absolute or relative. */
+function redactText(text: string): string {
+  return (
+    text
+      // absolute URLs: keep scheme+host+path, drop everything from the first ? or #
+      .replace(/(https?:\/\/[^\s?#"'<>()]+)[?#][^\s"'<>()]*/g, `$1${REDACTED}`)
+      // relative paths (a stack frame like `at /quote.html?t=…:4:1`)
+      .replace(/(\/[\w.\-/]*)\?[^\s"'<>()]*/g, `$1${REDACTED}`)
+  );
+}
+
 export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
   const r = new Hono();
 
@@ -46,7 +70,12 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
       }
       const result = ClientErrorSchema.safeParse(parsed);
       if (!result.success) return c.body(null, 400);
-      const e = result.data;
+      const e = {
+        ...result.data,
+        message: redactText(result.data.message),
+        stack: result.data.stack === undefined ? undefined : redactText(result.data.stack),
+        url: result.data.url === undefined ? undefined : redactPageUrl(result.data.url),
+      };
 
       // Expected control-flow beacons are acknowledged but never tracked or alerted.
       if (BENIGN_MESSAGE.test(e.message)) return c.body(null, 204);
