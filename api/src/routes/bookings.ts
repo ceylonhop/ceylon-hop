@@ -24,6 +24,7 @@ import {
   type PriceOutcome,
 } from '../services/pricing';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
+import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
@@ -873,7 +874,22 @@ function invalidRequest(error: ZodError) {
         currency: booking.currency,
         idempotencyKey,
       });
-      if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
+    }
+    // Outside `if (!payment)` on purpose: the payment row and this move are two writes, and when
+    // the move failed after the insert, every retry found the payment, skipped the move, and still
+    // handed out a live PayHere form for a DRAFT booking — a payment the webhook then could not
+    // settle. Repair it here, before any gateway fields leave the server. A concurrent checkout
+    // (a double tap) may have moved it first: that refusal is fine as long as it is now pending.
+    if (booking.status === 'draft') {
+      try {
+        await bookings.setStatus(booking.id, 'payment_pending');
+      } catch (err) {
+        if (!(err instanceof IllegalTransitionError)) throw err;
+        const now = await bookings.get(booking.id);
+        if (now?.status !== 'payment_pending') {
+          return c.json({ error: 'not_chargeable', status: now?.status ?? booking.status }, 409);
+        }
+      }
     }
 
     // Where the gateway sends the customer back to (spec: docs/checkout-redirect-spec.md §D3).
