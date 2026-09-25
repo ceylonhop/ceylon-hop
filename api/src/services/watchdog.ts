@@ -12,6 +12,7 @@ import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './notifications';
 import { bookingDeepLink } from './opsNotifications';
 import { isTeamEmail } from './testBookings';
+import { personKey, sameTrip } from './duplicateBookings';
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -245,31 +246,7 @@ export async function runWatchdog(
 // A booking is money in once it reaches any of these (the lifecycle only moves forward from paid).
 const PAID_OR_LATER = ['paid', 'confirmed', 'in_progress', 'completed'] as const;
 
-// The person, as the DB keys them: customers.person_key is generated from lower(btrim(email)).
-// Every booking inserts its own customers row, so the booking's own email is the join.
-function personKey(b: Booking): string {
-  return String(b.input.customer.email ?? '').trim().toLowerCase();
-}
-
-const norm = (s: string | undefined | null) => String(s ?? '').trim().toLowerCase();
-
-// Same mode, same travel date, and the same trip: the corridor and departure for a shared seat,
-// the endpoints for a single transfer, every stop for a trip. A trip or transfer with no date
-// yet matches nothing — "to confirm" is not a date two bookings can share.
-function sameTrip(a: Booking, b: Booking): boolean {
-  if (a.mode === 'shared' && b.mode === 'shared') {
-    return a.input.corridorId === b.input.corridorId && a.input.date === b.input.date && norm(a.input.time) === norm(b.input.time);
-  }
-  if (a.mode === 'single' && b.mode === 'single') {
-    return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
-  }
-  if (a.mode === 'trip' && b.mode === 'trip') {
-    const start = (x: typeof a) => x.input.dates?.find(Boolean);
-    return !!start(a) && start(a) === start(b) &&
-      a.input.stops.length === b.input.stops.length && a.input.stops.every((s, i) => norm(s) === norm(b.input.stops[i]));
-  }
-  return false;
-}
+// personKey / sameTrip live in ./duplicateBookings — the settle path closes the same duplicates.
 
 // A paid booking by the same person for the same trip, made AFTER this stuck one — i.e. they came
 // back and paid again rather than finishing this checkout. Null when there is none.

@@ -56,6 +56,7 @@ const checkout = (app: App, b: { id: string; checkoutToken: string }, token = b.
 const brokenLog: BookingCheckoutEventRepo = {
   record: () => Promise.reject(new Error('log is down')),
   listByBookingId: async () => [],
+  summarySince: () => Promise.reject(new Error('log is down')),
 };
 
 describe('POST /bookings/single|trip|shared → create events', () => {

@@ -6,6 +6,7 @@ import type { QuoteRepo } from '../db/quoteRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
+import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -45,7 +46,13 @@ export interface OpsDeps {
   // Test bookings (2026-09-24): config.TEAM_EMAILS. Optional so every existing ops test keeps
   // working; absent = no row is a test.
   teamEmails?: ReadonlySet<string>;
+  // Checkout attempt log (migration 0055) for the drawer's "Payment attempts" block. Optional so
+  // every existing ops test keeps working; absent = no attempts shown.
+  checkoutEvents?: BookingCheckoutEventRepo;
 }
+
+// The drawer shows at most this many attempt-log rows — the latest ones.
+const CHECKOUT_EVENTS_MAX = 50;
 
 // Every status a booking can hold once it has left the website's cart. 'draft' and
 // 'awaiting_details' stay out on purpose — those are half-finished web checkouts, not ops work.
@@ -265,7 +272,25 @@ export function opsRoutes(deps: OpsDeps) {
     const sel = srcQuote?.payLinkSelection;
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
-    return c.json({ booking: b, ops, payments, payLink, coverage });
+    // Payment attempts (2026-09-24): debugging a failed payment took SQL against
+    // booking_checkout_event. Latest 50, oldest first. `ua` stays server-side — it is
+    // diagnostic only. Best-effort: a log that cannot be read must not fail the drawer.
+    let checkoutEvents: Array<{
+      at: Date; action: string; outcome: string; reason: string | null; source: string;
+      attempt: number | null; httpStatus: number | null;
+    }> = [];
+    if (deps.checkoutEvents) {
+      try {
+        const newestFirst = await deps.checkoutEvents.listByBookingId(b.id);
+        checkoutEvents = newestFirst.slice(0, CHECKOUT_EVENTS_MAX).reverse().map((e) => ({
+          at: e.at, action: e.action, outcome: e.outcome, reason: e.reason, source: e.source,
+          attempt: e.attempt, httpStatus: e.httpStatus,
+        }));
+      } catch (err) {
+        console.error(`[ops] checkout events unavailable for ${b.id}:`, err);
+      }
+    }
+    return c.json({ booking: b, ops, payments, payLink, coverage, checkoutEvents });
   });
 
   r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {

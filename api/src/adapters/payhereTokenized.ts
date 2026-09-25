@@ -208,6 +208,12 @@ export class PayHereTokenizedPaymentAdapter implements TokenizedPaymentAdapter {
     return body.access_token;
   }
 
+  // Idempotency: whether PayHere's Charging API dedupes a repeated `order_id` is UNKNOWN — neither
+  // this code nor our PayHere notes establish it, and the request carries no idempotency key.
+  // This adapter therefore does NOT guard against a double charge itself; it relies on the
+  // member-status bookkeeping in services/rideBoardCutoff.ts (a member is marked 'charged' on a
+  // succeeded OR unknown outcome, and a confirmed/expired list never comes due again). The Fake
+  // replays a repeat orderId so tests can't depend on a double charge; this one sends it.
   async charge(args: ChargeArgs): Promise<ChargeResult> {
     if (
       !args.ref || !args.orderId || !Number.isSafeInteger(args.amountCents) || args.amountCents <= 0 ||

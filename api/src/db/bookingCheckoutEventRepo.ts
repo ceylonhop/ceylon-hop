@@ -62,12 +62,60 @@ export interface BookingCheckoutEvent {
   ua: string | null;
 }
 
+// The daily digest's payments line: over the bookings whose checkout started (a `checkout`
+// that succeeded) since a moment, how each one ended. Each booking lands in exactly one bucket,
+// strongest answer first: a PayHere `settled` notify beats `failed` beats `dismissed` (so a
+// declined-then-retried-then-paid booking is paid), and a booking PayHere never answered (or
+// only answered `pending`) is abandoned. `createRefused` counts create calls refused (4xx) or
+// errored (5xx) in the same window — those never reach a booking.
+export interface CheckoutSummary {
+  started: number;
+  paid: number;
+  declined: number;
+  cancelledAtGateway: number;
+  abandoned: number;
+  createRefused: number;
+}
+
+export interface CheckoutSummaryOptions {
+  // Booking ids to leave out entirely — the team's own test bookings (config.TEAM_EMAILS).
+  excludeBookingIds?: Iterable<string>;
+}
+
 export interface BookingCheckoutEventRepo {
   // Best-effort by contract: call sites fire-and-forget and log a rejection, never await it
   // on the request path.
   record(e: BookingCheckoutEventInput, now?: Date): Promise<void>;
   // Newest first.
   listByBookingId(bookingId: string): Promise<BookingCheckoutEvent[]>;
+  summarySince(since: Date, opts?: CheckoutSummaryOptions): Promise<CheckoutSummary>;
+}
+
+type SummaryRow = Pick<BookingCheckoutEvent, 'at' | 'action' | 'outcome' | 'bookingId'>;
+
+// Shared by both repos so the in-memory fake and Postgres cannot disagree on the buckets. The
+// caller hands it the rows at or after `since` (a day's worth — small).
+export function summarizeCheckouts(rows: readonly SummaryRow[], since: Date, opts: CheckoutSummaryOptions = {}): CheckoutSummary {
+  const exclude = new Set(opts.excludeBookingIds ?? []);
+  const inWindow = rows.filter((r) => r.at.getTime() >= since.getTime());
+  const started = new Set<string>();
+  for (const r of inWindow) {
+    if (r.action === 'checkout' && r.outcome === 'succeeded' && r.bookingId && !exclude.has(r.bookingId)) started.add(r.bookingId);
+  }
+  const answered = (outcome: CheckoutOutcome) =>
+    new Set(inWindow.filter((r) => r.action === 'webhook' && r.outcome === outcome && r.bookingId && started.has(r.bookingId)).map((r) => r.bookingId as string));
+  const settled = answered('settled');
+  const failed = answered('failed');
+  const dismissed = answered('dismissed');
+  let paid = 0, declined = 0, cancelledAtGateway = 0, abandoned = 0;
+  for (const id of started) {
+    if (settled.has(id)) paid++;
+    else if (failed.has(id)) declined++;
+    else if (dismissed.has(id)) cancelledAtGateway++;
+    else abandoned++;
+  }
+  const createRefused = inWindow.filter((r) => r.action === 'create' && (r.outcome === 'refused' || r.outcome === 'error')).length;
+  return { started: started.size, paid, declined, cancelledAtGateway, abandoned, createRefused };
 }
 
 const clip = (v: string | null | undefined, max: number): string | null =>
@@ -116,6 +164,10 @@ export class InMemoryBookingCheckoutEventRepo implements BookingCheckoutEventRep
       .filter((r) => r.bookingId === bookingId)
       .sort((a, b) => b.at.getTime() - a.at.getTime())
       .map((r) => ({ ...r }));
+  }
+
+  async summarySince(since: Date, opts?: CheckoutSummaryOptions): Promise<CheckoutSummary> {
+    return summarizeCheckouts(this.rows, since, opts);
   }
 
   // Test helper.

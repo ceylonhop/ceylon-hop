@@ -496,6 +496,7 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      duplicates: { bookings, departures, payments },
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({
@@ -514,6 +515,7 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+    ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
@@ -592,6 +594,7 @@ export function createApp(deps: AppDeps = {}) {
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+      ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,

@@ -1,8 +1,11 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { bookingCheckoutEvents } from './schema';
 import {
+  summarizeCheckouts,
   toCheckoutEvent,
+  type CheckoutSummary,
+  type CheckoutSummaryOptions,
   type BookingCheckoutEvent,
   type BookingCheckoutEventInput,
   type BookingCheckoutEventRepo,
@@ -30,5 +33,24 @@ export class PostgresBookingCheckoutEventRepo implements BookingCheckoutEventRep
       outcome: r.outcome as CheckoutOutcome,
       source: r.source as CheckoutEventSource,
     }));
+  }
+
+  // One day of the three actions the summary reads (indexed on `at`), bucketed by the same
+  // pure function the in-memory repo uses.
+  async summarySince(since: Date, opts?: CheckoutSummaryOptions): Promise<CheckoutSummary> {
+    const rows = await this.db
+      .select({
+        at: bookingCheckoutEvents.at,
+        action: bookingCheckoutEvents.action,
+        outcome: bookingCheckoutEvents.outcome,
+        bookingId: bookingCheckoutEvents.bookingId,
+      })
+      .from(bookingCheckoutEvents)
+      .where(and(gte(bookingCheckoutEvents.at, since), inArray(bookingCheckoutEvents.action, ['create', 'checkout', 'webhook'])));
+    return summarizeCheckouts(
+      rows.map((r) => ({ ...r, action: r.action as CheckoutAction, outcome: r.outcome as CheckoutOutcome })),
+      since,
+      opts,
+    );
   }
 }
