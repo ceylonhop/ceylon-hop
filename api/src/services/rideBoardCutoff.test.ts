@@ -492,3 +492,51 @@ describe('runRideBoardCutoff — locked-in manifest carries phone numbers', () =
     expect(m.text).toContain('+44 7700 900123');
   });
 });
+
+// The sweep charged a card, THEN recorded `charged` in a separate write, with the list left
+// `gathering` the whole time. Two sweeps over the same list (an overlapping trigger, a manual
+// re-run while the first is still going) both read every member as `held` and both charged every
+// card. So did one sweep whose status write failed after a successful charge: the member stayed
+// `held` and the next run charged it again. A card must be claimed before it is charged.
+describe('runRideBoardCutoff: never charges a card twice', () => {
+  const chargesPerRef = (paygw: FakeTokenizedPaymentAdapter) =>
+    paygw.charges.reduce<Record<string, number>>((n, c) => ({ ...n, [c.ref]: (n[c.ref] ?? 0) + 1 }), {});
+
+  it('charges each card once when two sweeps run over the same list at the same time', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+
+    await Promise.all([
+      runRideBoardCutoff(NOW, { rideLists: repo, paygw, email }),
+      runRideBoardCutoff(NOW, { rideLists: repo, paygw, email }),
+    ]);
+
+    expect(chargesPerRef(paygw)).toEqual({ pa_u0: 1, pa_u1: 1, pa_u2: 1, pa_u3: 1 });
+    expect((await repo.getByCode(list.code))?.list.status).toBe('confirmed');
+    // One sweep did the list; the other stepped back without mailing anyone.
+    expect(email.sent.filter((e) => /confirmed/i.test(e.subject))).toHaveLength(4);
+  });
+
+  it('does not charge a card again after the write that followed its charge failed', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+    // A DB blip on the first `charged` write after a successful charge.
+    const real = repo.setMemberStatus.bind(repo);
+    let blips = 1;
+    repo.setMemberStatus = async (listId, sub, status) => {
+      if (status === 'charged' && blips-- > 0) throw new Error('db blip');
+      return real(listId, sub, status);
+    };
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email }).catch(() => undefined);
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email });
+
+    expect(chargesPerRef(paygw)).toEqual({ pa_u0: 1, pa_u1: 1, pa_u2: 1, pa_u3: 1 });
+  });
+});
