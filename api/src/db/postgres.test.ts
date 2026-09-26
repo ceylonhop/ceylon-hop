@@ -11,7 +11,10 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import type { NewBooking } from './bookingRepo';
+import { personKeyFor, type NewBooking } from './bookingRepo';
+import { quote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import type { QuoteRequest } from '../quote/types';
 import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
@@ -80,6 +83,30 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await notifLog.wasSent(b.id, 'review_request')).toBe(false);
     await notifLog.markSent(b.id, 'trip_reminder'); // duplicate → no-op via unique constraint
     expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
+  });
+
+  // The add-ons live on the quote; the booking only links back (converted_booking_id). A load —
+  // one booking or a list, which share assembleMany — must name them, and a booking with no quote
+  // behind it carries no addOns field at all.
+  it('a booking loads the add-ons its quote charged, and none without a quote', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+      rateCardVersion: RATE_CARD.version, result, request: { engine },
+    });
+    const linked = await bookings.create(sample);
+    const plain = await bookings.create(sample);
+    await quotes.patch(q.id, { convertedBookingId: linked.id, status: 'won' });
+
+    expect((await bookings.get(linked.id))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 5);
+    expect(listed.find((b) => b.id === linked.id)?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {

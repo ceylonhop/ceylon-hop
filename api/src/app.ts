@@ -203,6 +203,9 @@ export function createApp(deps: AppDeps = {}) {
   // discount saves into an object nothing ever queries.
   const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
+  // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
+  // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
   // save is seen by all of them at once. Empty ⇒ the code card.
