@@ -247,14 +247,36 @@ export function verifyQuoteViewToken(
 //
 // The field is `b`, not `id`: `verifyBookingToken` reads `id`, and reusing the name would let a
 // pay-return token be spent as a booking view token.
-export function signPayReturnToken(bookingId: string, secret: string): string {
-  return signedBody({ v: 1, purpose: 'pay-return', b: bookingId }, secret);
+//
+// Which leg the payer came back on (2026-09-26). PayHere sends a payer to return_url after an
+// APPROVED payment and to cancel_url after a cancel ("Back to Site"), and since #792 a decline is
+// recorded — so a `failed` row can belong to an earlier attempt while the latest one was
+// approved. Only the cancel leg may therefore call a decline final (see GET /bookings/pay-return).
+// The cancel leg is its own purpose, `pay-cancel`, deliberately the same length as `pay-return`:
+// PayHere stores these URLs and its length limit is undocumented, so the cancel URL must stay
+// exactly as long as the one proven in production. The return leg keeps the format that already
+// existed, so every token minted before this — including a payer mid-checkout across the deploy —
+// reads as the return leg, the cautious answer. Both grant one thing: one booking's status.
+export type PayReturnLeg = 'return' | 'cancel';
+
+export function signPayReturnToken(bookingId: string, secret: string, leg: PayReturnLeg = 'return'): string {
+  return signedBody({ v: 1, purpose: leg === 'cancel' ? 'pay-cancel' : 'pay-return', b: bookingId }, secret);
 }
 
-export function verifyPayReturnToken(token: string | undefined, secret: string): string | null {
+export function verifyPayReturnLeg(
+  token: string | undefined,
+  secret: string,
+): { bookingId: string; leg: PayReturnLeg } | null {
   const parsed = verifiedPayload(token, secret) as
     | { v?: unknown; purpose?: unknown; b?: unknown }
     | null;
-  if (!parsed || parsed.v !== 1 || parsed.purpose !== 'pay-return') return null;
-  return typeof parsed.b === 'string' && parsed.b.length > 0 ? parsed.b : null;
+  if (!parsed || parsed.v !== 1) return null;
+  const leg: PayReturnLeg | null =
+    parsed.purpose === 'pay-return' ? 'return' : parsed.purpose === 'pay-cancel' ? 'cancel' : null;
+  if (!leg || typeof parsed.b !== 'string' || parsed.b.length === 0) return null;
+  return { bookingId: parsed.b, leg };
+}
+
+export function verifyPayReturnToken(token: string | undefined, secret: string): string | null {
+  return verifyPayReturnLeg(token, secret)?.bookingId ?? null;
 }
