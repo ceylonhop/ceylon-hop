@@ -370,3 +370,36 @@ Tests:
 - [ ] Look at it in the browser pane: the lookup page with stubbed data, desktop and phone width.
 - [ ] Push `feat/ops-payment-lookup` and open the PR. The body carries the red→green evidence and
   the sign-off list (spec §14). **Do not merge;** that is the owner's call.
+
+## Slice 2 — the customer's other bookings (spec §15)
+
+**Contract addition** (additive: every existing field is unchanged):
+```ts
+interface CaseResponse { /* …slice 1 fields… */
+  otherBookings: { rows: CasePersonBooking[]; truncated: boolean } | null; // null: failed to load, or a quote with no booking
+}
+interface CasePersonBooking {
+  id: string; reference: string; status: string; mode: string; channel: 'website' | 'whatsapp';
+  createdAt: string; route: string; travelDate: string | null; travelTime: string | null; pax: number;
+  total: number; currency: string; paid: boolean; isTest: boolean;
+}
+```
+
+**Tasks** (TDD, one PR):
+1. `BookingRepo.listByPersonKey(personKey, limit)`:
+   - Newest first, at most `limit` rows.
+   - In-memory: filter by `personKeyFor(email)`.
+   - Postgres: join `customers` on `person_key`, order by `created_at` desc, then `assembleMany`.
+   - Tests in `paymentLookupReads.test.ts` and `postgresPaymentLookup.test.ts`.
+2. Loader:
+   - Ask for 51 rows, drop the booking itself, keep 50, and set `truncated`.
+   - `paid` comes from `findByBookingIds`.
+   - The route test covers: same email in a different case, drafts and cancelled included, itself
+     excluded, the paid flag, test flag, truncation at 50, and a failing read giving `null` while
+     the verdict stays set.
+3. UI:
+   - A `lookupOtherBookingsHtml(list)` block after Payment.
+   - Each ref is a `data-lkcase` button that opens that booking's lookup.
+   - An empty state, a null state ("Couldn’t load …") and a truncated note.
+   - Unit and e2e tests.
+4. Gates: API check with `DATABASE_URL_TEST`, then web-tests `test:all`. Open the PR.
