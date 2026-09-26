@@ -63,7 +63,9 @@ function setup(over: { refunds?: InMemoryRefundRepo; bookings?: InMemoryBookingR
   return { app, bookings, payments, quotes, adapter, get };
 }
 
-// A website booking taken through checkout and PayHere's (fake) notify, the way a customer's is.
+// A website booking taken through checkout and PayHere's (fake) notify, the way a customer's is:
+// the notify comes a minute after the checkout. Sent in the checkout's own millisecond it would tie
+// with it, and a paid verdict counts only the checkouts strictly before the money arrived.
 async function paidBooking(s: ReturnType<typeof setup>) {
   const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
     s.app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': UA, ...headers }, body: JSON.stringify(body) });
@@ -72,7 +74,13 @@ async function paidBooking(s: ReturnType<typeof setup>) {
   const b = await created.json();
   const checkout = await s.app.request(`/bookings/${b.id}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${b.checkoutToken}`, 'user-agent': UA } });
   expect(checkout.status).toBe(200);
-  await s.app.request('/webhooks/payments', { method: 'POST', body: s.adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(Date.now() + 60_000);
+  try {
+    await s.app.request('/webhooks/payments', { method: 'POST', body: s.adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+  } finally {
+    vi.useRealTimers();
+  }
   return b as { id: string; reference: string };
 }
 
