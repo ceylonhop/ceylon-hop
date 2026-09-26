@@ -29,8 +29,18 @@ describe('GET /health', () => {
     expect(await res.json()).toEqual({ status: 'ok', commit: null });
   });
 
+  it('returns a server-owned request id without changing the response body', async () => {
+    const res = await app.request('/health', { headers: { 'x-request-id': 'caller-controlled' } });
+    const requestId = res.headers.get('x-request-id');
+
+    expect(requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(requestId).not.toBe('caller-controlled');
+    expect(await res.json()).toEqual({ status: 'ok', commit: null });
+  });
+
   it('sends CORS headers so the browser can call it cross-origin', async () => {
     const res = await app.request('/health', { headers: { origin: 'http://localhost:4173' } });
     expect(res.headers.get('access-control-allow-origin')).toBeTruthy();
+    expect(res.headers.get('access-control-expose-headers')?.toLowerCase()).toContain('x-request-id');
   });
 });

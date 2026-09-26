@@ -61,6 +61,7 @@ import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
 import type { AnalyticsDataRepo } from './db/analyticsDataRepo';
+import { requestCorrelation, REQUEST_ID_HEADER } from './lib/correlation';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -246,6 +247,10 @@ export function createApp(deps: AppDeps = {}) {
 
   const app = new Hono();
 
+  // One server-owned id follows the request through every mounted route and is returned to the
+  // caller for support diagnosis. Incoming X-Request-Id is never trusted as this primary id.
+  app.use('*', requestCorrelation());
+
   const reportApiError = (failure: unknown, method: string, route: string): void => {
     const err = failure instanceof Error ? failure : new Error(String(failure));
     console.error(err);
@@ -322,6 +327,7 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      exposeHeaders: [REQUEST_ID_HEADER],
       // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
       // on Pages → API on Render). Only the allow-listed origins above can read responses;
       // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
