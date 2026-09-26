@@ -468,6 +468,11 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  async findByReference(reference: string): Promise<Booking | null> {
+    const [row] = await this.db.select().from(bookings).where(eq(bookings.reference, reference));
+    return row ? this.assemble(row) : null;
+  }
+
   async refreshPayerDetails(
     id: string,
     details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },

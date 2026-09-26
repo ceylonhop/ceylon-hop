@@ -74,12 +74,28 @@ export interface PaymentRepo {
   // gatewayPaymentIdFor above — the Payment type drops provenance on purpose, and there is no
   // WRITER for this outside markSucceededManually, which is what makes the record immutable (0043).
   settledByFor(paymentId: string): Promise<string | null>;
+  // The whole provenance record, for the founder-only ops payment lookup (spec 2026-09-26), which
+  // exists to show exactly what the narrow readers above hide: when the row was created (the first
+  // checkout), when and how it settled, and who recorded it. Read-only; null for an unknown id.
+  provenanceFor(paymentId: string): Promise<PaymentProvenance | null>;
+}
+
+export interface PaymentProvenance {
+  createdAt: Date | null;
+  settledAt: Date | null;
+  settlementSource: PaymentSettlementEvidence['settlementSource'];
+  settledBy: string | null;
+  // PayHere's payment id for gateway money; the operator's cited reference for a manual row.
+  gatewayPaymentId: string | null;
 }
 
 export class InMemoryPaymentRepo implements PaymentRepo {
   private byId = new Map<string, InternalPaymentRecord>();
   private byKey = new Map<string, string>();
   private byOrder = new Map<string, string>();
+  // When each row was created — the table's created_at. Kept beside the records, not in them, so
+  // the settlement repos that share InternalPaymentRecord see no new field.
+  private createdAt = new Map<string, Date>();
 
   async create(p: NewPayment): Promise<Payment> {
     const existing = await this.findByIdempotencyKey(p.idempotencyKey);
@@ -98,6 +114,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     };
     this.byId.set(payment.id, payment);
     this.byKey.set(payment.idempotencyKey, payment.id);
+    this.createdAt.set(payment.id, new Date());
     this.byOrder.set(payment.orderId, payment.id);
     return this.toPayment(payment);
   }
@@ -176,6 +193,18 @@ export class InMemoryPaymentRepo implements PaymentRepo {
 
   async settledByFor(paymentId: string): Promise<string | null> {
     return this.byId.get(paymentId)?.settledBy ?? null;
+  }
+
+  async provenanceFor(paymentId: string): Promise<PaymentProvenance | null> {
+    const p = this.byId.get(paymentId);
+    if (!p) return null;
+    return {
+      createdAt: this.createdAt.get(paymentId) ?? null,
+      settledAt: p.settledAt ? new Date(p.settledAt) : null,
+      settlementSource: p.settlementSource,
+      settledBy: p.settledBy,
+      gatewayPaymentId: p.gatewayPaymentId,
+    };
   }
 
   getForSettlement(id: string): InternalPaymentRecord | null {
