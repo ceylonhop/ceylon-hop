@@ -455,6 +455,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return v ? '<div' + (sensitive ? MASK : '') + '><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>' : '';
   }
 
+  // The add-ons on the pass get its full width, one per line: in a third of a phone-width grid,
+  // two of them wrapped into seven lines. Nothing when none were chosen.
+  function passAddOnsCell(addOns){
+    if (!addOns || !addOns.length) return '';
+    return '<div style="grid-column:1/-1"><div class="k">Extras</div><div class="v">'
+      + addOns.map(function(a){ return esc(a); }).join('<br>') + '</div></div>';
+  }
+
   function renderPaid(p){
     p = p || {};
     var wrap = document.querySelector('.pp-wrap');
@@ -489,6 +497,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +       passCell('Days', fact('Days'))
       +       passCell('Lead guest', p.leadName || '', true)
       +       passCell('Paid', p.amountUsd || '')
+      +       passAddOnsCell(p.addOns)
       +     '</div>'
       +   '</div>'
       +   '<div class="pass-stub">'
@@ -504,6 +513,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<li>Your driver and vehicle details will be sent on WhatsApp before pickup.</li>'
       + '<li>Need anything? Just reply on WhatsApp.</li></ul></div>'
       + '</div>' + waLine();
+  }
+
+  // The add-ons the customer chose, as the quote names them (copy.addOns). Whole-trip links only:
+  // a partial link's receipt lines already name each add-on it charges. Nothing when none.
+  function addOnsHtml(addOns){
+    if (!addOns || !addOns.length) return '';
+    return '<div class="fact"><span class="k">Extras</span><span class="v">'
+      + addOns.map(function(a){ return esc(a); }).join('<br>') + '</span></div>';
   }
 
   // ── the ticket ──────────────────────────────────────────────────────────────────────
@@ -524,12 +541,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           + (uncovered ? '<span class="hop-x">not in this payment</span>' : '')
           + '</div></div></div>';
       }).join('');
-      return '<div class="hops">' + rows + '</div>';
+      return '<div class="hops">' + rows + '</div>' + addOnsHtml(c.addOns);
     }
     return c.facts.map(function(f){
       return '<div class="fact"><span class="k">' + esc(f.k) + '</span><span class="v">' + esc(f.v)
         + (f.sub ? '<small>' + esc(f.sub) + '</small>' : '') + '</span></div>';
-    }).join('');
+    }).join('') + addOnsHtml(c.addOns);
   }
 
   function renderPayable(){
