@@ -53,9 +53,17 @@ describe('renderPricingBlock', () => {
     const block = renderPricingBlock(payload);
     expect(block).toContain('"safari-wait":19');
     expect(block).toContain('"ella-east":23');
-    expect(block).toContain('const BUFFER_PCT = 10;');
+    expect(block).toContain('let BUFFER_PCT = 10;'); // reassignable: the live price list swaps it
     expect(block).toContain('const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};');
     expect(block).toContain('const CHAUFFEUR_IDLE_MIN_KM = {"car":55,"van":110};');
+  });
+
+  it('emits reassignable bindings for exactly the two live scalars (spec 2026-09-26 §9)', () => {
+    const block = renderPricingBlock(payload);
+    expect(block).toContain('let BUFFER_PCT = 10;');
+    expect(block).toContain('let CHAUFFEUR_DAY_FEE = 35;');
+    expect(block).toContain('const PER_KM = ');
+    expect(block).not.toMatch(/let (PER_KM|FLOORS|EXTRAS|SEAT_PRICING|DEPOSIT_PCT|DEPOSIT_CAP)\b/);
   });
 });
 

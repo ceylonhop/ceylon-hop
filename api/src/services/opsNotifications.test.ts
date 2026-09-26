@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
 import { sampleBooking } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -291,5 +291,54 @@ describe('Ride Board team emails — WhatsApp the traveller', () => {
     const email = new FakeEmailAdapter();
     await sendRideSeatHeld({ to: 'ops@x.com', list: ride(), member: member({ phone: null }), committed: 2, kind: 'joined' }, email, '');
     expect(email.sent[0].html).not.toContain('wa.me');
+  });
+});
+
+
+// The rescue alert (owner, 2026-09-26). A pay-link customer whose card fails is already talking to
+// the owner on WhatsApp; a website customer was on their own. This hands the team a one-tap,
+// pre-filled WhatsApp message carrying the customer's own booking link, sent by a person (nothing
+// goes to the customer automatically).
+describe('teamRescueEmail', () => {
+  const PAY = 'https://ceylonhop.com/manage.html?t=TOKEN123';
+  const waHref = (html: string) => {
+    // The pre-filled rescue link specifically (the Customer section also has a bare "Message on
+    // WhatsApp" pill, which carries no text).
+    const m = html.match(/href="(https:\/\/wa\.me\/[^"?]+\?text=[^"]+)"/);
+    return m ? m[1].replace(/&amp;/g, '&') : null;
+  };
+
+  it('names the customer, the booking, the trip and the amount in the subject', () => {
+    const m = teamRescueEmail(sampleBooking('single'), PAY, 'https://ops.example');
+    expect(m.subject.startsWith('Rescue: Priya couldn’t pay CH-7QK2P')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('LKR 18500.00');
+  });
+
+  it('carries a one-tap WhatsApp message to the customer, pre-filled with their booking link', () => {
+    const m = teamRescueEmail(sampleBooking('single'), PAY, 'https://ops.example');
+    const href = waHref(m.html);
+    expect(href).toMatch(/^https:\/\/wa\.me\/94771234567\?text=/);
+    const text = new URL(href!).searchParams.get('text')!;
+    expect(text).toContain('Hi Priya, this is Ceylon Hop');
+    expect(text).toContain('Colombo Fort → Kandy');
+    expect(text).toContain('didn’t go through');
+    expect(text).toContain(PAY);
+    // The plain-text part carries the same link, for mail clients that drop HTML.
+    expect(m.text).toContain(href!);
+  });
+
+  it('tells the team to check the booking is still unpaid before messaging', () => {
+    const m = teamRescueEmail(sampleBooking('single'), PAY, 'https://ops.example');
+    for (const part of [m.html, m.text]) expect(part).toContain('still unpaid');
+    expect(m.html).toContain('https://ops.example');
+  });
+
+  it('says so, with no dead button, when the booking has no usable WhatsApp number', () => {
+    const b = sampleBooking('single');
+    const noPhone = { ...b, input: { ...b.input, customer: { ...b.input.customer, whatsapp: '' } } } as typeof b;
+    const m = teamRescueEmail(noPhone, PAY, 'https://ops.example');
+    expect(waHref(m.html)).toBeNull();
+    for (const part of [m.html, m.text]) expect(part).toContain('No WhatsApp number on this booking');
   });
 });

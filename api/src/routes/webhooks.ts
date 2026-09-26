@@ -12,7 +12,7 @@ import {
 import { wasDelivered } from '../adapters/email';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
-import { teamPaidEmail } from '../services/opsNotifications';
+import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import {
@@ -243,6 +243,26 @@ export function webhookRoutes(deps: {
           await notificationLog?.markSent(failed.id, 'payment_failed');
         } catch (err) {
           console.error(`payment-failed email failed for ${failed.reference}:`, err);
+        }
+      }
+      // The team's rescue (owner, 2026-09-26): a one-tap WhatsApp message to the customer,
+      // pre-filled with the same booking link. Card DECLINES only: a cancel (-1) is the customer
+      // choosing not to pay. Once per booking: PayHere's later declines on the same order are
+      // payment_id 0 duplicates (#792) and never reach here, and the dedupe key is the booking.
+      // Last and best-effort, like the "Paid:" mail: it must cost neither the customer's email
+      // nor the webhook.
+      if (event.status === 'failed' && failed.status === 'payment_pending') {
+        try {
+          await alerts.send({
+            severity: 'warning',
+            kind: 'payment_rescue',
+            title: `Rescue: ${failed.input.customer.firstName} couldn’t pay ${failed.reference}`,
+            body: `PayHere declined the card on ${failed.reference}. Message the customer on WhatsApp with their booking link (check it is still unpaid first).`,
+            email: teamRescueEmail(failed, manageUrl(failed, baseUrl, linkSecret), deps.opsBaseUrl ?? ''),
+            dedupeKey: failed.id,
+          });
+        } catch (err) {
+          console.error(`rescue alert failed for ${failed.reference}:`, err);
         }
       }
       return c.json({ ok: true, status: 'failed' }, 200);

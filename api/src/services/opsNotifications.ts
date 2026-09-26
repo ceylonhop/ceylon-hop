@@ -298,6 +298,8 @@ interface TeamBookingParts {
   moneyTitle: string;
   moneyRows: [string, string][];
   strong: string[];
+  // A message-specific action shown above "Open the booking" (the rescue email's WhatsApp button).
+  primaryCta?: { html: string; text: string };
 }
 
 function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBaseUrl: string): { html: string; text: string } {
@@ -313,6 +315,7 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
     section('Trip', f.tripRows),
     section('Customer', f.customerRows),
     section(p.moneyTitle, p.moneyRows, p.strong),
+    p.primaryCta?.html ?? '',
     ctaBlock('Open the booking', link, fallback),
   ].join('');
   const rows = (title: string, r: SectionRow[]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(13)}${v}`), ''];
@@ -326,6 +329,7 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
     ...rows('Trip', f.tripRows),
     ...rows('Customer', customerText),
     ...rows(p.moneyTitle, p.moneyRows),
+    ...(p.primaryCta ? [p.primaryCta.text, ''] : []),
     link ? `Open the booking: ${link}` : fallback,
   ].join('\n');
   return opsEmailShell(html, text);
@@ -346,6 +350,58 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   return {
     subject,
     ...teamBookingBody(b, f, { pill: ['PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Paid'] }, opsBaseUrl),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Rescue (owner, 2026-09-26). PayHere declined the customer's card. A pay-link customer is
+// already talking to the owner on WhatsApp; a website customer was on their own. This hands the
+// team a one-tap WhatsApp message, pre-filled with the customer's own booking link (the same
+// manage link their "didn't go through" email carries). A person sends it, from their own
+// WhatsApp; nothing reaches the customer automatically. PayHere lets the payer retry on its page,
+// so the note says to check the booking is still unpaid first ("Paid:" lands if they got through).
+// ---------------------------------------------------------------------------
+
+export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const c = b.input.customer;
+  const amount = money(b.amountDueNow ?? b.total, b.currency);
+  const subject = `Rescue: ${c.firstName} couldn’t pay ${b.reference} — ${f.subjectRoute}, ${f.when} — ${amount}`;
+  const trip = f.when === 'date TBC' ? f.route : `${f.route} (${f.when})`;
+  const message =
+    `Hi ${c.firstName}, this is Ceylon Hop — your card payment for ${trip} didn’t go through. ` +
+    `You can pay here: ${payLink} — or reply and we’ll help.`;
+  const wa = whatsappLink(c.whatsapp);
+  const waHref = wa ? `${wa}?text=${encodeURIComponent(message)}` : '';
+  const primaryCta = waHref
+    ? {
+        html:
+          `<p style="margin:0 0 12px"><a href="${esc(waHref)}" style="background:#075E54;color:#fff;text-decoration:none;` +
+          `padding:10px 20px;border-radius:999px;display:inline-block;font-weight:700">Message ${esc(c.firstName)} on WhatsApp</a></p>` +
+          `<p style="margin:0 0 16px;font-size:13px;color:${MUTED}">Opens WhatsApp with this message ready to send: “${esc(message)}”</p>`,
+        text: `Message ${c.firstName} on WhatsApp (pre-filled): ${waHref}`,
+      }
+    : {
+        html: `<p style="margin:0 0 16px;font-size:14px">No WhatsApp number on this booking — email ${esc(c.email || 'the customer')} instead, with their booking link: ${esc(payLink)}</p>`,
+        text: `No WhatsApp number on this booking — email ${c.email || 'the customer'} instead, with their booking link: ${payLink}`,
+      };
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['DECLINED', '#8a3b12', '#fbe9dc'],
+        lead: 'card declined at PayHere',
+        keys: bookingKeys(f, b),
+        note: `PayHere declined ${c.firstName}’s card. They can try again on PayHere’s own page, so check the booking is still unpaid before you message them.`,
+        moneyTitle: 'Payment',
+        moneyRows: [['Due', amount], ['Channel', channelLabel(b)]],
+        strong: ['Due'],
+        primaryCta,
+      },
+      opsBaseUrl,
+    ),
   };
 }
 
