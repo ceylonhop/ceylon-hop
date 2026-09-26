@@ -88,6 +88,10 @@ export interface BookingCheckoutEventRepo {
   record(e: BookingCheckoutEventInput, now?: Date): Promise<void>;
   // Newest first.
   listByBookingId(bookingId: string): Promise<BookingCheckoutEvent[]>;
+  // Newest first. For the ops payment lookup (spec 2026-09-26): a notify PayHere sent that we
+  // rejected carries the order id but no booking id, so only this finds it. Optional because
+  // tests type object-literal fakes against this interface.
+  listByOrderId?(orderId: string): Promise<BookingCheckoutEvent[]>;
   summarySince(since: Date, opts?: CheckoutSummaryOptions): Promise<CheckoutSummary>;
 }
 
@@ -162,6 +166,13 @@ export class InMemoryBookingCheckoutEventRepo implements BookingCheckoutEventRep
   async listByBookingId(bookingId: string): Promise<BookingCheckoutEvent[]> {
     return this.rows
       .filter((r) => r.bookingId === bookingId)
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .map((r) => ({ ...r }));
+  }
+
+  async listByOrderId(orderId: string): Promise<BookingCheckoutEvent[]> {
+    return this.rows
+      .filter((r) => r.orderId === orderId)
       .sort((a, b) => b.at.getTime() - a.at.getTime())
       .map((r) => ({ ...r }));
   }
