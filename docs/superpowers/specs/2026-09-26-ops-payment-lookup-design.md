@@ -162,7 +162,7 @@ load <sources>", and the timeline shows what did load.
 | Source | Rows for this booking | Read with |
 |---|---|---|
 | `bookings` + `customers` | the booking; name, email, WhatsApp, country; billing; cancellation; status | `BookingRepo.findByReference` (**new**) |
-| `payments` | at most one gateway row (`checkout:<id>`) and one manual row (`manual-paid:<id>`) (`bookings.ts:846-877`, `admin.ts:496-512`) | `PaymentRepo.findByBookingId` |
+| `payments` | at most one gateway row (`checkout:<id>`) and one manual row (`manual-paid:<id>`) (`bookings.ts:846-877`, `admin.ts:496-512`) | `PaymentRepo.findByBookingId`, plus `provenanceFor` (**new**). The `Payment` shape drops settlement details on purpose (`paymentRepo.ts:59-76`), and the page needs `created_at`, `settled_at`, `settlement_source`, `settled_by` and `gateway_payment_id` |
 | `payment_events` | every signature-checked PayHere notice for those rows. The sanitized payload holds `status_message`, `method`, `payment_id` and `status_code`; card holder, number and expiry are never stored (`payhere.ts:42-54`) | `PaymentEventRepo.listForReconciliation` per payment. Needs **wiring**: the Postgres repo exists but is not constructed in `server.ts`; the in-memory one is built inside the settlement repo (`app.ts:175`) |
 | `booking_checkout_event` | rows with this `booking_id`, **plus** rows with `order_id` = the reference. The second set catches rejected notices, which carry no booking id (`webhooks.ts:150-207`) | `listByBookingId`, plus `listByOrderId` (**new**) |
 | `refunds` | every refund row | `RefundRepo.list`. Needs passing into the ops routes (`app.ts:518-525` omits it) |
@@ -234,23 +234,8 @@ A gap appears only when it affects this booking.
 
 `GET /admin/ops/cases/:ref`, in `routes/ops.ts`, `requireCap('payments:act')`.
 
-```ts
-{
-  ref: string;                          // normalised input
-  booking: OpsBookingRow & {            // toOpsRow + the fields below
-    status: string; createdAt: string;
-    customer: { firstName; lastName; email; whatsapp; country };
-    billing: BillingInput | null;
-    termsAcceptedAt: string | null;
-    cancellation: { reason: string | null; by: string | null; at: string | null } | null;
-  } | null;                             // null only for a quote with no booking
-  quote: { id; reference; status } | null;
-  verdict: { kind: VerdictKind; facts: Record<string, unknown>; warnings: string[] } | null;
-  timeline: Array<{ at: string; source: Source; kind: string; [field: string]: unknown }>;
-  gaps: GapCode[];
-  unavailable: Source[];
-}
-```
+The exact response shape (field names, enums, row kinds) is fixed in the implementation plan,
+`docs/superpowers/plans/2026-09-26-ops-payment-lookup.md` §Contract; UI and API are both built to it.
 
 - **Errors:** 404 `not_found` for an unknown ref, 400 for input that is neither `CH-` nor `Q-`,
   and no 500 for a single source failing (that source goes into `unavailable`).
@@ -301,7 +286,7 @@ A gap appears only when it affects this booking.
   - a draft found;
   - `Q-` to its booking, and `Q-` with no booking;
   - one source throwing, which produces `unavailable` and a null verdict.
-- **Postgres repo tests** for the four new reads (run with `DATABASE_URL_TEST`).
+- **Postgres repo tests** for the five new reads (run with `DATABASE_URL_TEST`).
 - **web-tests:**
   - e2e: nav shown for founder and hidden for ops; open by ref; deep link survives reload; the
     drawer link opens the case.
@@ -337,11 +322,13 @@ The rules above hold whichever way these land:
 ## 14. Needs the owner's sign-off (CLAUDE.md maintenance rules)
 
 - **No migration, no pricing, no config, no generated files.**
-- **Interfaces (hard rule 5):** read-only methods added to four repo interfaces:
+- **Interfaces (hard rule 5):** read-only methods added to five repo interfaces:
   - `BookingRepo.findByReference`
   - `QuoteRepo.findByReference`
   - `NotificationLogRepo.listByBookingId`
-  - `BookingCheckoutEventRepo.listByOrderId`
+  - `BookingCheckoutEventRepo.listByOrderId` — optional on the interface, because two test files
+    type object-literal fakes against it and #794 edits one of them
+  - `PaymentRepo.provenanceFor`
 
   Each is added to both the in-memory and Postgres versions. No existing method changes.
 - **Wiring:**
