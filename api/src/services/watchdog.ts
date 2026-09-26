@@ -100,14 +100,17 @@ export async function runWatchdog(
     // them was settled by hand. Pay links (2026-07-31) changed that: once a customer has
     // STARTED a gateway checkout on one, an abandoned payment is a real event again — the
     // same abandoned cart the website flow gets chased for. So the exemption now applies
-    // only while no gateway payment is pending; hand-settled bookings never have one.
+    // only while no gateway checkout has started; hand-settled bookings never have one.
+    // A DECLINED gateway payment (`failed`) is a started checkout too: since #792 recorded
+    // declines, a pay-link customer whose card was refused would otherwise drop out of the
+    // chase and out of ops' alerts, where before the decline was dropped and they were chased.
     if (b.channel === 'whatsapp') {
-      const gatewayPending = payments
+      const gatewayStarted = payments
         ? (await payments.findByBookingId(b.id)).some(
-            (p) => p.status === 'pending' && (p.provider === 'payhere' || p.provider === 'fake'),
+            (p) => (p.status === 'pending' || p.status === 'failed') && (p.provider === 'payhere' || p.provider === 'fake'),
           )
         : false;
-      if (!gatewayPending) continue;
+      if (!gatewayStarted) continue;
     }
     stuck.push(b);
   }
