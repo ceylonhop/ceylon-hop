@@ -492,3 +492,72 @@ describe('runRideBoardCutoff — locked-in manifest carries phone numbers', () =
     expect(m.text).toContain('+44 7700 900123');
   });
 });
+
+// Every traveller email in the sweep was a bare `await`, and Resend throws on any non-2xx. So one
+// 429/5xx part-way through a list, AFTER its cards were charged, threw out of the whole sweep:
+// later travellers never heard, the team's "Locked in" mail and the refund-due / charge-unknown
+// alerts never went, and every later list waited for the next day's run. An email failure must
+// cost that one email — and be reported — never the money alerts or the rest of the run.
+describe('runRideBoardCutoff: an email failure never stops the sweep', () => {
+  // Real FakeEmailAdapter, except sends to the named inbox throw like a Resend 5xx.
+  const flakyEmail = (badInbox: string) => {
+    const inner = new FakeEmailAdapter();
+    return {
+      inner,
+      adapter: {
+        send: async (msg: Parameters<FakeEmailAdapter['send']>[0]) => {
+          if (msg.to === badInbox) throw new Error('resend 503');
+          return inner.send(msg);
+        },
+      },
+    };
+  };
+
+  it('keeps emailing the rest of a confirmed van, sends the team mail, and reports who was missed', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const { inner, adapter } = flakyEmail('u1@x.com');
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email: adapter, alerts });
+
+    expect(res).toMatchObject({ confirmed: 1, charged: 4 });
+    expect(inner.sent.filter((e) => /confirmed/i.test(e.subject)).map((e) => e.to).sort())
+      .toEqual(['u0@x.com', 'u2@x.com', 'u3@x.com']);
+    const kinds = alerts.sent.map((a) => a.kind);
+    expect(kinds).toContain('ride_board_locked');
+    expect(kinds).toContain('ride_board_email_failed');
+    expect(alerts.sent.find((a) => a.kind === 'ride_board_email_failed')!.body).toContain('u1@x.com');
+  });
+
+  it('still raises the refund-due alert when a van called off after charges hits an email failure', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const { adapter } = flakyEmail('u0@x.com');
+    const list = await repo.createList(listArgs({ minSeats: 4 }));
+    await fill(repo, list.id, 4);
+    paygw.markRefWillFail('pa_u3'); // 3 charged < 4 needed → called off with money taken
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email: adapter, alerts });
+
+    expect(alerts.sent.map((a) => a.kind)).toContain('ride_board_refund_due');
+  });
+
+  it('goes on to the next due list after an email failure on the first', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const { adapter } = flakyEmail('u0@x.com');
+    const first = await repo.createList(listArgs());
+    await fill(repo, first.id, 2); // under-filled → called off, emails u0 (fails) and u1
+    const second = await repo.createList(listArgs({ date: '2026-08-09' }));
+    for (let i = 0; i < 4; i++) await repo.addMember(second.id, joiner(`v${i}`, `pa_v${i}`));
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email: adapter });
+
+    expect(res).toMatchObject({ expired: 1, confirmed: 1 });
+    expect((await repo.getByCode(second.code))?.list.status).toBe('confirmed');
+  });
+});
