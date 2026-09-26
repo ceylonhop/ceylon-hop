@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from './client';
 import { notificationLog } from './schema';
 import type { NotificationLogRepo, NotificationKind } from './notificationLogRepo';
@@ -36,5 +36,14 @@ export class PostgresNotificationLogRepo implements NotificationLogRepo {
     await this.db
       .delete(notificationLog)
       .where(and(eq(notificationLog.bookingId, bookingId), eq(notificationLog.kind, kind)));
+  }
+
+  async listByBookingId(bookingId: string): Promise<Array<{ kind: NotificationKind; sentAt: Date }>> {
+    const rows = await this.db
+      .select({ kind: notificationLog.kind, sentAt: notificationLog.sentAt })
+      .from(notificationLog)
+      .where(eq(notificationLog.bookingId, bookingId))
+      .orderBy(asc(notificationLog.sentAt));
+    return rows.map((r) => ({ kind: r.kind as NotificationKind, sentAt: r.sentAt }));
   }
 }
