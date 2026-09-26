@@ -462,7 +462,7 @@ In the hot-zones block, make these changes:
   to `// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever on the Rates page. ──`.
 - In `loadHotZones`, `hzSubmitZone`, `hzToggleZone` and `hzDeleteZone`, replace every
   `render();` with `renderRatesPage();` and every `showToast(` with `ratesToast(`. This is 1 + 3 +
-  2 + 2 `render();` calls and 5 + 2 + 3 toasts. The four functions then read:
+  3 + 3 `render();` calls and 5 + 2 + 3 toasts. The four functions then read:
 
 ```js
 async function loadHotZones() {
@@ -707,6 +707,13 @@ Expected: every test passes, `exit=0`. Save the summary line for the PR body.
 If the phone-width test fails on `overflow.view`, the likely overflow is the `.ch-hz-row` button
 row. Fix it in CSS and do not loosen the test:
 `.qv .ch-hz-row { flex-wrap: wrap; }`, placed next to the `.ch-hz-*` rules (`:1021-1035`). Rerun.
+
+**As executed (2026-09-26):** the page-scroll check passed, but the phone screenshot showed the
+zone row's Delete button running past the card's edge while still inside the 375px screen. The
+phone test gained a "nothing pokes out of the card" assertion, which went red on `["Delete"]`.
+The fix went into the row's inline style in `renderHotZonesPanel()`: `flex-wrap:wrap` on the row
+and `flex:1 1 140px` on the name. The CSS rule was not enough, because the name's inline
+`flex:1` would have kept winning. Green on rerun.
 
 - [ ] **Step 11: Look at it**
 

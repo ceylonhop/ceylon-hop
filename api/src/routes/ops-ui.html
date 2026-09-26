@@ -905,6 +905,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-rate-hint { font-size: 10.5px; color: var(--muted-2); }
 .qv .ch-rate-control { width: 132px; flex: none; }
 @media (max-width: 620px) { .qv .ch-rate-grid { grid-template-columns: 1fr; gap: 8px; }}
+/* Rates page (spec 2026-09-26 §5): the rate card + hot zones as a page in the shell's #view.
+   The wrapper carries .qv for the builder's tokens and components, but not its pane layout —
+   the page scrolls with #view like every other shell page instead of nesting a scroll box. */
+.qv.qv-page { height: auto; overflow: visible; }
+.qv .ch-rates-card { max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px 22px; }
+.qv .ch-rates-head { display: flex; justify-content: flex-end; margin-bottom: 10px; }
 
 /* ---------- Itinerary (premium timeline) ---------- */
 .qv .ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -2181,6 +2187,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
+  if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null, routeBookingId:null };
   // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
   // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
@@ -2192,6 +2200,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
   else if(route==='lookup')url.hash='#lookup';
+  else if(route==='rates')url.hash='#rates';
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
@@ -2320,18 +2329,21 @@ function collapseRail(){
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
    (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
 /* Rounded, representative marks: Bookings = event ticket (notched, perforated),
-   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis. */
+   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
+   Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
   analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
   lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
   const canLookup=state.caps&&state.caps.includes('payments:act');
   const canAnalytics=state.caps&&state.caps.includes('analytics:view');
+  const canRates=state.caps&&state.caps.includes('margin:view');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
@@ -2345,7 +2357,8 @@ function setNav(){
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
-    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
+    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'');
 }
 
 function ticketRow(t,i){
@@ -3333,6 +3346,22 @@ function viewLookup(){
     const out=$('#lookup-out');if(out)out.innerHTML=`<div class="an-empty">${esc(msg)}</div>`;
   });
 }
+/* ── Rates (spec 2026-09-26 §5) — the founder's rate card + hot zones as a page of its own.
+   The content still renders in QuoteView (same helpers, same .qv styles as the popup it
+   replaced); the shell owns the header and hands QuoteView the mount. The mount is reused
+   across routine shell repaints, so they neither refetch the card nor wipe a half-typed zone. */
+function viewRates(){
+  $('#topbar').innerHTML='';
+  const view=$('#view');
+  let mount=view.querySelector('#rates-mount');
+  if(!mount){
+    view.innerHTML=`<div class="qhead pagehead"><h1>Rates</h1></div>
+    <p class="pagesub">What we charge, and the towns that carry a premium</p>
+    <div id="rates-mount"></div>`;
+    mount=view.querySelector('#rates-mount');
+  }
+  QuoteView.showRates(mount);
+}
 document.addEventListener('submit',e=>{
   if(e.target.id!=='lookup-form')return;
   e.preventDefault();
@@ -3957,6 +3986,11 @@ function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
+  if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
+  /* The Rates page renders in QuoteView (it shares the builder's helpers and .qv styles) but paints
+     into #view — unmount it on every other route so a late rate-card/zone response can't paint
+     over the page that replaced it. */
+  if(state.route!=='rates')QuoteView.hideRates();
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -3998,6 +4032,15 @@ function render(){
       /* A bare Lookup is a search box and nothing else — the cursor goes in it. */
       const qi=!state.routeCaseRef&&$('#lookup-q');
       if(qi)qi.focus({preventScroll:true});
+    }
+  }else if(state.route==='rates'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewRates();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="rates"]');
+      if(navBtn)navBtn.focus();
     }
   }else{
     hideQuoteView();viewTickets();renderSheet();
@@ -4047,6 +4090,7 @@ document.addEventListener('click',e=>{
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
+  if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -4437,7 +4481,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -4655,7 +4699,7 @@ var rateCard = null;
 var _delegatesWired = false;
 
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
-var ratesOpen = false;    // Rate Settings modal
+var ratesEl = null;       // the shell's #rates-mount while the Rates page is showing, else null
 var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
@@ -7578,7 +7622,7 @@ function renderRateCardBody() {
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
 }
 
-// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever inside Rate Settings. ──
+// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever on the Rates page. ──
 // A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
 // (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
 // release). The whole app re-renders by innerHTML swap, so the form inputs are UNCONTROLLED —
@@ -7593,7 +7637,7 @@ async function loadHotZones() {
     var d = await jsonOrNull(r);
     hotZones = (d && d.zones) ? d.zones : [];
     hotZonesOff = !!(d && d.disabled);
-    render();
+    renderRatesPage();
   } catch (e) { window.opsReportError && window.opsReportError('hotZones list', e); /* leave prior state; a transient failure just shows the last list */ }
 }
 
@@ -7607,46 +7651,46 @@ async function hzSubmitZone() {
   var placeName = (placeEl.value || '').trim();
   var boostPct = parseInt(boostEl.value, 10);
   var active = activeEl ? !!activeEl.checked : true;
-  if (!placeName) { showToast('Enter a town name', 'error'); return; }
-  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%', 'error'); return; }
+  if (!placeName) { ratesToast('Enter a town name', 'error'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { ratesToast('Boost must be 0–100%', 'error'); return; }
   if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var path = hzEditId ? '/admin/quote/zones/' + hzEditId : '/admin/quote/zones';
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); render(); return; }
+    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
     hzEditId = null;
-    showToast('Zone saved');
+    ratesToast('Zone saved');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; ratesToast('Save failed', 'error'); renderRatesPage(); }
 }
 
 async function hzToggleZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (!z) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
     hzBusy = false;
-    if (!r.ok) { showToast('Update failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Update failed', 'error'); renderRatesPage(); return; }
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; ratesToast('Update failed', 'error'); renderRatesPage(); }
 }
 
 async function hzDeleteZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (z && !window.confirm('Delete the ' + z.placeName + ' hot zone?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
     hzBusy = false;
-    if (!r.ok) { showToast('Delete failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Delete failed', 'error'); renderRatesPage(); return; }
     if (hzEditId === id) hzEditId = null;
-    showToast('Zone deleted');
+    ratesToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; ratesToast('Delete failed', 'error'); renderRatesPage(); }
 }
 
 function renderHotZonesPanel() {
@@ -7662,8 +7706,10 @@ function renderHotZonesPanel() {
       var pill = z.active
         ? '<span class="ch-badge tone-teal">active</span>'
         : '<span class="ch-badge tone-slate">paused</span>';
-      return '<div class="ch-hz-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
-        + '<div style="flex:1;min-width:0"><b>' + esc(z.placeName) + '</b> '
+      // Wraps, with a 140px basis for the name: on a phone the pill and buttons drop to a second
+      // line instead of running past the card's edge (they overflowed at 375px wide).
+      return '<div class="ch-hz-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
+        + '<div style="flex:1 1 140px;min-width:0"><b>' + esc(z.placeName) + '</b> '
         + '<span style="color:' + (hot ? 'var(--danger,#c0392b)' : 'var(--muted-2)') + '">+' + esc(String(z.boostPct)) + '%</span>'
         + (hot ? ' <span title="Above 20% is unusually high">&#9888;</span>' : '') + '</div>'
         + pill
@@ -7720,6 +7766,76 @@ function renderHotZonesPanel() {
     + form
     + '</div>';
 }
+
+// ── Rates page (spec 2026-09-26 §5) ──────────────────────────────────────────
+// Rate Settings used to be a popup over the builder; it is now a founder-only page in the ops
+// side menu. The shell owns the page header and hands us #rates-mount; the card and the zones
+// panel render here because they share this module's helpers (api, esc, apiPlaces) and its
+// .qv-scoped CSS. `ratesEl` is non-null only while the page is showing — every async repaint
+// checks it, so a response that lands after the founder has moved on paints nothing.
+function ratesToast(msg, kind) {
+  // The builder's own #ch-toast sits inside the hidden #quoteRoot on this route; use the shell's.
+  if (window.opsToast) window.opsToast(msg, kind);
+}
+
+function renderRatesPage() {
+  if (!ratesEl || !ratesEl.isConnected) return;
+  var html = '<div class="qv qv-page" data-testid="rates-page">'
+    + '<div class="ch-rates-card">'
+    + '<div class="ch-rates-head"><span class="ch-badge tone-slate">&#x1F512; Locked</span></div>'
+    + '<div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>'
+    + renderRateCardBody()
+    + renderHotZonesPanel()
+    + '</div>'
+    + '</div>';
+  // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field.
+  morphdom(ratesEl, '<div>' + html + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); },
+  });
+  attachHotZoneAutoComplete();
+}
+
+// Mount (or re-mount) into the shell's #rates-mount. A NEW mount node means the founder just
+// arrived — fetch the card and the zones fresh; the same node again is a routine shell repaint.
+function showRates(el) {
+  var arriving = ratesEl !== el;
+  ratesEl = el;
+  if (arriving) {
+    hzEditId = null;
+    apiRateCard().then(function (rc) { if (rc) rateCard = rc; renderRatesPage(); });
+    loadHotZones();
+  }
+  renderRatesPage();
+}
+
+function hideRates() {
+  if (!ratesEl) return;
+  ratesEl = null;
+  hzEditId = null;
+  hzacClose();
+}
+
+// The page lives outside the builder's .ch-app, so its buttons need their own delegate.
+document.addEventListener('click', function (e) {
+  if (!ratesEl) return;
+  var el = e.target.closest('[data-action]');
+  if (!el || !ratesEl.contains(el)) return;
+  var action = el.getAttribute('data-action');
+  if (action === 'hzSubmit') {
+    hzSubmitZone();
+  } else if (action === 'hzEditStart') {
+    hzEditId = el.getAttribute('data-id');
+    renderRatesPage();
+  } else if (action === 'hzEditCancel') {
+    hzEditId = null;
+    renderRatesPage();
+  } else if (action === 'hzToggleActive') {
+    hzToggleZone(el.getAttribute('data-id'));
+  } else if (action === 'hzDelete') {
+    hzDeleteZone(el.getAttribute('data-id'));
+  }
+});
 
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
 // Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
@@ -9554,8 +9670,6 @@ function render() {
     '    <div class="ch-header-tools ch-actionbar">',
     renderHeaderAssign(),
     renderActionBar(),
-    // Rates (the rate-card settings modal) is a founder-only concern.
-    (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),
     '    </div>',
     '  </div>',
     renderPayLinkRow(),
@@ -9740,27 +9854,6 @@ function render() {
     '</div>', // ch-container
 
     // (The recent-quotes drawer was retired — the ops-shell queue is the quote list now.)
-
-    // ══ Rate Settings modal ══
-    (ratesOpen ? [
-      '<div class="ch-scrim show" data-action="closeRates"></div>',
-      '<div class="ch-modal">',
-      '  <div class="ch-modal-card">',
-      '    <div class="ch-modal-head">',
-      '      <h2>Rate Settings</h2>',
-      '      <div style="display:flex;align-items:center;gap:10px">',
-      '        <span class="ch-badge tone-slate">&#x1F512; Locked</span>',
-      '        <button class="ch-x-btn" data-action="closeRates" title="Close">&times;</button>',
-      '      </div>',
-      '    </div>',
-      '    <div class="ch-modal-body">',
-      '      <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
-      renderRateCardBody(),
-      renderHotZonesPanel(),
-      '    </div>',
-      '  </div>',
-      '</div>',
-    ].join('') : ''),
 
     // ══ "Mark booked" modal ══
     (bookOpen ? [
@@ -10295,28 +10388,6 @@ function attachEventListeners() {
       runAction(action, reopenToDraft);
     } else if (action === 'deleteQuote') {
       runAction(action, deleteQuote);
-    } else if (action === 'openRates') {
-      if (!viewerCan('margin:view')) return; // founder-only rate card
-      ratesOpen = true;
-      hzEditId = null;
-      loadHotZones(); // async: fetches the zone list, then re-renders the panel in place
-      render();
-    } else if (action === 'closeRates') {
-      ratesOpen = false;
-      hzEditId = null;
-      render();
-    } else if (action === 'hzSubmit') {
-      hzSubmitZone();
-    } else if (action === 'hzEditStart') {
-      hzEditId = el.getAttribute('data-id');
-      render();
-    } else if (action === 'hzEditCancel') {
-      hzEditId = null;
-      render();
-    } else if (action === 'hzToggleActive') {
-      hzToggleZone(el.getAttribute('data-id'));
-    } else if (action === 'hzDelete') {
-      hzDeleteZone(el.getAttribute('data-id'));
     } else if (action === 'toggleOutput') {
       // Resolve the current effective open state (tri-state → bool), then flip to
       // the explicit opposite so one click always toggles what the operator sees.
@@ -10517,7 +10588,6 @@ function attachEventListeners() {
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
   // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
-  attachHotZoneAutoComplete(); // same picker for the Rate-Settings zone field (#hz-place)
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
@@ -11598,6 +11668,7 @@ function teardown() {
   clearTimeout(_ac.timer);
   _ac.timer = null;
   acClose();
+  hideRates();
   _inited = false;
   // Drop the open-veil unconditionally: logging out mid-open leaves openQuote's finally
   // unreachable for that call, and a stuck veil would greet the next sign-in.
@@ -11647,7 +11718,7 @@ window.opsQuoteKbar = function() {
   return acts;
 };
 
-return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew };
+return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew, showRates: showRates, hideRates: hideRates };
 })();
 </script>
 </body>
