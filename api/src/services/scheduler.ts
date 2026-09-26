@@ -4,6 +4,7 @@ import type { NotificationLogRepo, NotificationKind } from '../db/notificationLo
 import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
 // review request once travel is this far in the past. The cron tick is idempotent via
@@ -68,6 +69,9 @@ export async function runScheduledNotifications(
     // Dry run (R7) — evaluate everything, write nothing, send nothing, and report the plan.
     // What you run after a migration touches booking state, before letting the real tick fire.
     dryRun?: boolean;
+    // Phase A correlation seam. Production job routes always provide it; persistence lands in
+    // later slices. Optional so pure service callers and existing tests remain source-compatible.
+    correlation?: TrackingCorrelation;
   },
 ): Promise<{ reminders: number; reviews: number; plan?: PlannedSend[] }> {
   const { bookings, log, email, baseUrl, linkSecret, budget, maxTripAgeDays, epoch, dryRun } = deps;

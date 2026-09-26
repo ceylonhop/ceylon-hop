@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createApp } from '../app';
 import { runWatchdog } from '../services/watchdog';
 import { FakeAlertAdapter } from '../adapters/alerts';
@@ -24,6 +24,33 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, suppressed: 0 });
+  });
+
+  it('correlates each watchdog run to its request without changing the response', async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line) => logged.push(String(line)));
+    try {
+      const app = createApp({ adminApiKey: KEY });
+      const run = () => app.request('/admin/jobs/watchdog', {
+        method: 'POST',
+        headers: { 'x-admin-key': KEY },
+      });
+
+      const first = await run();
+      const second = await run();
+      const ticks = logged.map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => line.event === 'watchdog_tick');
+
+      expect(ticks).toHaveLength(2);
+      expect(ticks[0]?.requestId).toBe(first.headers.get('x-request-id'));
+      expect(ticks[1]?.requestId).toBe(second.headers.get('x-request-id'));
+      expect(ticks[0]?.runId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(ticks[1]?.runId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(ticks[0]?.runId).not.toBe(ticks[1]?.runId);
+      expect(await first.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, suppressed: 0 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // BI1 — a fresh stuck-pending booking pages the founder, but a long-abandoned cart (which
