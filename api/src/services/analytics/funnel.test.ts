@@ -78,6 +78,17 @@ describe('computeFunnel tiles', () => {
     const r = computeFunnel(rows, range(7));
     expect(r.tiles.created).toEqual({ value: 1, prev: 2 });
   });
+
+  it('reports a true created-in-range cohort conversion, independent of activity timestamps', () => {
+    const rows = [
+      mk({ createdAt: daysAgo(6), status: 'won', sentAt: daysAgo(5), decidedAt: daysAgo(1) }),
+      mk({ createdAt: daysAgo(5), status: 'sent', sentAt: daysAgo(4) }),
+      mk({ createdAt: daysAgo(4), status: 'lost', sentAt: daysAgo(3), decidedAt: daysAgo(2) }),
+      mk({ createdAt: daysAgo(20), status: 'won', sentAt: daysAgo(5), decidedAt: daysAgo(1) }),
+    ];
+    const r = computeFunnel(rows, range(7));
+    expect(r.cohort).toEqual({ created: 3, sent: 3, decided: 2, won: 1, sendRatePct: 100, winRatePct: 50 });
+  });
 });
 
 describe('computeFunnel quote $ values', () => {

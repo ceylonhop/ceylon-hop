@@ -32,6 +32,7 @@ import { initTracking } from './observability/track';
 import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './db/postgresRefundRepo';
+import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 
@@ -139,6 +140,7 @@ const app = createApp({
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
+  analyticsData: new PostgresAnalyticsDataRepo(sql),
   // Founder manual discounts. WITHOUT this line app.ts falls back to the in-memory repo, and the
   // failure is silent and confusing: PostgresQuoteRepo.update still writes the row inside the save
   // transaction, so the discount really is in Postgres — but every READ goes to an empty object.

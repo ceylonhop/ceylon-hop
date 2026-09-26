@@ -9,6 +9,8 @@ import { KNOWN_PLACES } from '../../adapters/maps';
 
 export interface ExtractedTrip {
   places: string[];                                        // unique canonicalized stop names
+  origins: string[];                                       // unique ride origins
+  destinations: string[];                                  // unique ride destinations
   corridors: { from: string; to: string; km: number | null }[]; // first→last per ride, directional
   totalKm: number | null;                                  // null if any segment km is missing
   pax: number | null;
@@ -54,6 +56,8 @@ export function extractTrip(request: unknown): ExtractedTrip | null {
 
   const places: string[] = [];
   const seen = new Set<string>();
+  const origins: string[] = [], destinations: string[] = [];
+  const seenOrigins = new Set<string>(), seenDestinations = new Set<string>();
   const corridors: ExtractedTrip['corridors'] = [];
   let totalKm: number | null = 0;
 
@@ -65,6 +69,10 @@ export function extractTrip(request: unknown): ExtractedTrip | null {
     for (const s of stops as string[]) {
       if (!seen.has(s)) { seen.add(s); places.push(s); }
     }
+    const origin = stops[0] as string;
+    const destination = stops[stops.length - 1] as string;
+    if (!seenOrigins.has(origin)) { seenOrigins.add(origin); origins.push(origin); }
+    if (!seenDestinations.has(destination)) { seenDestinations.add(destination); destinations.push(destination); }
     let rideKm: number | null = 0;
     for (const seg of ride.segmentKms) {
       if (typeof seg === 'number' && Number.isFinite(seg) && seg >= 0 && rideKm !== null) rideKm += seg;
@@ -76,5 +84,5 @@ export function extractTrip(request: unknown): ExtractedTrip | null {
   if (corridors.length === 0) return null;
 
   const pax = typeof engine.pax === 'number' && Number.isFinite(engine.pax) ? engine.pax : null;
-  return { places, corridors, totalKm, pax };
+  return { places, origins, destinations, corridors, totalKm, pax };
 }
