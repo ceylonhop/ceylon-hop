@@ -209,7 +209,7 @@ export function webhookRoutes(deps: {
     c.set('checkoutEvent', {
       action: 'webhook', outcome: NOTIFY_OUTCOME[event.status], orderId: event.orderId,
       bookingId: outcome.booking.id, reference: outcome.booking.reference, channel: outcome.booking.channel,
-      reason: event.status === 'charged_back' ? 'charged_back' : null,
+      reason: event.status === 'charged_back' ? 'charged_back' : outcome.kind === 'stale_attempt' ? 'stale_attempt' : null,
     });
 
     if (outcome.kind === 'duplicate') {
@@ -225,6 +225,12 @@ export function webhookRoutes(deps: {
         dedupeKey: event.orderId,
       });
       return c.json({ ok: true, reversed: true }, 200);
+    }
+
+    // A decline from an EARLIER attempt on an order a later attempt already paid (one order can
+    // carry several attempts). Recorded as evidence by the settlement; not a reversal, no page.
+    if (outcome.kind === 'stale_attempt') {
+      return c.json({ ok: true, staleAttempt: true }, 200);
     }
 
     if (outcome.kind === 'failed') {
@@ -247,6 +253,19 @@ export function webhookRoutes(deps: {
     // ceiling legitimately sums them — which is exactly why this can't be quiet: whoever refunds
     // must know there are two captures to give back, not one. No customer email: the booking was
     // already settled by the first capture, and a second "confirmed" would only confuse.
+    if (outcome.kind === 'double_capture' && outcome.firstCaptureTxnId) {
+      // Same order captured twice (PayHere does not enforce order_id uniqueness). Our payment row
+      // keeps the FIRST capture; the second is only in payment_events, so the refund tool's
+      // ceiling does not include it — say exactly which one has to be refunded by hand.
+      void alerts.send({
+        severity: 'critical',
+        kind: 'payment_double_capture',
+        title: `DOUBLE CAPTURE on booking ${outcome.booking.reference}`,
+        body: `Order ${event.orderId} was captured TWICE on PayHere: payment ${outcome.firstCaptureTxnId} (recorded) and payment ${event.providerTxnId} (${event.currency} ${event.amountCents / 100}). The customer has been charged twice. Refund payment ${event.providerTxnId} in the PayHere portal — our refund tool only sees ${outcome.firstCaptureTxnId}.`,
+        dedupeKey: `${event.orderId}:${event.providerTxnId}`,
+      });
+      return c.json({ ok: true, doubleCapture: true }, 200);
+    }
     if (outcome.kind === 'double_capture') {
       void alerts.send({
         severity: 'critical',
