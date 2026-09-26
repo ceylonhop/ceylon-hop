@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { isoToday } from '../domain/dateRules';
 import { signCheckoutToken, verifyBookingToken, verifyPayReturnToken } from '../lib/bookingToken';
 import { PayHerePaymentAdapter } from '../adapters/payhere';
@@ -307,5 +308,50 @@ describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout
     const { fields } = await fieldsFor(payhereApp(), { returnTo: 'pay-link' });
     expect(fields.return_url).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=[^&]+$/);
     expect(fields.cancel_url).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=[^&]+&c=1$/);
+  });
+});
+
+// The checkout wrote the payment row and THEN moved the booking draft → payment_pending, and the
+// move lived inside `if (!payment)`. If it failed once (a DB blip after the insert), every retry
+// found the payment, skipped the move, and still handed out a live PayHere form for a DRAFT
+// booking. Paying it then settled as `unexpected_booking_state`: money taken, booking never paid,
+// no confirmation. A retry must repair the split before any gateway fields leave the server.
+describe('POST /bookings/:id/checkout: repairs a payment-row/draft-booking split', () => {
+  it('moves a still-draft booking to payment_pending when its payment row already exists', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const adapter = new FakePaymentAdapter();
+    const app = createApp({ bookings, payments, adapter });
+    const b = await book(app);
+    // The first attempt died between the two writes: payment row committed, booking still draft.
+    await payments.create({
+      bookingId: b.id, provider: adapter.provider, orderId: b.reference,
+      amount: b.total, currency: b.currency, idempotencyKey: `checkout:${b.id}`,
+    });
+    expect((await bookings.get(b.id))!.status).toBe('draft');
+
+    const res = await checkout(app, b);
+
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+    // …so the customer's payment on that form now confirms the booking.
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+  });
+
+  // Before: both requests saw the booking as draft, both tried draft → payment_pending, and the
+  // second threw `payment_pending -> payment_pending` as a 500.
+  it('lets two simultaneous checkouts of one draft booking both succeed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const b = await book(app);
+
+    const [first, second] = await Promise.all([checkout(app, b), checkout(app, b)]);
+
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
   });
 });
