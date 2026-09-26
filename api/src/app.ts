@@ -12,6 +12,7 @@ import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
+import { opsRatesRoutes } from './routes/opsRates';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -32,6 +33,7 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
@@ -91,6 +93,8 @@ export interface AppDeps {
   analyticsData?: AnalyticsDataRepo;
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
+  /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
+  rateRevisions?: RateRevisionRepo;
   placeResolutions?: PlaceResolutionRepo;
   shortLinks?: CustomerShortLinkRepo;
   /** Gates short-link MINTING only; GET /s/:code resolves regardless (spec 2026-08-24 §7.5). */
@@ -200,6 +204,9 @@ export function createApp(deps: AppDeps = {}) {
   const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
+  // save is seen by all of them at once. Empty ⇒ the code card.
+  const rateRevisions = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
   // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
@@ -424,6 +431,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       quotes,
       zones,
+      rateRevisions,
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       // manage.html's checkout returns to where its link was built — manageUrl()'s base.
@@ -459,6 +467,7 @@ export function createApp(deps: AppDeps = {}) {
         verifier: deps.customerVerifier,
       },
       maps,
+      rateRevisions,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
@@ -484,6 +493,7 @@ export function createApp(deps: AppDeps = {}) {
     maps,
     v2Enabled: quoteV2Enabled,
     zones,
+    rateRevisions,
     promoCodes,
     bookings,
     promoCodesEnabled,
@@ -571,8 +581,10 @@ export function createApp(deps: AppDeps = {}) {
     enabled: promoCodesEnabled,
     now: deps.promoNow,
   }));
+  // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
+  app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
