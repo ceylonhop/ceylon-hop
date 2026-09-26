@@ -12,6 +12,7 @@ import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
+import { opsRatesRoutes } from './routes/opsRates';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -580,6 +581,8 @@ export function createApp(deps: AppDeps = {}) {
     enabled: promoCodesEnabled,
     now: deps.promoNow,
   }));
+  // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
+  app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, rateRevisions, bookings, placeResolutions,
     auth: opsAuthCfg,
