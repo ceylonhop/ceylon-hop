@@ -473,6 +473,19 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  // person_key is the generated lower(btrim(email)) column, indexed (0032). One query for the
+  // rows, then the same batched assembly list() uses.
+  async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
+    const rows = await this.db
+      .select({ b: bookings })
+      .from(bookings)
+      .innerJoin(customers, eq(customers.id, bookings.customerId))
+      .where(eq(customers.personKey, personKey))
+      .orderBy(desc(bookings.createdAt))
+      .limit(limit);
+    return this.assembleMany(rows.map((r) => r.b));
+  }
+
   async refreshPayerDetails(
     id: string,
     details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },

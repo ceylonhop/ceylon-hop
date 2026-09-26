@@ -47,6 +47,19 @@ describe.skipIf(!TEST_URL)('payment lookup reads (Postgres integration)', () => 
     expect(await bookings.findByReference('CH-NOPE9')).toBeNull();
   });
 
+  it('lists one person’s bookings through the generated person_key, newest first, assembled like get()', async () => {
+    // Unique per run: this database outlives the run, and person_key groups by email.
+    const email = `lookup-${randomUUID().slice(0, 8)}@example.com`;
+    const as = (e: string): NewBooking => ({ ...single, input: { ...single.input, customer: { ...customer, email: e } } } as NewBooking);
+    const first = await bookings.create(as(email));
+    const second = await bookings.create(as(`  ${email.toUpperCase()} `));
+    await bookings.create(as(`other-${email}`));
+    const rows = await bookings.listByPersonKey(email, 10);
+    expect(rows.map((r) => r.id)).toEqual([second.id, first.id]);
+    expect(rows[1]).toEqual(await bookings.get(first.id));
+    expect((await bookings.listByPersonKey(email, 1)).map((r) => r.id)).toEqual([second.id]);
+  });
+
   it('finds a quote by reference and hides a soft-deleted one', async () => {
     const q = await quotes.save({
       product: 'private', vehicle: 'car', customerName: 'Maya', customerContact: '+34600', totalCents: 4048,
