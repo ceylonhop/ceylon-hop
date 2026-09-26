@@ -57,6 +57,37 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
   };
 
   for (const { list, members } of due) {
+    // Every traveller email goes through `mail`. Resend throws on any non-2xx, and a bare await
+    // here used to throw out of the whole sweep AFTER cards were charged — later travellers never
+    // told, the team mail and the refund-due / charge-unknown alerts never sent, every later list
+    // left for tomorrow. A failed send now costs that one email and is reported by `reportMissed`.
+    const missed: string[] = [];
+    const mail = async (what: string, m: RideMember, send: () => Promise<unknown>): Promise<void> => {
+      try {
+        await send();
+      } catch (err) {
+        missed.push(`  ${m.firstName} <${m.email}> — "${what}" email (${err instanceof Error ? err.message : String(err)})`);
+        logEvent('ride_board.email_failed', { code: list.code, what });
+      }
+    };
+    const reportMissed = async (): Promise<void> => {
+      if (missed.length === 0 || !deps.alerts) return;
+      try {
+        await deps.alerts.send({
+          severity: 'critical',
+          kind: 'ride_board_email_failed',
+          title: `Ride ${list.code}: ${missed.length} traveller(s) were NOT emailed`,
+          body: [
+            `Ride ${list.code} — ${list.fromPlace} → ${list.toPlace} on ${list.date}`,
+            `These emails failed to send, so these travellers do not know what happened to their ride.`,
+            `Message them on WhatsApp:`,
+            ...missed,
+          ].join('\n'),
+          dedupeKey: `ride_board_email_failed:${list.code}`,
+        });
+      } catch { /* the alert is the backstop, not the product */ }
+    };
+
     const held = members.filter((m) => m.status === 'held' || m.status === 'charged');
 
     // Seeded placeholders keep their SEATS — a real traveller who joined this list joined it
@@ -83,7 +114,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         reason: 'below_threshold', committed: liveSeats(held), minSeats: list.minSeats,
         travellers: real.length, seedSeats,
       });
-      for (const m of real) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
+      for (const m of real) await mail('called off', m, () => sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list }));
+      await reportMissed();
       continue;
     }
 
@@ -156,8 +188,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // travellers only, so seats + seedSeats is what cleared minSeats.
         seedSeats,
       });
-      for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
-      for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
+      for (const m of chargedOk) await mail('confirmed', m, () => sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time }));
+      for (const m of failed) await mail('at risk', m, () => sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list }));
       // The team's copy (owner, 2026-09-23): until this, a van locking in and cards being charged
       // reached only the travellers. Best-effort and after their emails; dedupeKey is the code,
       // and a confirmed list never comes due again, so this sends once.
@@ -222,9 +254,9 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       const chargedSubs = new Set(chargedOk.map((m) => m.sub));
       for (const m of real) {
         if (chargedSubs.has(m.sub)) {
-          await sendRideCalledOffRefundDue(deps.email, { to: m.email, firstName: m.firstName, list });
+          await mail('called off, refund due', m, () => sendRideCalledOffRefundDue(deps.email, { to: m.email, firstName: m.firstName, list }));
         } else {
-          await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
+          await mail('called off', m, () => sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list }));
         }
       }
       // Best-effort and last: a failure here must not cost the travellers their emails.
@@ -280,6 +312,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         });
       } catch { /* the alert is the backstop, not the product */ }
     }
+
+    await reportMissed();
   }
 
   return res;
