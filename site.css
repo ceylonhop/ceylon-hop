@@ -866,3 +866,9 @@ button:active:not(:disabled),
   @media(max-width:640px){.pass-stub::before{left:0;right:0;top:-9px;bottom:auto;width:auto;height:18px;background:radial-gradient(circle at top,transparent 0 8px,var(--paper) 8px) repeat-x;background-size:22px 18px}}
   .pass-stub .ref{font-family:ui-monospace,Menlo,monospace;font-size:1.05rem;letter-spacing:.15em;font-weight:600}
   .barcode{height:46px;background:repeating-linear-gradient(90deg,#fff 0 2px,transparent 2px 4px,#fff 4px 5px,transparent 5px 9px);border-radius:3px;margin-top:14px}
+
+/* Live price list (spec 2026-09-26 §9): a page's <head> adds html.prices-pending when it will fetch
+   the live list, and transfers-data.js lifts it when the list lands or 2.5 s passes. Held figures
+   keep their space and read as a placeholder, so the first price a customer sees is the current
+   one — the same treatment the route pages give [data-fare] (fares-pending). */
+.prices-pending [data-live-price]{color:transparent!important;background:var(--cream-deep,#ece6da);border-radius:6px}
