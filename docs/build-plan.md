@@ -677,6 +677,29 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     then prove all creation flags can turn off while a valid locked quote still converts and pays.
     Public flags are `PUBLIC_AUTOMATIC_PROMOTIONS_ENABLED` and `PUBLIC_PROMO_CODES_ENABLED`.
 
+- **M23 — Booking transitions and customer communication tracking.** Add durable, correlated
+  history without changing live email behaviour. `notification_log` remains the sole existing
+  send authority; Ride Board, quote/team email and WhatsApp tracking are excluded from this
+  milestone. Full
+  [design](./superpowers/specs/2026-09-26-booking-communications-tracking-design.md) and
+  [implementation plan](./superpowers/plans/2026-09-26-booking-communications-tracking.md).
+  - **23.1 — Contract and execution plan.** Freeze the exact booking-email kinds, communication
+    events, transition provenance, failure semantics, scope and acceptance criteria. Add executable
+    vocabulary tests only; no production path changes.
+  - **23.2 — Request and job correlation.** Generate and propagate request/run IDs without
+    persistence or behaviour changes.
+  - **23.3 — Atomic transition ledger.** Add `booking_status_events`; make the normal booking
+    repository transition and event one atomic operation.
+  - **23.4 — Complete status-writer coverage.** Route payment settlement, refunds, checkout,
+    conversions, Ops and scheduled writers through the atomic transition seam; add a direct-write
+    architectural guard.
+  - **23.5 — Observe existing booking emails.** Add communication/event ledgers, provider ID
+    capture and an observing adapter. Do not add sends, retries or a second dedupe authority.
+  - **23.6 — Resend delivery evidence.** Persist signed provider sent/delivered/delayed/failed/
+    bounced/complained events idempotently, including orphan evidence.
+  - **23.7 — Reconciliation and Ops timeline.** Add invariant checks, explicit alerts and a
+    paginated read-only booking timeline with partial-history disclosure.
+
 ---
 
 ## Hardening backlog (address before broad autonomy)
