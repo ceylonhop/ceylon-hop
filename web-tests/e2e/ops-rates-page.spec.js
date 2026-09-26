@@ -29,6 +29,16 @@ const RATE_CARD = {
   },
 };
 const ZONES = { zones: [{ id: 'z1', placeName: 'Ella', boostPct: 15, active: true }], disabled: false };
+// GET /admin/rates (opsRates.ts) with nothing saved: the page's own read since PR 4.
+const RATES = {
+  perKmCents: RATE_CARD.perKmCents, costPerKmCents: { car: 35, van: 47, van9: 47, van14: 48, custom: 175 },
+  floorCents: RATE_CARD.floorCents, dayRateCents: 3105, dayRateCostCents: 2700, extrasCents: RATE_CARD.extras,
+  bufferPct: 10, fxUsdToLkr: 330,
+};
+const RATES_BODY = {
+  live: { version: '2026-07-14', source: 'defaults', rates: RATES, createdBy: null, createdAt: null },
+  defaults: { version: '2026-07-14', rates: RATES }, history: [], readOnly: { depositPct: 10, depositCapCents: 5000 },
+};
 
 // Boots the shell with `caps`. `zones` overrides the zone-list handler (to count or delay it).
 async function boot(page, caps, { zones } = {}) {
@@ -46,6 +56,7 @@ async function boot(page, caps, { zones } = {}) {
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/quote/list**', (r) => r.fulfill(json({ quotes: [] })));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json(RATE_CARD)));
+  await page.route('**/admin/rates', (r) => r.fulfill(json(RATES_BODY)));
   await page.route('**/admin/quote/zones', zones || ((r) => r.fulfill(json(ZONES))));
 }
 const ready = (page) => page.waitForSelector('#approot:not([hidden]) #nav button', { timeout: 10000 });
@@ -66,9 +77,9 @@ test('founder: Rates closes the side menu and opens the rate card with hot zones
   expect(new URL(page.url()).hash).toBe('#rates');
   await expect(nav).toHaveClass(/active/);
   await expect(ratesPage(page)).toBeVisible();
-  // The rate card, drawn from GET /admin/quote/rate-card — the numbers the popup showed.
-  await expect(ratesPage(page).locator('.ch-rate-group-title').first()).toHaveText(/Per-km rates/i);
-  await expect(ratesPage(page)).toContainText('$0.40');
+  // The rate card, drawn from GET /admin/rates — per-km shown exactly since PR 4 ($0.4025, not $0.40).
+  await expect(ratesPage(page).locator('.ch-rate-group-title').first()).toHaveText(/Price per km/i);
+  await expect(ratesPage(page)).toContainText('$0.4025');
   await expect(ratesPage(page)).toContainText('2026-07-14');
   // The hot-zones panel moved with it: the stubbed zone is listed and the add form is live.
   await expect(ratesPage(page).locator('.ch-hz-row')).toContainText('Ella');
