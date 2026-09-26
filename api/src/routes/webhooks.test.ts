@@ -981,3 +981,80 @@ describe('POST /webhooks/payments — closes the same customer\'s older unpaid d
     }
   });
 });
+
+// The rescue alert (owner, 2026-09-26): when PayHere declines a card, the team gets a one-tap,
+// pre-filled WhatsApp message to the customer carrying their own booking link. Pay-link customers
+// already had the owner on WhatsApp; website customers were on their own after a decline.
+describe('POST /webhooks/payments: decline rescue alert for the team', () => {
+  const SITE = 'https://site.example.com';
+  const payhere = () =>
+    new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+  const post = (app: ReturnType<typeof createApp>, body: string) =>
+    app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+  // PayHere's real decline shape: status -2 with payment_id "0".
+  const decline = (adapter: PayHerePaymentAdapter, b: { reference: string; total: number; currency: string }, statusCode = '-2') =>
+    adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency, statusCode, paymentId: '0' });
+  const rescues = (alerts: FakeAlertAdapter) => alerts.sent.filter((a) => a.kind === 'payment_rescue');
+
+  it('sends the team one rescue email with a pre-filled WhatsApp message carrying the booking link', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts, bookingBaseUrl: SITE });
+    const b = await bookAndCheckout(app);
+
+    expect((await post(app, decline(adapter, b))).status).toBe(200);
+
+    const r = rescues(alerts);
+    expect(r).toHaveLength(1);
+    expect(r[0].severity).toBe('warning');
+    expect(r[0].email?.subject.startsWith(`Rescue: Maya couldn’t pay ${b.reference}`)).toBe(true);
+    const href = r[0].email!.html.match(/href="(https:\/\/wa\.me\/[^"?]+\?text=[^"]+)"/)![1].replace(/&amp;/g, '&');
+    expect(href).toMatch(/^https:\/\/wa\.me\/34600000000\?text=/);
+    expect(new URL(href).searchParams.get('text')).toContain(`${SITE}/manage.html?t=`);
+  });
+
+  it('sends only one rescue for a booking, however many declines arrive', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts, bookingBaseUrl: SITE });
+    const b = await bookAndCheckout(app);
+
+    await post(app, decline(adapter, b));
+    await post(app, decline(adapter, b));
+
+    expect(rescues(alerts)).toHaveLength(1);
+  });
+
+  it('does not fire for a cancel (-1): the customer chose not to pay', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts, bookingBaseUrl: SITE });
+    const b = await bookAndCheckout(app);
+
+    await post(app, decline(adapter, b, '-1'));
+
+    expect(rescues(alerts)).toHaveLength(0);
+  });
+
+  it('does not fire for a booking that is no longer awaiting payment', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, alerts, bookings, bookingBaseUrl: SITE });
+    const b = await bookAndCheckout(app);
+    await bookings.setStatus(b.id, 'cancelled'); // ops called it off while PayHere was open
+
+    await post(app, decline(adapter, b));
+
+    expect(rescues(alerts)).toHaveLength(0);
+  });
+});
