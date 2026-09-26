@@ -94,6 +94,8 @@ test('founder: business overview, separate sales funnels, operations and demand 
   await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('Net collected');
   await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('$500');
   await expect(page.locator('#view')).toContainText('Clean business data');
+  await expect(page.locator('#view').getByRole('heading', { name: 'Needs attention', exact: true })).toHaveCount(0);
+  await expect(page.locator('#view')).not.toContainText('CH-RISK1');
 
   await page.click('#view [data-antab="sales"]');
   await expect(page.locator('[data-testid="analytics-chart-created"] svg')).toBeVisible();
