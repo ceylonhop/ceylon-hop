@@ -3144,7 +3144,7 @@ function lookupVerdictText(v,cur){
   let detail='';
   switch(v.kind){
     case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
-    case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),'recorded by '+(hand.settledBy||'not recorded'),'ref '+(hand.reference||'none')]);break;
+    case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
     case 'declined':detail=join([String(ph.code)==='-1'?'Cancelled on PayHere’s page':(ph.message?'“'+ph.message+'”':'no message')+(ph.code!=null?' (code '+ph.code+')':''),when,counts+since]);break;
     case 'reached_no_answer':detail='Reached PayHere'+(when?' '+when:'')+'. A 3-D Secure failure and closing the page look the same here — PayHere sends nothing for either.';break;
     case 'checkout_no_trace':detail='Checkout started'+(when?' '+when:'')+'; nothing recorded after it.';break;
@@ -3192,7 +3192,8 @@ function lookupRowLabel(row){
   return String(row.kind);
 }
 /* The small line under a timeline row: whatever of reason, code, message, actor, ref and amount
-   the label doesn't already say. A user agent is shown raw, and only where it is the customer's. */
+   the label doesn't already say. A user agent is shown raw, on every row the customer's browser
+   caused — never on a webhook row, whose user agent is PayHere's server. */
 function lookupRowDetail(row){
   const m=()=>money({amount:row.amount,currency:row.currency});
   let a=[];
@@ -3200,7 +3201,7 @@ function lookupRowDetail(row){
     case 'log':{
       const label=paLabel(row);
       a=[row.reason&&!label.endsWith(': '+row.reason)&&row.reason,row.attempt!=null&&!label.includes('(attempt ')&&'attempt '+row.attempt,
-        row.httpStatus!=null&&'HTTP '+row.httpStatus,(row.client||row.action==='return')&&row.ua,row.orderMatchOnly&&'claimed to be for this order'];
+        row.httpStatus!=null&&'HTTP '+row.httpStatus,row.action!=='webhook'&&row.ua,row.orderMatchOnly&&'claimed to be for this order'];
       break;
     }
     case 'cancelled':a=[!row.paidOn&&row.reason];break;

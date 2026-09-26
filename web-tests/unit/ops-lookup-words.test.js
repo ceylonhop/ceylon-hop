@@ -96,7 +96,7 @@ describe('lookupVerdictText — one title per situation, with the facts behind i
 
   it('paid_by_hand: a row older than 0043 has no recorder and no reference', () => {
     const cash = W.lookupVerdictText(verdict({ kind: 'paid_by_hand', amount: 5000, manual: { method: 'cash', settledBy: null, reference: null } }));
-    expect(cash.detail).toBe('$50 · Cash · recorded by not recorded · ref none');
+    expect(cash.detail).toBe('$50 · Cash · who recorded it wasn’t recorded · no reference');
     const other = W.lookupVerdictText(verdict({ kind: 'paid_by_hand', amount: 5000, manual: { method: 'manual_other', settledBy: 'f@x.com', reference: 'x' } }));
     expect(other.detail).toContain('· Other ·');
   });
@@ -265,7 +265,7 @@ describe('lookupRowLabel — every row kind', () => {
 });
 
 describe('lookupRowDetail — the small line under each row', () => {
-  it('log rows: reason, HTTP status, the raw user agent on client and return rows, and untrusted order matches', () => {
+  it('log rows: reason, HTTP status, the raw user agent on every row the customer’s browser caused, and untrusted order matches', () => {
     expect(W.lookupRowDetail({ kind: 'log', action: 'webhook', outcome: 'refused', reason: 'bad_signature', httpStatus: 400, attempt: null, ua: null, client: false, orderMatchOnly: true }))
       .toBe('HTTP 400 · claimed to be for this order'); // the reason is already in paLabel's words
     expect(W.lookupRowDetail({ kind: 'log', action: 'return', outcome: 'failed', reason: 'cancel_url', httpStatus: null, attempt: null, ua: 'Mozilla/5.0 (iPhone)', client: false, orderMatchOnly: false }))
@@ -276,6 +276,8 @@ describe('lookupRowDetail — the small line under each row', () => {
       .toBe('HTTP 500'); // a server row's UA is not the customer's browser
     expect(W.lookupRowDetail({ kind: 'log', action: 'checkout', outcome: 'refused', reason: 'expired', httpStatus: 409, attempt: 3, ua: null, client: false, orderMatchOnly: false }))
       .toBe('attempt 3 · HTTP 409'); // paLabel only names the attempt on a started checkout
+    expect(W.lookupRowDetail({ kind: 'log', action: 'checkout', outcome: 'succeeded', reason: null, httpStatus: 200, attempt: 2, ua: 'Mozilla/5.0 (Android)', client: false, orderMatchOnly: false }))
+      .toBe('HTTP 200 · Mozilla/5.0 (Android)'); // the customer's own request, logged server-side
   });
 
   it('notices: code, message, method, payment id and amount', () => {
