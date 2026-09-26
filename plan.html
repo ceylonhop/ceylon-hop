@@ -17,7 +17,12 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
+<link rel="stylesheet" href="site.css?v=33723b0702">
+<!-- Live prices (spec 2026-09-26 §9): transfers-data.js loads the founder's current price list from
+     the API; `?api=off` keeps the baked prices, `?api=<origin>` points it elsewhere (the same
+     contract as search.html / booking.html). The hold keeps [data-live-price] figures blank until
+     that list lands; transfers-data.js lifts it, and the timer is only the backstop. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -600,7 +605,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
         <div class="sum-estimate" id="sum-estimate">
           <span class="se-lbl">Indicative transfers <span class="se-sub">per vehicle, whole trip</span></span>
-          <span class="se-amt" id="sum-amt">~$—</span>
+          <span class="se-amt" id="sum-amt" data-live-price>~$—</span>
         </div>
 
         <button class="btn btn-primary btn-lg sum-cta" id="request-btn">Next: add your dates</button>
@@ -713,6 +718,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=59ad6c1607"></script>
+<script src="plan.js?v=2e29f9e551"></script>
 </body>
 </html>
