@@ -278,6 +278,13 @@ describe('paymentVerdict — the nine situations', () => {
     expect(v).toMatchObject({ kind: 'never_started', cancellation: { by: 'o@x.com', reason: 'customer asked' } });
   });
 
+  it('reads the fake gateway’s stored status word as the PayHere code it stands for', () => {
+    const e = paidByCard();
+    e.notices = e.notices.map((n) => ({ ...n, provider: 'fake', providerStatusCode: n.normalizedStatus }));
+    expect(paymentVerdict(e)?.kind).toBe('paid');
+    expect(caseTimeline(e).filter((r) => r.kind === 'notice').map((r) => r.kind === 'notice' && r.code)).toEqual(['-2', '2']);
+  });
+
   it('gives no verdict when any source failed to load', () => {
     expect(paymentVerdict(evidence({ unavailable: ['refunds'] }))).toBeNull();
   });

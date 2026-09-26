@@ -127,7 +127,7 @@ function moneyOf(e: CaseEvidence): Money {
   const gwNotices = gateway
     ? e.notices.filter((n) => n.paymentId === gateway.id).sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt))
     : [];
-  const successes = gwNotices.filter((n) => n.providerStatusCode === '2');
+  const successes = gwNotices.filter((n) => codeOf(n) === '2');
   // Settled before notices were stored: the row itself is the only evidence there is.
   const legacy = !!gateway && gateway.status === 'succeeded' && gateway.settlementSource === 'legacy_backfill';
   const manualPaid = !!manual && manual.status === 'succeeded';
@@ -141,12 +141,18 @@ function moneyOf(e: CaseEvidence): Money {
     cardPaidAt: successes[0]?.receivedAt ?? (legacy ? gateway.settledAt : null),
     manualPaid,
     manualPaidAt: manualPaid ? manual.settledAt : null,
-    chargeback: gwNotices.find((n) => n.providerStatusCode === '-3') ?? null,
+    chargeback: gwNotices.find((n) => codeOf(n) === '-3') ?? null,
   };
 }
 
+// PayHere's own status code. The fake gateway (tests, local dev) stores its status word in that
+// column instead, so its events read as the PayHere code their parsed status stands for.
+const CODE_FOR_STATUS: Record<string, string> = { succeeded: '2', pending: '0', cancelled: '-1', failed: '-2', charged_back: '-3' };
+const codeOf = (n: PaymentEvent): string =>
+  n.provider === 'payhere' ? n.providerStatusCode : (CODE_FOR_STATUS[n.normalizedStatus] ?? n.providerStatusCode);
+
 const payhereOf = (n: PaymentEvent) => ({
-  code: n.providerStatusCode,
+  code: codeOf(n),
   message: n.sanitizedPayload.status_message ?? null,
   method: n.sanitizedPayload.method ?? null,
   paymentId: n.providerTxnId,
@@ -255,11 +261,11 @@ export function paymentVerdict(e: CaseEvidence): Verdict | null {
     ...log
       .filter((r) => r.action === 'webhook' && after(r.at) && !r.reason && LOG_CODE[r.outcome])
       .map((r) => ({ at: r.at, code: LOG_CODE[r.outcome] })),
-    ...m.gwNotices.filter((n) => after(n.receivedAt) && n.providerStatusCode !== '2').map((n) => ({ at: n.receivedAt, code: n.providerStatusCode })),
+    ...m.gwNotices.filter((n) => after(n.receivedAt) && codeOf(n) !== '2').map((n) => ({ at: n.receivedAt, code: codeOf(n) })),
   ].sort(byAt);
   const last = answers.at(-1);
   if (last && (last.code === '-2' || last.code === '-1')) {
-    const stored = [...m.gwNotices].reverse().find((n) => n.providerStatusCode === last.code);
+    const stored = [...m.gwNotices].reverse().find((n) => codeOf(n) === last.code);
     return {
       ...base,
       kind: 'declined',
@@ -333,9 +339,9 @@ export function caseTimeline(e: CaseEvidence): CaseRow[] {
 
   const firstSuccess = m.successes[0] ?? null;
   const loggedDeclines = e.log.filter((r) => r.action === 'webhook' && r.outcome === 'failed' && !r.reason).length;
-  const storedDeclines = e.notices.filter((n) => n.providerStatusCode === '-2').length;
+  const storedDeclines = e.notices.filter((n) => codeOf(n) === '-2').length;
   for (const n of [...e.notices].sort((a, x) => ms(a.receivedAt) - ms(x.receivedAt))) {
-    const code = n.providerStatusCode;
+    const code = codeOf(n);
     let note: 'paid_again' | 'earlier_attempt' | null = null;
     if (firstSuccess && n.providerTxnId !== firstSuccess.providerTxnId) {
       if (code === '2') note = 'paid_again';
