@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
@@ -42,8 +42,12 @@ class BrokenRefunds extends InMemoryRefundRepo {
   override async list(): Promise<Refund[]> { throw new Error('refunds down'); }
 }
 
-function setup(over: { refunds?: InMemoryRefundRepo } = {}) {
-  const bookings = new InMemoryBookingRepo();
+class BrokenPersonList extends InMemoryBookingRepo {
+  override async listByPersonKey(): Promise<never> { throw new Error('person list down'); }
+}
+
+function setup(over: { refunds?: InMemoryRefundRepo; bookings?: InMemoryBookingRepo } = {}) {
+  const bookings = over.bookings ?? new InMemoryBookingRepo();
   const payments = new InMemoryPaymentRepo();
   const paymentEvents = new InMemoryPaymentEventRepo();
   const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
@@ -130,6 +134,7 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       ref: q.reference, quote: { id: q.id, reference: q.reference, status: 'draft' }, booking: null, verdict: null, timeline: [], gaps: [], unavailable: [],
+      otherBookings: null, // a quote records no email, so there is no person to list
     });
   });
 
@@ -162,5 +167,59 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     const res = await s.get(b.reference);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ verdict: null, unavailable: ['refunds'], booking: { id: b.id } });
+  });
+});
+
+describe('GET /admin/ops/cases/:ref — this customer’s other bookings (spec §15)', () => {
+  const asEmail = (email: string): NewBooking => ({ ...draft, input: { ...draft.input, customer: { ...customer, email } } } as NewBooking);
+
+  afterEach(() => { vi.useRealTimers(); });
+  // Each booking gets its own minute: created in one millisecond they would tie on created_at.
+  const at = (minute: number) => vi.setSystemTime(new Date(Date.UTC(2026, 8, 20, 10, minute)));
+
+  it('lists the same person’s other bookings, newest first: drafts and cancelled included, itself left out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const s = setup();
+    at(1);
+    const older = await s.bookings.create(asEmail('Maya@Example.com '));
+    at(2);
+    const cancelled = await s.bookings.create(draft);
+    await s.bookings.setStatus(cancelled.id, 'cancelled', { reason: 'duplicate — paid on CH-XXXX2', by: 'system:duplicate-close' });
+    at(3);
+    await s.bookings.create(asEmail('someone@else.com'));
+    at(4);
+    const paidOne = await s.bookings.create(draft);
+    const pay = await s.payments.create({ bookingId: paidOne.id, provider: 'payhere', orderId: paidOne.reference, amount: 12100, currency: 'USD', idempotencyKey: `checkout:${paidOne.id}` });
+    await s.payments.markSucceeded(pay.id);
+    at(5);
+    const looked = await s.bookings.create(draft);
+    vi.useRealTimers(); // the session cookie is signed against the real clock
+
+    const body = await (await s.get(looked.reference)).json();
+    expect(body.otherBookings.truncated).toBe(false);
+    expect(body.otherBookings.rows.map((r: { id: string }) => r.id)).toEqual([paidOne.id, cancelled.id, older.id]);
+    expect(body.otherBookings.rows[0]).toEqual({
+      id: paidOne.id, reference: paidOne.reference, status: 'draft', mode: 'single', channel: 'website',
+      createdAt: paidOne.createdAt, route: 'Colombo Airport → Galle', travelDate: draft.input.date, travelTime: '09:00', pax: 2,
+      total: 12100, currency: 'USD', paid: true, isTest: false,
+    });
+    expect(body.otherBookings.rows[1]).toMatchObject({ status: 'cancelled', paid: false });
+  });
+
+  it('shows the newest 50 and says there are more', async () => {
+    const s = setup();
+    for (let i = 0; i < 52; i++) await s.bookings.create(draft);
+    const looked = await s.bookings.create(draft);
+    const body = await (await s.get(looked.reference)).json();
+    expect(body.otherBookings.rows).toHaveLength(50);
+    expect(body.otherBookings.truncated).toBe(true);
+    expect(body.otherBookings.rows.some((r: { id: string }) => r.id === looked.id)).toBe(false);
+  });
+
+  it('a list that fails to load is null, and never costs the booking its verdict', async () => {
+    const s = setup({ bookings: new BrokenPersonList() });
+    const b = await s.bookings.create(draft);
+    const body = await (await s.get(b.reference)).json();
+    expect(body).toMatchObject({ otherBookings: null, unavailable: [], verdict: { kind: 'never_started' } });
   });
 });

@@ -561,6 +561,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .lk-warn{margin:8px 0 0;font-size:.86rem;font-weight:700;color:var(--alert)}
   .lk-sub{display:block;font-size:.76rem;color:var(--ink-soft);overflow-wrap:anywhere}
   .lk-act{margin-top:10px}
+  .lk-other{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:7px 0;border-top:1px dashed var(--line)}
+  .lk-other:first-of-type{border-top:0}
   .lk-case .pa-dot{align-self:baseline} /* rows here run to two lines; the dot marks the first */
   @media(max-width:640px){.lk-case{padding:2px 14px 6px}.lk-case .pa-row{flex-wrap:wrap}.lk-case .pa-what{flex:1 1 100%;padding-left:17px}}
   .notebox{display:flex;gap:8px;margin-top:6px}
@@ -3255,6 +3257,20 @@ function lookupHeaderHtml(d){
       :`<span class="muted" style="padding:0">Not in the queue (${esc(b.status)})</span>`}</div>
   </div>`;
 }
+/* "This customer's bookings" (spec §15): the same person's other bookings, newest first, each
+   one press from its own lookup. null = the API could not read them; absent = an older answer. */
+function lookupOtherBookingsHtml(list){
+  const head='<div class="block" data-testid="lookup-others"><h4>This customer’s bookings</h4>';
+  if(list===null)return head+'<p class="lk-warn">Couldn’t load this customer’s other bookings.</p></div>';
+  const rows=(list.rows||[]).map(r=>{
+    const pay=r.status==='paid'?'paid':r.status+' · '+(r.paid?'paid':'unpaid');
+    const when=r.travelDate?fmtDate(r.travelDate):'No date';
+    const bits=['made '+lookupTime(r.createdAt),r.route,when,money({amount:r.total,currency:r.currency}),pay,r.isTest&&'test booking'].filter(Boolean);
+    return `<div class="lk-other"><button class="lk-link" data-lkcase="${esc(r.reference)}">${esc(r.reference)}</button><span class="lk-sub">${esc(bits.join(' · '))}</span></div>`;
+  }).join('');
+  return head+(rows||'<p class="muted" style="padding:0">No other bookings with this email.</p>')
+    +(list.truncated?'<p class="lk-line muted">Showing the newest 50.</p>':'')+'</div>';
+}
 function lookupCaseHtml(d){
   if(!d.booking){
     const q=d.quote||{};
@@ -3285,6 +3301,7 @@ function lookupCaseHtml(d){
   const gaps=(d.gaps||[]).length?`<div class="block" data-testid="lookup-gaps"><h4>Gaps in the record</h4>${d.gaps.map(g=>`<p class="lk-line">${esc(lookupGapText(g))}</p>`).join('')}</div>`:'';
   return `<div class="lk-case" data-testid="lookup-case">${lookupHeaderHtml(d)}
     <div class="block" data-testid="lookup-verdict"><h4>Payment</h4>${verdict}</div>
+    ${d.otherBookings===undefined?'':lookupOtherBookingsHtml(d.otherBookings)}
     <div class="block" data-testid="lookup-timeline"><h4>Timeline</h4>${rows}</div>${gaps}
     <p class="muted">Only some customer emails are recorded (not cancellation, refund or details-needed emails), and team emails aren’t stored per booking.</p></div>`;
 }

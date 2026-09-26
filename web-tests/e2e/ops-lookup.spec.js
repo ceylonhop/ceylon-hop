@@ -264,3 +264,55 @@ test('a quote with no booking yet says so', async ({ page }) => {
   await expect(view).toContainText('This quote has no booking yet — the customer hasn’t opened its pay link.');
   await expect(page.locator('[data-testid="lookup-timeline"]')).toHaveCount(0);
 });
+
+// Slice 2 (spec §15): the same person's other bookings, newest first, each one press from its own
+// lookup. The API sends `otherBookings: {rows, truncated}`, or null when it could not read them.
+const OTHER = (over = {}) => ({
+  id: 'b2', reference: 'CH-0002', status: 'draft', mode: 'single', channel: 'website',
+  createdAt: '2026-09-24T09:00:00.000Z', route: 'Colombo → <b>Ella</b>', travelDate: '2030-02-01', travelTime: '08:00', pax: 2,
+  total: 8000, currency: 'USD', paid: false, isTest: false, ...over,
+});
+
+test('this customer’s other bookings: newest first, each opens its own lookup', async ({ page }) => {
+  const newer = OTHER({ id: 'b3', reference: 'CH-0003', status: 'paid', paid: true, createdAt: '2026-09-25T09:00:00.000Z', isTest: true });
+  const requested = await boot(page, FOUNDER, {
+    'CH-0001': { body: { ...CASE, otherBookings: { rows: [newer, OTHER()], truncated: false } } },
+    'CH-0003': { body: { ...CASE, ref: 'CH-0003', booking: { ...BOOKING, id: 'b3', reference: 'CH-0003' }, otherBookings: { rows: [], truncated: false } } },
+  });
+  await page.goto(OPS_FILE + '?case=CH-0001#lookup');
+  await ready(page);
+  const block = page.locator('[data-testid="lookup-others"]');
+  await expect(block.locator('h4')).toHaveText('This customer’s bookings');
+  await expect(block.locator('[data-lkcase]')).toHaveText(['CH-0003', 'CH-0002']);
+  const lines = block.locator('.lk-other');
+  await expect(lines.nth(0)).toContainText('paid');
+  await expect(lines.nth(0)).toContainText('test booking');
+  await expect(lines.nth(1)).toContainText('draft · unpaid');
+  await expect(lines.nth(1)).toContainText('Colombo → <b>Ella</b>'); // shown as text, never parsed
+  await expect(block.locator('b')).toHaveCount(0);
+
+  await block.locator('[data-lkcase="CH-0003"]').click();
+  await expect(page.locator('[data-testid="lookup-header"]')).toContainText('CH-0003');
+  expect(requested).toEqual(['/admin/ops/cases/CH-0001', '/admin/ops/cases/CH-0003']);
+  await expect(page.locator('[data-testid="lookup-others"]')).toContainText('No other bookings with this email.');
+});
+
+test('other bookings: a truncated list says so, a failed read says so, an answer without the field shows no block', async ({ page }) => {
+  await boot(page, FOUNDER, {
+    'CH-0001': { body: { ...CASE, otherBookings: { rows: [OTHER()], truncated: true } } },
+    'CH-0002': { body: { ...CASE, ref: 'CH-0002', otherBookings: null } },
+    'CH-0009': { body: CASE },
+  });
+  await page.goto(OPS_FILE + '?case=CH-0001#lookup');
+  await ready(page);
+  await expect(page.locator('[data-testid="lookup-others"]')).toContainText('Showing the newest 50.');
+
+  await page.fill('#lookup-q', 'CH-0002');
+  await page.getByRole('button', { name: 'Look up' }).click();
+  await expect(page.locator('[data-testid="lookup-others"]')).toContainText('Couldn’t load this customer’s other bookings.');
+
+  await page.fill('#lookup-q', 'CH-0009');
+  await page.getByRole('button', { name: 'Look up' }).click();
+  await expect(caseView(page)).toBeVisible();
+  await expect(page.locator('[data-testid="lookup-others"]')).toHaveCount(0);
+});
