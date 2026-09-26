@@ -2930,7 +2930,6 @@ function anOverviewHtml(d){
   html+='<div class="an-grid">';
   html+=`<div class="an-card"><h3>Paid bookings over time</h3><p class="an-cap">Settled payments by ${d.range.bucket}; exact values are labelled.</p>${anSvgBars(d.series,[{key:'paidBookings',label:'Paid bookings',color:'var(--go)'}])}</div>`;
   html+=`<div class="an-card"><h3>Website payment funnel</h3><p class="an-cap">Bookings whose checkout started in this range; retries roll up to one booking.</p>${anPaymentFunnel(d.paymentFunnel)}</div>`;
-  html+=`<div class="an-card an-wide"><h3>Needs attention</h3><p class="an-cap">Upcoming money and fulfilment exceptions. Open a booking to act.</p>${anAttention(d.operations.needsAttention.slice(0,8))}</div>`;
   html+='</div>';
   return html+anDataNote(d);
 }
