@@ -147,6 +147,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
     return rows[0] ? quoteRowToSaved(rows[0]) : null;
   }
 
+  async findByReference(reference: string): Promise<SavedQuote | null> {
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.reference, reference), isNull(quotes.deletedAt)));
+    return rows[0] ? quoteRowToSaved(rows[0]) : null;
+  }
+
   async updateWebV2(args: {
     id: string;
     accessTokenDigest: string;

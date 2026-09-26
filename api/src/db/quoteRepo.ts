@@ -292,6 +292,9 @@ export interface QuoteRepo {
   // The quote a booking was converted from, if any. Reverse of convertedBookingId, so a
   // booking that dies can take its quote's "won" outcome down with it (services/quoteOutcome).
   findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null>;
+  // The ops payment lookup (spec 2026-09-26): a quote ref leads to the booking it became. Hides
+  // soft-deleted quotes, exactly as get() does.
+  findByReference(reference: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
   // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
   // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
@@ -463,6 +466,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
   async findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null> {
     for (const row of this.rows.values()) {
       if (!row.deletedAt && row.convertedBookingId === bookingId) return { ...row };
+    }
+    return null;
+  }
+
+  async findByReference(reference: string): Promise<SavedQuote | null> {
+    for (const row of this.rows.values()) {
+      if (!row.deletedAt && row.reference === reference) return { ...row };
     }
     return null;
   }

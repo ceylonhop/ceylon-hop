@@ -551,6 +551,18 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .pa-when{flex:none;min-width:44px;font-size:.76rem;color:var(--ink-faint);font-variant-numeric:tabular-nums}
   .pa-what{min-width:0;overflow-wrap:anywhere}
   .pa-hint{margin:8px 0 0;font-size:.8rem;color:var(--ink-soft)}
+  /* payment lookup (payments:act) — the sheet's .block/.kv/.pa-row vocabulary on one paper panel */
+  .lk-form{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+  .lk-case{max-width:760px;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:2px 20px 6px;box-shadow:var(--shadow-s)}
+  .lk-case a,.lk-link{color:var(--teal-deep);font-weight:700}
+  .lk-link{border:0;background:none;padding:0;font:inherit;font-weight:700;text-decoration:underline}
+  .lk-title{font-weight:700;font-size:1.02rem}
+  .lk-line{margin:6px 0 0;font-size:.88rem;overflow-wrap:anywhere}
+  .lk-warn{margin:8px 0 0;font-size:.86rem;font-weight:700;color:var(--alert)}
+  .lk-sub{display:block;font-size:.76rem;color:var(--ink-soft);overflow-wrap:anywhere}
+  .lk-act{margin-top:10px}
+  .lk-case .pa-dot{align-self:baseline} /* rows here run to two lines; the dot marks the first */
+  @media(max-width:640px){.lk-case{padding:2px 14px 6px}.lk-case .pa-row{flex-wrap:wrap}.lk-case .pa-what{flex:1 1 100%;padding-left:17px}}
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
@@ -2159,6 +2171,10 @@ function routeStateFromUrl(canQuote){
   // the Quotes or Analytics surface, so the hash is not consulted when it is present.
   const bookingId=(url.searchParams.get('booking')||'').trim()||null;
   if(bookingId)return { route:'tickets', routeQuoteId:null, routeBookingId:bookingId };
+  /* Payment lookup: `?case=<ref>#lookup`, the same pattern as ?quote=. payments:act only — without
+     it the address falls through to the default landing, the silent bounce #analytics gets. */
+  const caseRef=(url.searchParams.get('case')||'').trim()||null;
+  if((caseRef||url.hash==='#lookup')&&state.caps&&state.caps.includes('payments:act'))return { route:'lookup', routeQuoteId:null, routeBookingId:null, routeCaseRef:caseRef };
   if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId, routeBookingId:null };
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
@@ -2173,9 +2189,12 @@ function syncUrl(route, quoteId, bookingId, mode){
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
+  else if(route==='lookup')url.hash='#lookup';
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
+  if(route==='lookup'&&state.routeCaseRef)url.searchParams.set('case',state.routeCaseRef);
+  else url.searchParams.delete('case');
   // Only ever on the Bookings surface — leaving it set while the operator is looking at Quotes
   // would reopen a sheet the moment they came back, which is not what they asked for.
   if(route==='tickets'&&bookingId)url.searchParams.set('booking',bookingId);
@@ -2188,6 +2207,7 @@ function setShellRoute(route, opts){
   opts=opts||{};
   state.route=route;
   state.routeQuoteId=(route==='quote'&&opts.quoteId)?opts.quoteId:null;
+  state.routeCaseRef=(route==='lookup'&&opts.caseRef)?String(opts.caseRef):null;
   // Changing surface closes any open sheet — the sheet belongs to Bookings, and carrying it
   // across would leave `?booking=` describing something the operator can no longer see.
   if(route!=='tickets')closeDetail('silent');
@@ -2198,6 +2218,7 @@ function applyRouteFromUrl(mode){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
+  state.routeCaseRef=next.routeCaseRef||null;
   /* The sheet follows the URL in BOTH directions. Closing on an absent ?booking= is what makes
      browser Back close the sheet instead of stranding it over the queue, and it is the half that
      is easy to leave out — opening on arrival looks like the whole feature until you press Back. */
@@ -2297,15 +2318,17 @@ function collapseRail(){
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
    (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
 /* Rounded, representative marks: Bookings = event ticket (notched, perforated),
-   Quotes = price tag (with the tag's eyelet), Analytics = trend line over an axis. */
+   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis. */
 const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
   analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+  lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
+  const canLookup=state.caps&&state.caps.includes('payments:act');
   const canAnalytics=state.caps&&state.caps.includes('analytics:view');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
@@ -2319,6 +2342,7 @@ function setNav(){
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
+    (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
 }
 
@@ -3094,6 +3118,223 @@ function paymentAttemptsHtmlFor(d){
   return `<div class="block pay-attempts"><h4>Payment attempts</h4>${rows}${hint}</div>`;
 }
 
+/* ── Payment lookup (spec 2026-09-26): one booking's payment story, payments:act only.
+   GET /admin/ops/cases/:ref returns facts — a verdict kind, row kinds, gap codes — and the words
+   live here. The lookup* word functions are pure (web-tests/unit/ops-lookup-words.test.js evals
+   them out of this file), and checkout-log rows go through paLabel so the drawer and this page
+   never word the same event two ways. Everything drawn goes through esc(). ── */
+/* Local time to the second. Month names are spelled out rather than taken from
+   toLocaleDateString('en-GB'), which says "Sept" in current Chromium and Node. */
+function lookupTime(iso){
+  const d=new Date(iso);
+  if(!iso||isNaN(d.getTime()))return '—';
+  return _pad(d.getDate())+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]+' '+_pad(d.getHours())+':'+_pad(d.getMinutes())+':'+_pad(d.getSeconds());
+}
+/* {title, detail, refund, cancellation, warnings}. `cur` is the booking's currency, for a verdict
+   that carries none. */
+function lookupVerdictText(v,cur){
+  const m=n=>money({amount:n,currency:v.currency||cur||null});
+  const join=a=>a.filter(Boolean).join(' · ');
+  const n=(k,w)=>k+' '+w+(k===1?'':'s');
+  const counts=n(v.checkouts||0,'checkout')+', '+n(v.declineNotices||0,'decline notice');
+  const since=v.countsComplete===false?' (since 24 Sep)':''; /* the checkout log starts 24 Sep */
+  const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
+  const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
+  let detail='';
+  switch(v.kind){
+    case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
+    case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
+    case 'declined':detail=join([String(ph.code)==='-1'?'Cancelled on PayHere’s page':(ph.message?'“'+ph.message+'”':'no message')+(ph.code!=null?' (code '+ph.code+')':''),when,counts+since]);break;
+    case 'reached_no_answer':detail='Reached PayHere'+(when?' '+when:'')+'. A 3-D Secure failure and closing the page look the same here — PayHere sends nothing for either.';break;
+    case 'checkout_no_trace':detail='Checkout started'+(when?' '+when:'')+'; nothing recorded after it.';break;
+    case 'never_started':detail='The booking was created but checkout never started.';break;
+    case 'paid_elsewhere':detail='Closed automatically — paid on '+(v.paidOn||'another booking');break;
+    case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
+    case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
+  }
+  const c=v.cancellation;
+  return {
+    title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
+      checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
+      paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
+    detail,
+    refund:refund&&refund!==detail?refund:null, /* money_back already says it */
+    cancellation:!c?null:(c.by||c.reason)?'Cancelled'+(c.by?' by '+c.by:'')+(c.reason?': '+c.reason:''):'Cancelled — who and why not recorded',
+    warnings:(v.warnings||[]).map(w=>({
+      money_on_unpaid_booking:'Money received, but the booking still says unpaid — check it.',
+      money_after_cancel:'Money arrived after the booking was cancelled — a refund may be owed.',
+      paid_status_without_payment:'The booking says paid, but no payment is recorded.',
+    })[w]||String(w)),
+  };
+}
+function lookupRowLabel(row){
+  const m=()=>money({amount:row.amount,currency:row.currency});
+  switch(row.kind){
+    case 'log':return paLabel(row);
+    case 'created':return 'Booking created';
+    case 'cancelled':return row.paidOn?'Closed automatically — paid on '+row.paidOn:'Cancelled'+(row.by?' by '+row.by:'');
+    case 'payment_created':return 'Checkout set up — order '+row.orderId+', '+m();
+    case 'payment_settled':return row.settlementSource==='manual'?'Marked paid by hand — '+payMethodLabel(row.method):'Recorded as paid (backfill)';
+    case 'notice':{
+      const code=String(row.code);
+      let s=code==='2'?(row.note==='paid_again'?'PayHere: paid again — a second payment on this order':'PayHere: paid')
+        :({'-2':'PayHere: declined','-1':'PayHere: cancelled on PayHere’s page','0':'PayHere: pending','-3':'PayHere: charged back'})[code]||'PayHere: code '+code;
+      if(row.note==='earlier_attempt')s+=' (earlier attempt)';
+      if(row.repeats>1)s+=' — PayHere sent '+row.repeats+' decline notices; repeats share this row';
+      return s;
+    }
+    case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
+      deposit_received:'Email: deposit received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+    case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
+      failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
+  }
+  return String(row.kind);
+}
+/* The small line under a timeline row: whatever of reason, code, message, actor, ref and amount
+   the label doesn't already say. A user agent is shown raw, on every row the customer's browser
+   caused — never on a webhook row, whose user agent is PayHere's server. */
+function lookupRowDetail(row){
+  const m=()=>money({amount:row.amount,currency:row.currency});
+  let a=[];
+  switch(row.kind){
+    case 'log':{
+      const label=paLabel(row);
+      a=[row.reason&&!label.endsWith(': '+row.reason)&&row.reason,row.attempt!=null&&!label.includes('(attempt ')&&'attempt '+row.attempt,
+        row.httpStatus!=null&&'HTTP '+row.httpStatus,row.action!=='webhook'&&row.ua,row.orderMatchOnly&&'claimed to be for this order'];
+      break;
+    }
+    case 'cancelled':a=[!row.paidOn&&row.reason];break;
+    case 'payment_settled':a=[row.settledBy&&'by '+row.settledBy,row.reference&&'ref '+row.reference,m()];break;
+    case 'notice':a=['code '+row.code,row.message&&'“'+row.message+'”',row.method,row.paymentId&&'payment id '+row.paymentId,m()];break;
+    case 'email':a=[row.deliveryTracked===false&&'delivery not tracked'];break;
+    case 'refund':a=[row.by&&'by '+row.by,row.ref&&'ref '+row.ref,row.message&&'“'+row.message+'”',row.reason,row.step!=='requested'&&row.step!=='confirmed'&&m()];break;
+  }
+  return a.filter(Boolean).join(' · ');
+}
+function lookupRowTone(row){
+  if(row.kind==='log')return PA_TONE[row.outcome]||'var(--idle)';
+  if(row.kind==='notice')return ({'2':'var(--ok)','0':'var(--wait)','-1':'var(--wait)','-2':'var(--alert)','-3':'var(--alert)'})[String(row.code)]||'var(--idle)';
+  if(row.kind==='refund')return ({requested:'var(--wait)',sent:'var(--go)',confirmed:'var(--ok)',failed:'var(--alert)'})[row.step]||'var(--idle)';
+  if(row.kind==='payment_created')return 'var(--go)';
+  if(row.kind==='payment_settled')return 'var(--ok)';
+  return 'var(--idle)';
+}
+function lookupGapText(code){
+  return ({
+    no_checkout_log:'Checkout attempts before 24 Sep 2026 weren’t recorded.',
+    declines_may_be_missing:'PayHere declines before 26 Sep 2026 may be missing.',
+    no_gateway_report:'Pay links and manage links don’t report opening PayHere — the customer may have reached it.',
+    actor_not_recorded:'Who cancelled this, and why, wasn’t recorded.',
+  })[code]||String(code);
+}
+function lookupUnavailableText(list){
+  const w={payments:'payments',payment_events:'PayHere notices',booking_checkout_event:'checkout log',refunds:'refunds',notification_log:'emails'};
+  return 'Incomplete — couldn’t load: '+list.map(s=>w[s]||String(s)).join(', ');
+}
+const lookupKv=(k,v)=>`<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+function lookupHeaderHtml(d){
+  const b=d.booking,c=b.customer||{},bl=b.billing||{};
+  const billing=[[bl.firstName,bl.lastName].filter(Boolean).join(' '),bl.address,bl.city,bl.state,bl.postcode,bl.country].filter(Boolean).join(', ');
+  const when=(b.travelDate?fmtDate(b.travelDate):'No date')+(b.travelTime?' · '+b.travelTime:'')+' · '+b.pax+' guest'+(b.pax===1?'':'s');
+  const cur=b.currency;
+  return `<div class="block" data-testid="lookup-header"><h4>Booking</h4>
+    ${lookupKv('Reference',esc(b.reference)+(b.isTest?' <span class="pill" style="--c:var(--wait);--cbg:var(--wait-bg)" title="Team test booking — not a customer">Test booking</span>':''))}
+    ${lookupKv('Status',esc(b.status))}
+    ${lookupKv('Type',esc(MODE[b.mode]||b.mode)+' · '+esc(chanLabel(b.channel)))}
+    ${lookupKv('Customer',esc([c.firstName,c.lastName].filter(Boolean).join(' ')||'—'))}
+    ${lookupKv('Email',esc(c.email||'—'))}
+    ${lookupKv('WhatsApp',memberPhoneHtml(c.whatsapp))}
+    ${lookupKv('Country',esc(c.country||'—'))}
+    ${billing?lookupKv('Billing',esc(billing)):''}
+    ${lookupKv('Route',esc(b.route))}
+    ${lookupKv('When',esc(when))}
+    ${lookupKv('Total',esc(money({amount:b.total,currency:cur})))}
+    ${b.amountDueNow!=null&&b.amountDueNow!==b.total?lookupKv('Due now',esc(money({amount:b.amountDueNow,currency:cur}))):''}
+    <div class="lk-act">${b.inQueue
+      ?`<button class="btn" data-lkbooking="${esc(b.id)}">Open in queue</button>`
+      :`<span class="muted" style="padding:0">Not in the queue (${esc(b.status)})</span>`}</div>
+  </div>`;
+}
+function lookupCaseHtml(d){
+  if(!d.booking){
+    const q=d.quote||{};
+    return `<div class="lk-case" data-testid="lookup-case"><div class="block" data-testid="lookup-header"><h4>Quote</h4>
+      ${lookupKv('Reference',esc(q.reference||d.ref))}${lookupKv('Status',esc(q.status||'—'))}
+      <p class="lk-line">This quote has no booking yet — the customer hasn’t opened its pay link.</p></div></div>`;
+  }
+  const v=d.verdict;
+  let verdict;
+  if(v){
+    const t=lookupVerdictText(v,d.booking.currency);
+    /* The paying booking is one press away: its reference opens its own lookup. */
+    const at=v.kind==='paid_elsewhere'&&v.paidOn?t.detail.lastIndexOf(v.paidOn):-1;
+    const detail=at<0?esc(t.detail)
+      :esc(t.detail.slice(0,at))+`<button class="lk-link" data-lkcase="${esc(v.paidOn)}">${esc(v.paidOn)}</button>`+esc(t.detail.slice(at+v.paidOn.length));
+    verdict=`<div class="lk-title">${esc(t.title)}</div>`+(t.detail?`<p class="lk-line">${detail}</p>`:'')
+      +[t.refund,t.cancellation].filter(Boolean).map(s=>`<p class="lk-line">${esc(s)}</p>`).join('')
+      +t.warnings.map(s=>`<p class="lk-warn">${esc(s)}</p>`).join('');
+  }else{
+    /* No verdict is never "nothing happened": a source that failed to load says so by name. */
+    verdict=(d.unavailable||[]).length?`<p class="lk-warn">${esc(lookupUnavailableText(d.unavailable))}</p>`:'<p class="muted" style="padding:0">No verdict.</p>';
+  }
+  const rows=(d.timeline||[]).map(r=>{
+    const sub=lookupRowDetail(r);
+    return `<div class="pa-row" title="${esc(r.at)}"><span class="pa-dot" style="--c:${lookupRowTone(r)}"></span><span class="pa-when">${esc(lookupTime(r.at))}</span>`
+      +`<span class="pa-what"><span class="lk-label">${esc(lookupRowLabel(r))}</span>${sub?`<span class="lk-sub">${esc(sub)}</span>`:''}</span></div>`;
+  }).join('')||'<p class="muted" style="padding:0">Nothing recorded.</p>';
+  const gaps=(d.gaps||[]).length?`<div class="block" data-testid="lookup-gaps"><h4>Gaps in the record</h4>${d.gaps.map(g=>`<p class="lk-line">${esc(lookupGapText(g))}</p>`).join('')}</div>`:'';
+  return `<div class="lk-case" data-testid="lookup-case">${lookupHeaderHtml(d)}
+    <div class="block" data-testid="lookup-verdict"><h4>Payment</h4>${verdict}</div>
+    <div class="block" data-testid="lookup-timeline"><h4>Timeline</h4>${rows}</div>${gaps}
+    <p class="muted">Only some customer emails are recorded (not cancellation, refund or details-needed emails), and team emails aren’t stored per booking.</p></div>`;
+}
+function viewLookup(){
+  $('#topbar').innerHTML='';
+  const ref=state.routeCaseRef||'';
+  const view=$('#view');
+  view.innerHTML=`<div class="qhead pagehead"><h1>Lookup</h1></div>
+    <p class="pagesub">Payment history for one booking — paste a booking ref (CH-…) or a quote ref (Q-…)</p>
+    <form class="lk-form" id="lookup-form" role="search" autocomplete="off">
+      <div class="search">${NAV_ICONS.lookup}<input id="lookup-q" value="${esc(ref)}" placeholder="CH-… or Q-…" aria-label="Booking or quote reference" spellcheck="false"></div>
+      <button class="btn btn-go" type="submit">Look up</button>
+    </form>
+    <div id="lookup-out">${ref
+      ?`<div class="lk-case" aria-busy="true" aria-label="Loading payment history">${'<div class="block"><div class="an-skel"></div></div>'.repeat(3)}</div>`
+      :'<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">Look up a booking</div><div class="qempty-sub">You’ll see the customer, what happened to the payment, and every recorded step in order.</div></div>'}</div>`;
+  if(!ref)return;
+  /* Only the result area is replaced when the answer lands, so a ref typed meanwhile survives. */
+  api.get('/cases/'+encodeURIComponent(ref)).then(d=>{
+    if(state.route!=='lookup'||state.routeCaseRef!==ref)return; /* stale response — view moved on */
+    const out=$('#lookup-out');if(out)out.innerHTML=lookupCaseHtml(d);
+  }).catch(err=>{
+    if(state.route!=='lookup'||state.routeCaseRef!==ref)return;
+    const known=err.message==='api 404'||err.message==='api 400'||err.message==='auth';
+    if(!known)window.opsReportError&&window.opsReportError('lookup',err);
+    const msg=err.message==='api 404'?'No booking or quote with that reference.'
+      :err.message==='api 400'?'Enter a booking ref (CH-…) or a quote ref (Q-…).'
+      :'Couldn’t load — check the connection and try again.';
+    const out=$('#lookup-out');if(out)out.innerHTML=`<div class="an-empty">${esc(msg)}</div>`;
+  });
+}
+document.addEventListener('submit',e=>{
+  if(e.target.id!=='lookup-form')return;
+  e.preventDefault();
+  const q=$('#lookup-q');
+  setShellRoute('lookup',{caseRef:((q&&q.value)||'').trim()});
+});
+document.addEventListener('click',async e=>{
+  if(state.route!=='lookup')return;
+  const other=e.target.closest('#view [data-lkcase]');
+  if(other){setShellRoute('lookup',{caseRef:other.dataset.lkcase});return;}
+  const open=e.target.closest('#view [data-lkbooking]');
+  if(!open)return;
+  const id=open.dataset.lkbooking;
+  /* The queue list is fetched when the tab opens, and openDetail() can only open a row it holds —
+     a booking created since (the usual case for a payment that just failed) needs a fresh list. */
+  if(!tickets.some(x=>x.id===id))await loadQueue().catch(()=>{});
+  openDetail(id);
+});
+
 function buildActivity(t,d){
   const acts=[];
   if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
@@ -3542,6 +3783,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
       ${paymentAttemptsHtmlFor(d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
@@ -3697,6 +3939,7 @@ function playRouteIn(){
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
+  if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -3728,6 +3971,16 @@ function render(){
       playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
       if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='lookup'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewLookup();
+    if(entering){
+      playRouteIn();
+      /* A bare Lookup is a search box and nothing else — the cursor goes in it. */
+      const qi=!state.routeCaseRef&&$('#lookup-q');
+      if(qi)qi.focus({preventScroll:true});
     }
   }else{
     hideQuoteView();viewTickets();renderSheet();
@@ -3776,6 +4029,7 @@ document.addEventListener('click',e=>{
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
+  if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -3984,6 +4238,8 @@ document.addEventListener('click',async e=>{
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
+    /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
+    case 'lookup':{if(!state.caps||!state.caps.includes('payments:act'))break;setShellRoute('lookup',{caseRef:el.dataset.ref});break;}
     case 'refundrequest':{
       if(!mayReverseNow(t,state.detailData))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
@@ -4148,6 +4404,7 @@ function bootApp(identity){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
+  state.routeCaseRef=next.routeCaseRef||null;
   syncUrl(state.route,state.routeQuoteId,next.routeBookingId,'replace');
   /* The refresh case, and the reason this feature exists: boot reads the URL itself rather than
      going through applyRouteFromUrl, so without this a reloaded ?booking= would keep the address
@@ -4163,7 +4420,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics surface immediately — neither needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }

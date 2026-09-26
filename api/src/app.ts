@@ -40,7 +40,7 @@ import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 import type { JwtVerifier } from './lib/googleAuth';
-import { InMemoryPaymentEventRepo } from './db/paymentEventRepo';
+import { InMemoryPaymentEventRepo, type PaymentEventRepo } from './db/paymentEventRepo';
 import {
   InMemoryPaymentSettlementRepo,
   type PaymentSettlementRepo,
@@ -67,6 +67,9 @@ export interface AppDeps {
   payments?: PaymentRepo;
   refunds?: RefundRepo;
   settlements?: PaymentSettlementRepo;
+  // PayHere's stored notices, for the ops payment lookup. The Postgres settlement repo writes the
+  // same table itself; the in-memory default settlement writes to this one.
+  paymentEvents?: PaymentEventRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
@@ -167,12 +170,14 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
+  const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =
     deps.settlements ??
     new InMemoryPaymentSettlementRepo({
       bookings: bookings as InMemoryBookingRepo,
       payments: payments as InMemoryPaymentRepo,
-      events: new InMemoryPaymentEventRepo(),
+      events: paymentEvents instanceof InMemoryPaymentEventRepo ? paymentEvents : new InMemoryPaymentEventRepo(),
     });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
@@ -517,7 +522,7 @@ export function createApp(deps: AppDeps = {}) {
   }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists, quotes,
+    email, notificationLog, rideLists, quotes, paymentEvents, refunds,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
