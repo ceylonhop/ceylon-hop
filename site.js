@@ -52,11 +52,11 @@
 
   // ---- Header ----
   const NAVLINKS = [
-    ['Routes & prices','trip/'],
-    ['Share a ride','board.html'],
-    ['Plan a trip','plan.html'],
-    ['Tours','tours.html'],
-    ['About','about.html']
+    ['Shared taxi','board.html'],
+    ['Popular routes & prices','trip/'],
+    ['Plan a multi-stop trip','plan.html'],
+    ['Full tours','tours.html'],
+    ['About us','about.html']
   ];
   window.mountHeader = function(active='', onDark=false, showCta=true){
     const host=document.querySelector('[data-header]'); if(!host) return;
