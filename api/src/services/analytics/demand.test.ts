@@ -36,7 +36,7 @@ const range = (fromDays: number, toDays = 0) =>
   ({ from: daysAgo(fromDays), to: daysAgo(toDays), bucket: 'week' as const, now: NOW });
 
 describe('computeDemand', () => {
-  it('counts destination touches once per quote and attributes won value', () => {
+  it('counts final destinations once per quote and attributes won value', () => {
     const rows = [
       mk({ places: ['Kandy', 'Ella', 'Kandy'] }),                        // Kandy touched once
       mk({ places: ['Kandy', 'Yala'], status: 'won', totalCents: 5000 }),
@@ -44,11 +44,11 @@ describe('computeDemand', () => {
     ];
     const r = computeDemand(rows, range(28));
     const kandy = r.topDestinations.find((d) => d.place === 'Kandy')!;
-    expect(kandy.touches).toBe(2);
-    expect(kandy.wonValueCents).toEqual({ USD: 5000 });
-    const ella = r.topDestinations.find((d) => d.place === 'Ella')!;
-    expect(ella.touches).toBe(2);
-    expect(ella.wonValueCents).toEqual({});
+    expect(kandy.count).toBe(1);
+    expect(kandy.wonValueCents).toEqual({});
+    const yala = r.topDestinations.find((d) => d.place === 'Yala')!;
+    expect(yala.count).toBe(1);
+    expect(yala.wonValueCents).toEqual({ USD: 5000 });
   });
 
   it('corridors stay directional with average km', () => {
@@ -60,6 +60,20 @@ describe('computeDemand', () => {
     const r = computeDemand(rows, range(28));
     expect(r.topCorridors.find((c) => c.from === 'Kandy' && c.to === 'Ella')).toMatchObject({ count: 2, avgKm: 120 });
     expect(r.topCorridors.find((c) => c.from === 'Ella' && c.to === 'Kandy')).toMatchObject({ count: 1, avgKm: 120 });
+  });
+
+  it('separates origins from destinations and reports commercial corridor outcomes', () => {
+    const rows = [
+      mk({ places: ['Kandy', 'Ella'], status: 'won', totalCents: 30_000 }),
+      mk({ places: ['Kandy', 'Ella'], status: 'lost', totalCents: 10_000 }),
+      mk({ places: ['Ella', 'Galle'], status: 'won', totalCents: 20_000 }),
+    ];
+    const r = computeDemand(rows, range(28));
+    expect(r.topOrigins[0]).toMatchObject({ place: 'Kandy', count: 2 });
+    expect(r.topDestinations.find((d) => d.place === 'Ella')).toMatchObject({ count: 2 });
+    expect(r.topCorridors.find((c) => c.from === 'Kandy' && c.to === 'Ella')).toMatchObject({
+      count: 2, wins: 1, winRatePct: 50, bookedValueCents: { USD: 30_000 },
+    });
   });
 
   it('service mix includes an explicit unrecorded share; vehicle mix from the column', () => {
