@@ -13,6 +13,8 @@ import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './n
 import { bookingDeepLink } from './opsNotifications';
 import { isTeamEmail } from './testBookings';
 import { personKey, sameTrip } from './duplicateBookings';
+import type { RideListRepo } from '../db/rideListRepo';
+import { cutoffAt, isSeedMember, type Slot } from '../domain/rideList';
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -48,6 +50,11 @@ const UNCONFIRMED_PAID_MS = 15 * 60_000;
 // this alert is the entire mechanism by which anyone finds out. It re-raises every sweep,
 // deduped per refund, until someone resolves the row.
 const STUCK_REFUND_MS = 15 * 60_000;
+// A Ride Board list still `gathering` after its cutoff has not been swept: nobody charged, nobody
+// told whether the van runs. Between a cutoff and the once-a-day sweep that is normal, so page only
+// once departure is this close — late enough that a missed daily run is the only explanation,
+// early enough that ops can still run the job or message the travellers.
+const RIDE_LIST_OVERDUE_BEFORE_DEPARTURE_MS = 12 * 3600_000;
 
 export async function runWatchdog(
   now: Date,
@@ -78,12 +85,15 @@ export async function runWatchdog(
     // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
     // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
     teamEmails?: ReadonlySet<string>;
+    // Ride Board lists. Optional like the rest; without it overdue lists are not swept.
+    rideLists?: RideListRepo;
   },
 ): Promise<{
   stuckPending: number;
   paidUnconfirmed: number;
   recoveryEmails: number;
   stuckRefunds: number;
+  overdueRideLists: number;
 }> {
   const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, alertLog, opsBaseUrl } = deps;
   const teamEmails = deps.teamEmails ?? new Set<string>();
@@ -238,9 +248,42 @@ export async function runWatchdog(
 
   // Footprint. Last, so a sweep that threw halfway leaves no heartbeat — a crashing cron is
   // not a live one, and the liveness alert's wording covers both readings.
+  const overdueRideLists = deps.rideLists ? await sweepOverdueRideLists(now, deps.rideLists, alerts) : 0;
+
   await alertLog?.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, now);
 
-  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
+  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds, overdueRideLists };
+}
+
+// Lists past their cutoff that the cutoff sweep has not processed, departing soon, with at least
+// one real traveller (a seeded-only list affects nobody). Deduped per ride code, so the ~15-min
+// watchdog re-raises one at most once per alert cooldown until the list is swept.
+async function sweepOverdueRideLists(now: Date, rideLists: RideListRepo, alerts: AlertAdapter): Promise<number> {
+  let count = 0;
+  for (const { list, members } of await rideLists.dueForCutoff(now)) {
+    const departure = cutoffAt(list.date, list.slot as Slot, 0);
+    if (departure.getTime() - now.getTime() > RIDE_LIST_OVERDUE_BEFORE_DEPARTURE_MS) continue;
+    const real = members.filter((m) => (m.status === 'held' || m.status === 'charged') && !isSeedMember(m));
+    if (real.length === 0) continue;
+    count++;
+    const hours = Math.round((departure.getTime() - now.getTime()) / 3600_000);
+    await alerts.send({
+      severity: 'critical',
+      kind: 'ride_list_overdue',
+      title: `Ride ${list.code} is past its cutoff and was never locked — departs ${hours >= 0 ? `in ${hours} h` : `${-hours} h ago`}`,
+      body: [
+        `Ride ${list.code} — ${list.fromPlace} → ${list.toPlace} on ${list.date} (${list.slot})`,
+        `Cutoff was ${list.cutoffAt.toISOString()}; the list is still 'gathering', so the cutoff sweep has not run for it:`,
+        `nobody has been charged, and nobody has been told whether the van runs.`,
+        `${real.length} real traveller(s) on it:`,
+        ...real.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s), ${m.status}`),
+        '',
+        `Run the notifications job now (POST /admin/jobs/notifications), or contact them on WhatsApp.`,
+      ].join('\n'),
+      dedupeKey: `ride_list_overdue:${list.code}`,
+    });
+  }
+  return count;
 }
 
 // A booking is money in once it reaches any of these (the lifecycle only moves forward from paid).
