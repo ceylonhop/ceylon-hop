@@ -260,6 +260,31 @@ describe('POST /webhooks/payments', () => {
     await app.request('/webhooks/payments', { method: 'POST', body: failed });
     expect(email.sent).toHaveLength(1); // idempotent — only one nudge
   });
+
+  it('records and emails declines for separate bookings when PayHere reuses payment id zero', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, bookings, payments });
+    const first = await bookAndCheckout(app);
+    const second = await bookAndCheckout(app);
+
+    for (const booking of [first, second]) {
+      const failed = adapter.simulateWebhook({
+        orderId: booking.reference,
+        amount: booking.total,
+        currency: booking.currency,
+        status: 'failed',
+        providerTxnId: '0',
+      });
+      expect((await app.request('/webhooks/payments', { method: 'POST', body: failed })).status).toBe(200);
+    }
+
+    expect((await payments.findByOrderId(first.reference))?.status).toBe('failed');
+    expect((await payments.findByOrderId(second.reference))?.status).toBe('failed');
+    expect(email.sent).toHaveLength(2);
+  });
 });
 
 describe('payment webhook ops alerts (M17)', () => {
@@ -381,6 +406,54 @@ describe('payment webhook ops alerts (M17)', () => {
     const res = await app.request('/webhooks/payments', { method: 'POST', body: reversal });
     expect(res.status).toBe(200);
     expect(alerts.sent.map((a) => a.kind)).toContain('payment_reversed');
+  });
+
+  // PayHere: one order_id can carry several attempts. A decline from an EARLIER attempt landing
+  // after a later attempt was captured is history — not a chargeback, and not worth a page.
+  it('does NOT page "Payment reversed" for a late decline from an earlier attempt', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, alerts, bookings });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, providerTxnId: 'txn_second_try' }),
+    });
+    const late = adapter.simulateWebhook({
+      orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed', providerTxnId: 'txn_first_try',
+    });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: late });
+
+    expect(res.status).toBe(200);
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('payment_reversed');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+  });
+
+  // PayHere does not enforce order_id uniqueness: a second attempt on the same order can also be
+  // captured. The customer paid twice; the alert must name both captures and say which one our
+  // refund tool can't see, instead of the old "captured with no paid-transition" story.
+  it('alerts a DOUBLE CAPTURE naming both payment ids when the same order is captured twice', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, providerTxnId: 'txn_first' }),
+    });
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, providerTxnId: 'txn_second' }),
+    });
+
+    expect(res.status).toBe(200);
+    const kinds = alerts.sent.map((a) => a.kind);
+    expect(kinds).toContain('payment_double_capture');
+    expect(kinds).not.toContain('paid_in_unexpected_status');
+    const alert = alerts.sent.find((a) => a.kind === 'payment_double_capture')!;
+    expect(alert.body).toContain('txn_first');
+    expect(alert.body).toContain('txn_second');
   });
 
   it('alerts when a payment settles for a booking no longer in payment_pending (money with nowhere to go)', async () => {

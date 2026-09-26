@@ -643,6 +643,43 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  it('records PayHere payment id zero declines independently for different payments', async () => {
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    const created = [];
+    for (const suffix of ['first', 'second']) {
+      const booking = await bookings.create(sample);
+      await bookings.setStatus(booking.id, 'payment_pending');
+      const payment = await payments.create({
+        bookingId: booking.id,
+        provider: 'payhere',
+        orderId: booking.reference,
+        amount: booking.total,
+        currency: booking.currency,
+        idempotencyKey: `zero-decline-${suffix}-${booking.id}`,
+      });
+      created.push({ booking, payment });
+    }
+
+    for (const { booking, payment } of created) {
+      const outcome = await settlement.acceptVerifiedEvent({
+        provider: 'payhere',
+        merchantId: '1234567',
+        orderId: booking.reference,
+        providerTxnId: '0',
+        amountCents: payment.amount,
+        currency: payment.currency,
+        status: 'failed',
+        providerStatusCode: '-2',
+        receivedAt: new Date(),
+        payloadSha256: payment.id.replaceAll('-', '').padEnd(64, '0').slice(0, 64),
+        sanitizedPayload: { order_id: booking.reference, payment_id: '0', status_code: '-2' },
+      });
+      expect(outcome.kind).toBe('failed');
+      expect((await payments.findByOrderId(booking.reference))?.status).toBe('failed');
+      expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(1);
+    }
+  });
+
   // The ordering the webhook used to commit silently: ops settles the booking in cash, then the
   // gateway notify lands. The write must survive (both amounts are genuinely captured, and
   // refundRepo sums succeeded payments), but it must not pass as an ordinary settlement.
@@ -688,6 +725,73 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await paymentEvents.listForReconciliation(gateway.id)).toHaveLength(1);
     expect((await bookings.get(booking.id))?.status).toBe('paid');
     expect(await payments.hasManualSettlement(booking.id)).toBe(true);
+  });
+
+  // PayHere allows several attempts per order_id, each with its own payment_id and status, and
+  // does not enforce order_id uniqueness — so a late decline from an earlier attempt and a second
+  // capture on the same order are both real orderings. Neither may rewrite the recorded capture.
+  async function settledGatewayOrder(tag: string) {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `${tag}-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      // Unique per run: (provider, gateway_payment_id) is UNIQUE, and the test DB persists.
+      providerTxnId: `PAY-FIRST-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: '1'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    expect((await settlement.acceptVerifiedEvent(event)).kind).toBe('settled');
+    return { booking, payment, event, settlement };
+  }
+
+  it('treats a late decline from an earlier attempt on a settled order as a stale attempt', async () => {
+    const { booking, payment, event, settlement } = await settledGatewayOrder('stale');
+
+    const late = await settlement.acceptVerifiedEvent({
+      ...event,
+      providerTxnId: `PAY-EARLIER-${payment.id}`,
+      status: 'failed' as const,
+      providerStatusCode: '-2',
+      payloadSha256: '2'.repeat(64),
+    });
+
+    expect(late.kind).toBe('stale_attempt');
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('succeeded');
+    expect(await payments.gatewayPaymentIdFor(payment.id)).toBe(event.providerTxnId);
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
+  });
+
+  it('reports a second capture on the same order as a double capture and keeps the first capture id', async () => {
+    const { booking, payment, event, settlement } = await settledGatewayOrder('second');
+
+    const second = await settlement.acceptVerifiedEvent({
+      ...event,
+      providerTxnId: `PAY-SECOND-${payment.id}`,
+      payloadSha256: '3'.repeat(64),
+    });
+
+    expect(second.kind).toBe('double_capture');
+    expect(second).toMatchObject({ firstCaptureTxnId: event.providerTxnId });
+    expect(await payments.gatewayPaymentIdFor(payment.id)).toBe(event.providerTxnId);
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
   });
 
   it('persists a quote with JSONB request/result and patches its status', async () => {
