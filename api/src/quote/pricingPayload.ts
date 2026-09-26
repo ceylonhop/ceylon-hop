@@ -1,8 +1,9 @@
 // The canonical set of prices the static front-end is allowed to know. `tools/generate-pricing.mjs`
-// dumps this (via scripts/dump-pricing.ts) and injects the values into transfers-data.js / routes-data.js
-// so the front-end never hand-copies a price. Cents -> whole USD conversion happens here, once, at the
+// dumps it from the CODE card (scripts/dump-pricing.ts) as the site's offline fallback, and
+// GET /quote/pricing serves it from the LIVE card (spec 2026-09-26) so the site follows the
+// founder's saved rates on page load. Either way the front-end never hand-copies a price. Cents -> whole USD conversion happens here, once, at the
 // boundary — the backend stays in integer minor units.
-import { RATE_CARD } from './rateCard';
+import { RATE_CARD, type RateCard } from './rateCard';
 import { DEFAULT_CORRIDORS, SHARED_PRODUCTS } from '../db/departureRepo';
 import { SEATS_COVERING_VAN } from './seatPrice';
 
@@ -37,27 +38,29 @@ export type PricingPayload = {
 
 const usd = (cents: number) => cents / 100;
 
-export function buildPricingPayload(): PricingPayload {
+export function buildPricingPayload(card: RateCard = RATE_CARD): PricingPayload {
   const extras: Record<string, number> = {};
-  for (const [code, cents] of Object.entries(RATE_CARD.extras)) extras[code] = usd(cents);
+  for (const [code, cents] of Object.entries(card.extras)) extras[code] = usd(cents);
 
   const corridorSeat: Record<string, number> = {};
   for (const cor of DEFAULT_CORRIDORS) corridorSeat[cor.id] = usd(cor.seatPrice);
 
   return {
-    perKm: { car: usd(RATE_CARD.perKmCents.car), van: usd(RATE_CARD.perKmCents.van) },
-    floors: { car: usd(RATE_CARD.floorCents.car), van: usd(RATE_CARD.floorCents.van) },
-    bufferPct: RATE_CARD.bufferPct,
-    priceFinishing: RATE_CARD.priceFinishing,
-    chauffeurDayFee: usd(RATE_CARD.chauffeur.dayRateCents),
-    chauffeurIdleMinKm: { car: RATE_CARD.chauffeur.idleMinKm.car, van: RATE_CARD.chauffeur.idleMinKm.van },
-    depositPct: RATE_CARD.deposit.pct / 100,
-    depositCap: usd(RATE_CARD.deposit.capCents),
+    perKm: { car: usd(card.perKmCents.car), van: usd(card.perKmCents.van) },
+    floors: { car: usd(card.floorCents.car), van: usd(card.floorCents.van) },
+    bufferPct: card.bufferPct,
+    // Not founder-editable, so a live card always carries the code card's rule; `?:` on RateCard is
+    // only for old locked snapshots.
+    priceFinishing: card.priceFinishing ?? RATE_CARD.priceFinishing,
+    chauffeurDayFee: usd(card.chauffeur.dayRateCents),
+    chauffeurIdleMinKm: { car: card.chauffeur.idleMinKm.car, van: card.chauffeur.idleMinKm.van },
+    depositPct: card.deposit.pct / 100,
+    depositCap: usd(card.deposit.capCents),
     extras,
     corridorSeat,
     seatPricing: {
-      perKmCentsVan: RATE_CARD.perKmCents.van,
-      floorCentsVan: RATE_CARD.floorCents.van,
+      perKmCentsVan: card.perKmCents.van,
+      floorCentsVan: card.floorCents.van,
       seatsCoveringVan: SEATS_COVERING_VAN,
     },
     sharedProducts: SHARED_PRODUCTS.map((p) => ({

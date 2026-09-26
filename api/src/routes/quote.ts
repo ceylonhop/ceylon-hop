@@ -12,6 +12,7 @@ import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { liveRateCard } from '../quote/liveCard';
+import { buildPricingPayload } from '../quote/pricingPayload';
 import { stripZoneMeta } from '../quote/stripZoneMeta';
 import {
   WebQuoteIntentSchema,
@@ -184,6 +185,17 @@ export function quoteRoutes(deps: {
   }
 
   const r = new Hono();
+
+  // The live customer price list (spec 2026-09-26 §8.4): the same sell-side numbers the site bakes
+  // into transfers-data.js, from the live card, so a founder rate change reaches every page that
+  // prices from that copy on its next load. Public by design — never costs or markup. A 60s cache
+  // keeps page views off the database. Not gated on QUOTE_V2_ENABLED: it is a read of the rates,
+  // not an estimate.
+  r.get('/pricing', async (c) => {
+    const card = await liveCard();
+    return c.json(buildPricingPayload(card), 200, { 'cache-control': 'public, max-age=60' });
+  });
+
   r.post('/', async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = QuoteSchema.safeParse(body);
