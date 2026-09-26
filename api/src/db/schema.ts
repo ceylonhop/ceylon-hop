@@ -227,7 +227,8 @@ export const paymentEvents = pgTable(
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
   },
   (t) => [
-    unique('payment_events_provider_txn_status_unique').on(
+    unique('payment_events_payment_provider_txn_status_unique').on(
+      t.paymentId,
       t.provider,
       t.providerTxnId,
       t.providerStatusCode,

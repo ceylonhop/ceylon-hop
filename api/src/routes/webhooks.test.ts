@@ -260,6 +260,31 @@ describe('POST /webhooks/payments', () => {
     await app.request('/webhooks/payments', { method: 'POST', body: failed });
     expect(email.sent).toHaveLength(1); // idempotent — only one nudge
   });
+
+  it('records and emails declines for separate bookings when PayHere reuses payment id zero', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, bookings, payments });
+    const first = await bookAndCheckout(app);
+    const second = await bookAndCheckout(app);
+
+    for (const booking of [first, second]) {
+      const failed = adapter.simulateWebhook({
+        orderId: booking.reference,
+        amount: booking.total,
+        currency: booking.currency,
+        status: 'failed',
+        providerTxnId: '0',
+      });
+      expect((await app.request('/webhooks/payments', { method: 'POST', body: failed })).status).toBe(200);
+    }
+
+    expect((await payments.findByOrderId(first.reference))?.status).toBe('failed');
+    expect((await payments.findByOrderId(second.reference))?.status).toBe('failed');
+    expect(email.sent).toHaveLength(2);
+  });
 });
 
 describe('payment webhook ops alerts (M17)', () => {

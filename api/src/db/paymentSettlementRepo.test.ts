@@ -95,6 +95,58 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
   });
 
+  it('fails two different payments that share PayHere\'s zero decline transaction id', async () => {
+    const f = await fixture();
+    const secondBooking = await f.bookings.create({
+      mode: 'single',
+      input: {
+        from: 'Kandy',
+        to: 'Colombo',
+        vehicleType: 'car',
+        adults: 1,
+        children: 0,
+        bags: 1,
+        customer: {
+          firstName: 'Nimal',
+          lastName: 'Perera',
+          email: 'nimal@example.com',
+          whatsapp: '+94771111111',
+          country: 'Sri Lanka',
+        },
+      },
+      total: 4_000,
+      amountDueNow: 4_000,
+      currency: 'USD',
+    });
+    await f.bookings.setStatus(secondBooking.id, 'payment_pending');
+    const secondPayment = await f.payments.create({
+      bookingId: secondBooking.id,
+      provider: 'payhere',
+      orderId: secondBooking.reference,
+      amount: secondBooking.total,
+      currency: secondBooking.currency,
+      idempotencyKey: `checkout-${secondBooking.id}`,
+    });
+    const decline = {
+      ...f.event,
+      providerTxnId: '0',
+      providerStatusCode: '-2',
+      status: 'failed' as const,
+      sanitizedPayload: { ...f.event.sanitizedPayload, payment_id: '0', status_code: '-2' },
+    };
+    const repo = new InMemoryPaymentSettlementRepo(f);
+
+    const first = await repo.acceptVerifiedEvent(decline);
+    const second = await repo.acceptVerifiedEvent({ ...decline, orderId: secondBooking.reference });
+
+    expect(first.kind).toBe('failed');
+    expect(second.kind).toBe('failed');
+    expect((await f.payments.findByOrderId(f.booking.reference))?.status).toBe('failed');
+    expect((await f.payments.findByOrderId(secondBooking.reference))?.status).toBe('failed');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(1);
+    expect(await f.events.listForReconciliation(secondPayment.id)).toHaveLength(1);
+  });
+
   it('rejects amount or currency mismatch without writing evidence or state', async () => {
     const f = await fixture();
     const repo = new InMemoryPaymentSettlementRepo(f);

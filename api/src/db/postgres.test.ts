@@ -643,6 +643,43 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  it('records PayHere payment id zero declines independently for different payments', async () => {
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    const created = [];
+    for (const suffix of ['first', 'second']) {
+      const booking = await bookings.create(sample);
+      await bookings.setStatus(booking.id, 'payment_pending');
+      const payment = await payments.create({
+        bookingId: booking.id,
+        provider: 'payhere',
+        orderId: booking.reference,
+        amount: booking.total,
+        currency: booking.currency,
+        idempotencyKey: `zero-decline-${suffix}-${booking.id}`,
+      });
+      created.push({ booking, payment });
+    }
+
+    for (const { booking, payment } of created) {
+      const outcome = await settlement.acceptVerifiedEvent({
+        provider: 'payhere',
+        merchantId: '1234567',
+        orderId: booking.reference,
+        providerTxnId: '0',
+        amountCents: payment.amount,
+        currency: payment.currency,
+        status: 'failed',
+        providerStatusCode: '-2',
+        receivedAt: new Date(),
+        payloadSha256: payment.id.replaceAll('-', '').padEnd(64, '0').slice(0, 64),
+        sanitizedPayload: { order_id: booking.reference, payment_id: '0', status_code: '-2' },
+      });
+      expect(outcome.kind).toBe('failed');
+      expect((await payments.findByOrderId(booking.reference))?.status).toBe('failed');
+      expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(1);
+    }
+  });
+
   // The ordering the webhook used to commit silently: ops settles the booking in cash, then the
   // gateway notify lands. The write must survive (both amounts are genuinely captured, and
   // refundRepo sums succeeded payments), but it must not pass as an ordinary settlement.

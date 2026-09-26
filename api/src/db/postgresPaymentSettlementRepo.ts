@@ -71,6 +71,7 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         })
         .onConflictDoNothing({
           target: [
+            paymentEvents.paymentId,
             paymentEvents.provider,
             paymentEvents.providerTxnId,
             paymentEvents.providerStatusCode,
