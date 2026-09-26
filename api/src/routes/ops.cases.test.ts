@@ -140,8 +140,9 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     expect(body.booking).toMatchObject({ status: 'paid', inQueue: true });
     expect(body.verdict).toMatchObject({ kind: 'paid', checkouts: 1, declineNotices: 0, payhere: { code: '2' }, warnings: [] });
     const kinds = body.timeline.map((r: { source: string; kind: string; action?: string }) => `${r.source}:${r.kind}${r.action ? ':' + r.action : ''}`);
-    expect(kinds).toEqual(expect.arrayContaining(['bookings:created', 'booking_checkout_event:log:create', 'booking_checkout_event:log:checkout', 'payments:payment_created', 'payment_events:notice']));
+    expect(kinds).toEqual(expect.arrayContaining(['booking_checkout_event:log:create', 'booking_checkout_event:log:checkout', 'payments:payment_created', 'payment_events:notice']));
     expect(kinds).not.toContain('booking_checkout_event:log:webhook');
+    expect(kinds).not.toContain('bookings:created'); // the log's create row already says it
   });
 
   it('never hands out links, tokens or raw payload fingerprints', async () => {

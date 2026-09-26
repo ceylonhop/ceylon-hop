@@ -299,7 +299,11 @@ export function caseTimeline(e: CaseEvidence): CaseRow[] {
   const b = e.booking;
   const m = moneyOf(e);
 
-  push(b.createdAt, { at: b.createdAt.toISOString(), source: 'bookings', kind: 'created' });
+  // Once: the log's own create row says the same thing and carries the device. Pay-link and
+  // ops-made bookings log no create, so the booking's timestamp stands in for them.
+  if (!e.log.some((r) => r.action === 'create' && r.outcome === 'succeeded' && r.bookingId === b.id)) {
+    push(b.createdAt, { at: b.createdAt.toISOString(), source: 'bookings', kind: 'created' });
+  }
   if (b.cancelledAt) {
     const auto = b.cancelledBy === DUPLICATE_CLOSE_ACTOR;
     push(b.cancelledAt, {

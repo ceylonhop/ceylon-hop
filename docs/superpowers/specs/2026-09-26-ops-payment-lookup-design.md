@@ -185,7 +185,8 @@ load <sources>", and the timeline shows what did load.
 All rows are merged into one list, oldest first. Each shows local time to the second, with the
 UTC timestamp on hover for matching against PayHere's dashboard and Clarity.
 
-- **Booking** — created. Cancelled: who, why, when. Auto-closed as a duplicate.
+- **Booking** — created (once: when the checkout log has the create row, that row stands for it).
+  Cancelled: who, why, when. Auto-closed as a duplicate.
 - **Checkout log:**
   - Rows are worded with the drawer's existing labels (`paLabel` in `ops-ui.html`), so the drawer
     and this page never disagree.

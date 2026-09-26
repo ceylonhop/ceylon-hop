@@ -113,7 +113,9 @@ type CaseRow =
 ```
 
 **Row rules**
-- `created` comes from `bookings.created_at`. `cancelled` comes from `cancelled_at`, and
+- `created` comes from `bookings.created_at`, and is left out when the checkout log has this
+  booking's `create/succeeded` row (which says the same and carries the device). `cancelled`
+  comes from `cancelled_at`, and
   `paidOn` is parsed with `/paid on (CH-[A-Z0-9]+)/`.
 - **Log rows:**
   - Every checkout-log row matched by `booking_id` or `order_id`, **except** webhook rows with

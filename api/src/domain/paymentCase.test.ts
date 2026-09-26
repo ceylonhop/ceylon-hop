@@ -346,6 +346,14 @@ describe('caseTimeline', () => {
     expect(rows.find((r) => r.kind === 'log' && r.action === 'gateway')).toMatchObject({ client: true, ua: 'iPhone Safari', orderMatchOnly: false });
   });
 
+  it('shows the booking’s creation once: the log’s create row (it carries the device) replaces the bare one', () => {
+    const withCreate = evidence({ log: [log('create', 'succeeded', T('09:00:00'), { httpStatus: 201, ua: 'iPhone Safari' })] });
+    const created = caseTimeline(withCreate).filter((r) => r.kind === 'created' || (r.kind === 'log' && r.action === 'create'));
+    expect(created).toEqual([expect.objectContaining({ kind: 'log', action: 'create', ua: 'iPhone Safari' })]);
+    // A pay-link or ops-made booking has no create row: the booking's own timestamp stands in.
+    expect(caseTimeline(evidence()).map((r) => r.kind)).toEqual(['created']);
+  });
+
   it('lists the webhook rows when the notices could not be loaded', () => {
     const e = paidByCard();
     e.notices = [];
