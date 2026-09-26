@@ -11,6 +11,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PostgresRideBoardEventRepo } from './db/postgresRideBoardEventRepo';
 import { PostgresBookingCheckoutEventRepo } from './db/postgresBookingCheckoutEventRepo';
+import { PostgresPaymentEventRepo } from './db/postgresPaymentEventRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { PayHereTokenizedPaymentAdapter } from './adapters/payhereTokenized';
@@ -32,6 +33,7 @@ import { initTracking } from './observability/track';
 import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './db/postgresRefundRepo';
+import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 
@@ -135,10 +137,13 @@ const app = createApp({
   rideLists: new PostgresRideListRepo(sql),
   rideBoardEvents: new PostgresRideBoardEventRepo(db),
   checkoutEvents: new PostgresBookingCheckoutEventRepo(db),
+  // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
+  paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
+  analyticsData: new PostgresAnalyticsDataRepo(sql),
   // Founder manual discounts. WITHOUT this line app.ts falls back to the in-memory repo, and the
   // failure is silent and confusing: PostgresQuoteRepo.update still writes the row inside the save
   // transaction, so the discount really is in Postgres — but every READ goes to an empty object.

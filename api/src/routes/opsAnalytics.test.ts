@@ -32,7 +32,7 @@ describe('/admin/ops/analytics', () => {
     app.request(path, email ? { headers: { cookie: await cookie(email) } } : undefined);
 
   it('401 without a session, 403 for ops and finance, 403 for x-admin-key (system)', async () => {
-    for (const path of ['/admin/ops/analytics/funnel', '/admin/ops/analytics/demand']) {
+    for (const path of ['/admin/ops/analytics/overview', '/admin/ops/analytics/funnel', '/admin/ops/analytics/demand']) {
       expect((await app.request(path)).status).toBe(401);
       expect((await get(path, 'op@x.com')).status).toBe(403);
       expect((await get(path, 'fin@x.com')).status).toBe(403);
@@ -57,6 +57,16 @@ describe('/admin/ops/analytics', () => {
     expect(body.truncated).toBe(false);
   });
 
+  it('founder gets the business overview with an explicit clean-data count', async () => {
+    const res = await get('/admin/ops/analytics/overview', 'founder@x.com');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tiles.netCollected).toEqual({});
+    expect(body.paymentFunnel.started).toBe(0);
+    expect(body.excluded).toEqual({ teamBookings: 0, teamQuoteContacts: 0, seedRideLists: 0, teamRideMembers: 0 });
+    expect(body.updatedAt).toBeTruthy();
+  });
+
   it('founder gets a demand report with coverage', async () => {
     await quotes.save({
       product: 'private', totalCents: 10000, currency: 'USD', rateCardVersion: 'v1', requestedService: 'private',
@@ -67,8 +77,8 @@ describe('/admin/ops/analytics', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.coverage).toEqual({ parsed: 1, total: 1 });
-    // Equal touch counts tiebreak alphabetically (deterministic ordering).
-    expect(body.topDestinations.map((d: { place: string }) => d.place)).toEqual(['Ella', 'Kandy']);
+    expect(body.topOrigins.map((d: { place: string }) => d.place)).toEqual(['Kandy']);
+    expect(body.topDestinations.map((d: { place: string }) => d.place)).toEqual(['Ella']);
     expect(body.truncated).toBe(false);
   });
 

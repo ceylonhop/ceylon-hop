@@ -40,7 +40,7 @@ import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 import type { JwtVerifier } from './lib/googleAuth';
-import { InMemoryPaymentEventRepo } from './db/paymentEventRepo';
+import { InMemoryPaymentEventRepo, type PaymentEventRepo } from './db/paymentEventRepo';
 import {
   InMemoryPaymentSettlementRepo,
   type PaymentSettlementRepo,
@@ -60,12 +60,16 @@ import {
 import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
+import type { AnalyticsDataRepo } from './db/analyticsDataRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
   refunds?: RefundRepo;
   settlements?: PaymentSettlementRepo;
+  // PayHere's stored notices, for the ops payment lookup. The Postgres settlement repo writes the
+  // same table itself; the in-memory default settlement writes to this one.
+  paymentEvents?: PaymentEventRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
@@ -83,6 +87,8 @@ export interface AppDeps {
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
+  /** Cross-product founder analytics (bookings, payments, refunds, upcoming and Ride Board). */
+  analyticsData?: AnalyticsDataRepo;
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
   placeResolutions?: PlaceResolutionRepo;
@@ -164,12 +170,14 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
+  const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =
     deps.settlements ??
     new InMemoryPaymentSettlementRepo({
       bookings: bookings as InMemoryBookingRepo,
       payments: payments as InMemoryPaymentRepo,
-      events: new InMemoryPaymentEventRepo(),
+      events: paymentEvents instanceof InMemoryPaymentEventRepo ? paymentEvents : new InMemoryPaymentEventRepo(),
     });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
@@ -508,10 +516,13 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
-  app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
+  app.route('/admin/ops/analytics', opsAnalyticsRoutes({
+    quotes, auth: opsAuthCfg, data: deps.analyticsData,
+    teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+  }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists, quotes,
+    email, notificationLog, rideLists, quotes, paymentEvents, refunds,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,

@@ -169,6 +169,9 @@ export interface BookingRepo {
   reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
+  // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
+  // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
+  findByReference(reference: string): Promise<Booking | null>;
   // `audit` records WHY, for the transitions where that matters. Optional so the many
   // non-cancelling callers are untouched; the cancel route always supplies it.
   setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
@@ -304,6 +307,11 @@ export class InMemoryBookingRepo implements BookingRepo {
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
     const id = this.byKey.get(key);
     return id ? (this.byId.get(id) ?? null) : null;
+  }
+
+  async findByReference(reference: string): Promise<Booking | null> {
+    for (const b of this.byId.values()) if (b.reference === reference) return b;
+    return null;
   }
 
   async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
