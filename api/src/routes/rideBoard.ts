@@ -9,6 +9,8 @@ import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
 import type { MapsAdapter } from '../adapters/maps';
 import { seatPriceForDistance } from '../quote/seatPrice';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
+import { currentRateCard } from '../quote/liveCard';
 import { logEvent } from '../observability/events';
 import { verifyGoogleIdToken } from '../lib/googleAuth';
 import {
@@ -147,10 +149,14 @@ export interface RideBoardDeps {
   opsNotify?: { to: string; opsBaseUrl?: string };
   // Attempt log (db/rideBoardEventRepo.ts). Unset → nothing is recorded.
   events?: RideBoardEventRepo;
+  // Founder rate revisions (spec 2026-09-26 §8.3): an off-catalogue seat is priced off the live van
+  // rate. Unset → an empty repo → the code card, exactly as before.
+  rateRevisions?: RateRevisionRepo;
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
   const r = new Hono();
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
 
   // A traveller who adds their name has a card preapproved against a ride that may never
   // run. Before this they were told nothing: no record of the pledge, no amount, no
@@ -550,7 +556,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
           503,
         );
       }
-      seatPrice = seatPriceForDistance(distance.km);
+      seatPrice = seatPriceForDistance(distance.km, await currentRateCard(revisionsRepo));
     }
     const list = await deps.rideLists.createList({
       corridorId: corridor.id,

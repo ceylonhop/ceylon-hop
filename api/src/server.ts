@@ -25,6 +25,7 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresRateRevisionRepo } from './db/postgresRateRevisionRepo';
 import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
@@ -152,6 +153,9 @@ const app = createApp({
   quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
+  // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
+  // in-memory repo: every save from the Rates page would vanish on restart.
+  rateRevisions: new PostgresRateRevisionRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),
   shortLinks: new PostgresCustomerShortLinkRepo(db),
   // Promo codes. WITHOUT this line app.ts falls back to an empty in-memory repo: every code a founder

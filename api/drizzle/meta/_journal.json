@@ -400,6 +400,13 @@
       "when": 1790409600000,
       "tag": "0056_payment_event_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1790496000000,
+      "tag": "0057_rate_card_revisions",
+      "breakpoints": true
     }
   ]
 }

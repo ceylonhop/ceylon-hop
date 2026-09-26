@@ -10,7 +10,9 @@ import { isCatalogTown } from '../adapters/maps';
 import { memoizeDistance } from './bookings';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { liveRateCard } from '../quote/liveCard';
+import { buildPricingPayload } from '../quote/pricingPayload';
 import { stripZoneMeta } from '../quote/stripZoneMeta';
 import {
   WebQuoteIntentSchema,
@@ -153,6 +155,7 @@ export function quoteRoutes(deps: {
   v2Enabled?: boolean;
   now?: () => Date;
   zones?: ZonesRepo;
+  rateRevisions?: RateRevisionRepo;
   promoCodes?: PromoCodeRepo;
   bookings?: BookingRepo; // read-only here: the preview counts uses, it never takes one
   promoCodesEnabled?: boolean;
@@ -160,7 +163,9 @@ export function quoteRoutes(deps: {
 } = {}) {
   // No repo injected => an empty in-memory one => zero active zones => pricing identical to today.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
-  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+  // No revisions repo injected ⇒ an empty one ⇒ the code card (spec 2026-09-26 §8.2).
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo, revisionsRepo);
 
   // §6.4 — resolve a code for a PREVIEW. A plain read with no lock: it can say "used up", but a code
   // that previews fine can still be taken by someone else before the customer books.
@@ -180,6 +185,17 @@ export function quoteRoutes(deps: {
   }
 
   const r = new Hono();
+
+  // The live customer price list (spec 2026-09-26 §8.4): the same sell-side numbers the site bakes
+  // into transfers-data.js, from the live card, so a founder rate change reaches every page that
+  // prices from that copy on its next load. Public by design — never costs or markup. A 60s cache
+  // keeps page views off the database. Not gated on QUOTE_V2_ENABLED: it is a read of the rates,
+  // not an estimate.
+  r.get('/pricing', async (c) => {
+    const card = await liveCard();
+    return c.json(buildPricingPayload(card), 200, { 'cache-control': 'public, max-age=60' });
+  });
+
   r.post('/', async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = QuoteSchema.safeParse(body);
