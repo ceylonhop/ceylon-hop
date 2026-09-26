@@ -40,7 +40,7 @@ import {
   signCheckoutToken,
   signPayReturnToken,
   verifyBookingToken,
-  verifyPayReturnToken,
+  verifyPayReturnLeg,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
 import {
@@ -755,21 +755,30 @@ function invalidRequest(error: ZodError) {
   // manage.html's purchase gate needs (a sandbox settlement must never become GA4 revenue) and
   // which the return leg cannot see for itself — it never sees the checkout URL.
   r.get('/pay-return', async (c) => {
-    const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
-    if (!id) return c.json({ error: 'invalid_link' }, 401);
-    const booking = await deps.bookings.get(id);
+    const token = verifyPayReturnLeg(c.req.query('rt'), deps.linkSecret);
+    if (!token) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(token.bookingId);
     if (!booking) return c.json({ error: 'not_found' }, 404);
     const rows = await payments.findByBookingId(booking.id);
     // A settled payment is the answer whatever else is on the booking — including the ops
     // lifecycle mirror having moved it on. Only then a terminal failure; anything else is
     // still in flight.
+    //
+    // A decline is terminal ONLY on the cancel leg (2026-09-26). Since #792 declines are recorded,
+    // and PayHere lets the payer retry — on its own page or ours — so a `failed` row can belong to
+    // an earlier attempt while the latest was approved. The return leg is where PayHere sends an
+    // APPROVED payer; answering `failed` there before the approval's notify settles would tell
+    // someone who just paid "no charge was made — try again", and PayHere takes a second payment
+    // on the same order. So the return leg stays `pending` until the money lands; if it never
+    // does, the page's poll budget runs out into its own "we haven't heard back from your bank".
     const status = rows.some((p) => p.status === 'succeeded')
       ? 'paid'
-      : rows.some((p) => p.status === 'failed')
+      : token.leg === 'cancel' && rows.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
     // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
-    if (returnSeen.first(`${booking.id}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
+    // `reason` records the leg: which of PayHere's two links the payer came back on.
+    if (returnSeen.first(`${booking.id}:${token.leg}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, reason: token.leg, httpStatus: 200, bookingId: booking.id,
       reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
     return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
   });
@@ -888,13 +897,17 @@ function invalidRequest(error: ZodError) {
     const returnUrls =
       body?.returnTo === 'pay-link' && deps.payBaseUrl
         ? (() => {
-            const rt = signPayReturnToken(booking.id, deps.linkSecret);
-            const base = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=${encodeURIComponent(rt)}`;
+            const page = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=`;
             // Both legs land on the SAME page. PayHere documents return_url for an approved
             // payment and cancel_url for a customer-cancelled one, but says nothing about where
             // a DECLINED payment goes — so neither URL may be the only one that works. The page
             // polls our own settlement state either way; `c=1` is a display hint, never truth.
-            return { returnUrl: base, cancelUrl: `${base}&c=1` };
+            // Each leg carries its own token, so pay-return knows which one the payer used (only
+            // the cancel leg may call a decline final — see GET /pay-return).
+            return {
+              returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
+              cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+            };
           })()
         : body?.returnTo === 'manage' && deps.manageBaseUrl
           ? (() => {
@@ -906,9 +919,11 @@ function invalidRequest(error: ZodError) {
               // (spec §D4), and `t` can view this booking and start its payment. The page keeps
               // `t` in the tab's sessionStorage across the round trip instead (manageToken below,
               // for the website, which has none of its own). Same two-legs rule as above.
-              const rt = signPayReturnToken(booking.id, deps.linkSecret);
-              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=${encodeURIComponent(rt)}`;
-              return { returnUrl: base, cancelUrl: `${base}&c=1` };
+              const page = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=`;
+              return {
+                returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
+                cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+              };
             })()
           : {};
     // The website checkout (booking.js) arrives with only a checkout token, so a manage return

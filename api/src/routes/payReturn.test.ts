@@ -85,8 +85,10 @@ describe('GET /bookings/pay-return', () => {
     expect(await res.json()).toMatchObject({ status: 'paid' });
   });
 
-  // A decline must not read as "still confirming" forever — that is the whole of D6.
-  it('reports failed when the attempt was declined', async () => {
+  // A decline must not read as "still confirming" forever — that is the whole of D6. Since
+  // 2026-09-26 that is the CANCEL leg's answer only (see the leg tests below): on the return leg a
+  // decline may belong to an earlier attempt, so it keeps "confirming".
+  it('reports failed when the attempt was declined (cancel leg)', async () => {
     const adapter = new FakePaymentAdapter();
     const app = createApp({ adapter });
     const b = await book(app);
@@ -99,7 +101,7 @@ describe('GET /bookings/pay-return', () => {
       method: 'POST',
       body: adapter.simulateWebhook({ orderId: b.reference, amount: co.amount, currency: co.currency, status: 'failed' }),
     });
-    const res = await ret(app, signPayReturnToken(b.id, SECRET));
+    const res = await ret(app, signPayReturnToken(b.id, SECRET, 'cancel'));
     expect(await res.json()).toMatchObject({ status: 'failed' });
   });
 
@@ -129,5 +131,83 @@ describe('GET /bookings/pay-return', () => {
       const body = await (await ret(app, signPayReturnToken(b.id, SECRET))).json();
       expect(body.sandbox).toBe(sandbox);
     });
+  });
+});
+
+// Since #792, a PayHere decline is recorded and moves the payment to `failed`. PayHere lets the
+// payer retry on its own page ("Try Again") and our pages let them retry too, so a `failed` row
+// can belong to an EARLIER attempt while the latest one was approved. If the browser lands back
+// before the approval's notify is settled, answering `failed` makes the page say "no charge was
+// made — try again below" to someone who just paid, and PayHere accepts a second payment on the
+// same order. PayHere sends the payer to return_url after an approval and to cancel_url after a
+// cancel ("Back to Site"), so only the cancel leg may call a decline final; the return leg keeps
+// "confirming" until the money lands or the page's own poll budget runs out.
+describe('GET /bookings/pay-return: a decline is only final on the cancel leg', () => {
+  const SITE = 'https://site.example.com';
+  const PAY = 'https://pay.example.com';
+  const payhere = () => new PayHerePaymentAdapter('1211149', 'secret', {
+    mode: 'sandbox',
+    notifyUrl: 'https://api.example.com/webhooks/payments',
+    returnUrl: 'https://default.example.com/booking.html',
+    cancelUrl: 'https://default.example.com/booking.html?cancelled=1',
+  });
+  const notify = (app: ReturnType<typeof createApp>, body: string) =>
+    app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+  const rtOf = (url: string) => new URL(url).searchParams.get('rt') as string;
+
+  async function checkedOut(returnTo: 'manage' | 'pay-link') {
+    const adapter = payhere();
+    const app = createApp({ adapter, bookingBaseUrl: SITE, payBaseUrl: PAY });
+    const b = await book(app);
+    const co = await (await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ returnTo }),
+    })).json() as { fields: Record<string, string> };
+    return { app, adapter, b, returnRt: rtOf(co.fields.return_url), cancelRt: rtOf(co.fields.cancel_url) };
+  }
+  // PayHere's real decline shape: status -2 with payment_id "0" (no payment was created).
+  const decline = (adapter: PayHerePaymentAdapter, b: { reference: string; total: number; currency: string }) =>
+    adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency, statusCode: '-2', paymentId: '0' });
+
+  for (const returnTo of ['manage', 'pay-link'] as const) {
+    describe(`${returnTo} checkout`, () => {
+      it('gives the return leg and the cancel leg different tokens', async () => {
+        const { returnRt, cancelRt } = await checkedOut(returnTo);
+        expect(returnRt).not.toBe(cancelRt);
+      });
+
+      it('answers `failed` on the cancel leg after a decline', async () => {
+        const { app, adapter, b, cancelRt } = await checkedOut(returnTo);
+        await notify(app, decline(adapter, b));
+        expect(await (await ret(app, cancelRt)).json()).toMatchObject({ status: 'failed' });
+      });
+
+      it('keeps the return leg at `pending` after a decline: the latest attempt may have been approved', async () => {
+        const { app, adapter, b, returnRt } = await checkedOut(returnTo);
+        await notify(app, decline(adapter, b));
+        expect(await (await ret(app, returnRt)).json()).toMatchObject({ status: 'pending' });
+      });
+
+      it('answers `paid` on both legs once a retry succeeds', async () => {
+        const { app, adapter, b, returnRt, cancelRt } = await checkedOut(returnTo);
+        await notify(app, decline(adapter, b));
+        await notify(app, adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency, paymentId: '320000000001' }));
+        expect(await (await ret(app, returnRt)).json()).toMatchObject({ status: 'paid' });
+        expect(await (await ret(app, cancelRt)).json()).toMatchObject({ status: 'paid' });
+      });
+    });
+  }
+
+  // Tokens minted before this change are the return-leg format, so a payer mid-checkout across a
+  // deploy gets the cautious answer, never a premature "declined".
+  it('treats a token minted before the leg existed as the return leg', async () => {
+    const { app, adapter, b } = await checkedOut('manage');
+    await notify(app, decline(adapter, b));
+    expect(await (await ret(app, signPayReturnToken(b.id, SECRET))).json()).toMatchObject({ status: 'pending' });
   });
 });
