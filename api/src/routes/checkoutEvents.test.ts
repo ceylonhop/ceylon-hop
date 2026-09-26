@@ -266,8 +266,8 @@ describe('GET /bookings/pay-return → return events', () => {
     const adapter = new FakePaymentAdapter();
     const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
     const app = createApp({ checkoutEvents, adapter });
-    const ret = (b: { id: string }) =>
-      app.request(`/bookings/pay-return?rt=${encodeURIComponent(signPayReturnToken(b.id, SECRET))}`, { headers: { 'user-agent': UA } });
+    const ret = (b: { id: string }, leg: 'return' | 'cancel' = 'return') =>
+      app.request(`/bookings/pay-return?rt=${encodeURIComponent(signPayReturnToken(b.id, SECRET, leg))}`, { headers: { 'user-agent': UA } });
 
     const b = await book(app);
     await checkout(app, b);
@@ -278,13 +278,14 @@ describe('GET /bookings/pay-return → return events', () => {
     const b2 = await book(app);
     await checkout(app, b2);
     await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b2.reference, amount: b2.total, currency: b2.currency, status: 'failed' }) });
-    expect((await (await ret(b2)).json()).status).toBe('failed');
+    // A decline is only final on the cancel leg (2026-09-26).
+    expect((await (await ret(b2, 'cancel')).json()).status).toBe('failed');
 
     const returns = checkoutEvents.all().filter((r) => r.action === 'return');
-    expect(returns.map((r) => [r.bookingId, r.outcome, r.httpStatus])).toEqual([
-      [b.id, 'pending', 200],
-      [b.id, 'settled', 200],
-      [b2.id, 'failed', 200],
+    expect(returns.map((r) => [r.bookingId, r.outcome, r.httpStatus, r.reason])).toEqual([
+      [b.id, 'pending', 200, 'return'],
+      [b.id, 'settled', 200, 'return'],
+      [b2.id, 'failed', 200, 'cancel'],
     ]);
     expect(returns[0]).toMatchObject({ reference: b.reference, source: 'server', ua: UA });
   });
