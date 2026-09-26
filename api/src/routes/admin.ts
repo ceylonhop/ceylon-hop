@@ -666,6 +666,7 @@ export function adminRoutes(deps: {
     const result = await runWatchdog(new Date(), {
       bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget,
       alertLog: deps.alertLog, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents,
+      rideLists: deps.rideLists,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it
     // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).
