@@ -21,10 +21,11 @@ import { KNOWN_PLACES, FakeMapsAdapter } from '../src/adapters/maps';
 import { createDb } from '../src/db/client';
 import { InMemoryZonesRepo, type ZonesRepo } from '../src/db/zonesRepo';
 import { PostgresZonesRepo } from '../src/db/postgresZonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../src/db/rateRevisionRepo';
+import { PostgresRateRevisionRepo } from '../src/db/postgresRateRevisionRepo';
 import { PostgresDistanceCacheRepo } from '../src/db/postgresDistanceCacheRepo';
 import type { DistanceCacheRepo, DistanceCacheRow } from '../src/db/distanceCacheRepo';
 import { liveRateCard } from '../src/quote/liveCard';
-import { RATE_CARD } from '../src/quote/rateCard';
 import {
   zoneCoverage,
   routeHealthRow,
@@ -39,10 +40,12 @@ const TOP_N = 40;
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   const zonesRepo: ZonesRepo = databaseUrl ? new PostgresZonesRepo(createDb(databaseUrl).db) : new InMemoryZonesRepo();
+  // The founder's saved rates, so the report prices exactly as a live quote would (spec 2026-09-26).
+  const revisionsRepo: RateRevisionRepo = databaseUrl ? new PostgresRateRevisionRepo(createDb(databaseUrl).db) : new InMemoryRateRevisionRepo();
   const distanceRepo: DistanceCacheRepo | null = databaseUrl ? new PostgresDistanceCacheRepo(createDb(databaseUrl).db) : null;
   const maps = new FakeMapsAdapter();
 
-  const rateCard = await liveRateCard(zonesRepo, RATE_CARD);
+  const rateCard = await liveRateCard(zonesRepo, revisionsRepo);
   const zones = rateCard.hotZones ?? [];
 
   console.log(`# Pricing health — ${new Date().toISOString().slice(0, 10)}\n`);
@@ -92,7 +95,7 @@ async function main(): Promise<void> {
   // false alarm that used to fill the top of this table. They're reported as a count + the most
   // extreme (shortest) example instead of ranked alongside real signal.
   // routeHealthRow always prices with the 'car' vehicle (its fixed sampling point).
-  const expectedPerKm = RATE_CARD.perKmCents.car / 100;
+  const expectedPerKm = rateCard.perKmCents.car / 100;
   const { ranked, floorBound } = rankRouteHealth(rows, expectedPerKm);
   const shown = ranked.slice(0, TOP_N);
 

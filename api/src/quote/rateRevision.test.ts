@@ -50,7 +50,8 @@ describe('the editable rate set', () => {
   });
 
   it('reads an older stored row: a missing field is the code default, an unknown key is dropped', () => {
-    const { bufferPct: _dropped, ...older } = DEFAULTS;
+    const older: Record<string, unknown> = { ...DEFAULTS };
+    delete older.bufferPct; // saved before buffer became editable
     const stored = { ...older, perKmCents: { car: 45 }, somethingRetired: 1 };
     const rates = readStoredRates(stored, DEFAULTS);
     expect(rates.bufferPct).toBe(DEFAULTS.bufferPct);

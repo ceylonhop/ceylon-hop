@@ -10,6 +10,7 @@ import { isCatalogTown } from '../adapters/maps';
 import { memoizeDistance } from './bookings';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { liveRateCard } from '../quote/liveCard';
 import { stripZoneMeta } from '../quote/stripZoneMeta';
 import {
@@ -153,6 +154,7 @@ export function quoteRoutes(deps: {
   v2Enabled?: boolean;
   now?: () => Date;
   zones?: ZonesRepo;
+  rateRevisions?: RateRevisionRepo;
   promoCodes?: PromoCodeRepo;
   bookings?: BookingRepo; // read-only here: the preview counts uses, it never takes one
   promoCodesEnabled?: boolean;
@@ -160,7 +162,9 @@ export function quoteRoutes(deps: {
 } = {}) {
   // No repo injected => an empty in-memory one => zero active zones => pricing identical to today.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
-  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+  // No revisions repo injected ⇒ an empty one ⇒ the code card (spec 2026-09-26 §8.2).
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo, revisionsRepo);
 
   // §6.4 — resolve a code for a PREVIEW. A plain read with no lock: it can say "used up", but a code
   // that previews fine can still be taken by someone else before the customer books.

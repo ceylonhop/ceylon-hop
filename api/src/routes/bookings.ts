@@ -34,6 +34,7 @@ import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { liveRateCard } from '../quote/liveCard';
 import {
   signBookingToken,
@@ -228,6 +229,8 @@ export function bookingRoutes(deps: {
   conciergeTasks: ConciergeTaskRepo;
   quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
   zones?: ZonesRepo;
+  // Founder rate revisions (spec 2026-09-26). Unset ⇒ an empty repo ⇒ the code card.
+  rateRevisions?: RateRevisionRepo;
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
@@ -250,6 +253,7 @@ export function bookingRoutes(deps: {
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
   const promoNow = deps.promoNow ?? (() => new Date());
@@ -330,13 +334,13 @@ export function bookingRoutes(deps: {
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
   // an unknown/expired id, or no quotes repo wired → the live card (base rate card composed with
   // currently-active hot zones, hot-zones spec D5). Never throws (a bad id must not fail the
-  // booking — it just falls back to the current card). A pricing_zones lookup failure is part of
+  // booking — it just falls back to the current card). A pricing_zones or rate_card_revisions lookup failure is part of
   // that contract too: it prices unboosted off the plain compiled RATE_CARD rather than failing
   // the booking — any resulting drift from the zone-boosted price is caught by the mismatch flag.
   async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
     let current: RateCard;
     try {
-      current = await liveRateCard(zonesRepo);
+      current = await liveRateCard(zonesRepo, revisionsRepo);
     } catch {
       current = RATE_CARD;
     }

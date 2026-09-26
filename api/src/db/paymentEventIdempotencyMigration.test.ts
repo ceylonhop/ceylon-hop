@@ -32,8 +32,10 @@ describe('0056_payment_event_idempotency', () => {
   });
 
   it('is journalled after 0055', () => {
-    const last = journal.entries[journal.entries.length - 1]!;
-    expect(last).toMatchObject({ idx: 56, tag: '0056_payment_event_idempotency' });
-    expect(last.when).toBeGreaterThan(journal.entries[journal.entries.length - 2]!.when);
+    // Looked up by tag, not "the last entry": every later migration (0057 onwards) is appended after it.
+    const at = journal.entries.findIndex((e) => e.tag === '0056_payment_event_idempotency');
+    expect(journal.entries[at]).toMatchObject({ idx: 56, tag: '0056_payment_event_idempotency' });
+    expect(journal.entries[at - 1]).toMatchObject({ tag: '0055_booking_checkout_event' });
+    expect(journal.entries[at]!.when).toBeGreaterThan(journal.entries[at - 1]!.when);
   });
 });
