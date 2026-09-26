@@ -47,6 +47,26 @@ describe('InMemoryPaymentEventRepo', () => {
     expect(await repo.listForReconciliation(succeeded.paymentId)).toHaveLength(1);
   });
 
+  it('records the same provider decline identifier for different local payments', async () => {
+    const repo = new InMemoryPaymentEventRepo();
+    const decline = {
+      ...succeeded,
+      providerTxnId: '0',
+      providerStatusCode: '-2',
+      normalizedStatus: 'failed' as const,
+      sanitizedPayload: { ...succeeded.sanitizedPayload, payment_id: '0', status_code: '-2' },
+    };
+
+    const first = await repo.record(decline);
+    const second = await repo.record({ ...decline, paymentId: 'payment-2' });
+
+    expect(first.inserted).toBe(true);
+    expect(second.inserted).toBe(true);
+    expect(second.event.paymentId).toBe('payment-2');
+    expect(await repo.listForReconciliation('payment-1')).toHaveLength(1);
+    expect(await repo.listForReconciliation('payment-2')).toHaveLength(1);
+  });
+
   it('records a later reversal for the same provider transaction', async () => {
     const repo = new InMemoryPaymentEventRepo();
     await repo.record(succeeded);

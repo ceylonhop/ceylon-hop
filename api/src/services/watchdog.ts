@@ -1,6 +1,7 @@
 import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
+import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
@@ -56,6 +57,58 @@ const STUCK_REFUND_MS = 15 * 60_000;
 // early enough that ops can still run the job or message the travellers.
 const RIDE_LIST_OVERDUE_BEFORE_DEPARTURE_MS = 12 * 3600_000;
 
+const isGatewayPayment = (p: Payment): boolean => p.provider === 'payhere' || p.provider === 'fake';
+
+// The booking timestamp answers when the cart was made, not when PayHere was last asked to take
+// money. A retry can happen hours later and reuses the same payment row, whose status can still be
+// `failed` from the previous attempt. The append-only checkout log is therefore the authority for
+// whether the latest attempt is unanswered or already received a terminal PayHere response.
+async function pendingWatchStartedAt(
+  booking: Booking,
+  rows: Payment[] | null,
+  checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingId'>,
+): Promise<Date | null> {
+  if (rows === null) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
+
+  const gateway = rows.filter(isGatewayPayment);
+  if (!gateway.length) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
+  if (gateway.some((p) => p.status === 'succeeded')) return null;
+
+  if (checkoutEvents && gateway.length) {
+    try {
+      const events = await checkoutEvents.listByBookingId(booking.id);
+      const latestCheckout = events
+        .filter((e) => e.action === 'checkout' && e.outcome === 'succeeded')
+        .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
+      const latestTerminal = events
+        .filter(
+          (e) =>
+            (e.action === 'webhook' || e.action === 'return') &&
+            (e.outcome === 'failed' || e.outcome === 'dismissed' || e.outcome === 'settled'),
+        )
+        .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
+
+      if (latestCheckout) {
+        // A terminal answer at/after the newest checkout closed that attempt. A newer checkout
+        // means the customer retried, even though the reused payment row may still say `failed`.
+        if (latestTerminal && latestTerminal >= latestCheckout) return null;
+        return latestCheckout;
+      }
+    } catch (err) {
+      // Instrumentation is best-effort by contract. Fall back to the payment row so a logging
+      // outage cannot take down the watchdog itself.
+      console.error(`watchdog checkout timeline read failed for ${booking.reference}:`, err);
+    }
+  }
+
+  const pending = gateway.filter((p) => p.status === 'pending');
+  if (!pending.length) return null; // known failed, succeeded, or no gateway attempt
+  return pending.reduce<Date | null>(
+    (latest, p) => !p.lastAttemptAt || (latest && p.lastAttemptAt <= latest) ? latest : p.lastAttemptAt,
+    null,
+  ) ?? new Date(booking.createdAt);
+}
+
 export async function runWatchdog(
   now: Date,
   deps: {
@@ -82,6 +135,8 @@ export async function runWatchdog(
     alertLog?: AlertLogRepo;
     // Deep link in the stuck-pending alert. '' without OPS_BASE_URL, as everywhere else.
     opsBaseUrl?: string;
+    // Attempt timeline distinguishes a finished decline from a retry on the reused payment row.
+    checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingId'>;
     // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
     // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
     teamEmails?: ReadonlySet<string>;
@@ -99,26 +154,27 @@ export async function runWatchdog(
   const teamEmails = deps.teamEmails ?? new Set<string>();
 
   const pending = await bookings.list({ status: 'payment_pending' });
+  const paymentRows = new Map<string, Payment[]>();
+  if (payments && pending.length) {
+    for (const payment of await payments.findByBookingIds(pending.map((b) => b.id))) {
+      const rows = paymentRows.get(payment.bookingId) ?? [];
+      rows.push(payment);
+      paymentRows.set(payment.bookingId, rows);
+    }
+  }
   const stuck: typeof pending = [];
   for (const b of pending) {
-    const age = now.getTime() - Date.parse(b.createdAt);
-    if (age < STUCK_PENDING_MS || age >= STUCK_PENDING_MAX_MS) continue;
     // The owner's and team's own test bookings (#764): the ops queue and the digest already leave
     // them out; chasing them mailed the owner and paged the founder about their own test.
     if (isTeamEmail(b.input.customer.email, teamEmails)) continue;
-    // Ops-booked bookings (channel 'whatsapp') were exempt wholesale when every one of
-    // them was settled by hand. Pay links (2026-07-31) changed that: once a customer has
-    // STARTED a gateway checkout on one, an abandoned payment is a real event again — the
-    // same abandoned cart the website flow gets chased for. So the exemption now applies
-    // only while no gateway payment is pending; hand-settled bookings never have one.
-    if (b.channel === 'whatsapp') {
-      const gatewayPending = payments
-        ? (await payments.findByBookingId(b.id)).some(
-            (p) => p.status === 'pending' && (p.provider === 'payhere' || p.provider === 'fake'),
-          )
-        : false;
-      if (!gatewayPending) continue;
-    }
+    const watchFrom = await pendingWatchStartedAt(
+      b,
+      payments ? paymentRows.get(b.id) ?? [] : null,
+      deps.checkoutEvents,
+    );
+    if (!watchFrom) continue;
+    const age = now.getTime() - watchFrom.getTime();
+    if (age < STUCK_PENDING_MS || age >= STUCK_PENDING_MAX_MS) continue;
     stuck.push(b);
   }
   // The customer may have retried and PAID the same trip on a newer booking (CH-Y5RXW was chased
@@ -130,7 +186,7 @@ export async function runWatchdog(
     if (paidOn) {
       // Nothing to chase — the money came in on the other booking. Still tell ops, but as a
       // chore (cancel the leftover), not an incident; and never email the customer about it.
-      const gateway = payments ? await payments.findByBookingId(b.id) : null;
+      const gateway = payments ? paymentRows.get(b.id) ?? [] : null;
       await alerts.send({
         severity: 'warning',
         kind: 'watchdog_stuck_pending',
@@ -182,7 +238,7 @@ export async function runWatchdog(
         recovery = `FAILED to send (${err instanceof Error ? err.message : String(err)}) — the next sweep retries`;
       }
     }
-    const gateway = payments ? await payments.findByBookingId(b.id) : null;
+    const gateway = payments ? paymentRows.get(b.id) ?? [] : null;
     await alerts.send({
       severity: 'critical',
       kind: 'watchdog_stuck_pending',

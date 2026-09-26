@@ -393,6 +393,13 @@
       "when": 1790323200000,
       "tag": "0055_booking_checkout_event",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1790409600000,
+      "tag": "0056_payment_event_idempotency",
+      "breakpoints": true
     }
   ]
 }

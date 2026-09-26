@@ -10,13 +10,22 @@ export type PaymentSettlementOutcome =
   | { kind: 'duplicate'; payment: Payment; booking: Booking }
   | { kind: 'failed'; payment: Payment; booking: Booking }
   | { kind: 'reversal'; payment: Payment; booking: Booking }
+  // A non-success notify for a DIFFERENT attempt on an order we already captured. PayHere lets one
+  // order_id carry several attempts (confirmed by PayHere, 2026-09-25), so an earlier attempt's
+  // decline can land after a later attempt was paid. The event is recorded as evidence; nothing
+  // about the payment or booking changes, and it is not a reversal.
+  | { kind: 'stale_attempt'; payment: Payment; booking: Booking }
   // A SECOND capture: some other payment on this booking had already settled when this one
   // arrived (a late PayHere notify on a booking ops settled in cash). The money is real and is
   // recorded — refundRepo sums succeeded payments, so dropping it would cap a refund below what
   // we actually hold — but the booking is deliberately left exactly as the first settlement left
   // it: a human has to decide which capture to give back. Distinct from unexpected_booking_state,
   // whose story ("captured with no paid-transition") is the wrong one to page an operator with.
-  | { kind: 'double_capture'; payment: Payment; booking: Booking }
+  //
+  // `firstCaptureTxnId` is set when the second capture is on the SAME order (PayHere does not
+  // enforce order_id uniqueness): the payment row keeps that first capture's id — the one our
+  // refund tool reaches — and the second exists only as a payment_events row.
+  | { kind: 'double_capture'; payment: Payment; booking: Booking; firstCaptureTxnId?: string }
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
@@ -29,6 +38,19 @@ export type SettlementFailurePoint =
   | 'after_booking_update';
 
 export type SettlementFailureHook = (point: SettlementFailurePoint) => Promise<void> | void;
+
+/** The gateway id of the capture a payment row already records, or null when there is none we
+ *  can compare against: an unsettled row, a manual settlement (its id is a slip reference, not a
+ *  PayHere payment_id), or a legacy row settled before ids were stored. Shared by both repos so the
+ *  in-memory fake and Postgres cannot disagree about which notifies are "another attempt". */
+export function recordedCaptureId(p: {
+  status: string;
+  settlementSource?: string | null;
+  gatewayPaymentId?: string | null;
+}): string | null {
+  if (p.status !== 'succeeded' || p.settlementSource !== 'webhook') return null;
+  return p.gatewayPaymentId ?? null;
+}
 
 export class PaymentSettlementError extends Error {
   constructor(
@@ -98,10 +120,14 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     }
     await this.failureHook?.('after_event_insert');
 
+    const captured = recordedCaptureId(paymentRecord);
     if (event.status !== 'succeeded') {
       if (paymentRecord.status === 'succeeded') {
+        // Only a chargeback, or a non-success on the very capture we recorded, is a reversal.
+        const staleAttempt =
+          event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId;
         return {
-          kind: 'reversal',
+          kind: staleAttempt ? 'stale_attempt' : 'reversal',
           payment: this.requirePayment(event.orderId),
           booking,
         };
@@ -116,6 +142,16 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
         kind: 'failed',
         payment: this.requirePayment(event.orderId),
         booking,
+      };
+    }
+
+    // A second capture on this same order: never overwrite the first capture's id.
+    if (captured !== null && captured !== event.providerTxnId) {
+      return {
+        kind: 'double_capture',
+        payment: this.requirePayment(event.orderId),
+        booking,
+        firstCaptureTxnId: captured,
       };
     }
 

@@ -6,6 +6,7 @@ import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { InMemoryBookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import { SendBudget } from './sendBudget';
 import { futureIsoDate } from '../testSupport/dates';
 import { InMemoryRideListRepo } from '../db/rideListRepo';
@@ -219,6 +220,116 @@ describe('pay links re-arm the abandoned-checkout watch', () => {
     });
     expect(res.stuckPending).toBe(0);
     expect(alerts.sent).toHaveLength(0);
+  });
+});
+
+// Payment-state regression cases from CH-DMYBN and CH-Y8LYF.
+describe('stuck payment eligibility follows the latest gateway attempt', () => {
+  async function seededGatewayPayment() {
+    const { bookings, booking } = await seed('payment_pending');
+    const payments = new InMemoryPaymentRepo();
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: 5000,
+      currency: 'USD',
+      idempotencyKey: `checkout:${booking.id}`,
+    });
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    const createdAt = new Date(booking.createdAt);
+    const at = (minutes: number) => new Date(createdAt.getTime() + minutes * MIN);
+    return { bookings, booking, payments, payment, checkoutEvents, at };
+  }
+
+  it('does not page or email for a payment PayHere already declined', async () => {
+    const { bookings, booking, payments, payment, checkoutEvents, at } = await seededGatewayPayment();
+    await checkoutEvents.record(
+      { action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, attempt: 1 },
+      at(1),
+    );
+    await payments.markFailed(payment.id);
+    await checkoutEvents.record(
+      { action: 'webhook', outcome: 'failed', source: 'server', bookingId: booking.id },
+      at(2),
+    );
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+
+    const result = await runWatchdog(at(60), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+      email,
+      baseUrl: 'https://ceylonhop.com',
+      linkSecret: 'sek',
+    });
+
+    expect(result.stuckPending).toBe(0);
+    expect(result.recoveryEmails).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('gives a fresh retry its own 30-minute response window even when the booking is old', async () => {
+    const { bookings, booking, payments, payment, checkoutEvents, at } = await seededGatewayPayment();
+    await checkoutEvents.record(
+      { action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, attempt: 1 },
+      at(1),
+    );
+    await payments.markFailed(payment.id);
+    await checkoutEvents.record(
+      { action: 'webhook', outcome: 'failed', source: 'server', bookingId: booking.id },
+      at(2),
+    );
+    await checkoutEvents.record(
+      { action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, attempt: 2 },
+      at(59),
+    );
+    const alerts = new FakeAlertAdapter();
+
+    const result = await runWatchdog(at(60), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+    });
+
+    expect(result.stuckPending).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  it('pages when the latest retry has gone unanswered for 30 minutes', async () => {
+    const { bookings, booking, payments, payment, checkoutEvents, at } = await seededGatewayPayment();
+    await checkoutEvents.record(
+      { action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, attempt: 1 },
+      at(1),
+    );
+    await payments.markFailed(payment.id);
+    await checkoutEvents.record(
+      { action: 'webhook', outcome: 'failed', source: 'server', bookingId: booking.id },
+      at(2),
+    );
+    await checkoutEvents.record(
+      { action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, attempt: 2 },
+      at(20),
+    );
+    const alerts = new FakeAlertAdapter();
+
+    const result = await runWatchdog(at(51), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+    });
+
+    expect(result.stuckPending).toBe(1);
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].kind).toBe('watchdog_stuck_pending');
   });
 });
 
