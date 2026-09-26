@@ -7,9 +7,9 @@
   /* @generated:pricing — from api/src/quote/rateCard.ts · DO NOT EDIT BY HAND · run `npm run generate` */
   const PER_KM = {"car":0.4025,"van":0.5405};
   const FLOORS = {"car":29,"van":49.99};
-  const BUFFER_PCT = 10;
+  let BUFFER_PCT = 10;
   const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};
-  const CHAUFFEUR_DAY_FEE = 31.05;
+  let CHAUFFEUR_DAY_FEE = 31.05;
   const CHAUFFEUR_IDLE_MIN_KM = {"car":50,"van":100};
   const DEPOSIT_PCT = 0.1;
   const DEPOSIT_CAP = 50;
@@ -487,4 +487,52 @@
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
+
+  /* ── Live price list (spec docs/superpowers/specs/2026-09-26-ops-rates-page-design.md §9) ──
+     The numbers at the top are baked in at build time from the code rate card. The founder can now
+     change prices on the ops Rates page, so on load this asks the API for the live list
+     (GET /quote/pricing — the same payload shape) and writes it into the copy: objects in place,
+     the two scalars reassigned and mirrored onto window.TRANSFERS. All-or-nothing: a missing, non-
+     finite or non-positive number keeps every baked value. Pages that draw a copy price on first
+     paint hide it behind html.prices-pending (their <head> adds it) and redraw on `ch:pricing`, so a
+     customer never sees one number turn into another. A slow answer (2.5 s) is dropped: once the
+     baked figures have been shown they stay. Only pages that set window.CEYLON_HOP_API fetch. */
+  const LIVE_CAP_MS = 2500;
+  const T = window.TRANSFERS;
+  const positive = (n) => typeof n === 'number' && isFinite(n) && n > 0;
+  function applyLivePricing(p) {
+    const ok = !!p && !!p.perKm && positive(p.perKm.car) && positive(p.perKm.van)
+      && !!p.floors && positive(p.floors.car) && positive(p.floors.van)
+      && typeof p.bufferPct === 'number' && isFinite(p.bufferPct) && p.bufferPct >= 0
+      && positive(p.chauffeurDayFee)
+      && !!p.extras && Object.keys(EXTRAS).every((k) => positive(p.extras[k]))
+      && !!p.seatPricing && positive(p.seatPricing.perKmCentsVan) && positive(p.seatPricing.floorCentsVan);
+    if (!ok) return false;
+    PER_KM.car = p.perKm.car; PER_KM.van = p.perKm.van;
+    FLOORS.car = p.floors.car; FLOORS.van = p.floors.van;
+    Object.keys(EXTRAS).forEach((k) => { EXTRAS[k] = p.extras[k]; });
+    SEAT_PRICING.perKmCentsVan = p.seatPricing.perKmCentsVan;
+    SEAT_PRICING.floorCentsVan = p.seatPricing.floorCentsVan;
+    BUFFER_PCT = p.bufferPct; T.BUFFER_PCT = p.bufferPct;
+    CHAUFFEUR_DAY_FEE = p.chauffeurDayFee; T.CHAUFFEUR_DAY_FEE = p.chauffeurDayFee;
+    return true;
+  }
+  T.applyLivePricing = applyLivePricing;
+  T.pricingReady = new Promise((resolve) => {
+    let settled = false;
+    const settle = (live) => {
+      if (settled) return;
+      settled = true;
+      try { document.documentElement.classList.remove('prices-pending'); } catch (e) { /* no DOM */ }
+      if (live) { try { document.dispatchEvent(new CustomEvent('ch:pricing')); } catch (e) { /* no DOM */ } }
+      resolve(live);
+    };
+    const base = (typeof window.CEYLON_HOP_API === 'string') ? window.CEYLON_HOP_API.replace(/\/$/, '') : '';
+    if (!base || typeof window.fetch !== 'function') { settle(false); return; }
+    setTimeout(() => settle(false), LIVE_CAP_MS);
+    window.fetch(base + '/quote/pricing', { credentials: 'omit' })
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((p) => { if (!settled) settle(applyLivePricing(p)); })
+      .catch(() => settle(false));
+  });
 })();

@@ -17,7 +17,12 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
+<link rel="stylesheet" href="site.css?v=33723b0702">
+<!-- Live prices (spec 2026-09-26 §9): transfers-data.js loads the founder's current price list from
+     the API; `?api=off` keeps the baked prices, `?api=<origin>` points it elsewhere (the same
+     contract as search.html / booking.html). The hold keeps [data-live-price] figures blank until
+     that list lands; transfers-data.js lifts it, and the timer is only the backstop. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -119,9 +124,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <div>
       <div class="cmp">
-        <div class="row bad"><div class="who">Curbside taxi quote<small>Colombo Airport → Kandy · "special price, my friend"</small></div><div class="amt" id="cmp-taxi">$80?</div></div>
+        <div class="row bad"><div class="who">Curbside taxi quote<small>Colombo Airport → Kandy · "special price, my friend"</small></div><div class="amt" data-live-price id="cmp-taxi">$80?</div></div>
         <div class="row bad"><div class="who">Public bus + tuk-tuks<small>4–6 hours, three changes, bags on your lap</small></div><div class="amt">your day</div></div>
-        <div class="row hop"><div class="who">Ceylon Hop, private AC car<small id="cmp-meta">Door to door · about 3 h drive</small></div><div class="amt" id="cmp-car">$49.99 fixed</div><span class="tagp" id="cmp-seat" hidden></span></div>
+        <div class="row hop"><div class="who">Ceylon Hop, private AC car<small id="cmp-meta">Door to door · about 3 h drive</small></div><div class="amt" data-live-price id="cmp-car">$49.99 fixed</div><span class="tagp" id="cmp-seat" hidden></span></div>
       </div>
       <p class="hand-note saffron" style="margin:14px 6px 0">the price you see is the price you pay</p>
     </div>
@@ -209,15 +214,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
 </footer></div>
 <script src="site.js?v=81c109a6ac"></script>
-<script src="transfers-data.js?v=a00d86c790"></script>
+<script src="transfers-data.js?v=7988bba57e"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   initChrome({active:'why.html', footerCta:false, onDark:true});
   document.getElementById('cta-c').innerHTML=cmark(56,'#fff');
   document.getElementById('cta-wa').innerHTML=ICON.wa+' Chat on WhatsApp';
   document.querySelectorAll('.btn').forEach(b=>{if(/Get a fixed price$|Plan a multi-stop trip$/.test(b.textContent.trim()))b.insertAdjacentHTML('beforeend',' '+ICON.arrow);});
-  // live numbers from the same quote engine the booking flow uses
-  (function(){
+  // live numbers from the same quote engine the booking flow uses — drawn once, and again when the
+  // live price list lands (transfers-data.js, spec 2026-09-26 §9)
+  function drawComparison(){
     const T=window.TRANSFERS; if(!T) return;
     const q=T.privateQuote('cmb-airport','kandy');
     const sh=T.sharedOption('cmb-airport','kandy');
@@ -228,7 +234,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // not run on this corridor; JS reveals it only when sharedOption() actually returns one.
     const seatEl=document.getElementById('cmp-seat');
     if(seatEl){ if(sh){ seatEl.textContent='or shared seat $'+sh.seat; seatEl.hidden=false; } else seatEl.remove(); }
-  })();
+  }
+  drawComparison();
+  document.addEventListener('ch:pricing', drawComparison);
 </script>
 </body>
 </html>
