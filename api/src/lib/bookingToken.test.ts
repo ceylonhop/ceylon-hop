@@ -296,6 +296,10 @@ describe('pay-return token legs', () => {
     expect(verifyPayReturnLeg(`${t.slice(0, -2)}xx`, S)).toBeNull();
   });
 
+  it('is exactly as long as a return-leg token, so the cancel URL does not grow', () => {
+    expect(signPayReturnToken(ID, S, 'cancel').length).toBe(signPayReturnToken(ID, S).length);
+  });
+
   it('cannot be spent as a booking token', () => {
     expect(verifyBookingToken(signPayReturnToken(ID, S, 'cancel'), S)).toBeNull();
   });

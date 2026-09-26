@@ -168,8 +168,9 @@ describe('GET /bookings/pay-return: a decline is only final on the cancel leg', 
       headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({ returnTo }),
     })).json() as { fields: Record<string, string> };
-    return { app, adapter, b, returnRt: rtOf(co.fields.return_url), cancelRt: rtOf(co.fields.cancel_url) };
+    return { app, adapter, b, fields: co.fields, returnRt: rtOf(co.fields.return_url), cancelRt: rtOf(co.fields.cancel_url) };
   }
+  const checkedOutFields = checkedOut;
   // PayHere's real decline shape: status -2 with payment_id "0" (no payment was created).
   const decline = (adapter: PayHerePaymentAdapter, b: { reference: string; total: number; currency: string }) =>
     adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: b.currency, statusCode: '-2', paymentId: '0' });
@@ -179,6 +180,14 @@ describe('GET /bookings/pay-return: a decline is only final on the cancel leg', 
       it('gives the return leg and the cancel leg different tokens', async () => {
         const { returnRt, cancelRt } = await checkedOut(returnTo);
         expect(returnRt).not.toBe(cancelRt);
+      });
+
+      // PayHere stores both URLs and walks them through its redirect; its length limit is not
+      // documented. The URLs in use before the legs existed (return 200, cancel 204 chars) are
+      // proven to work, so the cancel leg must not grow: exactly the return URL plus "&c=1".
+      it('keeps the cancel URL exactly as long as the return URL plus "&c=1"', async () => {
+        const { fields } = await checkedOutFields(returnTo);
+        expect(fields.cancel_url.length).toBe(fields.return_url.length + '&c=1'.length);
       });
 
       it('answers `failed` on the cancel leg after a decline', async () => {
