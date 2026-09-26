@@ -16,6 +16,7 @@ import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import type { QuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import type { DiscountIntent } from '../db/quoteRepo';
 import type { DiscountRequest } from '../quote/discount';
@@ -334,10 +335,11 @@ async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter, resolver?: Pla
   l.distanceKm = (segs as number[]).reduce((sum, k) => sum + k, 0);
 }
 
-const fxRate = RATE_CARD.fxUsdToLkr;
-const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
+// LKR is display-only and follows the FX of the card that priced the quote: the live card for an
+// estimate, the locked snapshot for an approved one. FX is founder-set since spec 2026-09-26.
+const toLkr = (cents: number, fx: number): number => Math.round((cents * fx) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
-const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
+const lkr = (cents: number, fx: number): string => `LKR ${toLkr(cents, fx).toLocaleString('en-US')}`;
 
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
@@ -418,16 +420,16 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
   };
 }
 
-function money(cents: number) {
-  return { cents, usd: usd(cents), lkr: lkr(cents), lkrAmount: toLkr(cents) };
+function money(cents: number, fx: number) {
+  return { cents, usd: usd(cents), lkr: lkr(cents, fx), lkrAmount: toLkr(cents, fx) };
 }
 
 // Compact per-service summary for the chooser (NOT the full breakdown).
 type ServiceSummary = { total: ReturnType<typeof money>; deposit: ReturnType<typeof money>; amountDueNow: ReturnType<typeof money> };
 type ServiceChoice = ServiceSummary | { error: string };
 type ServiceChooserData = { pointToPoint: ServiceChoice; chauffeur: ServiceChoice };
-function summary(result: QuoteResult): ServiceSummary {
-  return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
+function summary(result: QuoteResult, fx: number): ServiceSummary {
+  return { total: money(result.totalCents, fx), deposit: money(result.depositCents, fx), amountDueNow: money(result.amountDueNowCents, fx) };
 }
 
 // Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
@@ -446,12 +448,12 @@ function displayPlacesFor(toolLegs: unknown): Record<string, string> {
   return out;
 }
 
-function shape(result: QuoteResult, canMargin: boolean) {
+function shape(result: QuoteResult, canMargin: boolean, fx: number) {
   const base = {
     product: result.product,
-    total: money(result.totalCents),
-    deposit: money(result.depositCents),
-    amountDueNow: money(result.amountDueNowCents),
+    total: money(result.totalCents, fx),
+    deposit: money(result.depositCents, fx),
+    amountDueNow: money(result.amountDueNowCents, fx),
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
     // The founder-only zone annotation is stripped for non-margin:view roles (D9).
@@ -459,7 +461,7 @@ function shape(result: QuoteResult, canMargin: boolean) {
     // what they are given rather than each keeping a copy of the rule — ops-ui had one, and
     // manage.html and the drawer were about to grow two more. `label` stays exact for search,
     // tooltips and anything that needs the address as stored.
-    lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
+    lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents, fx), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   // The discount SUMMARY, so the pane can say "you asked for X, you may have Y" without the
   // client re-deriving either. The negative line item itself already rides in lineItems above and
@@ -470,8 +472,8 @@ function shape(result: QuoteResult, canMargin: boolean) {
         discount: {
           method: result.discount.method,
           value: result.discount.value,
-          applied: money(result.discount.appliedCents),
-          requested: money(result.discount.requestedCents),
+          applied: money(result.discount.appliedCents, fx),
+          requested: money(result.discount.requestedCents, fx),
           // capReason is a margin-class diagnostic — it tells you WHY you were stopped, which is
           // a statement about cost and policy. Founder-only, like the margin line.
           ...(canMargin ? { capReason: result.discount.capReason } : {}),
@@ -479,7 +481,7 @@ function shape(result: QuoteResult, canMargin: boolean) {
       }
     : base;
   if (!canMargin) return withDiscount;
-  return { ...withDiscount, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
+  return { ...withDiscount, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents, fx) };
 }
 
 // Strip persisted margin from a stored quote for non-margin:view roles (spec §3.1) —
@@ -514,8 +516,8 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
   const services: ServiceChooserData = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
 
   services.pointToPoint = selected === 'private'
-    ? summary(selectedResult)
-    : summary(quote(toEngineRequest(body, 'private'), rateCard));
+    ? summary(selectedResult, rateCard.fxUsdToLkr)
+    : summary(quote(toEngineRequest(body, 'private'), rateCard), rateCard.fxUsdToLkr);
 
   const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
   const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
@@ -525,8 +527,8 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
     services.chauffeur = { error: 'single-day — point-to-point only' };
   } else {
     services.chauffeur = selected === 'chauffeur'
-      ? summary(selectedResult)
-      : summary(quote(toEngineRequest(body, 'chauffeur'), rateCard));
+      ? summary(selectedResult, rateCard.fxUsdToLkr)
+      : summary(quote(toEngineRequest(body, 'chauffeur'), rateCard), rateCard.fxUsdToLkr);
   }
 
   return services;
@@ -537,7 +539,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: RateCard): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -548,9 +550,10 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
     const { rateCard } = rateCardFor(
       { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
       now,
+      current,
     );
     const result = quote(engineReq, rateCard);
-    const base = shape(result, canMargin);
+    const base = shape(result, canMargin, rateCard.fxUsdToLkr);
     // Legacy/minimal row without a usable tool payload → base total only (no per-leg / services).
     if (!toolReq || !toolReq.vehicle || !Array.isArray(toolReq.legs) || typeof toolReq.passengerCount !== 'number' || typeof toolReq.luggageCount !== 'number') {
       return base;
@@ -632,6 +635,8 @@ export function internalQuoteRoutes(deps: {
   // Optional: with no repo injected the router uses an empty in-memory one ⇒ zero active zones ⇒
   // pricing identical to pre-hot-zones. Prod injects the Postgres repo (server.ts → app.ts).
   zones?: ZonesRepo;
+  // Founder rate revisions (spec 2026-09-26). Same default rule: none injected ⇒ the code card.
+  rateRevisions?: RateRevisionRepo;
   /** Founder manual discounts. Absent = the feature is simply not wired in this composition. */
   discounts?: QuoteDiscountRepo;
   /** Gates CREATION only; an existing discount keeps pricing regardless. */
@@ -693,7 +698,8 @@ export function internalQuoteRoutes(deps: {
   // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const discountsEnabled = deps.discountsEnabled ?? false;
-  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo, revisionsRepo);
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
@@ -838,8 +844,8 @@ export function internalQuoteRoutes(deps: {
       const services = serviceChooserData(body, card, selected, result);
 
       return c.json({
-        ...shape(result, canMargin),
-        fxUsdToLkr: fxRate,
+        ...shape(result, canMargin, card.fxUsdToLkr),
+        fxUsdToLkr: card.fxUsdToLkr,
         breakdown: quoteBreakdown(req, card),
         services,
         displayPlaces: displayPlacesFor(body.legs),
@@ -939,7 +945,7 @@ export function internalQuoteRoutes(deps: {
         customerContact: body.contact ?? null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
-        rateCardVersion: RATE_CARD.version,
+        rateCardVersion: result.rateCardVersion,
         marginCents: result.marginEstimateCents ?? null,
         // V19: persist the reopenable tool payload alongside the engine request.
         // GET /:id returns request.tool for the UI to reopen the draft.
@@ -1388,21 +1394,23 @@ export function internalQuoteRoutes(deps: {
     }
   });
 
-  // Read-only view of the locked rate card for the tool's Settings card.
+  // The live rate card for the tool: seat caps and add-on prices for everyone who quotes, and the
+  // Rates page's read-only card. Sell prices only — costs and markup never leave through here.
   // MUST be registered before /:id so that /rate-card doesn't match the param route.
-  r.get('/rate-card', (c) =>
-    c.json({
-      version: RATE_CARD.version,
-      perKmCents: RATE_CARD.perKmCents,
-      floorCents: RATE_CARD.floorCents,
-      chauffeurDayRateCents: RATE_CARD.chauffeur.dayRateCents,
-      bufferPct: RATE_CARD.bufferPct,
-      depositPct: RATE_CARD.deposit.pct,
-      extras: RATE_CARD.extras,
-      fxUsdToLkr: RATE_CARD.fxUsdToLkr,
-      vehicle: RATE_CARD.vehicle, // V12: per-tier maxPax/maxBags caps for client-side vehicle labelling
-    }),
-  );
+  r.get('/rate-card', async (c) => {
+    const card = await liveCard();
+    return c.json({
+      version: card.version,
+      perKmCents: card.perKmCents,
+      floorCents: card.floorCents,
+      chauffeurDayRateCents: card.chauffeur.dayRateCents,
+      bufferPct: card.bufferPct,
+      depositPct: card.deposit.pct,
+      extras: card.extras,
+      fxUsdToLkr: card.fxUsdToLkr,
+      vehicle: card.vehicle, // V12: per-tier maxPax/maxBags caps for client-side vehicle labelling
+    });
+  });
 
   // ── Hot zones admin (spec §7) — the founder's pricing lever. Reads are visible under margin:view;
   // every WRITE is gated by quote:approve ON TOP OF the router's quote:manage guard (both = founder
@@ -1480,7 +1488,7 @@ export function internalQuoteRoutes(deps: {
     const canMargin = can(role, 'margin:view');
     // Ship the quote priced against its locked card so the tool renders the frozen (approved)
     // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
-    const estimate = lockedEstimate(q, canMargin, new Date());
+    const estimate = lockedEstimate(q, canMargin, new Date(), await liveCard());
     const view = canMargin ? q : stripQuoteMargin(q);
     // May THIS viewer approve THIS quote (plan 2026-08-11)? The page knows the viewer's role but
     // not whether a given quote qualifies, so the answer has to travel with the quote — a UI

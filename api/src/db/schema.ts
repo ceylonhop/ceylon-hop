@@ -771,6 +771,19 @@ export const pricingZones = pgTable('pricing_zones', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Founder-set rate revisions (spec 2026-09-26 §8.1; migration 0057). Append-only: the newest row
+// (highest seq) is the live rate card's editable set — see quote/liveCard.ts. seq is unique so two
+// saves racing from the same base cannot both land.
+export const rateCardRevisions = pgTable('rate_card_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  seq: integer('seq').notNull().unique(),
+  version: text('version').notNull().unique(),
+  rates: jsonb('rates').notNull(),
+  revertedToVersion: text('reverted_to_version'),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Cached road distances for catalogue-town pairs (spec 2026-08-12 §Distance cache). Rows are
 // DIRECTIONAL (A→B and B→A are separate rows) and keyed on canonPlace() output, the same
 // normalisation place_resolutions uses. See src/db/distanceCacheRepo.ts.
