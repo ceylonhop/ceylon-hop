@@ -1,6 +1,10 @@
 # Notification safety rails — blast-radius caps and send provenance
 
-**Status:** **PROPOSED — nothing built.** No code, schema, or config changes have been made.
+**Status:** **PARTIALLY SHIPPED.** R1 (burst cap), R2 (claim-then-send), R3 (kill
+switch/allowlist), R6 (relevance window) and R7 (dry run) are implemented. R4 and R5 are
+superseded by the owner-approved, tracking-only M23 design; they must not be built from this older
+document. See
+[`2026-09-26-booking-communications-tracking-design.md`](./superpowers/specs/2026-09-26-booking-communications-tracking-design.md).
 **Written:** 2026-08-08. **Trigger:** owner question — *"what guards do we have that we don't send
 wrong notifications? Imagine some status update via migration and we mistakenly send out a bunch of
 emails or put customers in a wrong state."*
