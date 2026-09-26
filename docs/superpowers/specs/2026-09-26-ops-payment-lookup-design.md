@@ -190,7 +190,8 @@ UTC timestamp on hover for matching against PayHere's dashboard and Clarity.
   - Rows are worded with the drawer's existing labels (`paLabel` in `ops-ui.html`), so the drawer
     and this page never disagree.
   - `reason`, `attempt` and `http_status` are shown when present.
-  - The raw user agent is shown under client rows and `return` rows. It is shown as stored, not
+  - The raw user agent is shown under every row the customer's browser caused (everything except
+    PayHere's webhook rows, whose user agent is PayHere's server). It is shown as stored, not
     parsed.
   - Webhook rows that were `settled`, `failed`, `dismissed` or `pending` are **not** listed: the
     `payment_events` row for the same notice carries more. The exception is when `payment_events`

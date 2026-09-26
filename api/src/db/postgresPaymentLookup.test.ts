@@ -87,9 +87,11 @@ describe.skipIf(!TEST_URL)('payment lookup reads (Postgres integration)', () => 
     const before = await payments.provenanceFor(p.id);
     expect(before).toMatchObject({ settledAt: null, settlementSource: null, settledBy: null, gatewayPaymentId: null });
     expect(before?.createdAt).toBeInstanceOf(Date);
-    await payments.markSucceededManually(p.id, { reference: 'SLIP-7', settledBy: 'f@x.com' });
+    // Unique per run: (provider, gateway_payment_id) is unique and this database outlives the run.
+    const slip = `SLIP-${randomUUID().slice(0, 8)}`;
+    await payments.markSucceededManually(p.id, { reference: slip, settledBy: 'f@x.com' });
     const after = await payments.provenanceFor(p.id);
-    expect(after).toMatchObject({ settlementSource: 'manual', settledBy: 'f@x.com', gatewayPaymentId: 'SLIP-7' });
+    expect(after).toMatchObject({ settlementSource: 'manual', settledBy: 'f@x.com', gatewayPaymentId: slip });
     expect(after?.settledAt).toBeInstanceOf(Date);
     expect(await payments.provenanceFor(randomUUID())).toBeNull();
   });
