@@ -2,6 +2,7 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
@@ -133,6 +134,9 @@ export async function runWatchdog(
     // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
     // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
     teamEmails?: ReadonlySet<string>;
+    // Phase A correlation seam. The HTTP job route supplies one request id + one run id; later
+    // communication tracking persists them without changing this service boundary again.
+    correlation?: TrackingCorrelation;
   },
 ): Promise<{
   stuckPending: number;
