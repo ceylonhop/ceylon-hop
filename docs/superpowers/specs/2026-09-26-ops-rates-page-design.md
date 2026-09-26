@@ -1,7 +1,7 @@
 # Ops Rates page — founder-set prices
 
-**Date:** 2026-09-26 · **Status:** design agreed with the owner in chat; spec awaiting owner review
-· **Read from:** `origin/main` @ `63e738c1`.
+**Date:** 2026-09-26 · **Status:** spec approved by the owner in chat (2026-09-26); implementation
+plan next · **Read from:** `origin/main` @ `63e738c1`.
 
 ## 1. Problem
 
@@ -33,6 +33,8 @@ prices. Hot zones are already stored in the database and founder-editable. `live
    deploy". Clarity (non-bot sessions, 24–26 Sep) shows `plan.html` is the busiest page, and it
    prices only from the baked copy: plan 70 sessions, search 60, home 56, booking 48, `/trip/` 30.
 6. **Edits are stored as a revision history** (who saved, when) with revert.
+7. **Deposit % and cap are read-only.** The owner decided this at spec review, after learning that
+   they change nothing today (§6). This narrows decision 2.
 
 ### 2.1 User stories
 
@@ -128,15 +130,16 @@ the popup's rounded $0.40, so saving an untouched field changes nothing.
 The "Allowed" limits reject fat fingers without constraining real pricing. The owner can change
 them at spec review.
 
-**Deposit % and cap: proposed read-only (owner call, §11).** They change nothing today:
+**Deposit % and cap: read-only (owner, 2026-09-26).** They change nothing today:
 
 - Every booking is charged in full. This is the owner's 2026-07-07 decision (`engine.ts:171-179`).
 - The ops tool shows "Pay in full to confirm" (`ops-ui.html:8111-8117`).
 - `booking.js:1726` `depositDue()` is defined but never called.
 - The only place the % appears is this rates page.
 
-An editable control that changes nothing would mislead. The proposal is to show both values
-read-only, labelled "not charged: bookings are paid in full".
+An editable control that changes nothing would mislead, so both values are shown read-only,
+labelled "not charged: bookings are paid in full". They stay in code and are not part of a
+revision's `rates`.
 
 The page shows each vehicle's margin as **(price − cost) ÷ cost**. That is the markup-on-cost the
 owner set in July, so today's card reads 15% on every vehicle.
@@ -326,5 +329,6 @@ caller (2026-09-26).
    holds the code defaults, and the baked site copy is generated from them as the offline fallback.
    Shared seat prices still change only in `departureRepo.ts`. This is updated in PR 2.
 5. **First prod edit.** Only after PRs 2–4 are all promoted.
-6. **Deposit.** Keep deposit % and cap read-only (§6), because they change nothing today, or make
-   them editable as first chosen.
+Signed off by the owner at spec review (2026-09-26, "go ahead"). Item 1 still needs the owner's
+explicit OK at the PR 2 promote, per the migration rule. Deposit is decided: read-only
+(decision 7).
