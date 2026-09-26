@@ -528,7 +528,7 @@ function distHtml(route, price){
   return `<span class="lm-dist">${routeEstimateText(route)}</span>`+
          `<span class="lm-src" title="${sourceTitle}">${source}</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`;
+         `<span class="lm-price">from ${vehiclePriceIcon()} <b data-live-price>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`;
 }
 
 // remove any portaled date popovers left over from the previous render
@@ -1454,3 +1454,7 @@ render();
 // Arriving this way IS the answer to the fork: booking's "Add your dates →" and "Back to
 // planner" both land here, and that customer came back to work on dates.
 if((params.get('step')||'').toLowerCase()==='dates'){ state.datesMode='known'; showDatesStep(); }
+
+// The live price list landed (transfers-data.js, spec 2026-09-26 §9): every figure above was drawn
+// from the baked copy while html.prices-pending hid it — draw them again from the live one.
+document.addEventListener('ch:pricing', () => render());

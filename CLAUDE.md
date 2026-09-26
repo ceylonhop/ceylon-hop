@@ -39,7 +39,7 @@ management tightens accordingly. These refine the Hard rules above for day-to-da
    refactors, no opportunistic cleanup. Adjacent issues you notice → surface as a one-line note
    (or a task chip), do **not** fix them.
 3. **Minimal footprint — STOP and ask first** before touching any of: **pricing**
-   (`rateCard.ts` / `departureRepo.ts`), **DB schema / migrations**, **config** (`config.ts`,
+   (`rateCard.ts` / `departureRepo.ts` / the rate-revision code), **DB schema / migrations**, **config** (`config.ts`,
    env), **generated files** (`@generated:` blocks; `terms`/`privacy`/`404`/`trip/*`), or a
    **shared component** used across pages. These carry blast radius beyond the change.
 4. **Leave it green, always.** `cd api && npm run check` + `npm run test:all` (web-tests) pass
@@ -65,10 +65,13 @@ management tightens accordingly. These refine the Hard rules above for day-to-da
    release step. Local dev stays manual (`cd api && npm run migrate`); nothing migrates on
    `npm run dev` unless `RUN_MIGRATIONS=1`.
 
-**Drift rules (always):** prices change ONLY via `rateCard.ts` (+ corridors in
-`departureRepo.ts`) then `npm run generate` — never hand-edit a `@generated:` block (the parity +
-codegen tests will, and should, fail). Generated pages change via their source + regenerate,
-never by editing the output.
+**Drift rules (always):** customer prices (per-km, day rate, minimum fares, add-ons, buffer, FX)
+change on the founder's ops **Rates** page — each save is a `rate_card_revisions` row the live card
+applies (spec 2026-09-26). `rateCard.ts` holds the **code defaults** (used until the first save,
+and baked into the site by `npm run generate` as its offline fallback) plus everything not editable
+there (deposit, seat limits, finishing). Shared seat prices still change only in
+`departureRepo.ts`. Never hand-edit a `@generated:` block (the parity + codegen tests will, and
+should, fail). Generated pages change via their source + regenerate, never by editing the output.
 
 **Branch protection (active 2026-07-18):** `main` and `production` both require a PR + green CI
 to merge (the 3 `ci.yml` checks). `production` allows **no admin bypass** (real prod gate); `main`

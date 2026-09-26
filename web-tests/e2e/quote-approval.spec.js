@@ -679,30 +679,27 @@ test('the collapsed rail opens when any part of it is clicked', async ({ page })
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
 });
 
-// ── Margin + Rates are founder-only across the detail view ───────────────────────
-test('founder sees the estimated margin and the Rates button', async ({ page }) => {
+// ── Margin is founder-only across the detail view; Rates left the builder ────────────
+// Rates moved to its own side-menu page (spec 2026-09-26 §5); its access tests live in
+// ops-rates-page.spec.js. Here: the builder carries no Rates button or popup for anyone.
+test('founder sees the estimated margin, and the builder has no Rates button', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
   await expect(page.locator('.ch-margin')).toContainText(/Est\. margin/i);
-  await expect(page.locator('#btnRates')).toBeVisible();
+  await expect(page.locator('#btnRates')).toHaveCount(0);
+  await expect(page.locator('#quoteRoot [data-action="openRates"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="rates-nav"]')).toBeVisible();
 });
 
 for (const role of ['ops', 'finance']) {
-  test(`${role} never sees margin/profit or the Rates button in the builder`, async ({ page }) => {
+  test(`${role} never sees margin/profit or a way to the rates`, async ({ page }) => {
     await openDetail(page, role, { id: 'q1', status: 'draft' });
     // No margin anywhere in the builder (money pane or internal tab).
     await expect(page.locator('.ch-margin')).toHaveCount(0);
     await page.locator('.ch-tab[data-tab="internal"]').click();
     await expect(page.locator('#quoteRoot .ch-app')).not.toContainText(/margin/i);
-    // Rates (rate-card) button is founder-only.
+    // No Rates button in the builder, and no Rates item in the side menu.
     await expect(page.locator('#btnRates')).toHaveCount(0);
-    // And even a forced openRates action can't reveal the modal.
-    await page.evaluate(() => {
-      const el = document.querySelector('[data-action="openRates"]') || document.createElement('button');
-      el.setAttribute('data-action', 'openRates');
-      document.querySelector('#quoteRoot .ch-app').appendChild(el);
-      el.click();
-    });
-    await expect(page.locator('.ch-modal')).toHaveCount(0);
+    await expect(page.locator('[data-testid="rates-nav"]')).toHaveCount(0);
   });
 }
 

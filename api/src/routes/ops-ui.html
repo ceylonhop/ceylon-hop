@@ -561,6 +561,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .lk-warn{margin:8px 0 0;font-size:.86rem;font-weight:700;color:var(--alert)}
   .lk-sub{display:block;font-size:.76rem;color:var(--ink-soft);overflow-wrap:anywhere}
   .lk-act{margin-top:10px}
+  .lk-other{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:7px 0;border-top:1px dashed var(--line)}
+  .lk-other:first-of-type{border-top:0}
   .lk-case .pa-dot{align-self:baseline} /* rows here run to two lines; the dot marks the first */
   @media(max-width:640px){.lk-case{padding:2px 14px 6px}.lk-case .pa-row{flex-wrap:wrap}.lk-case .pa-what{flex:1 1 100%;padding-left:17px}}
   .notebox{display:flex;gap:8px;margin-top:6px}
@@ -903,6 +905,41 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-rate-hint { font-size: 10.5px; color: var(--muted-2); }
 .qv .ch-rate-control { width: 132px; flex: none; }
 @media (max-width: 620px) { .qv .ch-rate-grid { grid-template-columns: 1fr; gap: 8px; }}
+/* Rates page (spec 2026-09-26 §5): the rate card + hot zones as a page in the shell's #view.
+   The wrapper carries .qv for the builder's tokens and components, but not its pane layout —
+   the page scrolls with #view like every other shell page instead of nesting a scroll box. */
+.qv.qv-page { height: auto; overflow: visible; }
+.qv .ch-rates-card { max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px 22px; }
+/* Rates editor (spec 2026-09-26 §6–§7): the live-version bar, exact values, the review dialog's
+   tables and warnings, and the history rows. Reuses .ch-rate-* rows, .ch-field/.ch-input-wrap
+   inputs and .ch-hist-* chips; these rules only add what those don't cover. */
+.qv .ch-rates-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.qv .ch-rates-live { font-size: 12.5px; color: var(--muted); min-width: 0; }
+.qv .ch-rates-live b { color: var(--ink); }
+.qv .ch-rates-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.qv .ch-rt-val { display: inline-flex; flex-direction: column; align-items: flex-end; font-size: 13px; font-weight: 600; color: var(--ink); }
+.qv .ch-rt-val i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.qv .ch-rt-val small { font-size: 11px; font-weight: 500; color: var(--muted-2); }
+.qv .ch-rt-editing .ch-rate-row { align-items: flex-start; }
+.qv .ch-rt-editing .ch-rate-label { padding-top: 9px; }
+.qv .ch-rt-h3 { margin: 18px 0 6px; font-size: 15px; }
+.qv .ch-rt-hist-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.qv .ch-rt-hist-row .ch-hist-chips { flex: 1 1 240px; justify-content: flex-start; min-width: 0; }
+.qv .ch-rt-hist-row .ch-hist-chip { white-space: normal; }
+/* The builder's history meta truncates to one line; here who and when must read in full. */
+.qv .ch-rt-hist-row .ch-hist-meta { flex: 0 1 auto; white-space: normal; overflow: visible; }
+.qv .ch-rt-hist-row .ch-hist-rev { color: var(--ink); font-weight: 700; }
+.qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
+.qv .ch-rt-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted-2); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.qv .ch-rt-table td { padding: 6px; border-bottom: 1px dashed var(--line); vertical-align: top; }
+.qv .ch-rt-table td:not(:first-child), .qv .ch-rt-table th:not(:first-child) { text-align: right; white-space: nowrap; }
+.qv .ch-rt-table tr.is-big td { background: rgba(236,58,36,.05); }
+.qv .ch-rt-flag { display: inline-block; font-size: 10px; font-weight: 700; color: #8a5a00; background: #fdf0d2; border: 1px solid #f0d9a6; border-radius: 999px; padding: 0 6px; }
+.qv .ch-rt-warn { margin: 10px 0; padding: 10px 12px; border-radius: var(--r-md); background: #fdf0d2; color: #6b4600; font-size: 12.5px; border: 1px solid #f0d9a6; line-height: 1.45; }
+.qv .ch-rt-samples-title { margin-top: 14px; }
+.qv .ch-rt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+:root[data-theme="dark"] .qv .ch-rt-flag,
+:root[data-theme="dark"] .qv .ch-rt-warn { color: #f5c96a; background: rgba(245,201,106,.12); border-color: rgba(245,201,106,.35); }
 
 /* ---------- Itinerary (premium timeline) ---------- */
 .qv .ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -2179,6 +2216,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
+  if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null, routeBookingId:null };
   // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
   // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
@@ -2190,6 +2229,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
   else if(route==='lookup')url.hash='#lookup';
+  else if(route==='rates')url.hash='#rates';
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
@@ -2318,18 +2358,21 @@ function collapseRail(){
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
    (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
 /* Rounded, representative marks: Bookings = event ticket (notched, perforated),
-   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis. */
+   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
+   Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
   analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
   lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
   const canLookup=state.caps&&state.caps.includes('payments:act');
   const canAnalytics=state.caps&&state.caps.includes('analytics:view');
+  const canRates=state.caps&&state.caps.includes('margin:view');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
@@ -2343,7 +2386,8 @@ function setNav(){
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
-    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
+    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'');
 }
 
 function ticketRow(t,i){
@@ -3255,6 +3299,20 @@ function lookupHeaderHtml(d){
       :`<span class="muted" style="padding:0">Not in the queue (${esc(b.status)})</span>`}</div>
   </div>`;
 }
+/* "This customer's bookings" (spec §15): the same person's other bookings, newest first, each
+   one press from its own lookup. null = the API could not read them; absent = an older answer. */
+function lookupOtherBookingsHtml(list){
+  const head='<div class="block" data-testid="lookup-others"><h4>This customer’s bookings</h4>';
+  if(list===null)return head+'<p class="lk-warn">Couldn’t load this customer’s other bookings.</p></div>';
+  const rows=(list.rows||[]).map(r=>{
+    const pay=r.status==='paid'?'paid':r.status+' · '+(r.paid?'paid':'unpaid');
+    const when=r.travelDate?fmtDate(r.travelDate):'No date';
+    const bits=['made '+lookupTime(r.createdAt),r.route,when,money({amount:r.total,currency:r.currency}),pay,r.isTest&&'test booking'].filter(Boolean);
+    return `<div class="lk-other"><button class="lk-link" data-lkcase="${esc(r.reference)}">${esc(r.reference)}</button><span class="lk-sub">${esc(bits.join(' · '))}</span></div>`;
+  }).join('');
+  return head+(rows||'<p class="muted" style="padding:0">No other bookings with this email.</p>')
+    +(list.truncated?'<p class="lk-line muted">Showing the newest 50.</p>':'')+'</div>';
+}
 function lookupCaseHtml(d){
   if(!d.booking){
     const q=d.quote||{};
@@ -3285,6 +3343,7 @@ function lookupCaseHtml(d){
   const gaps=(d.gaps||[]).length?`<div class="block" data-testid="lookup-gaps"><h4>Gaps in the record</h4>${d.gaps.map(g=>`<p class="lk-line">${esc(lookupGapText(g))}</p>`).join('')}</div>`:'';
   return `<div class="lk-case" data-testid="lookup-case">${lookupHeaderHtml(d)}
     <div class="block" data-testid="lookup-verdict"><h4>Payment</h4>${verdict}</div>
+    ${d.otherBookings===undefined?'':lookupOtherBookingsHtml(d.otherBookings)}
     <div class="block" data-testid="lookup-timeline"><h4>Timeline</h4>${rows}</div>${gaps}
     <p class="muted">Only some customer emails are recorded (not cancellation, refund or details-needed emails), and team emails aren’t stored per booking.</p></div>`;
 }
@@ -3315,6 +3374,22 @@ function viewLookup(){
       :'Couldn’t load — check the connection and try again.';
     const out=$('#lookup-out');if(out)out.innerHTML=`<div class="an-empty">${esc(msg)}</div>`;
   });
+}
+/* ── Rates (spec 2026-09-26 §5) — the founder's rate card + hot zones as a page of its own.
+   The content still renders in QuoteView (same helpers, same .qv styles as the popup it
+   replaced); the shell owns the header and hands QuoteView the mount. The mount is reused
+   across routine shell repaints, so they neither refetch the card nor wipe a half-typed zone. */
+function viewRates(){
+  $('#topbar').innerHTML='';
+  const view=$('#view');
+  let mount=view.querySelector('#rates-mount');
+  if(!mount){
+    view.innerHTML=`<div class="qhead pagehead"><h1>Rates</h1></div>
+    <p class="pagesub">What we charge, and the towns that carry a premium</p>
+    <div id="rates-mount"></div>`;
+    mount=view.querySelector('#rates-mount');
+  }
+  QuoteView.showRates(mount);
 }
 document.addEventListener('submit',e=>{
   if(e.target.id!=='lookup-form')return;
@@ -3940,6 +4015,11 @@ function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
+  if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
+  /* The Rates page renders in QuoteView (it shares the builder's helpers and .qv styles) but paints
+     into #view — unmount it on every other route so a late rate-card/zone response can't paint
+     over the page that replaced it. */
+  if(state.route!=='rates')QuoteView.hideRates();
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -3981,6 +4061,15 @@ function render(){
       /* A bare Lookup is a search box and nothing else — the cursor goes in it. */
       const qi=!state.routeCaseRef&&$('#lookup-q');
       if(qi)qi.focus({preventScroll:true});
+    }
+  }else if(state.route==='rates'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewRates();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="rates"]');
+      if(navBtn)navBtn.focus();
     }
   }else{
     hideQuoteView();viewTickets();renderSheet();
@@ -4030,6 +4119,7 @@ document.addEventListener('click',e=>{
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
+  if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -4420,7 +4510,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -4638,7 +4728,7 @@ var rateCard = null;
 var _delegatesWired = false;
 
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
-var ratesOpen = false;    // Rate Settings modal
+var ratesEl = null;       // the shell's #rates-mount while the Rates page is showing, else null
 var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
@@ -7465,103 +7555,7 @@ function renderLegCard(leg, idx, total) {
   ].join('');
 }
 
-// ── Rate card body renderer ────────────────────────────────────────────────────
-function renderRateCardBody() {
-  if (!rateCard) {
-    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rate card…</div>';
-  }
-
-  var fx = rateCard.fxUsdToLkr;
-
-  // Helper: cents → "$X.XX"
-  function usd(cents) {
-    return '$' + (cents / 100).toFixed(2);
-  }
-
-  // Helper: cents → "Rs X,XXX" (LKR = round(cents × fx / 100))
-  function lkr(cents) {
-    var val = Math.round(cents * fx / 100);
-    return 'Rs ' + val.toLocaleString('en-US');
-  }
-
-  // Helper: render a static rate row
-  function rateRow(label, hint, valueHtml) {
-    return [
-      '<div class="ch-rate-row">',
-      '  <span class="ch-rate-label">',
-      esc(label),
-      hint ? '<span class="ch-rate-hint">' + esc(hint) + '</span>' : '',
-      '  </span>',
-      '  <span class="ch-rate-control" style="font-size:13px;font-weight:600;color:var(--ink);text-align:right">',
-      valueHtml,
-      '  </span>',
-      '</div>',
-    ].join('');
-  }
-
-  var carKmCents = rateCard.perKmCents.car;
-  var vanKmCents = rateCard.perKmCents.van;
-  var van14KmCents = rateCard.perKmCents.van14;
-  var customKmCents = rateCard.perKmCents.custom;
-  var carFloorCents = rateCard.floorCents.car;
-  var vanFloorCents = rateCard.floorCents.van;
-  var driverCents = rateCard.chauffeurDayRateCents;
-  var bufferPct = rateCard.bufferPct;
-  var depositPct = rateCard.depositPct;
-  var extras = rateCard.extras;
-
-  var leftCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Per-km rates</div>',
-    rateRow('Car', null,
-      esc(usd(carKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carKmCents)) + ' /km</span>'),
-    rateRow('Van', null,
-      esc(usd(vanKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanKmCents)) + ' /km</span>'),
-    rateRow('Van 14', null,
-      esc(usd(van14KmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(van14KmCents)) + ' /km</span>'),
-    rateRow('Custom', null,
-      esc(usd(customKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(customKmCents)) + ' /km</span>'),
-    '  <div class="ch-rate-group-title">Minimum per leg</div>',
-    rateRow('Car floor', null,
-      esc(usd(carFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carFloorCents)) + '</span>'),
-    rateRow('Van floor', null,
-      esc(usd(vanFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanFloorCents)) + '</span>'),
-    '</div>',
-  ].join('');
-
-  var rightCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Chauffeur &amp; buffer</div>',
-    rateRow('Driver day rate', null,
-      esc(usd(driverCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /day</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(driverCents)) + ' /day</span>'),
-    rateRow('Buffer', null, esc(String(bufferPct)) + '%'),
-    rateRow('Deposit', null, esc(String(depositPct)) + '%'),
-    '  <div class="ch-rate-group-title">Add-ons &amp; FX</div>',
-    rateRow('Sightseeing', null,
-      esc(usd(extras.sightseeing))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.sightseeing)) + '</span>'),
-    rateRow('Waiting', null,
-      esc(usd(extras.waiting))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.waiting)) + '</span>'),
-    rateRow('Safari wait', null,
-      esc(usd(extras['safari-wait']))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras['safari-wait'])) + '</span>'),
-    rateRow('FX', 'LKR per USD', 'Rs ' + esc(String(fx)) + ' / $'),
-    rateRow('Rate card', 'version', esc(rateCard.version)),
-    '</div>',
-  ].join('');
-
-  return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
-}
-
-// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever inside Rate Settings. ──
+// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever on the Rates page. ──
 // A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
 // (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
 // release). The whole app re-renders by innerHTML swap, so the form inputs are UNCONTROLLED —
@@ -7576,7 +7570,7 @@ async function loadHotZones() {
     var d = await jsonOrNull(r);
     hotZones = (d && d.zones) ? d.zones : [];
     hotZonesOff = !!(d && d.disabled);
-    render();
+    renderRatesPage();
   } catch (e) { window.opsReportError && window.opsReportError('hotZones list', e); /* leave prior state; a transient failure just shows the last list */ }
 }
 
@@ -7590,46 +7584,46 @@ async function hzSubmitZone() {
   var placeName = (placeEl.value || '').trim();
   var boostPct = parseInt(boostEl.value, 10);
   var active = activeEl ? !!activeEl.checked : true;
-  if (!placeName) { showToast('Enter a town name', 'error'); return; }
-  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%', 'error'); return; }
+  if (!placeName) { ratesToast('Enter a town name', 'error'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { ratesToast('Boost must be 0–100%', 'error'); return; }
   if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var path = hzEditId ? '/admin/quote/zones/' + hzEditId : '/admin/quote/zones';
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); render(); return; }
+    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
     hzEditId = null;
-    showToast('Zone saved');
+    ratesToast('Zone saved');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; ratesToast('Save failed', 'error'); renderRatesPage(); }
 }
 
 async function hzToggleZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (!z) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
     hzBusy = false;
-    if (!r.ok) { showToast('Update failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Update failed', 'error'); renderRatesPage(); return; }
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; ratesToast('Update failed', 'error'); renderRatesPage(); }
 }
 
 async function hzDeleteZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (z && !window.confirm('Delete the ' + z.placeName + ' hot zone?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
     hzBusy = false;
-    if (!r.ok) { showToast('Delete failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Delete failed', 'error'); renderRatesPage(); return; }
     if (hzEditId === id) hzEditId = null;
-    showToast('Zone deleted');
+    ratesToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; ratesToast('Delete failed', 'error'); renderRatesPage(); }
 }
 
 function renderHotZonesPanel() {
@@ -7645,8 +7639,10 @@ function renderHotZonesPanel() {
       var pill = z.active
         ? '<span class="ch-badge tone-teal">active</span>'
         : '<span class="ch-badge tone-slate">paused</span>';
-      return '<div class="ch-hz-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
-        + '<div style="flex:1;min-width:0"><b>' + esc(z.placeName) + '</b> '
+      // Wraps, with a 140px basis for the name: on a phone the pill and buttons drop to a second
+      // line instead of running past the card's edge (they overflowed at 375px wide).
+      return '<div class="ch-hz-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
+        + '<div style="flex:1 1 140px;min-width:0"><b>' + esc(z.placeName) + '</b> '
         + '<span style="color:' + (hot ? 'var(--danger,#c0392b)' : 'var(--muted-2)') + '">+' + esc(String(z.boostPct)) + '%</span>'
         + (hot ? ' <span title="Above 20% is unusually high">&#9888;</span>' : '') + '</div>'
         + pill
@@ -7703,6 +7699,498 @@ function renderHotZonesPanel() {
     + form
     + '</div>';
 }
+
+// ── Rates page (spec 2026-09-26 §5–§7) ───────────────────────────────────────
+// Rate Settings used to be a popup over the builder; it is a founder-only page in the ops side
+// menu. The shell owns the page header and hands us #rates-mount; the page renders here because it
+// shares this module's helpers (api, esc, apiPlaces) and its .qv-scoped CSS. `ratesEl` is non-null
+// only while the page is showing — every async repaint checks it, so a response that lands after
+// the founder has moved on paints nothing.
+//
+// The rates come from GET /admin/rates (the live set, the code defaults, the history and the
+// read-only deposit) and are saved through a review step as a new revision (POST /admin/rates).
+// Per-km figures are shown and edited EXACTLY — two decimals of a cent, $0.4025 — so saving an
+// untouched field can never move a price. The form is uncontrolled, like the zone form: values are
+// read from the DOM at Review time, and the open form is never re-rendered (see renderRatesPage).
+var ratesData = null;       // GET /admin/rates body; null until loaded
+var ratesLoadFailed = false;
+var ratesEditing = false;   // the edit form is open
+var ratesReview = null;     // the open review: { rates, revertedToVersion, changes, warnings, samples, samplesFailed, saving, error }
+
+var RT_VEHICLES = [['car', 'Car'], ['van', 'Van 6'], ['van9', 'Van 9'], ['van14', 'Van 14'], ['custom', 'Custom']];
+var RT_EXTRAS = [['sightseeing', 'Sightseeing stops'], ['safari-wait', 'Safari wait'], ['waiting', 'Waiting'],
+  ['luggage', 'Luggage rack'], ['front', 'Child seat'], ['flex', 'Flexi ticket']];
+
+function ratesToast(msg, kind) {
+  // The builder's own #ch-toast sits inside the hidden #quoteRoot on this route; use the shell's.
+  if (window.opsToast) window.opsToast(msg, kind);
+}
+function rtCanEdit() { return viewerCan('rates:manage'); }
+// The version the form was opened on (null = nothing saved yet, the code defaults).
+function rtBaseVersion() { return ratesData && ratesData.live.source === 'revision' ? ratesData.live.version : null; }
+
+// "0.4025": up to two decimals of a cent, trailing zeros trimmed to at least two places.
+function rtKmPlain(cents) { return (cents / 100).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1'); }
+function rtUsdPlain(cents) { return (cents / 100).toFixed(2); }
+function rtKm(cents) { return '$' + rtKmPlain(cents); }
+function rtUsd(cents) { return '$' + rtUsdPlain(cents); }
+function rtLkr(cents, fx) { return 'Rs ' + Math.round((cents * fx) / 100).toLocaleString('en-US'); }
+// Markup on cost — the owner's July model — so today's card reads 15% on every vehicle.
+function rtMargin(price, cost) { return cost > 0 ? (Math.round(((price - cost) / cost) * 1000) / 10) + '%' : '—'; }
+function rtShow(kind, v) {
+  if (kind === 'km') return rtKm(v);
+  if (kind === 'pct') return v + '%';
+  if (kind === 'fx') return 'Rs ' + v;
+  return rtUsd(v);
+}
+function rtWho(email) { return String(email || '').split('@')[0] || 'unknown'; }
+function rtWhen(iso) { var s = String(iso || ''); return s ? s.slice(0, 10) + ' ' + s.slice(11, 16) + ' UTC' : ''; }
+
+// Every field that differs between two rate sets, in reading order. A change of more than 20% either
+// way is flagged — a slipped decimal point should look alarming before it is saved.
+function rtChanges(a, b) {
+  var out = [];
+  function cmp(label, x, y, kind) {
+    if (x === y) return;
+    var pct = x ? ((y - x) / x) * 100 : null;
+    out.push({ label: label, from: x, to: y, kind: kind, pct: pct, big: pct == null || Math.abs(pct) > 20 });
+  }
+  RT_VEHICLES.forEach(function (v) {
+    cmp(v[1] + ' — price per km', a.perKmCents[v[0]], b.perKmCents[v[0]], 'km');
+    cmp(v[1] + ' — our cost per km', a.costPerKmCents[v[0]], b.costPerKmCents[v[0]], 'km');
+  });
+  RT_VEHICLES.forEach(function (v) { cmp(v[1] + ' — minimum fare', a.floorCents[v[0]], b.floorCents[v[0]], 'usd'); });
+  cmp('Driver day rate', a.dayRateCents, b.dayRateCents, 'usd');
+  cmp('Our driver day cost', a.dayRateCostCents, b.dayRateCostCents, 'usd');
+  RT_EXTRAS.forEach(function (x) { cmp(x[1], a.extrasCents[x[0]], b.extrasCents[x[0]], 'usd'); });
+  cmp('Buffer', a.bufferPct, b.bufferPct, 'pct');
+  cmp('FX (LKR per USD)', a.fxUsdToLkr, b.fxUsdToLkr, 'fx');
+  return out;
+}
+
+// A price set below what it costs us is allowed — a promotion is a business call — but said out loud.
+function rtBelowCost(r) {
+  var out = [];
+  RT_VEHICLES.forEach(function (v) {
+    if (r.perKmCents[v[0]] < r.costPerKmCents[v[0]]) out.push(v[1] + ': the price per km is below our cost');
+  });
+  if (r.dayRateCents < r.dayRateCostCents) out.push('The driver day rate is below our day cost');
+  return out;
+}
+
+function rtVal(id) { var el = document.getElementById(id); return el ? String(el.value).trim().replace(/^\$/, '') : ''; }
+// Dollars as typed → cents. `places` = decimals of a dollar allowed: 4 for a per-km figure, else 2.
+function rtCents(raw, places) {
+  var re = places === 4 ? /^\d+(\.\d{1,4})?$/ : /^\d+(\.\d{1,2})?$/;
+  if (!re.test(raw)) return null;
+  return Math.round(Number(raw) * 10000) / 100;
+}
+
+// Read the form into a rate set, checking each figure against the limits the server enforces
+// (api/src/quote/rateRevision.ts). Returns { rates, errors }: rates is null while any field is bad.
+function rtReadForm() {
+  var errors = {};
+  var rates = { perKmCents: {}, costPerKmCents: {}, floorCents: {}, extrasCents: {} };
+  function money(id, places, maxCents) {
+    var c = rtCents(rtVal(id), places);
+    if (c == null) errors[id] = places === 4 ? 'Dollars, up to 4 decimals (0.4025)' : 'Dollars and cents (29.00)';
+    else if (c <= 0 || c > maxCents) errors[id] = 'Between $0.01 and ' + rtUsd(maxCents);
+    return c;
+  }
+  RT_VEHICLES.forEach(function (v) {
+    rates.perKmCents[v[0]] = money('rt-km-' + v[0], 4, 1000);
+    rates.costPerKmCents[v[0]] = money('rt-cost-' + v[0], 4, 1000);
+    rates.floorCents[v[0]] = money('rt-floor-' + v[0], 2, 100000);
+  });
+  rates.dayRateCents = money('rt-day', 2, 100000);
+  rates.dayRateCostCents = money('rt-daycost', 2, 100000);
+  RT_EXTRAS.forEach(function (x) { rates.extrasCents[x[0]] = money('rt-x-' + x[0], 2, 50000); });
+  var buf = rtVal('rt-buffer');
+  if (!/^\d+$/.test(buf) || Number(buf) > 50) errors['rt-buffer'] = 'A whole percent, 0–50';
+  rates.bufferPct = Number(buf);
+  var fx = rtVal('rt-fx');
+  if (!/^\d+(\.\d{1,2})?$/.test(fx) || Number(fx) <= 0 || Number(fx) > 1000) errors['rt-fx'] = 'Rupees per dollar, up to 2 decimals';
+  rates.fxUsdToLkr = Number(fx);
+  return { rates: Object.keys(errors).length ? null : rates, errors: errors };
+}
+
+// Errors go straight onto the inputs, not through a render: the open form is never re-rendered.
+function rtShowErrors(errors) {
+  if (!ratesEl) return;
+  ratesEl.querySelectorAll('.ch-rt-input').forEach(function (el) {
+    var msg = errors[el.id] || '';
+    el.classList.toggle('invalid', !!msg);
+    var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('.ch-field-err');
+    if (err) err.textContent = msg;
+  });
+}
+
+function rtInput(id, value, prefix, suffix, label) {
+  return '<div class="ch-field"><div class="ch-input-wrap">'
+    + (prefix ? '<span class="ch-input-prefix">' + prefix + '</span>' : '')
+    + '<input class="ch-input ch-rt-input" id="' + id + '" inputmode="decimal" autocomplete="off" aria-label="' + esc(label) + '" value="' + esc(value) + '">'
+    + (suffix ? '<span class="ch-input-suffix">' + suffix + '</span>' : '')
+    + '</div><div class="ch-field-err"></div></div>';
+}
+
+function renderRatesEditor() {
+  if (ratesLoadFailed) {
+    return '<div class="ch-lock-note" data-testid="rates-load-failed">Couldn’t load the rates. '
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtReload">Try again</button></div>';
+  }
+  if (!ratesData) return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rates…</div>';
+  var d = ratesData, r = d.live.rates, fx = r.fxUsdToLkr, edit = ratesEditing;
+  function row(label, hint, viewHtml, inputHtml) {
+    return '<div class="ch-rate-row">'
+      + '<span class="ch-rate-label">' + esc(label) + (hint ? '<span class="ch-rate-hint">' + hint + '</span>' : '') + '</span>'
+      + '<span class="ch-rate-control">' + (edit && inputHtml ? inputHtml : viewHtml) + '</span></div>';
+  }
+  // Value and unit share one line; the rupee equivalent sits under them.
+  function view(main, sub) { return '<span class="ch-rt-val"><span>' + main + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>'; }
+
+  var perKm = RT_VEHICLES.map(function (v) {
+    var c = r.perKmCents[v[0]];
+    return row(v[1], null, view(esc(rtKm(c)) + '<i> /km</i>', rtLkr(c, fx) + ' /km'),
+      rtInput('rt-km-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' price per km'));
+  }).join('');
+  var cost = RT_VEHICLES.map(function (v) {
+    var c = r.costPerKmCents[v[0]];
+    var m = '<span data-margin-for="' + v[0] + '">margin ' + esc(rtMargin(r.perKmCents[v[0]], c)) + '</span>';
+    return row(v[1], m, view(esc(rtKm(c)) + '<i> /km</i>'), rtInput('rt-cost-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' our cost per km'));
+  }).join('');
+  var floors = RT_VEHICLES.map(function (v) {
+    var c = r.floorCents[v[0]];
+    return row(v[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-floor-' + v[0], rtUsdPlain(c), '$', '', v[1] + ' minimum fare'));
+  }).join('');
+  var day = row('Driver day rate', null, view(esc(rtUsd(r.dayRateCents)) + '<i> /day</i>', rtLkr(r.dayRateCents, fx) + ' /day'),
+      rtInput('rt-day', rtUsdPlain(r.dayRateCents), '$', '/day', 'Driver day rate'))
+    + row('Our day cost', '<span data-margin-for="day">margin ' + esc(rtMargin(r.dayRateCents, r.dayRateCostCents)) + '</span>',
+      view(esc(rtUsd(r.dayRateCostCents)) + '<i> /day</i>'), rtInput('rt-daycost', rtUsdPlain(r.dayRateCostCents), '$', '/day', 'Our driver day cost'));
+  var extras = RT_EXTRAS.map(function (x) {
+    var c = r.extrasCents[x[0]];
+    return row(x[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-x-' + x[0], rtUsdPlain(c), '$', '', x[1]));
+  }).join('');
+  var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
+    + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
+  // Read-only in both modes (owner, 2026-09-26): no booking charges a deposit today.
+  var deposit = row('Deposit', 'not charged — bookings are paid in full',
+    view(esc(String(d.readOnly.depositPct)) + '%', 'cap ' + rtUsd(d.readOnly.depositCapCents)), null);
+
+  var live = d.live;
+  var liveLabel = live.source === 'revision'
+    ? 'Live: version <b>' + esc(live.version) + '</b> · saved by ' + esc(rtWho(live.createdBy)) + ' · ' + esc(rtWhen(live.createdAt))
+    : 'Live: the code defaults (<b>' + esc(d.defaults.version) + '</b>) — nothing saved yet';
+  var actions = !rtCanEdit() ? '' : (edit
+    ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="rtCancel">Cancel</button>'
+      + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtReview">Review changes</button>'
+    : '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtEdit">Edit rates</button>');
+  var note = edit
+    ? 'Change any figure, then Review. Prices are what the customer pays; costs only feed the margin. Nothing is live until you save.'
+    : 'These are the live prices: a saved change applies to the next quote, website estimate and booking. Approved quotes, and web quotes inside their 7-day lock, keep their prices.';
+
+  return '<div class="ch-rates-top"><div class="ch-rates-live" data-testid="rates-live">' + liveLabel + '</div>'
+    + '<div class="ch-rates-actions">' + actions + '</div></div>'
+    + '<div class="ch-lock-note">' + note + '</div>'
+    + '<div class="ch-rate-grid' + (edit ? ' ch-rt-editing" id="rt-form' : '') + '">'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Price per km</div>' + perKm
+    + '<div class="ch-rate-group-title">Minimum fare</div>' + floors + '</div>'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Our cost per km</div>' + cost
+    + '<div class="ch-rate-group-title">Chauffeur day</div>' + day
+    + '<div class="ch-rate-group-title">Add-ons</div>' + extras
+    + '<div class="ch-rate-group-title">Buffer &amp; FX</div>' + bufFx
+    + '<div class="ch-rate-group-title">Deposit</div>' + deposit + '</div>'
+    + '</div>';
+}
+
+function renderRatesHistory() {
+  var d = ratesData;
+  if (!d) return '';
+  var canRevert = rtCanEdit() && !ratesEditing;
+  var rows = d.history.map(function (h, i) {
+    var older = d.history[i + 1] ? d.history[i + 1].rates : d.defaults.rates;
+    var ch = rtChanges(older, h.rates);
+    var chips = ch.length
+      ? ch.slice(0, 4).map(function (c) { return '<span class="ch-hist-chip">' + esc(c.label + ' ' + rtShow(c.kind, c.from) + ' → ' + rtShow(c.kind, c.to)) + '</span>'; }).join('')
+        + (ch.length > 4 ? '<span class="ch-hist-chip is-quiet">+' + (ch.length - 4) + ' more</span>' : '')
+      : '<span class="ch-hist-chip is-quiet">no price change</span>';
+    return '<div class="ch-rt-hist-row" data-testid="rates-history-row">'
+      + '<span class="ch-hist-rev">' + esc(h.version) + (i === 0 ? ' <span class="ch-badge tone-teal">live</span>' : '') + '</span>'
+      + '<span class="ch-hist-meta">' + esc(rtWho(h.createdBy)) + ' · ' + esc(rtWhen(h.createdAt))
+      + (h.revertedToVersion ? ' · reverted to ' + esc(h.revertedToVersion) : '') + '</span>'
+      + '<span class="ch-hist-chips">' + chips + '</span>'
+      + (canRevert && i > 0 ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(h.version) + '">Revert to this</button>' : '')
+      + '</div>';
+  });
+  rows.push('<div class="ch-rt-hist-row" data-testid="rates-history-defaults">'
+    + '<span class="ch-hist-rev">Code defaults' + (d.history.length ? '' : ' <span class="ch-badge tone-teal">live</span>') + '</span>'
+    + '<span class="ch-hist-meta">' + esc(d.defaults.version) + ' · rateCard.ts</span>'
+    + '<span class="ch-hist-chips"></span>'
+    + (canRevert && d.history.length ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(d.defaults.version) + '">Revert to this</button>' : '')
+    + '</div>');
+  return '<div class="ch-rt-history"><h3 class="ch-rt-h3">History</h3>' + rows.join('') + '</div>';
+}
+
+function renderRatesReview() {
+  var rv = ratesReview;
+  if (!rv || !ratesData) return '';
+  var changes = rv.changes.length
+    ? '<table class="ch-rt-table" data-testid="rates-changes"><thead><tr><th>What</th><th>Now</th><th>New</th><th>Change</th></tr></thead><tbody>'
+      + rv.changes.map(function (c) {
+        var pct = c.pct == null ? '—' : (c.pct > 0 ? '+' : '') + (Math.round(c.pct * 10) / 10) + '%';
+        return '<tr' + (c.big ? ' class="is-big"' : '') + '><td>' + esc(c.label) + '</td><td>' + esc(rtShow(c.kind, c.from)) + '</td>'
+          + '<td><b>' + esc(rtShow(c.kind, c.to)) + '</b></td><td>' + esc(pct)
+          + (c.big ? ' <span class="ch-rt-flag" title="More than 20% either way">check</span>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty" data-testid="rates-no-change">Nothing has changed — every figure matches the live rates.</div>';
+  var warn = rv.warnings.length
+    ? '<div class="ch-rt-warn" data-testid="rates-below-cost">' + rv.warnings.map(esc).join('<br>') + '</div>' : '';
+  var samples = rv.samples
+    ? '<table class="ch-rt-table" data-testid="rates-samples"><thead><tr><th>Sample trip</th><th>Now</th><th>New</th></tr></thead><tbody>'
+      + rv.samples.map(function (s) {
+        return '<tr><td>' + esc(s.label) + '</td><td>' + esc(rtUsd(s.currentCents)) + '</td><td><b>' + esc(rtUsd(s.proposedCents)) + '</b></td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty">' + (rv.samplesFailed ? 'Couldn’t price the sample trips — the changes above are still exact.' : 'Pricing sample trips…') + '</div>';
+  var revertNote = rv.revertedToVersion
+    ? '<div class="ch-lock-note">Reverting to ' + (rv.revertedToVersion === ratesData.defaults.version
+      ? 'the code defaults (' + esc(rv.revertedToVersion) + ')' : 'version ' + esc(rv.revertedToVersion))
+      + '. History keeps every version: this saves a new one.</div>' : '';
+  var err = '';
+  if (rv.error && rv.error.kind === 'stale') {
+    var cur = rv.error.current;
+    err = '<div class="ch-rt-warn" data-testid="rates-stale">Someone saved rates since you opened this page'
+      + (cur ? ' — version ' + esc(cur.version) + ' by ' + esc(rtWho(cur.createdBy)) + ', ' + esc(rtWhen(cur.createdAt)) : '')
+      + '. Reload to see them, then make your change again.</div>';
+  } else if (rv.error && rv.error.kind === 'invalid') {
+    err = '<div class="ch-rt-warn">The server refused: ' + esc(rv.error.issues.map(function (i) { return (i.path || []).join('.'); }).join(', ') || 'invalid figures') + '.</div>';
+  } else if (rv.error) {
+    err = '<div class="ch-rt-warn">Couldn’t save — nothing changed. Try again.</div>';
+  }
+  var buttons = (rv.error && rv.error.kind === 'stale')
+    ? '<button class="ch-btn ch-btn-teal" data-action="rtReload">Reload rates</button>'
+    : '<button class="ch-btn ch-btn-outline" data-action="rtReviewClose">' + (rv.revertedToVersion ? 'Cancel' : 'Back to editing') + '</button>'
+      + '<button class="ch-btn ch-btn-teal" data-action="rtSave"' + (rv.saving || !rv.changes.length ? ' disabled' : '') + '>'
+      + (rv.saving ? 'Saving…' : (rv.revertedToVersion ? 'Revert' : 'Save rates')) + '</button>';
+  return '<div class="ch-scrim show" data-action="rtReviewClose"></div>'
+    + '<div class="ch-modal" data-testid="rates-review"><div class="ch-modal-card">'
+    + '<div class="ch-modal-head"><h2>' + (rv.revertedToVersion ? 'Review the revert' : 'Review rate changes') + '</h2>'
+    + '<button class="ch-x-btn" data-action="rtReviewClose" title="Close">&times;</button></div>'
+    + '<div class="ch-modal-body">'
+    + '<div class="ch-lock-note">Saving makes these the live prices: the next quote, website estimate and booking use them. Approved quotes keep the prices they were approved at.</div>'
+    + revertNote + warn + changes
+    + '<div class="ch-rate-group-title ch-rt-samples-title">Sample trips</div>' + samples
+    + err
+    + '<div class="ch-rt-modal-actions">' + buttons + '</div>'
+    + '</div></div></div>';
+}
+
+// The review dialog renders into its own .qv host on <body>, not inside the page: #view sits at
+// z-index 1 under the side rail (z-index 2), so a dialog inside it would be half-covered by the rail
+// on a phone however high its own z-index went.
+var rtModalRoot = null;
+function rtModalHost() {
+  if (!rtModalRoot || !rtModalRoot.isConnected) {
+    rtModalRoot = document.createElement('div');
+    rtModalRoot.className = 'qv qv-page';
+    document.body.appendChild(rtModalRoot);
+  }
+  return rtModalRoot;
+}
+
+function renderRatesPage() {
+  if (!ratesEl || !ratesEl.isConnected) return;
+  var html = '<div class="qv qv-page" data-testid="rates-page">'
+    + '<div class="ch-rates-card">'
+    + renderRatesEditor()
+    + renderRatesHistory()
+    + renderHotZonesPanel()
+    + '</div>'
+    + '</div>';
+  // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field. And the
+  // open rates form is the founder's draft — never diff it, or a render mid-edit (a zone list
+  // landing, the review opening) would reset a typed figure to its saved value.
+  morphdom(ratesEl, '<div>' + html + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) {
+      if (ratesEditing && fromEl.id === 'rt-form') return false;
+      return !fromEl.isEqualNode(toEl);
+    },
+  });
+  morphdom(rtModalHost(), '<div>' + renderRatesReview() + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); },
+  });
+  attachHotZoneAutoComplete();
+}
+
+async function loadRates() {
+  try {
+    var r = await api('/admin/rates');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (!d || !d.live || !d.live.rates || !d.defaults || !Array.isArray(d.history) || !d.readOnly) {
+      ratesLoadFailed = true;
+    } else {
+      ratesData = d;
+      ratesLoadFailed = false;
+    }
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates load', e);
+    ratesLoadFailed = true;
+  }
+  renderRatesPage();
+}
+
+// Open the review for a proposed set (a form read, or a revert). The sample trips are priced by the
+// server with the real engine; the change list is exact and needs no round trip.
+async function rtOpenReview(rates, revertedToVersion) {
+  var rv = {
+    rates: rates, revertedToVersion: revertedToVersion || null,
+    changes: rtChanges(ratesData.live.rates, rates), warnings: rtBelowCost(rates),
+    samples: null, samplesFailed: false, saving: false, error: null,
+  };
+  ratesReview = rv;
+  renderRatesPage();
+  try {
+    var r = await api('/admin/rates/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rates: rates }) });
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (ratesReview !== rv) return; // closed or replaced meanwhile
+    if (d && Array.isArray(d.samples)) rv.samples = d.samples; else rv.samplesFailed = true;
+  } catch (e) {
+    if (ratesReview !== rv) return;
+    rv.samplesFailed = true;
+  }
+  renderRatesPage();
+}
+
+async function rtSave() {
+  var rv = ratesReview;
+  if (!rv || rv.saving || !rv.changes.length) return;
+  rv.saving = true;
+  rv.error = null;
+  renderRatesPage();
+  try {
+    var body = { baseVersion: rtBaseVersion(), rates: rv.rates };
+    if (rv.revertedToVersion) body.revertedToVersion = rv.revertedToVersion;
+    var r = await api('/admin/rates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    var d = await jsonOrNull(r);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    if (r.status === 201 && d && d.revision) {
+      ratesReview = null;
+      ratesEditing = false;
+      ratesToast('Rates saved — version ' + d.revision.version + ' is live');
+      await loadRates();
+      apiRateCard().then(function (rc) { if (rc) rateCard = rc; }); // the builder's copy (add-ons, caps) follows
+      return;
+    }
+    if (r.status === 409) rv.error = { kind: 'stale', current: d && d.current };
+    else if (r.status === 400) rv.error = { kind: 'invalid', issues: (d && d.issues) || [] };
+    else rv.error = { kind: 'failed' };
+    renderRatesPage();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates save', e);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    rv.error = { kind: 'failed' };
+    renderRatesPage();
+  }
+}
+
+// Mount (or re-mount) into the shell's #rates-mount. A NEW mount node means the founder just
+// arrived — fetch the rates and the zones fresh; the same node again is a routine shell repaint.
+function showRates(el) {
+  var arriving = ratesEl !== el;
+  ratesEl = el;
+  if (arriving) {
+    hzEditId = null;
+    ratesEditing = false;
+    ratesReview = null;
+    ratesData = null;
+    ratesLoadFailed = false;
+    loadRates();
+    loadHotZones();
+  }
+  renderRatesPage();
+}
+
+function hideRates() {
+  if (!ratesEl) return;
+  ratesEl = null;
+  hzEditId = null;
+  ratesEditing = false;
+  ratesReview = null;
+  if (rtModalRoot) rtModalRoot.innerHTML = '';
+  hzacClose();
+}
+
+// The page lives outside the builder's .ch-app, so its buttons need their own delegate.
+document.addEventListener('click', function (e) {
+  if (!ratesEl) return;
+  var el = e.target.closest('[data-action]');
+  if (!el || !(ratesEl.contains(el) || (rtModalRoot && rtModalRoot.contains(el)))) return;
+  var action = el.getAttribute('data-action');
+  if (action === 'hzSubmit') {
+    hzSubmitZone();
+  } else if (action === 'hzEditStart') {
+    hzEditId = el.getAttribute('data-id');
+    renderRatesPage();
+  } else if (action === 'hzEditCancel') {
+    hzEditId = null;
+    renderRatesPage();
+  } else if (action === 'hzToggleActive') {
+    hzToggleZone(el.getAttribute('data-id'));
+  } else if (action === 'hzDelete') {
+    hzDeleteZone(el.getAttribute('data-id'));
+  } else if (action === 'rtEdit') {
+    if (!rtCanEdit() || !ratesData) return;
+    ratesEditing = true;
+    renderRatesPage();
+  } else if (action === 'rtCancel') {
+    ratesEditing = false;
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtReview') {
+    var form = rtReadForm();
+    rtShowErrors(form.errors);
+    if (!form.rates) { ratesToast('Check the highlighted figures', 'error'); return; }
+    rtOpenReview(form.rates, null);
+  } else if (action === 'rtReviewClose') {
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtSave') {
+    rtSave();
+  } else if (action === 'rtRevert') {
+    if (!rtCanEdit() || !ratesData) return;
+    var v = el.getAttribute('data-version');
+    var target = v === ratesData.defaults.version ? ratesData.defaults
+      : ratesData.history.find(function (h) { return h.version === v; });
+    if (target) rtOpenReview(target.rates, v);
+  } else if (action === 'rtReload') {
+    ratesReview = null;
+    ratesEditing = false;
+    ratesData = null;
+    ratesLoadFailed = false;
+    renderRatesPage();
+    loadRates();
+  }
+});
+
+// Margins follow the typed figures as they change — straight onto the page, no render (the open
+// form is never re-rendered). Editing a field also clears its error.
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!ratesEl || !ratesEditing || !t || !t.classList || !t.classList.contains('ch-rt-input') || !ratesEl.contains(t)) return;
+  t.classList.remove('invalid');
+  var err = t.closest('.ch-field') && t.closest('.ch-field').querySelector('.ch-field-err');
+  if (err) err.textContent = '';
+  var m = /^rt-(km|cost)-(.+)$/.exec(t.id);
+  var key = m ? m[2] : ((t.id === 'rt-day' || t.id === 'rt-daycost') ? 'day' : null);
+  if (!key) return;
+  var places = key === 'day' ? 2 : 4;
+  var price = rtCents(rtVal(key === 'day' ? 'rt-day' : 'rt-km-' + key), places);
+  var cost = rtCents(rtVal(key === 'day' ? 'rt-daycost' : 'rt-cost-' + key), places);
+  var out = ratesEl.querySelector('[data-margin-for="' + key + '"]');
+  if (out) out.textContent = 'margin ' + (price != null && cost != null ? rtMargin(price, cost) : '—');
+});
 
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
 // Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
@@ -9537,8 +10025,6 @@ function render() {
     '    <div class="ch-header-tools ch-actionbar">',
     renderHeaderAssign(),
     renderActionBar(),
-    // Rates (the rate-card settings modal) is a founder-only concern.
-    (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),
     '    </div>',
     '  </div>',
     renderPayLinkRow(),
@@ -9723,27 +10209,6 @@ function render() {
     '</div>', // ch-container
 
     // (The recent-quotes drawer was retired — the ops-shell queue is the quote list now.)
-
-    // ══ Rate Settings modal ══
-    (ratesOpen ? [
-      '<div class="ch-scrim show" data-action="closeRates"></div>',
-      '<div class="ch-modal">',
-      '  <div class="ch-modal-card">',
-      '    <div class="ch-modal-head">',
-      '      <h2>Rate Settings</h2>',
-      '      <div style="display:flex;align-items:center;gap:10px">',
-      '        <span class="ch-badge tone-slate">&#x1F512; Locked</span>',
-      '        <button class="ch-x-btn" data-action="closeRates" title="Close">&times;</button>',
-      '      </div>',
-      '    </div>',
-      '    <div class="ch-modal-body">',
-      '      <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
-      renderRateCardBody(),
-      renderHotZonesPanel(),
-      '    </div>',
-      '  </div>',
-      '</div>',
-    ].join('') : ''),
 
     // ══ "Mark booked" modal ══
     (bookOpen ? [
@@ -10278,28 +10743,6 @@ function attachEventListeners() {
       runAction(action, reopenToDraft);
     } else if (action === 'deleteQuote') {
       runAction(action, deleteQuote);
-    } else if (action === 'openRates') {
-      if (!viewerCan('margin:view')) return; // founder-only rate card
-      ratesOpen = true;
-      hzEditId = null;
-      loadHotZones(); // async: fetches the zone list, then re-renders the panel in place
-      render();
-    } else if (action === 'closeRates') {
-      ratesOpen = false;
-      hzEditId = null;
-      render();
-    } else if (action === 'hzSubmit') {
-      hzSubmitZone();
-    } else if (action === 'hzEditStart') {
-      hzEditId = el.getAttribute('data-id');
-      render();
-    } else if (action === 'hzEditCancel') {
-      hzEditId = null;
-      render();
-    } else if (action === 'hzToggleActive') {
-      hzToggleZone(el.getAttribute('data-id'));
-    } else if (action === 'hzDelete') {
-      hzDeleteZone(el.getAttribute('data-id'));
     } else if (action === 'toggleOutput') {
       // Resolve the current effective open state (tri-state → bool), then flip to
       // the explicit opposite so one click always toggles what the operator sees.
@@ -10500,7 +10943,6 @@ function attachEventListeners() {
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
   // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
-  attachHotZoneAutoComplete(); // same picker for the Rate-Settings zone field (#hz-place)
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
@@ -11581,6 +12023,7 @@ function teardown() {
   clearTimeout(_ac.timer);
   _ac.timer = null;
   acClose();
+  hideRates();
   _inited = false;
   // Drop the open-veil unconditionally: logging out mid-open leaves openQuote's finally
   // unreachable for that call, and a stuck veil would greet the next sign-in.
@@ -11630,7 +12073,7 @@ window.opsQuoteKbar = function() {
   return acts;
 };
 
-return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew };
+return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew, showRates: showRates, hideRates: hideRates };
 })();
 </script>
 </body>

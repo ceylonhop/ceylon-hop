@@ -1,4 +1,4 @@
-import type { Booking, BookingRepo } from '../db/bookingRepo';
+import { personKeyFor, type Booking, type BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentEvent, PaymentEventRepo } from '../db/paymentEventRepo';
@@ -18,8 +18,8 @@ import {
 // "incomplete" rather than drawing a confident answer from part of the evidence.
 
 export interface PaymentCaseDeps {
-  bookings: Pick<BookingRepo, 'get' | 'findByReference'>;
-  payments: Pick<PaymentRepo, 'findByBookingId' | 'provenanceFor'>;
+  bookings: Pick<BookingRepo, 'get' | 'findByReference' | 'listByPersonKey'>;
+  payments: Pick<PaymentRepo, 'findByBookingId' | 'findByBookingIds' | 'provenanceFor'>;
   paymentEvents?: Pick<PaymentEventRepo, 'listForReconciliation'>;
   checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingId' | 'listByOrderId'>;
   refunds?: Pick<RefundRepo, 'list'>;
@@ -52,6 +52,25 @@ export interface CaseBooking {
   inQueue: boolean;
 }
 
+// One line of "this customer's bookings" (spec §15). `paid` is the ops queue's own rule (a
+// succeeded payment row); each booking's full verdict is its own lookup, one press away.
+export interface CasePersonBooking {
+  id: string;
+  reference: string;
+  status: string;
+  mode: string;
+  channel: 'website' | 'whatsapp';
+  createdAt: string;
+  route: string;
+  travelDate: string | null;
+  travelTime: string | null;
+  pax: number;
+  total: number;
+  currency: string;
+  paid: boolean;
+  isTest: boolean;
+}
+
 export interface CaseResponse {
   ref: string;
   quote: { id: string; reference: string; status: string } | null;
@@ -60,7 +79,12 @@ export interface CaseResponse {
   timeline: CaseRow[];
   gaps: GapCode[];
   unavailable: CaseSource[];
+  // Null when it could not be read, or for a quote with no booking (a quote records no email).
+  otherBookings: { rows: CasePersonBooking[]; truncated: boolean } | null;
 }
+
+// Team test addresses carry dozens of bookings; the newest this many are plenty to read.
+const OTHER_BOOKINGS_MAX = 50;
 
 export type PaymentCaseResult = { kind: 'bad_ref' } | { kind: 'not_found' } | { kind: 'found'; body: CaseResponse };
 
@@ -76,7 +100,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
     quote = { id: q.id, reference: q.reference, status: q.status };
     booking = q.convertedBookingId ? await deps.bookings.get(q.convertedBookingId) : null;
     if (!booking) {
-      return { kind: 'found', body: { ref: parsed.ref, quote, booking: null, verdict: null, timeline: [], gaps: [], unavailable: [] } };
+      return { kind: 'found', body: { ref: parsed.ref, quote, booking: null, verdict: null, timeline: [], gaps: [], unavailable: [], otherBookings: null } };
     }
   } else {
     booking = await deps.bookings.findByReference(parsed.ref);
@@ -100,7 +124,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
   };
 
   const { paymentEvents, checkoutEvents, refunds, notificationLog } = deps;
-  const [paid, log, refundRows, emails, fromQuote] = await Promise.all([
+  const [paid, log, refundRows, emails, fromQuote, otherBookings] = await Promise.all([
     // Payments, then each row's provenance and PayHere notices. The notices hang off the rows, so
     // if the rows cannot be read the notices cannot either.
     load('payments', async () => {
@@ -121,6 +145,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
     load('refunds', refunds ? () => refunds.list(b.id) : null, [] as Refund[]),
     load('notification_log', notificationLog ? () => notificationLog.listByBookingId(b.id) : null, [] as Array<{ kind: string; sentAt: Date }>),
     quote || !deps.quotes ? Promise.resolve(null) : deps.quotes.findByConvertedBookingId(b.id).catch(() => null),
+    otherBookingsOf(deps, b),
   ]);
   if (fromQuote) quote = { id: fromQuote.id, reference: fromQuote.reference, status: fromQuote.status };
 
@@ -172,6 +197,34 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
       timeline: caseTimeline(evidence),
       gaps: caseGaps(evidence, verdict),
       unavailable,
+      otherBookings,
     },
   };
+}
+
+// Everyone else booked under the same person_key. Not payment evidence for THIS booking, so a
+// failure here is reported as null on its own and never withholds the verdict.
+async function otherBookingsOf(deps: PaymentCaseDeps, b: Booking): Promise<CaseResponse['otherBookings']> {
+  try {
+    // Room for the booking itself plus one more, so "there are older ones" is known, not guessed.
+    const found = (await deps.bookings.listByPersonKey(personKeyFor(b.input.customer.email), OTHER_BOOKINGS_MAX + 2))
+      .filter((x) => x.id !== b.id);
+    const shown = found.slice(0, OTHER_BOOKINGS_MAX);
+    const payments = shown.length ? await deps.payments.findByBookingIds(shown.map((x) => x.id)) : [];
+    const paidIds = new Set(payments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    return {
+      rows: shown.map((x) => {
+        const row = toOpsRow(x, { paid: paidIds.has(x.id), teamEmails: deps.teamEmails });
+        return {
+          id: x.id, reference: x.reference, status: x.status, mode: x.mode, channel: x.channel, createdAt: x.createdAt,
+          route: row.route, travelDate: row.travelDate, travelTime: row.travelTime, pax: row.pax,
+          total: x.total, currency: x.currency, paid: paidIds.has(x.id), isTest: row.isTest,
+        };
+      }),
+      truncated: found.length > OTHER_BOOKINGS_MAX,
+    };
+  } catch (err) {
+    console.error(`[ops] payment lookup: other bookings unavailable for ${b.reference}:`, err);
+    return null;
+  }
 }

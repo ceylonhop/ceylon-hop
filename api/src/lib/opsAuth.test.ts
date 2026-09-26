@@ -28,6 +28,11 @@ describe('can() capability matrix', () => {
     for (const r of ['finance', 'ops', 'system'] as const) expect(can(r, 'analytics:view')).toBe(false);
   });
 
+  it('rates:manage is founder-only (spec 2026-09-26 Rates page)', () => {
+    expect(can('founder', 'rates:manage')).toBe(true);
+    for (const r of ['finance', 'ops', 'system'] as const) expect(can(r, 'rates:manage')).toBe(false);
+  });
+
   // payments:reverse — undoing a sale (owner, 2026-08-02). Split out of payments:act so finance
   // keeps recording money and reading refund history, while cancelling a trip and giving the
   // money back stay with the founder. The pairing below is the whole point: finance still holds

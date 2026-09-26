@@ -228,7 +228,9 @@ export function paymentVerdict(e: CaseEvidence): Verdict | null {
   }
   if (m.cardPaid) {
     const at = m.cardPaidAt;
-    const before = (d: Date) => at === null || ms(d) < ms(at);
+    // At or before: a row stamped in the capture's own millisecond counts as before it — the clock
+    // ticks in milliseconds, and no checkout is handed out once the payment has settled.
+    const before = (d: Date) => at === null || ms(d) <= ms(at);
     const first = m.successes[0];
     return {
       ...base,

@@ -9,6 +9,9 @@ import { FakeAlertAdapter } from '../adapters/alerts';
 import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 import { isoToday } from '../domain/dateRules';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
+import { ratesFromCard } from '../quote/rateRevision';
+import { RATE_CARD } from '../quote/rateCard';
 
 // Joining is only allowed while the cutoff is still ahead (a seat nothing can charge for is a
 // free rider — see the guard in routes/rideBoard.ts), so these dates must be anchored to now.
@@ -20,7 +23,7 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string } = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string; rateRevisions?: RateRevisionRepo } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
@@ -748,6 +751,20 @@ describe('POST /board (create) — catalogue legs', () => {
     }));
     expect(res.status).toBe(201);
     expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(113)); // fake maps km
+  });
+
+  it('prices an off-catalogue seat off the founder\'s saved van rate (spec 2026-09-26 §8.3)', async () => {
+    const revisions = new InMemoryRateRevisionRepo();
+    const rates = ratesFromCard(RATE_CARD);
+    await revisions.create({ rates: { ...rates, perKmCents: { ...rates.perKmCents, van: 108.1 } }, baseVersion: null, createdBy: 'f@x.com' });
+    const { app } = makeApp({}, { rateRevisions: revisions });
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
+      from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2999-08-08', slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    const card = { ...RATE_CARD, perKmCents: { ...RATE_CARD.perKmCents, van: 108.1 } };
+    expect((await res.json()).list.seatPrice).toBe(seatPriceForDistance(113, card));
   });
 
   it('does not price the REVERSE of a catalogue leg from the catalogue', async () => {

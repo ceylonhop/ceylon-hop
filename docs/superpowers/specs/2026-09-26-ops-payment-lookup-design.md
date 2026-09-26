@@ -340,3 +340,37 @@ The rules above hold whichever way these land:
 - **Shared file:** `ops-ui.html` gets a new route plus one drawer link.
 - **Rollout:** merge to `main` (staging auto-deploys, no migration), check it on staging with a
   staging booking, then promote with the owner's ok.
+
+## 15. Slice 2 — the customer's other bookings (owner chose option 1, 2026-09-26)
+
+**Question it answers:** did they try again, or pay on a different booking? This was the crux of
+the CH-8UVYG / CH-9SFAG and CH-PX5Z4 investigations.
+
+**What the page adds:** a "This customer's bookings" block. It lists every other booking by the same
+person, newest first. Each line shows:
+- the ref, which opens that booking's own lookup;
+- when it was made;
+- route and travel date;
+- total;
+- status;
+- paid or unpaid;
+- the test flag.
+
+**Rules:**
+- **Same person** means the same `customers.person_key`. That's the database's own grouping,
+  generated from `lower(btrim(email))` and indexed since migration 0032 (`customers_person_key_idx`).
+  The booking being looked up is left out. There's no phone or quote-contact matching (option 3,
+  not chosen).
+- **Paid** uses the ops queue's own rule: a succeeded payment row (`toOpsRow`). The full verdict
+  for each booking is one click away (option 2, not chosen).
+- **Limit:** at most 50, newest first. `truncated` says whether older ones exist. That matters
+  for team test addresses, which carry dozens of bookings.
+- **Not payment evidence for this booking.** If the list fails to load, `otherBookings` is `null`
+  and the page says so. It never withholds or changes the verdict.
+- **Quote with no booking:** `otherBookings` is `null`, because a quote records no email.
+
+**Build notes:**
+- One new read, `BookingRepo.listByPersonKey(key, limit)`, returning newest first, in-memory and
+  Postgres.
+- The payments come from the existing batched `PaymentRepo.findByBookingIds`.
+- No migration, pricing or config.

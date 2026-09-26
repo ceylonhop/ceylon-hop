@@ -105,6 +105,22 @@ describe('paymentVerdict — the nine situations', () => {
     });
   });
 
+  it('1 paid: a checkout or decline notice stamped in the capture’s own millisecond counts as before it', () => {
+    // The clock ticks in milliseconds; the in-memory route tests hand out the form and settle it within one.
+    const at = T('09:20:00');
+    const v = paymentVerdict(evidence({
+      booking: { status: 'paid' },
+      payments: [gateway({ status: 'succeeded', settledAt: at, settlementSource: 'webhook', gatewayPaymentId: '320048289427' })],
+      log: [
+        log('checkout', 'succeeded', at, { attempt: 1 }),
+        log('webhook', 'failed', at, { httpStatus: 200 }),
+        log('webhook', 'failed', new Date(at.getTime() + 1), { httpStatus: 200 }), // a millisecond later is after it
+      ],
+      notices: [notice('2', at)],
+    }));
+    expect(v).toMatchObject({ kind: 'paid', at: at.toISOString(), checkouts: 1, declineNotices: 1 });
+  });
+
   it('2 paid by hand: method, who recorded it, their reference', () => {
     const v = paymentVerdict(evidence({ booking: { status: 'paid' }, payments: [manual()] }));
     expect(v).toMatchObject({ kind: 'paid_by_hand', at: T('12:00:00').toISOString(), amount: 5000,

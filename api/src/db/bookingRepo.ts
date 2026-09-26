@@ -172,6 +172,9 @@ export interface BookingRepo {
   // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
   // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
   findByReference(reference: string): Promise<Booking | null>;
+  // Every booking by one person — customers.person_key, i.e. personKeyFor(email) — newest first,
+  // at most `limit`. The lookup's "this customer's bookings" (spec 2026-09-26 §15).
+  listByPersonKey(personKey: string, limit: number): Promise<Booking[]>;
   // `audit` records WHY, for the transitions where that matters. Optional so the many
   // non-cancelling callers are untouched; the cancel route always supplies it.
   setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
@@ -312,6 +315,13 @@ export class InMemoryBookingRepo implements BookingRepo {
   async findByReference(reference: string): Promise<Booking | null> {
     for (const b of this.byId.values()) if (b.reference === reference) return b;
     return null;
+  }
+
+  async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
+    return [...this.byId.values()]
+      .filter((b) => personKeyFor(b.input.customer.email) === personKey)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, limit);
   }
 
   async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {

@@ -34,6 +34,25 @@ describe('BookingRepo.findByReference (in-memory)', () => {
   });
 });
 
+describe('BookingRepo.listByPersonKey (in-memory)', () => {
+  it('lists one person’s bookings by email however it was typed, newest first, up to the limit', async () => {
+    vi.useFakeTimers();
+    const repo = new InMemoryBookingRepo();
+    const withEmail = (email: string): NewBooking => ({ ...single, input: { ...single.input, customer: { ...customer, email } } } as NewBooking);
+    vi.setSystemTime(new Date('2026-09-20T10:00:00Z'));
+    const a = await repo.create(single);
+    vi.setSystemTime(new Date('2026-09-21T10:00:00Z'));
+    const b = await repo.create(withEmail(' Maya@Example.com '));
+    vi.setSystemTime(new Date('2026-09-22T10:00:00Z'));
+    await repo.create(withEmail('someone@else.com'));
+    vi.setSystemTime(new Date('2026-09-23T10:00:00Z'));
+    const c = await repo.create(single);
+    expect((await repo.listByPersonKey('maya@example.com', 10)).map((x) => x.id)).toEqual([c.id, b.id, a.id]);
+    expect((await repo.listByPersonKey('maya@example.com', 2)).map((x) => x.id)).toEqual([c.id, b.id]);
+    expect(await repo.listByPersonKey('nobody@example.com', 10)).toEqual([]);
+  });
+});
+
 describe('QuoteRepo.findByReference (in-memory)', () => {
   it('finds a quote by its reference, never a soft-deleted one', async () => {
     const repo = new InMemoryQuoteRepo();
