@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // Drives the REAL ops quote view (api/src/routes/ops-ui.html) with a fully stubbed API +
 // Google, on the default offline webServer (no DB), like ops-autocomplete.spec.js.
 //
-// Covers the Rate-Settings "Hot zones" town field (#hz-place): it must offer the SAME Google/
+// Covers the Rates page's "Hot zones" town field (#hz-place): it must offer the SAME Google/
 // known-places autocomplete the quote tool uses, so a founder PICKS a canonical place label
 // instead of free-typing (which let towns like "Passikudah" silently never match). Only the
 // picker is asserted here — matching/pricing is covered in api/src/routes/hotZonesRoutes.test.ts.
@@ -22,12 +22,12 @@ async function stubOps(page, places) {
   });
   const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
-  // Founder needs margin:view for the Rates button AND the Hot-zones panel to render.
+  // Founder needs margin:view for the Rates page AND the Hot-zones panel to render.
   await page.route('**/admin/ops/whoami', (r) =>
     r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage', 'margin:view'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/quote/zones', (r) => r.fulfill(json({ zones: [], disabled: false })));
-  // Rate card stays null → the modal shows its "Loading rate card…" placeholder (the real card
+  // Rate card stays null → the page shows its "Loading rate card…" placeholder (the real card
   // shape is irrelevant here; the Hot-zones panel renders independently). Keeps this test robust
   // to rate-card schema changes.
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill({ status: 500, body: '' }));
@@ -36,9 +36,8 @@ async function stubOps(page, places) {
 }
 
 async function openHotZones(page) {
-  await page.goto(OPS_FILE + '#quote');
-  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  await page.locator('[data-action="openRates"]').first().click();
+  // Hot zones live on the Rates page (spec 2026-09-26 §5), not in a popup over the builder.
+  await page.goto(OPS_FILE + '#rates');
   await expect(page.locator('#hz-place')).toBeVisible({ timeout: 10000 });
 }
 
