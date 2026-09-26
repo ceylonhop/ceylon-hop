@@ -87,9 +87,10 @@ test('founder sees Lookup in the nav, between Quotes and Analytics', async ({ pa
   await ready(page);
   await expect(page.locator('[data-testid="lookup-nav"]')).toBeVisible();
   await expect(page.locator('[data-testid="lookup-nav"]')).toHaveAttribute('title', 'Lookup');
-  await expect(page.locator('#nav button')).toHaveCount(4);
+  // FOUNDER holds margin:view, so Rates (spec 2026-09-26) closes the list.
+  await expect(page.locator('#nav button')).toHaveCount(5);
   expect(await page.locator('#nav button').evaluateAll((bs) => bs.map((b) => b.dataset.route)))
-    .toEqual(['tickets', 'quotes', 'lookup', 'analytics']);
+    .toEqual(['tickets', 'quotes', 'lookup', 'analytics', 'rates']);
 });
 
 test('ops: no Lookup nav, and a hand-typed #lookup bounces silently to Bookings', async ({ page }) => {
