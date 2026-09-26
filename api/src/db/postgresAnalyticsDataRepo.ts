@@ -44,7 +44,7 @@ export class PostgresAnalyticsDataRepo implements AnalyticsDataRepo {
        or exists (select 1 from payments px where px.booking_id = b.id and px.settled_at >= ${range.previousFrom})
        or exists (select 1 from refunds rx where rx.booking_id = b.id and rx.confirmed_at >= ${range.previousFrom})
        or coalesce(
-            (select min(bl.travel_date) from booking_leg bl where bl.booking_id = b.id and bl.removed_at is null),
+            (select min(bl.travel_date) from booking_legs bl where bl.booking_id = b.id and bl.removed_at is null),
             tr.travel_date, sr.date
           ) between ${today} and ${range.upcomingThrough})`;
 
@@ -53,7 +53,7 @@ export class PostgresAnalyticsDataRepo implements AnalyticsDataRepo {
              b.total as total_cents, coalesce(b.amount_due_now, b.total) as amount_due_now_cents,
              b.currency, b.created_at,
              coalesce(
-               (select min(bl.travel_date) from booking_leg bl where bl.booking_id = b.id and bl.removed_at is null),
+               (select min(bl.travel_date) from booking_legs bl where bl.booking_id = b.id and bl.removed_at is null),
                tr.travel_date, sr.date
              ) as travel_date,
              ro.fulfilment_status
