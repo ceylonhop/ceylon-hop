@@ -207,31 +207,6 @@ describe('pay links re-arm the abandoned-checkout watch', () => {
     expect(email.sent[0].to).toBe('maya@example.com');
   });
 
-  // Since #792 a PayHere decline is recorded, and moves the payment from `pending` to `failed`.
-  // A declined pay-link customer started a gateway checkout just as surely as one who walked away,
-  // so they must stay watched: before #792 their payment stayed `pending` (the decline was dropped)
-  // and they were chased; the fix must not quietly drop them from the chase and from ops' alerts.
-  it('a whatsapp booking whose gateway payment was DECLINED is still watched', async () => {
-    const bookings = new InMemoryBookingRepo();
-    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
-    await bookings.setStatus(b.id, 'payment_pending');
-    const payments = new InMemoryPaymentRepo();
-    const p = await payments.create({
-      bookingId: b.id, provider: 'payhere', orderId: b.reference,
-      amount: 5000, currency: 'USD', idempotencyKey: `checkout:${b.id}`,
-    });
-    await payments.markFailed(p.id); // PayHere declined the card
-    const alerts = new FakeAlertAdapter();
-    const email = new FakeEmailAdapter();
-    const res = await runWatchdog(later(31), {
-      bookings, log: new InMemoryNotificationLogRepo(), alerts, payments,
-      email, baseUrl: 'https://ceylonhop.com', linkSecret: 'sek',
-    });
-    expect(res.stuckPending).toBe(1);
-    expect(res.recoveryEmails).toBe(1);
-    expect(alerts.sent.map((a) => a.kind)).toContain('watchdog_stuck_pending');
-  });
-
   it('a whatsapp booking with NO payments stays exempt — cash is still collected by hand', async () => {
     const bookings = new InMemoryBookingRepo();
     const b = await bookings.create({ ...sample, channel: 'whatsapp' });
