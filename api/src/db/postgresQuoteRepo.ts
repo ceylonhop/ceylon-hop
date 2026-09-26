@@ -229,7 +229,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
     return channel === 'all' ? [] : [eq(quotes.channel, channel)];
   }
 
-  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops', excludeContacts: ReadonlySet<string> = new Set()): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
     // Window arm (any lifecycle stamp after `since`) OR live arm (open statuses, any age) —
     // the live set is what the pipeline/aging snapshots aggregate and is inherently small.
     // Scalars only: request_json/result_json are deliberately never selected here (perf).
@@ -244,6 +244,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .where(and(
         isNull(quotes.deletedAt),
         ...this.channelCond(channel),
+        ...(excludeContacts.size
+          ? [sql`coalesce(lower(btrim(${quotes.customerContact})), '') not in (${sql.join([...excludeContacts].map((v) => sql`${v.trim().toLowerCase()}`), sql`, `)})`]
+          : []),
         or(
           gte(quotes.createdAt, since),
           gte(quotes.sentAt, since),
@@ -273,7 +276,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
     };
   }
 
-  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops', excludeContacts: ReadonlySet<string> = new Set()): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
     // The ONLY analytics query that touches request_json — bounded to created-in-range.
     const rows = await this.db
       .select({
@@ -287,6 +290,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .where(and(
         isNull(quotes.deletedAt),
         ...this.channelCond(channel),
+        ...(excludeContacts.size
+          ? [sql`coalesce(lower(btrim(${quotes.customerContact})), '') not in (${sql.join([...excludeContacts].map((v) => sql`${v.trim().toLowerCase()}`), sql`, `)})`]
+          : []),
         gte(quotes.createdAt, from),
         lte(quotes.createdAt, to),
         // Autosave shells never count as demand (spec 2026-07-29). Unlike listFunnelRows, this
