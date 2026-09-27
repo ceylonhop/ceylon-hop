@@ -23,7 +23,7 @@ import {
   InvalidPricingRequestError,
   type PriceOutcome,
 } from '../services/pricing';
-import type { BookingRepo, Booking } from '../db/bookingRepo';
+import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
@@ -35,13 +35,14 @@ import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { liveRateCard } from '../quote/liveCard';
 import {
   signBookingToken,
   signCheckoutToken,
   signPayReturnToken,
   verifyBookingToken,
-  verifyPayReturnToken,
+  verifyPayReturnLeg,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
 import {
@@ -148,6 +149,8 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // The add-ons the customer chose, as the quote named them. Absent when there are none.
+  addOns?: string[];
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
@@ -161,6 +164,7 @@ export function projectBooking(b: Booking): CustomerBookingView {
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: Math.max(0, b.total - dueNow),
+    ...(b.addOns?.length ? { addOns: b.addOns } : {}),
   };
   if (b.mode === 'single') {
     return {
@@ -229,6 +233,8 @@ export function bookingRoutes(deps: {
   conciergeTasks: ConciergeTaskRepo;
   quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
   zones?: ZonesRepo;
+  // Founder rate revisions (spec 2026-09-26). Unset ⇒ an empty repo ⇒ the code card.
+  rateRevisions?: RateRevisionRepo;
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
@@ -251,6 +257,7 @@ export function bookingRoutes(deps: {
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const revisionsRepo = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
   const promoNow = deps.promoNow ?? (() => new Date());
@@ -331,13 +338,13 @@ export function bookingRoutes(deps: {
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
   // an unknown/expired id, or no quotes repo wired → the live card (base rate card composed with
   // currently-active hot zones, hot-zones spec D5). Never throws (a bad id must not fail the
-  // booking — it just falls back to the current card). A pricing_zones lookup failure is part of
+  // booking — it just falls back to the current card). A pricing_zones or rate_card_revisions lookup failure is part of
   // that contract too: it prices unboosted off the plain compiled RATE_CARD rather than failing
   // the booking — any resulting drift from the zone-boosted price is caught by the mismatch flag.
   async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
     let current: RateCard;
     try {
-      current = await liveRateCard(zonesRepo);
+      current = await liveRateCard(zonesRepo, revisionsRepo);
     } catch {
       current = RATE_CARD;
     }
@@ -500,7 +507,12 @@ function invalidRequest(error: ZodError) {
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
           ...(promo.code ? { discountTotal } : {}),
         },
-        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+        {
+          idempotencyKey: key,
+          ...(promo.code ? { promo: { code: promo.code, now } } : {}),
+          // The engine's own request and lines, kept so the booking can name the add-ons it paid for.
+          ...(outcome.priced && outcome.breakdown ? { pricingSnapshot: websitePricingSnapshot(outcome.breakdown) } : {}),
+        },
       );
     } catch (err) {
       if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);
@@ -756,21 +768,30 @@ function invalidRequest(error: ZodError) {
   // manage.html's purchase gate needs (a sandbox settlement must never become GA4 revenue) and
   // which the return leg cannot see for itself — it never sees the checkout URL.
   r.get('/pay-return', async (c) => {
-    const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
-    if (!id) return c.json({ error: 'invalid_link' }, 401);
-    const booking = await deps.bookings.get(id);
+    const token = verifyPayReturnLeg(c.req.query('rt'), deps.linkSecret);
+    if (!token) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(token.bookingId);
     if (!booking) return c.json({ error: 'not_found' }, 404);
     const rows = await payments.findByBookingId(booking.id);
     // A settled payment is the answer whatever else is on the booking — including the ops
     // lifecycle mirror having moved it on. Only then a terminal failure; anything else is
     // still in flight.
+    //
+    // A decline is terminal ONLY on the cancel leg (2026-09-26). Since #792 declines are recorded,
+    // and PayHere lets the payer retry — on its own page or ours — so a `failed` row can belong to
+    // an earlier attempt while the latest was approved. The return leg is where PayHere sends an
+    // APPROVED payer; answering `failed` there before the approval's notify settles would tell
+    // someone who just paid "no charge was made — try again", and PayHere takes a second payment
+    // on the same order. So the return leg stays `pending` until the money lands; if it never
+    // does, the page's poll budget runs out into its own "we haven't heard back from your bank".
     const status = rows.some((p) => p.status === 'succeeded')
       ? 'paid'
-      : rows.some((p) => p.status === 'failed')
+      : token.leg === 'cancel' && rows.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
     // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
-    if (returnSeen.first(`${booking.id}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, httpStatus: 200, bookingId: booking.id,
+    // `reason` records the leg: which of PayHere's two links the payer came back on.
+    if (returnSeen.first(`${booking.id}:${token.leg}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, reason: token.leg, httpStatus: 200, bookingId: booking.id,
       reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
     return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
   });
@@ -904,13 +925,17 @@ function invalidRequest(error: ZodError) {
     const returnUrls =
       body?.returnTo === 'pay-link' && deps.payBaseUrl
         ? (() => {
-            const rt = signPayReturnToken(booking.id, deps.linkSecret);
-            const base = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=${encodeURIComponent(rt)}`;
+            const page = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=`;
             // Both legs land on the SAME page. PayHere documents return_url for an approved
             // payment and cancel_url for a customer-cancelled one, but says nothing about where
             // a DECLINED payment goes — so neither URL may be the only one that works. The page
             // polls our own settlement state either way; `c=1` is a display hint, never truth.
-            return { returnUrl: base, cancelUrl: `${base}&c=1` };
+            // Each leg carries its own token, so pay-return knows which one the payer used (only
+            // the cancel leg may call a decline final — see GET /pay-return).
+            return {
+              returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
+              cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+            };
           })()
         : body?.returnTo === 'manage' && deps.manageBaseUrl
           ? (() => {
@@ -922,9 +947,11 @@ function invalidRequest(error: ZodError) {
               // (spec §D4), and `t` can view this booking and start its payment. The page keeps
               // `t` in the tab's sessionStorage across the round trip instead (manageToken below,
               // for the website, which has none of its own). Same two-legs rule as above.
-              const rt = signPayReturnToken(booking.id, deps.linkSecret);
-              const base = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=${encodeURIComponent(rt)}`;
-              return { returnUrl: base, cancelUrl: `${base}&c=1` };
+              const page = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=`;
+              return {
+                returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
+                cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+              };
             })()
           : {};
     // The website checkout (booking.js) arrives with only a checkout token, so a manage return

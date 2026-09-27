@@ -296,6 +296,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-seg.sm button{padding:6px 13px;font-size:.78rem}
   .an-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:16px}
   .an-tile{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-s)}
+  .an-tile.hero{border-color:rgba(var(--blue-rgb),.35);background:linear-gradient(145deg,var(--paper),#eefafa)}
+  .an-tile.risk{border-color:#e8c86b;background:var(--wait-bg)}
   .an-tile .an-n{font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
   .an-tile .an-l{font-size:.74rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
   .an-tile .an-d{font-size:.78rem;font-weight:700;margin-top:2px;color:var(--ink-faint)}
@@ -303,6 +305,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-tile .an-sub{font-size:.78rem;color:var(--ink-soft);margin-top:2px}
   .an-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
   .an-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-s)}
+  .an-card.an-wide{grid-column:1/-1}
   .an-card h3{margin:0 0 4px;font-size:.95rem}
   .an-card .an-cap{font-size:.76rem;color:var(--ink-faint);margin:0 0 10px}
   .an-card svg{width:100%;height:auto;display:block}
@@ -321,8 +324,25 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-mover{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 8px 8px 0;font-size:.84rem;font-weight:700}
   .an-mover.up{color:var(--ok)} .an-mover.down{color:var(--alert)}
   .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
+  .an-section-label{font-size:.69rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:20px 2px 9px}
+  .an-data-note{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;color:var(--ink-soft);font-size:.78rem;background:rgba(255,255,255,.45)}
+  .an-funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:stretch}
+  .an-funnel>div{position:relative;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--paper)}
+  .an-funnel>div+div:before{content:'→';position:absolute;left:-9px;top:50%;transform:translate(-50%,-50%);color:var(--ink-faint);font-weight:800;background:var(--paper);padding:2px}
+  .an-funnel span,.an-funnel small{display:block;color:var(--ink-soft);font-size:.72rem}
+  .an-funnel b{display:block;font-size:1.45rem;line-height:1.2;font-variant-numeric:tabular-nums}
+  .an-outcomes{margin-top:10px!important}
+  .an-attn{display:grid;gap:7px}
+  .an-attn button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:10px 12px;color:var(--ink);font:inherit;cursor:pointer}
+  .an-attn button:hover{border-color:var(--cream-deep);transform:translateY(-1px)}
+  .an-attn span,.an-attn small{display:block}.an-attn small{color:var(--ink-soft);margin-top:2px}.an-attn strong{white-space:nowrap;font-variant-numeric:tabular-nums}
   .an-skel{height:74px;border-radius:14px;background:linear-gradient(100deg,var(--line-soft),var(--cream-deep),var(--line-soft));background-size:200% 100%;animation:anshimmer 1.2s infinite linear}
   @keyframes anshimmer{to{background-position:-200% 0}}
+  @media(max-width:700px){
+    .an-seg{max-width:100%;overflow:auto}.an-seg button{padding:8px 12px;white-space:nowrap}
+    .an-funnel{grid-template-columns:1fr}.an-funnel>div+div:before{content:'↓';left:50%;top:-5px}
+    .an-card.an-wide{grid-column:auto}.an-attn button{align-items:flex-start}.an-attn strong{font-size:.82rem}
+  }
   /* Bulk close-out bar — sits under the Needs closing header, quiet until something is ticked. */
   .bulkbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 2px 10px;padding:9px 12px;
     border:1px solid var(--line);border-radius:11px;background:var(--paper);font-size:.82rem}
@@ -531,6 +551,20 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .pa-when{flex:none;min-width:44px;font-size:.76rem;color:var(--ink-faint);font-variant-numeric:tabular-nums}
   .pa-what{min-width:0;overflow-wrap:anywhere}
   .pa-hint{margin:8px 0 0;font-size:.8rem;color:var(--ink-soft)}
+  /* payment lookup (payments:act) — the sheet's .block/.kv/.pa-row vocabulary on one paper panel */
+  .lk-form{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+  .lk-case{max-width:760px;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:2px 20px 6px;box-shadow:var(--shadow-s)}
+  .lk-case a,.lk-link{color:var(--teal-deep);font-weight:700}
+  .lk-link{border:0;background:none;padding:0;font:inherit;font-weight:700;text-decoration:underline}
+  .lk-title{font-weight:700;font-size:1.02rem}
+  .lk-line{margin:6px 0 0;font-size:.88rem;overflow-wrap:anywhere}
+  .lk-warn{margin:8px 0 0;font-size:.86rem;font-weight:700;color:var(--alert)}
+  .lk-sub{display:block;font-size:.76rem;color:var(--ink-soft);overflow-wrap:anywhere}
+  .lk-act{margin-top:10px}
+  .lk-other{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:7px 0;border-top:1px dashed var(--line)}
+  .lk-other:first-of-type{border-top:0}
+  .lk-case .pa-dot{align-self:baseline} /* rows here run to two lines; the dot marks the first */
+  @media(max-width:640px){.lk-case{padding:2px 14px 6px}.lk-case .pa-row{flex-wrap:wrap}.lk-case .pa-what{flex:1 1 100%;padding-left:17px}}
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
@@ -871,6 +905,41 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-rate-hint { font-size: 10.5px; color: var(--muted-2); }
 .qv .ch-rate-control { width: 132px; flex: none; }
 @media (max-width: 620px) { .qv .ch-rate-grid { grid-template-columns: 1fr; gap: 8px; }}
+/* Rates page (spec 2026-09-26 §5): the rate card + hot zones as a page in the shell's #view.
+   The wrapper carries .qv for the builder's tokens and components, but not its pane layout —
+   the page scrolls with #view like every other shell page instead of nesting a scroll box. */
+.qv.qv-page { height: auto; overflow: visible; }
+.qv .ch-rates-card { max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px 22px; }
+/* Rates editor (spec 2026-09-26 §6–§7): the live-version bar, exact values, the review dialog's
+   tables and warnings, and the history rows. Reuses .ch-rate-* rows, .ch-field/.ch-input-wrap
+   inputs and .ch-hist-* chips; these rules only add what those don't cover. */
+.qv .ch-rates-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.qv .ch-rates-live { font-size: 12.5px; color: var(--muted); min-width: 0; }
+.qv .ch-rates-live b { color: var(--ink); }
+.qv .ch-rates-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.qv .ch-rt-val { display: inline-flex; flex-direction: column; align-items: flex-end; font-size: 13px; font-weight: 600; color: var(--ink); }
+.qv .ch-rt-val i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.qv .ch-rt-val small { font-size: 11px; font-weight: 500; color: var(--muted-2); }
+.qv .ch-rt-editing .ch-rate-row { align-items: flex-start; }
+.qv .ch-rt-editing .ch-rate-label { padding-top: 9px; }
+.qv .ch-rt-h3 { margin: 18px 0 6px; font-size: 15px; }
+.qv .ch-rt-hist-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.qv .ch-rt-hist-row .ch-hist-chips { flex: 1 1 240px; justify-content: flex-start; min-width: 0; }
+.qv .ch-rt-hist-row .ch-hist-chip { white-space: normal; }
+/* The builder's history meta truncates to one line; here who and when must read in full. */
+.qv .ch-rt-hist-row .ch-hist-meta { flex: 0 1 auto; white-space: normal; overflow: visible; }
+.qv .ch-rt-hist-row .ch-hist-rev { color: var(--ink); font-weight: 700; }
+.qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
+.qv .ch-rt-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted-2); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.qv .ch-rt-table td { padding: 6px; border-bottom: 1px dashed var(--line); vertical-align: top; }
+.qv .ch-rt-table td:not(:first-child), .qv .ch-rt-table th:not(:first-child) { text-align: right; white-space: nowrap; }
+.qv .ch-rt-table tr.is-big td { background: rgba(236,58,36,.05); }
+.qv .ch-rt-flag { display: inline-block; font-size: 10px; font-weight: 700; color: #8a5a00; background: #fdf0d2; border: 1px solid #f0d9a6; border-radius: 999px; padding: 0 6px; }
+.qv .ch-rt-warn { margin: 10px 0; padding: 10px 12px; border-radius: var(--r-md); background: #fdf0d2; color: #6b4600; font-size: 12.5px; border: 1px solid #f0d9a6; line-height: 1.45; }
+.qv .ch-rt-samples-title { margin-top: 14px; }
+.qv .ch-rt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+:root[data-theme="dark"] .qv .ch-rt-flag,
+:root[data-theme="dark"] .qv .ch-rt-warn { color: #f5c96a; background: rgba(245,201,106,.12); border-color: rgba(245,201,106,.35); }
 
 /* ---------- Itinerary (premium timeline) ---------- */
 .qv .ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -2139,10 +2208,16 @@ function routeStateFromUrl(canQuote){
   // the Quotes or Analytics surface, so the hash is not consulted when it is present.
   const bookingId=(url.searchParams.get('booking')||'').trim()||null;
   if(bookingId)return { route:'tickets', routeQuoteId:null, routeBookingId:bookingId };
+  /* Payment lookup: `?case=<ref>#lookup`, the same pattern as ?quote=. payments:act only — without
+     it the address falls through to the default landing, the silent bounce #analytics gets. */
+  const caseRef=(url.searchParams.get('case')||'').trim()||null;
+  if((caseRef||url.hash==='#lookup')&&state.caps&&state.caps.includes('payments:act'))return { route:'lookup', routeQuoteId:null, routeBookingId:null, routeCaseRef:caseRef };
   if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId, routeBookingId:null };
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
+  if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null, routeBookingId:null };
   // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
   // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
@@ -2153,9 +2228,13 @@ function syncUrl(route, quoteId, bookingId, mode){
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
+  else if(route==='lookup')url.hash='#lookup';
+  else if(route==='rates')url.hash='#rates';
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
+  if(route==='lookup'&&state.routeCaseRef)url.searchParams.set('case',state.routeCaseRef);
+  else url.searchParams.delete('case');
   // Only ever on the Bookings surface — leaving it set while the operator is looking at Quotes
   // would reopen a sheet the moment they came back, which is not what they asked for.
   if(route==='tickets'&&bookingId)url.searchParams.set('booking',bookingId);
@@ -2168,6 +2247,7 @@ function setShellRoute(route, opts){
   opts=opts||{};
   state.route=route;
   state.routeQuoteId=(route==='quote'&&opts.quoteId)?opts.quoteId:null;
+  state.routeCaseRef=(route==='lookup'&&opts.caseRef)?String(opts.caseRef):null;
   // Changing surface closes any open sheet — the sheet belongs to Bookings, and carrying it
   // across would leave `?booking=` describing something the operator can no longer see.
   if(route!=='tickets')closeDetail('silent');
@@ -2178,6 +2258,7 @@ function applyRouteFromUrl(mode){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
+  state.routeCaseRef=next.routeCaseRef||null;
   /* The sheet follows the URL in BOTH directions. Closing on an absent ?booking= is what makes
      browser Back close the sheet instead of stranding it over the queue, and it is the half that
      is easy to leave out — opening on arrival looks like the whole feature until you press Back. */
@@ -2277,16 +2358,21 @@ function collapseRail(){
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
    (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
 /* Rounded, representative marks: Bookings = event ticket (notched, perforated),
-   Quotes = price tag (with the tag's eyelet), Analytics = trend line over an axis. */
+   Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
+   Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
   analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+  lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
+  const canLookup=state.caps&&state.caps.includes('payments:act');
   const canAnalytics=state.caps&&state.caps.includes('analytics:view');
+  const canRates=state.caps&&state.caps.includes('margin:view');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
@@ -2299,7 +2385,9 @@ function setNav(){
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
-    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
+    (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
+    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'');
 }
 
 function ticketRow(t,i){
@@ -2783,18 +2871,17 @@ function viewQuotes(){
   paintQuotesView(html);
 }
 
-/* ── founder analytics (spec 2026-07-23) ─────────────────────────────────────
-   Two sub-tabs (Funnel · Demand) over /admin/ops/analytics. Self-contained:
-   fetches lazily on tab open / range change, 60s cache per tab+range, NO
-   polling — the background booking refresh never touches this view. A
-   truncated:true response always renders a visible banner (never silently
-   partial numbers). Charts are hand-rolled SVG/CSS — no chart library. */
+/* ── founder analytics ───────────────────────────────────────────────────────
+   Business outcomes first: Overview · Sales · Operations · Demand. Website
+   payment conversion and Ops quote conversion stay separate because their
+   denominators are different. TEAM_EMAILS and seeded Ride Board fixtures are
+   excluded server-side from every response. */
 const AN_PRESETS=[
   {id:'7d',label:'7d'},{id:'28d',label:'28d'},{id:'12w',label:'12w'},
   {id:'month',label:'This month'},{id:'lastmonth',label:'Last month'},{id:'all',label:'All'},
 ];
 const AN_EPOCH='2026-01-01'; /* "All time" floor — before the business wrote its first quote */
-const anState={tab:'funnel',preset:'28d',bucket:'day',cache:{},inflight:null};
+const anState={tab:'overview',preset:'28d',bucket:'day',cache:{},inflight:null};
 function anColomboToday(){return new Date(Date.now()+5.5*3600e3).toISOString().slice(0,10);}
 function anShiftDays(iso,days){return new Date(Date.parse(iso+'T00:00:00Z')+days*864e5).toISOString().slice(0,10);}
 function anRange(){
@@ -2816,11 +2903,19 @@ function anEffectiveBucket(){return anState.bucketTouched?anState.bucket:((anSta
 async function anFetch(tab){
   const r=anRange();
   const bucket=anEffectiveBucket();
-  const key=tab+'|'+r.from+'|'+r.to+'|'+(tab==='funnel'?bucket:'-');
+  const key=tab+'|'+r.from+'|'+r.to+'|'+bucket;
   const hit=anState.cache[key];
   if(hit&&Date.now()-hit.at<60e3)return hit.data;
-  const qs='?from='+r.from+'&to='+r.to+(tab==='funnel'?'&bucket='+bucket:'');
-  const data=await api.get('/analytics/'+tab+qs); /* shell api prefixes /admin/ops + handles 401 */
+  const qs='?from='+r.from+'&to='+r.to+'&bucket='+bucket;
+  let data;
+  if(tab==='sales'){
+    const both=await Promise.all([api.get('/analytics/funnel'+qs),api.get('/analytics/overview'+qs)]);
+    data={quotes:both[0],business:both[1]};
+  }else if(tab==='operations'){
+    data=await api.get('/analytics/overview'+qs);
+  }else{
+    data=await api.get('/analytics/'+tab+qs);
+  }
   anState.cache[key]={at:Date.now(),data};
   return data;
 }
@@ -2832,20 +2927,21 @@ function anMoney(map){
   });
   return parts.length?parts.join(' · '):'$0';
 }
-function anDelta(d){
+function anDelta(d,suffix){
   if(!d||d.prev===d.value&&d.prev===0)return '';
+  if(d.value===null||d.prev===null)return '<span class="an-d">No prior comparison</span>';
   const diff=d.value-d.prev;
   if(diff===0)return '<span class="an-d">= prev</span>';
-  return `<span class="an-d ${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${Math.abs(diff)} vs prev</span>`;
+  return `<span class="an-d ${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${Math.abs(diff)}${suffix||''} vs prev</span>`;
 }
-function anTile(label,value,extra){return `<div class="an-tile"><div class="an-l">${label}</div><div class="an-n">${value}</div>${extra||''}</div>`;}
+function anTile(label,value,extra,cls){return `<div class="an-tile${cls?' '+cls:''}"><div class="an-l">${label}</div><div class="an-n">${value}</div>${extra||''}</div>`;}
 function anSvgBars(series,fields){
-  /* grouped-by-bucket vertical bars: fields = [{key,color},...]; sparse labels (first/last). */
-  if(!series.length)return '<div class="an-empty">No quotes in this range yet</div>';
-  const W=560,H=150,pad=4,lblH=16;
+  if(!series.length)return '<div class="an-empty">Nothing in this range yet</div>';
+  const W=560,H=170,pad=30,lblH=18;
   const max=Math.max(1,...series.map(b=>Math.max(...fields.map(f=>b[f.key]))));
-  const bw=(W-pad*2)/series.length;
-  let bars='';
+  const bw=(W-pad-4)/series.length;
+  let bars=`<line x1="${pad}" y1="8" x2="${pad}" y2="${H-lblH}" stroke="var(--line)"/><line x1="${pad}" y1="${H-lblH}" x2="${W}" y2="${H-lblH}" stroke="var(--line)"/>`;
+  bars+=`<text x="${pad-5}" y="13" font-size="10" fill="var(--ink-faint)" text-anchor="end">${max}</text><text x="${pad-5}" y="${H-lblH}" font-size="10" fill="var(--ink-faint)" text-anchor="end">0</text>`;
   series.forEach((b,i)=>{
     fields.forEach((f,fi)=>{
       const v=b[f.key],h=v?Math.max(2,(H-lblH-6)*v/max):0;
@@ -2853,10 +2949,11 @@ function anSvgBars(series,fields){
       const w=Math.max(1.5,bw*0.72/fields.length);
       const x=pad+i*bw+bw*0.14+fi*w;
       bars+=`<rect x="${x.toFixed(1)}" y="${(H-lblH-h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${f.color}"><title>${b.bucketStart}: ${v}</title></rect>`;
+      if(series.length<=14)bars+=`<text x="${(x+w/2).toFixed(1)}" y="${Math.max(10,H-lblH-h-3).toFixed(1)}" font-size="9" fill="var(--ink-soft)" text-anchor="middle">${v}</text>`;
     });
   });
   const lbl=(i)=>`<text x="${(pad+i*bw+bw/2).toFixed(1)}" y="${H-3}" font-size="10" fill="var(--ink-faint)" text-anchor="middle">${series[i].bucketStart.slice(5)}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" role="img">${bars}${lbl(0)}${series.length>1?lbl(series.length-1):''}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(fields.map(f=>f.label||f.key).join(', ')+' over time')}">${bars}${lbl(0)}${series.length>1?lbl(series.length-1):''}</svg>`;
 }
 function anHBars(items){
   /* horizontal bar list; items = [{label,n,sub}] */
@@ -2869,29 +2966,75 @@ function anChips(list,activeId,dataAttr){
 }
 function anSeg(list,activeId,dataAttr,cls){
   /* joined segmented control — reads as a mode switch, unlike the pill filter chips */
-  return `<div class="an-seg${cls?' '+cls:''}">`+list.map(c=>`<button class="${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('')+'</div>';
+  return `<div class="an-seg${cls?' '+cls:''}" role="tablist">`+list.map(c=>`<button class="${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}" role="tab" aria-selected="${c.id===activeId}">${c.label}</button>`).join('')+'</div>';
 }
-function anFunnelHtml(d){
+function anPct(v){return v===null||v===undefined?'—':v+'%';}
+function anUpdated(d){return d.updatedAt?`Updated ${fmtDateTime(d.updatedAt)}`:'';}
+function anDataNote(d){
+  const x=d.excluded||{},n=(x.teamBookings||0)+(x.teamQuoteContacts||0)+(x.seedRideLists||0)+(x.teamRideMembers||0);
+  return `<div class="an-data-note"><b>Clean business data</b> · team test activity and seeded Ride Board fixtures are excluded${n?' ('+n+' records in this view)':''}.</div>`;
+}
+function anAttention(items){
+  if(!items.length)return '<div class="an-empty">Nothing needs attention in the next 7 days.</div>';
+  return `<div class="an-attn">${items.map(x=>`<button data-anbooking="${esc(x.bookingId)}"><span><b>${esc(x.reference)}</b><small>${esc(x.travelDate||'Date missing')} · ${esc(x.label)}</small></span><strong>${anMoney({[x.currency]:x.amountCents})}</strong></button>`).join('')}</div>`;
+}
+function anPaymentFunnel(f){
+  const steps=[['Checkout started',f.started],['PayHere opened',f.gatewayOpened],['Paid',f.paid]];
+  return `<div class="an-funnel">${steps.map((s,i)=>`<div><span>${esc(s[0])}</span><b>${s[1]}</b>${i?`<small>${f.started?Math.round(s[1]/f.started*100):0}% of starts</small>`:'<small>booking cohort</small>'}</div>`).join('')}</div>
+    <p class="an-cap an-outcomes">Outcomes: ${f.failed} declined · ${f.dismissed} closed at PayHere · ${f.abandoned} no final answer</p>`;
+}
+function anOverviewHtml(d){
   const t=d.tiles;
   let html='';
-  if(d.truncated)html+=`<div class="an-banner">Large range — showing the most recent quotes only. Narrow the range for exact numbers.</div>`;
+  if(d.truncated)html+=`<div class="an-banner">Large range — showing the most recent records only. Narrow the range for exact numbers.</div>`;
   html+=`<div class="an-tiles" data-testid="analytics-tiles">`+
-    anTile('Won value',anMoney(t.wonValue),'<div class="an-sub">quotes won in range</div>')+
-    anTile('Quoted value',anMoney(t.sentValue),'<div class="an-sub">sent to customers</div>')+
-    anTile('Avg quote size',anMoney(t.avgSentCents),'<div class="an-sub">per quote sent</div>')+
-    anTile('Created',t.created.value,anDelta(t.created))+
-    anTile('Sent',t.sent.value,anDelta(t.sent))+
-    anTile('Won',t.won.value,anDelta(t.won))+
-    anTile('Open pipeline',t.pipeline.count,`<div class="an-sub">${anMoney(t.pipeline.valueCents)} awaiting decision</div>`)+
+    anTile('Net collected',anMoney(t.netCollected),'<div class="an-sub">payments less confirmed refunds</div>','hero')+
+    anTile('Paid bookings',t.paidBookings.value,anDelta(t.paidBookings))+
+    anTile('Website payment success',anPct(t.paymentSuccessPct.value),anDelta(t.paymentSuccessPct,' pts'))+
+    anTile('Revenue at risk',anMoney(t.revenueAtRisk.valueCents),`<div class="an-sub">${t.revenueAtRisk.count} pending payment${t.revenueAtRisk.count===1?'':'s'}</div>`,t.revenueAtRisk.count?'risk':'')+
+    anTile('Upcoming needs attention',t.upcomingNeedsAttention,'<div class="an-sub">departing in the next 7 days</div>',t.upcomingNeedsAttention?'risk':'')+
+    anTile('Refunded',anMoney(t.refunded),'<div class="an-sub">confirmed in this range</div>')+
   '</div>';
   html+='<div class="an-grid">';
-  html+=`<div class="an-card" data-testid="analytics-chart-created"><h3>Quotes per ${d.range.bucket}</h3><p class="an-cap">created (teal) · sent (amber) · won (green)</p>${anSvgBars(d.series,[{key:'created',color:'var(--go)'},{key:'sent',color:'var(--wait)'},{key:'won',color:'var(--ok)'}])}</div>`;
-  html+=`<div class="an-card"><h3>Pipeline aging</h3><p class="an-cap">open sent quotes by days waiting — click to open the queue</p><div class="an-age">${d.aging.map(b=>
-    `<button class="an-agebtn ${b.bucket==='15+'&&b.count?'warn':''}" data-anage="1"><div class="an-n">${b.count}</div><div class="an-l">${b.bucket} days</div><div class="an-l">${anMoney(b.valueCents)}</div></button>`
-  ).join('')}</div></div>`;
-  html+=`<div class="an-card"><h3>Lost reasons</h3><p class="an-cap">quotes lost in this range</p>${anHBars(d.lostReasons.map(r=>({label:r.reason||'(no reason recorded)',n:r.count,sub:anMoney(r.valueCents)})))}</div>`;
+  html+=`<div class="an-card"><h3>Paid bookings over time</h3><p class="an-cap">Settled payments by ${d.range.bucket}; exact values are labelled.</p>${anSvgBars(d.series,[{key:'paidBookings',label:'Paid bookings',color:'var(--go)'}])}</div>`;
+  html+=`<div class="an-card"><h3>Website payment funnel</h3><p class="an-cap">Bookings whose checkout started in this range; retries roll up to one booking.</p>${anPaymentFunnel(d.paymentFunnel)}</div>`;
   html+='</div>';
-  return html;
+  return html+anDataNote(d);
+}
+function anSalesHtml(payload){
+  const d=payload.quotes,b=payload.business,t=d.tiles,c=d.cohort;
+  let html='';
+  if(d.truncated||b.truncated)html+=`<div class="an-banner">Large range — narrow it for exact numbers.</div>`;
+  html+=`<div class="an-section-label">Website sales</div><div class="an-tiles" data-testid="analytics-tiles">`+
+    anTile('Payment success',anPct(b.paymentFunnel.successRatePct),'<div class="an-sub">paid ÷ checkout starts</div>','hero')+
+    anTile('Checkout starts',b.paymentFunnel.started,'')+
+    anTile('Declined',b.paymentFunnel.failed,'')+
+    anTile('No final answer',b.paymentFunnel.abandoned,'')+'</div>';
+  html+=`<div class="an-card"><h3>Website checkout → paid</h3><p class="an-cap">A booking cohort, with every retry collapsed into its eventual outcome.</p>${anPaymentFunnel(b.paymentFunnel)}</div>`;
+  html+=`<div class="an-section-label">Ops quotes · Ops quotes only</div><div class="an-tiles">`+
+    anTile('Booked quote value',anMoney(t.wonValue),'<div class="an-sub">won quote value, not cash collected</div>')+
+    anTile('Quote win rate',anPct(c.winRatePct),'<div class="an-sub">won ÷ decided, created in range</div>','hero')+
+    anTile('Send rate',anPct(c.sendRatePct),'<div class="an-sub">sent ÷ created cohort</div>')+
+    anTile('Open pipeline',t.pipeline.count,`<div class="an-sub">${anMoney(t.pipeline.valueCents)} awaiting decision</div>`)+
+    anTile('Average sent quote',anMoney(t.avgSentCents),'')+'</div>';
+  html+='<div class="an-grid">';
+  html+=`<div class="an-card" data-testid="analytics-chart-created"><h3>Quote activity</h3><p class="an-cap">Created, sent and won events during the range. This chart is activity—not conversion.</p>${anSvgBars(d.series,[{key:'created',label:'Created',color:'var(--go)'},{key:'sent',label:'Sent',color:'var(--wait)'},{key:'won',label:'Won',color:'var(--ok)'}])}</div>`;
+  html+=`<div class="an-card"><h3>Pipeline aging</h3><p class="an-cap">Open sent quotes by days waiting.</p><div class="an-age">${d.aging.map(x=>`<button class="an-agebtn ${x.bucket==='15+'&&x.count?'warn':''}" data-anage="${x.bucket}"><div class="an-n">${x.count}</div><div class="an-l">${x.bucket} days</div><div class="an-l">${anMoney(x.valueCents)}</div></button>`).join('')}</div></div>`;
+  html+=`<div class="an-card"><h3>Lost reasons</h3><p class="an-cap">Decisions recorded in this range.</p>${anHBars(d.lostReasons.map(x=>({label:x.reason||'No reason recorded',n:x.count,sub:anMoney(x.valueCents)})))}</div>`;
+  return html+'</div>'+anDataNote(b);
+}
+function anOperationsHtml(d){
+  const r=d.operations.rideBoard;
+  let html=`<div class="an-tiles" data-testid="analytics-tiles">`+
+    anTile('Trips next 7 days',d.operations.upcoming7,'')+
+    anTile('Trips next 28 days',d.operations.upcoming28,'')+
+    anTile('Need attention',d.operations.needsAttention.length,'<div class="an-sub">next 7 days</div>',d.operations.needsAttention.length?'risk':'')+
+    anTile('Active shared lists',r.activeLists,'')+
+    anTile('Committed shared seats',r.committedSeats,'')+
+    anTile('Seats still needed',r.seatsNeeded,'<div class="an-sub">to reach minimums</div>',r.seatsNeeded?'risk':'')+'</div>';
+  html+=`<div class="an-grid"><div class="an-card an-wide"><h3>Upcoming exceptions</h3><p class="an-cap">Only work that needs a decision: unpaid departures or a vehicle still not confirmed.</p>${anAttention(d.operations.needsAttention)}</div>`;
+  html+=`<div class="an-card"><h3>Ride Board health</h3><p class="an-cap">Real customer lists only; fixture lists and team members are excluded.</p>${anHBars([{label:'Gathering',n:r.gatheringLists},{label:'Confirmed',n:r.confirmedLists}])}</div></div>`;
+  return html+anDataNote(d);
 }
 function anDemandHtml(d){
   const t=d.tiles,sm=t.serviceMix;
@@ -2901,27 +3044,26 @@ function anDemandHtml(d){
   const svcTotal=sm.private+sm.chauffeur+sm.both+sm.unrecorded;
   html+=`<div class="an-tiles" data-testid="analytics-tiles">`+
     anTile('Quotes',svcTotal,'')+
-    anTile('Private',sm.private,'<div class="an-sub">requested</div>')+
-    anTile('Chauffeur',sm.chauffeur,'<div class="an-sub">requested</div>')+
-    anTile('Both',sm.both,'<div class="an-sub">upsell open</div>')+
-    anTile('Unrecorded',sm.unrecorded,'<div class="an-sub">no intent saved</div>')+
     anTile('Avg trip',t.avgTripKm===null?'—':t.avgTripKm+' km','')+
     anTile('Avg group',t.avgPax===null?'—':t.avgPax+' pax','')+
+    anTile('Private mix',svcTotal?Math.round(sm.private/svcTotal*100)+'%':'—','')+
+    anTile('Chauffeur mix',svcTotal?Math.round(sm.chauffeur/svcTotal*100)+'%':'—','')+
+    anTile('Unrecorded intent',sm.unrecorded,'')+
   '</div>';
   html+='<div class="an-grid">';
-  html+=`<div class="an-card" data-testid="analytics-top-destinations"><h3>Top destinations</h3><p class="an-cap">${cov||'touches per quote'}</p>${anHBars(d.topDestinations.map(x=>({label:x.place,n:x.touches,sub:Object.keys(x.wonValueCents).length?anMoney(x.wonValueCents)+' won':''})))}</div>`;
-  html+=`<div class="an-card"><h3>Top corridors</h3><p class="an-cap">directional, first → last stop${cov?' · '+cov:''}</p>${anHBars(d.topCorridors.map(c=>({label:c.from+' → '+c.to,n:c.count,sub:c.avgKm===null?'':c.avgKm+' km avg'})))}</div>`;
-  const movers=d.movers.map(m=>`<span class="an-mover ${m.changePct>0?'up':'down'}">${m.changePct>0?'▲':'▼'} ${esc(m.place)} <span class="an-hn">${m.prior}→${m.recent}</span></span>`).join('');
-  html+=`<div class="an-card"><h3>Rising & falling</h3><p class="an-cap">recent half vs prior half of the range (3+ touches, ±50%)</p>${movers||'<div class="an-empty">No clear movers yet — needs more volume</div>'}</div>`;
+  html+=`<div class="an-card"><h3>Top origins</h3><p class="an-cap">Where requested journeys begin.</p>${anHBars((d.topOrigins||[]).map(x=>({label:x.place,n:x.count})))}</div>`;
+  html+=`<div class="an-card" data-testid="analytics-top-destinations"><h3>Top destinations</h3><p class="an-cap">Where requested journeys end. ${cov}</p>${anHBars(d.topDestinations.map(x=>({label:x.place,n:x.count||x.touches})))}</div>`;
+  html+=`<div class="an-card an-wide"><h3>Corridor performance</h3><p class="an-cap">Requests · wins · cohort win rate · booked quote value touching the route.</p>${anHBars(d.topCorridors.map(c=>({label:c.from+' → '+c.to,n:c.count,sub:(c.winRatePct===undefined?'':c.wins+' won · '+c.winRatePct+'% · '+anMoney(c.bookedValueCents))})))}</div>`;
   html+=`<div class="an-card"><h3>Requested service by week</h3><p class="an-cap">private (teal) · chauffeur (amber) · both (green)</p>${anSvgBars(d.serviceTrend,[{key:'private',color:'var(--go)'},{key:'chauffeur',color:'var(--wait)'},{key:'both',color:'var(--ok)'}])}</div>`;
+  html+=`<div class="an-card"><h3>Vehicle demand</h3><p class="an-cap">Vehicle selected on the quote.</p>${anHBars(Object.entries(t.vehicleMix||{}).map(([label,n])=>({label,n})))}</div>`;
   html+=`<div class="an-card"><h3>Trip distance</h3><p class="an-cap">priced km per quote</p>${anHBars(t.kmBuckets.map(b=>({label:b.bucket+' km',n:b.count})))}</div>`;
   html+='</div>';
   return html;
 }
 function anControlsHtml(){
-  const showBucket=anState.tab==='funnel';
+  const showBucket=anState.tab==='overview'||anState.tab==='sales';
   return `<div class="an-controls">
-    ${anSeg([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
+    ${anSeg([{id:'overview',label:'Overview'},{id:'sales',label:'Sales'},{id:'operations',label:'Operations'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
     <span class="an-sep"></span>
     <span class="an-glabel">Range</span>
     ${anChips(AN_PRESETS,anState.preset,'anpreset')}
@@ -2931,13 +3073,17 @@ function anControlsHtml(){
 function viewAnalytics(){
   $('#topbar').innerHTML='';
   const head=`<div class="qhead pagehead"><h1>Analytics</h1></div>
-    <p class="pagesub"><b>Founder view</b> · quote funnel, pipeline and demand</p>`+anControlsHtml();
+    <p class="pagesub"><b>Business health</b> · money received, conversion and work that needs attention <span class="an-updated"></span></p>`+anControlsHtml();
   const view=$('#view');
   view.innerHTML=head+'<div class="an-tiles"><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div></div>';
   const tab=anState.tab;
   anFetch(tab).then(data=>{
     if(state.route!=='analytics'||anState.tab!==tab)return; /* stale response — view moved on */
-    view.innerHTML=head+(tab==='funnel'?anFunnelHtml(data):anDemandHtml(data));
+    const body=tab==='overview'?anOverviewHtml(data):tab==='sales'?anSalesHtml(data):tab==='operations'?anOperationsHtml(data):anDemandHtml(data);
+    view.innerHTML=head+body;
+    const updated=view.querySelector('.an-updated');
+    const stamp=tab==='sales'?data.business&&data.business.updatedAt:data.updatedAt;
+    if(updated&&stamp)updated.textContent=' · '+anUpdated({updatedAt:stamp});
   }).catch(()=>{
     if(state.route!=='analytics')return;
     view.innerHTML=head+'<div class="an-empty">Couldn’t load analytics — check the connection and try again.</div>';
@@ -2956,6 +3102,8 @@ document.addEventListener('click',e=>{
      navigation, and a stale query would silently filter the drill-down cohort down to
      "0 of N quotes match" instead of the Sent bucket this chip promises. */
   if(age){queueFilter='sent';quoteQuery='';setShellRoute('quotes',{});return;} /* v1: status-filter only */
+  const booking=e.target.closest('#view [data-anbooking]');
+  if(booking){openDetail(booking.dataset.anbooking);return;}
 });
 
 function openOpsQuote(id){
@@ -3013,6 +3161,254 @@ function paymentAttemptsHtmlFor(d){
   const hint=silent?`<p class="pa-hint">${esc('No answer from PayHere — if this was a 3-D Secure decline it only shows in the PayHere dashboard (search the reference)')}</p>`:'';
   return `<div class="block pay-attempts"><h4>Payment attempts</h4>${rows}${hint}</div>`;
 }
+
+/* ── Payment lookup (spec 2026-09-26): one booking's payment story, payments:act only.
+   GET /admin/ops/cases/:ref returns facts — a verdict kind, row kinds, gap codes — and the words
+   live here. The lookup* word functions are pure (web-tests/unit/ops-lookup-words.test.js evals
+   them out of this file), and checkout-log rows go through paLabel so the drawer and this page
+   never word the same event two ways. Everything drawn goes through esc(). ── */
+/* Local time to the second. Month names are spelled out rather than taken from
+   toLocaleDateString('en-GB'), which says "Sept" in current Chromium and Node. */
+function lookupTime(iso){
+  const d=new Date(iso);
+  if(!iso||isNaN(d.getTime()))return '—';
+  return _pad(d.getDate())+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]+' '+_pad(d.getHours())+':'+_pad(d.getMinutes())+':'+_pad(d.getSeconds());
+}
+/* {title, detail, refund, cancellation, warnings}. `cur` is the booking's currency, for a verdict
+   that carries none. */
+function lookupVerdictText(v,cur){
+  const m=n=>money({amount:n,currency:v.currency||cur||null});
+  const join=a=>a.filter(Boolean).join(' · ');
+  const n=(k,w)=>k+' '+w+(k===1?'':'s');
+  const counts=n(v.checkouts||0,'checkout')+', '+n(v.declineNotices||0,'decline notice');
+  const since=v.countsComplete===false?' (since 24 Sep)':''; /* the checkout log starts 24 Sep */
+  const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
+  const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
+  let detail='';
+  switch(v.kind){
+    case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
+    case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
+    case 'declined':detail=join([String(ph.code)==='-1'?'Cancelled on PayHere’s page':(ph.message?'“'+ph.message+'”':'no message')+(ph.code!=null?' (code '+ph.code+')':''),when,counts+since]);break;
+    case 'reached_no_answer':detail='Reached PayHere'+(when?' '+when:'')+'. A 3-D Secure failure and closing the page look the same here — PayHere sends nothing for either.';break;
+    case 'checkout_no_trace':detail='Checkout started'+(when?' '+when:'')+'; nothing recorded after it.';break;
+    case 'never_started':detail='The booking was created but checkout never started.';break;
+    case 'paid_elsewhere':detail='Closed automatically — paid on '+(v.paidOn||'another booking');break;
+    case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
+    case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
+  }
+  const c=v.cancellation;
+  return {
+    title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
+      checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
+      paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
+    detail,
+    refund:refund&&refund!==detail?refund:null, /* money_back already says it */
+    cancellation:!c?null:(c.by||c.reason)?'Cancelled'+(c.by?' by '+c.by:'')+(c.reason?': '+c.reason:''):'Cancelled — who and why not recorded',
+    warnings:(v.warnings||[]).map(w=>({
+      money_on_unpaid_booking:'Money received, but the booking still says unpaid — check it.',
+      money_after_cancel:'Money arrived after the booking was cancelled — a refund may be owed.',
+      paid_status_without_payment:'The booking says paid, but no payment is recorded.',
+    })[w]||String(w)),
+  };
+}
+function lookupRowLabel(row){
+  const m=()=>money({amount:row.amount,currency:row.currency});
+  switch(row.kind){
+    case 'log':return paLabel(row);
+    case 'created':return 'Booking created';
+    case 'cancelled':return row.paidOn?'Closed automatically — paid on '+row.paidOn:'Cancelled'+(row.by?' by '+row.by:'');
+    case 'payment_created':return 'Checkout set up — order '+row.orderId+', '+m();
+    case 'payment_settled':return row.settlementSource==='manual'?'Marked paid by hand — '+payMethodLabel(row.method):'Recorded as paid (backfill)';
+    case 'notice':{
+      const code=String(row.code);
+      let s=code==='2'?(row.note==='paid_again'?'PayHere: paid again — a second payment on this order':'PayHere: paid')
+        :({'-2':'PayHere: declined','-1':'PayHere: cancelled on PayHere’s page','0':'PayHere: pending','-3':'PayHere: charged back'})[code]||'PayHere: code '+code;
+      if(row.note==='earlier_attempt')s+=' (earlier attempt)';
+      if(row.repeats>1)s+=' — PayHere sent '+row.repeats+' decline notices; repeats share this row';
+      return s;
+    }
+    case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
+      deposit_received:'Email: deposit received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+    case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
+      failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
+  }
+  return String(row.kind);
+}
+/* The small line under a timeline row: whatever of reason, code, message, actor, ref and amount
+   the label doesn't already say. A user agent is shown raw, on every row the customer's browser
+   caused — never on a webhook row, whose user agent is PayHere's server. */
+function lookupRowDetail(row){
+  const m=()=>money({amount:row.amount,currency:row.currency});
+  let a=[];
+  switch(row.kind){
+    case 'log':{
+      const label=paLabel(row);
+      a=[row.reason&&!label.endsWith(': '+row.reason)&&row.reason,row.attempt!=null&&!label.includes('(attempt ')&&'attempt '+row.attempt,
+        row.httpStatus!=null&&'HTTP '+row.httpStatus,row.action!=='webhook'&&row.ua,row.orderMatchOnly&&'claimed to be for this order'];
+      break;
+    }
+    case 'cancelled':a=[!row.paidOn&&row.reason];break;
+    case 'payment_settled':a=[row.settledBy&&'by '+row.settledBy,row.reference&&'ref '+row.reference,m()];break;
+    case 'notice':a=['code '+row.code,row.message&&'“'+row.message+'”',row.method,row.paymentId&&'payment id '+row.paymentId,m()];break;
+    case 'email':a=[row.deliveryTracked===false&&'delivery not tracked'];break;
+    case 'refund':a=[row.by&&'by '+row.by,row.ref&&'ref '+row.ref,row.message&&'“'+row.message+'”',row.reason,row.step!=='requested'&&row.step!=='confirmed'&&m()];break;
+  }
+  return a.filter(Boolean).join(' · ');
+}
+function lookupRowTone(row){
+  if(row.kind==='log')return PA_TONE[row.outcome]||'var(--idle)';
+  if(row.kind==='notice')return ({'2':'var(--ok)','0':'var(--wait)','-1':'var(--wait)','-2':'var(--alert)','-3':'var(--alert)'})[String(row.code)]||'var(--idle)';
+  if(row.kind==='refund')return ({requested:'var(--wait)',sent:'var(--go)',confirmed:'var(--ok)',failed:'var(--alert)'})[row.step]||'var(--idle)';
+  if(row.kind==='payment_created')return 'var(--go)';
+  if(row.kind==='payment_settled')return 'var(--ok)';
+  return 'var(--idle)';
+}
+function lookupGapText(code){
+  return ({
+    no_checkout_log:'Checkout attempts before 24 Sep 2026 weren’t recorded.',
+    declines_may_be_missing:'PayHere declines before 26 Sep 2026 may be missing.',
+    no_gateway_report:'Pay links and manage links don’t report opening PayHere — the customer may have reached it.',
+    actor_not_recorded:'Who cancelled this, and why, wasn’t recorded.',
+  })[code]||String(code);
+}
+function lookupUnavailableText(list){
+  const w={payments:'payments',payment_events:'PayHere notices',booking_checkout_event:'checkout log',refunds:'refunds',notification_log:'emails'};
+  return 'Incomplete — couldn’t load: '+list.map(s=>w[s]||String(s)).join(', ');
+}
+const lookupKv=(k,v)=>`<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+function lookupHeaderHtml(d){
+  const b=d.booking,c=b.customer||{},bl=b.billing||{};
+  const billing=[[bl.firstName,bl.lastName].filter(Boolean).join(' '),bl.address,bl.city,bl.state,bl.postcode,bl.country].filter(Boolean).join(', ');
+  const when=(b.travelDate?fmtDate(b.travelDate):'No date')+(b.travelTime?' · '+b.travelTime:'')+' · '+b.pax+' guest'+(b.pax===1?'':'s');
+  const cur=b.currency;
+  return `<div class="block" data-testid="lookup-header"><h4>Booking</h4>
+    ${lookupKv('Reference',esc(b.reference)+(b.isTest?' <span class="pill" style="--c:var(--wait);--cbg:var(--wait-bg)" title="Team test booking — not a customer">Test booking</span>':''))}
+    ${lookupKv('Status',esc(b.status))}
+    ${lookupKv('Type',esc(MODE[b.mode]||b.mode)+' · '+esc(chanLabel(b.channel)))}
+    ${lookupKv('Customer',esc([c.firstName,c.lastName].filter(Boolean).join(' ')||'—'))}
+    ${lookupKv('Email',esc(c.email||'—'))}
+    ${lookupKv('WhatsApp',memberPhoneHtml(c.whatsapp))}
+    ${lookupKv('Country',esc(c.country||'—'))}
+    ${billing?lookupKv('Billing',esc(billing)):''}
+    ${lookupKv('Route',esc(b.route))}
+    ${lookupKv('When',esc(when))}
+    ${lookupKv('Total',esc(money({amount:b.total,currency:cur})))}
+    ${b.amountDueNow!=null&&b.amountDueNow!==b.total?lookupKv('Due now',esc(money({amount:b.amountDueNow,currency:cur}))):''}
+    <div class="lk-act">${b.inQueue
+      ?`<button class="btn" data-lkbooking="${esc(b.id)}">Open in queue</button>`
+      :`<span class="muted" style="padding:0">Not in the queue (${esc(b.status)})</span>`}</div>
+  </div>`;
+}
+/* "This customer's bookings" (spec §15): the same person's other bookings, newest first, each
+   one press from its own lookup. null = the API could not read them; absent = an older answer. */
+function lookupOtherBookingsHtml(list){
+  const head='<div class="block" data-testid="lookup-others"><h4>This customer’s bookings</h4>';
+  if(list===null)return head+'<p class="lk-warn">Couldn’t load this customer’s other bookings.</p></div>';
+  const rows=(list.rows||[]).map(r=>{
+    const pay=r.status==='paid'?'paid':r.status+' · '+(r.paid?'paid':'unpaid');
+    const when=r.travelDate?fmtDate(r.travelDate):'No date';
+    const bits=['made '+lookupTime(r.createdAt),r.route,when,money({amount:r.total,currency:r.currency}),pay,r.isTest&&'test booking'].filter(Boolean);
+    return `<div class="lk-other"><button class="lk-link" data-lkcase="${esc(r.reference)}">${esc(r.reference)}</button><span class="lk-sub">${esc(bits.join(' · '))}</span></div>`;
+  }).join('');
+  return head+(rows||'<p class="muted" style="padding:0">No other bookings with this email.</p>')
+    +(list.truncated?'<p class="lk-line muted">Showing the newest 50.</p>':'')+'</div>';
+}
+function lookupCaseHtml(d){
+  if(!d.booking){
+    const q=d.quote||{};
+    return `<div class="lk-case" data-testid="lookup-case"><div class="block" data-testid="lookup-header"><h4>Quote</h4>
+      ${lookupKv('Reference',esc(q.reference||d.ref))}${lookupKv('Status',esc(q.status||'—'))}
+      <p class="lk-line">This quote has no booking yet — the customer hasn’t opened its pay link.</p></div></div>`;
+  }
+  const v=d.verdict;
+  let verdict;
+  if(v){
+    const t=lookupVerdictText(v,d.booking.currency);
+    /* The paying booking is one press away: its reference opens its own lookup. */
+    const at=v.kind==='paid_elsewhere'&&v.paidOn?t.detail.lastIndexOf(v.paidOn):-1;
+    const detail=at<0?esc(t.detail)
+      :esc(t.detail.slice(0,at))+`<button class="lk-link" data-lkcase="${esc(v.paidOn)}">${esc(v.paidOn)}</button>`+esc(t.detail.slice(at+v.paidOn.length));
+    verdict=`<div class="lk-title">${esc(t.title)}</div>`+(t.detail?`<p class="lk-line">${detail}</p>`:'')
+      +[t.refund,t.cancellation].filter(Boolean).map(s=>`<p class="lk-line">${esc(s)}</p>`).join('')
+      +t.warnings.map(s=>`<p class="lk-warn">${esc(s)}</p>`).join('');
+  }else{
+    /* No verdict is never "nothing happened": a source that failed to load says so by name. */
+    verdict=(d.unavailable||[]).length?`<p class="lk-warn">${esc(lookupUnavailableText(d.unavailable))}</p>`:'<p class="muted" style="padding:0">No verdict.</p>';
+  }
+  const rows=(d.timeline||[]).map(r=>{
+    const sub=lookupRowDetail(r);
+    return `<div class="pa-row" title="${esc(r.at)}"><span class="pa-dot" style="--c:${lookupRowTone(r)}"></span><span class="pa-when">${esc(lookupTime(r.at))}</span>`
+      +`<span class="pa-what"><span class="lk-label">${esc(lookupRowLabel(r))}</span>${sub?`<span class="lk-sub">${esc(sub)}</span>`:''}</span></div>`;
+  }).join('')||'<p class="muted" style="padding:0">Nothing recorded.</p>';
+  const gaps=(d.gaps||[]).length?`<div class="block" data-testid="lookup-gaps"><h4>Gaps in the record</h4>${d.gaps.map(g=>`<p class="lk-line">${esc(lookupGapText(g))}</p>`).join('')}</div>`:'';
+  return `<div class="lk-case" data-testid="lookup-case">${lookupHeaderHtml(d)}
+    <div class="block" data-testid="lookup-verdict"><h4>Payment</h4>${verdict}</div>
+    ${d.otherBookings===undefined?'':lookupOtherBookingsHtml(d.otherBookings)}
+    <div class="block" data-testid="lookup-timeline"><h4>Timeline</h4>${rows}</div>${gaps}
+    <p class="muted">Only some customer emails are recorded (not cancellation, refund or details-needed emails), and team emails aren’t stored per booking.</p></div>`;
+}
+function viewLookup(){
+  $('#topbar').innerHTML='';
+  const ref=state.routeCaseRef||'';
+  const view=$('#view');
+  view.innerHTML=`<div class="qhead pagehead"><h1>Lookup</h1></div>
+    <p class="pagesub">Payment history for one booking — paste a booking ref (CH-…) or a quote ref (Q-…)</p>
+    <form class="lk-form" id="lookup-form" role="search" autocomplete="off">
+      <div class="search">${NAV_ICONS.lookup}<input id="lookup-q" value="${esc(ref)}" placeholder="CH-… or Q-…" aria-label="Booking or quote reference" spellcheck="false"></div>
+      <button class="btn btn-go" type="submit">Look up</button>
+    </form>
+    <div id="lookup-out">${ref
+      ?`<div class="lk-case" aria-busy="true" aria-label="Loading payment history">${'<div class="block"><div class="an-skel"></div></div>'.repeat(3)}</div>`
+      :'<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">Look up a booking</div><div class="qempty-sub">You’ll see the customer, what happened to the payment, and every recorded step in order.</div></div>'}</div>`;
+  if(!ref)return;
+  /* Only the result area is replaced when the answer lands, so a ref typed meanwhile survives. */
+  api.get('/cases/'+encodeURIComponent(ref)).then(d=>{
+    if(state.route!=='lookup'||state.routeCaseRef!==ref)return; /* stale response — view moved on */
+    const out=$('#lookup-out');if(out)out.innerHTML=lookupCaseHtml(d);
+  }).catch(err=>{
+    if(state.route!=='lookup'||state.routeCaseRef!==ref)return;
+    const known=err.message==='api 404'||err.message==='api 400'||err.message==='auth';
+    if(!known)window.opsReportError&&window.opsReportError('lookup',err);
+    const msg=err.message==='api 404'?'No booking or quote with that reference.'
+      :err.message==='api 400'?'Enter a booking ref (CH-…) or a quote ref (Q-…).'
+      :'Couldn’t load — check the connection and try again.';
+    const out=$('#lookup-out');if(out)out.innerHTML=`<div class="an-empty">${esc(msg)}</div>`;
+  });
+}
+/* ── Rates (spec 2026-09-26 §5) — the founder's rate card + hot zones as a page of its own.
+   The content still renders in QuoteView (same helpers, same .qv styles as the popup it
+   replaced); the shell owns the header and hands QuoteView the mount. The mount is reused
+   across routine shell repaints, so they neither refetch the card nor wipe a half-typed zone. */
+function viewRates(){
+  $('#topbar').innerHTML='';
+  const view=$('#view');
+  let mount=view.querySelector('#rates-mount');
+  if(!mount){
+    view.innerHTML=`<div class="qhead pagehead"><h1>Rates</h1></div>
+    <p class="pagesub">What we charge, and the towns that carry a premium</p>
+    <div id="rates-mount"></div>`;
+    mount=view.querySelector('#rates-mount');
+  }
+  QuoteView.showRates(mount);
+}
+document.addEventListener('submit',e=>{
+  if(e.target.id!=='lookup-form')return;
+  e.preventDefault();
+  const q=$('#lookup-q');
+  setShellRoute('lookup',{caseRef:((q&&q.value)||'').trim()});
+});
+document.addEventListener('click',async e=>{
+  if(state.route!=='lookup')return;
+  const other=e.target.closest('#view [data-lkcase]');
+  if(other){setShellRoute('lookup',{caseRef:other.dataset.lkcase});return;}
+  const open=e.target.closest('#view [data-lkbooking]');
+  if(!open)return;
+  const id=open.dataset.lkbooking;
+  /* The queue list is fetched when the tab opens, and openDetail() can only open a row it holds —
+     a booking created since (the usual case for a payment that just failed) needs a fresh list. */
+  if(!tickets.some(x=>x.id===id))await loadQueue().catch(()=>{});
+  openDetail(id);
+});
 
 function buildActivity(t,d){
   const acts=[];
@@ -3275,6 +3671,14 @@ function refundHtmlFor(t,d){
 const MEMBER_STATE={held:'Held',charged:'Paid',charge_failed:'Card failed',scratched:'Scratched'};
 /* booking extras are stored as machine slugs; the sheet prints them for humans */
 const EXTRA_LBL={sightseeing:'Sightseeing stops',luggage:'Extra luggage',front:'Front seat',flex:'Flexible timing',waiting:'Waiting time','safari-wait':'Safari wait'};
+/* The add-ons the customer chose, for the booking sheet's Extras row. A booking made from a quote
+   carries them as the quote named them (booking.addOns, read off the quote's priced lines); a
+   website transfer still sends its own extras codes. Empty when nothing was chosen. */
+function bookingAddOns(booking) {
+  if (Array.isArray(booking?.addOns) && booking.addOns.length) return booking.addOns;
+  const codes = Array.isArray(booking?.input?.extras) ? booking.input.extras : [];
+  return codes.map((x) => EXTRA_LBL[x] || x);
+}
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
   const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
@@ -3437,8 +3841,8 @@ function renderSheet(){
       <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
       ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
   }
-  const extras=Array.isArray(d?.booking?.input?.extras)?d.booking.input.extras:[];
-  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(EXTRA_LBL[x]||x)).join(' · ')}</span></div>`:'';
+  const extras=bookingAddOns(d?.booking);
+  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -3462,6 +3866,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
       ${paymentAttemptsHtmlFor(d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
@@ -3617,6 +4022,12 @@ function playRouteIn(){
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
+  if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
+  if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
+  /* The Rates page renders in QuoteView (it shares the builder's helpers and .qv styles) but paints
+     into #view — unmount it on every other route so a late rate-card/zone response can't paint
+     over the page that replaced it. */
+  if(state.route!=='rates')QuoteView.hideRates();
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -3647,6 +4058,25 @@ function render(){
     if(entering){
       playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='lookup'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewLookup();
+    if(entering){
+      playRouteIn();
+      /* A bare Lookup is a search box and nothing else — the cursor goes in it. */
+      const qi=!state.routeCaseRef&&$('#lookup-q');
+      if(qi)qi.focus({preventScroll:true});
+    }
+  }else if(state.route==='rates'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewRates();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="rates"]');
       if(navBtn)navBtn.focus();
     }
   }else{
@@ -3696,6 +4126,8 @@ document.addEventListener('click',e=>{
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
+  if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
+  if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -3904,6 +4336,8 @@ document.addEventListener('click',async e=>{
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
+    /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
+    case 'lookup':{if(!state.caps||!state.caps.includes('payments:act'))break;setShellRoute('lookup',{caseRef:el.dataset.ref});break;}
     case 'refundrequest':{
       if(!mayReverseNow(t,state.detailData))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
@@ -4068,6 +4502,7 @@ function bootApp(identity){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
+  state.routeCaseRef=next.routeCaseRef||null;
   syncUrl(state.route,state.routeQuoteId,next.routeBookingId,'replace');
   /* The refresh case, and the reason this feature exists: boot reads the URL itself rather than
      going through applyRouteFromUrl, so without this a reloaded ?booking= would keep the address
@@ -4083,7 +4518,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics surface immediately — neither needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -4301,7 +4736,7 @@ var rateCard = null;
 var _delegatesWired = false;
 
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
-var ratesOpen = false;    // Rate Settings modal
+var ratesEl = null;       // the shell's #rates-mount while the Rates page is showing, else null
 var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
@@ -7128,103 +7563,7 @@ function renderLegCard(leg, idx, total) {
   ].join('');
 }
 
-// ── Rate card body renderer ────────────────────────────────────────────────────
-function renderRateCardBody() {
-  if (!rateCard) {
-    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rate card…</div>';
-  }
-
-  var fx = rateCard.fxUsdToLkr;
-
-  // Helper: cents → "$X.XX"
-  function usd(cents) {
-    return '$' + (cents / 100).toFixed(2);
-  }
-
-  // Helper: cents → "Rs X,XXX" (LKR = round(cents × fx / 100))
-  function lkr(cents) {
-    var val = Math.round(cents * fx / 100);
-    return 'Rs ' + val.toLocaleString('en-US');
-  }
-
-  // Helper: render a static rate row
-  function rateRow(label, hint, valueHtml) {
-    return [
-      '<div class="ch-rate-row">',
-      '  <span class="ch-rate-label">',
-      esc(label),
-      hint ? '<span class="ch-rate-hint">' + esc(hint) + '</span>' : '',
-      '  </span>',
-      '  <span class="ch-rate-control" style="font-size:13px;font-weight:600;color:var(--ink);text-align:right">',
-      valueHtml,
-      '  </span>',
-      '</div>',
-    ].join('');
-  }
-
-  var carKmCents = rateCard.perKmCents.car;
-  var vanKmCents = rateCard.perKmCents.van;
-  var van14KmCents = rateCard.perKmCents.van14;
-  var customKmCents = rateCard.perKmCents.custom;
-  var carFloorCents = rateCard.floorCents.car;
-  var vanFloorCents = rateCard.floorCents.van;
-  var driverCents = rateCard.chauffeurDayRateCents;
-  var bufferPct = rateCard.bufferPct;
-  var depositPct = rateCard.depositPct;
-  var extras = rateCard.extras;
-
-  var leftCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Per-km rates</div>',
-    rateRow('Car', null,
-      esc(usd(carKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carKmCents)) + ' /km</span>'),
-    rateRow('Van', null,
-      esc(usd(vanKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanKmCents)) + ' /km</span>'),
-    rateRow('Van 14', null,
-      esc(usd(van14KmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(van14KmCents)) + ' /km</span>'),
-    rateRow('Custom', null,
-      esc(usd(customKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(customKmCents)) + ' /km</span>'),
-    '  <div class="ch-rate-group-title">Minimum per leg</div>',
-    rateRow('Car floor', null,
-      esc(usd(carFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carFloorCents)) + '</span>'),
-    rateRow('Van floor', null,
-      esc(usd(vanFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanFloorCents)) + '</span>'),
-    '</div>',
-  ].join('');
-
-  var rightCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Chauffeur &amp; buffer</div>',
-    rateRow('Driver day rate', null,
-      esc(usd(driverCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /day</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(driverCents)) + ' /day</span>'),
-    rateRow('Buffer', null, esc(String(bufferPct)) + '%'),
-    rateRow('Deposit', null, esc(String(depositPct)) + '%'),
-    '  <div class="ch-rate-group-title">Add-ons &amp; FX</div>',
-    rateRow('Sightseeing', null,
-      esc(usd(extras.sightseeing))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.sightseeing)) + '</span>'),
-    rateRow('Waiting', null,
-      esc(usd(extras.waiting))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.waiting)) + '</span>'),
-    rateRow('Safari wait', null,
-      esc(usd(extras['safari-wait']))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras['safari-wait'])) + '</span>'),
-    rateRow('FX', 'LKR per USD', 'Rs ' + esc(String(fx)) + ' / $'),
-    rateRow('Rate card', 'version', esc(rateCard.version)),
-    '</div>',
-  ].join('');
-
-  return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
-}
-
-// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever inside Rate Settings. ──
+// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever on the Rates page. ──
 // A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
 // (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
 // release). The whole app re-renders by innerHTML swap, so the form inputs are UNCONTROLLED —
@@ -7239,7 +7578,7 @@ async function loadHotZones() {
     var d = await jsonOrNull(r);
     hotZones = (d && d.zones) ? d.zones : [];
     hotZonesOff = !!(d && d.disabled);
-    render();
+    renderRatesPage();
   } catch (e) { window.opsReportError && window.opsReportError('hotZones list', e); /* leave prior state; a transient failure just shows the last list */ }
 }
 
@@ -7253,46 +7592,46 @@ async function hzSubmitZone() {
   var placeName = (placeEl.value || '').trim();
   var boostPct = parseInt(boostEl.value, 10);
   var active = activeEl ? !!activeEl.checked : true;
-  if (!placeName) { showToast('Enter a town name', 'error'); return; }
-  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%', 'error'); return; }
+  if (!placeName) { ratesToast('Enter a town name', 'error'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { ratesToast('Boost must be 0–100%', 'error'); return; }
   if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var path = hzEditId ? '/admin/quote/zones/' + hzEditId : '/admin/quote/zones';
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); render(); return; }
+    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
     hzEditId = null;
-    showToast('Zone saved');
+    ratesToast('Zone saved');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; ratesToast('Save failed', 'error'); renderRatesPage(); }
 }
 
 async function hzToggleZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (!z) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
     hzBusy = false;
-    if (!r.ok) { showToast('Update failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Update failed', 'error'); renderRatesPage(); return; }
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; ratesToast('Update failed', 'error'); renderRatesPage(); }
 }
 
 async function hzDeleteZone(id) {
   var z = (hotZones || []).find(function(x) { return x.id === id; });
   if (z && !window.confirm('Delete the ' + z.placeName + ' hot zone?')) return;
-  hzBusy = true; render();
+  hzBusy = true; renderRatesPage();
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
     hzBusy = false;
-    if (!r.ok) { showToast('Delete failed', 'error'); render(); return; }
+    if (!r.ok) { ratesToast('Delete failed', 'error'); renderRatesPage(); return; }
     if (hzEditId === id) hzEditId = null;
-    showToast('Zone deleted');
+    ratesToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed', 'error'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; ratesToast('Delete failed', 'error'); renderRatesPage(); }
 }
 
 function renderHotZonesPanel() {
@@ -7308,8 +7647,10 @@ function renderHotZonesPanel() {
       var pill = z.active
         ? '<span class="ch-badge tone-teal">active</span>'
         : '<span class="ch-badge tone-slate">paused</span>';
-      return '<div class="ch-hz-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
-        + '<div style="flex:1;min-width:0"><b>' + esc(z.placeName) + '</b> '
+      // Wraps, with a 140px basis for the name: on a phone the pill and buttons drop to a second
+      // line instead of running past the card's edge (they overflowed at 375px wide).
+      return '<div class="ch-hz-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
+        + '<div style="flex:1 1 140px;min-width:0"><b>' + esc(z.placeName) + '</b> '
         + '<span style="color:' + (hot ? 'var(--danger,#c0392b)' : 'var(--muted-2)') + '">+' + esc(String(z.boostPct)) + '%</span>'
         + (hot ? ' <span title="Above 20% is unusually high">&#9888;</span>' : '') + '</div>'
         + pill
@@ -7366,6 +7707,498 @@ function renderHotZonesPanel() {
     + form
     + '</div>';
 }
+
+// ── Rates page (spec 2026-09-26 §5–§7) ───────────────────────────────────────
+// Rate Settings used to be a popup over the builder; it is a founder-only page in the ops side
+// menu. The shell owns the page header and hands us #rates-mount; the page renders here because it
+// shares this module's helpers (api, esc, apiPlaces) and its .qv-scoped CSS. `ratesEl` is non-null
+// only while the page is showing — every async repaint checks it, so a response that lands after
+// the founder has moved on paints nothing.
+//
+// The rates come from GET /admin/rates (the live set, the code defaults, the history and the
+// read-only deposit) and are saved through a review step as a new revision (POST /admin/rates).
+// Per-km figures are shown and edited EXACTLY — two decimals of a cent, $0.4025 — so saving an
+// untouched field can never move a price. The form is uncontrolled, like the zone form: values are
+// read from the DOM at Review time, and the open form is never re-rendered (see renderRatesPage).
+var ratesData = null;       // GET /admin/rates body; null until loaded
+var ratesLoadFailed = false;
+var ratesEditing = false;   // the edit form is open
+var ratesReview = null;     // the open review: { rates, revertedToVersion, changes, warnings, samples, samplesFailed, saving, error }
+
+var RT_VEHICLES = [['car', 'Car'], ['van', 'Van 6'], ['van9', 'Van 9'], ['van14', 'Van 14'], ['custom', 'Custom']];
+var RT_EXTRAS = [['sightseeing', 'Sightseeing stops'], ['safari-wait', 'Safari wait'], ['waiting', 'Waiting'],
+  ['luggage', 'Luggage rack'], ['front', 'Child seat'], ['flex', 'Flexi ticket']];
+
+function ratesToast(msg, kind) {
+  // The builder's own #ch-toast sits inside the hidden #quoteRoot on this route; use the shell's.
+  if (window.opsToast) window.opsToast(msg, kind);
+}
+function rtCanEdit() { return viewerCan('rates:manage'); }
+// The version the form was opened on (null = nothing saved yet, the code defaults).
+function rtBaseVersion() { return ratesData && ratesData.live.source === 'revision' ? ratesData.live.version : null; }
+
+// "0.4025": up to two decimals of a cent, trailing zeros trimmed to at least two places.
+function rtKmPlain(cents) { return (cents / 100).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1'); }
+function rtUsdPlain(cents) { return (cents / 100).toFixed(2); }
+function rtKm(cents) { return '$' + rtKmPlain(cents); }
+function rtUsd(cents) { return '$' + rtUsdPlain(cents); }
+function rtLkr(cents, fx) { return 'Rs ' + Math.round((cents * fx) / 100).toLocaleString('en-US'); }
+// Markup on cost — the owner's July model — so today's card reads 15% on every vehicle.
+function rtMargin(price, cost) { return cost > 0 ? (Math.round(((price - cost) / cost) * 1000) / 10) + '%' : '—'; }
+function rtShow(kind, v) {
+  if (kind === 'km') return rtKm(v);
+  if (kind === 'pct') return v + '%';
+  if (kind === 'fx') return 'Rs ' + v;
+  return rtUsd(v);
+}
+function rtWho(email) { return String(email || '').split('@')[0] || 'unknown'; }
+function rtWhen(iso) { var s = String(iso || ''); return s ? s.slice(0, 10) + ' ' + s.slice(11, 16) + ' UTC' : ''; }
+
+// Every field that differs between two rate sets, in reading order. A change of more than 20% either
+// way is flagged — a slipped decimal point should look alarming before it is saved.
+function rtChanges(a, b) {
+  var out = [];
+  function cmp(label, x, y, kind) {
+    if (x === y) return;
+    var pct = x ? ((y - x) / x) * 100 : null;
+    out.push({ label: label, from: x, to: y, kind: kind, pct: pct, big: pct == null || Math.abs(pct) > 20 });
+  }
+  RT_VEHICLES.forEach(function (v) {
+    cmp(v[1] + ' — price per km', a.perKmCents[v[0]], b.perKmCents[v[0]], 'km');
+    cmp(v[1] + ' — our cost per km', a.costPerKmCents[v[0]], b.costPerKmCents[v[0]], 'km');
+  });
+  RT_VEHICLES.forEach(function (v) { cmp(v[1] + ' — minimum fare', a.floorCents[v[0]], b.floorCents[v[0]], 'usd'); });
+  cmp('Driver day rate', a.dayRateCents, b.dayRateCents, 'usd');
+  cmp('Our driver day cost', a.dayRateCostCents, b.dayRateCostCents, 'usd');
+  RT_EXTRAS.forEach(function (x) { cmp(x[1], a.extrasCents[x[0]], b.extrasCents[x[0]], 'usd'); });
+  cmp('Buffer', a.bufferPct, b.bufferPct, 'pct');
+  cmp('FX (LKR per USD)', a.fxUsdToLkr, b.fxUsdToLkr, 'fx');
+  return out;
+}
+
+// A price set below what it costs us is allowed — a promotion is a business call — but said out loud.
+function rtBelowCost(r) {
+  var out = [];
+  RT_VEHICLES.forEach(function (v) {
+    if (r.perKmCents[v[0]] < r.costPerKmCents[v[0]]) out.push(v[1] + ': the price per km is below our cost');
+  });
+  if (r.dayRateCents < r.dayRateCostCents) out.push('The driver day rate is below our day cost');
+  return out;
+}
+
+function rtVal(id) { var el = document.getElementById(id); return el ? String(el.value).trim().replace(/^\$/, '') : ''; }
+// Dollars as typed → cents. `places` = decimals of a dollar allowed: 4 for a per-km figure, else 2.
+function rtCents(raw, places) {
+  var re = places === 4 ? /^\d+(\.\d{1,4})?$/ : /^\d+(\.\d{1,2})?$/;
+  if (!re.test(raw)) return null;
+  return Math.round(Number(raw) * 10000) / 100;
+}
+
+// Read the form into a rate set, checking each figure against the limits the server enforces
+// (api/src/quote/rateRevision.ts). Returns { rates, errors }: rates is null while any field is bad.
+function rtReadForm() {
+  var errors = {};
+  var rates = { perKmCents: {}, costPerKmCents: {}, floorCents: {}, extrasCents: {} };
+  function money(id, places, maxCents) {
+    var c = rtCents(rtVal(id), places);
+    if (c == null) errors[id] = places === 4 ? 'Dollars, up to 4 decimals (0.4025)' : 'Dollars and cents (29.00)';
+    else if (c <= 0 || c > maxCents) errors[id] = 'Between $0.01 and ' + rtUsd(maxCents);
+    return c;
+  }
+  RT_VEHICLES.forEach(function (v) {
+    rates.perKmCents[v[0]] = money('rt-km-' + v[0], 4, 1000);
+    rates.costPerKmCents[v[0]] = money('rt-cost-' + v[0], 4, 1000);
+    rates.floorCents[v[0]] = money('rt-floor-' + v[0], 2, 100000);
+  });
+  rates.dayRateCents = money('rt-day', 2, 100000);
+  rates.dayRateCostCents = money('rt-daycost', 2, 100000);
+  RT_EXTRAS.forEach(function (x) { rates.extrasCents[x[0]] = money('rt-x-' + x[0], 2, 50000); });
+  var buf = rtVal('rt-buffer');
+  if (!/^\d+$/.test(buf) || Number(buf) > 50) errors['rt-buffer'] = 'A whole percent, 0–50';
+  rates.bufferPct = Number(buf);
+  var fx = rtVal('rt-fx');
+  if (!/^\d+(\.\d{1,2})?$/.test(fx) || Number(fx) <= 0 || Number(fx) > 1000) errors['rt-fx'] = 'Rupees per dollar, up to 2 decimals';
+  rates.fxUsdToLkr = Number(fx);
+  return { rates: Object.keys(errors).length ? null : rates, errors: errors };
+}
+
+// Errors go straight onto the inputs, not through a render: the open form is never re-rendered.
+function rtShowErrors(errors) {
+  if (!ratesEl) return;
+  ratesEl.querySelectorAll('.ch-rt-input').forEach(function (el) {
+    var msg = errors[el.id] || '';
+    el.classList.toggle('invalid', !!msg);
+    var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('.ch-field-err');
+    if (err) err.textContent = msg;
+  });
+}
+
+function rtInput(id, value, prefix, suffix, label) {
+  return '<div class="ch-field"><div class="ch-input-wrap">'
+    + (prefix ? '<span class="ch-input-prefix">' + prefix + '</span>' : '')
+    + '<input class="ch-input ch-rt-input" id="' + id + '" inputmode="decimal" autocomplete="off" aria-label="' + esc(label) + '" value="' + esc(value) + '">'
+    + (suffix ? '<span class="ch-input-suffix">' + suffix + '</span>' : '')
+    + '</div><div class="ch-field-err"></div></div>';
+}
+
+function renderRatesEditor() {
+  if (ratesLoadFailed) {
+    return '<div class="ch-lock-note" data-testid="rates-load-failed">Couldn’t load the rates. '
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtReload">Try again</button></div>';
+  }
+  if (!ratesData) return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rates…</div>';
+  var d = ratesData, r = d.live.rates, fx = r.fxUsdToLkr, edit = ratesEditing;
+  function row(label, hint, viewHtml, inputHtml) {
+    return '<div class="ch-rate-row">'
+      + '<span class="ch-rate-label">' + esc(label) + (hint ? '<span class="ch-rate-hint">' + hint + '</span>' : '') + '</span>'
+      + '<span class="ch-rate-control">' + (edit && inputHtml ? inputHtml : viewHtml) + '</span></div>';
+  }
+  // Value and unit share one line; the rupee equivalent sits under them.
+  function view(main, sub) { return '<span class="ch-rt-val"><span>' + main + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>'; }
+
+  var perKm = RT_VEHICLES.map(function (v) {
+    var c = r.perKmCents[v[0]];
+    return row(v[1], null, view(esc(rtKm(c)) + '<i> /km</i>', rtLkr(c, fx) + ' /km'),
+      rtInput('rt-km-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' price per km'));
+  }).join('');
+  var cost = RT_VEHICLES.map(function (v) {
+    var c = r.costPerKmCents[v[0]];
+    var m = '<span data-margin-for="' + v[0] + '">margin ' + esc(rtMargin(r.perKmCents[v[0]], c)) + '</span>';
+    return row(v[1], m, view(esc(rtKm(c)) + '<i> /km</i>'), rtInput('rt-cost-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' our cost per km'));
+  }).join('');
+  var floors = RT_VEHICLES.map(function (v) {
+    var c = r.floorCents[v[0]];
+    return row(v[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-floor-' + v[0], rtUsdPlain(c), '$', '', v[1] + ' minimum fare'));
+  }).join('');
+  var day = row('Driver day rate', null, view(esc(rtUsd(r.dayRateCents)) + '<i> /day</i>', rtLkr(r.dayRateCents, fx) + ' /day'),
+      rtInput('rt-day', rtUsdPlain(r.dayRateCents), '$', '/day', 'Driver day rate'))
+    + row('Our day cost', '<span data-margin-for="day">margin ' + esc(rtMargin(r.dayRateCents, r.dayRateCostCents)) + '</span>',
+      view(esc(rtUsd(r.dayRateCostCents)) + '<i> /day</i>'), rtInput('rt-daycost', rtUsdPlain(r.dayRateCostCents), '$', '/day', 'Our driver day cost'));
+  var extras = RT_EXTRAS.map(function (x) {
+    var c = r.extrasCents[x[0]];
+    return row(x[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-x-' + x[0], rtUsdPlain(c), '$', '', x[1]));
+  }).join('');
+  var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
+    + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
+  // Read-only in both modes (owner, 2026-09-26): no booking charges a deposit today.
+  var deposit = row('Deposit', 'not charged — bookings are paid in full',
+    view(esc(String(d.readOnly.depositPct)) + '%', 'cap ' + rtUsd(d.readOnly.depositCapCents)), null);
+
+  var live = d.live;
+  var liveLabel = live.source === 'revision'
+    ? 'Live: version <b>' + esc(live.version) + '</b> · saved by ' + esc(rtWho(live.createdBy)) + ' · ' + esc(rtWhen(live.createdAt))
+    : 'Live: the code defaults (<b>' + esc(d.defaults.version) + '</b>) — nothing saved yet';
+  var actions = !rtCanEdit() ? '' : (edit
+    ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="rtCancel">Cancel</button>'
+      + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtReview">Review changes</button>'
+    : '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtEdit">Edit rates</button>');
+  var note = edit
+    ? 'Change any figure, then Review. Prices are what the customer pays; costs only feed the margin. Nothing is live until you save.'
+    : 'These are the live prices: a saved change applies to the next quote, website estimate and booking. Approved quotes, and web quotes inside their 7-day lock, keep their prices.';
+
+  return '<div class="ch-rates-top"><div class="ch-rates-live" data-testid="rates-live">' + liveLabel + '</div>'
+    + '<div class="ch-rates-actions">' + actions + '</div></div>'
+    + '<div class="ch-lock-note">' + note + '</div>'
+    + '<div class="ch-rate-grid' + (edit ? ' ch-rt-editing" id="rt-form' : '') + '">'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Price per km</div>' + perKm
+    + '<div class="ch-rate-group-title">Minimum fare</div>' + floors + '</div>'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Our cost per km</div>' + cost
+    + '<div class="ch-rate-group-title">Chauffeur day</div>' + day
+    + '<div class="ch-rate-group-title">Add-ons</div>' + extras
+    + '<div class="ch-rate-group-title">Buffer &amp; FX</div>' + bufFx
+    + '<div class="ch-rate-group-title">Deposit</div>' + deposit + '</div>'
+    + '</div>';
+}
+
+function renderRatesHistory() {
+  var d = ratesData;
+  if (!d) return '';
+  var canRevert = rtCanEdit() && !ratesEditing;
+  var rows = d.history.map(function (h, i) {
+    var older = d.history[i + 1] ? d.history[i + 1].rates : d.defaults.rates;
+    var ch = rtChanges(older, h.rates);
+    var chips = ch.length
+      ? ch.slice(0, 4).map(function (c) { return '<span class="ch-hist-chip">' + esc(c.label + ' ' + rtShow(c.kind, c.from) + ' → ' + rtShow(c.kind, c.to)) + '</span>'; }).join('')
+        + (ch.length > 4 ? '<span class="ch-hist-chip is-quiet">+' + (ch.length - 4) + ' more</span>' : '')
+      : '<span class="ch-hist-chip is-quiet">no price change</span>';
+    return '<div class="ch-rt-hist-row" data-testid="rates-history-row">'
+      + '<span class="ch-hist-rev">' + esc(h.version) + (i === 0 ? ' <span class="ch-badge tone-teal">live</span>' : '') + '</span>'
+      + '<span class="ch-hist-meta">' + esc(rtWho(h.createdBy)) + ' · ' + esc(rtWhen(h.createdAt))
+      + (h.revertedToVersion ? ' · reverted to ' + esc(h.revertedToVersion) : '') + '</span>'
+      + '<span class="ch-hist-chips">' + chips + '</span>'
+      + (canRevert && i > 0 ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(h.version) + '">Revert to this</button>' : '')
+      + '</div>';
+  });
+  rows.push('<div class="ch-rt-hist-row" data-testid="rates-history-defaults">'
+    + '<span class="ch-hist-rev">Code defaults' + (d.history.length ? '' : ' <span class="ch-badge tone-teal">live</span>') + '</span>'
+    + '<span class="ch-hist-meta">' + esc(d.defaults.version) + ' · rateCard.ts</span>'
+    + '<span class="ch-hist-chips"></span>'
+    + (canRevert && d.history.length ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(d.defaults.version) + '">Revert to this</button>' : '')
+    + '</div>');
+  return '<div class="ch-rt-history"><h3 class="ch-rt-h3">History</h3>' + rows.join('') + '</div>';
+}
+
+function renderRatesReview() {
+  var rv = ratesReview;
+  if (!rv || !ratesData) return '';
+  var changes = rv.changes.length
+    ? '<table class="ch-rt-table" data-testid="rates-changes"><thead><tr><th>What</th><th>Now</th><th>New</th><th>Change</th></tr></thead><tbody>'
+      + rv.changes.map(function (c) {
+        var pct = c.pct == null ? '—' : (c.pct > 0 ? '+' : '') + (Math.round(c.pct * 10) / 10) + '%';
+        return '<tr' + (c.big ? ' class="is-big"' : '') + '><td>' + esc(c.label) + '</td><td>' + esc(rtShow(c.kind, c.from)) + '</td>'
+          + '<td><b>' + esc(rtShow(c.kind, c.to)) + '</b></td><td>' + esc(pct)
+          + (c.big ? ' <span class="ch-rt-flag" title="More than 20% either way">check</span>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty" data-testid="rates-no-change">Nothing has changed — every figure matches the live rates.</div>';
+  var warn = rv.warnings.length
+    ? '<div class="ch-rt-warn" data-testid="rates-below-cost">' + rv.warnings.map(esc).join('<br>') + '</div>' : '';
+  var samples = rv.samples
+    ? '<table class="ch-rt-table" data-testid="rates-samples"><thead><tr><th>Sample trip</th><th>Now</th><th>New</th></tr></thead><tbody>'
+      + rv.samples.map(function (s) {
+        return '<tr><td>' + esc(s.label) + '</td><td>' + esc(rtUsd(s.currentCents)) + '</td><td><b>' + esc(rtUsd(s.proposedCents)) + '</b></td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty">' + (rv.samplesFailed ? 'Couldn’t price the sample trips — the changes above are still exact.' : 'Pricing sample trips…') + '</div>';
+  var revertNote = rv.revertedToVersion
+    ? '<div class="ch-lock-note">Reverting to ' + (rv.revertedToVersion === ratesData.defaults.version
+      ? 'the code defaults (' + esc(rv.revertedToVersion) + ')' : 'version ' + esc(rv.revertedToVersion))
+      + '. History keeps every version: this saves a new one.</div>' : '';
+  var err = '';
+  if (rv.error && rv.error.kind === 'stale') {
+    var cur = rv.error.current;
+    err = '<div class="ch-rt-warn" data-testid="rates-stale">Someone saved rates since you opened this page'
+      + (cur ? ' — version ' + esc(cur.version) + ' by ' + esc(rtWho(cur.createdBy)) + ', ' + esc(rtWhen(cur.createdAt)) : '')
+      + '. Reload to see them, then make your change again.</div>';
+  } else if (rv.error && rv.error.kind === 'invalid') {
+    err = '<div class="ch-rt-warn">The server refused: ' + esc(rv.error.issues.map(function (i) { return (i.path || []).join('.'); }).join(', ') || 'invalid figures') + '.</div>';
+  } else if (rv.error) {
+    err = '<div class="ch-rt-warn">Couldn’t save — nothing changed. Try again.</div>';
+  }
+  var buttons = (rv.error && rv.error.kind === 'stale')
+    ? '<button class="ch-btn ch-btn-teal" data-action="rtReload">Reload rates</button>'
+    : '<button class="ch-btn ch-btn-outline" data-action="rtReviewClose">' + (rv.revertedToVersion ? 'Cancel' : 'Back to editing') + '</button>'
+      + '<button class="ch-btn ch-btn-teal" data-action="rtSave"' + (rv.saving || !rv.changes.length ? ' disabled' : '') + '>'
+      + (rv.saving ? 'Saving…' : (rv.revertedToVersion ? 'Revert' : 'Save rates')) + '</button>';
+  return '<div class="ch-scrim show" data-action="rtReviewClose"></div>'
+    + '<div class="ch-modal" data-testid="rates-review"><div class="ch-modal-card">'
+    + '<div class="ch-modal-head"><h2>' + (rv.revertedToVersion ? 'Review the revert' : 'Review rate changes') + '</h2>'
+    + '<button class="ch-x-btn" data-action="rtReviewClose" title="Close">&times;</button></div>'
+    + '<div class="ch-modal-body">'
+    + '<div class="ch-lock-note">Saving makes these the live prices: the next quote, website estimate and booking use them. Approved quotes keep the prices they were approved at.</div>'
+    + revertNote + warn + changes
+    + '<div class="ch-rate-group-title ch-rt-samples-title">Sample trips</div>' + samples
+    + err
+    + '<div class="ch-rt-modal-actions">' + buttons + '</div>'
+    + '</div></div></div>';
+}
+
+// The review dialog renders into its own .qv host on <body>, not inside the page: #view sits at
+// z-index 1 under the side rail (z-index 2), so a dialog inside it would be half-covered by the rail
+// on a phone however high its own z-index went.
+var rtModalRoot = null;
+function rtModalHost() {
+  if (!rtModalRoot || !rtModalRoot.isConnected) {
+    rtModalRoot = document.createElement('div');
+    rtModalRoot.className = 'qv qv-page';
+    document.body.appendChild(rtModalRoot);
+  }
+  return rtModalRoot;
+}
+
+function renderRatesPage() {
+  if (!ratesEl || !ratesEl.isConnected) return;
+  var html = '<div class="qv qv-page" data-testid="rates-page">'
+    + '<div class="ch-rates-card">'
+    + renderRatesEditor()
+    + renderRatesHistory()
+    + renderHotZonesPanel()
+    + '</div>'
+    + '</div>';
+  // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field. And the
+  // open rates form is the founder's draft — never diff it, or a render mid-edit (a zone list
+  // landing, the review opening) would reset a typed figure to its saved value.
+  morphdom(ratesEl, '<div>' + html + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) {
+      if (ratesEditing && fromEl.id === 'rt-form') return false;
+      return !fromEl.isEqualNode(toEl);
+    },
+  });
+  morphdom(rtModalHost(), '<div>' + renderRatesReview() + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); },
+  });
+  attachHotZoneAutoComplete();
+}
+
+async function loadRates() {
+  try {
+    var r = await api('/admin/rates');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (!d || !d.live || !d.live.rates || !d.defaults || !Array.isArray(d.history) || !d.readOnly) {
+      ratesLoadFailed = true;
+    } else {
+      ratesData = d;
+      ratesLoadFailed = false;
+    }
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates load', e);
+    ratesLoadFailed = true;
+  }
+  renderRatesPage();
+}
+
+// Open the review for a proposed set (a form read, or a revert). The sample trips are priced by the
+// server with the real engine; the change list is exact and needs no round trip.
+async function rtOpenReview(rates, revertedToVersion) {
+  var rv = {
+    rates: rates, revertedToVersion: revertedToVersion || null,
+    changes: rtChanges(ratesData.live.rates, rates), warnings: rtBelowCost(rates),
+    samples: null, samplesFailed: false, saving: false, error: null,
+  };
+  ratesReview = rv;
+  renderRatesPage();
+  try {
+    var r = await api('/admin/rates/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rates: rates }) });
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (ratesReview !== rv) return; // closed or replaced meanwhile
+    if (d && Array.isArray(d.samples)) rv.samples = d.samples; else rv.samplesFailed = true;
+  } catch (e) {
+    if (ratesReview !== rv) return;
+    rv.samplesFailed = true;
+  }
+  renderRatesPage();
+}
+
+async function rtSave() {
+  var rv = ratesReview;
+  if (!rv || rv.saving || !rv.changes.length) return;
+  rv.saving = true;
+  rv.error = null;
+  renderRatesPage();
+  try {
+    var body = { baseVersion: rtBaseVersion(), rates: rv.rates };
+    if (rv.revertedToVersion) body.revertedToVersion = rv.revertedToVersion;
+    var r = await api('/admin/rates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    var d = await jsonOrNull(r);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    if (r.status === 201 && d && d.revision) {
+      ratesReview = null;
+      ratesEditing = false;
+      ratesToast('Rates saved — version ' + d.revision.version + ' is live');
+      await loadRates();
+      apiRateCard().then(function (rc) { if (rc) rateCard = rc; }); // the builder's copy (add-ons, caps) follows
+      return;
+    }
+    if (r.status === 409) rv.error = { kind: 'stale', current: d && d.current };
+    else if (r.status === 400) rv.error = { kind: 'invalid', issues: (d && d.issues) || [] };
+    else rv.error = { kind: 'failed' };
+    renderRatesPage();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates save', e);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    rv.error = { kind: 'failed' };
+    renderRatesPage();
+  }
+}
+
+// Mount (or re-mount) into the shell's #rates-mount. A NEW mount node means the founder just
+// arrived — fetch the rates and the zones fresh; the same node again is a routine shell repaint.
+function showRates(el) {
+  var arriving = ratesEl !== el;
+  ratesEl = el;
+  if (arriving) {
+    hzEditId = null;
+    ratesEditing = false;
+    ratesReview = null;
+    ratesData = null;
+    ratesLoadFailed = false;
+    loadRates();
+    loadHotZones();
+  }
+  renderRatesPage();
+}
+
+function hideRates() {
+  if (!ratesEl) return;
+  ratesEl = null;
+  hzEditId = null;
+  ratesEditing = false;
+  ratesReview = null;
+  if (rtModalRoot) rtModalRoot.innerHTML = '';
+  hzacClose();
+}
+
+// The page lives outside the builder's .ch-app, so its buttons need their own delegate.
+document.addEventListener('click', function (e) {
+  if (!ratesEl) return;
+  var el = e.target.closest('[data-action]');
+  if (!el || !(ratesEl.contains(el) || (rtModalRoot && rtModalRoot.contains(el)))) return;
+  var action = el.getAttribute('data-action');
+  if (action === 'hzSubmit') {
+    hzSubmitZone();
+  } else if (action === 'hzEditStart') {
+    hzEditId = el.getAttribute('data-id');
+    renderRatesPage();
+  } else if (action === 'hzEditCancel') {
+    hzEditId = null;
+    renderRatesPage();
+  } else if (action === 'hzToggleActive') {
+    hzToggleZone(el.getAttribute('data-id'));
+  } else if (action === 'hzDelete') {
+    hzDeleteZone(el.getAttribute('data-id'));
+  } else if (action === 'rtEdit') {
+    if (!rtCanEdit() || !ratesData) return;
+    ratesEditing = true;
+    renderRatesPage();
+  } else if (action === 'rtCancel') {
+    ratesEditing = false;
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtReview') {
+    var form = rtReadForm();
+    rtShowErrors(form.errors);
+    if (!form.rates) { ratesToast('Check the highlighted figures', 'error'); return; }
+    rtOpenReview(form.rates, null);
+  } else if (action === 'rtReviewClose') {
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtSave') {
+    rtSave();
+  } else if (action === 'rtRevert') {
+    if (!rtCanEdit() || !ratesData) return;
+    var v = el.getAttribute('data-version');
+    var target = v === ratesData.defaults.version ? ratesData.defaults
+      : ratesData.history.find(function (h) { return h.version === v; });
+    if (target) rtOpenReview(target.rates, v);
+  } else if (action === 'rtReload') {
+    ratesReview = null;
+    ratesEditing = false;
+    ratesData = null;
+    ratesLoadFailed = false;
+    renderRatesPage();
+    loadRates();
+  }
+});
+
+// Margins follow the typed figures as they change — straight onto the page, no render (the open
+// form is never re-rendered). Editing a field also clears its error.
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!ratesEl || !ratesEditing || !t || !t.classList || !t.classList.contains('ch-rt-input') || !ratesEl.contains(t)) return;
+  t.classList.remove('invalid');
+  var err = t.closest('.ch-field') && t.closest('.ch-field').querySelector('.ch-field-err');
+  if (err) err.textContent = '';
+  var m = /^rt-(km|cost)-(.+)$/.exec(t.id);
+  var key = m ? m[2] : ((t.id === 'rt-day' || t.id === 'rt-daycost') ? 'day' : null);
+  if (!key) return;
+  var places = key === 'day' ? 2 : 4;
+  var price = rtCents(rtVal(key === 'day' ? 'rt-day' : 'rt-km-' + key), places);
+  var cost = rtCents(rtVal(key === 'day' ? 'rt-daycost' : 'rt-cost-' + key), places);
+  var out = ratesEl.querySelector('[data-margin-for="' + key + '"]');
+  if (out) out.textContent = 'margin ' + (price != null && cost != null ? rtMargin(price, cost) : '—');
+});
 
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
 // Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
@@ -9200,8 +10033,6 @@ function render() {
     '    <div class="ch-header-tools ch-actionbar">',
     renderHeaderAssign(),
     renderActionBar(),
-    // Rates (the rate-card settings modal) is a founder-only concern.
-    (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),
     '    </div>',
     '  </div>',
     renderPayLinkRow(),
@@ -9386,27 +10217,6 @@ function render() {
     '</div>', // ch-container
 
     // (The recent-quotes drawer was retired — the ops-shell queue is the quote list now.)
-
-    // ══ Rate Settings modal ══
-    (ratesOpen ? [
-      '<div class="ch-scrim show" data-action="closeRates"></div>',
-      '<div class="ch-modal">',
-      '  <div class="ch-modal-card">',
-      '    <div class="ch-modal-head">',
-      '      <h2>Rate Settings</h2>',
-      '      <div style="display:flex;align-items:center;gap:10px">',
-      '        <span class="ch-badge tone-slate">&#x1F512; Locked</span>',
-      '        <button class="ch-x-btn" data-action="closeRates" title="Close">&times;</button>',
-      '      </div>',
-      '    </div>',
-      '    <div class="ch-modal-body">',
-      '      <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
-      renderRateCardBody(),
-      renderHotZonesPanel(),
-      '    </div>',
-      '  </div>',
-      '</div>',
-    ].join('') : ''),
 
     // ══ "Mark booked" modal ══
     (bookOpen ? [
@@ -9941,28 +10751,6 @@ function attachEventListeners() {
       runAction(action, reopenToDraft);
     } else if (action === 'deleteQuote') {
       runAction(action, deleteQuote);
-    } else if (action === 'openRates') {
-      if (!viewerCan('margin:view')) return; // founder-only rate card
-      ratesOpen = true;
-      hzEditId = null;
-      loadHotZones(); // async: fetches the zone list, then re-renders the panel in place
-      render();
-    } else if (action === 'closeRates') {
-      ratesOpen = false;
-      hzEditId = null;
-      render();
-    } else if (action === 'hzSubmit') {
-      hzSubmitZone();
-    } else if (action === 'hzEditStart') {
-      hzEditId = el.getAttribute('data-id');
-      render();
-    } else if (action === 'hzEditCancel') {
-      hzEditId = null;
-      render();
-    } else if (action === 'hzToggleActive') {
-      hzToggleZone(el.getAttribute('data-id'));
-    } else if (action === 'hzDelete') {
-      hzDeleteZone(el.getAttribute('data-id'));
     } else if (action === 'toggleOutput') {
       // Resolve the current effective open state (tri-state → bool), then flip to
       // the explicit opposite so one click always toggles what the operator sees.
@@ -10163,7 +10951,6 @@ function attachEventListeners() {
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
   // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
-  attachHotZoneAutoComplete(); // same picker for the Rate-Settings zone field (#hz-place)
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
@@ -11244,6 +12031,7 @@ function teardown() {
   clearTimeout(_ac.timer);
   _ac.timer = null;
   acClose();
+  hideRates();
   _inited = false;
   // Drop the open-veil unconditionally: logging out mid-open leaves openQuote's finally
   // unreachable for that call, and a stuck veil would greet the next sign-in.
@@ -11293,7 +12081,7 @@ window.opsQuoteKbar = function() {
   return acts;
 };
 
-return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew };
+return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew, showRates: showRates, hideRates: hideRates };
 })();
 </script>
 </body>

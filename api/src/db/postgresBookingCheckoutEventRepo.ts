@@ -14,6 +14,13 @@ import {
   type CheckoutOutcome,
 } from './bookingCheckoutEventRepo';
 
+const toEvent = (r: typeof bookingCheckoutEvents.$inferSelect): BookingCheckoutEvent => ({
+  ...r,
+  action: r.action as CheckoutAction,
+  outcome: r.outcome as CheckoutOutcome,
+  source: r.source as CheckoutEventSource,
+});
+
 export class PostgresBookingCheckoutEventRepo implements BookingCheckoutEventRepo {
   constructor(private readonly db: Db) {}
 
@@ -27,12 +34,17 @@ export class PostgresBookingCheckoutEventRepo implements BookingCheckoutEventRep
       .from(bookingCheckoutEvents)
       .where(eq(bookingCheckoutEvents.bookingId, bookingId))
       .orderBy(desc(bookingCheckoutEvents.at));
-    return rows.map((r) => ({
-      ...r,
-      action: r.action as CheckoutAction,
-      outcome: r.outcome as CheckoutOutcome,
-      source: r.source as CheckoutEventSource,
-    }));
+    return rows.map(toEvent);
+  }
+
+  // Served by booking_checkout_event_order_id_idx.
+  async listByOrderId(orderId: string): Promise<BookingCheckoutEvent[]> {
+    const rows = await this.db
+      .select()
+      .from(bookingCheckoutEvents)
+      .where(eq(bookingCheckoutEvents.orderId, orderId))
+      .orderBy(desc(bookingCheckoutEvents.at));
+    return rows.map(toEvent);
   }
 
   // One day of the three actions the summary reads (indexed on `at`), bucketed by the same

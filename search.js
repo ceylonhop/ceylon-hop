@@ -33,12 +33,11 @@ const ICONS = {
   seat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.8" r="3.3"/><path d="M3.5 20c0-3.2 2.5-5.3 5.5-5.3s5.5 2.1 5.5 5.3"/><path d="M15.5 12.6c2.9 0 5 2.1 5 5.1"/><circle class="wp" cx="16.7" cy="7.5" r="2"/></svg>',
   // img/icons/line/pickup.svg
   pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.7-7-10a7 7 0 0 1 14 0c0 5.3-7 10-7 10z"/><circle class="wp" cx="12" cy="11" r="2"/></svg>',
-  /* The private-transfer promises — img/icons/line/{flexi-time,your-line,rate-lock}.svg.
+  /* The private-transfer promises — img/icons/line/{flexi-time,rate-lock}.svg.
      Deliberately NOT `chauffeur` for "private to your group": booking.html:735 uses that mark
      for the chauffeur PRODUCT, one click further on, and the set's README keeps the two apart
      on purpose. Reusing it here would advertise a different service. */
   flexi:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>',
-  stops:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg>',
   // The same calendar-refresh mark as the page's own "Free cancellation" reassurance row.
   cancel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg>',
@@ -307,12 +306,11 @@ function privateCardHtml(pending) {
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want, and add stops along the way — tell us at booking. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
-    <div class="veh">${row('car', ICONS.car, 'AC car', 'Up to 3 travellers + bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Up to 6 travellers + bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
+    <div class="veh">${row('car', ICONS.car, 'AC car', 'Seats 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Seats 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
     </div>
     <div class="incl">
       <span class="chip">${ICONS.seat} Private to your group</span>
       <span class="chip">${ICONS.flexi} Pick your own time</span>
-      <span class="chip">${ICONS.stops} Stops on request</span>
       <span class="chip">${ICONS.lock} Fixed price, no meter</span>
       <span class="chip">${ICONS.cancel} Free cancellation up to 24h before</span>
     </div>

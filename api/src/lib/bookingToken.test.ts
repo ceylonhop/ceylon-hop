@@ -1,18 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
-import {
-  CHECKOUT_TOKEN_TTL_MS,
-  signBookingToken,
-  signCheckoutToken,
-  verifyBookingToken,
-  verifyCheckoutToken,
-  signQuotePayToken,
-  verifyQuotePayToken,
-  signPayReturnToken,
-  verifyPayReturnToken,
-  signQuoteViewToken,
-  verifyQuoteViewToken,
-} from './bookingToken';
+import { CHECKOUT_TOKEN_TTL_MS, signBookingToken, signCheckoutToken, verifyBookingToken, verifyCheckoutToken, signQuotePayToken, verifyQuotePayToken, signPayReturnToken, verifyPayReturnToken, signQuoteViewToken, verifyQuoteViewToken, verifyPayReturnLeg } from './bookingToken';
 
 const S = 'test-secret';
 
@@ -279,5 +267,40 @@ describe('quote view token', () => {
   it('cannot be spent as a pay token, and a pay token cannot be spent as a view token', () => {
     expect(verifyQuotePayToken(signQuoteViewToken(ID, S), S)).toBeNull();
     expect(verifyQuoteViewToken(signQuotePayToken(ID, 3, S, 1), S)).toBeNull();
+  });
+});
+
+// The two legs of a redirect checkout carry different return tokens (2026-09-26), so
+// GET /bookings/pay-return can tell a payer PayHere sent back after an approval from one who
+// pressed "Back to Site" — only the cancel leg may call a decline final.
+describe('pay-return token legs', () => {
+  const S = 'leg-secret';
+  const ID = '11111111-2222-3333-4444-555555555555';
+
+  it('reads a cancel-leg token as the cancel leg', () => {
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S, 'cancel'), S)).toEqual({ bookingId: ID, leg: 'cancel' });
+  });
+
+  it('reads the default token — the format minted before legs existed — as the return leg', () => {
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S), S)).toEqual({ bookingId: ID, leg: 'return' });
+  });
+
+  it('still resolves either leg to its booking through verifyPayReturnToken', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(ID, S, 'cancel'), S)).toBe(ID);
+    expect(verifyPayReturnToken(signPayReturnToken(ID, S), S)).toBe(ID);
+  });
+
+  it('refuses a cancel-leg token signed with another secret, or tampered with', () => {
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, 'other', 'cancel'), S)).toBeNull();
+    const t = signPayReturnToken(ID, S, 'cancel');
+    expect(verifyPayReturnLeg(`${t.slice(0, -2)}xx`, S)).toBeNull();
+  });
+
+  it('is exactly as long as a return-leg token, so the cancel URL does not grow', () => {
+    expect(signPayReturnToken(ID, S, 'cancel').length).toBe(signPayReturnToken(ID, S).length);
+  });
+
+  it('cannot be spent as a booking token', () => {
+    expect(verifyBookingToken(signPayReturnToken(ID, S, 'cancel'), S)).toBeNull();
   });
 });

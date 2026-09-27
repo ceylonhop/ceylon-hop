@@ -31,8 +31,9 @@ export const bookings = pgTable(
     status: text('status').notNull(),
     mode: text('mode').notNull().default('single'),
     total: integer('total').notNull(),
-    // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
-    // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
+    // Immutable pricing evidence. Nullable so every legacy booking keeps its exact
+    // storage/checkout behaviour; written by POST /bookings/from-quote-v2 (quote conversion) and by
+    // POST /bookings/single (the website's own priced lines — WebsitePricingSnapshot, source 'website').
     subtotal: integer('subtotal'),
     discountTotal: integer('discount_total'),
     pricingSnapshotJson: jsonb('pricing_snapshot_json'),
@@ -227,7 +228,8 @@ export const paymentEvents = pgTable(
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
   },
   (t) => [
-    unique('payment_events_provider_txn_status_unique').on(
+    unique('payment_events_payment_provider_txn_status_unique').on(
+      t.paymentId,
       t.provider,
       t.providerTxnId,
       t.providerStatusCode,
@@ -512,6 +514,54 @@ export const bookingCheckoutEvents = pgTable(
   ],
 );
 
+// M23.3 — append-only facts for booking status changes. The booking row and event are written
+// in one transaction by BookingRepo.setStatus; no synthetic baseline is created for legacy rows.
+export const bookingStatusEvents = pgTable(
+  'booking_status_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    fromStatus: text('from_status').notNull(),
+    toStatus: text('to_status').notNull(),
+    source: text('source').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    reason: text('reason'),
+    requestId: uuid('request_id'),
+    runId: uuid('run_id'),
+    relatedEntityType: text('related_entity_type'),
+    relatedEntityId: text('related_entity_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'booking_status_events_from_status_valid',
+      sql`${t.fromStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_to_status_valid',
+      sql`${t.toStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_source_valid',
+      sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_actor_type_valid',
+      sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_related_entity_type_valid',
+      sql`${t.relatedEntityType} is null or ${t.relatedEntityType} in ('payment', 'refund', 'quote', 'fulfilment')`,
+    ),
+    index('booking_status_events_booking_occurred_idx').on(t.bookingId, t.occurredAt, t.id),
+    index('booking_status_events_request_id_idx').on(t.requestId),
+    index('booking_status_events_run_id_idx').on(t.runId),
+  ],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {
@@ -768,6 +818,19 @@ export const pricingZones = pgTable('pricing_zones', {
   updatedBy: text('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Founder-set rate revisions (spec 2026-09-26 §8.1; migration 0057). Append-only: the newest row
+// (highest seq) is the live rate card's editable set — see quote/liveCard.ts. seq is unique so two
+// saves racing from the same base cannot both land.
+export const rateCardRevisions = pgTable('rate_card_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  seq: integer('seq').notNull().unique(),
+  version: text('version').notNull().unique(),
+  rates: jsonb('rates').notNull(),
+  revertedToVersion: text('reverted_to_version'),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Cached road distances for catalogue-town pairs (spec 2026-08-12 §Distance cache). Rows are

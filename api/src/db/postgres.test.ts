@@ -11,7 +11,10 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import type { NewBooking } from './bookingRepo';
+import { personKeyFor, websitePricingSnapshot, type NewBooking } from './bookingRepo';
+import { quote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import type { QuoteRequest } from '../quote/types';
 import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
@@ -24,6 +27,7 @@ import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -46,6 +50,7 @@ const sample: NewBooking = {
 // Runs only when a test database is configured (CI provisions an ephemeral Postgres).
 describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
+  let trackedBookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
   let paymentEvents: PostgresPaymentEventRepo;
   let tasks: PostgresConciergeTaskRepo;
@@ -63,6 +68,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     await seedCorridors(sql);
     bookings = new PostgresBookingRepo(conn.db);
+    trackedBookings = new PostgresBookingRepo(conn.db, { transitionTrackingEnabled: true });
     payments = new PostgresPaymentRepo(conn.db);
     paymentEvents = new PostgresPaymentEventRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
@@ -80,6 +86,46 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await notifLog.wasSent(b.id, 'review_request')).toBe(false);
     await notifLog.markSent(b.id, 'trip_reminder'); // duplicate → no-op via unique constraint
     expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
+  });
+
+  // The add-ons live on the quote; the booking only links back (converted_booking_id). A load —
+  // one booking or a list, which share assembleMany — must name them, and a booking with no quote
+  // behind it carries no addOns field at all.
+  it('a booking loads the add-ons its quote charged, and none without a quote', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+      rateCardVersion: RATE_CARD.version, result, request: { engine },
+    });
+    const linked = await bookings.create(sample);
+    const plain = await bookings.create(sample);
+    await quotes.patch(q.id, { convertedBookingId: linked.id, status: 'won' });
+
+    expect((await bookings.get(linked.id))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 5);
+    expect(listed.find((b) => b.id === linked.id)?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
+  });
+
+  // A website booking has no quote: it keeps the engine's own priced lines in
+  // pricing_snapshot_json, and a load names its add-ons from them.
+  it('a website booking keeps the lines it was priced with and names its add-ons', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }],
+      extras: ['sightseeing'],
+    };
+    const result = quote(engine, RATE_CARD);
+    const b = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(b.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    const [row] = await db.select({ s: bookingRows.pricingSnapshotJson }).from(bookingRows).where(eq(bookingRows.id, b.id));
+    expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
@@ -152,6 +198,89 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const moved = await bookings.setStatus(b.id, 'payment_pending');
     expect(moved.status).toBe('payment_pending');
     await expect(bookings.setStatus(b.id, 'completed')).rejects.toThrow();
+  });
+
+  it('atomically records applied transitions and preserves stable order', async () => {
+    const b = await trackedBookings.create(sample);
+    const firstContext: BookingTransitionContext = {
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: '11111111-1111-4111-8111-111111111111',
+    };
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, firstContext);
+    await trackedBookings.setStatus(b.id, 'paid', undefined, {
+      source: 'payment_webhook',
+      actorType: 'provider',
+      requestId: '22222222-2222-4222-8222-222222222222',
+      relatedEntityType: 'payment',
+      relatedEntityId: 'payment-1',
+    });
+
+    const firstRead = await trackedBookings.listStatusEvents(b.id);
+    expect((await trackedBookings.listStatusEvents(b.id))).toEqual(firstRead);
+    expect(firstRead.map((event) => [event.fromStatus, event.toStatus])).toEqual([
+      ['draft', 'payment_pending'],
+      ['payment_pending', 'paid'],
+    ]);
+    expect(firstRead[0]).toMatchObject({
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: firstContext.requestId,
+      runId: null,
+    });
+  });
+
+  it('writes no event for a legacy row or an illegal transition', async () => {
+    const legacy = await bookings.create(sample);
+    await bookings.setStatus(legacy.id, 'payment_pending');
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+    await expect(
+      trackedBookings.setStatus(legacy.id, 'completed', undefined, {
+        source: 'system', actorType: 'system',
+      }),
+    ).rejects.toThrow();
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+  });
+
+  it('rolls back the status when the transition event insert fails', async () => {
+    const b = await trackedBookings.create(sample);
+    await expect(
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+        source: 'website',
+        actorType: 'customer',
+        requestId: 'not-a-uuid',
+      }),
+    ).rejects.toThrow();
+    expect((await trackedBookings.get(b.id))?.status).toBe('draft');
+    expect(await trackedBookings.listStatusEvents(b.id)).toEqual([]);
+  });
+
+  it('records only the winning concurrent transition', async () => {
+    const b = await trackedBookings.create(sample);
+    const context: BookingTransitionContext = { source: 'system', actorType: 'system' };
+    const results = await Promise.allSettled([
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await trackedBookings.listStatusEvents(b.id)).toHaveLength(1);
+  });
+
+  it('reconciles a booking whose current status differs from its latest event', async () => {
+    const b = await trackedBookings.create(sample);
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+      source: 'system', actorType: 'system',
+    });
+    await db.update(bookingRows).set({ status: 'cancelled' }).where(eq(bookingRows.id, b.id));
+
+    expect(await trackedBookings.listStatusEventMismatches()).toContainEqual({
+      bookingId: b.id,
+      currentStatus: 'cancelled',
+      eventStatus: 'payment_pending',
+    });
   });
 
   it('persists and reads back a multi-stop trip', async () => {
@@ -643,6 +772,43 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  it('records PayHere payment id zero declines independently for different payments', async () => {
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    const created = [];
+    for (const suffix of ['first', 'second']) {
+      const booking = await bookings.create(sample);
+      await bookings.setStatus(booking.id, 'payment_pending');
+      const payment = await payments.create({
+        bookingId: booking.id,
+        provider: 'payhere',
+        orderId: booking.reference,
+        amount: booking.total,
+        currency: booking.currency,
+        idempotencyKey: `zero-decline-${suffix}-${booking.id}`,
+      });
+      created.push({ booking, payment });
+    }
+
+    for (const { booking, payment } of created) {
+      const outcome = await settlement.acceptVerifiedEvent({
+        provider: 'payhere',
+        merchantId: '1234567',
+        orderId: booking.reference,
+        providerTxnId: '0',
+        amountCents: payment.amount,
+        currency: payment.currency,
+        status: 'failed',
+        providerStatusCode: '-2',
+        receivedAt: new Date(),
+        payloadSha256: payment.id.replaceAll('-', '').padEnd(64, '0').slice(0, 64),
+        sanitizedPayload: { order_id: booking.reference, payment_id: '0', status_code: '-2' },
+      });
+      expect(outcome.kind).toBe('failed');
+      expect((await payments.findByOrderId(booking.reference))?.status).toBe('failed');
+      expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(1);
+    }
+  });
+
   // The ordering the webhook used to commit silently: ops settles the booking in cash, then the
   // gateway notify lands. The write must survive (both amounts are genuinely captured, and
   // refundRepo sums succeeded payments), but it must not pass as an ordinary settlement.
@@ -688,6 +854,73 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await paymentEvents.listForReconciliation(gateway.id)).toHaveLength(1);
     expect((await bookings.get(booking.id))?.status).toBe('paid');
     expect(await payments.hasManualSettlement(booking.id)).toBe(true);
+  });
+
+  // PayHere allows several attempts per order_id, each with its own payment_id and status, and
+  // does not enforce order_id uniqueness — so a late decline from an earlier attempt and a second
+  // capture on the same order are both real orderings. Neither may rewrite the recorded capture.
+  async function settledGatewayOrder(tag: string) {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `${tag}-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      // Unique per run: (provider, gateway_payment_id) is UNIQUE, and the test DB persists.
+      providerTxnId: `PAY-FIRST-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: '1'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    expect((await settlement.acceptVerifiedEvent(event)).kind).toBe('settled');
+    return { booking, payment, event, settlement };
+  }
+
+  it('treats a late decline from an earlier attempt on a settled order as a stale attempt', async () => {
+    const { booking, payment, event, settlement } = await settledGatewayOrder('stale');
+
+    const late = await settlement.acceptVerifiedEvent({
+      ...event,
+      providerTxnId: `PAY-EARLIER-${payment.id}`,
+      status: 'failed' as const,
+      providerStatusCode: '-2',
+      payloadSha256: '2'.repeat(64),
+    });
+
+    expect(late.kind).toBe('stale_attempt');
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('succeeded');
+    expect(await payments.gatewayPaymentIdFor(payment.id)).toBe(event.providerTxnId);
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
+  });
+
+  it('reports a second capture on the same order as a double capture and keeps the first capture id', async () => {
+    const { booking, payment, event, settlement } = await settledGatewayOrder('second');
+
+    const second = await settlement.acceptVerifiedEvent({
+      ...event,
+      providerTxnId: `PAY-SECOND-${payment.id}`,
+      payloadSha256: '3'.repeat(64),
+    });
+
+    expect(second.kind).toBe('double_capture');
+    expect(second).toMatchObject({ firstCaptureTxnId: event.providerTxnId });
+    expect(await payments.gatewayPaymentIdFor(payment.id)).toBe(event.providerTxnId);
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
   });
 
   it('persists a quote with JSONB request/result and patches its status', async () => {

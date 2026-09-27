@@ -292,12 +292,15 @@ export interface QuoteRepo {
   // The quote a booking was converted from, if any. Reverse of convertedBookingId, so a
   // booking that dies can take its quote's "won" outcome down with it (services/quoteOutcome).
   findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null>;
+  // The ops payment lookup (spec 2026-09-26): a quote ref leads to the booking it became. Hides
+  // soft-deleted quotes, exactly as get() does.
+  findByReference(reference: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
   // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
   // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
-  listFunnelRows(since: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }>;
+  listFunnelRows(since: Date, limit: number, channel?: AnalyticsChannel, excludeContacts?: ReadonlySet<string>): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }>;
   // Rows created in [from, to]. Ordered createdAt desc so a truncation keeps the most recent.
-  listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
+  listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel, excludeContacts?: ReadonlySet<string>): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
   // Superseded versions, newest first. Empty for a quote never edited.
   listRevisions(quoteId: string): Promise<QuoteRevision[]>;
@@ -467,6 +470,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return null;
   }
 
+  async findByReference(reference: string): Promise<SavedQuote | null> {
+    for (const row of this.rows.values()) {
+      if (!row.deletedAt && row.reference === reference) return { ...row };
+    }
+    return null;
+  }
+
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
     let rows = [...this.rows.values()].filter((r) => !r.deletedAt);
     if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
@@ -482,14 +492,16 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return rows.map(toSummary);
   }
 
-  private analyticsBase(channel: AnalyticsChannel): SavedQuote[] {
+  private analyticsBase(channel: AnalyticsChannel, excludeContacts: ReadonlySet<string> = new Set()): SavedQuote[] {
+    const excluded = new Set([...excludeContacts].map((v) => v.trim().toLowerCase()));
     return [...this.rows.values()].filter(
-      (r) => !r.deletedAt && (channel === 'all' || r.channel === channel),
+      (r) => !r.deletedAt && (channel === 'all' || r.channel === channel) &&
+        (!r.customerContact || !excluded.has(r.customerContact.trim().toLowerCase())),
     );
   }
 
-  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
-    const all = this.analyticsBase(channel)
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops', excludeContacts: ReadonlySet<string> = new Set()): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel, excludeContacts)
       .filter((r) =>
         (r.createdAt >= since ||
         (r.sentAt && r.sentAt >= since) ||
@@ -507,8 +519,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return { rows, truncated: all.length > limit };
   }
 
-  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
-    const all = this.analyticsBase(channel)
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops', excludeContacts: ReadonlySet<string> = new Set()): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel, excludeContacts)
       .filter((r) =>
         r.createdAt >= from && r.createdAt <= to &&
         // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking

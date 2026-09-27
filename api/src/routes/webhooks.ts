@@ -12,7 +12,7 @@ import {
 import { wasDelivered } from '../adapters/email';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
-import { teamPaidEmail } from '../services/opsNotifications';
+import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import {
@@ -209,7 +209,7 @@ export function webhookRoutes(deps: {
     c.set('checkoutEvent', {
       action: 'webhook', outcome: NOTIFY_OUTCOME[event.status], orderId: event.orderId,
       bookingId: outcome.booking.id, reference: outcome.booking.reference, channel: outcome.booking.channel,
-      reason: event.status === 'charged_back' ? 'charged_back' : null,
+      reason: event.status === 'charged_back' ? 'charged_back' : outcome.kind === 'stale_attempt' ? 'stale_attempt' : null,
     });
 
     if (outcome.kind === 'duplicate') {
@@ -227,6 +227,12 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, reversed: true }, 200);
     }
 
+    // A decline from an EARLIER attempt on an order a later attempt already paid (one order can
+    // carry several attempts). Recorded as evidence by the settlement; not a reversal, no page.
+    if (outcome.kind === 'stale_attempt') {
+      return c.json({ ok: true, staleAttempt: true }, 200);
+    }
+
     if (outcome.kind === 'failed') {
       // Immediate best-effort nudge so the customer can retry. Idempotent (once per booking),
       // and never fails the webhook — PayHere must not retry over a mail hiccup.
@@ -239,6 +245,26 @@ export function webhookRoutes(deps: {
           console.error(`payment-failed email failed for ${failed.reference}:`, err);
         }
       }
+      // The team's rescue (owner, 2026-09-26): a one-tap WhatsApp message to the customer,
+      // pre-filled with the same booking link. Card DECLINES only: a cancel (-1) is the customer
+      // choosing not to pay. Once per booking: PayHere's later declines on the same order are
+      // payment_id 0 duplicates (#792) and never reach here, and the dedupe key is the booking.
+      // Last and best-effort, like the "Paid:" mail: it must cost neither the customer's email
+      // nor the webhook.
+      if (event.status === 'failed' && failed.status === 'payment_pending') {
+        try {
+          await alerts.send({
+            severity: 'warning',
+            kind: 'payment_rescue',
+            title: `Rescue: ${failed.input.customer.firstName} couldn’t pay ${failed.reference}`,
+            body: `PayHere declined the card on ${failed.reference}. Message the customer on WhatsApp with their booking link (check it is still unpaid first).`,
+            email: teamRescueEmail(failed, manageUrl(failed, baseUrl, linkSecret), deps.opsBaseUrl ?? ''),
+            dedupeKey: failed.id,
+          });
+        } catch (err) {
+          console.error(`rescue alert failed for ${failed.reference}:`, err);
+        }
+      }
       return c.json({ ok: true, status: 'failed' }, 200);
     }
 
@@ -247,6 +273,19 @@ export function webhookRoutes(deps: {
     // ceiling legitimately sums them — which is exactly why this can't be quiet: whoever refunds
     // must know there are two captures to give back, not one. No customer email: the booking was
     // already settled by the first capture, and a second "confirmed" would only confuse.
+    if (outcome.kind === 'double_capture' && outcome.firstCaptureTxnId) {
+      // Same order captured twice (PayHere does not enforce order_id uniqueness). Our payment row
+      // keeps the FIRST capture; the second is only in payment_events, so the refund tool's
+      // ceiling does not include it — say exactly which one has to be refunded by hand.
+      void alerts.send({
+        severity: 'critical',
+        kind: 'payment_double_capture',
+        title: `DOUBLE CAPTURE on booking ${outcome.booking.reference}`,
+        body: `Order ${event.orderId} was captured TWICE on PayHere: payment ${outcome.firstCaptureTxnId} (recorded) and payment ${event.providerTxnId} (${event.currency} ${event.amountCents / 100}). The customer has been charged twice. Refund payment ${event.providerTxnId} in the PayHere portal — our refund tool only sees ${outcome.firstCaptureTxnId}.`,
+        dedupeKey: `${event.orderId}:${event.providerTxnId}`,
+      });
+      return c.json({ ok: true, doubleCapture: true }, 200);
+    }
     if (outcome.kind === 'double_capture') {
       void alerts.send({
         severity: 'critical',

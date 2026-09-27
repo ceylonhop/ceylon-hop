@@ -24,9 +24,11 @@ export function renderPricingBlock(p) {
     PRICING_BEGIN,
     `const PER_KM = ${j(p.perKm)};`,
     `const FLOORS = ${j(p.floors)};`,
-    `const BUFFER_PCT = ${p.bufferPct};`,
+    // `let`, not `const`: transfers-data.js swaps these two for the live list on load (spec
+    // 2026-09-26 §9). The objects stay const — the loader updates them in place.
+    `let BUFFER_PCT = ${p.bufferPct};`,
     `const PRICE_FINISHING = ${j(p.priceFinishing)};`,
-    `const CHAUFFEUR_DAY_FEE = ${p.chauffeurDayFee};`,
+    `let CHAUFFEUR_DAY_FEE = ${p.chauffeurDayFee};`,
     `const CHAUFFEUR_IDLE_MIN_KM = ${j(p.chauffeurIdleMinKm)};`,
     `const DEPOSIT_PCT = ${p.depositPct};`,
     `const DEPOSIT_CAP = ${p.depositCap};`,

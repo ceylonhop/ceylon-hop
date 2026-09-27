@@ -4,6 +4,8 @@ import type { QuoteRepo, AnalyticsChannel } from '../db/quoteRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { computeFunnel, type AnalyticsRange } from '../services/analytics/funnel';
 import { computeDemand } from '../services/analytics/demand';
+import { computeBusinessAnalytics } from '../services/analytics/business';
+import { EmptyAnalyticsDataRepo, type AnalyticsDataRepo } from '../db/analyticsDataRepo';
 
 // Founder analytics (spec 2026-07-23). Read-only aggregates over the quotes table, gated on
 // analytics:view (founder-only). Perf contract: the repo fetches are BOUNDED by the requested
@@ -13,6 +15,8 @@ import { computeDemand } from '../services/analytics/demand';
 export interface OpsAnalyticsDeps {
   quotes: QuoteRepo;
   auth: OpsAuthConfig;
+  data?: AnalyticsDataRepo;
+  teamEmails?: ReadonlySet<string>;
 }
 
 const FUNNEL_LIMIT = 10_000; // scalars only — ~1MB worst case
@@ -43,6 +47,8 @@ function parseRange(q: z.infer<typeof QuerySchema>, now: Date): AnalyticsRange |
 
 export function opsAnalyticsRoutes(deps: OpsAnalyticsDeps) {
   const r = new Hono();
+  const data = deps.data ?? new EmptyAnalyticsDataRepo();
+  const teamEmails = deps.teamEmails ?? new Set<string>();
   r.use('*', opsIdentity(deps.auth));
   r.use('*', requireCap('analytics:view'));
 
@@ -53,7 +59,7 @@ export function opsAnalyticsRoutes(deps: OpsAnalyticsDeps) {
     if (!range) return c.json({ error: 'from must not be after to' }, 400);
     // Widened once past `from` so the previous-equal-window deltas are computable.
     const since = new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime()));
-    const { rows, truncated } = await deps.quotes.listFunnelRows(since, FUNNEL_LIMIT, parsed.data.channel as AnalyticsChannel);
+    const { rows, truncated } = await deps.quotes.listFunnelRows(since, FUNNEL_LIMIT, parsed.data.channel as AnalyticsChannel, teamEmails);
     return c.json({ ...computeFunnel(rows, range), truncated });
   });
 
@@ -62,8 +68,24 @@ export function opsAnalyticsRoutes(deps: OpsAnalyticsDeps) {
     if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'bad query' }, 400);
     const range = parseRange(parsed.data, new Date());
     if (!range) return c.json({ error: 'from must not be after to' }, 400);
-    const { rows, truncated } = await deps.quotes.listDemandRows(range.from, range.to, DEMAND_LIMIT, parsed.data.channel as AnalyticsChannel);
+    const { rows, truncated } = await deps.quotes.listDemandRows(range.from, range.to, DEMAND_LIMIT, parsed.data.channel as AnalyticsChannel, teamEmails);
     return c.json({ ...computeDemand(rows, range), truncated });
+  });
+
+  r.get('/overview', async (c) => {
+    const parsed = QuerySchema.safeParse(c.req.query());
+    if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'bad query' }, 400);
+    const range = parseRange(parsed.data, new Date());
+    if (!range) return c.json({ error: 'from must not be after to' }, 400);
+    const windowMs = range.to.getTime() - range.from.getTime();
+    const previousFrom = new Date(range.from.getTime() - windowMs - 1);
+    const today = new Date(range.now.getTime() + COLOMBO_OFFSET_MS).toISOString().slice(0, 10);
+    const upcomingThrough = new Date(Date.parse(`${today}T00:00:00.000Z`) + 28 * DAY_MS).toISOString().slice(0, 10);
+    const loaded = await data.load({
+      from: range.from, to: range.to, previousFrom, now: range.now, upcomingThrough,
+      teamEmails, limit: FUNNEL_LIMIT,
+    });
+    return c.json(computeBusinessAnalytics(loaded, range));
   });
 
   return r;

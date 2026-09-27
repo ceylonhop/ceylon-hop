@@ -29,7 +29,12 @@ export interface PaymentEventRepo {
 }
 
 function eventIdentity(event: NewPaymentEvent): string {
-  return JSON.stringify([event.provider, event.providerTxnId, event.providerStatusCode]);
+  return JSON.stringify([
+    event.paymentId,
+    event.provider,
+    event.providerTxnId,
+    event.providerStatusCode,
+  ]);
 }
 
 function cloneEvent(event: PaymentEvent): PaymentEvent {

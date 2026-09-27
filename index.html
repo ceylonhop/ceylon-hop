@@ -17,7 +17,12 @@
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
-<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
+<link rel="stylesheet" href="site.css?v=33723b0702">
+<!-- Live prices (spec 2026-09-26 §9): transfers-data.js loads the founder's current price list from
+     the API; `?api=off` keeps the baked prices, `?api=<origin>` points it elsewhere (the same
+     contract as search.html / booking.html). The hold keeps [data-live-price] figures blank until
+     that list lands; transfers-data.js lifts it, and the timer is only the backstop. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -528,13 +533,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div data-header><header class="nav" data-nav>
   <div class="wrap nav-inner">
     <a href="index.html" class="brand"><img class="cmark" src="img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
-    <nav class="nav-links"><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></nav>
+    <nav class="nav-links"><a href="board.html">Shared taxi</a><a href="trip/">Popular routes & prices</a><a href="plan.html">Plan a multi-stop trip</a><a href="tours.html">Full tours</a><a href="about.html">About us</a></nav>
     <div class="nav-cta">
       <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
     </div>
   </div>
 </header>
-<div class="mobile-menu" data-mobile><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></div></div>
+<div class="mobile-menu" data-mobile><a href="board.html">Shared taxi</a><a href="trip/">Popular routes & prices</a><a href="plan.html">Plan a multi-stop trip</a><a href="tours.html">Full tours</a><a href="about.html">About us</a></div></div>
 
 <!-- HERO -->
 <section class="hero hero-pc" id="hero-sec" data-screen-label="Home hero">
@@ -738,10 +743,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
   </div>
 </footer></div>
-<script src="site.js?v=4d9960d50b"></script>
+<script src="site.js?v=81c109a6ac"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=4273085929"></script>
-<script src="transfers-data.js?v=a00d86c790"></script>
+<script src="transfers-data.js?v=7988bba57e"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="image-slot.js?v=f20592da50"></script>
@@ -775,7 +780,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
       <div class="tc-meta">${estimate}</div>
       <div class="tc-foot">
-        <span class="tc-price">from <b>$${displayPrice(q.car)}</b> fixed</span>
+        <span class="tc-price">from <b data-live-price>$${displayPrice(q.car)}</b> fixed</span>
         ${sh?`<span class="tc-shared">or shared seat $${displayPrice(sh.seat)}</span>`:`<span class="tc-go">See prices ${ICON.arrow}</span>`}
       </div></a>`;
   }).join('');
@@ -789,11 +794,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="ht-top"><span class="pill pill-saffron">${t.tag}</span><span class="ht-days">${t.days} days · ${t.nights} nights</span></div>
         <h3>${t.name}</h3>
         <p class="ht-route">${t.stops.join(' → ')}</p>
-        <div class="ht-foot"><span class="ht-price"><span class="ht-price-label">Private transport</span><span class="ht-price-value">From <b>$${displayPrice(p2p)}</b></span></span><span class="tc-go">View tour ${ICON.arrow}</span></div>
+        <div class="ht-foot"><span class="ht-price"><span class="ht-price-label">Private transport</span><span class="ht-price-value">From <b data-live-price>$${displayPrice(p2p)}</b></span></span><span class="tc-go">View tour ${ICON.arrow}</span></div>
       </a>
       <a class="ht-custom" href="${planUrl}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Customise this route</a>
     </article>`;
   }).join('');
+
+  // The live price list landed (transfers-data.js, spec 2026-09-26 §9): update the price figures in
+  // place. Not a re-render — the cards carry site.js's scroll-reveal state, and fresh .reveal nodes
+  // would stay invisible.
+  document.addEventListener('ch:pricing', () => {
+    const transferFigs = document.querySelectorAll('#home-transfers .tc-price b[data-live-price]');
+    POP_TRANSFERS.forEach(([f, t], i) => {
+      if (transferFigs[i]) transferFigs[i].textContent = '$' + displayPrice(TRANSFERS.privateQuote(f, t).car);
+    });
+    const tourFigs = document.querySelectorAll('#home-tours .ht-price-value b[data-live-price]');
+    TOURS.slice(0, 3).forEach((t, i) => {
+      if (tourFigs[i]) tourFigs[i].textContent = '$' + displayPrice(TRANSFERS.tripQuote(t.stops, 'car').total);
+    });
+  });
 
   // pro hoppers (drivers)
   const PIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>';

@@ -95,6 +95,58 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
   });
 
+  it('fails two different payments that share PayHere\'s zero decline transaction id', async () => {
+    const f = await fixture();
+    const secondBooking = await f.bookings.create({
+      mode: 'single',
+      input: {
+        from: 'Kandy',
+        to: 'Colombo',
+        vehicleType: 'car',
+        adults: 1,
+        children: 0,
+        bags: 1,
+        customer: {
+          firstName: 'Nimal',
+          lastName: 'Perera',
+          email: 'nimal@example.com',
+          whatsapp: '+94771111111',
+          country: 'Sri Lanka',
+        },
+      },
+      total: 4_000,
+      amountDueNow: 4_000,
+      currency: 'USD',
+    });
+    await f.bookings.setStatus(secondBooking.id, 'payment_pending');
+    const secondPayment = await f.payments.create({
+      bookingId: secondBooking.id,
+      provider: 'payhere',
+      orderId: secondBooking.reference,
+      amount: secondBooking.total,
+      currency: secondBooking.currency,
+      idempotencyKey: `checkout-${secondBooking.id}`,
+    });
+    const decline = {
+      ...f.event,
+      providerTxnId: '0',
+      providerStatusCode: '-2',
+      status: 'failed' as const,
+      sanitizedPayload: { ...f.event.sanitizedPayload, payment_id: '0', status_code: '-2' },
+    };
+    const repo = new InMemoryPaymentSettlementRepo(f);
+
+    const first = await repo.acceptVerifiedEvent(decline);
+    const second = await repo.acceptVerifiedEvent({ ...decline, orderId: secondBooking.reference });
+
+    expect(first.kind).toBe('failed');
+    expect(second.kind).toBe('failed');
+    expect((await f.payments.findByOrderId(f.booking.reference))?.status).toBe('failed');
+    expect((await f.payments.findByOrderId(secondBooking.reference))?.status).toBe('failed');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(1);
+    expect(await f.events.listForReconciliation(secondPayment.id)).toHaveLength(1);
+  });
+
   it('rejects amount or currency mismatch without writing evidence or state', async () => {
     const f = await fixture();
     const repo = new InMemoryPaymentSettlementRepo(f);
@@ -173,6 +225,87 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect(reversal.kind).toBe('reversal');
     expect(reversal.payment.status).toBe('succeeded');
     expect(reversal.booking.status).toBe('paid');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(2);
+  });
+
+  // PayHere (2026-09-25): one order_id can carry several attempts, each with its own payment_id
+  // and status. A decline from an EARLIER attempt can therefore land after a later attempt was
+  // captured. That is history, not a reversal — paging "Payment reversed" for it is a false
+  // critical that trains everyone to ignore the real chargeback.
+  it('treats a late decline from a different attempt on a settled order as a stale attempt', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(f.event);
+
+    const late = await repo.acceptVerifiedEvent({
+      ...f.event,
+      providerTxnId: 'PAY-EARLIER',
+      status: 'failed',
+      providerStatusCode: '-2',
+      payloadSha256: 'c'.repeat(64),
+      sanitizedPayload: { ...f.event.sanitizedPayload, status_code: '-2' },
+    });
+
+    expect(late.kind).toBe('stale_attempt');
+    expect(late.payment.status).toBe('succeeded');
+    expect(late.booking.status).toBe('paid');
+    expect(await f.payments.gatewayPaymentIdFor(f.payment.id)).toBe('PAY-123');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(2);
+  });
+
+  it('still reports a reversal when the recorded capture itself reports a non-success', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(f.event);
+
+    const same = await repo.acceptVerifiedEvent({
+      ...f.event,
+      status: 'failed',
+      providerStatusCode: '-2',
+      payloadSha256: 'c'.repeat(64),
+      sanitizedPayload: { ...f.event.sanitizedPayload, status_code: '-2' },
+    });
+
+    expect(same.kind).toBe('reversal');
+  });
+
+  it('reports any chargeback as a reversal, whichever attempt it names', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(f.event);
+
+    const chargeback = await repo.acceptVerifiedEvent({
+      ...f.event,
+      providerTxnId: 'PAY-OTHER',
+      status: 'charged_back',
+      providerStatusCode: '-3',
+      payloadSha256: 'd'.repeat(64),
+      sanitizedPayload: { ...f.event.sanitizedPayload, status_code: '-3' },
+    });
+
+    expect(chargeback.kind).toBe('reversal');
+  });
+
+  // PayHere does not enforce unique order_ids, so a second attempt on the same order can ALSO be
+  // captured. Overwriting gateway_payment_id with the second capture used to erase the first one
+  // (the one our refund tool can reach), and the booking-already-paid branch then paged the wrong
+  // story. Keep the first capture's id, record the event, and report a double capture.
+  it('reports a second capture on the same order as a double capture and keeps the first capture id', async () => {
+    const f = await fixture();
+    const repo = new InMemoryPaymentSettlementRepo(f);
+    await repo.acceptVerifiedEvent(f.event);
+
+    const second = await repo.acceptVerifiedEvent({
+      ...f.event,
+      providerTxnId: 'PAY-456',
+      payloadSha256: 'e'.repeat(64),
+    });
+
+    expect(second.kind).toBe('double_capture');
+    expect(second).toMatchObject({ firstCaptureTxnId: 'PAY-123' });
+    expect(second.payment.status).toBe('succeeded');
+    expect(second.booking.status).toBe('paid');
+    expect(await f.payments.gatewayPaymentIdFor(f.payment.id)).toBe('PAY-123');
     expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(2);
   });
 });

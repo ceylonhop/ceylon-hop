@@ -40,9 +40,9 @@ describe('0055_booking_checkout_event', () => {
   });
 
   it('is journalled after 0054', () => {
-    const last = journal.entries[journal.entries.length - 1]!;
-    expect(last.tag).toBe('0055_booking_checkout_event');
-    expect(last.idx).toBe(55);
-    expect(last.when).toBeGreaterThan(journal.entries[journal.entries.length - 2]!.when);
+    const position = journal.entries.findIndex((entry) => entry.tag === '0055_booking_checkout_event');
+    const entry = journal.entries[position]!;
+    expect(entry.idx).toBe(55);
+    expect(entry.when).toBeGreaterThan(journal.entries[position - 1]!.when);
   });
 });

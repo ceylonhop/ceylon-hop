@@ -12,6 +12,7 @@ import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
+import { opsRatesRoutes } from './routes/opsRates';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -32,6 +33,7 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
@@ -40,7 +42,7 @@ import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 import type { JwtVerifier } from './lib/googleAuth';
-import { InMemoryPaymentEventRepo } from './db/paymentEventRepo';
+import { InMemoryPaymentEventRepo, type PaymentEventRepo } from './db/paymentEventRepo';
 import {
   InMemoryPaymentSettlementRepo,
   type PaymentSettlementRepo,
@@ -60,12 +62,17 @@ import {
 import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
+import type { AnalyticsDataRepo } from './db/analyticsDataRepo';
+import { requestCorrelation, REQUEST_ID_HEADER } from './lib/correlation';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
   refunds?: RefundRepo;
   settlements?: PaymentSettlementRepo;
+  // PayHere's stored notices, for the ops payment lookup. The Postgres settlement repo writes the
+  // same table itself; the in-memory default settlement writes to this one.
+  paymentEvents?: PaymentEventRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
@@ -83,8 +90,12 @@ export interface AppDeps {
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
+  /** Cross-product founder analytics (bookings, payments, refunds, upcoming and Ride Board). */
+  analyticsData?: AnalyticsDataRepo;
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
+  /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
+  rateRevisions?: RateRevisionRepo;
   placeResolutions?: PlaceResolutionRepo;
   shortLinks?: CustomerShortLinkRepo;
   /** Gates short-link MINTING only; GET /s/:code resolves regardless (spec 2026-08-24 §7.5). */
@@ -164,12 +175,14 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
+  const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =
     deps.settlements ??
     new InMemoryPaymentSettlementRepo({
       bookings: bookings as InMemoryBookingRepo,
       payments: payments as InMemoryPaymentRepo,
-      events: new InMemoryPaymentEventRepo(),
+      events: paymentEvents instanceof InMemoryPaymentEventRepo ? paymentEvents : new InMemoryPaymentEventRepo(),
     });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
@@ -191,7 +204,13 @@ export function createApp(deps: AppDeps = {}) {
   // discount saves into an object nothing ever queries.
   const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
+  // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
+  // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
+  // save is seen by all of them at once. Empty ⇒ the code card.
+  const rateRevisions = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
   // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
   // starts from the same identified set production does.
   const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
@@ -237,6 +256,10 @@ export function createApp(deps: AppDeps = {}) {
     ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
+
+  // One server-owned id follows the request through every mounted route and is returned to the
+  // caller for support diagnosis. Incoming X-Request-Id is never trusted as this primary id.
+  app.use('*', requestCorrelation());
 
   const reportApiError = (failure: unknown, method: string, route: string): void => {
     const err = failure instanceof Error ? failure : new Error(String(failure));
@@ -314,6 +337,7 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      exposeHeaders: [REQUEST_ID_HEADER],
       // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
       // on Pages → API on Render). Only the allow-listed origins above can read responses;
       // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
@@ -416,6 +440,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       quotes,
       zones,
+      rateRevisions,
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       // manage.html's checkout returns to where its link was built — manageUrl()'s base.
@@ -451,6 +476,7 @@ export function createApp(deps: AppDeps = {}) {
         verifier: deps.customerVerifier,
       },
       maps,
+      rateRevisions,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
@@ -476,6 +502,7 @@ export function createApp(deps: AppDeps = {}) {
     maps,
     v2Enabled: quoteV2Enabled,
     zones,
+    rateRevisions,
     promoCodes,
     bookings,
     promoCodesEnabled,
@@ -508,10 +535,13 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
-  app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
+  app.route('/admin/ops/analytics', opsAnalyticsRoutes({
+    quotes, auth: opsAuthCfg, data: deps.analyticsData,
+    teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+  }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists, quotes,
+    email, notificationLog, rideLists, quotes, paymentEvents, refunds,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
@@ -560,8 +590,10 @@ export function createApp(deps: AppDeps = {}) {
     enabled: promoCodesEnabled,
     now: deps.promoNow,
   }));
+  // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
+  app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,

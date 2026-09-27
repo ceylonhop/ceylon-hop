@@ -34,6 +34,7 @@ export class PostgresPaymentEventRepo implements PaymentEventRepo {
       .values(event)
       .onConflictDoNothing({
         target: [
+          paymentEvents.paymentId,
           paymentEvents.provider,
           paymentEvents.providerTxnId,
           paymentEvents.providerStatusCode,
@@ -47,6 +48,7 @@ export class PostgresPaymentEventRepo implements PaymentEventRepo {
       .from(paymentEvents)
       .where(
         and(
+          eq(paymentEvents.paymentId, event.paymentId),
           eq(paymentEvents.provider, event.provider),
           eq(paymentEvents.providerTxnId, event.providerTxnId),
           eq(paymentEvents.providerStatusCode, event.providerStatusCode),

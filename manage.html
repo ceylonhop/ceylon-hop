@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css?v=6e5bdb2df7">
+<link rel="stylesheet" href="site.css?v=33723b0702">
 <link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <style>
   /* What to DO about a decline — pay.html's panel, verbatim. Rendered only after a real attempt
@@ -280,8 +280,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       { k: 'Travellers', v: String(v.travellers) },
       { k: 'Vehicle', v: vehicleLabel(v.vehicleType) },
     ];
+    // The add-ons the customer chose, as the quote named them. Only when there are some.
+    if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
-      return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + esc(r.v)
+      var val = r.lines ? r.lines.map(function(l){ return esc(l); }).join('<br>') : esc(r.v);
+      return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + val
         + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span></div>';
     }).join('');
   }

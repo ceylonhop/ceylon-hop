@@ -29,11 +29,11 @@ describe('header nav — one link set, three copies', () => {
   const generated = fromLiteral(read('tools/site-chrome.mjs'));
   const board = read('board.html');
 
-  // Labelled "Share a ride", not "Ride board": route pages present ONE shared option and are
+  // Labelled "Shared taxi", not "Ride board": route pages present ONE shared option and are
   // guarded against naming the board (route-page-unified.test.js), and the nav is on those pages.
   it('site.js is parseable and links the board', () => {
     expect(live.length).toBeGreaterThan(3);
-    expect(live).toContainEqual(['Share a ride', 'board.html']);
+    expect(live).toContainEqual(['Shared taxi', 'board.html']);
   });
 
   it('generated pages get the same links, in the same order', () => {
@@ -86,17 +86,19 @@ describe('footer — one link set, two copies', () => {
    the apex cutover they were still three dead WordPress pages ("Shared Taxi" = /routes/, "The
    Island Loop 6 Stops", an old trip page) plus Why/About. The header is the signal we control:
    the pages a customer buys from, first, and nothing that competes with them for a slot. The
-   blog and Why us stay in the footer, so they are still crawled — just not from the top level. */
+   blog and Why us stay in the footer, so they are still crawled — just not from the top level.
+   Revised 2026-09-25: the shared taxi leads (busiest page, the phrase customers search), and each
+   label is the exact sitelink name — sitelink-titles.test.js makes each page title lead with it. */
 describe('header nav — the five sitelinks we want Google to show', () => {
   const live = fromLiteral(read('site.js'));
 
-  it('is Routes, Share a ride, Plan, Tours, About — in that order', () => {
+  it('is Shared taxi, Popular routes, Plan, Full tours, About us — in that order', () => {
     expect(live).toEqual([
-      ['Routes & prices', 'trip/'],
-      ['Share a ride', 'board.html'],
-      ['Plan a trip', 'plan.html'],
-      ['Tours', 'tours.html'],
-      ['About', 'about.html'],
+      ['Shared taxi', 'board.html'],
+      ['Popular routes & prices', 'trip/'],
+      ['Plan a multi-stop trip', 'plan.html'],
+      ['Full tours', 'tours.html'],
+      ['About us', 'about.html'],
     ]);
   });
 

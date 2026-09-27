@@ -3,7 +3,11 @@ import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
+import type { QuoteRepo } from './quoteRepo';
+import { chosenAddOns } from '../quote/paySelection';
+import type { QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
   PromoCodeRefusedError,
@@ -109,6 +113,11 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
   promoCodeId?: string | null;
   promoHoldUntil?: string | null; // ISO
+  // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read on every load from the priced
+  // lines that already exist — the booking's quote (quotes.converted_booking_id), or a website
+  // booking's own WebsitePricingSnapshot — never stored as a field. Present only when there is at
+  // least one, so every surface shows them only when they were chosen.
+  addOns?: string[];
 };
 
 /** Who reversed a booking and why. Written only on a cancellation. */
@@ -116,6 +125,36 @@ export interface StatusAudit {
   reason: string;
   by: string;
   at?: Date;
+}
+
+/** One applied booking status fact. Legacy bookings deliberately have no synthetic baseline. */
+export interface BookingStatusEvent {
+  id: string;
+  bookingId: string;
+  fromStatus: BookingStatus;
+  toStatus: BookingStatus;
+  source: BookingTransitionContext['source'];
+  actorType: BookingTransitionContext['actorType'];
+  actorId: string | null;
+  reason: string | null;
+  requestId: string | null;
+  runId: string | null;
+  relatedEntityType: NonNullable<BookingTransitionContext['relatedEntityType']> | null;
+  relatedEntityId: string | null;
+  occurredAt: string;
+}
+
+export interface BookingStatusEventMismatch {
+  bookingId: string;
+  currentStatus: BookingStatus;
+  eventStatus: BookingStatus;
+}
+
+export class BookingTransitionContextRequiredError extends Error {
+  constructor() {
+    super('Booking transition context is required while transition tracking is enabled');
+    this.name = 'BookingTransitionContextRequiredError';
+  }
 }
 
 /** A booking taking one use of a code (spec 2026-09-14 §5.3). */
@@ -148,6 +187,47 @@ export interface BookingPricingSnapshot {
   lineItems: unknown[];
 }
 
+/**
+ * What a website booking keeps of its price (bookings.pricing_snapshot_json). A website booking has
+ * no quote, so it keeps the engine's own request and lines in the fields the quote-conversion
+ * snapshot above uses (minus the quote), and its add-ons read exactly as a quote's do.
+ */
+export interface WebsitePricingSnapshot {
+  version: 1;
+  source: 'website';
+  engine: QuoteRequest;
+  subtotalCents: number;
+  discountTotalCents: number;
+  totalCents: number;
+  amountDueNowCents: number;
+  currency: string;
+  rateCardVersion: string;
+  lineItems: unknown[];
+}
+
+export function websitePricingSnapshot(priced: { engine: QuoteRequest; result: QuoteResult }): WebsitePricingSnapshot {
+  const { engine, result } = priced;
+  return {
+    version: 1,
+    source: 'website',
+    engine: structuredClone(engine),
+    subtotalCents: result.subtotalCents,
+    discountTotalCents: result.discountCents ?? 0,
+    totalCents: result.totalCents,
+    amountDueNowCents: result.amountDueNowCents,
+    currency: result.currency,
+    rateCardVersion: result.rateCardVersion,
+    lineItems: structuredClone(result.lineItems),
+  };
+}
+
+/** The add-ons a website booking's own snapshot names; none for anything else in the column. */
+export function snapshotAddOns(snapshot: unknown): string[] {
+  const s = snapshot as Partial<WebsitePricingSnapshot> | null;
+  if (!s || s.source !== 'website') return [];
+  return chosenAddOns({ request: { engine: s.engine }, result: { lineItems: s.lineItems } });
+}
+
 // The storage seam. The route layer depends only on this interface, so swapping the
 // in-memory store for Postgres later (M2) touches nothing else.
 export class BookingNotFoundError extends Error {
@@ -160,7 +240,7 @@ export class BookingNotFoundError extends Error {
 export interface BookingRepo {
   // `promo` takes one use of a code inside the same write; throws PromoCodeRefusedError when the
   // code no longer works or every use is paid or held (spec 2026-09-14 §5.3).
-  create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking>;
+  create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking>;
   /** Paid and held uses of a code at `now` (§5.1). */
   promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }>;
   /** Every booking that carried the code, newest first (§6.5). */
@@ -169,9 +249,24 @@ export interface BookingRepo {
   reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
+  // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
+  // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
+  findByReference(reference: string): Promise<Booking | null>;
+  // Every booking by one person — customers.person_key, i.e. personKeyFor(email) — newest first,
+  // at most `limit`. The lookup's "this customer's bookings" (spec 2026-09-26 §15).
+  listByPersonKey(personKey: string, limit: number): Promise<Booking[]>;
   // `audit` records WHY, for the transitions where that matters. Optional so the many
   // non-cancelling callers are untouched; the cancel route always supplies it.
-  setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
+  setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking>;
+  /** Applied transition facts, oldest first. Empty means no recorded history, not no activity. */
+  listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]>;
+  /** Rows whose current status disagrees with their latest recorded applied transition. */
+  listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
   // Re-record who is paying, for a booking that has not been paid yet.
   //
@@ -196,6 +291,11 @@ export interface BookingRepo {
 // A booking's payer may only be rewritten while it is still awaiting money.
 export const PAYER_EDITABLE_STATUSES = ['draft', 'payment_pending'] as const;
 
+export interface InMemoryBookingRepoOptions {
+  transitionTrackingEnabled?: boolean;
+  now?: () => Date;
+}
+
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -216,10 +316,31 @@ export class InMemoryBookingRepo implements BookingRepo {
   // Per-code queue standing in for Postgres's FOR UPDATE: the count and the insert are separated by
   // awaits, so without it two concurrent bookings could both see the last use as free.
   private promoLocks = new Map<string, Promise<void>>();
+  private statusEvents: BookingStatusEvent[] = [];
+
+  constructor(private readonly options: InMemoryBookingRepoOptions = {}) {}
 
   /** Lets the count see succeeded payments exactly as the Postgres query does (§5.1). */
   attachPayments(payments: PaymentRepo): void {
     this.payments = payments;
+  }
+
+  private quotes?: Pick<QuoteRepo, 'findByConvertedBookingId'>;
+  // A website booking's own priced lines — the pricing_snapshot_json twin.
+  private websitePricing = new Map<string, WebsitePricingSnapshot>();
+
+  /** Lets a booking name its quote's add-ons exactly as the Postgres repo's load does. */
+  attachQuotes(quotes: Pick<QuoteRepo, 'findByConvertedBookingId'>): void {
+    this.quotes = quotes;
+  }
+
+  // The stored booking as a read returns it: plus `addOns` when its quote charged any. A booking
+  // with none comes back as the very object stored, exactly as before.
+  private async present(b: Booking): Promise<Booking> {
+    const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
+    const fromQuote = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
+    return addOns.length ? { ...b, addOns } : b;
   }
 
   private async withPromoLock<T>(codeId: string, fn: () => Promise<T>): Promise<T> {
@@ -247,7 +368,7 @@ export class InMemoryBookingRepo implements BookingRepo {
     );
   }
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking> {
     const key = opts?.idempotencyKey;
     if (key) {
       // Synchronous check (no await before the insert below) so two concurrent create()
@@ -256,28 +377,33 @@ export class InMemoryBookingRepo implements BookingRepo {
       const existingId = this.byKey.get(key);
       // `byId` is append-only (no eviction anywhere in this repo), so a live byKey entry
       // always resolves to a row — the non-null assertion holds.
-      if (existingId) return this.byId.get(existingId)!;
+      if (existingId) return this.present(this.byId.get(existingId)!);
     }
     const promo = opts?.promo;
-    if (!promo) return this.insert(b, key);
+    if (!promo) return this.present(this.insert(b, key, undefined, opts?.pricingSnapshot));
     return this.withPromoLock(promo.code.id, async () => {
       // Re-check under the lock: a concurrent retry with the same key may have inserted meanwhile.
       if (key) {
         const existingId = this.byKey.get(key);
-        if (existingId) return this.byId.get(existingId)!;
+        if (existingId) return this.present(this.byId.get(existingId)!);
       }
       const unavailable = promoCodeAvailability(promo.code, promo.now);
       if (unavailable) throw new PromoCodeRefusedError(unavailable);
       const { paid, held } = await this.promoUsage(promo.code.id, promo.now);
       if (paid + held >= promo.code.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
-      return this.insert(b, key, {
+      return this.present(this.insert(b, key, {
         promoCodeId: promo.code.id,
         promoHoldUntil: new Date(promo.now.getTime() + PROMO_HOLD_MS).toISOString(),
-      });
+      }, opts?.pricingSnapshot));
     });
   }
 
-  private insert(b: NewBooking, key: string | undefined, promo?: { promoCodeId: string; promoHoldUntil: string }): Booking {
+  private insert(
+    b: NewBooking,
+    key: string | undefined,
+    promo?: { promoCodeId: string; promoHoldUntil: string },
+    pricingSnapshot?: WebsitePricingSnapshot,
+  ): Booking {
     let reference = generateReference();
     while (this.refs.has(reference)) reference = generateReference();
     const booking: Booking = {
@@ -292,24 +418,48 @@ export class InMemoryBookingRepo implements BookingRepo {
       ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
+    if (pricingSnapshot) this.websitePricing.set(booking.id, structuredClone(pricingSnapshot));
     this.refs.add(reference);
     if (key) this.byKey.set(key, booking.id);
     return booking;
   }
 
   async get(id: string): Promise<Booking | null> {
-    return this.byId.get(id) ?? null;
+    const b = this.byId.get(id);
+    return b ? this.present(b) : null;
   }
 
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
     const id = this.byKey.get(key);
-    return id ? (this.byId.get(id) ?? null) : null;
+    const b = id ? this.byId.get(id) : undefined;
+    return b ? this.present(b) : null;
   }
 
-  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
+  async findByReference(reference: string): Promise<Booking | null> {
+    for (const b of this.byId.values()) if (b.reference === reference) return this.present(b);
+    return null;
+  }
+
+  async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
+    const rows = [...this.byId.values()]
+      .filter((b) => personKeyFor(b.input.customer.email) === personKey)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, limit);
+    return Promise.all(rows.map((b) => this.present(b)));
+  }
+
+  async setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
+    if (this.options.transitionTrackingEnabled && !context) {
+      throw new BookingTransitionContextRequiredError();
+    }
     const updated: Booking = {
       ...current,
       status: to,
@@ -317,8 +467,45 @@ export class InMemoryBookingRepo implements BookingRepo {
         ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: (audit.at ?? new Date()).toISOString() }
         : {}),
     };
+    // The in-memory path stays atomic by appending before the only non-throwing state mutation.
+    // If event construction ever throws, the booking row remains untouched.
+    if (this.options.transitionTrackingEnabled && context) {
+      this.statusEvents.push({
+        id: randomUUID(),
+        bookingId: id,
+        fromStatus: current.status,
+        toStatus: to,
+        source: context.source,
+        actorType: context.actorType,
+        actorId: context.actorId ?? null,
+        reason: context.reason ?? audit?.reason ?? null,
+        requestId: context.requestId ?? null,
+        runId: context.runId ?? null,
+        relatedEntityType: context.relatedEntityType ?? null,
+        relatedEntityId: context.relatedEntityId ?? null,
+        occurredAt: (this.options.now?.() ?? new Date()).toISOString(),
+      });
+    }
     this.byId.set(id, updated);
-    return updated;
+    return this.present(updated);
+  }
+
+  async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
+    // Array order is application order; return copies so a reader cannot mutate the ledger.
+    return this.statusEvents.filter((event) => event.bookingId === bookingId).map((event) => ({ ...event }));
+  }
+
+  async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
+    const latest = new Map<string, BookingStatusEvent>();
+    for (const event of this.statusEvents) latest.set(event.bookingId, event);
+    const mismatches: BookingStatusEventMismatch[] = [];
+    for (const [bookingId, event] of latest) {
+      const booking = this.byId.get(bookingId);
+      if (booking && booking.status !== event.toStatus) {
+        mismatches.push({ bookingId, currentStatus: booking.status, eventStatus: event.toStatus });
+      }
+    }
+    return mismatches.sort((a, b) => a.bookingId.localeCompare(b.bookingId));
   }
 
   async refreshPayerDetails(
@@ -327,7 +514,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
-    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return current;
+    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
     const updated: Booking = {
       ...current,
       input: { ...current.input, customer: { ...details.customer } },
@@ -340,14 +527,14 @@ export class InMemoryBookingRepo implements BookingRepo {
       termsAcceptedAt: details.termsAcceptedAt ? details.termsAcceptedAt.toISOString() : current.termsAcceptedAt,
     } as Booking;
     this.byId.set(id, updated);
-    return updated;
+    return this.present(updated);
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
     const all = [...this.byId.values()];
-    if (!filter?.status) return all;
-    const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
-    return all.filter((b) => statuses.includes(b.status));
+    const statuses = !filter?.status ? null : Array.isArray(filter.status) ? filter.status : [filter.status];
+    const rows = statuses ? all.filter((b) => statuses.includes(b.status)) : all;
+    return Promise.all(rows.map((b) => this.present(b)));
   }
 
   async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {

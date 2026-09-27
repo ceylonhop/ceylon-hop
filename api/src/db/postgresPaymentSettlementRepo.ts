@@ -5,6 +5,7 @@ import type { Db } from './client';
 import { paymentEvents, payments, bookings } from './schema';
 import {
   PaymentSettlementError,
+  recordedCaptureId,
   type PaymentSettlementOutcome,
   type PaymentSettlementRepo,
   type SettlementFailureHook,
@@ -70,6 +71,7 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         })
         .onConflictDoNothing({
           target: [
+            paymentEvents.paymentId,
             paymentEvents.provider,
             paymentEvents.providerTxnId,
             paymentEvents.providerStatusCode,
@@ -82,9 +84,17 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       }
       await this.failureHook?.('after_event_insert');
 
+      const captured = recordedCaptureId(payment);
       if (event.status !== 'succeeded') {
         if (payment.status === 'succeeded') {
-          return { kind: 'reversal' as const, payment, bookingId: booking.id };
+          // Only a chargeback, or a non-success on the very capture we recorded, is a reversal.
+          const staleAttempt =
+            event.status !== 'charged_back' && captured !== null && captured !== event.providerTxnId;
+          return {
+            kind: staleAttempt ? ('stale_attempt' as const) : ('reversal' as const),
+            payment,
+            bookingId: booking.id,
+          };
         }
         const [failed] = await tx
           .update(payments)
@@ -93,6 +103,16 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
           .returning();
         await this.failureHook?.('after_payment_update');
         return { kind: 'failed' as const, payment: failed, bookingId: booking.id };
+      }
+
+      // A second capture on this same order: never overwrite the first capture's id.
+      if (captured !== null && captured !== event.providerTxnId) {
+        return {
+          kind: 'double_capture' as const,
+          payment,
+          bookingId: booking.id,
+          firstCaptureTxnId: captured,
+        };
       }
 
       // Has some OTHER payment on this booking already captured? Read inside the transaction,
@@ -149,10 +169,12 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
 
     const booking = await this.bookingRepo.get(committed.bookingId);
     if (!booking) throw new Error(`booking_not_found_after_settlement: ${committed.bookingId}`);
+    const firstCaptureTxnId = 'firstCaptureTxnId' in committed ? committed.firstCaptureTxnId : undefined;
     return {
       kind: committed.kind,
       payment: toPayment(committed.payment),
       booking,
-    };
+      ...(firstCaptureTxnId ? { firstCaptureTxnId } : {}),
+    } as PaymentSettlementOutcome;
   }
 }
