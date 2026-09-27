@@ -81,3 +81,40 @@ test('a raise the customer did not drive is still held for acknowledgement', asy
   await page.click('#engine-reprice-note button');
   await expect(page.locator('#sum-total')).toHaveText('$166');
 });
+
+test('the vehicle line never dips while the ticked extra is being priced', async ({ page }) => {
+  // The first test pins where the rows SETTLE; this one watches the way there. Until the new
+  // estimate lands the total reads "Calculating…" and calcTotal() still holds the figure priced
+  // WITHOUT the extra, so a vehicle line derived as that figure minus the extras now ticked
+  // counted $156 → $146 and back up: the same "reduce from here", for as long as the round trip
+  // takes. The delay stands in for that round trip, and keeps a dip observable even when no
+  // animation frame runs (a count's backstop timer writes its target ~500ms in).
+  await gotoBooking(page, {
+    estimate: {
+      respond: (intent) => ((intent.extras || []).includes('sightseeing')
+        ? { totalCents: WITH_EXTRA, delayMs: 500 }
+        : { totalCents: BASE }),
+    },
+  });
+  await expect(page.locator('#sum-adamt')).toHaveText('$156');
+  await page.evaluate(() => window.goStep && window.goStep(3));
+
+  // Every value each figure takes from here on, so a dip that lasts a frame can't hide.
+  await page.evaluate(() => {
+    window.__seen = { base: [], total: [] };
+    for (const [key, id] of [['base', 'sum-adamt'], ['total', 'sum-total']]) {
+      const el = document.getElementById(id);
+      new MutationObserver(() => window.__seen[key].push(el.textContent))
+        .observe(el, { childList: true, characterData: true, subtree: true });
+    }
+  });
+  await sightseeing(page).click();
+  await expect(page.locator('#sum-total')).toHaveText('$166', { timeout: 10000 });
+  await expect(page.locator('#sum-adamt')).toHaveText('$156');
+
+  const seen = await page.evaluate(() => window.__seen);
+  // The in-flight window really opened; without it the check below would pass on nothing.
+  expect(seen.total.join(' | ')).toMatch(/Calculating/);
+  const lowest = Math.min(...seen.base.map((t) => parseFloat(t.replace(/[^0-9.]/g, ''))));
+  expect(lowest, `vehicle line read ${seen.base.join(' → ')}`).toBeGreaterThanOrEqual(156);
+});
