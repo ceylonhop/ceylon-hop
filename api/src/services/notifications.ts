@@ -81,9 +81,11 @@ function dateTime(date?: string, time?: string): string {
   if (!date) return 'To confirm';
   return time ? `${fmtDate(date)} · ${time}` : fmtDate(date);
 }
-// "374 minutes" → "6h 14m" ("6h" when the remainder is 0). Used only by roadRow — no existing
-// formatter in this file states a duration this way (the rest state a DATE, or a day count).
+// "374 minutes" → "6h 14m" ("6h" when the remainder is 0; under an hour, "45 min" — "0h 45m"
+// reads oddly for a short local-road detour). Used only by roadRow — no existing formatter in
+// this file states a duration this way (the rest state a DATE, or a day count).
 function hoursMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
   const m = min % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;

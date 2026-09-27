@@ -687,6 +687,24 @@ describe('roadRow / factRows — the road the customer paid for (spec §4.3)', (
     expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway']);
   });
 
+  // hoursMinutes (private to this file, exercised only through roadRow): under an hour reads as
+  // plain minutes — "0h 45m" is an odd way to state a 45-minute detour — a whole hour drops the
+  // "0m" remainder, and anything else states both units.
+  it('states a sub-hour duration as plain minutes, not "0h 45m"', () => {
+    const b: Booking = { ...single, durationMin: 45, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 45 min']);
+  });
+
+  it('states a whole-hour duration without a "0m" remainder', () => {
+    const b: Booking = { ...single, durationMin: 360, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h']);
+  });
+
+  it('states an hours-and-minutes duration as both units', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
   it('a single with no road, or the fastest road, has no Road row', () => {
     expect(roadRow(single)).toBeNull();
     expect(factRows(single).some(([k]) => k === 'Road')).toBe(false);
