@@ -3,6 +3,7 @@ import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
@@ -124,6 +125,36 @@ export interface StatusAudit {
   at?: Date;
 }
 
+/** One applied booking status fact. Legacy bookings deliberately have no synthetic baseline. */
+export interface BookingStatusEvent {
+  id: string;
+  bookingId: string;
+  fromStatus: BookingStatus;
+  toStatus: BookingStatus;
+  source: BookingTransitionContext['source'];
+  actorType: BookingTransitionContext['actorType'];
+  actorId: string | null;
+  reason: string | null;
+  requestId: string | null;
+  runId: string | null;
+  relatedEntityType: NonNullable<BookingTransitionContext['relatedEntityType']> | null;
+  relatedEntityId: string | null;
+  occurredAt: string;
+}
+
+export interface BookingStatusEventMismatch {
+  bookingId: string;
+  currentStatus: BookingStatus;
+  eventStatus: BookingStatus;
+}
+
+export class BookingTransitionContextRequiredError extends Error {
+  constructor() {
+    super('Booking transition context is required while transition tracking is enabled');
+    this.name = 'BookingTransitionContextRequiredError';
+  }
+}
+
 /** A booking taking one use of a code (spec 2026-09-14 §5.3). */
 export interface PromoHold {
   code: PromoCode;
@@ -183,7 +214,16 @@ export interface BookingRepo {
   listByPersonKey(personKey: string, limit: number): Promise<Booking[]>;
   // `audit` records WHY, for the transitions where that matters. Optional so the many
   // non-cancelling callers are untouched; the cancel route always supplies it.
-  setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
+  setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking>;
+  /** Applied transition facts, oldest first. Empty means no recorded history, not no activity. */
+  listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]>;
+  /** Rows whose current status disagrees with their latest recorded applied transition. */
+  listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
   // Re-record who is paying, for a booking that has not been paid yet.
   //
@@ -208,6 +248,11 @@ export interface BookingRepo {
 // A booking's payer may only be rewritten while it is still awaiting money.
 export const PAYER_EDITABLE_STATUSES = ['draft', 'payment_pending'] as const;
 
+export interface InMemoryBookingRepoOptions {
+  transitionTrackingEnabled?: boolean;
+  now?: () => Date;
+}
+
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -228,6 +273,9 @@ export class InMemoryBookingRepo implements BookingRepo {
   // Per-code queue standing in for Postgres's FOR UPDATE: the count and the insert are separated by
   // awaits, so without it two concurrent bookings could both see the last use as free.
   private promoLocks = new Map<string, Promise<void>>();
+  private statusEvents: BookingStatusEvent[] = [];
+
+  constructor(private readonly options: InMemoryBookingRepoOptions = {}) {}
 
   /** Lets the count see succeeded payments exactly as the Postgres query does (§5.1). */
   attachPayments(payments: PaymentRepo): void {
@@ -348,10 +396,18 @@ export class InMemoryBookingRepo implements BookingRepo {
     return Promise.all(rows.map((b) => this.present(b)));
   }
 
-  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
+  async setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
+    if (this.options.transitionTrackingEnabled && !context) {
+      throw new BookingTransitionContextRequiredError();
+    }
     const updated: Booking = {
       ...current,
       status: to,
@@ -359,8 +415,45 @@ export class InMemoryBookingRepo implements BookingRepo {
         ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: (audit.at ?? new Date()).toISOString() }
         : {}),
     };
+    // The in-memory path stays atomic by appending before the only non-throwing state mutation.
+    // If event construction ever throws, the booking row remains untouched.
+    if (this.options.transitionTrackingEnabled && context) {
+      this.statusEvents.push({
+        id: randomUUID(),
+        bookingId: id,
+        fromStatus: current.status,
+        toStatus: to,
+        source: context.source,
+        actorType: context.actorType,
+        actorId: context.actorId ?? null,
+        reason: context.reason ?? audit?.reason ?? null,
+        requestId: context.requestId ?? null,
+        runId: context.runId ?? null,
+        relatedEntityType: context.relatedEntityType ?? null,
+        relatedEntityId: context.relatedEntityId ?? null,
+        occurredAt: (this.options.now?.() ?? new Date()).toISOString(),
+      });
+    }
     this.byId.set(id, updated);
     return this.present(updated);
+  }
+
+  async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
+    // Array order is application order; return copies so a reader cannot mutate the ledger.
+    return this.statusEvents.filter((event) => event.bookingId === bookingId).map((event) => ({ ...event }));
+  }
+
+  async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
+    const latest = new Map<string, BookingStatusEvent>();
+    for (const event of this.statusEvents) latest.set(event.bookingId, event);
+    const mismatches: BookingStatusEventMismatch[] = [];
+    for (const [bookingId, event] of latest) {
+      const booking = this.byId.get(bookingId);
+      if (booking && booking.status !== event.toStatus) {
+        mismatches.push({ bookingId, currentStatus: booking.status, eventStatus: event.toStatus });
+      }
+    }
+    return mismatches.sort((a, b) => a.bookingId.localeCompare(b.bookingId));
   }
 
   async refreshPayerDetails(
