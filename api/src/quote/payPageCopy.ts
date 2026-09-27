@@ -127,13 +127,13 @@ function legRoute(l: ToolLegLite): string {
 
 // An add-on's stored label names its journey by EVERY stop ("Waiting fee — Galle → Seetha Amman
 // Temple, … → Nuwara Eliya"; extrasDeposit.ts), which repeated a multi-stop day's whole chain on
-// each row (owner-reported 2026-09-27). Owner call: waiting and sightseeing are just "Waiting" and
-// "Sightseeing" in the Included list; any other add-on keeps its journey, named by its two ends
+// each row (owner-reported 2026-09-27). Owner call: waiting and sightseeing read "Waiting up to 3hrs" and
+// "Sightseeing up to 3hrs" in the Included list; any other add-on keeps its journey, named by its two ends
 // like legRoute. Render-time only: the stored label, ops and emails are untouched. Exported so the
 // quote page can match a priced row against the same name.
 const INCLUDED_NAMES: [string, string][] = [
-  [EXTRA_LABELS.waiting, 'Waiting'],
-  [EXTRA_LABELS.sightseeing, 'Sightseeing'],
+  [EXTRA_LABELS.waiting, 'Waiting up to 3hrs'],
+  [EXTRA_LABELS.sightseeing, 'Sightseeing up to 3hrs'],
 ];
 export function includedName(label: string): string {
   for (const [stored, name] of INCLUDED_NAMES) {

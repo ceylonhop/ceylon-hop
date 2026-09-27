@@ -281,7 +281,7 @@ describe('payPageCopy — the add-ons the customer chose', () => {
 
   it('a single transfer names its add-on', () => {
     const q = priced([leg('Kandy', 'Ella', '2026-08-08')], [{ code: 'waiting', legIndex: 0 }]);
-    expect(payPageCopy(q).addOns).toEqual(['Waiting']);
+    expect(payPageCopy(q).addOns).toEqual(['Waiting up to 3hrs']);
   });
 
   it('a multi-leg trip names each add-on after its journey', () => {
@@ -289,8 +289,8 @@ describe('payPageCopy — the add-ons the customer chose', () => {
     expect(payPageCopy(q).addOns).toEqual(['Wait for Safari — Ella → Yala']);
   });
 
-  // Owner call 2026-09-27: in the Included list waiting and sightseeing are just "Waiting" and
-  // "Sightseeing" — the stored label carries the whole stop chain ("Sightseeing stops (up to 3h) —
+  // Owner call 2026-09-27: in the Included list waiting and sightseeing read "Waiting up to 3hrs" and
+  // "Sightseeing up to 3hrs" — the stored label carries the whole stop chain ("Sightseeing stops (up to 3h) —
   // Galle → Seetha Amman Temple, Seetha Eliya, Sri Lanka → … → Nuwara Eliya"), which repeated
   // every stop on every row. Listed once each, however many journeys carry one.
   it('lists waiting and sightseeing by name only, once each', () => {
@@ -306,7 +306,7 @@ describe('payPageCopy — the add-ons the customer chose', () => {
     const result = quote(engine, RATE_CARD);
     const toolLegs = [{ stops, category: 'transfer' }, leg('Nuwara Eliya', 'Negombo')];
     const q = { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool(toolLegs), engine }, result };
-    expect(payPageCopy(q).addOns).toEqual(['Sightseeing', 'Waiting']);
+    expect(payPageCopy(q).addOns).toEqual(['Sightseeing up to 3hrs', 'Waiting up to 3hrs']);
   });
 
   // Any other add-on keeps its journey, named by its ends like the leg row — never every stop.

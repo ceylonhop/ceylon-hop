@@ -493,7 +493,7 @@ export function customerQuoteView(
     );
     // The add-ons the customer chose join the priced card's list of what the money buys — except
     // one the per-journey breakdown already prices on its own row, which would read as two charges.
-    // Matched by the Included list's own name for it (includedName): "Sightseeing", not the row's label.
+    // Matched by the Included list's own name for it (includedName): "Sightseeing up to 3hrs", not the row's label.
     const ownRow = new Set((legPrices?.rows ?? []).map((r) => includedName(r.label)));
     const addOns = lead ? (copy.addOns ?? []).filter((a) => !ownRow.has(a)) : [];
     const included = { lead: c.included.lead, items: [...c.included.items, ...addOns] };
