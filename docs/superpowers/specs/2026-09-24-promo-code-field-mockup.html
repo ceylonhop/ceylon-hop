@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Promo Code Field Mockup</title>
+<!-- Design reference for 2026-09-24-promo-code-field-design.md. Static: every state is drawn
+     side by side, no script. Tokens and component rules are copied from site.css and
+     booking.html on origin/main @ ea28bd72 so the pieces look as they will on the page.
+     The new rules (.promo-*) are the only invented CSS. -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&family=Poppins:wght@400;500;600;700;800&display=swap');
+:root{
+  --blue:#63BFD6;--blue-deep:#24758A;--teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;
+  --tomato:#EC3A24;--ink:#3A3739;--ink-soft:#6c6a6b;--cream:#F0EEE5;--cream-deep:#E4E0D2;
+  --paper:#fffdf8;--white:#ffffff;--line:#e7e3d6;
+  --accent:var(--blue);--accent-deep:var(--blue-deep);--accent-rgb:99,191,214;
+  --btn-accent:#24758A;--btn-accent-hover:#1E6273;--btn-cta:#D52812;--cta:var(--tomato);
+  --pc-sky:#e4f2f7;--pc-teal:#e3f4ef;--pc-saffron:#fbf0d8;
+  --display:'CH Bodoni','Bodoni Moda','Didot',Georgia,serif;
+  --body:'Poppins',system-ui,-apple-system,sans-serif;
+  --r-sm:10px;--r:16px;--r-lg:24px;
+  --shadow-s:0 2px 8px rgba(44,42,43,.06);--shadow:0 14px 40px -18px rgba(44,42,43,.30);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--body);color:var(--ink);background:var(--cream);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.14;margin:0}
+button{font-family:inherit;color:inherit;cursor:pointer}
+.muted{color:var(--ink-soft)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;font-weight:600;font-size:.97rem;border:none;border-radius:999px;padding:.9rem 1.6rem;white-space:nowrap;line-height:1}
+.btn-cta{background:var(--btn-cta);color:#fff;box-shadow:0 12px 26px -10px var(--cta)}
+.btn-primary{background:var(--btn-accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
+.btn-lg{padding:1.05rem 2rem;font-size:1.02rem}
+.btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
+.btn:disabled{opacity:.55;cursor:default;box-shadow:none}
+.field input{width:100%;padding:.85rem 1rem;border:1.5px solid var(--line);border-radius:var(--r-sm);font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
+
+/* booking.html (copied) */
+.stepcard{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:30px}
+.stepcard h2{font-size:clamp(1.6rem,3vw,2.2rem);margin-bottom:.35rem}
+.stepcard .sub{color:var(--ink-soft);margin:0 0 22px;font-size:.95rem}
+.trust-line{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.86rem;color:var(--ink-soft);margin:-6px 0 18px}
+.trust-line b{color:var(--ink);font-weight:700}
+.trust-line .ta-stars{color:#34e0a1;letter-spacing:.05em;font-size:.95rem;-webkit-text-stroke:.5px #00684a}
+.pay-summary-row{display:flex;justify-content:space-between;align-items:baseline;background:var(--cream-deep);border-radius:12px;padding:14px 16px;margin-bottom:18px}
+.pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft);min-width:0}
+.pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem}
+.pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem;flex:none;white-space:nowrap}
+.summary{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.summary .s-route{background:var(--pc-teal);padding:16px 20px;font-weight:600;font-size:.92rem}
+.summary .s-body{padding:20px}
+.summary h3{font-size:1.1rem;margin-bottom:.3rem}
+.s-row{display:flex;justify-content:space-between;font-size:.88rem;padding:.45rem 0;color:var(--ink-soft)}
+.s-row b{color:var(--ink);font-weight:600}
+.s-div{height:1px;background:var(--line);margin:8px 0}
+.s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
+.s-total b{font-family:var(--display);font-size:1.7rem}
+.nav-btns{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px}
+.back-link{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.92rem}
+.ph-card{background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.3);max-width:380px;width:100%;padding:32px;text-align:center;margin:0 auto}
+.ph-logo{font-weight:800;font-size:1.3rem;color:#1b1b1b;margin-bottom:6px}
+.ph-logo span{color:#0fa958}
+.ph-sub{font-size:.84rem;color:#666;margin-bottom:22px}
+.ph-ico{width:56px;height:56px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
+.ph-ico.err{background:#fdeee9;color:#c0392b}
+.ph-ico svg{width:30px;height:30px}
+.ph-msg{font-size:.98rem;color:#333;line-height:1.45}
+.ph-actions{display:flex;flex-direction:column;gap:9px;margin-top:22px}
+.ph-btn{border:none;border-radius:11px;padding:12px 16px;font-weight:600;font-size:.9rem;font-family:inherit}
+.ph-btn-ghost{background:transparent;color:#666}
+
+/* ── NEW: promo code (the only invented CSS) ───────────────────────────── */
+.promo{margin:0 0 12px}
+.promo-toggle{background:none;border:none;padding:0;font-size:.88rem;font-weight:600;color:var(--accent-deep);display:inline-flex;align-items:center;gap:.4rem}
+.promo-toggle:hover{text-decoration:underline;text-underline-offset:3px}
+.promo-toggle svg,.promo-chip svg{width:15px;height:15px;flex:none}
+.promo-form label{display:block;font-size:.82rem;font-weight:600;margin-bottom:.4rem}
+.promo-form .row{display:flex;gap:8px}
+.promo-form input{flex:1;min-width:0;text-transform:uppercase;letter-spacing:.06em;padding:.62rem .9rem}
+.promo-form input::placeholder{text-transform:none;letter-spacing:0}
+.promo-form input[readonly]{background:var(--cream)}
+.promo-msg{margin:.4rem 0 0;font-size:.84rem;font-weight:500;color:#b13b22}
+.promo-msg.soft{color:var(--ink-soft)}
+.promo-chip{display:inline-flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--pc-teal);border:1px solid #c6e8de;color:var(--teal-deep);border-radius:999px;padding:.4rem .5rem .4rem .8rem;font-size:.86rem}
+.promo-chip b{color:var(--ink);letter-spacing:.06em}
+.promo-chip .rm{background:none;border:none;padding:.1rem .45rem;border-radius:999px;font-size:.82rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
+.promo-chip.off{display:flex;align-items:center;border-radius:12px;background:var(--cream-deep);border-color:var(--line);color:var(--ink-soft);padding:.5rem .5rem .5rem .8rem}
+.promo-chip.off>span{flex:1;min-width:0;line-height:1.4}
+.shim{display:inline-block;width:76px;height:1.3rem;border-radius:8px;background:linear-gradient(90deg,#d8d3c3 0%,#ece8dc 50%,#d8d3c3 100%);background-size:200% 100%;animation:shim 1.2s linear infinite;vertical-align:middle}
+@keyframes shim{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.shim{animation:none}}
+.s-row.s-promo span{display:inline-flex;align-items:center;gap:.35rem}
+.s-row.s-promo b{color:var(--teal-deep)}
+.s-row.s-promo.off b{color:var(--ink-soft);font-weight:500}
+
+/* mockup page chrome */
+.wrap{max-width:1180px;margin:0 auto;padding:40px 16px 80px}
+.intro{max-width:720px;margin-bottom:36px}
+.intro h1{font-size:clamp(1.9rem,4vw,2.6rem);margin-bottom:.4rem}
+.intro p{margin:.3rem 0;color:var(--ink-soft)}
+.sec{margin:52px 0 18px;font-size:.74rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:26px;align-items:start}
+.states{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.state{background:var(--paper);border-radius:var(--r);box-shadow:var(--shadow-s);padding:18px 18px 16px;border:1px solid var(--line)}
+.state .tag{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:10px}
+.state .note{font-size:.8rem;color:var(--ink-soft);margin:12px 0 0;border-top:1px dashed var(--line);padding-top:10px;line-height:1.5}
+.state .pay-summary-row{margin:10px 0 0}
+.pair{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.phone{width:375px;max-width:100%;border:10px solid #2a2829;border-radius:36px;overflow:hidden;background:var(--cream);box-shadow:var(--shadow)}
+.phone .stepcard{border-radius:0;box-shadow:none;padding:22px 16px}
+.phone .mbar{display:flex;justify-content:space-between;align-items:center;background:var(--paper);border-top:1px solid var(--line);padding:12px 16px}
+.phone .mbar b{font-family:var(--display);font-size:1.35rem}
+.phone .mbar small{display:block;font-size:.72rem;color:var(--ink-soft)}
+.mobile-row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.mobile-row .aside{flex:1;min-width:260px;max-width:460px}
+.mobile-row .aside p{margin:.3rem 0 .8rem;color:var(--ink-soft);font-size:.92rem}
+.dim{background:rgba(20,30,28,.62);border-radius:var(--r);padding:34px 16px}
+@media(max-width:860px){.hero{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:620px){.stepcard{padding:22px 18px}.nav-btns{align-items:stretch}.nav-btns .btn{white-space:normal}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="intro">
+  <h1>Promo code field: every state</h1>
+  <p>How the booking page's Payment step and summary look with a code. It uses the page's own
+     colours, type and components. The only new styling is the promo link, field, chip and summary row.</p>
+  <p>Example throughout: private car $80 + sightseeing extra $10 = $90, code <b>SAVE10</b> (10%) <span style="white-space:nowrap">= <b>−$9</b></span>, pay <b>$81</b>.</p>
+</header>
+
+<!-- ─────────────── 1. The whole screen, code applied ─────────────── -->
+<div class="sec">1 · Desktop, code applied</div>
+<div class="hero">
+  <div class="stepcard">
+    <h2>Payment</h2>
+    <p class="sub">Pay securely to confirm. Free cancellation up to 24 hours before.</p>
+    <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from 31 travellers on Tripadvisor</p>
+    <div class="promo">
+      <span class="promo-chip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+        <span><b>SAVE10</b> applied</span>
+        <button class="rm" type="button">Remove</button>
+      </span>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$81</span></div>
+    <p class="muted" style="font-size:.85rem;margin:0">Card · via PayHere secure checkout · the rest of the step is unchanged</p>
+    <div class="nav-btns"><button class="back-link">← Back</button><button class="btn btn-cta btn-lg">Continue to secure payment →</button></div>
+  </div>
+  <aside class="summary">
+    <div class="s-route">CMB Airport → Galle</div>
+    <div class="s-body">
+      <h3>Private transfer</h3>
+      <div class="s-row"><span>Date</span><b>Sat 11 Oct</b></div>
+      <div class="s-row"><span>Departure</span><b>09:00</b></div>
+      <div class="s-div"></div>
+      <div class="s-row"><span>Private AC car</span><b>$80</b></div>
+      <div class="s-row"><span>Sightseeing stop</span><b>$10</b></div>
+      <div class="s-row s-promo"><span>Promo SAVE10</span><b>−$9</b></div>
+      <div class="s-div"></div>
+      <div class="s-total"><span class="muted">Total</span><b>$81</b></div>
+    </div>
+  </aside>
+</div>
+
+<!-- ─────────────── 2. Payment step states ─────────────── -->
+<div class="sec">2 · The field, state by state (Payment step)</div>
+<div class="states">
+
+  <div class="state">
+    <span class="tag">A · Collapsed (default)</span>
+    <div class="promo">
+      <button class="promo-toggle" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+        Have a promo code?
+      </button>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$90</span></div>
+    <p class="note">A text link, sitting between the Tripadvisor line and Due now. Most customers don't have a code, so it stays quiet.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">B · Open</span>
+    <div class="promo promo-form">
+      <label for="p1">Promo code</label>
+      <div class="row"><input id="p1" class="field" placeholder="Enter code" style="border:1.5px solid var(--accent);box-shadow:0 0 0 3px rgba(99,191,214,.15);border-radius:10px;font-family:inherit;font-size:.95rem"><button class="btn btn-primary btn-sm" type="button">Apply</button></div>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$90</span></div>
+    <p class="note">Focus goes to the input. Enter applies. Typed letters show in capitals.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">C · Checking</span>
+    <div class="promo promo-form">
+      <label>Promo code</label>
+      <div class="row"><input readonly value="SAVE10" style="border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem"><button class="btn btn-primary btn-sm" type="button" disabled>Checking…</button></div>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt"><span class="shim" aria-label="Calculating"></span></span></div>
+    <p class="note">About a second. Total and Due now use the page's existing loading shimmer, as for any re-price.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">D · Applied</span>
+    <div class="promo">
+      <span class="promo-chip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+        <span><b>SAVE10</b> applied</span><button class="rm" type="button">Remove</button>
+      </span>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$81</span></div>
+    <p class="note">Remove → back to B, empty, full price.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">E · Refused on Apply</span>
+    <div class="promo promo-form">
+      <label>Promo code</label>
+      <div class="row"><input value="SAVE01" style="border:1.5px solid #f4c9bb;border-radius:10px;font-family:inherit;font-size:.95rem"><button class="btn btn-primary btn-sm" type="button">Apply</button></div>
+      <p class="promo-msg" role="status">That code isn't valid.</p>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$90</span></div>
+    <p class="note">The typed text stays so it can be corrected. Other messages: <i>isn't active yet · has expired · has been fully used · can't be used on this booking</i>.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">F · Stopped applying later <span style="color:var(--tomato)">(call 1)</span></span>
+    <div class="promo">
+      <span class="promo-chip off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+        <span><b style="color:var(--ink-soft)">SAVE10</b> · can't be used on this booking</span><button class="rm" type="button">Remove</button>
+      </span>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$90</span></div>
+    <p class="note">The code was applied, then the trip changed (e.g. a traveller added) and it no longer qualifies. It stays in place and comes back by itself if the trip qualifies again.</p>
+  </div>
+
+  <div class="state">
+    <span class="tag">G · Couldn't check</span>
+    <div class="promo promo-form">
+      <label>Promo code</label>
+      <div class="row"><input value="SAVE10" style="border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem"><button class="btn btn-primary btn-sm" type="button">Apply</button></div>
+      <p class="promo-msg soft" role="status">We couldn't check your code just now, please try again.</p>
+    </div>
+    <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$90</span></div>
+    <p class="note">Our pricing server didn't answer, so the page is on its offline price. No discount is shown or sent.</p>
+  </div>
+
+</div>
+
+<!-- ─────────────── 3. Summary panel ─────────────── -->
+<div class="sec">3 · Summary panel (desktop side panel and the mobile summary sheet)</div>
+<div class="pair">
+  <div>
+    <span class="tag" style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)">Applied</span>
+    <div class="summary" style="margin-top:8px"><div class="s-body">
+      <div class="s-row"><span>Private AC car</span><b>$80</b></div>
+      <div class="s-row"><span>Sightseeing stop</span><b>$10</b></div>
+      <div class="s-row s-promo"><span>Promo SAVE10</span><b>−$9</b></div>
+      <div class="s-div"></div>
+      <div class="s-total"><span class="muted">Total</span><b>$81</b></div>
+    </div></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">The car stays at $80. The discount is its own line, and the rows add up to the Total.</p>
+  </div>
+  <div>
+    <span class="tag" style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)">Stopped applying (call 1)</span>
+    <div class="summary" style="margin-top:8px"><div class="s-body">
+      <div class="s-row"><span>Private AC van</span><b>$110</b></div>
+      <div class="s-row"><span>Sightseeing stop</span><b>$10</b></div>
+      <div class="s-row s-promo off"><span>Promo SAVE10</span><b>Doesn't apply</b></div>
+      <div class="s-div"></div>
+      <div class="s-total"><span class="muted">Total</span><b>$120</b></div>
+    </div></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">Shows on every step, so a price rise from losing the code is never unexplained.</p>
+  </div>
+  <div>
+    <span class="tag" style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)">Without the car-row rule (what we avoid)</span>
+    <div class="summary" style="margin-top:8px;opacity:.75"><div class="s-body">
+      <div class="s-row"><span>Private AC car</span><b style="color:#b13b22">$71</b></div>
+      <div class="s-row"><span>Sightseeing stop</span><b>$10</b></div>
+      <div class="s-div"></div>
+      <div class="s-total"><span class="muted">Total</span><b>$81</b></div>
+    </div></div>
+    <p class="muted" style="font-size:.82rem;margin-top:10px">If the discount went into the page's running total, the car would read $71 and the code would be invisible. Part 2 prevents this.</p>
+  </div>
+</div>
+
+<!-- ─────────────── 4. Phone ─────────────── -->
+<div class="sec">4 · Phone (375px), code applied</div>
+<div class="mobile-row">
+  <div class="phone">
+    <div class="stepcard">
+      <h2 style="font-size:1.7rem">Payment</h2>
+      <p class="sub" style="font-size:.9rem">Pay securely to confirm. Free cancellation up to 24 hours before.</p>
+      <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from 31 travellers</p>
+      <div class="promo">
+        <span class="promo-chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+          <span><b>SAVE10</b> applied</span><button class="rm" type="button">Remove</button>
+        </span>
+      </div>
+      <div class="pay-summary-row"><span class="lbl">Due now<b>CMB Airport → Galle</b></span><span class="amt">$81</span></div>
+      <p class="muted" style="font-size:.8rem;margin:0">… payment methods, terms, Pay button …</p>
+    </div>
+    <div class="mbar"><div><small>Total</small><b>$81</b></div><button class="btn btn-cta btn-sm">Continue →</button></div>
+  </div>
+  <div class="aside">
+    <h3 style="font-size:1.2rem;margin-bottom:.4rem">On a phone</h3>
+    <p>The side summary becomes the sheet behind the bottom bar. The bar's Total copies the summary Total, so it shows $81 with no extra work. The promo row appears in the sheet when it's opened.</p>
+    <p>The chip and "Due now" are what the customer sees on the Payment step. The chip wraps onto two lines if a long code needs it. Codes are at most 32 characters.</p>
+  </div>
+</div>
+
+<!-- ─────────────── 5. Refused at the last moment ─────────────── -->
+<div class="sec">5 · Code refused when the booking is made</div>
+<div class="mobile-row">
+  <div class="dim" style="flex:1;min-width:280px;max-width:460px">
+    <div class="ph-card">
+      <div class="ph-logo">Pay<span>Here</span></div>
+      <div class="ph-sub">Sri Lanka's trusted payment gateway</div>
+      <div class="ph-ico err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg></div>
+      <div class="ph-msg">That code has been fully used. Your total is now the full price.</div>
+      <div class="ph-actions"><button class="ph-btn ph-btn-ghost" type="button">Close</button></div>
+    </div>
+  </div>
+  <div class="aside">
+    <h3 style="font-size:1.2rem;margin-bottom:.4rem">Rare, but handled</h3>
+    <p>The code passed the preview, but someone took its last use (or it expired) before this customer pressed Pay.</p>
+    <p><b>No payment is taken.</b> There is no "Try again" button. It follows the same pattern as the local-road refusal, so the customer returns to the Payment step. There the field is open with the message and Due now shows the full $90, and they choose whether to pay it.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
