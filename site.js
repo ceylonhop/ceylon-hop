@@ -266,14 +266,22 @@
       const MENU_MIN=340;
       const menuW=Math.min(Math.max(r.width, MENU_MIN), window.innerWidth-24);
       const left=Math.min(Math.max(12,r.left), window.innerWidth-menuW-12);
-      const below=r.bottom+6;
-      const maxBelow=window.innerHeight-below-12;
-      const preferredH=Math.min(280, Math.max(96, items.length*50+16));
-      const top=maxBelow>=Math.min(180, preferredH) ? below : Math.max(12, r.top-6-preferredH);
+      /* Below when most of a list fits there (180px), else whichever side has more room —
+         decided from the space alone, so the Google rows arriving can't throw an open menu
+         across the field. Room is measured on the VISIBLE area: a phone keyboard shrinks and
+         shifts visualViewport, not the window. Opening above, the menu's bottom is pinned 6px
+         over the field once it is in the page; clamping only its top (as before) kept it 280px
+         tall, so on a phone it ran straight over the field being typed in. */
+      const vv=window.visualViewport;
+      const viewTop=vv ? vv.offsetTop : 0;
+      const viewBottom=vv ? vv.offsetTop+vv.height : window.innerHeight;
+      const roomBelow=viewBottom-r.bottom-6-12;
+      const roomAbove=r.top-6-12-viewTop;
+      const openBelow=roomBelow>=180 || roomBelow>=roomAbove;
       menu.style.left=left+'px';
-      menu.style.top=top+'px';
+      menu.style.top=(r.bottom+6)+'px';
       menu.style.width=menuW+'px';
-      menu.style.maxHeight=Math.max(96, Math.min(280, window.innerHeight-top-12))+'px';
+      menu.style.maxHeight=Math.min(280, openBelow ? roomBelow : roomAbove)+'px';
       menu.addEventListener('mousedown',e=>e.preventDefault());
       menu.addEventListener('click',e=>{
         const btn=e.target.closest('.place-option'); if(!btn) return;
@@ -282,6 +290,7 @@
         if(items[idx]) choose(items[idx]);
       });
       document.body.appendChild(menu);
+      if(!openBelow) menu.style.top=(r.top-6-menu.offsetHeight)+'px';
       openedAt=Date.now();
     }
     function refresh(){
