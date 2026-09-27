@@ -2747,7 +2747,10 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: tQuoteId,
       days: (state.svc==='chauffeur') ? tripDays : undefined,
-      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined
+      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined,
+      // The server prices from THIS payload, so it must know which wires are the traveller's own
+      // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
+      gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined
     };
   } else if(isShared){
     endpoint = '/bookings/shared';

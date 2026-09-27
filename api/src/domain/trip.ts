@@ -26,6 +26,10 @@ export const TripInput = z.object({
   // Chauffeur-guide: days the car is kept + driver accommodation nights (days − 1).
   days: z.number().int().positive().optional(),
   driverNights: z.number().int().min(0).optional(),
+  // Planner "gaps": indexes of the wires (stops[i] → stops[i+1]) the traveller arranges
+  // themselves — a train, their own transport. Never priced, never measured. The checks that need
+  // `stops`/`serviceType` live in the route handler, so TripInput stays a plain ZodObject.
+  gaps: z.array(z.number().int().min(0)).max(MAX_TRIP_STOPS - 1).optional(),
 });
 
 export type TripInput = z.infer<typeof TripInput>;
