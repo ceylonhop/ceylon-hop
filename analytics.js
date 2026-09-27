@@ -81,6 +81,32 @@
     return /^\/\d+$/.test(url.pathname) ? a : null;     // has a phone = a contact
   }
 
+  // ── cookie choice: the Europe-only strip (owner decision 2026-09-27) ────
+  // Clarity records an EEA/UK/CH visitor with no advertising consent cookielessly: a new
+  // "user" on every page view. The head snippet denies ad_storage there by region and
+  // REPLAYS a stored answer; this decides whether to ask, and consent.js asks.
+  //
+  // The site is static, so there is no server to tell us the country. The device clock is
+  // the proxy, and it fails safe: it never grants anything, it only decides who sees a
+  // question. A UK traveller already in Sri Lanka has a Colombo clock and a Sri Lankan IP,
+  // where advertising is granted by default anyway. Not on the checkout pages (owner call:
+  // nothing competes with the price sheet or Pay), nor pay/quote/ops.
+  var CONSENT_KEY = 'ceylonhop_cookie_choice';
+  var consentSrc = (document.currentScript && document.currentScript.src) || '';
+  window.chConsentAsk = function (tz, path) {
+    return /^(?:Europe\/|Atlantic\/(?:Canary|Madeira|Azores|Reykjavik|Faroe)$)/.test(tz || '') &&
+      !/^\/(?:(?:booking|manage|pay|quote)\.html|p|q|ops(?:\/.*)?)$/.test(path || '/');
+  };
+  window.chConsentOpen = function () {
+    if (typeof window.chConsentShow === 'function') { window.chConsentShow(); return; }
+    if (document.querySelector('script[data-ch-consent]')) return; // already on its way
+    var s = document.createElement('script');
+    s.src = consentSrc ? new window.URL('consent.js', consentSrc).href : '/consent.js';
+    s.async = true;
+    s.setAttribute('data-ch-consent', '');
+    document.head.appendChild(s);
+  };
+
   // Everything below runs ONCE per page: a second copy of this script must not
   // double-count contacts, nor push a second ch_context.
   if (window.chContactBound) return;
@@ -113,6 +139,21 @@
     }
     attempt();
   })();
+  (function askAboutCookies() {
+    var stored = null, tz = '';
+    try { stored = window.localStorage.getItem(CONSENT_KEY); } catch (e) { /* no storage */ }
+    try { tz = (window.Intl || Intl).DateTimeFormat().resolvedOptions().timeZone; } catch (e) { /* no Intl */ }
+    if (stored !== 'granted' && stored !== 'denied' &&
+        window.chConsentAsk(tz, window.location.pathname)) window.chConsentOpen();
+  })();
+  // The footer's "Cookie choices" link: open the strip instead of following the link, which
+  // is only the no-JS fallback to the privacy policy.
+  document.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('[data-consent-open]') : null;
+    if (!a) return;
+    ev.preventDefault();
+    window.chConsentOpen();
+  });
   document.addEventListener('click', function (ev) {
     var a = contactLink(ev.target);
     if (!a) return;
