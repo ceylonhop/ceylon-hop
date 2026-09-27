@@ -482,12 +482,26 @@ export function customerQuoteView(
   // value proposition, and the two must read as parallel statements of what each buys.
   const build = (service: 'private' | 'chauffeur', cents: number, lead: boolean): QuoteViewOption => {
     const c = COPY[service];
+    const legPrices = legPricesFor(
+      quote,
+      engine?.product ?? null,
+      lead,
+      otherTotal == null, // sole option: a two-option quote shows no per-journey prices at all
+      driving.length,
+      cents,
+      lead ? discountOff : null,
+    );
+    // The add-ons the customer chose join the priced card's list of what the money buys — except
+    // one the per-journey breakdown already prices on its own row, which would read as two charges.
+    const ownRow = new Set((legPrices?.rows ?? []).map((r) => r.label));
+    const addOns = lead ? (copy.addOns ?? []).filter((a) => !ownRow.has(a)) : [];
+    const included = { lead: c.included.lead, items: [...c.included.items, ...addOns] };
     return {
       service,
       name: c.name,
       blurb: c.blurb,
-      included: { lead: c.included.lead, items: [...c.included.items] },
-      includedText: legacyIncludedText(c.included),
+      included,
+      includedText: legacyIncludedText(included),
       totalCents: cents,
       totalUsd: usd(cents),
       // Only on the card that was actually priced: the comparison card is a recompute with no
@@ -498,15 +512,7 @@ export function customerQuoteView(
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),
-      legPrices: legPricesFor(
-        quote,
-        engine?.product ?? null,
-        lead,
-        otherTotal == null, // sole option: a two-option quote shows no per-journey prices at all
-        driving.length,
-        cents,
-        lead ? discountOff : null,
-      ),
+      legPrices,
     };
   };
 

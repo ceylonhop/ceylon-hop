@@ -109,6 +109,12 @@ const Env = z.object({
     .enum(['0', '1', 'false', 'true'])
     .default('false')
     .transform((value) => value === '1' || value === 'true'),
+  // M23.3 — additive booking transition ledger rollout. Deploy the table first, then enable
+  // writes only after every status writer has adopted provenance in M23.4.
+  BOOKING_TRANSITION_TRACKING_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   // Temporary rollout seam: staging may accept the legacy tokenless checkout while the
   // website deploy catches up. Default-off; live production with real payments rejects it.
   CHECKOUT_TOKEN_COMPATIBILITY: z

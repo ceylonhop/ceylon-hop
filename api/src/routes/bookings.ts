@@ -23,7 +23,7 @@ import {
   InvalidPricingRequestError,
   type PriceOutcome,
 } from '../services/pricing';
-import type { BookingRepo, Booking } from '../db/bookingRepo';
+import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
@@ -149,6 +149,8 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // The add-ons the customer chose, as the quote named them. Absent when there are none.
+  addOns?: string[];
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
@@ -162,6 +164,7 @@ export function projectBooking(b: Booking): CustomerBookingView {
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: Math.max(0, b.total - dueNow),
+    ...(b.addOns?.length ? { addOns: b.addOns } : {}),
   };
   if (b.mode === 'single') {
     return {
@@ -504,7 +507,12 @@ function invalidRequest(error: ZodError) {
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
           ...(promo.code ? { discountTotal } : {}),
         },
-        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+        {
+          idempotencyKey: key,
+          ...(promo.code ? { promo: { code: promo.code, now } } : {}),
+          // The engine's own request and lines, kept so the booking can name the add-ons it paid for.
+          ...(outcome.priced && outcome.breakdown ? { pricingSnapshot: websitePricingSnapshot(outcome.breakdown) } : {}),
+        },
       );
     } catch (err) {
       if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);

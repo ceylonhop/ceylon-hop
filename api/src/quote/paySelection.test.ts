@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg } from './paySelection';
+import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg, chosenAddOns } from './paySelection';
 import { quote } from './engine';
 import { RATE_CARD } from './rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -103,5 +103,56 @@ describe('gapAfterLeg', () => {
     const lines = payLines(savedQuote());
     expect(gapAfterLeg(lines, { legIndexes: [0, 2], extraIndexes: [] })).toBe('Colombo → Kandy (car)');
     expect(gapAfterLeg(lines, { legIndexes: [0, 1], extraIndexes: [] })).toBeNull();
+  });
+});
+
+// The add-ons a customer chose, for every surface that names them (booking emails, the ops
+// drawer, the manage, quote and pay pages). Read off the same stored lines payLines reads, so
+// "what counts as an add-on" has one definition.
+describe('chosenAddOns', () => {
+  it('names each chosen add-on as the quote labels it, in request order', () => {
+    expect(chosenAddOns(savedQuote())).toEqual(['Luggage rack — Kandy → Ella', 'Flexi ticket']);
+  });
+
+  it('names a waiting fee after the journey it belongs to', () => {
+    const waiting: QuoteRequest = { ...req, extras: [{ code: 'waiting', legIndex: 0 }] };
+    expect(chosenAddOns(savedQuote(waiting))).toEqual(['Waiting fee — Colombo → Kandy']);
+  });
+
+  it('is empty when nothing was chosen', () => {
+    expect(chosenAddOns(savedQuote({ ...req, extras: [] }))).toEqual([]);
+    expect(chosenAddOns(savedQuote({ ...req, extras: undefined }))).toEqual([]);
+  });
+
+  it('lists only the add-ons a partial link charges', () => {
+    expect(chosenAddOns(savedQuote(), { legIndexes: [0], extraIndexes: [1] })).toEqual(['Flexi ticket']);
+    expect(chosenAddOns(savedQuote(), { legIndexes: [0], extraIndexes: [] })).toEqual([]);
+  });
+
+  // Waiting, sightseeing and safari wait are part of the chauffeur day rate: the engine drops
+  // them, so a chauffeur quote has nothing the customer chose on top.
+  it('is empty for a chauffeur quote rather than throwing', () => {
+    const chauffeur: QuoteRequest = {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-09-01', lastDate: '2026-09-02',
+      travelDays: [{ date: '2026-09-01', from: 'Colombo', to: 'Kandy', distanceKm: 120 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    expect(chosenAddOns(savedQuote(chauffeur))).toEqual([]);
+  });
+
+  it('is empty for a quote with no priced lines (a shell or legacy row)', () => {
+    expect(chosenAddOns({ request: { engine: req }, result: {} })).toEqual([]);
+    expect(chosenAddOns({ request: null, result: null })).toEqual([]);
+  });
+
+  // Booking loads (the ops queue, every email) and the quote and pay pages all name add-ons
+  // through this. A malformed stored row may cost a missing line, never a page or a queue.
+  it('never throws on a malformed stored row', () => {
+    const items = [{ label: 'A → B (car)', amountCents: 5000 }, { label: 'Waiting fee — A → B', amountCents: 1000 }];
+    expect(chosenAddOns({ request: { engine: { product: 'private' } }, result: { lineItems: items } })).toEqual([]);
+    expect(chosenAddOns({ request: { engine: { product: 'private', legs: [{}] } }, result: { lineItems: [items[0], null, 7] } })).toEqual([]);
+    // A selection that is not a list of indexes filters nothing.
+    expect(chosenAddOns(savedQuote(), { extraIndexes: 'all' as unknown as number[] }))
+      .toEqual(['Luggage rack — Kandy → Ella', 'Flexi ticket']);
   });
 });

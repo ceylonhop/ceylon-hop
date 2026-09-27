@@ -63,6 +63,7 @@ import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
 import type { AnalyticsDataRepo } from './db/analyticsDataRepo';
+import { requestCorrelation, REQUEST_ID_HEADER } from './lib/correlation';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -203,6 +204,9 @@ export function createApp(deps: AppDeps = {}) {
   // discount saves into an object nothing ever queries.
   const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
+  // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
+  // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
   // save is seen by all of them at once. Empty ⇒ the code card.
@@ -252,6 +256,10 @@ export function createApp(deps: AppDeps = {}) {
     ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
+
+  // One server-owned id follows the request through every mounted route and is returned to the
+  // caller for support diagnosis. Incoming X-Request-Id is never trusted as this primary id.
+  app.use('*', requestCorrelation());
 
   const reportApiError = (failure: unknown, method: string, route: string): void => {
     const err = failure instanceof Error ? failure : new Error(String(failure));
@@ -329,6 +337,7 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      exposeHeaders: [REQUEST_ID_HEADER],
       // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
       // on Pages → API on Render). Only the allow-listed origins above can read responses;
       // other endpoints don't use cookies cross-origin, so echoing this header is harmless.

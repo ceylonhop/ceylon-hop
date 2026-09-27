@@ -147,6 +147,24 @@ describe('POST /bookings/single', () => {
     expect(b.total).toBe(8999); // raw 9149¢ incl. extras → crosses the $90 threshold
   });
 
+  // The add-on a website customer paid for used to be priced and then dropped: nothing on the
+  // booking said which. The booking now keeps the engine's own priced lines, so every email, the ops
+  // drawer and the manage card can name it — and only when one was chosen.
+  it('keeps the add-ons a website customer paid for, and names them on the booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['sightseeing'] });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    expect((await bookings.get(body.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    // The stored lines stay server-side (they carry pricing internals); the response never has them.
+    expect(JSON.stringify(body)).not.toContain('lineItems');
+
+    const plain = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' })).json();
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
+  });
+
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
     const fake = new FakeMapsAdapter();
     let calls = 0;
