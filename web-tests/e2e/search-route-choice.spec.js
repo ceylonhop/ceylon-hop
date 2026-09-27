@@ -93,7 +93,9 @@ test('picking the local road reprices the card, the meta line and the Select lin
   expect(fast).toEqual(await metaFigures(page));
   expect(fast).toEqual({ km: '335 km', time: '5h' });        // 297 min rounds as the meta line does
   expect(local).toEqual({ km: '215 km', time: '6h' });       // 213 km / 374 min, rounded
-  await expect(dialog.locator('.ch-rc-slower')).toHaveText('+1h');
+  // each card shows only its own drive time — no "+1h" (owner, 2026-09-27: it read as a sum)
+  await expect(dialog.locator('label.ch-rc-opt.is-local .ch-rc-alt')).toHaveText('6h');
+  await expect(dialog).not.toContainText('+1h');
   await dialog.locator('label.ch-rc-opt.is-local').click();
   await dialog.getByRole('button', { name: 'Use local road' }).click();
   await expect(dialog).toHaveCount(0);

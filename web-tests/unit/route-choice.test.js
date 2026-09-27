@@ -128,6 +128,13 @@ describe('CH_ROUTE_CHOICE.open', () => {
     }
   });
 
+  it('shows only each road\'s own time — never a "+1h" difference (owner, 2026-09-27)', () => {
+    RC.open(opts({ local: { ...opts().local, slower: '+1h 15m' } }));
+    const local = document.querySelector('.ch-rc-opt.is-local .ch-rc-alt');
+    expect(local.textContent).toBe('6h 14m');
+    expect(document.querySelector('.ch-rc-slower')).toBeNull();
+  });
+
   it('has one action button — no "Decide later" (owner, 2026-09-27)', () => {
     RC.open(opts());
     const foot = [...document.querySelectorAll('.ch-rc-foot button')].map((b) => b.textContent);

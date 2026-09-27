@@ -829,7 +829,6 @@ function maybeOffer() {
   if (bar && bar.contains(document.activeElement)) return;
   RC.markAsked(key);
   const saving = roadSaving();
-  const fastMin = roadMin(expresswayQuote.durationMin), localMin = roadMin(roads.noTolls.min);
   RC.open({
     title: `Two roads to ${dispTo}`,
     sub: "The local road skips the expressway tolls. It's slower, but cheaper. Pick one and you can switch later.",
@@ -839,8 +838,6 @@ function maybeOffer() {
     },
     local: {
       time: roadTime(roads.noTolls.min),
-      // the difference between the two times SHOWN, so the sum always adds up on screen
-      slower: fastMin != null && localMin != null && localMin > fastMin ? '+' + RC.fmtMinutes(localMin - fastMin) : '',
       km: roadKm(roads.noTolls.km),
       price: '$' + displayPrice(roads.noTolls.car), extra: 'van $' + displayPrice(roads.noTolls.van),
       save: 'Save $' + saving

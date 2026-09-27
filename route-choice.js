@@ -53,7 +53,6 @@
       '.ch-rc-fig{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 12px;margin-top:4px}' +
       '.ch-rc-big{font-family:var(--display,Georgia,serif);font-weight:700;font-size:2rem;line-height:1}' +
       '.ch-rc-alt{font-weight:600;font-size:1rem}' +
-      '.ch-rc-slower{font-weight:500;font-size:.85rem;color:var(--ink-soft,#6c6a6b)}' +
       '.ch-rc-stats{font-size:.85rem;color:var(--ink-soft,#6c6a6b);overflow-wrap:anywhere}' +
       '.ch-rc-best{font-size:.85rem;font-weight:600;color:var(--ink,#3A3739)}' +
       '.ch-rc-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px}' +
@@ -104,13 +103,12 @@
     head.appendChild(el('span', 'ch-rc-tag', local ? o.save : 'Fastest'));
     lab.appendChild(head);
 
-    // One layout for both roads (owner, 2026-09-27): the price leads, the time follows, so the two
-    // cards compare line for line. The local road adds how much longer it takes.
+    // One layout for both roads (owner, 2026-09-27): the price leads, then that road's own drive
+    // time — no "+1h" difference, which read as a sum ("6h +1h").
     const fig = el('span', 'ch-rc-fig');
     fig.appendChild(el('span', 'ch-rc-big ch-rc-price', o.price));
     const t = el('span', 'ch-rc-alt');
     t.appendChild(el('span', 'ch-rc-time', o.time));
-    if (local && o.slower) { t.appendChild(document.createTextNode(' ')); t.appendChild(el('span', 'ch-rc-slower', o.slower)); }
     fig.appendChild(t);
     lab.appendChild(fig);
 
