@@ -7,7 +7,7 @@ import { routeText, travelWhenText } from './notifications';
 
 // "Same customer, same trip" — one matcher, shared by the watchdog (which stops chasing a stuck
 // checkout the customer already paid for on a newer booking, #775) and the settle path (which
-// closes that leftover as soon as the newer one is paid). Keep them one definition: if the two
+// closes that leftover as soon as the other one is paid). Keep them one definition: if the two
 // ever disagreed, the watchdog would chase a booking the settle path had decided was a duplicate.
 
 // The person, as the DB keys them: customers.person_key is generated from lower(btrim(email)).
@@ -19,14 +19,16 @@ export function personKey(b: Booking): string {
 const norm = (s: string | undefined | null) => String(s ?? '').trim().toLowerCase();
 
 // Same mode, same travel date, and the same trip: the corridor and departure for a shared seat,
-// the endpoints for a single transfer, every stop for a trip. A trip or transfer with no date
-// yet matches nothing — "to confirm" is not a date two bookings can share.
+// the endpoints (and pick-up time, when both have one) for a single transfer, every stop for a
+// trip. A trip or transfer with no date yet matches nothing — "to confirm" is not a date two
+// bookings can share. One time left to confirm still matches: a retry may skip the time.
 export function sameTrip(a: Booking, b: Booking): boolean {
   if (a.mode === 'shared' && b.mode === 'shared') {
     return a.input.corridorId === b.input.corridorId && a.input.date === b.input.date && norm(a.input.time) === norm(b.input.time);
   }
   if (a.mode === 'single' && b.mode === 'single') {
-    return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
+    const sameTime = !a.input.time || !b.input.time || norm(a.input.time) === norm(b.input.time);
+    return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to) && sameTime;
   }
   if (a.mode === 'trip' && b.mode === 'trip') {
     const start = (x: typeof a) => x.input.dates?.find(Boolean);
@@ -37,6 +39,9 @@ export function sameTrip(a: Booking, b: Booking): boolean {
 }
 
 export const DUPLICATE_CLOSED_BY = 'system:duplicate-close';
+
+// How long a newer unpaid booking must sit untouched (no checkout) before it counts as a leftover.
+export const WALKED_AWAY_MS = 30 * 60_000;
 
 export interface DuplicateCloseDeps {
   bookings: Pick<BookingRepo, 'list' | 'setStatus'>;
@@ -49,8 +54,14 @@ export interface DuplicateCloseDeps {
 // every retry is a NEW booking. Once one of them is paid, the earlier unpaid ones are leftovers:
 // CH-Y5RXW stayed in the ops queue as "Payment not received" after its customer paid on CH-L72HX,
 // the watchdog chased her, and the hand-cancel that cleared it emailed her a cancellation for a
-// trip she had paid for. So when `paid` settles, close the same person's OLDER draft/pending
+// trip she had paid for. So when `paid` settles, close the same person's other draft/pending
 // bookings for the same trip — quietly: no customer email, one info alert for ops.
+//
+// An OLDER one closes at once. A NEWER one closes only once the customer has walked away from it
+// (no checkout for WALKED_AWAY_MS): CH-ULS3L was made after CH-Y8LYF, abandoned, and left behind
+// when CH-Y8LYF was paid five hours later — but a newer booking the customer is still paying could
+// be a real second one (a second car), and cancelling it under an open PayHere page would take
+// money for a cancelled booking.
 //
 // Never touches a booking that has any succeeded payment (whatever its status says). Idempotent:
 // a closed booking is no longer draft/pending, and the compare-and-set in setStatus means a
@@ -58,17 +69,22 @@ export interface DuplicateCloseDeps {
 // seats are only released when this call is the one that cancelled it.
 // Returns the bookings it closed. Throws only if the initial lookup does; callers treat the whole
 // thing as best-effort.
-export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDeps): Promise<Booking[]> {
+export async function closeLeftoverDuplicates(paid: Booking, deps: DuplicateCloseDeps, now = new Date()): Promise<Booking[]> {
   const who = personKey(paid);
   if (!who) return [];
-  const paidAt = Date.parse(paid.createdAt);
+  const paidCreatedAt = Date.parse(paid.createdAt);
   const candidates = (await deps.bookings.list({ status: ['draft', 'payment_pending'] })).filter(
-    (b) => b.id !== paid.id && personKey(b) === who && Date.parse(b.createdAt) < paidAt && sameTrip(b, paid),
+    (b) => b.id !== paid.id && personKey(b) === who && sameTrip(b, paid),
   );
   const closed: Booking[] = [];
   for (const b of candidates) {
     try {
-      if ((await deps.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded')) continue;
+      const payments = await deps.payments.findByBookingId(b.id);
+      if (payments.some((p) => p.status === 'succeeded')) continue;
+      if (Date.parse(b.createdAt) >= paidCreatedAt) {
+        const lastUsed = Math.max(Date.parse(b.createdAt), ...payments.map((p) => p.lastAttemptAt?.getTime() ?? 0));
+        if (now.getTime() - lastUsed < WALKED_AWAY_MS) continue;
+      }
       let cancelled: Booking;
       try {
         cancelled = await deps.bookings.setStatus(b.id, 'cancelled', {
@@ -106,7 +122,7 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
       title: `Closed duplicate ${refs} — customer paid on ${paid.reference}`,
       body: [
         `${paid.input.customer.email} paid for ${routeText(paid)} (travels ${travelWhenText(paid)}) on ${paid.reference}.`,
-        `Their earlier unpaid booking${closed.length > 1 ? 's' : ''} for the same trip ${closed.length > 1 ? 'were' : 'was'} cancelled automatically: ${refs}.`,
+        `Their other unpaid booking${closed.length > 1 ? 's' : ''} for the same trip ${closed.length > 1 ? 'were' : 'was'} cancelled automatically: ${refs}.`,
         'No email was sent to the customer about this. Nothing to do.',
       ].join('\n'),
       dedupeKey: paid.reference,
