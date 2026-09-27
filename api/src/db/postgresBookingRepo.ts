@@ -1,6 +1,16 @@
-import { and, desc, eq, exists, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs, payments, promoCodes } from './schema';
+import {
+  customers,
+  bookings,
+  transferRequests,
+  tripRequests,
+  sharedRequests,
+  bookingLegs,
+  payments,
+  promoCodes,
+  bookingStatusEvents,
+} from './schema';
 import {
   type BookingRepo,
   type NewBooking,
@@ -9,7 +19,10 @@ import {
   type StatusAudit,
   type PromoHold,
   type PromoBookingUse,
+  type BookingStatusEvent,
+  type BookingStatusEventMismatch,
   BookingNotFoundError,
+  BookingTransitionContextRequiredError,
   generateReference,
   PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
@@ -27,9 +40,33 @@ import { assertTransition, IllegalTransitionError, type BookingStatus } from '..
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 import { track } from '../observability/track';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 type BookingRow = typeof bookings.$inferSelect;
+type BookingStatusEventRow = typeof bookingStatusEvents.$inferSelect;
 type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export interface PostgresBookingRepoOptions {
+  transitionTrackingEnabled?: boolean;
+}
+
+function buildStatusEvent(row: BookingStatusEventRow): BookingStatusEvent {
+  return {
+    id: row.id,
+    bookingId: row.bookingId,
+    fromStatus: row.fromStatus as BookingStatus,
+    toStatus: row.toStatus as BookingStatus,
+    source: row.source as BookingStatusEvent['source'],
+    actorType: row.actorType as BookingStatusEvent['actorType'],
+    actorId: row.actorId,
+    reason: row.reason,
+    requestId: row.requestId,
+    runId: row.runId,
+    relatedEntityType: row.relatedEntityType as BookingStatusEvent['relatedEntityType'],
+    relatedEntityId: row.relatedEntityId,
+    occurredAt: row.occurredAt.toISOString(),
+  };
+}
 
 // A Postgres unique-violation (23505). Drizzle wraps the driver error as `Error: Failed
 // query…` with the real PostgresError on `.cause`; the raw postgres.js error carries
@@ -212,7 +249,10 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
 }
 
 export class PostgresBookingRepo implements BookingRepo {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: PostgresBookingRepoOptions = {},
+  ) {}
 
   // SQL twin of promoUseState() (domain/promoCode.ts); bookingPromo.test.ts holds both to the same cases.
   private succeededPayment() {
@@ -545,29 +585,99 @@ export class PostgresBookingRepo implements BookingRepo {
     return fresh;
   }
 
-  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
-    const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
-    if (!row) throw new BookingNotFoundError(id);
-    const from = row.status as BookingStatus;
-    assertTransition(from, to);
-    // Compare-and-set: only move the row if it is STILL in `from`, so two concurrent
-    // transitions (e.g. a double-cancel) can't both win and double-release seats.
-    const [updated] = await this.db
-      .update(bookings)
-      .set({
-        status: to,
-        // Only a cancellation carries a reason; every other transition leaves these untouched.
-        ...(to === 'cancelled' && audit
-          ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
-          : {}),
-      })
-      .where(and(eq(bookings.id, id), eq(bookings.status, from)))
-      .returning();
-    if (!updated) {
-      const [current] = await this.db.select().from(bookings).where(eq(bookings.id, id));
-      throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, to);
-    }
+  async setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking> {
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(bookings).where(eq(bookings.id, id));
+      if (!row) throw new BookingNotFoundError(id);
+      const from = row.status as BookingStatus;
+      assertTransition(from, to);
+      if (this.options.transitionTrackingEnabled && !context) {
+        throw new BookingTransitionContextRequiredError();
+      }
+
+      // Compare-and-set: only move the row if it is STILL in `from`, so two concurrent
+      // transitions cannot both win. The event insert below shares this transaction.
+      const [moved] = await tx
+        .update(bookings)
+        .set({
+          status: to,
+          // Only a cancellation carries a reason; every other transition leaves these untouched.
+          ...(to === 'cancelled' && audit
+            ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
+            : {}),
+        })
+        .where(and(eq(bookings.id, id), eq(bookings.status, from)))
+        .returning();
+      if (!moved) {
+        const [current] = await tx.select().from(bookings).where(eq(bookings.id, id));
+        throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, to);
+      }
+
+      if (this.options.transitionTrackingEnabled && context) {
+        await tx.insert(bookingStatusEvents).values({
+          bookingId: id,
+          fromStatus: from,
+          toStatus: to,
+          source: context.source,
+          actorType: context.actorType,
+          actorId: context.actorId ?? null,
+          reason: context.reason ?? audit?.reason ?? null,
+          requestId: context.requestId ?? null,
+          runId: context.runId ?? null,
+          relatedEntityType: context.relatedEntityType ?? null,
+          relatedEntityId: context.relatedEntityId ?? null,
+        });
+      }
+      return moved;
+    });
     return this.assemble(updated);
+  }
+
+  async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
+    const rows = await this.db
+      .select()
+      .from(bookingStatusEvents)
+      .where(eq(bookingStatusEvents.bookingId, bookingId))
+      .orderBy(
+        asc(bookingStatusEvents.occurredAt),
+        asc(bookingStatusEvents.id),
+      );
+    return rows.map(buildStatusEvent);
+  }
+
+  async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
+    const latest = this.db
+      .selectDistinctOn([bookingStatusEvents.bookingId], {
+        bookingId: bookingStatusEvents.bookingId,
+        eventStatus: bookingStatusEvents.toStatus,
+      })
+      .from(bookingStatusEvents)
+      .orderBy(
+        bookingStatusEvents.bookingId,
+        desc(bookingStatusEvents.occurredAt),
+        desc(bookingStatusEvents.id),
+      )
+      .as('latest_booking_status_event');
+    const rows = await this.db
+      .select({
+        bookingId: bookings.id,
+        currentStatus: bookings.status,
+        eventStatus: latest.eventStatus,
+      })
+      .from(bookings)
+      .innerJoin(latest, eq(bookings.id, latest.bookingId))
+      .where(ne(bookings.status, latest.eventStatus))
+      .orderBy(asc(bookings.id));
+    return rows.map((row) => ({
+      bookingId: row.bookingId,
+      currentStatus: row.currentStatus as BookingStatus,
+      eventStatus: row.eventStatus as BookingStatus,
+    }));
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {

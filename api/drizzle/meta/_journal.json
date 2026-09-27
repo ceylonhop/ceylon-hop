@@ -407,6 +407,13 @@
       "when": 1790496000000,
       "tag": "0057_rate_card_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790553600000,
+      "tag": "0058_booking_status_events",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryBookingRepo, type NewBooking, personKeyFor } from './bookingRepo';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -15,6 +16,13 @@ const sample: NewBooking = {
   total: 4000,
   amountDueNow: 4000,
   currency: 'USD',
+};
+
+const websiteCustomer: BookingTransitionContext = {
+  source: 'website',
+  actorType: 'customer',
+  actorId: 'maya@example.com',
+  requestId: '11111111-1111-4111-8111-111111111111',
 };
 
 describe('InMemoryBookingRepo', () => {
@@ -48,6 +56,83 @@ describe('InMemoryBookingRepo', () => {
     const updated = await repo.setStatus(a.id, 'payment_pending');
     expect(updated.status).toBe('payment_pending');
     expect((await repo.get(a.id))?.status).toBe('payment_pending');
+  });
+
+  it('keeps the transition ledger empty while the rollout flag is off', async () => {
+    const repo = new InMemoryBookingRepo();
+    const a = await repo.create(sample);
+    await repo.setStatus(a.id, 'payment_pending', undefined, websiteCustomer);
+    expect(await repo.listStatusEvents(a.id)).toEqual([]);
+  });
+
+  it('atomically records one applied transition with its provenance when enabled', async () => {
+    const repo = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const a = await repo.create(sample);
+
+    await repo.setStatus(a.id, 'payment_pending', undefined, websiteCustomer);
+
+    expect(await repo.listStatusEvents(a.id)).toMatchObject([
+      {
+        bookingId: a.id,
+        fromStatus: 'draft',
+        toStatus: 'payment_pending',
+        source: 'website',
+        actorType: 'customer',
+        actorId: 'maya@example.com',
+        requestId: '11111111-1111-4111-8111-111111111111',
+        runId: null,
+        reason: null,
+        relatedEntityType: null,
+        relatedEntityId: null,
+      },
+    ]);
+  });
+
+  it('records neither a baseline nor an illegal transition', async () => {
+    const repo = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const a = await repo.create(sample);
+    expect(await repo.listStatusEvents(a.id)).toEqual([]);
+
+    await expect(
+      repo.setStatus(a.id, 'completed', undefined, websiteCustomer),
+    ).rejects.toThrow();
+    expect((await repo.get(a.id))?.status).toBe('draft');
+    expect(await repo.listStatusEvents(a.id)).toEqual([]);
+  });
+
+  it('lets only one concurrent transition win and records only that applied fact', async () => {
+    const repo = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const a = await repo.create(sample);
+
+    const results = await Promise.allSettled([
+      repo.setStatus(a.id, 'payment_pending', undefined, websiteCustomer),
+      repo.setStatus(a.id, 'payment_pending', undefined, websiteCustomer),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await repo.listStatusEvents(a.id)).toHaveLength(1);
+  });
+
+  it('returns status history in a stable applied order', async () => {
+    const repo = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const a = await repo.create(sample);
+    await repo.setStatus(a.id, 'payment_pending', undefined, websiteCustomer);
+    await repo.setStatus(a.id, 'paid', undefined, {
+      source: 'payment_webhook',
+      actorType: 'provider',
+      relatedEntityType: 'payment',
+      relatedEntityId: 'pay-1',
+      requestId: '22222222-2222-4222-8222-222222222222',
+    });
+
+    const first = await repo.listStatusEvents(a.id);
+    const second = await repo.listStatusEvents(a.id);
+    expect(second).toEqual(first);
+    expect(first.map((event) => [event.fromStatus, event.toStatus])).toEqual([
+      ['draft', 'payment_pending'],
+      ['payment_pending', 'paid'],
+    ]);
   });
 
   it('rejects an illegal transition and leaves the row unchanged', async () => {

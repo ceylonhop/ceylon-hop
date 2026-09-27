@@ -24,6 +24,7 @@ import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -46,6 +47,7 @@ const sample: NewBooking = {
 // Runs only when a test database is configured (CI provisions an ephemeral Postgres).
 describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
+  let trackedBookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
   let paymentEvents: PostgresPaymentEventRepo;
   let tasks: PostgresConciergeTaskRepo;
@@ -63,6 +65,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     await seedCorridors(sql);
     bookings = new PostgresBookingRepo(conn.db);
+    trackedBookings = new PostgresBookingRepo(conn.db, { transitionTrackingEnabled: true });
     payments = new PostgresPaymentRepo(conn.db);
     paymentEvents = new PostgresPaymentEventRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
@@ -152,6 +155,89 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const moved = await bookings.setStatus(b.id, 'payment_pending');
     expect(moved.status).toBe('payment_pending');
     await expect(bookings.setStatus(b.id, 'completed')).rejects.toThrow();
+  });
+
+  it('atomically records applied transitions and preserves stable order', async () => {
+    const b = await trackedBookings.create(sample);
+    const firstContext: BookingTransitionContext = {
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: '11111111-1111-4111-8111-111111111111',
+    };
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, firstContext);
+    await trackedBookings.setStatus(b.id, 'paid', undefined, {
+      source: 'payment_webhook',
+      actorType: 'provider',
+      requestId: '22222222-2222-4222-8222-222222222222',
+      relatedEntityType: 'payment',
+      relatedEntityId: 'payment-1',
+    });
+
+    const firstRead = await trackedBookings.listStatusEvents(b.id);
+    expect((await trackedBookings.listStatusEvents(b.id))).toEqual(firstRead);
+    expect(firstRead.map((event) => [event.fromStatus, event.toStatus])).toEqual([
+      ['draft', 'payment_pending'],
+      ['payment_pending', 'paid'],
+    ]);
+    expect(firstRead[0]).toMatchObject({
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: firstContext.requestId,
+      runId: null,
+    });
+  });
+
+  it('writes no event for a legacy row or an illegal transition', async () => {
+    const legacy = await bookings.create(sample);
+    await bookings.setStatus(legacy.id, 'payment_pending');
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+    await expect(
+      trackedBookings.setStatus(legacy.id, 'completed', undefined, {
+        source: 'system', actorType: 'system',
+      }),
+    ).rejects.toThrow();
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+  });
+
+  it('rolls back the status when the transition event insert fails', async () => {
+    const b = await trackedBookings.create(sample);
+    await expect(
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+        source: 'website',
+        actorType: 'customer',
+        requestId: 'not-a-uuid',
+      }),
+    ).rejects.toThrow();
+    expect((await trackedBookings.get(b.id))?.status).toBe('draft');
+    expect(await trackedBookings.listStatusEvents(b.id)).toEqual([]);
+  });
+
+  it('records only the winning concurrent transition', async () => {
+    const b = await trackedBookings.create(sample);
+    const context: BookingTransitionContext = { source: 'system', actorType: 'system' };
+    const results = await Promise.allSettled([
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await trackedBookings.listStatusEvents(b.id)).toHaveLength(1);
+  });
+
+  it('reconciles a booking whose current status differs from its latest event', async () => {
+    const b = await trackedBookings.create(sample);
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+      source: 'system', actorType: 'system',
+    });
+    await db.update(bookingRows).set({ status: 'cancelled' }).where(eq(bookingRows.id, b.id));
+
+    expect(await trackedBookings.listStatusEventMismatches()).toContainEqual({
+      bookingId: b.id,
+      currentStatus: 'cancelled',
+      eventStatus: 'payment_pending',
+    });
   });
 
   it('persists and reads back a multi-stop trip', async () => {
