@@ -1,6 +1,11 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter, SendOutcome } from '../adapters/email';
+import type {
+  CustomerCommunicationKind,
+  CustomerCommunicationTracking,
+  EmailAdapter,
+  SendOutcome,
+} from '../adapters/email';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -29,6 +34,30 @@ const SANS = "'Poppins', Helvetica, Arial, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
+
+const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
+  confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
+  details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
+  booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
+  refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
+  no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
+  trip_reminder: { templateKey: 'trip-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  review_request: { templateKey: 'review-request', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_recovery: { templateKey: 'payment-recovery', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
+  deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
+};
+
+function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
+  return {
+    bookingId: booking.id,
+    kind,
+    ...trackingDefaults[kind],
+    templateVersion: '1',
+    trackingKey: `${booking.id}:${kind}`,
+  };
+}
 
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
@@ -536,6 +565,7 @@ export async function sendBookingConfirmation(
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking, links.manage, links.coverage),
     text: renderText(booking, links.manage, links.coverage),
+    tracking: emailTracking(booking, 'confirmation'),
   });
 }
 
@@ -567,6 +597,7 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
     subject: `Your Ceylon Hop booking was cancelled — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'cancellation'),
   });
 }
 
@@ -605,6 +636,7 @@ export async function sendRefundConfirmation(
     subject: `Your Ceylon Hop refund is processed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'refund'),
   });
 }
 
@@ -642,6 +674,7 @@ export async function sendTripReminder(
     subject: `Your Ceylon Hop trip is coming up — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'trip_reminder'),
   });
 }
 
@@ -674,6 +707,7 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
     subject: `How was your trip? — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'review_request'),
   });
 }
 
@@ -728,6 +762,7 @@ export async function sendPaymentIncomplete(
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_recovery'),
   });
 }
 
@@ -778,6 +813,7 @@ export async function sendPaymentFailed(
     subject: `Your payment didn’t go through — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_failed'),
   });
 }
 
@@ -821,6 +857,7 @@ export async function sendDepositReceived(
     subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'deposit_received'),
   });
 }
 
@@ -860,6 +897,7 @@ export async function sendBookingConfirmed(
     subject: `You’re confirmed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'booking_confirmed'),
   });
 }
 
@@ -891,6 +929,7 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
     subject: `Your Ceylon Hop pickup — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'no_show_notice'),
   });
 }
 
@@ -928,6 +967,7 @@ export async function sendDetailsNeeded(
     subject: `We need a couple of details — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'details_needed'),
   });
 }
 

@@ -37,6 +37,7 @@ import { PostgresRefundRepo } from './db/postgresRefundRepo';
 import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
+import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -171,6 +172,8 @@ const app = createApp({
   paygw: ridePaygw,
   maps,
   email,
+  customerCommunications: new PostgresCustomerCommunicationRepo(db),
+  communicationTrackingEnabled: config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED,
   alerts,
   alertLog,
   pingDb: async () => {
