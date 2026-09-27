@@ -42,8 +42,12 @@
       '.ch-rc-opt:hover{border-color:#cfc9b6}' +
       '.ch-rc-opt:has(input:checked){border-color:var(--btn-accent,#24758A);background:#f3f9fa;box-shadow:0 0 0 1px var(--btn-accent,#24758A)}' +
       '.ch-rc-opt.is-on{border-color:var(--btn-accent,#24758A);background:#f3f9fa;box-shadow:0 0 0 1px var(--btn-accent,#24758A)}' +
-      '.ch-rc-opt input{grid-row:1 / span 4;width:20px;height:20px;margin:2px 0 0;border-radius:50%;accent-color:var(--btn-accent,#24758A);cursor:pointer}' +
-      '.ch-rc-opt input:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:3px}' +
+      // Drawn, not native: a native radio's focus ring (outline or shadow) is square in Chromium
+      // whatever its border-radius. Still a real <input type=radio>, so keys and AT are unchanged.
+      '.ch-rc-opt input{grid-row:1 / span 4;appearance:none;-webkit-appearance:none;box-sizing:border-box;width:20px;height:20px;margin:2px 0 0;border-radius:50%;border:2px solid #8a8789;background:var(--paper,#fffdf8);cursor:pointer}' +
+      '.ch-rc-opt input:checked{border-color:var(--btn-accent,#24758A);background:radial-gradient(circle,var(--btn-accent,#24758A) 0 4.5px,var(--paper,#fffdf8) 5px)}' +
+      // The keyboard ring: a round two-ring shadow (paper gap, then the accent).
+      '.ch-rc-opt input:focus-visible{outline:none;box-shadow:0 0 0 3px var(--paper,#fffdf8),0 0 0 5px var(--btn-accent,#24758A)}' +
       '.ch-rc-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}' +
       '.ch-rc-sw{flex:none;width:26px;height:0;border-top:4px solid #2F6DB5;border-radius:2px}' +
       '.ch-rc-opt.is-local .ch-rc-sw{border-top:4px dashed #D9861A;border-radius:0}' +
