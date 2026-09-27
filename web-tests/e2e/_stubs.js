@@ -138,12 +138,15 @@ export async function installEstimateStub(page, opts = {}) {
       estimated = false,
       legs = [{ from: 'A', to: 'B', distanceKm: 100, durationMin: 120 }],
       delayMs = 0,
+      // Anything else the spec returns (route choice's `routeChoice`, say) goes out as-is, so a
+      // response field the defaults above don't know about can still be stubbed.
+      ...rest
     } = o;
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
     if (status !== 200) {
       return r.fulfill({ status, contentType: 'application/json', body: '{"error":"not_found"}' });
     }
-    return r.fulfill(json({ totalCents, amountDueNowCents, estimated, legs }));
+    return r.fulfill(json({ ...rest, totalCents, amountDueNowCents, estimated, legs }));
   });
 }
 
