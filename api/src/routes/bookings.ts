@@ -29,7 +29,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
-import type { MapsAdapter, DistanceResult } from '../adapters/maps';
+import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
@@ -73,16 +73,28 @@ const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
 const UNPRICED_NOTE_PREFIX = 'unpriced booking — set a price before this can be paid';
 
 // One maps lookup per route pair per request: engine pricing and the M8 enrichment share
-// results, so going engine-first doesn't double the billed Google calls. Exported: quote.ts's
-// /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a (from,to)
-// pair (e.g. one corridor priced for car and for van) share one lookup instead of both racing
-// a cold cache miss under Promise.all.
+// results, so going engine-first doesn't double the billed Google calls — and the route-choice
+// comparison, so an estimate that measures and compares one pair bills it once. Exported:
+// quote.ts's /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a
+// (from,to) pair (e.g. one corridor priced for car and for van) share one lookup instead of both
+// racing a cold cache miss under Promise.all.
 export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
   const cache = new Map<string, Promise<DistanceResult | null>>();
+  const variants = new Map<string, Promise<RouteVariants | null>>();
   return {
     provider: maps.provider,
     places: (q) => maps.places(q),
-    distanceVariants: (from, to) => maps.distanceVariants(from, to),
+    distanceVariants(from, to) {
+      const key = `${from}|${to}`;
+      let hit = variants.get(key);
+      if (!hit) {
+        hit = maps.distanceVariants(from, to);
+        variants.set(key, hit);
+        // A rejected comparison must not poison the request: drop it so a retry can ask again.
+        hit.catch(() => variants.delete(key));
+      }
+      return hit;
+    },
     distance(from, to) {
       const key = `${from}|${to}`;
       let hit = cache.get(key);

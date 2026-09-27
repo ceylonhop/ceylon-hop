@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { EXTRA_CODES } from './rateCard';
+import { ROUTE_VARIANTS } from './routeChoice';
 
 const Place = z.string().trim().min(1).max(500);
 const Identity = {
@@ -27,6 +28,8 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
             .object({
               from: Place,
               to: Place,
+              // Customer route choice (spec 2026-09-26 §4.1): ASK for a road, never send a distance.
+              routeVariant: z.enum(ROUTE_VARIANTS).optional(),
             })
             .strict(),
         )
