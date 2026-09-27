@@ -167,6 +167,25 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.input.from).toBe('Colombo Airport');
   });
 
+  // The in-memory repo copies every field it is handed, so only this round trip proves the note
+  // survives Postgres. The note is bound as a query parameter, never spliced into SQL: text that
+  // looks like an attack is stored and read back as the inert characters it is.
+  it("keeps the customer's note exactly as typed — SQL and HTML stay plain text", async () => {
+    const hostile = "Robert'); DROP TABLE bookings;-- <script>alert(1)</script>\n' OR '1'='1";
+    const b = await bookings.create({ ...sample, customerNotes: hostile });
+    expect((await bookings.get(b.id))?.customerNotes).toBe(hostile);
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from bookings where id = ${b.id}`;
+    expect(n).toBe(1); // the table is still there, and so is the row
+    expect((await bookings.get((await bookings.create(sample)).id))?.customerNotes).toBeNull();
+  });
+
+  it('the database itself refuses a customer note over 1,000 characters', async () => {
+    const b = await bookings.create(sample);
+    await expect(sql`update bookings set customer_notes = ${'x'.repeat(1001)} where id = ${b.id}`)
+      .rejects.toMatchObject({ code: '23514', constraint_name: 'bookings_customer_notes_length' });
+    await expect(sql`update bookings set customer_notes = ${'x'.repeat(1000)} where id = ${b.id}`).resolves.toBeDefined();
+  });
+
   it('is idempotent on the booking idempotency key', async () => {
     const key = `it-${Date.now()}`;
     const a = await bookings.create(sample, { idempotencyKey: key });

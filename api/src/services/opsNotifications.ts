@@ -274,6 +274,8 @@ function bookingFacts(b: Booking) {
     ['Name', `${c.firstName} ${c.lastName}`],
     ['Email', c.email],
     ['WhatsApp', c.whatsapp, whatsappButton(c.whatsapp)],
+    // What they wrote in "Anything we should know?" — only when they wrote something.
+    ...(b.customerNotes ? [['Note', b.customerNotes] as SectionRow] : []),
   ];
   // What a paid booking actually took: a deposit booking charges amountDueNow, not the total.
   const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;

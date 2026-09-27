@@ -234,6 +234,102 @@ describe('POST /bookings/single', () => {
   });
 });
 
+// The details step asks "Anything we should know?" (hotel name, dietary needs, surf gear). Until
+// 2026-09-27 nothing read that box, so what a customer wrote there never reached ops. The note is
+// the customer's own free text, so it is bounded and cleaned at the door, then kept as plain text.
+describe("the customer's note is kept on the booking", () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  // A future shared service day (Wed=3 / Sat=6), so a shared request reaches bookings.create.
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  it('keeps a transfer note, trimmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: '  Hilton Colombo, two surfboards  ' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hilton Colombo, two surfboards');
+  });
+
+  it('keeps the note on a trip and on a shared seat', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const trip = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: 'Vegetarian',
+    });
+    const shared = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+      customer: valid.customer, customerNotes: 'One big backpack',
+    });
+    expect(trip.status).toBe(201);
+    expect(shared.status).toBe(201);
+    expect((await bookings.get((await trip.json()).id))?.customerNotes).toBe('Vegetarian');
+    expect((await bookings.get((await shared.json()).id))?.customerNotes).toBe('One big backpack');
+  });
+
+  it('stores a blank note as no note', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const blank = await (await post(app, { ...valid, customerNotes: ' \n\t ' })).json();
+    const none = await (await post(app, valid)).json();
+    expect((await bookings.get(blank.id))?.customerNotes).toBeNull();
+    expect((await bookings.get(none.id))?.customerNotes).toBeNull();
+  });
+
+  // A NUL byte is rejected by Postgres text columns, so left in it would 500 the booking.
+  it('keeps line breaks and drops invisible control characters', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: 'Hotel: Galle Face\r\nFlight\u0000 UL\u0007 504\u001b' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hotel: Galle Face\nFlight UL 504');
+  });
+
+  it('refuses a note over 1,000 characters on every booking route, and creates no booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const long = 'x'.repeat(1001);
+    const responses = [
+      await post(app, { ...valid, customerNotes: long }),
+      await jpost(app, '/bookings/trip', {
+        stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+        pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: long,
+      }),
+      await jpost(app, '/bookings/shared', {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+        customer: valid.customer, customerNotes: long,
+      }),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('invalid_notes');
+      expect(body.message).toContain('1,000');
+    }
+    expect(await bookings.list()).toHaveLength(0);
+    // Exactly at the limit is fine.
+    expect((await post(app, { ...valid, customerNotes: 'x'.repeat(1000) })).status).toBe(201);
+  });
+
+  it('refuses a note that is not text', async () => {
+    const app = createApp();
+    for (const customerNotes of [42, { $gt: '' }, ['a', 'b'], true]) {
+      const res = await post(app, { ...valid, customerNotes });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('invalid_notes');
+    }
+  });
+});
+
 describe('GET /bookings/view (tokenized customer view)', () => {
   const SECRET = 'dev-booking-link-secret-change-me';
 

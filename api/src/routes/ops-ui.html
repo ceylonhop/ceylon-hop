@@ -3843,6 +3843,10 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
+     public, so it is escaped like every other value here; pre-line keeps their line breaks. */
+  const custNote=d?.booking?.customerNotes;
+  const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -3853,6 +3857,7 @@ function renderSheet(){
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
+        ${noteRow}
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>

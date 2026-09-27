@@ -223,6 +223,23 @@ describe('teamPaidEmail', () => {
     const evil = { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<img src=x>' } } } as typeof b;
     expect(teamPaidEmail(evil, '').html).not.toContain('<img src=x>');
   });
+
+  it("carries the customer's note, escaped, and leaves the subject alone", () => {
+    const plain = sampleBooking('single');
+    const b = { ...plain, customerNotes: 'Hilton Colombo <img src=x onerror=alert(1)>\nTwo surfboards' };
+    const m = teamPaidEmail(b, '');
+    expect(m.subject).toBe(teamPaidEmail(plain, '').subject);
+    expect(m.html).toContain('Hilton Colombo &lt;img src=x onerror=alert(1)&gt;');
+    expect(m.html).not.toContain('<img src=x');
+    expect(m.text).toMatch(/^Note: +Hilton Colombo/m);
+    expect(m.text).toContain('Two surfboards');
+  });
+
+  it('shows no note row when the customer left none', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '');
+    expect(m.text).not.toMatch(/^Note:/m);
+    expect(m.html).not.toContain('>Note<');
+  });
 });
 
 describe('teamCancelledEmail / teamRefundedEmail', () => {

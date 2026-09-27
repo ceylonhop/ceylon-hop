@@ -935,7 +935,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="field"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name"><option>Sri Lanka</option><option>Australia</option><option>Austria</option><option>Belgium</option><option>Canada</option><option>China</option><option>Denmark</option><option>Finland</option><option>France</option><option>Germany</option><option>India</option><option>Ireland</option><option>Italy</option><option>Japan</option><option>Netherlands</option><option>New Zealand</option><option>Norway</option><option>Singapore</option><option>Spain</option><option>Sweden</option><option>Switzerland</option><option>United Arab Emirates</option><option>United Kingdom</option><option>United States</option><option>Other</option></select></div>
         <div class="field"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="77 123 4567"></div>
       </div>
-      <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
+      <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" maxlength="1000" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
 
       <!-- Billing details (2026-08-03). These go to the card gateway, and until now this page
            collected none of them: PayHere asked for the address in its own popup a step later,
@@ -1131,6 +1131,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=8e0695a542"></script>
+<script src="booking.js?v=2e7cfce891"></script>
 </body>
 </html>

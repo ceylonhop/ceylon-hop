@@ -2813,6 +2813,10 @@ async function createApiBooking(){
     bill.lastName  = document.getElementById('f-blast').value.trim();
   }
   payload.billing = bill;
+  // The "Anything we should know?" note (2026-09-27) — hotel, dietary needs, surf gear. Nothing
+  // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
+  const notes = document.getElementById('f-notes').value.trim();
+  if(notes) payload.customerNotes = notes;
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);

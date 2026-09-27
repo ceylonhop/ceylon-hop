@@ -414,6 +414,13 @@
       "when": 1790553600000,
       "tag": "0058_booking_status_events",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1790640000000,
+      "tag": "0059_booking_customer_notes",
+      "breakpoints": true
     }
   ]
 }
