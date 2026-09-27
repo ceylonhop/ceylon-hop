@@ -230,6 +230,32 @@ describe('POST /bookings/trip — route choice (spec §4.2)', () => {
     distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: null, hasChoice: false }),
   };
 
+  // #849 (self-arranged gaps) and route choice meet in one loop: a gap wire is skipped entirely —
+  // never measured, never compared, never charged — while the driven legs are priced on their road.
+  it('with a gap and a local road: the gap costs nothing and the local leg prices at the toll-free km', async () => {
+    const seen: string[] = [];
+    const counting: MapsAdapter = {
+      ...forkMaps,
+      distance: async (f, t) => { seen.push(`d:${f}|${t}`); return { km: 335, durationMin: 299 }; },
+      distanceVariants: async (f, t) => { seen.push(`v:${f}|${t}`); return forkMaps.distanceVariants(f, t); },
+    };
+    const stops = ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Galle'];
+    const trip = { ...valid, stops, nights: [0, 1, 1, 0], dates: [futureIsoDate(30), '', futureIsoDate(33)], vehicleType: 'car', gaps: [1] };
+    const bookings = new InMemoryBookingRepo();
+    const local = await postTrip(createApp({ bookings, maps: counting }), { ...trip, routeVariants: ['no_tolls', 'fastest', 'fastest'] });
+    expect(local.status).toBe(201);
+    const localBody = await local.json();
+    // the gap (Kandy → Ella) is never looked at, not even for a road comparison
+    expect(seen.some((x) => x.includes('Kandy|Ella'))).toBe(false);
+    // the stored distance is the driven legs only, the first on the local road: 213 + 335
+    expect(localBody.distanceKm).toBe(213 + 335);
+    // cheaper than the same gapped trip on the expressway, which is cheaper than no gap at all
+    const express = await (await postTrip(createApp({ maps: forkMaps }), { ...trip, routeVariants: ['fastest', 'fastest', 'fastest'] })).json();
+    const noGap = await (await postTrip(createApp({ maps: forkMaps }), { ...trip, gaps: undefined, dates: [futureIsoDate(30), futureIsoDate(31), futureIsoDate(33)] })).json();
+    expect(localBody.total).toBeLessThan(express.total);
+    expect(express.total).toBeLessThan(noGap.total);
+  });
+
   it('rejects routeVariants of the wrong length (400 invalid_request)', async () => {
     const app = createApp({ maps: forkMaps });
     const res = await postTrip(app, {
