@@ -443,6 +443,21 @@ function customerNotesFrom(body: unknown): { ok: true; notes: string | undefined
 }
 const INVALID_NOTES = { error: 'invalid_notes', message: 'Please keep your note to 1,000 characters or fewer.' };
 
+// A trip's self-arranged gaps (TripInput.gaps) must name real, distinct wires and leave at least
+// one leg for us to drive. A chauffeur-guide keeps the car for the whole trip, so it has no gaps —
+// and pricing one would skip distance the car really covers. The planner never produces either
+// case (booking.js only offers chauffeur once every wire is dated, and a gap wire never is).
+function tripGapsProblem(t: TripInput): string | null {
+  const gaps = t.gaps ?? [];
+  if (!gaps.length) return null;
+  const wires = t.stops.length - 1;
+  if (t.serviceType === 'chauffeur') return 'a chauffeur-guide trip cannot have self-arranged legs';
+  if (gaps.some((g) => g >= wires)) return `this ${t.stops.length}-stop trip has legs 0–${wires - 1} only`;
+  if (new Set(gaps).size !== gaps.length) return 'each leg can be listed once';
+  if (gaps.length >= wires) return 'at least one leg must be one we drive';
+  return null;
+}
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -558,6 +573,8 @@ function invalidRequest(error: ZodError) {
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     const notes = customerNotesFrom(body);
     if (!notes.ok) return c.json(INVALID_NOTES, 400);
+    const gapsProblem = tripGapsProblem(parsed.data);
+    if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -604,10 +621,12 @@ function invalidRequest(error: ZodError) {
     // M8 — total road distance/duration across the trip's legs (best-effort; null if any
     // leg can't be resolved, since a partial sum would understate the trip).
     const stops = parsed.data.stops;
+    const gaps = new Set(parsed.data.gaps ?? []);
     let tripKm: number | null = 0;
     let tripMin: number | null = 0;
     try {
       for (let i = 0; i < stops.length - 1; i++) {
+        if (gaps.has(i)) continue; // the traveller's own stretch — not distance we drive
         const leg = await legMaps.distance(stops[i], stops[i + 1]);
         if (!leg) {
           tripKm = null;

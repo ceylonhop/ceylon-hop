@@ -104,6 +104,37 @@ describe('buildEstimateIntent — trip + private', () => {
   });
 });
 
+// The server prices the booking from the POST, not from the estimate above — so the POST has to
+// say which wires are gaps, or the API charges them as legs (shown $143, charged $209 on prod,
+// 2026-09-27).
+describe('createApiBooking — trip payload', () => {
+  async function tripPayload(query) {
+    const w = loadBooking(query);
+    w.eval(`
+      window.CEYLON_HOP_API = 'https://api.test';
+      window.__tripBody = null;
+      window.fetch = function(url, init){
+        if(String(url).indexOf('/bookings/trip') !== -1) window.__tripBody = JSON.parse(init.body);
+        return Promise.resolve({ ok: true, status: 200, json: function(){ return Promise.resolve({ quoteId: 'q1' }); } });
+      };
+      window.__done = createApiBooking();
+    `);
+    await w.__done;
+    return ev(w, 'window.__tripBody');
+  }
+
+  it('names the gap wires, alongside the full stop list', async () => {
+    const body = await tripPayload('mode=trip&stops=Colombo|Kandy|Ella|Galle&nights=1,1,1&dates=,,,&kms=&gaps=1&vehicle=car&price=200&ad=2');
+    expect(body.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
+    expect(body.gaps).toEqual([1]);
+  });
+
+  it('sends no gaps field for a trip without one', async () => {
+    const body = await tripPayload('mode=trip&stops=Colombo|Kandy|Ella&nights=1,2&dates=,,&kms=&gaps=&vehicle=car&price=200&ad=2');
+    expect(body).not.toHaveProperty('gaps');
+  });
+});
+
 describe('buildEstimateIntent — trip + chauffeur', () => {
   // Chauffeur legs stay 2 days apart, mirroring the api suite's own date-bomb guard
   // (a booking-route test convention: web-tests/unit/no-date-bombs.test.js forbids literals).

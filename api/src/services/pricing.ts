@@ -142,7 +142,11 @@ export async function priceTrip(
   discount?: DiscountRequest,
 ): Promise<PriceOutcome> {
   const legs: { from: string; to: string; distanceKm: number }[] = [];
+  const gaps = new Set(input.gaps ?? []);
   for (let i = 0; i < input.stops.length - 1; i++) {
+    // A gap is the traveller's own stretch: not a leg we drive, so never measured or charged.
+    // (Chauffeur trips can't carry gaps — the route refuses them.)
+    if (gaps.has(i)) continue;
     const from = input.stops[i];
     const to = input.stops[i + 1];
     let leg = null;
@@ -208,7 +212,7 @@ export function quoteTrip(input: TripInput): { currency: string; total: number }
     const days = Math.max(nights + 1, legs);
     return { currency: 'USD', total: days * CHAUFFEUR_DAY_CENTS };
   }
-  const legs = Math.max(0, input.stops.length - 1);
+  const legs = Math.max(0, input.stops.length - 1 - (input.gaps?.length ?? 0));
   const perLeg = LEG_BASE_CENTS + (input.vehicleType === 'van' ? LEG_VAN_SURCHARGE_CENTS : 0);
   return { currency: 'USD', total: legs * perLeg };
 }

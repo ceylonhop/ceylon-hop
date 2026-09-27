@@ -4,6 +4,7 @@ import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { futureIsoDate } from '../testSupport/dates';
 
 // Anchored to "now" so the past-date rule never expires these (see testSupport/dates).
@@ -135,5 +136,77 @@ describe('POST /bookings/trip', () => {
     expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].html).toContain('Kandy'); // trip route line
+  });
+});
+
+// A planner "gap" is a stretch the traveller arranges themselves (plan.js:753 tells them "we won't
+// add or charge for this stretch"). booking.js prices it at $0 and leaves it out of the estimate
+// intent (booking.js:1462-1468), so the booking must be charged for the driven legs only.
+describe('POST /bookings/trip — a self-arranged gap is not charged', () => {
+  // CMB → Kandy (we drive) · Kandy → Ella (the traveller's own train, wire 1) · Ella → Galle (we drive)
+  const stops = ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Galle'];
+  const gapped = {
+    ...valid,
+    stops,
+    nights: [0, 1, 1, 0],
+    dates: [futureIsoDate(30), '', futureIsoDate(33)], // plan.js never dates a gap wire
+    vehicleType: 'car',
+  };
+
+  it('charges only the driven legs, matching the estimate the booking page showed', async () => {
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ quoteV2Enabled: true, conciergeTasks });
+    // Exactly buildEstimateIntent()'s private-trip intent: one leg per NON-gap wire.
+    const shown = await (await app.request('/quote/v2/estimate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        product: 'private', vehicle: 'car', pax: 2, bags: 0, extras: [],
+        legs: [{ from: stops[0], to: stops[1] }, { from: stops[2], to: stops[3] }],
+      }),
+    })).json();
+    expect(shown.totalCents).toBeGreaterThan(0);
+
+    const res = await postTrip(app, { ...gapped, gaps: [1], quotedTotal: shown.totalCents });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.total).toBe(shown.totalCents);
+    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(0); // no price-mismatch flag
+  });
+
+  it('never measures the gap — pricing and the distance enrichment look up the driven legs only', async () => {
+    const fake = new FakeMapsAdapter();
+    const asked: string[] = [];
+    const counting: MapsAdapter = {
+      provider: 'counting',
+      distance: (f, t) => { asked.push(`${f} → ${t}`); return fake.distance(f, t); },
+      distanceVariants: (f, t) => fake.distanceVariants(f, t),
+      places: (q) => fake.places(q),
+    };
+    const app = createApp({ maps: counting });
+    const b = await (await postTrip(app, { ...gapped, gaps: [1] })).json();
+    expect(asked).toEqual(['Colombo Airport (CMB) → Kandy', 'Ella → Galle']);
+    const driven = (await fake.distance(stops[0], stops[1]))!.km + (await fake.distance(stops[2], stops[3]))!.km;
+    expect(b.distanceKm).toBe(Math.round(driven));
+  });
+
+  it('an unpriceable gapped trip falls back to a placeholder for the driven legs only', async () => {
+    const app = createApp();
+    const res = await postTrip(app, { ...gapped, stops: ['Nowhere', 'Elsewhere', 'Somewhere', 'Anywhere'], gaps: [1] });
+    expect(res.status).toBe(201);
+    expect((await res.json()).total).toBe(10000); // fallback stub: 2 driven legs × 5000 (car), not 3
+  });
+
+  it.each([
+    ['a wire the trip does not have', { gaps: [3] }],
+    ['the same wire twice', { gaps: [1, 1] }],
+    ['every wire (nothing left for us to drive)', { gaps: [0, 1, 2] }],
+    ['a chauffeur-guide, who keeps the car for the whole trip', { gaps: [1], serviceType: 'chauffeur' }],
+  ])('refuses gaps naming %s (400)', async (_label, extra) => {
+    const res = await postTrip(createApp(), { ...gapped, ...extra });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_request');
+    expect(body.message).toMatch(/^gaps: /);
   });
 });
