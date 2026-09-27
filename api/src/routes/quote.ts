@@ -387,6 +387,9 @@ export function quoteRoutes(deps: {
         if (lifted.bad) return null;
         const parsed = WebQuoteIntentSchema.safeParse(lifted.body);
         if (!parsed.success || parsed.data.product !== 'private') return null;
+        // No client sends a road in a batch (plan.js sends only compareRoutes), and each road-carrying
+        // leg would bill its own comparison outside MAX_COMPARE_PER_BATCH — so a road is refused here.
+        if (carriesRoad(parsed.data)) return null;
         if (lifted.compare && parsed.data.legs.length !== 1) return null;
         if (!parsed.data.legs.every((l) => isCatalogTown(l.from) && isCatalogTown(l.to))) return null;
         const compare = lifted.compare && compareSlots-- > 0;

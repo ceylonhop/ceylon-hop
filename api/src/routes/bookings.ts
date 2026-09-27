@@ -30,6 +30,7 @@ import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
+import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
@@ -85,7 +86,9 @@ export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
     provider: maps.provider,
     places: (q) => maps.places(q),
     distanceVariants(from, to) {
-      const key = `${from}|${to}`;
+      // Keyed on the canonical place: "KANDY" and "kandy" both pass isCatalogTown, and must share
+      // one comparison rather than each billing their own.
+      const key = `${canonPlace(from)}|${canonPlace(to)}`;
       let hit = variants.get(key);
       if (!hit) {
         hit = maps.distanceVariants(from, to);

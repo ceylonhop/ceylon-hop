@@ -877,4 +877,33 @@ describe('route choice (v2)', () => {
     expect(body.results[0]).toBeNull();
     expect(body.results.slice(1).every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
   });
+
+  it('estimate-batch refuses any intent carrying a road, without a single comparison', async () => {
+    // No client sends routeVariant in a batch (plan.js sends only compareRoutes). Allowing it
+    // let 8 legs x 60 intents each bill a distanceVariants call outside MAX_COMPARE_PER_BATCH.
+    const maps = forkMaps();
+    const legs = Array.from({ length: 8 }, () => ({ from: 'Kandy', to: 'Ella', routeVariant: 'no_tolls' }));
+    const body = await (await send(appWith(maps), '/quote/v2/estimate-batch', {
+      intents: [
+        { ...ONE(), legs },
+        ONE({ routeVariant: 'fastest' }),
+        { ...ONE(), legs: [{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: 'Yala', routeVariant: 'no_tolls' }] },
+        ONE(),
+      ],
+    })).json();
+    expect(body.results.slice(0, 3)).toEqual([null, null, null]);
+    expect(body.results[3].totalCents).toBe(carAt(335));
+    expect(maps.variantCalls).toBe(0);
+  });
+
+  it('estimate-batch compares one pair once however its names are cased or spaced', async () => {
+    const spellings = ['Kandy', 'KANDY', 'kandy', ' Kandy ', 'kAnDy', 'Kandy'];
+    const intents = Array.from({ length: 12 }, (_, i) => ({
+      ...ONE(), legs: [{ from: spellings[i % spellings.length], to: i % 2 ? 'ELLA' : 'ella' }], compareRoutes: true,
+    }));
+    const maps = forkMaps();
+    const body = await (await send(appWith(maps), '/quote/v2/estimate-batch', { intents })).json();
+    expect(body.results.every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
+    expect(maps.variantCalls).toBe(1);
+  });
 });
