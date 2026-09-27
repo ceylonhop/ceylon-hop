@@ -605,15 +605,12 @@ function openRoad(key, source){
   const RC=window.CH_ROUTE_CHOICE, o=roadOffer(key);
   if(!RC || !o || RC.isOpen()) return;
   RC.markAsked(roadAskKey(o.opt));
-  const fastMin=roadMinRounded(o.base.durationMin), localMin=roadMinRounded(o.opt.noTolls.min);
   RC.open({
     title:`Two roads to ${o.opt.to}`,
     sub:"The local road skips the expressway tolls. It's slower, but cheaper. Pick one and you can switch later.",
     fastest:{ time:roadTimeText(o.base.durationMin), km:roadKmText(o.base.distanceKm), price:'about '+money(o.fastCents/100) },
     local:{
       time:roadTimeText(o.opt.noTolls.min),
-      // the difference between the two times SHOWN, so the sum always adds up on screen
-      slower: fastMin!=null && localMin!=null && localMin>fastMin ? '+'+RC.fmtMinutes(localMin-fastMin) : '',
       // no tag at all rather than "Save about $0" (a chosen road whose saving has gone)
       km:roadKmText(o.opt.noTolls.km), price:'about '+money(o.localCents/100), save:o.saving>=1 ? 'Save about $'+o.saving : ''
     },

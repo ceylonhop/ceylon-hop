@@ -117,7 +117,9 @@ test('the popup opens once, and describes each road with the card\'s own figures
   await chip(page, 0).click();
   await expect(dialog).toBeVisible();
   expect(await popupFigures(dialog, 'is-local')).toEqual(await cardFigures(page, 0));
-  await expect(dialog.locator('.ch-rc-slower')).toHaveText('+1h');
+  // each card shows only its own drive time — no "+1h" (owner, 2026-09-27: it read as a sum)
+  await expect(dialog.locator('label.ch-rc-opt.is-local .ch-rc-alt')).toHaveText('6h');
+  await expect(dialog).not.toContainText('+1h');
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
 });
