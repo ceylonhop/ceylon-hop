@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { track } from '../observability/track';
 import { createApp } from '../app';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
+
+// Observe what would reach Sentry. track() is a no-op without a DSN, so mocking it changes nothing
+// for the other tests here.
+vi.mock('../observability/track', () => ({ track: vi.fn(), initTracking: vi.fn() }));
 
 const post = (app: ReturnType<typeof createApp>, body: string) =>
   app.request('/errors/client', {
@@ -116,5 +121,53 @@ describe('POST /errors/client', () => {
       if (res.status === 429) { limited = true; break; }
     }
     expect(limited).toBe(true);
+  });
+});
+
+// pay.html, quote.html and manage.html are opened with a bearer token in the query (`t`, and `rt`
+// on the leg back from PayHere). Their error beacon posts location.href, so a JS error used to
+// copy a live customer token into Sentry and into the founder alert email — where anyone with
+// that access could open the booking or start its payment. Strip query strings and fragments
+// server-side, so every page, including copies cached before any front-end fix, is covered.
+describe('POST /errors/client: customer tokens never leave the endpoint', () => {
+  const mk = () => {
+    const inner = new FakeAlertAdapter();
+    const app = createApp({ alerts: new ThrottledAlerts(inner, new InMemoryAlertLogRepo()) });
+    return { inner, app };
+  };
+  const sentToSentry = () => JSON.stringify(vi.mocked(track).mock.calls.map(([err, ctx]) => [(err as Error).message, ctx]));
+  beforeEach(() => vi.mocked(track).mockClear());
+
+  it('strips the token from the page url, keeping the page', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({ property: 'pay', message: 'TypeError: boom', url: 'https://pay.ceylonhop.com/p?t=PAYSECRET123&x=1#frag' }));
+    const alert = JSON.stringify(inner.sent);
+    expect(alert).toContain('pay.ceylonhop.com/p');
+    expect(alert).not.toContain('PAYSECRET123');
+    expect(alert).not.toContain('frag');
+    expect(sentToSentry()).toContain('pay.ceylonhop.com/p');
+    expect(sentToSentry()).not.toContain('PAYSECRET123');
+  });
+
+  it('strips a token carried in the fragment', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({ property: 'manage', message: 'TypeError: boom', url: 'https://ops.ceylonhop.com/manage.html#t=HASHSECRET9' }));
+    expect(JSON.stringify(inner.sent)).not.toContain('HASHSECRET9');
+    expect(sentToSentry()).not.toContain('HASHSECRET9');
+  });
+
+  it('strips tokens from URLs inside the message and stack', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({
+      property: 'manage',
+      message: 'Failed to fetch https://ops.ceylonhop.com/bookings/pay-return?rt=RTSECRET77',
+      stack: 'at load (https://ops.ceylonhop.com/manage.html?t=STACKSECRET5:12:5)\nat /quote.html?t=RELSECRET3:4:1',
+    }));
+    const alert = JSON.stringify(inner.sent);
+    for (const secret of ['RTSECRET77', 'STACKSECRET5', 'RELSECRET3']) {
+      expect(alert).not.toContain(secret);
+      expect(sentToSentry()).not.toContain(secret);
+    }
+    expect(alert).toContain('ops.ceylonhop.com/bookings/pay-return');
   });
 });
