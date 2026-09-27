@@ -31,8 +31,9 @@ export const bookings = pgTable(
     status: text('status').notNull(),
     mode: text('mode').notNull().default('single'),
     total: integer('total').notNull(),
-    // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
-    // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
+    // Immutable pricing evidence. Nullable so every legacy booking keeps its exact
+    // storage/checkout behaviour; written by POST /bookings/from-quote-v2 (quote conversion) and by
+    // POST /bookings/single (the website's own priced lines — WebsitePricingSnapshot, source 'website').
     subtotal: integer('subtotal'),
     discountTotal: integer('discount_total'),
     pricingSnapshotJson: jsonb('pricing_snapshot_json'),

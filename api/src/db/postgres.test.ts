@@ -11,7 +11,7 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import { personKeyFor, type NewBooking } from './bookingRepo';
+import { personKeyFor, websitePricingSnapshot, type NewBooking } from './bookingRepo';
 import { quote } from '../quote/engine';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest } from '../quote/types';
@@ -110,6 +110,22 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 5);
     expect(listed.find((b) => b.id === linked.id)?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
     expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
+  });
+
+  // A website booking has no quote: it keeps the engine's own priced lines in
+  // pricing_snapshot_json, and a load names its add-ons from them.
+  it('a website booking keeps the lines it was priced with and names its add-ons', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }],
+      extras: ['sightseeing'],
+    };
+    const result = quote(engine, RATE_CARD);
+    const b = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(b.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    const [row] = await db.select({ s: bookingRows.pricingSnapshotJson }).from(bookingRows).where(eq(bookingRows.id, b.id));
+    expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
