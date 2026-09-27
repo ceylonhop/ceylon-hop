@@ -289,6 +289,21 @@ describe('payPageCopy — the add-ons the customer chose', () => {
     expect(payPageCopy(q).addOns).toEqual(['Wait for Safari — Ella → Yala']);
   });
 
+  // Owner-reported 2026-09-27: the stored label carries the whole stop chain ("Sightseeing stops
+  // (up to 3h) — Galle → Seetha Amman Temple, Seetha Eliya, Sri Lanka → … → Nuwara Eliya"), so
+  // every add-on row repeated every stop. Name the journey the way its leg row does: ends only.
+  it('names a multi-stop journey by its ends, not every stop', () => {
+    const stops = ['Galle', 'Seetha Amman Temple, Seetha Eliya, Sri Lanka', 'Gregory Lake, Nuwara Eliya, Sri Lanka', 'Nuwara Eliya'];
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ stops, segmentKms: [100, 5, 3] }],
+      extras: [{ code: 'sightseeing', legIndex: 0 }, { code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool([{ stops, category: 'transfer' }]), engine }, result };
+    expect(payPageCopy(q).addOns).toEqual(['Sightseeing stops (up to 3h) — Galle → Nuwara Eliya', 'Waiting fee — Galle → Nuwara Eliya']);
+  });
+
   it('says nothing about add-ons when none were chosen', () => {
     expect(payPageCopy(priced([leg('Kandy', 'Ella')], [])).addOns).toBeUndefined();
     expect(payPageCopy(quoteOf({})).addOns).toBeUndefined(); // no stored lines at all

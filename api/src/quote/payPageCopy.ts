@@ -124,6 +124,18 @@ function legRoute(l: ToolLegLite): string {
   return `${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
 }
 
+// An add-on's stored label names its journey by EVERY stop ("Waiting fee — Galle → Seetha Amman
+// Temple, … → Nuwara Eliya"; extrasDeposit.ts). Name it the way legRoute names the leg row — its
+// two ends, shortened — so a multi-stop day doesn't repeat its whole chain on each add-on
+// (owner-reported 2026-09-27). Render-time only: the stored label, ops and emails are untouched.
+function addOnLabel(label: string): string {
+  const at = label.indexOf(' — ');
+  if (at < 0) return label;
+  const stops = label.slice(at + 3).split(' → ');
+  if (stops.length < 2) return label;
+  return `${label.slice(0, at)} — ${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
+}
+
 // `selection` (spec 2026-08-04 partial links) — the legs THIS payment covers, by index into the
 // engine's driving legs. Omit it, or pass one covering everything, and every word below is
 // byte-identical to the whole-trip page.
@@ -144,7 +156,7 @@ export function payPageCopy(quote: {
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
   const engine = req.engine ?? null;
-  const addOns = selection ? [] : chosenAddOns({ request: quote.request, result: quote.result });
+  const addOns = selection ? [] : chosenAddOns({ request: quote.request, result: quote.result }).map(addOnLabel);
   const withAddOns = addOns.length ? { addOns } : {};
 
   const greetingName = (quote.customerName ?? '').trim().split(/\s+/)[0] || null;
