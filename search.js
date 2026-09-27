@@ -805,11 +805,26 @@ function applyRoad(v, track) {
 }
 
 // Offer the cheaper road — once per pair per tab, and never over something the customer is doing.
+// A search opened in a background tab gets its fares while nobody is looking. Rather than drop
+// the offer, wait for the tab to be shown once and ask then — every other guard is re-checked at
+// that moment (a road already picked, a Select clicked, already asked).
+let offerOnShow = false;
+function offerWhenShown() {
+  if (offerOnShow) return;
+  offerOnShow = true;
+  document.addEventListener('visibilitychange', function onShow() {
+    if (document.visibilityState !== 'visible') return;
+    document.removeEventListener('visibilitychange', onShow);
+    offerOnShow = false;
+    maybeOffer();
+  });
+}
 function maybeOffer() {
   const RC = window.CH_ROUTE_CHOICE;
   if (!RC || !roads || road === 'no_tolls' || params.has('road') || selectClicked) return;
   const key = fromP.name + '>' + toP.name;
-  if (RC.wasAsked(key) || document.visibilityState !== 'visible') return;
+  if (RC.wasAsked(key)) return;
+  if (document.visibilityState !== 'visible') { offerWhenShown(); return; }
   const bar = document.getElementById('srch-bar');
   if (bar && bar.contains(document.activeElement)) return;
   RC.markAsked(key);
