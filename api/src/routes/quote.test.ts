@@ -10,6 +10,7 @@ import type { RateCard } from '../quote/rateCard';
 import type { DistanceResult, RouteVariants } from '../adapters/maps';
 import { RATE_CARD } from '../quote/rateCard';
 import { quote as priceQuote } from '../quote/engine';
+import { MAX_COMPARE_PER_BATCH } from '../quote/routeChoice';
 
 async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
   const repo = new InMemoryZonesRepo();
@@ -857,5 +858,23 @@ describe('route choice (v2)', () => {
     expect(body.results[0]).toMatchObject({ totalCents: carAt(335), routeChoice: { noTolls: { distanceKm: 213 } } });
     expect(body.results[1].routeChoice).toBeUndefined();
     expect(body.results[2]).toBeNull();
+  });
+
+  it('caps comparisons per batch, and a non-catalogue compare intent never consumes a slot', async () => {
+    const thirteen = Array.from({ length: 13 }, () => ({ ...ONE(), compareRoutes: true }));
+    const capped = await (await send(appWith(forkMaps()), '/quote/v2/estimate-batch', { intents: thirteen })).json();
+    expect(capped.results).toHaveLength(13);
+    expect(capped.results.slice(0, MAX_COMPARE_PER_BATCH).every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
+    expect(capped.results[MAX_COMPARE_PER_BATCH].routeChoice).toBeUndefined();
+    // The 13th is still priced — only the comparison is skipped, not the price.
+    expect(capped.results[MAX_COMPARE_PER_BATCH].totalCents).toBe(carAt(335));
+
+    const nonCatalogueFirst = [
+      { ...ONE(), legs: [{ from: '12 Temple Rd, Ella', to: 'Kandy' }], compareRoutes: true },
+      ...Array.from({ length: MAX_COMPARE_PER_BATCH }, () => ({ ...ONE(), compareRoutes: true })),
+    ];
+    const body = await (await send(appWith(forkMaps()), '/quote/v2/estimate-batch', { intents: nonCatalogueFirst })).json();
+    expect(body.results[0]).toBeNull();
+    expect(body.results.slice(1).every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
   });
 });

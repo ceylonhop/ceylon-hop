@@ -34,7 +34,7 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
             .strict(),
         )
         .min(1)
-        .max(8), // Each leg is a billed distance lookup, and the per-IP limiter counts REQUESTS, not lookups. Capping legs is what bounds the money one allowed request can spend (2026-08-12).
+        .max(8), // Each leg is a billed distance lookup — a no_tolls leg can cost up to 3 Google elements (1 distance + 2 comparison), so 8 legs bound ~24 elements — and the per-IP limiter counts REQUESTS, not lookups. Capping legs is what bounds the money one allowed request can spend (2026-08-12).
       extras: Extras,
     })
     .strict(),

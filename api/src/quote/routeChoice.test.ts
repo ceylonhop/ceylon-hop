@@ -82,4 +82,9 @@ describe('cheaperRouteChoice', () => {
     const longer: RouteVariants = { fastest: FAST, noTolls: { km: 360, durationMin: 420 }, hasChoice: true };
     expect(await cheaperRouteChoice(stub({ variants: longer }).maps, 'A', 'B', FAST, perKm)).toBeNull();
   });
+
+  it('degrades to null, not a throw, when priceAtKm itself throws', async () => {
+    const throwingPrice = () => { throw new Error('rate card edge case'); };
+    expect(await cheaperRouteChoice(stub().maps, 'A', 'B', FAST, throwingPrice)).toBeNull();
+  });
 });

@@ -91,7 +91,10 @@ export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
         hit = maps.distanceVariants(from, to);
         variants.set(key, hit);
         // A rejected comparison must not poison the request: drop it so a retry can ask again.
-        hit.catch(() => variants.delete(key));
+        // Only delete OUR entry — a retry that already installed its own promise under this key
+        // must not have it evicted by this (now-stale) rejection handler.
+        const installed = hit;
+        installed.catch(() => { if (variants.get(key) === installed) variants.delete(key); });
       }
       return hit;
     },

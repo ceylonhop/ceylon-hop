@@ -62,8 +62,16 @@ export async function cheaperRouteChoice(
   if (fastest.estimated) return null;
   const v = await maps.distanceVariants(from, to).catch(() => null);
   if (!v || !v.hasChoice || !v.noTolls) return null;
-  const fastCents = priceAtKm(fastest.km);
-  const slowCents = priceAtKm(v.noTolls.km);
+  // The comparison is optional: a pricing exception here (e.g. a rate-card edge case at the
+  // toll-free km) must degrade to "no choice", never fail the estimate that already priced the
+  // main road, and never drop a batch intent's own price.
+  let fastCents: number, slowCents: number;
+  try {
+    fastCents = priceAtKm(fastest.km);
+    slowCents = priceAtKm(v.noTolls.km);
+  } catch {
+    return null;
+  }
   if (!(slowCents < fastCents)) return null;
   return {
     fastest: { distanceKm: fastest.km, durationMin: fastest.durationMin, totalCents: fastCents },
