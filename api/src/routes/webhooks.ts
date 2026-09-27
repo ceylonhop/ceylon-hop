@@ -23,7 +23,7 @@ import {
 } from '../db/bookingCheckoutEventRepo';
 import type { ProviderPaymentStatus } from '../adapters/payments';
 import { claimWonQuote } from '../services/quoteOutcome';
-import { closeOlderDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
+import { closeLeftoverDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -383,13 +383,13 @@ export function webhookRoutes(deps: {
       } catch (err) {
         console.error(`team paid-notification failed for ${paid.reference}:`, err);
       }
-      // The customer's earlier failed attempts at this same trip are leftovers now (Lea:
+      // The customer's other unfinished attempts at this same trip are leftovers now (Lea:
       // CH-Y5RXW declined at 3-D Secure, CH-L72HX paid 20 min later) — close them quietly.
       // After everything the paid booking needs, and NOT awaited: housekeeping on OTHER bookings
       // must neither fail nor delay this 200 (PayHere would retry, hit the idempotent return and
       // skip nothing — but a slow lookup still holds the notify open). A replay never gets here.
       if (deps.duplicates) {
-        void closeOlderDuplicates(paid, { ...deps.duplicates, alerts }).catch((err) => {
+        void closeLeftoverDuplicates(paid, { ...deps.duplicates, alerts }).catch((err) => {
           console.error(`duplicate close after ${paid.reference} failed:`, err);
         });
       }
