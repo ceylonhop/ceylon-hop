@@ -640,6 +640,8 @@ document.getElementById('rail').addEventListener('click', e=>{
    other candidate is marked asked at the same moment and keeps its chip — offers never chain. */
 let pendingOffer=false;
 function roadPageQuiet(){
+  // A plan opened in a background tab waits until it is shown (the visibilitychange below).
+  if(document.visibilityState!=='visible') return false;
   const a=document.activeElement;
   if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
   if(document.querySelector('.place-menu')) return false;
@@ -664,6 +666,10 @@ function maybeOfferRoad(){
 }
 // The next quiet moment: a blur that leaves no field focused. Waits out the place menu, which a
 // blur closes 120 ms later (wirePlaceSearch), so the menu of the field just left doesn't count.
+// The held offer (pendingOffer) is asked the first time the tab is shown — never again after.
+document.addEventListener('visibilitychange', ()=>{
+  if(pendingOffer && document.visibilityState==='visible') maybeOfferRoad();
+});
 document.addEventListener('focusout', ()=>{
   if(pendingOffer) setTimeout(()=>{ if(pendingOffer) maybeOfferRoad(); }, 150);
   // a drive skipped while its field had focus is sent now, even if the field didn't change

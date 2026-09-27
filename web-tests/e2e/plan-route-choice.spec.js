@@ -302,3 +302,31 @@ test('a dismissed offer is not asked again after a reload', async ({ page }) => 
   await expect(dialog).toHaveCount(0);
   expect(new URL(page.url()).searchParams.has('roads')).toBe(false);
 });
+
+// A page opened in a background tab: visibilityState reads 'hidden' until the test "switches" to it.
+const hideTab = (page) => page.addInitScript(() => {
+  window.__vis = 'hidden';
+  Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get() { return window.__vis; } });
+  Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get() { return window.__vis !== 'visible'; } });
+});
+const setTab = (page, vis) => page.evaluate((v) => { window.__vis = v; document.dispatchEvent(new Event('visibilitychange')); }, vis);
+
+test('a plan opened in a background tab offers the road when the tab is first shown, once', async ({ page }) => {
+  await hideTab(page);
+  await stubBatch(page);
+  await page.goto(PLAN);
+  await expect(chip(page, 0)).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('dialog')).toHaveCount(0);   // nobody is looking yet
+
+  await setTab(page, 'visible');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCount(1);
+  await dialog.getByRole('button', { name: 'Close' }).click();
+
+  await setTab(page, 'hidden');
+  await setTab(page, 'visible');
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
