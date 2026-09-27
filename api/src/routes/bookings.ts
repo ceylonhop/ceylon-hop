@@ -25,6 +25,7 @@ import {
   type PriceOutcome,
 } from '../services/pricing';
 import { measureLeg } from '../quote/routeChoice';
+import { roadRow } from '../services/notifications';
 import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
@@ -175,10 +176,13 @@ export interface CustomerBookingView {
   balanceDueCents: number;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
+  // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
+  road?: string;
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
+  const road = roadRow(b)?.[1];
   const base = {
     reference: b.reference,
     status: b.status,
@@ -189,6 +193,7 @@ export function projectBooking(b: Booking): CustomerBookingView {
     amountDueNowCents: dueNow,
     balanceDueCents: Math.max(0, b.total - dueNow),
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
+    ...(road ? { road } : {}),
   };
   if (b.mode === 'single') {
     return {
