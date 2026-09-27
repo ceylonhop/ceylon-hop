@@ -140,3 +140,25 @@ describe('closeOlderDuplicates — the customer paid for the same trip on a newe
     expect(alerts.sent).toHaveLength(0);
   });
 });
+
+// Route choice (spec §4.3): the duplicate-closed alert names the local road the customer paid for.
+describe('closeOlderDuplicates — the alert names the local road', () => {
+  const single = (routeVariant?: 'no_tolls' | 'fastest') => ({
+    mode: 'single' as const,
+    input: { from: 'Colombo Airport', to: 'Ella', date: TRAVEL, time: '09:00', vehicleType: 'car', adults: 2, children: 0, bags: 1, customer,
+      ...(routeVariant ? { routeVariant } : {}) },
+  });
+  it('adds a Road line when the paid booking is on the local road', async () => {
+    const paid = { ...mk('CH-L72HX', 'paid', at(20), single('no_tolls') as never), durationMin: 374 };
+    const { alerts, deps } = setup([mk('CH-Y5RXW', 'payment_pending', at(0), single('no_tolls') as never), paid]);
+    await closeOlderDuplicates(paid, deps);
+    expect(alerts.sent[0].body).toContain('Road: Local road, no expressway · about 6h 14m');
+  });
+  it('adds nothing on the expressway', async () => {
+    const paid = mk('CH-L72HX', 'paid', at(20), single() as never);
+    const { alerts, deps } = setup([mk('CH-Y5RXW', 'payment_pending', at(0), single() as never), paid]);
+    await closeOlderDuplicates(paid, deps);
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].body).not.toContain('Road:');
+  });
+});

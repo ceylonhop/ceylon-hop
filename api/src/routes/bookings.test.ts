@@ -688,6 +688,50 @@ describe('a Maps outage must not silently reprice', () => {
   });
 });
 
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): a single
+// transfer prices the road it was asked for, server-side, and never silently swaps roads
+// under the customer — a fork that vanishes between quote and booking refuses to charge.
+describe('POST /bookings/single — route choice (spec §4.2)', () => {
+  const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
+    "The local road isn't available for this trip right now, so nothing was charged. We've switched the price back to the expressway. Please check it and book again.";
+
+  const forkMaps: MapsAdapter = {
+    provider: 'fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+  };
+  const noForkMaps: MapsAdapter = {
+    provider: 'no-fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: null, hasChoice: false }),
+  };
+
+  it('books the toll-free road and stores/returns its own km + minutes', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.distanceKm).toBe(213);
+    expect(b.durationMin).toBe(374);
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'single') throw new Error('expected a single booking');
+    expect(got.input.routeVariant).toBe('no_tolls');
+  });
+
+  it('422s with route_choice_unavailable and creates no booking when the road cannot be confirmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: noForkMaps });
+    const before = await bookings.list();
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'route_choice_unavailable', message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE });
+    expect(await bookings.list()).toHaveLength(before.length);
+  });
+});
+
 // The booking re-price is a second entry point onto the live rate card (the first is
 // POST /quote) — it must compose the same active hot zones, or a customer who quotes then
 // books straight through the wizard (no quoteId) gets the pre-boost price.

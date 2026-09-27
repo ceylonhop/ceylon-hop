@@ -39,3 +39,22 @@ describe('manage card names the add-ons the customer chose', () => {
     expect(factsOf({ ...view, addOns: ['<img src=x>'] })).not.toContain('<img');
   });
 });
+
+// Route choice (spec §4.3): the booking view carries `road` (roadRow's words) only when the
+// customer bought the local road. The card prints it as a Road fact, right after Stops.
+describe('manage card names the local road the customer chose', () => {
+  it('prints a Road row after Stops', () => {
+    const html = factsOf({ ...view, road: 'Local road, no expressway · about 6h 14m' });
+    expect(html).toContain('<span class="k">Road</span><span class="v">Local road, no expressway · about 6h 14m</span>');
+    expect(html.indexOf('>Road<')).toBeGreaterThan(html.indexOf('>Stops<'));
+    expect(html.indexOf('>Road<')).toBeLessThan(html.indexOf('>Travellers<'));
+  });
+
+  it('prints nothing new on the expressway (no road on the view)', () => {
+    expect(factsOf(view)).not.toContain('Road');
+  });
+
+  it('escapes the road', () => {
+    expect(factsOf({ ...view, road: '<img src=x>' })).not.toContain('<img');
+  });
+});

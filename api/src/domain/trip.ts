@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CustomerInput, QuotedTotal } from './singleTransfer';
+import { ROUTE_VARIANTS } from '../quote/routeChoice';
 
 // A multi-stop trip from the planner/tour hand-off. `nights` is per stop; `dates` is one
 // per leg (the gap between consecutive stops) and optional/flexible. serviceType picks
@@ -30,6 +31,11 @@ export const TripInput = z.object({
   // themselves — a train, their own transport. Never priced, never measured. The checks that need
   // `stops`/`serviceType` live in the route handler, so TripInput stays a plain ZodObject.
   gaps: z.array(z.number().int().min(0)).max(MAX_TRIP_STOPS - 1).optional(),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): one entry per
+  // consecutive stop pair. The length-matches-legs check lives in the route handler (needs
+  // `stops`, so TripInput stays a plain ZodObject); 'fastest' covers "no choice" and gap wires,
+  // pricing identically to absent so the column is a plain text[] with no NULL elements.
+  routeVariants: z.array(z.enum(ROUTE_VARIANTS)).max(MAX_TRIP_STOPS - 1).optional(),
 });
 
 export type TripInput = z.infer<typeof TripInput>;

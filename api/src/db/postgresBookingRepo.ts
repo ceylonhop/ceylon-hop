@@ -13,6 +13,7 @@ import {
   bookingStatusEvents,
 } from './schema';
 import { chosenAddOns, type PaySelection } from '../quote/paySelection';
+import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
   type NewBooking,
@@ -265,6 +266,9 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         serviceType: tr.serviceType as 'private' | 'chauffeur',
         days: tr.days ?? undefined,
         driverNights: tr.driverNights ?? undefined,
+        // Undefined, not null, when the row never recorded any — so an old booking's shape is
+        // byte-identical (0061_route_variant is additive/nullable, no backfill).
+        ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
         customer,
       },
     };
@@ -303,6 +307,9 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       adults: t.adults,
       children: t.children,
       bags: t.bags,
+      // Undefined, not null, when the row never recorded one — so an old booking's shape is
+      // byte-identical (0061_route_variant is additive/nullable, no backfill).
+      ...(t.routeVariant ? { routeVariant: t.routeVariant as RouteVariant } : {}),
       customer,
     },
   };
@@ -480,6 +487,7 @@ export class PostgresBookingRepo implements BookingRepo {
           dates: t.dates ?? null,
           days: t.days ?? null,
           driverNights: t.driverNights ?? null,
+          routeVariants: t.routeVariants ?? null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;
@@ -507,6 +515,7 @@ export class PostgresBookingRepo implements BookingRepo {
           bags: t.bags,
           distanceKm: b.distanceKm ?? null,
           durationMin: b.durationMin ?? null,
+          routeVariant: t.routeVariant ?? null,
         });
       }
       const legs = safeLegRowsForBooking(bk.id, b);

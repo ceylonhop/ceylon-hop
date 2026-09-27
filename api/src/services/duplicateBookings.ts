@@ -3,7 +3,7 @@ import type { Booking, BookingRepo } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { IllegalTransitionError } from '../domain/status';
-import { routeText, travelWhenText } from './notifications';
+import { roadLines, routeText, travelWhenText } from './notifications';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // "Same customer, same trip" — one matcher, shared by the watchdog (which stops chasing a stuck
@@ -113,6 +113,7 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
       title: `Closed duplicate ${refs} — customer paid on ${paid.reference}`,
       body: [
         `${paid.input.customer.email} paid for ${routeText(paid)} (travels ${travelWhenText(paid)}) on ${paid.reference}.`,
+        ...roadLines(paid),
         `Their earlier unpaid booking${closed.length > 1 ? 's' : ''} for the same trip ${closed.length > 1 ? 'were' : 'was'} cancelled automatically: ${refs}.`,
         'No email was sent to the customer about this. Nothing to do.',
       ].join('\n'),

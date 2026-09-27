@@ -13,6 +13,7 @@ import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
+import type { MapsAdapter } from '../adapters/maps';
 
 const valid = {
   from: 'Colombo Airport (CMB)',
@@ -349,6 +350,31 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(paid?.email?.subject).toContain('AC car · 3 pax');
     expect(paid?.email?.html).toContain('2 adults, 1 child');
     expect(paid?.email?.text).toContain(b.reference);
+  });
+
+  // Route choice (spec §4.3): the plain paid alert names the road when the customer bought the
+  // local one, so the team books a driver for the road that was sold. The subject never changes.
+  it('the paid alert body names the local road the customer chose; the expressway body is unchanged', async () => {
+    const forkMaps: MapsAdapter = {
+      provider: 'fork',
+      places: async () => [],
+      distance: async () => ({ km: 335, durationMin: 299 }),
+      distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+    };
+    const paidAlert = async (overrides: Record<string, unknown>) => {
+      const adapter = new FakePaymentAdapter();
+      const alerts = new FakeAlertAdapter();
+      const app = createApp({ adapter, alerts, maps: forkMaps });
+      const b = await bookAndCheckout(app, overrides);
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return alerts.sent.find((a) => a.kind === 'booking_paid')!;
+    };
+    const local = await paidAlert({ routeVariant: 'no_tolls' });
+    expect(local.body).toContain('Road: Local road, no expressway · about 6h 14m');
+    expect(local.email?.subject.startsWith('Paid: ')).toBe(true);
+    const plain = await paidAlert({});
+    expect(plain.body).not.toContain('Road:');
+    expect(plain.body.split('\n')).toHaveLength(5);
   });
 
   it('the team notification never costs the customer their confirmation', async () => {

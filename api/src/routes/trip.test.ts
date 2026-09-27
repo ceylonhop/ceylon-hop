@@ -210,3 +210,123 @@ describe('POST /bookings/trip — a self-arranged gap is not charged', () => {
     expect(body.message).toMatch(/^gaps: /);
   });
 });
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): one
+// routeVariants entry per leg, private only, and a fork that vanishes refuses to charge.
+describe('POST /bookings/trip — route choice (spec §4.2)', () => {
+  const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
+    "The local road isn't available for this trip right now, so nothing was charged. We've switched the price back to the expressway. Please check it and book again.";
+
+  const forkMaps: MapsAdapter = {
+    provider: 'fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+  };
+  const noForkMaps: MapsAdapter = {
+    provider: 'no-fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: null, hasChoice: false }),
+  };
+
+  // #849 (self-arranged gaps) and route choice meet in one loop: a gap wire is skipped entirely —
+  // never measured, never compared, never charged — while the driven legs are priced on their road.
+  it('with a gap and a local road: the gap costs nothing and the local leg prices at the toll-free km', async () => {
+    const seen: string[] = [];
+    const counting: MapsAdapter = {
+      ...forkMaps,
+      distance: async (f, t) => { seen.push(`d:${f}|${t}`); return { km: 335, durationMin: 299 }; },
+      distanceVariants: async (f, t) => { seen.push(`v:${f}|${t}`); return forkMaps.distanceVariants(f, t); },
+    };
+    const stops = ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Galle'];
+    const trip = { ...valid, stops, nights: [0, 1, 1, 0], dates: [futureIsoDate(30), '', futureIsoDate(33)], vehicleType: 'car', gaps: [1] };
+    const bookings = new InMemoryBookingRepo();
+    const local = await postTrip(createApp({ bookings, maps: counting }), { ...trip, routeVariants: ['no_tolls', 'fastest', 'fastest'] });
+    expect(local.status).toBe(201);
+    const localBody = await local.json();
+    // the gap (Kandy → Ella) is never looked at, not even for a road comparison
+    expect(seen.some((x) => x.includes('Kandy|Ella'))).toBe(false);
+    // the stored distance is the driven legs only, the first on the local road: 213 + 335
+    expect(localBody.distanceKm).toBe(213 + 335);
+    // cheaper than the same gapped trip on the expressway, which is cheaper than no gap at all
+    const express = await (await postTrip(createApp({ maps: forkMaps }), { ...trip, routeVariants: ['fastest', 'fastest', 'fastest'] })).json();
+    const noGap = await (await postTrip(createApp({ maps: forkMaps }), { ...trip, gaps: undefined, dates: [futureIsoDate(30), futureIsoDate(31), futureIsoDate(33)] })).json();
+    expect(localBody.total).toBeLessThan(express.total);
+    expect(express.total).toBeLessThan(noGap.total);
+  });
+
+  it('rejects routeVariants of the wrong length (400 invalid_request)', async () => {
+    const app = createApp({ maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls'], // 2 legs need 2 entries
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  it('rejects a chauffeur trip with any no_tolls leg (400 invalid_request)', async () => {
+    const app = createApp({ maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      serviceType: 'chauffeur',
+      vehicleType: 'car',
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  it('books a valid private trip and round-trips routeVariants', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.input.routeVariants).toEqual(['no_tolls', 'fastest']);
+  });
+
+  it('422s with route_choice_unavailable and creates no booking when a leg’s fork vanishes', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: noForkMaps });
+    const before = await bookings.list();
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'route_choice_unavailable', message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE });
+    expect(await bookings.list()).toHaveLength(before.length);
+  });
+
+  // M8 enrichment must measure the SAME road that was priced (§4.2) — otherwise a trip booked
+  // partly on the local road would store the expressway's summed km/minutes instead.
+  it('stores the local road’s km/minutes for a leg booked on it, not the expressway’s', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    // leg 0 (no_tolls): 213 km / 374 min; leg 1 (fastest): 335 km / 299 min.
+    expect(b.distanceKm).toBe(213 + 335);
+    expect(b.durationMin).toBe(374 + 299);
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.distanceKm).toBe(213 + 335);
+    expect(got.durationMin).toBe(374 + 299);
+  });
+});

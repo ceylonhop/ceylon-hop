@@ -88,13 +88,61 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
+// The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
+// the planner's `roads=` (one per stop pair, 'no_tolls' or blank) for a trip. roadNotice says
+// why a chosen local road was dropped: 'echo' when the engine could only price the expressway.
+let bookRoad=null, tripRoads=[], roadNotice='';
+// Back to the planner, carrying the roads as they stand NOW — a road dropped on this page (the
+// engine or the booking couldn't confirm it) must not come back when the customer returns.
+// Built at click time for that reason; `dates` lands on the planner's When step.
+function buildTripEditUrl(dates){
+  const q=new URLSearchParams(tripEditQuery);
+  const local=tripLocalWires();
+  const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
+  if(roads) q.set('roads', roads);
+  if(dates) q.set('step', 'dates');
+  return 'plan.html?'+q.toString();
+}
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
     const n=parseInt((s||'').trim(),10);
     return Number.isFinite(n) && n>0 ? n : null;
+  });
+}
+// A trip leg's drive chip in the itinerary card.
+// A trip leg's chip, in the words every other screen uses (route-estimate.js rounding): "215 km",
+// never the raw 213 the search and plan pages rounded. A leg on the local road is timed by the
+// engine's own answer (`est`, the current estimate), never by the distance model — that would time
+// the shorter local road FASTER than the expressway it is slower than ("5h" for a 6h drive).
+// `est` is passed in, not read here: the itinerary is first drawn before engineEst exists.
+function tripKmText(km){
+  const RE=window.CH && CH.routeEstimate, k=RE ? RE.roundDistanceKm(km) : null;
+  return `${k!=null ? k : km} km`;
+}
+function tripMinText(min){
+  const RE=window.CH && CH.routeEstimate, m=RE ? RE.roundDurationMin(min) : Math.round(min);
+  if(min<60) return `${m} min`;
+  const h=Math.floor(m/60), r=m%60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+function tripDriveText(leg, i, est){
+  if(leg.km==null) return 'Distance on request';
+  if(tripRoads[i]==='no_tolls' && state.svc!=='chauffeur' && !tripGaps.has(i)){
+    const e=est && Array.isArray(est.legs)
+      ? est.legs.find(l=>l && l.from===tripStops[i] && l.to===tripStops[i+1] && l.routeVariant==='no_tolls') : null;
+    return e && e.durationMin>0 ? `${tripKmText(e.distanceKm>0 ? e.distanceKm : leg.km)} · ${tripMinText(e.durationMin)}` : tripKmText(leg.km);
+  }
+  return `${tripKmText(leg.km)} · ${leg.duration}`;
+}
+// Repaint every leg chip against the itinerary and estimate as they stand now.
+function repaintTripDrives(){
+  const est=currentEngineEst();
+  document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
+    const i=+el.dataset.wire, leg=tripLegs[i], chip=el.querySelector('.tr-drive');
+    if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
 function tripQuoteWithKms(veh){
@@ -138,6 +186,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
@@ -164,12 +213,17 @@ if(mode==='trip' && window.TRANSFERS){
   let price=parseFloat(params.get('rawPrice') || params.get('price'))||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  if(mode==='private') bookRoad = params.get('road')==='no_tolls' ? 'no_tolls' : null;
   // pre-compute both vehicle prices so we can switch car→van when over capacity
   if(T.place(routeFromId) && T.place(routeToId)){
     const q=T.privateQuote(routeFromId, routeToId);
     // Keep the unfinished vehicle fares internally so extras are added before the one final
     // price-finishing pass in calcTotal(). privateQuote's car/van fields are display totals.
     vehPrices={ car:q.rawCar, van:q.rawVan };
+    // A local-road pick carries its own (shorter) km from search; the catalogue km is the
+    // expressway's, so the car↔van figures come from the passed distance instead.
+    const k=positiveNumberParam('estimateKm');
+    if(bookRoad && k) vehPrices={ car:T.legPrice(k,'car'), van:T.legPrice(k,'van') };
   }
   r={
     id:'transfer', type:mode,
@@ -255,6 +309,10 @@ function selectedBrowseEstimate(){
       estimateId:params.get('estimateId')||'search-selection'
     };
   }
+  return catalogueRouteEstimate();
+}
+// The reviewed catalogue pair's figures (the expressway), or 'unavailable' off-catalogue.
+function catalogueRouteEstimate(){
   if(window.TRANSFERS && routeFromId && routeToId){
     const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
     if(q && (q.km>0 || q.durationMin>0)) return {
@@ -266,7 +324,8 @@ function selectedBrowseEstimate(){
   }
   return { state:'unavailable', estimateId:'unavailable' };
 }
-const browseRouteEstimate=selectedBrowseEstimate();
+// `let`: a dropped local road (dropLocalRoad) replaces search's local-road figures.
+let browseRouteEstimate=selectedBrowseEstimate();
 let activeRouteEstimate=Object.assign({},browseRouteEstimate);
 let routeEstimateUnavailable=false;
 let lastRouteAnnouncement='';
@@ -603,7 +662,7 @@ function renderRouteMap(){
   if(window.CH_MAP && window.CH_MAP.renderRoute){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
-    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], Object.assign({
       expandable: true,
       // pFrom/pTo are {lat,lng} once the customer picks from autocomplete, so the legend
       // can't read a name off them — hand it the display names explicitly.
@@ -637,7 +696,7 @@ function renderRouteMap(){
           render(); checkWhere();
         }
       },
-    });
+    }, bookRoad==='no_tolls' ? { runs:[{ stops:[pFrom,pTo], avoidTolls:true, continues:false }] } : {}));
   } else {
     showFallback();
   }
@@ -667,31 +726,30 @@ if(isTrip){
       return;
     }
     const dt=fmtLeg(tripDates[i]);
-    const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
-    html+=`<div class="tr-leg">`+
+    html+=`<div class="tr-leg" data-wire="${i}">`+
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
-        `<span class="tr-chip muted">${drive}</span>`+
+        `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
-  const datesUrl=editUrl+'&step=dates';
+  // (buildTripEditUrl(true) vs buildTripEditUrl()).
   // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
-  html+=`<div class="tr-foot"><button type="button" class="tr-edit" onclick="location.href='${editUrl}'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
+  html+=`<div class="tr-foot"><button type="button" class="tr-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
   tr.innerHTML=html;
-  tripEditUrl=datesUrl;
+  tr.querySelector('.tr-edit').addEventListener('click',()=>{ location.href=buildTripEditUrl(); });
   // a clear way back to the planner from the booking flow (task: no way back)
   const nav1=document.getElementById('nav1');
   if(nav1 && nav1.firstElementChild){
     const back=document.createElement('button');
     back.type='button'; back.className='back-link'; back.textContent='← Back to planner';
-    back.onclick=()=>location.href=datesUrl;
+    back.onclick=()=>location.href=buildTripEditUrl(true);
     nav1.replaceChild(back, nav1.firstElementChild);
   }
   // Show the private vs chauffeur chooser ONLY when there's a real choice — i.e. a multi-day
@@ -783,7 +841,7 @@ if(isTrip){
         '<div class="pline"></div>'+
         '<div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Pay</span></div>';
       // the two leading nodes jump back to the planner (Route / Dates live there)
-      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=editUrl; }); });
+      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=buildTripEditUrl(); }); });
     }
     // rewire navigation to the journey numbering (n1’s click listener is made trip-aware where it’s bound)
     const n4=document.getElementById('n4'); if(n4) n4.setAttribute('onclick','goStep(4)'); // (parked) Travellers → Payment
@@ -1053,7 +1111,7 @@ window.pickSvc=function(svc){
   // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
   // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
-    if(tripEditUrl) location.href=tripEditUrl;
+    location.href=buildTripEditUrl(true);
     return;
   }
   // Inside the notice window the card can't be chosen online — pressing it opens the explainer
@@ -1434,6 +1492,53 @@ let estimatePending = false; // true while an estimate fetch for the current int
 // so a routing change on the API side is never shadowed by a stale km the browser had on hand.
 // null means "nothing to price": shared seats run their own fixed-schedule local formula
 // (Global Constraints) and never call the estimate endpoint.
+// The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
+// choice only applies to private transfers.
+// A gap wire is the traveller's own stretch, so it never asks for a road either.
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+// The priced (non-gap) wires the customer chose the local road for, whatever the service.
+function tripLocalWires(){
+  const out=[];
+  for(let i=0;i<tripStops.length-1;i++) if(!tripGaps.has(i) && tripRoads[i]==='no_tolls') out.push(i);
+  return out;
+}
+// Drops the local road wherever it couldn't be confirmed, and with it every figure that described
+// it: the distance line and car/van fares (single), the leg km and local trip fares (trip).
+// estLegs = the estimate's legs (drop only legs echoed 'fastest', adopting their km), or null
+// after a 422 (drop every local road, back to the catalogue figures). True when anything dropped.
+function dropLocalRoad(estLegs){
+  const T=window.TRANSFERS;
+  if(!isTrip){
+    if(bookRoad!=='no_tolls') return false;
+    const leg=estLegs ? estLegs[0] : null;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) return false;
+    bookRoad=null;
+    browseRouteEstimate = (leg && (leg.distanceKm>0 || leg.durationMin>0))
+      ? { distanceKm:leg.distanceKm, durationMin:leg.durationMin, state:'browse', estimateId:'engine-v2' }
+      : catalogueRouteEstimate();
+    if(!hasExactRouteInputs()) activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    const q=(T && T.place(routeFromId) && T.place(routeToId)) ? T.privateQuote(routeFromId, routeToId) : null;
+    vehPrices = q ? { car:q.rawCar, van:q.rawVan } : null;
+    if(vehPrices){ unit=vehPrices[vehicleKey]; r.price=unit; }
+    scheduleRouteMap(); // redraw the map on the road now priced
+    return true;
+  }
+  let dropped=false;
+  for(let i=0, j=0; i<tripStops.length-1; i++){
+    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    const leg=estLegs ? estLegs[j++] : null;
+    if(tripRoads[i]!=='no_tolls') continue;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
+    tripRoads[i]='fastest';
+    tripKms[i]=(leg && leg.distanceKm>0) ? Math.round(leg.distanceKm) : null; // null → catalogue km
+    dropped=true;
+  }
+  if(dropped){
+    const q=tripQuoteWithKms(vehicleKey); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
+    repaintTripDrives();
+  }
+  return dropped;
+}
 function buildEstimateIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
@@ -1463,13 +1568,14 @@ function buildEstimateIntent(){
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
       if(tripGaps.has(i)) continue;
-      legs.push({ from: tripStops[i], to: tripStops[i+1] });
+      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
   // Single transfer: the same place strings the booking payload sends (createApiBooking,
   // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
-  const legs = [{ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] }];
+  const legs = [Object.assign({ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] },
+    bookRoad==='no_tolls' ? { routeVariant:'no_tolls' } : {})];
   const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
@@ -1663,20 +1769,28 @@ function handleEngineEstimate(est, sig){
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
-  adoptCustomerRouteEstimate(est,sig);
+  // Route choice: the engine echoes the road it actually priced on each leg. A local road asked
+  // for but answered with 'fastest' could not be confirmed for these points — the figure is the
+  // expressway fare, so the page stops claiming (and asking for) the local road.
+  if(est && Array.isArray(est.legs) && !(isTrip && state.svc==='chauffeur') && dropLocalRoad(est.legs)) roadNotice='echo';
+  // Clearing a road moves the intent: an echoed 'fastest' is exactly the expressway price for
+  // the NEW intent, so everything below settles against that one. render() still sends one more
+  // estimate for it (lastRequestedSig holds the old sig) — deliberately not suppressed.
+  const sigNow = currentIntentSig();
+  adoptCustomerRouteEstimate(est,sigNow);
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
+  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sigNow, engineEst.intentSig)){
     // `vehicleUpgrade`: the party has outgrown the car, so the engine priced a van on its own.
     // The capacity note already owns that decision (it blocks Continue until it's resolved) and
     // is the ONE control for it — see carOutgrownVanFits(). The figure is still held, exactly as
     // for any undriven raise; it just isn't announced a second time by renderRepriceNote.
     state.pendingReprice = { engineRaise:true, vehicleUpgrade:carOutgrownVanFits(),
-      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sigNow };
     render();
     checkWhere();
     return;
   }
-  adoptEngineEstimate(est, sig);
+  adoptEngineEstimate(est, sigNow);
   state.pendingReprice = null; // a fresh figure supersedes any stale reprice notice too
   render();
   checkWhere();
@@ -1877,10 +1991,33 @@ function customerRouteEstimateText(){
     ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
     : '';
 }
+// The local road being booked, in words — '' on the expressway, or once the road was dropped.
+// The summary (#sum-road) and step 4's Due now box both say it.
+function roadChoiceText(){
+  if(isTrip){
+    if(state.svc==='chauffeur') return '';
+    const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
+    return local.length ? 'Local road for '+local.join(', ') : '';
+  }
+  return bookRoad==='no_tolls' ? 'Via the local road · no expressway' : '';
+}
+// The road the customer chose, under the route estimate — and, beside it, why a chosen local road
+// no longer applies (the engine could only price the expressway, or a chauffeur-guide was picked).
+function paintRoadChoice(){
+  const road=roadChoiceText();
+  const roadEl=document.getElementById('sum-road');
+  if(roadEl){ roadEl.textContent=road; roadEl.hidden=!road; }
+  let note='';
+  if(isTrip && state.svc==='chauffeur' && tripLocalWires().length) note='Local roads apply to private transfers, so a chauffeur-guide takes the usual roads.';
+  else if(roadNotice==='echo') note='The local road isn’t available for these exact points, so this is the expressway fare.';
+  const noteEl=document.getElementById('sum-road-note');
+  if(noteEl){ noteEl.textContent=note; noteEl.hidden=!note; }
+}
 function paintCustomerRouteEstimate(){
   const text=customerRouteEstimateText();
   const summary=document.getElementById('sum-route-estimate');
   if(summary){ summary.textContent=text; summary.hidden=!text; }
+  paintRoadChoice();
   const bar=document.getElementById('rm-bar');
   if(!bar || isTrip) return;
   const from=shortPlaceLabel(state.locFrom || r.stops[0]);
@@ -1891,6 +2028,7 @@ function paintCustomerRouteEstimate(){
     `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
 }
 function render(){
+  if(isTrip) repaintTripDrives(); // a local-road leg takes the engine's drive time once it lands
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen
@@ -1949,7 +2087,7 @@ function render(){
           // one route that still works. waTripSummary() carries the itinerary, so the
           // traveller does not retype what they just entered.
           '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we’ll see what we can do.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Change your dates →</button>';
       } else { note.hidden=true; note.innerHTML=''; }
     }
     if(!chOK && state.svc==='chauffeur'){
@@ -1963,7 +2101,7 @@ function render(){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
@@ -2155,7 +2293,9 @@ function render(){
       ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
       : r.name;
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
+    // The road being paid for, under the route — the summary's words, gone when the road is.
+    const dueRoad = roadChoiceText();
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
@@ -2351,7 +2491,17 @@ async function runPayment(){
   let booking;
   payRef = null; // a fresh attempt: no reference until the create answers
   try { booking = await createApiBooking(); }
-  catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
+  catch(e){
+    clearTimeout(slow);
+    // The local road couldn't be confirmed at booking time: drop it, re-price on the expressway,
+    // and show why — with no one-click retry, so the customer sees the new price before paying.
+    if(e && e.status===422 && e.body && e.body.error==='route_choice_unavailable'){
+      dropLocalRoad(null); roadNotice='';
+      render();
+      return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
+    }
+    return phShowEnd(...bookingCreateFailure(e));
+  }
   clearTimeout(slow);
   payRef = (booking && booking.reference) || null;
   if(!booking){ return simulatePayThenConfirm(null); }
@@ -2750,7 +2900,9 @@ async function createApiBooking(){
       driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined,
       // The server prices from THIS payload, so it must know which wires are the traveller's own
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
-      gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined
+      gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // One road per consecutive stop pair; sent only when a local road is actually chosen.
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -2790,7 +2942,8 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
-      extras: state.addons.size ? Array.from(state.addons) : undefined
+      extras: state.addons.size ? Array.from(state.addons) : undefined,
+      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined
     };
   }
   // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was

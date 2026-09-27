@@ -81,3 +81,29 @@ describe('projectBooking names the add-ons the customer chose', () => {
     expect(projectBooking(tripBooking)).not.toHaveProperty('addOns');
   });
 });
+
+// The road the customer paid for, when it isn't the expressway (route choice, spec §4.3). The
+// manage card is where a paying customer lands, and it was the one customer view that never said
+// which road they bought. Same words as the emails (roadRow). Only when there is one: every
+// existing booking's view keeps exactly the keys it had.
+describe('projectBooking names the local road the customer chose', () => {
+  it('a transfer on the local road says so, with its drive time', () => {
+    const b = { ...singleBooking, durationMin: 374, input: { ...(singleBooking as never as { input: Record<string, unknown> }).input, routeVariant: 'no_tolls' } } as unknown as Booking;
+    expect(projectBooking(b).road).toBe('Local road, no expressway · about 6h 14m');
+  });
+
+  it('a trip names the legs that take the local road', () => {
+    const b = { ...tripBooking, input: { ...(tripBooking as never as { input: Record<string, unknown> }).input, routeVariants: ['fastest', 'no_tolls', 'fastest'] } } as unknown as Booking;
+    expect(projectBooking(b).road).toBe('Local road for Sigiriya → Kandy');
+  });
+
+  it('leaves the field out on the expressway — the view keeps exactly its old keys', () => {
+    const fastest = { ...singleBooking, input: { ...(singleBooking as never as { input: Record<string, unknown> }).input, routeVariant: 'fastest' } } as unknown as Booking;
+    for (const b of [singleBooking, tripBooking, fastest]) expect(projectBooking(b)).not.toHaveProperty('road');
+    expect(Object.keys(projectBooking(singleBooking))).toEqual([
+      'reference', 'status', 'mode', 'firstName', 'currency', 'totalCents', 'amountDueNowCents', 'balanceDueCents',
+      'from', 'to', 'date', 'time', 'stops', 'legDates', 'endDate', 'travellers', 'bags', 'vehicleType',
+    ]);
+    expect(JSON.stringify(projectBooking(fastest))).toBe(JSON.stringify(projectBooking(singleBooking)));
+  });
+});

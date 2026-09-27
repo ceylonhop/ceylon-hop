@@ -90,13 +90,37 @@ function localRouteEstimate(a,b){
     source:'estimated'
   } : null;
 }
-function legRouteEstimate(a,b){
-  const key=liveRouteKey(a,b);
-  return liveRouteCache.get(key) || localRouteEstimate(a,b);
+/* Route choice (spec 2026-09-26 §4.7): a drive whose toll-free local road is cheaper than the
+   expressway can be switched to it. Everything is keyed by DRIVE (liveRouteKey), never by card
+   index, so reordering keeps a choice and changing an endpoint re-arms it (the key changes). */
+const roadOptions = new Map();   // key → {from,to, fastest:{km,min}, noTolls:{km,min}}: the engine's answer
+const roadChecked = new Set();   // keys already sent in a batch — never sent again
+const roadChoice = new Map();    // key → 'no_tolls' | 'fastest'
+// The road the page draws a drive on before any choice: Google's, or the catalogue's.
+function baseRouteEstimate(a,b){
+  return liveRouteCache.get(liveRouteKey(a,b)) || localRouteEstimate(a,b);
 }
-function legKm(a,b){
-  const route=legRouteEstimate(a,b);
-  return route ? route.distanceKm : null;
+// EVERY figure on the page (card, guide total, the `kms` hand-off) reads this, so the local road
+// needs no logic of its own anywhere else.
+function legRouteEstimate(a,b){
+  const base=baseRouteEstimate(a,b);
+  const key=liveRouteKey(a,b), opt=roadOptions.get(key);
+  if(!base || !opt || roadChoice.get(key)!=='no_tolls') return base;
+  return Object.assign({}, base, { distanceKm:opt.noTolls.km, durationMin:opt.noTolls.min, road:'no_tolls' });
+}
+/* The minutes a drive adds to its day, for the same-day driving check. That check models time as
+   km/42 (drivingMinutes), which a local road's SHORTER km would turn into LESS driving although
+   the local road is slower. So a local-road drive counts the expressway's modelled minutes plus
+   the real extra time the engine measured: choosing it can only make a day longer. Every other
+   drive counts exactly as before. */
+function dayDrivingMinutes(a,b){
+  const base=baseRouteEstimate(a,b);
+  if(!base || base.distanceKm==null) return null;
+  const minutes=drivingMinutes(base.distanceKm);
+  const key=liveRouteKey(a,b), opt=roadOptions.get(key);
+  if(!opt || roadChoice.get(key)!=='no_tolls') return minutes;
+  const extra=Number.isFinite(opt.noTolls.min) && Number.isFinite(opt.fastest.min) ? Math.max(0, opt.noTolls.min-opt.fastest.min) : 0;
+  return minutes+extra;
 }
 function requestLiveRoute(a,b,cb){
   if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
@@ -177,6 +201,12 @@ const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)|
 // Wire indices the traveller arranges themselves (a leg's drop-off ≠ the next leg's pick-up).
 // Restored from the URL so returning from booking doesn't re-invent a connector leg for the gap.
 const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+// The local roads chosen on an earlier pass (booking's Back, a reload): `roads` is index-aligned
+// with the stop wires, 'no_tolls' or empty. It takes effect only once the batch confirms the
+// drive still has a cheaper local road; one that comes back without it is dropped.
+(params.get('roads')||'').split(',').forEach((r,i)=>{
+  if(r==='no_tolls' && i<startStops.length-1 && !gapsParam.includes(i)) roadChoice.set(liveRouteKey(startStops[i],startStops[i+1]),'no_tolls');
+});
 function buildLegs(stops, nights, gaps){
   const hasNights = nights && nights.some(n=>n>0);
   if(!stops.length) return [];  // fresh planner — the empty state invites the first leg
@@ -459,7 +489,7 @@ function routeSeq(){
 // Each transfer leg's date lands on the wire it creates, so dates set in the
 // “When” step flow through to the booking itinerary in the right place.
 function routeSeqDetailed(){
-  const seq=[]; const wires=[]; const wireKm=[]; const claimed=new Set();
+  const seq=[]; const wires=[]; const wireKm=[]; const wireRoad=[]; const wireChosen=[]; const claimed=new Set();
   const addPlace=(place,nights)=>{
     if(!place) return false;
     if(seq.length && norm(seq[seq.length-1].place)===norm(place)){ seq[seq.length-1].nights+=nights; return false; }
@@ -478,23 +508,34 @@ function routeSeqDetailed(){
         const w=seq.length-2;
         claimed.add(w); // this transfer's own wire; any UNclaimed wire is a "gap" the traveller arranges
         wires[w] = l.date ? fmtISO(l.date) : '';
-        const km=legKm(l.from,l.to);
+        const route=legRouteEstimate(l.from,l.to);
+        const km=route ? route.distanceKm : null;
         wireKm[w] = km!=null ? String(km) : '';
+        wireRoad[w] = route && route.road==='no_tolls' ? 'no_tolls' : '';
+        wireChosen[w] = roadChoice.get(liveRouteKey(l.from,l.to))==='no_tolls' ? 'no_tolls' : '';
       }
     }
   });
-  const dates=[]; const kms=[]; const gaps=[];
-  for(let i=0;i<Math.max(0,seq.length-1);i++){ dates.push(wires[i]||''); kms.push(wireKm[i]||''); if(!claimed.has(i)) gaps.push(i); }
-  return { seq, dates, kms, gaps };
+  // roads: per wire, 'no_tolls' where the drive is priced and drawn on the local road, else empty —
+  // what the booking hand-off and the map use. chosenRoads also keeps a choice the batch has not
+  // confirmed yet (a reload, an API hiccup), so the plan's own URL never loses it. A gap wire is
+  // never claimed by a transfer, so it is always empty in both.
+  const dates=[]; const kms=[]; const gaps=[]; const roads=[]; const chosenRoads=[];
+  for(let i=0;i<Math.max(0,seq.length-1);i++){
+    dates.push(wires[i]||''); kms.push(wireKm[i]||''); roads.push(wireRoad[i]||''); chosenRoads.push(wireChosen[i]||'');
+    if(!claimed.has(i)) gaps.push(i);
+  }
+  return { seq, dates, kms, gaps, roads, chosenRoads };
 }
 function syncPlanUrl(){
-  const { seq, dates, gaps } = routeSeqDetailed();
+  const { seq, dates, gaps, chosenRoads } = routeSeqDetailed();
   if(seq.length){
     const p=new URLSearchParams(location.search);
     p.set('stops', seq.map(s=>s.place).join('|'));
     p.set('nights', seq.map(s=>s.nights).join(','));
     p.set('dates', dates.join(','));
     if(gaps.length) p.set('gaps', gaps.join(',')); else p.delete('gaps');
+    if(chosenRoads.some(Boolean)) p.set('roads', chosenRoads.join(',')); else p.delete('roads');
     // pax stays out of the URL until it's actually picked — String(null) wrote the literal
     // "null", which booking.js would later parse as 1 traveller.
     if(state.pax!=null) p.set('pax', String(state.pax)); else p.delete('pax');
@@ -516,19 +557,214 @@ function vehiclePriceIcon(){
   return `<span class="lm-veh" title="${isVan?'Private AC van':'Private AC car'}" aria-label="${isVan?'Private AC van':'Private AC car'}">${isVan?VAN_ICO:CAR_ICO}</span>`;
 }
 
-function distHtml(route, price){
+/* ---- route choice: the chip, the popup and the batch that finds the forks (spec §4.7) ----
+   The engine's routeChoice decides only WHETHER a drive has a cheaper local road, and its km and
+   time. Every price here stays this page's own — legPrice at that road's km, finished as the card
+   finishes it — so the chip, the popup and the card can never disagree. */
+const planFareCents = km => Math.round(T.finishPrice(legPrice(km, state.vehicle), minLegPrice(state.vehicle))*100);
+// What a drive's chip and popup describe, or null when there is nothing to offer. A drive whose
+// two roads price the same here shows no chip, unless the traveller already chose (so they can
+// always switch back). The saving is whole dollars rounded DOWN, in cents: never overstated.
+function roadOffer(key){
+  const opt=roadOptions.get(key); if(!opt) return null;
+  const base=baseRouteEstimate(opt.from, opt.to);
+  if(!base || base.distanceKm==null) return null;
+  const fastCents=planFareCents(base.distanceKm), localCents=planFareCents(opt.noTolls.km);
+  const saving=Math.max(0, Math.floor((fastCents-localCents)/100));
+  const choice=roadChoice.get(key)||null;
+  if(saving<1 && !choice) return null;
+  return { key, opt, base, fastCents, localCents, saving, choice };
+}
+/* One road, one set of figures: the popup and the chip describe each road with the rounding the
+   card's own distance line uses (route-estimate.js), as search.js does. Under an hour stays in
+   minutes, as durationWords does. */
+const estimatePolicy = () => (window.CH && CH.routeEstimate) || null;
+const roadKmText = km => `${estimatePolicy() ? estimatePolicy().roundDistanceKm(km) : Math.round(km)} km`;
+const roadMinRounded = m => (m == null ? null : estimatePolicy() ? estimatePolicy().roundDurationMin(m) : m);
+function roadTimeText(m){
+  const r=roadMinRounded(m);
+  if(r==null || !window.CH_ROUTE_CHOICE) return '';
+  return m<60 ? `${r} min` : CH_ROUTE_CHOICE.fmtMinutes(r);
+}
+function roadChipHtml(key){
+  const o=key ? roadOffer(key) : null;
+  if(!o) return '';
+  const label = o.choice==='no_tolls' ? 'Road: Local road ▾'
+    : o.choice==='fastest' ? 'Road: Expressway ▾'
+      : `Cheaper local road · save about $${o.saving}`;
+  const cls = 'lm-road' + (o.choice ? ' is-set' : '') + (o.choice==='no_tolls' ? ' is-local' : '');
+  return `<span class="lm-road-row"><button type="button" class="${cls}" data-road-key="${escAttr(key)}" aria-haspopup="dialog">`+
+         `<span class="lm-road-sw" aria-hidden="true"></span>${label}</button></span>`;
+}
+// The sessionStorage "asked" mark, in search.js's from>to shape.
+const roadAskKey = opt => opt.from+'>'+opt.to;
+function trackRoad(choice, source, saving){
+  if(typeof window.chTrack==='function') window.chTrack('route_choice', { choice, source, page:'plan', saving_usd:saving });
+}
+function openRoad(key, source){
+  const RC=window.CH_ROUTE_CHOICE, o=roadOffer(key);
+  if(!RC || !o || RC.isOpen()) return;
+  RC.markAsked(roadAskKey(o.opt));
+  RC.open({
+    title:`Two roads to ${o.opt.to}`,
+    sub:"The local road skips the expressway tolls. It's slower, but cheaper. Pick one and you can switch later.",
+    fastest:{ time:roadTimeText(o.base.durationMin), km:roadKmText(o.base.distanceKm), price:'about '+money(o.fastCents/100) },
+    local:{
+      time:roadTimeText(o.opt.noTolls.min),
+      // no tag at all rather than "Save about $0" (a chosen road whose saving has gone)
+      km:roadKmText(o.opt.noTolls.km), price:'about '+money(o.localCents/100), save:o.saving>=1 ? 'Save about $'+o.saving : ''
+    },
+    selected: o.choice==='no_tolls' ? 'no_tolls' : 'fastest',
+    onPick: v => {
+      roadChoice.set(key, v==='no_tolls' ? 'no_tolls' : 'fastest');
+      render();   // the card, the guide total, the map (its key carries the roads) and the URL
+      trackRoad(roadChoice.get(key), source, o.saving);
+      // the chip that opened it was rebuilt: give focus back to its replacement
+      if(source==='card'){ const b=[...document.querySelectorAll('#rail .lm-road')].find(x=>x.dataset.roadKey===key); if(b) b.focus(); }
+    },
+    onDismiss: () => trackRoad('dismissed', source, o.saving)
+  });
+}
+// The chip reopens the popup for its drive, as the ops chip does.
+document.getElementById('rail').addEventListener('click', e=>{
+  const b=e.target.closest('.lm-road');
+  if(b) openRoad(b.dataset.roadKey, 'card');
+});
+
+/* Auto-open, once per drive per tab, never over something the traveller is doing: no field
+   focused, no place menu, no other popup, and not on the dates step (render() fires from late
+   live-route callbacks while that step shows). Only the earliest undecided drive opens; every
+   other candidate is marked asked at the same moment and keeps its chip — offers never chain. */
+let pendingOffer=false;
+function roadPageQuiet(){
+  // A plan opened in a background tab waits until it is shown (the visibilitychange below).
+  if(document.visibilityState!=='visible') return false;
+  const a=document.activeElement;
+  if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  if(document.querySelector('.place-menu')) return false;
+  if(window.CH_ROUTE_CHOICE.isOpen()) return false;
+  return document.getElementById('dates-wrap')?.hidden !== false;
+}
+function maybeOfferRoad(){
+  const RC=window.CH_ROUTE_CHOICE; if(!RC) return;
+  const cands=[];
+  state.legs.forEach(l=>{
+    if(l.type==='stay') return;
+    const key=liveRouteKey(l.from,l.to);
+    if(cands.includes(key)) return;
+    const o=roadOffer(key);
+    if(o && !o.choice && !RC.wasAsked(roadAskKey(o.opt))) cands.push(key);
+  });
+  pendingOffer=false;
+  if(!cands.length) return;
+  if(!roadPageQuiet()){ pendingOffer=true; return; }
+  cands.forEach(k=>RC.markAsked(roadAskKey(roadOptions.get(k))));
+  openRoad(cands[0], 'popup');
+}
+// The next quiet moment: a blur that leaves no field focused. Waits out the place menu, which a
+// blur closes 120 ms later (wirePlaceSearch), so the menu of the field just left doesn't count.
+// The held offer (pendingOffer) is asked the first time the tab is shown — never again after.
+document.addEventListener('visibilitychange', ()=>{
+  if(pendingOffer && document.visibilityState==='visible') maybeOfferRoad();
+});
+document.addEventListener('focusout', ()=>{
+  if(pendingOffer) setTimeout(()=>{ if(pendingOffer) maybeOfferRoad(); }, 150);
+  // a drive skipped while its field had focus is sent now, even if the field didn't change
+  if(roadSkipped) checkRoads();
+});
+
+/* One estimate-batch request per change of drives (debounced like the rest of the page), one
+   one-leg car intent with compareRoutes per drive not yet checked — so however many drives there
+   are, the page stays inside the API's rate limit. At most 10 drives (the planner's maximum; the
+   server compares at most 12). API off, a network error or a non-200: nothing happens, and
+   nothing retries — every sent drive is already marked checked. */
+let roadTimer=null;
+function checkRoads(){
+  clearTimeout(roadTimer);
+  roadTimer=setTimeout(sendRoadBatch, 800);
+}
+// The batch prices catalogue towns only (spec §4.1): a Google pick or free text is never sent.
+function isCatalogueTown(name){ const g=GEO[norm(name)]; return !!(g && g.id); }
+let roadSkipped=false;
+function sendRoadBatch(){
+  if(!window.CEYLON_HOP_API) return;
+  roadSkipped=false;
+  // A drive whose field is being typed in isn't committed yet: skipped, NOT marked checked, so the
+  // render its 'change' triggers sends it.
+  const ae=document.activeElement;
+  const editing=ae && ae.closest && ae.closest('#rail .leg') && ae.matches('.place-input') ? +ae.closest('#rail .leg').dataset.i : -1;
+  const drives=[];
+  state.legs.forEach((l,i)=>{
+    if(l.type==='stay') return;
+    if(i===editing){ roadSkipped=true; return; }
+    const from=(l.from||'').trim(), to=(l.to||'').trim();
+    if(!from || !to || norm(from)===norm(to) || !isCatalogueTown(from) || !isCatalogueTown(to)) return;
+    const key=liveRouteKey(from,to);
+    if(roadChecked.has(key) || drives.some(d=>d.key===key) || drives.length>=10) return;
+    drives.push({ key, from, to });
+  });
+  if(!drives.length) return;
+  drives.forEach(d=>roadChecked.add(d.key));
+  const intents=drives.map(d=>({ product:'private', vehicle:'car', pax:1, bags:0, extras:[], legs:[{ from:d.from, to:d.to }], compareRoutes:true }));
+  fetch(window.CEYLON_HOP_API.replace(/\/$/, '')+'/quote/v2/estimate-batch', {
+    method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ intents })
+  }).then(res=>res.ok ? res.json() : null).then(body=>{
+    const results=body && Array.isArray(body.results) ? body.results : null;
+    if(!results || results.length!==drives.length) return;
+    const road=r=>r && Number.isFinite(r.distanceKm) && r.distanceKm>0;
+    let changed=false;
+    drives.forEach((d,i)=>{
+      const rc=results[i] && results[i].routeChoice;
+      if(rc && road(rc.fastest) && road(rc.noTolls)){
+        roadOptions.set(d.key, {
+          from:d.from, to:d.to,
+          fastest:{ km:rc.fastest.distanceKm, min:rc.fastest.durationMin },
+          noTolls:{ km:rc.noTolls.distanceKm, min:rc.noTolls.durationMin }
+        });
+        changed=true;
+      } else if(roadChoice.delete(d.key)){
+        changed=true;   // a road carried in the URL that this drive no longer offers
+      }
+    });
+    if(changed) refreshRoads();
+    maybeOfferRoad();
+  }).catch(()=>{});
+}
+/* The batch lands whenever it lands — often while the traveller is typing in a field. A full
+   render() would rebuild that field under their cursor, so only each drive's distance line, the
+   summary (and with it the map) and the URL are redrawn, as refreshVehiclePricing does. */
+function refreshRoads(){
+  document.querySelectorAll('#rail .leg').forEach(el=>{
+    const leg=state.legs[+el.dataset.i];
+    const distEl=el.querySelector('[data-dist]');
+    if(!leg || leg.type==='stay' || !distEl) return;
+    const route=legRouteEstimate(leg.from,leg.to);
+    const km=route?route.distanceKm:null;
+    distEl.innerHTML=distHtml(route, km!=null?legPrice(km,state.vehicle):null, liveRouteKey(leg.from,leg.to));
+    distEl.classList.toggle('on', km!=null);
+  });
+  updateSummary();
+  syncPlanUrl();
+}
+
+function distHtml(route, price, key){
   if(!route || route.distanceKm==null){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
   }
-  const source=route.source==='google' ? 'Google route'
+  // A local-road drive shows the engine's figures for that road, so it never borrows the
+  // expressway's source label (a "reviewed" catalogue row describes the expressway).
+  const local=route.road==='no_tolls';
+  const source=local ? 'Local road' : route.source==='google' ? 'Google route'
     : route.source==='reviewed' ? 'Reviewed route' : 'Estimated route';
-  const sourceTitle=route.source==='google' ? 'Distance and journey time routed by Google'
+  const sourceTitle=local ? 'Toll-free road distance and journey time, measured by Google'
+    : route.source==='google' ? 'Distance and journey time routed by Google'
     : route.source==='reviewed' ? 'Distance and journey time from the reviewed route table'
       : 'Approximate route until Google routing is available';
   return `<span class="lm-dist">${routeEstimateText(route)}</span>`+
          `<span class="lm-src" title="${sourceTitle}">${source}</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from ${vehiclePriceIcon()} <b data-live-price>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`;
+         `<span class="lm-price">from ${vehiclePriceIcon()} <b data-live-price>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`+
+         roadChipHtml(key);
 }
 
 // remove any portaled date popovers left over from the previous render
@@ -669,7 +905,7 @@ function render(){
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
-            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price)}</div>`}
+            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price,liveRouteKey(leg.from,leg.to))}</div>`}
           <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
@@ -690,12 +926,12 @@ function render(){
         const route=legRouteEstimate(fromI.value,toI.value);
         const k=route?route.distanceKm:null;
         const pr=k!=null?legPrice(k,state.vehicle):null;
-        distEl.innerHTML=distHtml(route,pr);
+        distEl.innerHTML=distHtml(route,pr,liveRouteKey(fromI.value,toI.value));
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
         // never here on raw keystrokes, so a half-typed string like "ga" is never geocoded
-        // or priced. Known places still price instantly above via the local legKm().
+        // or priced. Known places still price instantly above via the local route table.
         updateSummary();
       }
       fromI.addEventListener('input',recompute);
@@ -783,7 +1019,12 @@ function render(){
   if(addBtn) addBtn.lastChild.textContent = state.legs.length ? ' Add another transfer' : ' Add your first transfer';
   syncVehBtns();
   syncTemplateStrip();
+  // A drive the traveller edited away loses its road: its key is gone from the legs. Pruned
+  // before the URL is written, so `roads` never names a drive the plan no longer has.
+  const driveKeys=new Set(state.legs.filter(l=>l.type!=='stay').map(l=>liveRouteKey(l.from,l.to)));
+  [...roadChoice.keys()].forEach(k=>{ if(!driveKeys.has(k)) roadChoice.delete(k); });
   syncPlanUrl();
+  checkRoads();
 }
 
 function refreshVehiclePricing(){
@@ -812,7 +1053,7 @@ function refreshVehiclePricing(){
     const route=legRouteEstimate(leg.from,leg.to);
     const km=route?route.distanceKm:null;
     const price=km!=null?legPrice(km,state.vehicle):null;
-    distEl.innerHTML=distHtml(route,price);
+    distEl.innerHTML=distHtml(route,price,liveRouteKey(leg.from,leg.to));
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
     const from=before.get(el.dataset.i);
@@ -973,7 +1214,8 @@ function updateSummary(opts={}){
 // What the drawn map actually depends on: the ordered stops and where the route BREAKS. Party
 // size, vehicle, dates and nights are not in it — they cannot move a line between two places.
 let lastMapKey=null;
-function mapKey(names,gapSet){ return JSON.stringify([names,[...gapSet].sort()]); }
+// The roads are in it too: a road pick redraws the same stops along a different road.
+function mapKey(names,gapSet,roads){ return JSON.stringify([names,[...gapSet].sort(),roads]); }
 
 function renderMap(){
   const host=document.getElementById('trip-map'); if(!host) return;
@@ -986,14 +1228,16 @@ function renderMap(){
     return {name, idx, ...proj(g.lat,g.lng)};
   }).filter(Boolean);
   // Wires the traveller arranges themselves — the route line must BREAK here, not draw across.
-  const gapSet=new Set(routeSeqDetailed().gaps);
+  const detail=routeSeqDetailed();
+  const gapSet=new Set(detail.gaps);
+  const roads=detail.roads;   // per wire of `names`: 'no_tolls' or empty
   // Redrawing an unchanged route is not free: CH_MAP.renderRoute() tears the host down and builds
   // a fresh google.maps.Map, which flashes the map back through its spinner and costs another
   // billable dynamic-map load. updateSummary()'s refreshMap defaults to true, so every pax click
   // was paying both for a route that had not moved (owner-reported, 2026-08-19). Guarding here
   // rather than at the call sites covers pax, vehicle, dates and nights in one place — and the
   // host still has to be populated at least once, hence the firstRender check.
-  const key=mapKey(names,gapSet);
+  const key=mapKey(names,gapSet,roads);
   if(key===lastMapKey && host.firstElementChild) return;
   lastMapKey=key;
   const gapBetween=(a,b)=>{ for(let w=a;w<b;w++) if(gapSet.has(w)) return true; return false; };
@@ -1030,7 +1274,8 @@ function renderMap(){
   // drives is simply never drawn. This used to bail to the schematic instead, which meant any trip
   // with a self-arranged stretch lost its map and got a hand-drawn oval standing in for the island.
   // The SVG stays as the honest FAILURE path: no key, or Google unreachable.
-  const runs = gapSet.size ? routeRuns(names, gapSet) : null;
+  // A local-road drive is its own run too: avoidTolls is a per-query modifier (ch-map.js).
+  const runs = (gapSet.size || roads.includes('no_tolls')) ? routeRuns(names, gapSet, i=>roads[i]||'') : null;
   if(window.CH_MAP && names.length>=2 && (!runs || runs.length)){
     const opts = { expandable:true, onFail(){ host.innerHTML=svg; } };
     if(runs) opts.runs = runs;   // omitted entirely on an unbroken route: same single query as ever
@@ -1038,21 +1283,29 @@ function renderMap(){
   }
   else { host.innerHTML=svg; }
 }
-/* Split the stop list into the stretches we actually drive. `gapSet` holds the index of each wire
-   the traveller arranges themselves, so a gap at i breaks the route between names[i] and
-   names[i+1]. Each stretch is its own run: `continues:false`, because a run after a gap starts at a
-   genuinely different place and needs its own pin (unlike quote.html's road-choice splits, which
-   share a stop with the run before them).
+/* Split the stop list into the stretches we actually drive, each its own route query. `gapSet`
+   holds the index of each wire the traveller arranges themselves, so a gap at i breaks the route
+   between names[i] and names[i+1]; `roadAt(i)` is wire i's road ('no_tolls' or empty), and a
+   change of road starts a new run too, because avoidTolls is a per-query modifier.
+   `continues` follows api/src/quote/customerQuoteView.ts's mapRunsOf: a run continues when it
+   starts at the stop where the previous KEPT run ended — true across a road change, which shares
+   that stop, and false after a gap, where the next run starts at a genuinely different place and
+   needs its own pin.
    A stretch of one stop can't be routed and is dropped — ch-map requires two — so an isolated stop
    between two gaps has no line, though the legend still numbers it. */
-function routeRuns(names, gapSet){
-  const runs=[]; let cur=[];
-  for(let i=0;i<names.length;i++){
-    cur.push(names[i]);
-    if(gapSet.has(i)){ runs.push(cur); cur=[]; }
+function routeRuns(names, gapSet, roadAt){
+  const road = i => (roadAt ? roadAt(i) : '') || '';
+  const runs=[]; let cur=null;
+  for(let i=0;i<names.length-1;i++){
+    if(gapSet.has(i)){ cur=null; continue; }          // wire i isn't driven
+    if(!cur || cur.road!==road(i)){ cur={ first:i, last:i+1, road:road(i), stops:[names[i]] }; runs.push(cur); }
+    cur.stops.push(names[i+1]); cur.last=i+1;
   }
-  if(cur.length) runs.push(cur);
-  return runs.filter(r=>r.length>=2).map(stops=>({ stops, avoidTolls:false, continues:false }));
+  return runs.map((r,k)=>({
+    stops:r.stops,
+    avoidTolls:r.road==='no_tolls',
+    continues:k>0 && runs[k-1].last===r.first
+  }));
 }
 
 // ---- continue into the booking flow ----
@@ -1278,11 +1531,11 @@ function sameDayDrivingIssue(){
   const byDate=new Map();
   state.legs.forEach(leg=>{
     if(leg.type==='stay' || !leg.date) return;
-    const km=legKm(leg.from, leg.to);
-    if(km==null) return;
+    const minutes=dayDrivingMinutes(leg.from, leg.to);
+    if(minutes==null) return;
     const key=fmtISO(leg.date);
     const day=byDate.get(key) || { minutes:0, count:0 };
-    day.minutes += drivingMinutes(km);
+    day.minutes += minutes;
     day.count += 1;
     byDate.set(key, day);
   });
@@ -1373,7 +1626,7 @@ function goToBooking(){
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
-  const { seq, dates, kms, gaps } = routeSeqDetailed();
+  const { seq, dates, kms, gaps, roads } = routeSeqDetailed();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   // Backstop for the showDatesStep gate (?step=dates deep-links land here too): never hand
   // booking pax=null — it parses "null" as 1 traveller and there is no later step to fix it.
@@ -1394,6 +1647,8 @@ function goToBooking(){
     vehicle:state.vehicle,
     start: firstDated || ''
   });
+  // the local roads chosen, index-aligned with the wires like kms (whose km they already carry)
+  if(roads.some(Boolean)) p.set('roads', roads.join(','));
   window.location.href='booking.html?'+p.toString();
 }
 document.getElementById('request-btn').addEventListener('click',showDatesStep);

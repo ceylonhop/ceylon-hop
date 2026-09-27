@@ -155,6 +155,15 @@ window.updateSearch = function (e) {
    renders through a function. `shared` stays null for an engine route: a shared seat is a
    scheduled corridor in the baked table, and no such service exists for an arbitrary place. */
 let quote = engineRoute ? null : T.privateQuote(fromId, toId);
+/* Route choice (spec 2026-09-26 §4.6). When the engine finds the toll-free local road cheaper,
+   `roads` holds both roads' fares, in dollars like quote.car, and `road` is the one on the card.
+   `expresswayQuote` is `quote` as it stood when the roads arrived: switching back restores that
+   exact object, so the expressway never changes its km (on a baked pair, the catalogue's). */
+let roads = null, expresswayQuote = null;
+let road = params.get('road') === 'no_tolls' ? 'no_tolls' : 'fastest';
+let selectClicked = false;   // a Select was followed — too late to offer a road
+// A `road=no_tolls` the engine can't back (no cheaper local road today) prices the expressway.
+const onLocalRoad = () => !!roads && road === 'no_tolls';
 const shared = engineRoute ? null : T.sharedOption(fromId, toId);
 // Whether the fares on the card come from the engine (bottom of this file). Same ends is a broken
 // link with the picker already open over it — nothing to ask.
@@ -197,7 +206,7 @@ function renderMeta(measuring) {
     : '';
   document.getElementById('route-meta').innerHTML =
     (quote && estimateText
-      ? `<span class="route-estimate">${ICONS.clock} ${estimateText}</span>`
+      ? `<span class="route-estimate">${ICONS.clock} ${estimateText}${onLocalRoad() ? ' · via local road' : ''}</span>`
       : measuring ? `<span>${ICONS.pin} Measuring your route…</span>` : '') +
     `<span>${ICONS.cal} ${dateText}</span>` +
     (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
@@ -260,13 +269,19 @@ function bookUrl(extra) {
   // traveller count properly on its own step, so an absent param costs nothing there —
   // whereas a guessed one arrives pre-filled and looks like their answer.
   const base = { from: fromId, to: toId, date };
-  if (quote) {
-    base.estimateKm = String(quote.km);
-    if (quote.durationMin != null) base.estimateMin = String(quote.durationMin);
-    base.estimateState = quote.estimateState || 'browse';
-    base.estimateId = quote.estimateId || browseEstimateId;
+  // Only a private car takes the local road. The shared seat is a scheduled service on its own
+  // road, so its link always carries the expressway's figures and never a `road`.
+  const local = onLocalRoad() && extra.mode === 'private';
+  const q = local || !expresswayQuote ? quote : expresswayQuote;
+  if (q) {
+    base.estimateKm = String(q.km);
+    if (q.durationMin != null) base.estimateMin = String(q.durationMin);
+    base.estimateState = q.estimateState || 'browse';
+    base.estimateId = q.estimateId || browseEstimateId;
   }
   if (pax != null) base.pax = String(pax);
+  // booking.js prices the local road from this, with the local road's km/min carried above.
+  if (local) base.road = 'no_tolls';
   const all = Object.assign(base, extra);
   // An engine-priced route has no separate unfinished fare, so rawPrice comes through null —
   // drop it rather than sending the literal string "null", which parseFloat would turn into 0
@@ -306,7 +321,7 @@ function privateCardHtml(pending) {
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want, and add stops along the way — tell us at booking. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
-    <div class="veh">${row('car', ICONS.car, 'AC car', 'Seats 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Seats 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
+    ${!pending && roads ? roadSwitchHtml() : ''}<div class="veh">${row('car', ICONS.car, 'AC car', 'Seats 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Seats 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
     </div>
     <div class="incl">
       <span class="chip">${ICONS.seat} Private to your group</span>
@@ -317,6 +332,30 @@ function privateCardHtml(pending) {
   </article>`;
 }
 function privateSkeletonHtml() { return privateCardHtml(true); }
+
+/* One road, one set of figures: the popup and the card switch describe each road with the same
+   rounding the meta line uses (route-estimate.js), so "Approx. 335 km · 5h" up top is never
+   "4h 57m" in the popup. Under an hour stays in minutes, as the meta line's durationWords does. */
+const estimatePolicy = () => (window.CH && CH.routeEstimate) || null;
+const roadKm = (km) => `${estimatePolicy() ? estimatePolicy().roundDistanceKm(km) : Math.round(km)} km`;
+const roadMin = (m) => (m == null ? null : estimatePolicy() ? estimatePolicy().roundDurationMin(m) : m);
+function roadTime(m) {
+  const r = roadMin(m);
+  if (r == null || !window.CH_ROUTE_CHOICE) return '';
+  return m < 60 ? `${r} min` : CH_ROUTE_CHOICE.fmtMinutes(r);
+}
+
+/* The two roads, both already priced, so switching asks nothing (spec §4.6). Native radios in
+   labels: the arrow keys work, and the card-click delegation below leaves labels alone. */
+function roadSwitchHtml() {
+  // "Expressway · 5h"; on a phone the time drops under the name (search.html), minus the dot.
+  const fmt = (m) => (roadTime(m) ? `<span class="rs-dot"> · </span><span class="rs-t">${roadTime(m)}</span>` : '');
+  const opt = (v, cls, name, min) => `<label class="rs-opt ${cls}${road === v ? ' is-on' : ''}"><input type="radio" name="ch-card-road" value="${v}"${road === v ? ' checked' : ''}><span class="rs-sw" aria-hidden="true"></span><span class="rs-txt">${name}${fmt(min)}</span></label>`;
+  return `<div class="road-switch" role="radiogroup" aria-label="Road">${
+    opt('fastest', 'rs-fast', 'Expressway', expresswayQuote.durationMin)}${
+    opt('no_tolls', 'rs-local', 'Local road', roads.noTolls.min)}</div>
+    `;
+}
 
 /* No price, and no way to get one — the API is unreachable or can't route these two points.
    There is no local formula to fall back on for a place that isn't in the baked table, so the
@@ -650,6 +689,18 @@ renderResults(askEngine ? 'pending' : 'priced');
       : card ? card.querySelector('a.btn-primary.o-cta') : null;
     if (link) link.click();
   });
+  // Route choice: once a Select has been followed, it's too late to offer a road.
+  box.addEventListener('click', (e) => {
+    if (e.target && e.target.closest && e.target.closest('a[href*="booking.html"]')) selectClicked = true;
+  }, true);
+  // The card's road switch. The card is redrawn, so focus goes back to the road now checked.
+  box.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t || !t.matches || !t.matches('.road-switch input[type="radio"]')) return;
+    applyRoad(t.value, 'card');
+    const back = document.querySelector('#results .road-switch input:checked');
+    if (back) back.focus();
+  });
 })();
 
 // ---- funnel: search + results view (Phase 0 analytics) ----
@@ -708,6 +759,97 @@ function trackResults() {
 }
 if (!askEngine) trackResults();
 
+/* ---- route choice (spec 2026-09-26 §4.6) ---- */
+// Both roads, from the car and van answers — or null unless BOTH carry a usable routeChoice.
+function roadsFrom(car, van) {
+  const c = car && car.routeChoice, v = van && van.routeChoice;
+  // A road with no real distance (0, negative, NaN) would print "0 km" or "null km": no choice.
+  const ok = (r) => r && typeof r.totalCents === 'number' && Number.isFinite(r.distanceKm) && r.distanceKm > 0;
+  if (!c || !v || !ok(c.fastest) || !ok(c.noTolls) || !ok(v.fastest) || !ok(v.noTolls)) return null;
+  const both = (a, b) => ({ km: a.distanceKm, min: a.durationMin, car: a.totalCents / 100, van: b.totalCents / 100 });
+  return { fastest: both(c.fastest, v.fastest), noTolls: both(c.noTolls, v.noTolls) };
+}
+// Called once `quote` holds the engine's expressway fare, before that fare is first drawn.
+function takeRoads(car, van) {
+  roads = roadsFrom(car, van);
+  if (!roads) return;
+  expresswayQuote = quote;
+  if (road === 'no_tolls') applyRoad('no_tolls', false);
+}
+// What the local road saves on the car, against the expressway fare the card shows. Whole dollars,
+// rounded DOWN (in cents, so float noise can't tip it): a saving is never overstated.
+const roadSaving = () => Math.floor((Math.round(expresswayQuote.car * 100) - Math.round(roads.noTolls.car * 100)) / 100);
+
+function applyRoad(v, track) {
+  if (!roads || !expresswayQuote) return;
+  road = v === 'no_tolls' ? 'no_tolls' : 'fastest';
+  quote = road === 'no_tolls'
+    ? tagRouteEstimate(Object.assign({}, expresswayQuote, {
+        km: roads.noTolls.km, durationMin: roads.noTolls.min,
+        car: roads.noTolls.car, van: roads.noTolls.van, rawCar: null, rawVan: null
+      }), expresswayQuote.estimateState)
+    : expresswayQuote;
+  // Only the private card and the meta line. Never showFares()/trackResults() here: a road
+  // switch is not a new search, and they would fire search/view_item_list a second time.
+  const card = document.querySelector('#results .opt-private');
+  if (card) card.outerHTML = privateCardHtml();
+  renderMeta(false);
+  // An explicit exception to "a fare once shown never changes" (spec §4.6): the customer changed
+  // the product and has seen both prices. The savings the page states are recomputed against
+  // the fare the card now shows, or they would describe a price it no longer offers.
+  showSharedSaving();
+  if (goingList) showAlreadyGoing();
+  if (track && typeof window.chTrack === 'function') {
+    window.chTrack('route_choice', { choice: road, source: track, page: 'search', saving_usd: roadSaving() });
+  }
+}
+
+// Offer the cheaper road — once per pair per tab, and never over something the customer is doing.
+// A search opened in a background tab gets its fares while nobody is looking. Rather than drop
+// the offer, wait for the tab to be shown once and ask then — every other guard is re-checked at
+// that moment (a road already picked, a Select clicked, already asked).
+let offerOnShow = false;
+function offerWhenShown() {
+  if (offerOnShow) return;
+  offerOnShow = true;
+  document.addEventListener('visibilitychange', function onShow() {
+    if (document.visibilityState !== 'visible') return;
+    document.removeEventListener('visibilitychange', onShow);
+    offerOnShow = false;
+    maybeOffer();
+  });
+}
+function maybeOffer() {
+  const RC = window.CH_ROUTE_CHOICE;
+  if (!RC || !roads || road === 'no_tolls' || params.has('road') || selectClicked) return;
+  const key = fromP.name + '>' + toP.name;
+  if (RC.wasAsked(key)) return;
+  if (document.visibilityState !== 'visible') { offerWhenShown(); return; }
+  const bar = document.getElementById('srch-bar');
+  if (bar && bar.contains(document.activeElement)) return;
+  RC.markAsked(key);
+  const saving = roadSaving();
+  RC.open({
+    title: `Two roads to ${dispTo}`,
+    sub: "The local road skips the expressway tolls. It's slower, but cheaper. Pick one and you can switch later.",
+    fastest: {
+      time: roadTime(expresswayQuote.durationMin), km: roadKm(expresswayQuote.km),
+      price: '$' + displayPrice(expresswayQuote.car), extra: 'van $' + displayPrice(expresswayQuote.van)
+    },
+    local: {
+      time: roadTime(roads.noTolls.min),
+      km: roadKm(roads.noTolls.km),
+      price: '$' + displayPrice(roads.noTolls.car), extra: 'van $' + displayPrice(roads.noTolls.van),
+      save: 'Save $' + saving
+    },
+    selected: 'fastest',
+    onPick: (v) => applyRoad(v, 'popup'),
+    onDismiss: () => {
+      if (typeof window.chTrack === 'function') window.chTrack('route_choice', { choice: 'dismissed', source: 'popup', page: 'search', saving_usd: saving });
+    }
+  });
+}
+
 /* ---- engine prices ----
    EVERY route's fares come from the engine (owner decision 2026-09-20). A baked pair used to
    show its catalogue fare and never ask — but hot zones are rows in the prod database that the
@@ -764,7 +906,8 @@ if (askEngine) (function () {
   function ask(vehicle) {
     return new Promise(function (resolve) {
       if (!window.CH_PRICING) return resolve(null);
-      window.CH_PRICING.estimate(Object.assign({ vehicle }, base), {
+      // compareRoutes: the engine adds a routeChoice when the toll-free road is cheaper.
+      window.CH_PRICING.estimate(Object.assign({ vehicle }, base, { compareRoutes: true }), {
         onResult: function (est) { resolve(est); },
         onUnavailable: function () { resolve(null); }
       }, { immediate: true });   // asked once, on load — the debounce is for a wizard mid-click
@@ -791,7 +934,9 @@ if (askEngine) (function () {
       quote = tagRouteEstimate(Object.assign({}, baked, {
         car: car.totalCents / 100, van: van.totalCents / 100, rawCar: null, rawVan: null
       }), baked.estimateState);
+      takeRoads(car, van);   // after the settled guard: a catalogue fallback never gets roads
       showFares();
+      maybeOffer();
       return;
     }
     if (!answered) {
@@ -812,9 +957,11 @@ if (askEngine) (function () {
       rawCar: null, rawVan: null
     }, car.estimated === true ? 'estimated' : 'browse');
     if (quote.km == null) { quote = null; renderMeta(false); renderResults('unpriced'); return; }
+    takeRoads(car, van);
     renderMeta(false);
     renderResults('priced');
     trackResults();
+    maybeOffer();
   });
 })();
 
