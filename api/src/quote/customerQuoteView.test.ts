@@ -983,15 +983,15 @@ describe('the add-ons the customer chose, on the quote page', () => {
   it('lists them on the priced card, whether or not journey prices are shown', () => {
     for (const showLegPrices of [false, true]) {
       const lead = customerQuoteView(withLines([...legLines, waiting], { showLegPrices }), p2pOnly).options[0];
-      expect(lead.included.items).toContain('Waiting fee — Sigiriya → Kandy');
-      expect(lead.includedText).toContain('Waiting fee — Sigiriya → Kandy');
+      expect(lead.included.items).toContain('Waiting up to 3hrs');
+      expect(lead.includedText).toContain('Waiting up to 3hrs');
     }
   });
 
   it('never on the comparison card, and nothing added when none were chosen', () => {
     const v = customerQuoteView(withLines([...legLines, waiting], { requestedService: 'both' }), both);
-    expect(v.options[0].included.items).toContain('Waiting fee — Sigiriya → Kandy');
-    expect(v.options[1].included.items).not.toContain('Waiting fee — Sigiriya → Kandy');
+    expect(v.options[0].included.items).toContain('Waiting up to 3hrs');
+    expect(v.options[1].included.items).not.toContain('Waiting up to 3hrs');
     expect(customerQuoteView(withLines(legLines), p2pOnly).options[0].included.items)
       .toEqual(['Pick up and drop off', 'Air-conditioned car with driver', 'Fuel, tolls and parking']);
   });
@@ -1002,9 +1002,9 @@ describe('the add-ons the customer chose, on the quote page', () => {
     const sightseeing = { label: 'Sightseeing stops (up to 3h)', amountCents: 1_000 };
     const lead = customerQuoteView(withLines([...legLines, sightseeing], { showLegPrices: true }), p2pOnly).options[0];
     expect(lead.legPrices?.rows.map((r) => r.label)).toContain('Sightseeing stops (up to 3h)');
-    expect(lead.included.items).not.toContain('Sightseeing stops (up to 3h)');
+    expect(lead.included.items).not.toContain('Sightseeing up to 3hrs');
     // Without the breakdown it is the only place the customer sees it.
     const plain = customerQuoteView(withLines([...legLines, sightseeing]), p2pOnly).options[0];
-    expect(plain.included.items).toContain('Sightseeing stops (up to 3h)');
+    expect(plain.included.items).toContain('Sightseeing up to 3hrs');
   });
 });
