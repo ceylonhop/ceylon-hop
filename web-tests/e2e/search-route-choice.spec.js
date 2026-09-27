@@ -26,12 +26,14 @@ const choice = (intent) => {
 };
 
 // `calls.n` counts every estimate request the page makes.
-function responder({ withChoice = true } = {}) {
+// `localKm` overrides the local road's distanceKm in the routeChoice (a malformed answer).
+function responder({ withChoice = true, localKm } = {}) {
   const calls = { n: 0, intents: [] };
   const respond = (intent) => {
     calls.n += 1;
     calls.intents.push(intent);
     const c = choice(intent);
+    if (localKm !== undefined) c.routeChoice.noTolls.distanceKm = localKm;
     return {
       totalCents: c.fast,
       legs: [{ from: intent.legs[0].from, to: intent.legs[0].to, distanceKm: 335, durationMin: 299 }],
@@ -41,8 +43,8 @@ function responder({ withChoice = true } = {}) {
   return { calls, respond };
 }
 
-const open = async (page, { query = 'from=cmb-airport&to=ella', withChoice = true } = {}) => {
-  const r = responder({ withChoice });
+const open = async (page, { query = 'from=cmb-airport&to=ella', withChoice = true, localKm } = {}) => {
+  const r = responder({ withChoice, localKm });
   await gotoBooking(page, { path: '/search.html', query, estimate: { respond: r.respond } });
   return r.calls;
 };
@@ -205,4 +207,43 @@ test('road=no_tolls in the URL preselects the local road and asks nothing', asyn
   await expect(page.locator('#route-meta')).toContainText('via local road');
   expect(new URLSearchParams((await carHref(page)).split('?')[1]).get('road')).toBe('no_tolls');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+/* The shared seat is a scheduled service on its own road: its "Book a seat" link must never carry
+   the private car's local road, nor that road's km/min. Negombo → Sigiriya runs a Saturday seat;
+   the catalogue (the expressway on a baked pair) says 148 km / 194 min. */
+const SHARED_ROUTE = 'from=negombo&to=sigiriya&date=2099-08-15';
+const seatHref = async (page) => new URLSearchParams(
+  (await page.locator('#shared-option a.o-cta').getAttribute('href')).split('?')[1]);
+
+test('picking the local road leaves the shared seat on the expressway figures', async ({ page }) => {
+  await open(page, { query: SHARED_ROUTE });
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.locator('label.ch-rc-opt.is-local').click();
+  await dialog.getByRole('button', { name: 'Use local road' }).click();
+  await expect(rows(page).nth(0)).toContainText('$91');
+  expect(new URLSearchParams((await carHref(page)).split('?')[1]).get('road')).toBe('no_tolls');
+  const q = await seatHref(page);
+  expect(q.get('mode')).toBe('shared');
+  expect(q.has('road')).toBe(false);
+  expect(q.get('estimateKm')).toBe('148');
+  expect(q.get('estimateMin')).toBe('194');
+});
+
+test('road=no_tolls in the URL still leaves the shared seat on the expressway figures', async ({ page }) => {
+  await open(page, { query: SHARED_ROUTE + '&road=no_tolls' });
+  await expect(rows(page).nth(0)).toContainText('$91');
+  const q = await seatHref(page);
+  expect(q.has('road')).toBe(false);
+  expect(q.get('estimateKm')).toBe('148');
+  expect(q.get('estimateMin')).toBe('194');
+});
+
+test('a local road with no real distance is never offered', async ({ page }) => {
+  await open(page, { localKm: 0 });
+  await expect(rows(page).nth(0)).toContainText('$140');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(cardSwitch(page)).toHaveCount(0);
+  expect(new URLSearchParams((await carHref(page)).split('?')[1]).has('road')).toBe(false);
 });

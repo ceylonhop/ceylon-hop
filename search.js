@@ -269,15 +269,19 @@ function bookUrl(extra) {
   // traveller count properly on its own step, so an absent param costs nothing there —
   // whereas a guessed one arrives pre-filled and looks like their answer.
   const base = { from: fromId, to: toId, date };
-  if (quote) {
-    base.estimateKm = String(quote.km);
-    if (quote.durationMin != null) base.estimateMin = String(quote.durationMin);
-    base.estimateState = quote.estimateState || 'browse';
-    base.estimateId = quote.estimateId || browseEstimateId;
+  // Only a private car takes the local road. The shared seat is a scheduled service on its own
+  // road, so its link always carries the expressway's figures and never a `road`.
+  const local = onLocalRoad() && extra.mode === 'private';
+  const q = local || !expresswayQuote ? quote : expresswayQuote;
+  if (q) {
+    base.estimateKm = String(q.km);
+    if (q.durationMin != null) base.estimateMin = String(q.durationMin);
+    base.estimateState = q.estimateState || 'browse';
+    base.estimateId = q.estimateId || browseEstimateId;
   }
   if (pax != null) base.pax = String(pax);
   // booking.js prices the local road from this, with the local road's km/min carried above.
-  if (onLocalRoad()) base.road = 'no_tolls';
+  if (local) base.road = 'no_tolls';
   const all = Object.assign(base, extra);
   // An engine-priced route has no separate unfinished fare, so rawPrice comes through null —
   // drop it rather than sending the literal string "null", which parseFloat would turn into 0
@@ -759,7 +763,8 @@ if (!askEngine) trackResults();
 // Both roads, from the car and van answers — or null unless BOTH carry a usable routeChoice.
 function roadsFrom(car, van) {
   const c = car && car.routeChoice, v = van && van.routeChoice;
-  const ok = (r) => r && typeof r.totalCents === 'number' && typeof r.distanceKm === 'number';
+  // A road with no real distance (0, negative, NaN) would print "0 km" or "null km": no choice.
+  const ok = (r) => r && typeof r.totalCents === 'number' && Number.isFinite(r.distanceKm) && r.distanceKm > 0;
   if (!c || !v || !ok(c.fastest) || !ok(c.noTolls) || !ok(v.fastest) || !ok(v.noTolls)) return null;
   const both = (a, b) => ({ km: a.distanceKm, min: a.durationMin, car: a.totalCents / 100, van: b.totalCents / 100 });
   return { fastest: both(c.fastest, v.fastest), noTolls: both(c.noTolls, v.noTolls) };
