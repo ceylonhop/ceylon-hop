@@ -593,17 +593,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-div{height:1px;background:var(--line);margin:8px 0}
   .s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
   .s-total b{font-family:var(--display);font-size:1.7rem}
-  /* While a fresh engine estimate is in flight the total is a STATUS, not a price, so it drops
-     the display face and the price weight — at 1.7rem "Calculating…" would also wrap the row.
-     Same rule serves #pay-due's amount and the sticky bar's mirror of this figure. The pulse is
-     decoration only: anyone who asked for less motion still gets the words. */
+  /* While a fresh engine estimate is in flight the figure is a placeholder, not a price: the
+     skeleton shimmer the search page shows where a fare will land (search.html .sk-amt), in the
+     same box. PRICING_LABEL stays inside it, transparent, so a screen reader still hears
+     "Calculating…" (the total also carries aria-busy). Same rule serves #pay-due's amount and the
+     sticky bar's mirror of this figure. Anyone who asked for less motion gets the still block. */
   .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
-    font-family:inherit;font-size:.92rem;font-weight:600;color:var(--ink-soft)}
+    display:inline-block;width:74px;height:1.6rem;overflow:hidden;white-space:nowrap;vertical-align:middle;
+    font-family:inherit;font-size:.92rem;color:transparent;border-radius:7px;
+    background:linear-gradient(90deg,var(--cream-deep) 25%,var(--paper) 50%,var(--cream-deep) 75%);
+    background-size:240% 100%}
+  /* Due now sits on a --cream-deep row, where that block would vanish: same shimmer, a tone up. */
+  #pay-due .amt.is-pricing{
+    background-image:linear-gradient(90deg,var(--paper) 25%,var(--cream) 50%,var(--paper) 75%)}
   @media (prefers-reduced-motion:no-preference){
     .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
-      animation:chPricing 1.15s ease-in-out infinite}
+      animation:chPricing 1.3s ease-in-out infinite}
   }
-  @keyframes chPricing{0%,100%{opacity:.5}50%{opacity:1}}
+  @keyframes chPricing{0%{background-position:120% 0}100%{background-position:-120% 0}}
   .s-perks{margin-top:14px;display:grid;gap:6px;font-size:.78rem;color:var(--ink-soft)}
   .s-perks div{display:flex;gap:.4rem;align-items:center}.s-perks svg{width:13px;height:13px;color:var(--teal-deep);flex:none}
 
