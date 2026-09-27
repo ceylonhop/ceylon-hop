@@ -148,6 +148,8 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // The add-ons the customer chose, as the quote named them. Absent when there are none.
+  addOns?: string[];
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
@@ -161,6 +163,7 @@ export function projectBooking(b: Booking): CustomerBookingView {
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: Math.max(0, b.total - dueNow),
+    ...(b.addOns?.length ? { addOns: b.addOns } : {}),
   };
   if (b.mode === 'single') {
     return {

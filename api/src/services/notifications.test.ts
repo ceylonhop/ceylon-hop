@@ -405,6 +405,33 @@ describe('itinerary rendering — website booking shapes', () => {
     expect(m.text).toContain('Sightseeing stops');
   });
 
+  // A booking made from a quote carries the quote's add-ons (booking.addOns), named as the quote
+  // named them — the waiting fee used to vanish from every email after booking.
+  it('names the add-ons a quote-booked transfer carries, in html and text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation({ ...single, addOns: ['Waiting fee — CMB → Galle'] }, email);
+    expect(email.sent[0].html).toContain('Waiting fee — CMB → Galle');
+    expect(email.sent[0].text).toContain('Extras: Waiting fee — CMB → Galle');
+  });
+
+  it('names the add-ons on a multi-journey trip too', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-ADD', id: 'ida',
+      input: { stops: ['Kandy', 'Ella', 'Galle'], nights: [0, 1, 0], dates: ['2026-08-09', '2026-08-10'], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+      addOns: ['Waiting fee — Kandy → Ella', 'Wait for Safari — Ella → Galle'],
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    expect(email.sent[0].html).toContain('Wait for Safari — Ella → Galle');
+    expect(email.sent[0].text).toContain('Extras: Waiting fee — Kandy → Ella, Wait for Safari — Ella → Galle');
+  });
+
+  it('shows no Extras line when nothing was chosen', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email);
+    expect(email.sent[0].text).not.toContain('Extras:');
+  });
+
   it('chauffeur trip renders the multi-day duration', async () => {
     const email = new FakeEmailAdapter();
     const b: Booking = {

@@ -17,6 +17,10 @@ export interface PayPageCopy {
   legs: { route: string; date: string | null; covered?: boolean }[] | null;
   includedText: string;
   totalLabel: string;
+  // The add-ons the customer chose, as the quote names them ("Waiting fee — Kandy → Ella"). Whole-
+  // trip pages only: a partial link's receipt lines already name every add-on it charges. Absent
+  // when there are none.
+  addOns?: string[];
 }
 
 interface ToolLegLite {
@@ -28,6 +32,7 @@ interface ToolLegLite {
 }
 
 import { shortPlace } from './shortPlace';
+import { chosenAddOns } from './paySelection';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
@@ -132,11 +137,15 @@ export function payPageCopy(quote: {
   vehicle: string | null;
   request: unknown;
   totalCents: number;
+  /** The stored QuoteResult: its lines name the add-ons. */
+  result?: unknown;
 }, selection?: { legIndexes: number[]; extraIndexes?: number[] } | null): PayPageCopy {
   const req = (quote.request ?? {}) as { tool?: { legs?: ToolLegLite[]; passengerCount?: number }; engine?: { product?: string; firstDate?: string; lastDate?: string } | null };
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
   const engine = req.engine ?? null;
+  const addOns = selection ? [] : chosenAddOns({ request: quote.request, result: quote.result });
+  const withAddOns = addOns.length ? { addOns } : {};
 
   const greetingName = (quote.customerName ?? '').trim().split(/\s+/)[0] || null;
   const veh = vehicleLabel(quote.vehicle);
@@ -191,6 +200,7 @@ export function payPageCopy(quote: {
       legs: null,
       includedText: transferIncludedText(l),
       totalLabel: 'Total',
+      ...withAddOns,
     };
   }
 
@@ -233,6 +243,7 @@ export function payPageCopy(quote: {
       // NEVER "all N journeys" on a partial payment — that is the sentence that misled a paying
       // customer in prod.
       totalLabel: partial ? `Total · ${sold!.length} of your ${count} journeys` : `Total · all ${count} journeys`,
+      ...withAddOns,
     };
   }
 
