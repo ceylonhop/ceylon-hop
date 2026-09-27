@@ -33,6 +33,7 @@ interface ToolLegLite {
 
 import { shortPlace } from './shortPlace';
 import { chosenAddOns } from './paySelection';
+import { EXTRA_LABELS } from './extrasDeposit';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
@@ -125,10 +126,19 @@ function legRoute(l: ToolLegLite): string {
 }
 
 // An add-on's stored label names its journey by EVERY stop ("Waiting fee — Galle → Seetha Amman
-// Temple, … → Nuwara Eliya"; extrasDeposit.ts). Name it the way legRoute names the leg row — its
-// two ends, shortened — so a multi-stop day doesn't repeat its whole chain on each add-on
-// (owner-reported 2026-09-27). Render-time only: the stored label, ops and emails are untouched.
-function addOnLabel(label: string): string {
+// Temple, … → Nuwara Eliya"; extrasDeposit.ts), which repeated a multi-stop day's whole chain on
+// each row (owner-reported 2026-09-27). Owner call: waiting and sightseeing are just "Waiting" and
+// "Sightseeing" in the Included list; any other add-on keeps its journey, named by its two ends
+// like legRoute. Render-time only: the stored label, ops and emails are untouched. Exported so the
+// quote page can match a priced row against the same name.
+const INCLUDED_NAMES: [string, string][] = [
+  [EXTRA_LABELS.waiting, 'Waiting'],
+  [EXTRA_LABELS.sightseeing, 'Sightseeing'],
+];
+export function includedName(label: string): string {
+  for (const [stored, name] of INCLUDED_NAMES) {
+    if (label === stored || label.startsWith(`${stored} — `)) return name;
+  }
   const at = label.indexOf(' — ');
   if (at < 0) return label;
   const stops = label.slice(at + 3).split(' → ');
@@ -156,7 +166,7 @@ export function payPageCopy(quote: {
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
   const engine = req.engine ?? null;
-  const addOns = selection ? [] : chosenAddOns({ request: quote.request, result: quote.result }).map(addOnLabel);
+  const addOns = selection ? [] : [...new Set(chosenAddOns({ request: quote.request, result: quote.result }).map(includedName))];
   const withAddOns = addOns.length ? { addOns } : {};
 
   const greetingName = (quote.customerName ?? '').trim().split(/\s+/)[0] || null;
