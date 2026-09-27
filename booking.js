@@ -113,7 +113,38 @@ function parsedKmList(v){
   });
 }
 // A trip leg's drive chip in the itinerary card.
-function tripDriveText(leg){ return leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request'; }
+// A trip leg's chip, in the words every other screen uses (route-estimate.js rounding): "215 km",
+// never the raw 213 the search and plan pages rounded. A leg on the local road is timed by the
+// engine's own answer (`est`, the current estimate), never by the distance model — that would time
+// the shorter local road FASTER than the expressway it is slower than ("5h" for a 6h drive).
+// `est` is passed in, not read here: the itinerary is first drawn before engineEst exists.
+function tripKmText(km){
+  const RE=window.CH && CH.routeEstimate, k=RE ? RE.roundDistanceKm(km) : null;
+  return `${k!=null ? k : km} km`;
+}
+function tripMinText(min){
+  const RE=window.CH && CH.routeEstimate, m=RE ? RE.roundDurationMin(min) : Math.round(min);
+  if(min<60) return `${m} min`;
+  const h=Math.floor(m/60), r=m%60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+function tripDriveText(leg, i, est){
+  if(leg.km==null) return 'Distance on request';
+  if(tripRoads[i]==='no_tolls' && state.svc!=='chauffeur' && !tripGaps.has(i)){
+    const e=est && Array.isArray(est.legs)
+      ? est.legs.find(l=>l && l.from===tripStops[i] && l.to===tripStops[i+1] && l.routeVariant==='no_tolls') : null;
+    return e && e.durationMin>0 ? `${tripKmText(e.distanceKm>0 ? e.distanceKm : leg.km)} · ${tripMinText(e.durationMin)}` : tripKmText(leg.km);
+  }
+  return `${tripKmText(leg.km)} · ${leg.duration}`;
+}
+// Repaint every leg chip against the itinerary and estimate as they stand now.
+function repaintTripDrives(){
+  const est=currentEngineEst();
+  document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
+    const i=+el.dataset.wire, leg=tripLegs[i], chip=el.querySelector('.tr-drive');
+    if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
+  });
+}
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
@@ -699,7 +730,7 @@ if(isTrip){
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
-        `<span class="tr-chip muted tr-drive">${tripDriveText(leg)}</span>`+
+        `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
@@ -1504,10 +1535,7 @@ function dropLocalRoad(estLegs){
   }
   if(dropped){
     const q=tripQuoteWithKms(vehicleKey); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
-    document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
-      const leg=tripLegs[+el.dataset.wire], chip=el.querySelector('.tr-drive');
-      if(leg && chip) chip.textContent=tripDriveText(leg);
-    });
+    repaintTripDrives();
   }
   return dropped;
 }
@@ -1998,6 +2026,7 @@ function paintCustomerRouteEstimate(){
     `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
 }
 function render(){
+  if(isTrip) repaintTripDrives(); // a local-road leg takes the engine's drive time once it lands
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen

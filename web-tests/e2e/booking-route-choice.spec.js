@@ -189,7 +189,7 @@ test('on a trip with a gap, only the leg the engine could not confirm drops its 
   ]);
   // The dropped leg's chip shows the road now priced; the kept one keeps the local km.
   await expect(page.locator('.tr-leg[data-wire="2"] .tr-drive')).toContainText(`${EXPRESS_KM} km`);
-  await expect(page.locator('.tr-leg[data-wire="1"] .tr-drive')).toContainText(`${LOCAL_KM} km`);
+  await expect(page.locator('.tr-leg[data-wire="1"] .tr-drive')).toContainText('215 km'); // 213, rounded as every other screen does
 
   await fillContact(page);
   const bookP = page.waitForRequest('**/bookings/trip');
@@ -267,4 +267,33 @@ test('going back to the planner keeps the chosen roads', async ({ page }) => {
   await page.locator('.tr-edit').click();
   await page.waitForURL(/plan\.html\?/);
   expect(new URL(page.url()).searchParams.get('roads')).toBe('no_tolls,');
+});
+
+// The planner's own hand-off (plan.js goToBooking): kms carries the local road's 213 km.
+const TRIP_FROM_PLAN = [
+  'mode=trip',
+  'stops=Colombo%20Airport%20(CMB)%7CElla%7CYala',
+  'nights=0,1,0',
+  'dates=,',
+  'kms=213,126',
+  'roads=no_tolls,',
+  'pax=2',
+  'vehicle=car',
+].join('&');
+
+test('a trip leg on the local road shows the engine\'s drive time and the rounded distance every other screen shows', async ({ page }) => {
+  // Real figures (Google, 2026-09-27): the local road is shorter but SLOWER — 213 km / 374 min.
+  const respond = (intent) => {
+    const legs = (intent.legs || []).map((l) => (l.routeVariant === 'no_tolls'
+      ? { from: l.from, to: l.to, distanceKm: 213, durationMin: 374, routeVariant: 'no_tolls' }
+      : { from: l.from, to: l.to, distanceKm: 126, durationMin: 195 }));
+    return { totalCents: 14900, legs };
+  };
+  await gotoBooking(page, { query: TRIP_FROM_PLAN, estimate: { respond } });
+
+  const localLeg = page.locator('.tr-leg[data-wire="0"] .tr-drive');
+  // 374 min rounds to 6h (route-estimate.js) — never the distance model's "5h", which would make
+  // the shorter, slower road look faster than the expressway.
+  await expect(localLeg).toHaveText('215 km · 6h');
+  await expect(page.locator('.tr-leg[data-wire="1"] .tr-drive')).toContainText('125 km');
 });
