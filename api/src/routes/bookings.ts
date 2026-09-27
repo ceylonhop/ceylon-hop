@@ -932,7 +932,14 @@ function invalidRequest(error: ZodError) {
     // (a double tap) may have moved it first: that refusal is fine as long as it is now pending.
     if (booking.status === 'draft') {
       try {
-        await bookings.setStatus(booking.id, 'payment_pending');
+        await bookings.setStatus(booking.id, 'payment_pending', undefined, {
+          source: 'website',
+          actorType: 'customer',
+          actorId: booking.input.customer.email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'payment',
+          relatedEntityId: payment.id,
+        });
       } catch (err) {
         if (!(err instanceof IllegalTransitionError)) throw err;
         const now = await bookings.get(booking.id);

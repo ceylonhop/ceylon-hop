@@ -60,6 +60,23 @@ describe('ops bookings endpoints', () => {
     expect(ops.fulfilmentStatus).toBe('vehicle_confirmed');
   });
 
+  it('records the staff and fulfilment milestone mirrored to the booking', async () => {
+    const tracked = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const trackedRideOps = new InMemoryRideOpsRepo();
+    const trackedApp = createApp({ bookings: tracked, rideOps: trackedRideOps, auth, adminApiKey: 'adminkey' });
+    const b = await seed(tracked);
+    await tracked.setStatus(b.id, 'payment_pending', undefined, { source: 'website', actorType: 'customer' });
+    await tracked.setStatus(b.id, 'paid', undefined, { source: 'payment_webhook', actorType: 'provider' });
+
+    expect((await trackedApp.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    })).status).toBe(200);
+    expect((await tracked.listStatusEvents(b.id))[2]).toMatchObject({
+      fromStatus: 'paid', toStatus: 'confirmed', source: 'ops', actorType: 'staff', actorId: 'f@x.com',
+      reason: 'fulfilment:vehicle_confirmed', relatedEntityType: 'fulfilment', relatedEntityId: b.id,
+    });
+  });
+
   it('rejects an illegal status transition with 400', async () => {
     await bookings.setStatus(bid, 'paid');
     const res = await app.request(`/admin/ops/bookings/${bid}/status`, {

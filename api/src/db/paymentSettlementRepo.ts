@@ -4,6 +4,7 @@ import { InMemoryBookingRepo } from './bookingRepo';
 import { InMemoryPaymentEventRepo } from './paymentEventRepo';
 import type { Payment } from './paymentRepo';
 import { InMemoryPaymentRepo } from './paymentRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 export type PaymentSettlementOutcome =
   | { kind: 'settled'; payment: Payment; booking: Booking }
@@ -29,7 +30,7 @@ export type PaymentSettlementOutcome =
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
-  acceptVerifiedEvent(event: VerifiedPaymentEvent): Promise<PaymentSettlementOutcome>;
+  acceptVerifiedEvent(event: VerifiedPaymentEvent, correlation?: TrackingCorrelation): Promise<PaymentSettlementOutcome>;
 }
 
 export type SettlementFailurePoint =
@@ -74,13 +75,13 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     private readonly failureHook?: SettlementFailureHook,
   ) {}
 
-  async acceptVerifiedEvent(event: VerifiedPaymentEvent): Promise<PaymentSettlementOutcome> {
+  async acceptVerifiedEvent(event: VerifiedPaymentEvent, correlation?: TrackingCorrelation): Promise<PaymentSettlementOutcome> {
     return this.exclusive(async () => {
       const bookingSnapshot = this.deps.bookings.snapshotForSettlement();
       const paymentSnapshot = this.deps.payments.snapshotForSettlement();
       const eventSnapshot = this.deps.events.snapshotForSettlement();
       try {
-        return await this.accept(event);
+        return await this.accept(event, correlation);
       } catch (error) {
         this.deps.bookings.restoreForSettlement(bookingSnapshot);
         this.deps.payments.restoreForSettlement(paymentSnapshot);
@@ -90,7 +91,7 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     });
   }
 
-  private async accept(event: VerifiedPaymentEvent): Promise<PaymentSettlementOutcome> {
+  private async accept(event: VerifiedPaymentEvent, correlation?: TrackingCorrelation): Promise<PaymentSettlementOutcome> {
     const paymentRecord = this.deps.payments.findByOrderIdForSettlement(event.orderId);
     if (!paymentRecord) throw new PaymentSettlementError('unknown_order');
     if (event.amountCents !== paymentRecord.amount || event.currency !== paymentRecord.currency) {
@@ -186,7 +187,14 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
-    const paid = await this.deps.bookings.setStatus(booking.id, 'paid');
+    const paid = await this.deps.bookings.setStatus(booking.id, 'paid', undefined, {
+      source: 'payment_webhook',
+      actorType: 'provider',
+      actorId: event.provider,
+      ...correlation,
+      relatedEntityType: 'payment',
+      relatedEntityId: paymentRecord.id,
+    });
     await this.failureHook?.('after_booking_update');
     return {
       kind: 'settled',

@@ -1140,7 +1140,14 @@ export function internalQuoteRoutes(deps: {
     let booking = created;
     if (created.status === 'draft') {
       try {
-        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending', undefined, {
+          source: 'quote_conversion',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
       } catch {
         // A concurrent double-submit already moved this booking out of draft — re-read it
         // rather than surface a 500 on a booking that was, in fact, created.

@@ -586,12 +586,16 @@ export class InMemoryBookingRepo implements BookingRepo {
     });
   }
 
-  snapshotForSettlement(): Map<string, Booking> {
-    return new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)]));
+  snapshotForSettlement(): { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] } {
+    return {
+      bookings: new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)])),
+      statusEvents: structuredClone(this.statusEvents),
+    };
   }
 
-  restoreForSettlement(snapshot: Map<string, Booking>): void {
-    this.byId = new Map([...snapshot].map(([id, booking]) => [id, structuredClone(booking)]));
+  restoreForSettlement(snapshot: { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] }): void {
+    this.byId = new Map([...snapshot.bookings].map(([id, booking]) => [id, structuredClone(booking)]));
+    this.statusEvents = structuredClone(snapshot.statusEvents);
   }
 
   snapshotForQuoteConversion(): {

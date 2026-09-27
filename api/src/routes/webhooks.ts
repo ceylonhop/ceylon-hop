@@ -185,7 +185,7 @@ export function webhookRoutes(deps: {
 
     let outcome;
     try {
-      outcome = await settlements.acceptVerifiedEvent(event);
+      outcome = await settlements.acceptVerifiedEvent(event, { requestId: c.get('requestId') });
     } catch (error) {
       if (!(error instanceof PaymentSettlementError)) throw error;
       c.set('checkoutEvent', {
@@ -389,7 +389,11 @@ export function webhookRoutes(deps: {
       // must neither fail nor delay this 200 (PayHere would retry, hit the idempotent return and
       // skip nothing — but a slow lookup still holds the notify open). A replay never gets here.
       if (deps.duplicates) {
-        void closeOlderDuplicates(paid, { ...deps.duplicates, alerts }).catch((err) => {
+        void closeOlderDuplicates(paid, {
+          ...deps.duplicates,
+          alerts,
+          correlation: { requestId: c.get('requestId') },
+        }).catch((err) => {
           console.error(`duplicate close after ${paid.reference} failed:`, err);
         });
       }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BookingRepo } from './bookingRepo';
 import type { PaymentRepo } from './paymentRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 export type RefundStatus =
   | 'manual_pending'
@@ -97,6 +98,7 @@ export interface RefundRepo {
     refundId: string;
     gatewayRef: string;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation>;
   cancel(input: { bookingId: string; refundId: string }): Promise<Refund>;
   list(bookingId: string): Promise<Refund[]>;
@@ -110,6 +112,7 @@ export interface RefundRepo {
     refundId: string;
     outcome: RefundApiOutcome;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation>;
   // Rows stuck mid-call, oldest first — the watchdog's input.
   listStuckApi(olderThan: Date): Promise<Refund[]>;
@@ -180,6 +183,7 @@ export class InMemoryRefundRepo implements RefundRepo {
     refundId: string;
     gatewayRef: string;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     return this.exclusive(async () => {
       const row = this.rows.get(input.refundId);
@@ -228,7 +232,14 @@ export class InMemoryRefundRepo implements RefundRepo {
       const fully = refunded === captured;
       if (fully) {
         try {
-          await this.bookings.setStatus(input.bookingId, 'refunded');
+          await this.bookings.setStatus(input.bookingId, 'refunded', undefined, {
+            source: 'refund',
+            actorType: 'staff',
+            actorId: input.confirmedBy,
+            ...input.correlation,
+            relatedEntityType: 'refund',
+            relatedEntityId: row.id,
+          });
         } catch {
           this.rows.set(row.id, row);
           throw new RefundError('booking_state_conflict');
@@ -290,6 +301,7 @@ export class InMemoryRefundRepo implements RefundRepo {
     refundId: string;
     outcome: RefundApiOutcome;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     if (input.outcome.kind === 'failed') {
       return this.exclusive(async () => {
@@ -316,6 +328,7 @@ export class InMemoryRefundRepo implements RefundRepo {
       refundId: input.refundId,
       gatewayRef,
       confirmedBy: input.confirmedBy,
+      correlation: input.correlation,
     }).then((outcome) => {
       const stored = this.rows.get(input.refundId);
       if (stored && providerMessage) {
