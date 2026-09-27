@@ -362,7 +362,7 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
       ] },
     });
     const t = signQuotePayToken(q.id, q.revision, SECRET);
-    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting fee — CMB → Galle']);
+    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting up to 3hrs']);
 
     await start(app, t);
     const booking = (await bookings.list())[0];
@@ -370,7 +370,7 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     await payments.markSucceeded(p.id);
     const paid = await (await view(app, t)).json();
     expect(paid.state).toBe('paid');
-    expect(paid.paid.addOns).toEqual(['Waiting fee — CMB → Galle']);
+    expect(paid.paid.addOns).toEqual(['Waiting up to 3hrs']);
   });
 });
 
