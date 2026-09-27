@@ -365,6 +365,17 @@ describe('teamRescueEmail', () => {
     expect(m.text).toContain(href!);
   });
 
+  // Route choice (spec §4.3): the customer bought the local road — the message says so, so the
+  // booking they are asked to pay for is recognisably theirs. The expressway message is unchanged.
+  it('names the local road in the pre-filled message when the customer chose it', () => {
+    const plain = sampleBooking('single');
+    const local = { ...plain, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const text = (b: typeof plain) => new URL(waHref(teamRescueEmail(b, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text(local)).toContain('Colombo Fort → Kandy via the local road');
+    expect(text(plain)).not.toContain('local road');
+    expect(teamRescueEmail(local, PAY, 'https://ops.example').subject).toBe(teamRescueEmail(plain, PAY, 'https://ops.example').subject);
+  });
+
   it('tells the team to check the booking is still unpaid before messaging', () => {
     const m = teamRescueEmail(sampleBooking('single'), PAY, 'https://ops.example');
     for (const part of [m.html, m.text]) expect(part).toContain('still unpaid');

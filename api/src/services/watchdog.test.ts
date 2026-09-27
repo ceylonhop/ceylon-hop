@@ -58,6 +58,20 @@ describe('runWatchdog', () => {
     expect(alerts.sent[0].body).toContain(booking.reference);
   });
 
+  // Route choice (spec §4.3): the stuck-checkout alert names the local road when that is what
+  // the customer was buying; an expressway booking's alert has no Road line.
+  it('names the local road in the stuck-pending alert, and only then', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const local = await bookings.create({ ...sample, durationMin: 374, input: { ...sample.input, routeVariant: 'no_tolls' } } as NewBooking);
+    const plain = await bookings.create(sample);
+    for (const b of [local, plain]) await bookings.setStatus(b.id, 'payment_pending');
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
+    const bodyOf = (ref: string) => alerts.sent.find((a) => a.kind === 'watchdog_stuck_pending' && a.body.includes(ref))!.body;
+    expect(bodyOf(local.reference)).toContain('Road: Local road, no expressway · about 6h 14m');
+    expect(bodyOf(plain.reference)).not.toContain('Road:');
+  });
+
   it('alerts on a paid booking with no confirmation logged after 15 minutes', async () => {
     const { bookings, booking } = await seed('paid');
     const alerts = new FakeAlertAdapter();

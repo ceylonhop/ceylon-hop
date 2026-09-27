@@ -281,6 +281,31 @@ describe('sendRefundConfirmation', () => {
     expect(m.text).toContain('CH-ABC12');
     expect(m.text).not.toContain('<');
   });
+
+  // The refund letter drops the facts list (facts:false), so it was the one customer email that
+  // never said which road was refunded. It names the local road alone — nothing else returns.
+  it('names the local road the customer paid for, in the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } }, email);
+    const m = email.sent[0];
+    expect(m.html).toMatch(/>Road<\/td>\s*<td[^>]*>Local road, no expressway · about 6h 14m<\/td>/);
+    expect(m.text).toContain('Road: Local road, no expressway · about 6h 14m');
+    // Only the road — the letter still carries no facts list.
+    expect(m.html).not.toContain('Travellers');
+    expect(m.subject).toBe('Your Ceylon Hop refund is processed — CH-ABC12');
+  });
+
+  it('adds nothing when the booking took the expressway', async () => {
+    const plain = new FakeEmailAdapter();
+    await sendRefundConfirmation(single, plain);
+    const fastest = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, input: { ...single.input, routeVariant: 'fastest' } }, fastest);
+    for (const m of [plain.sent[0], fastest.sent[0]]) {
+      expect(m.html).not.toContain('Local road');
+      expect(m.text).not.toContain('Road:');
+    }
+    expect(fastest.sent[0].html).toBe(plain.sent[0].html);
+  });
 });
 
 // ── New lifecycle emails ────────────────────────────────────────────────────

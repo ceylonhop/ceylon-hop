@@ -189,6 +189,12 @@ export function roadRow(booking: Booking): [string, string] | null {
   return null;
 }
 
+// roadRow as a plain-text line ("Road: …"), or nothing — for the text emails and team alerts.
+export function roadLines(booking: Booking): string[] {
+  const road = roadRow(booking);
+  return road ? [`${road[0]}: ${road[1]}`] : [];
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
 // team's paid email states the vehicle and head-count in exactly the customer's words.
 export function factRows(booking: Booking): [string, string][] {
@@ -403,8 +409,8 @@ function routeRow(booking: Booking): string {
 }
 
 // The non-route facts as an editorial list with hairline dividers.
-function detailsRow(booking: Booking): string {
-  const rows = factRows(booking)
+function detailsRow(facts: [string, string][]): string {
+  const rows = facts
     .map(
       ([k, v]) =>
         `<tr>
@@ -421,7 +427,7 @@ function detailsRow(booking: Booking): string {
 // Composes the letter body: reference + status, the journey line, then (optionally) the
 // facts list. Keeps the same call shape the senders already use.
 function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean } = {}): string {
-  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(booking) : '');
+  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(factRows(booking)) : '');
 }
 
 // Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
@@ -642,6 +648,7 @@ export async function sendRefundConfirmation(
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
   const amount = money(amountCents, currency);
+  const road = roadRow(booking);
   const html = page(
     brandHeader() +
       introBlock(
@@ -651,6 +658,8 @@ export async function sendRefundConfirmation(
         'We&rsquo;ve processed a refund for the booking below.',
       ) +
       ticketCard(booking, BADGE_REFUNDED, { facts: false }) +
+      // No facts list on a refund — but the road they paid for, when it was the local one.
+      (road ? detailsRow([road]) : '') +
       totalBlock('Amount refunded', amount) +
       infoBox(
         'When will I see it?',
@@ -659,6 +668,7 @@ export async function sendRefundConfirmation(
       footer(),
   );
   const text = textShell('refund processed', "We've processed a refund for your booking.", booking, [
+    ...roadLines(booking),
     `Amount refunded: ${amount}`,
     '',
     'Refunds usually land in 5-10 business days, depending on your bank or card provider.',

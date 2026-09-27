@@ -3,7 +3,7 @@ import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, 
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
 import type { Booking } from '../db/bookingRepo';
-import { factRows, routeText } from './notifications';
+import { factRows, roadRow, routeText } from './notifications';
 import { shortPlace } from '../quote/shortPlace';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
@@ -369,7 +369,9 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
   const c = b.input.customer;
   const amount = money(b.amountDueNow ?? b.total, b.currency);
   const subject = `Rescue: ${c.firstName} couldn’t pay ${b.reference} — ${f.subjectRoute}, ${f.when} — ${amount}`;
-  const trip = f.when === 'date TBC' ? f.route : `${f.route} (${f.when})`;
+  // The road they chose, when it was the local one — the booking must read as theirs.
+  const route = roadRow(b) ? `${f.route} via the local road` : f.route;
+  const trip = f.when === 'date TBC' ? route : `${route} (${f.when})`;
   const message =
     `Hi ${c.firstName}, this is Ceylon Hop — your card payment for ${trip} didn’t go through. ` +
     `You can pay here: ${payLink} — or reply and we’ll help.`;

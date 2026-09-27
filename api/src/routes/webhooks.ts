@@ -10,7 +10,7 @@ import {
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
 import { wasDelivered } from '../adapters/email';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
 import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
@@ -71,6 +71,8 @@ function teamPaidBody(b: Booking): string {
   const c = b.input.customer;
   return [
     `${routeText(b)}`,
+    // The road that was sold, when it is the local one (route choice, spec §4.3).
+    ...roadLines(b),
     // When they travel — omitted until 2026-09-22, so the one message telling the team a seat
     // sold could not tell them it departs in two days. The timestamp the alert transport adds
     // at the foot of that email is the send time, which is when the money landed (CH-6HE3V).
