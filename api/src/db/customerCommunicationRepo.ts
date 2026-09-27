@@ -7,7 +7,10 @@ export type CustomerCommunicationEventType =
   | 'send_attempted'
   | 'provider_accepted'
   | 'send_failed'
+  | 'provider_sent'
   | 'delivered'
+  | 'delayed'
+  | 'provider_failed'
   | 'bounced'
   | 'complained';
 
@@ -46,11 +49,20 @@ export interface CustomerCommunicationEvent {
 
 export type PlanCustomerCommunication = Omit<CustomerCommunication, 'id' | 'provider' | 'providerMessageId' | 'createdAt' | 'updatedAt'>;
 export type RecordCustomerCommunicationEvent = Omit<CustomerCommunicationEvent, 'id' | 'recordedAt'>;
+export type RecordProviderCommunicationEvent = RecordCustomerCommunicationEvent & {
+  providerEventId: string;
+  providerMessageId: string;
+};
 
 export interface CustomerCommunicationRepo {
   plan(input: PlanCustomerCommunication): Promise<CustomerCommunication>;
   recordEvent(input: RecordCustomerCommunicationEvent): Promise<CustomerCommunicationEvent>;
+  recordProviderEvent(input: RecordProviderCommunicationEvent): Promise<{
+    event: CustomerCommunicationEvent;
+    inserted: boolean;
+  }>;
   markProviderAccepted(id: string, provider: string | null, providerMessageId: string | null): Promise<void>;
+  findByProviderMessageId(providerMessageId: string): Promise<CustomerCommunication | null>;
   listByBookingId(bookingId: string): Promise<CustomerCommunication[]>;
   listEvents(communicationId?: string): Promise<CustomerCommunicationEvent[]>;
 }
@@ -79,10 +91,25 @@ export class InMemoryCustomerCommunicationRepo implements CustomerCommunicationR
     return structuredClone(row);
   }
 
+  async recordProviderEvent(input: RecordProviderCommunicationEvent): Promise<{
+    event: CustomerCommunicationEvent;
+    inserted: boolean;
+  }> {
+    const existing = this.events.find((row) => row.providerEventId === input.providerEventId);
+    if (existing) return { event: structuredClone(existing), inserted: false };
+    return { event: await this.recordEvent(input), inserted: true };
+  }
+
   async markProviderAccepted(id: string, provider: string | null, providerMessageId: string | null): Promise<void> {
     const row = this.communications.get(id);
     if (!row) return;
     this.communications.set(id, { ...row, provider, providerMessageId, updatedAt: new Date() });
+  }
+
+  async findByProviderMessageId(providerMessageId: string): Promise<CustomerCommunication | null> {
+    const row = [...this.communications.values()]
+      .find((communication) => communication.providerMessageId === providerMessageId);
+    return row ? structuredClone(row) : null;
   }
 
   async listByBookingId(bookingId: string): Promise<CustomerCommunication[]> {
