@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from './app';
+import { InMemoryBookingRepo } from './db/bookingRepo';
 import { issueSessionCookie } from './lib/opsMiddleware';
 
 // /admin/quote/* now requires a session with quote:manage (D-A) — the old
@@ -79,6 +80,42 @@ describe('rate limiting (booking writes)', () => {
       });
     expect((await hit('1.1.1.1')).status).toBe(201);
     expect((await hit('2.2.2.2')).status).toBe(429); // rotating x-real-ip buys nothing
+  });
+});
+
+// The per-IP limit bounds how OFTEN, not how BIG: uncapped, every write read and parsed a
+// multi-megabyte JSON body before Zod could refuse it. One cap covers the whole app.
+describe('request body cap', () => {
+  const huge = JSON.stringify({ ...body, padding: 'x'.repeat(2_000_000) });
+  function postRaw(app: ReturnType<typeof createApp>, path: string, payload: string, headers: Record<string, string> = {}) {
+    return app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: payload,
+    });
+  }
+
+  it('413s an oversized booking, streamed or declared, without creating it', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const streamed = await postRaw(app, '/bookings/single', huge); // no content-length: the body itself is counted
+    expect(streamed.status).toBe(413);
+    expect((await streamed.json()).error).toBe('payload_too_large');
+    const declared = await postRaw(app, '/bookings/single', huge, { 'content-length': String(Buffer.byteLength(huge)) });
+    expect(declared.status).toBe(413);
+    expect(await bookings.list()).toHaveLength(0);
+  });
+
+  it('still creates a normal booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    expect((await postRaw(app, '/bookings/single', JSON.stringify(body))).status).toBe(201);
+    expect(await bookings.list()).toHaveLength(1);
+  });
+
+  it('covers routes outside the public write prefixes too', async () => {
+    const app = createApp();
+    expect((await postRaw(app, '/webhooks/payments', huge)).status).toBe(413);
   });
 });
 
