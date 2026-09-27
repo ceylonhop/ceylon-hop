@@ -51,6 +51,21 @@ const rows = (page) => page.locator('.opt-private .veh-row');
 const carHref = (page) => rows(page).nth(0).locator('a.btn').getAttribute('href');
 const pushes = (page, event) => page.evaluate((ev) => (window.dataLayer || []).filter((e) => e && e.event === ev), event);
 const cardSwitch = (page) => page.locator('.opt-private [role="radiogroup"][aria-label="Road"]');
+// The meta line's figures for the road on the card: "Approx. 335 km · 5h[ · via local road]".
+async function metaFigures(page) {
+  const t = (await page.locator('#route-meta .route-estimate').textContent()).trim();
+  const m = t.match(/Approx\. (\d+ km) · (.+?)(?: · via local road)?$/);
+  expect(m, `meta line "${t}"`).toBeTruthy();
+  return { km: m[1], time: m[2] };
+}
+// The popup's figures for one road ('is-fastest' | 'is-local'): its km and its time.
+async function popupFigures(dialog, cls) {
+  const card = dialog.locator(`label.ch-rc-opt.${cls}`);
+  return {
+    km: (await card.locator('.ch-rc-stats').textContent()).split(' · ')[0],
+    time: (await card.locator('.ch-rc-time').textContent()).trim(),
+  };
+}
 
 test('a cheaper local road is offered once, in a popup', async ({ page }) => {
   const calls = await open(page);
@@ -69,6 +84,14 @@ test('a cheaper local road is offered once, in a popup', async ({ page }) => {
 test('picking the local road reprices the card, the meta line and the Select links', async ({ page }) => {
   await open(page);
   const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  // One road, one set of figures: the popup describes each road exactly as the meta line will.
+  const fast = await popupFigures(dialog, 'is-fastest');
+  const local = await popupFigures(dialog, 'is-local');
+  expect(fast).toEqual(await metaFigures(page));
+  expect(fast).toEqual({ km: '335 km', time: '5h' });        // 297 min rounds as the meta line does
+  expect(local).toEqual({ km: '215 km', time: '6h' });       // 213 km / 374 min, rounded
+  await expect(dialog.locator('.ch-rc-slower')).toHaveText('+1h');
   await dialog.locator('label.ch-rc-opt.is-local').click();
   await dialog.getByRole('button', { name: 'Use local road' }).click();
   await expect(dialog).toHaveCount(0);
@@ -76,8 +99,8 @@ test('picking the local road reprices the card, the meta line and the Select lin
   await expect(rows(page).nth(0)).toContainText('$91');
   await expect(rows(page).nth(1)).toContainText('$123');
   // route-estimate.js rounds a displayed distance to 5 km, so 213 km reads "215 km"
-  await expect(page.locator('#route-meta')).toContainText('215 km');
   await expect(page.locator('#route-meta')).toContainText('via local road');
+  expect(await metaFigures(page)).toEqual(local);
   const q = new URLSearchParams((await carHref(page)).split('?')[1]);
   expect(q.get('road')).toBe('no_tolls');
   expect(q.get('estimateKm')).toBe('213');
@@ -113,16 +136,19 @@ test('the card switch moves both ways without asking the engine again', async ({
   const asked = calls.n;
 
   const sw = cardSwitch(page);
-  await sw.locator('label', { hasText: 'Local road · 6h 14m' }).click();
+  // the switch uses the meta line's figures too
+  await expect(sw.locator('label')).toHaveText(['Expressway · 5h', 'Local road · 6h']);
+  await sw.locator('label', { hasText: 'Local road · 6h' }).click();
   await expect(rows(page).nth(0)).toContainText('$91');
   await expect(rows(page).nth(1)).toContainText('$123');
   await expect(cardSwitch(page).locator('input:checked')).toHaveValue('no_tolls');
-  // the expressway's time is the catalogue's (297 min), the one the meta line was showing
-  await cardSwitch(page).locator('label', { hasText: /^Expressway · 4h 57m$/ }).click();
+  expect((await metaFigures(page)).time).toBe('6h');
+  // the expressway's time is the catalogue's (297 min), rounded as the meta line rounds it
+  await cardSwitch(page).locator('label', { hasText: /^Expressway · 5h$/ }).click();
   await expect(rows(page).nth(0)).toContainText('$140');
   await expect(rows(page).nth(1)).toContainText('$189');
-  await expect(page.locator('#route-meta')).toContainText('335 km');
   await expect(page.locator('#route-meta')).not.toContainText('via local road');
+  expect(await metaFigures(page)).toEqual({ km: '335 km', time: '5h' });
   expect(new URLSearchParams((await carHref(page)).split('?')[1]).get('estimateKm')).toBe('335');
 
   expect(calls.n).toBe(asked);

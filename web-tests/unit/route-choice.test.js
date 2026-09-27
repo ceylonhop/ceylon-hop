@@ -99,6 +99,24 @@ describe('CH_ROUTE_CHOICE.open', () => {
     expect(document.body.style.overflow).toBe('scroll');
   });
 
+  it("Escape stops at the popup: the page's own Escape handlers never see it", () => {
+    const o = opts();
+    const pageEsc = vi.fn();
+    const onInput = vi.fn();
+    window.addEventListener('keydown', pageEsc);
+    opener.addEventListener('keydown', onInput);
+    RC.open(o);
+    const radio = document.querySelector('input[name="ch-rc-road"]:checked');
+    radio.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(o.onDismiss).toHaveBeenCalledTimes(1);
+    expect(pageEsc).not.toHaveBeenCalled();
+    // once closed, the popup swallows nothing
+    opener.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    window.removeEventListener('keydown', pageEsc);
+    expect(onInput).toHaveBeenCalledTimes(1);
+    expect(pageEsc).toHaveBeenCalledTimes(1);
+  });
+
   it('Decide later, the close button and the scrim all dismiss', () => {
     for (const hit of [
       () => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Decide later').click(),

@@ -111,11 +111,12 @@
     const fig = el('span', 'ch-rc-fig');
     if (local) {
       fig.appendChild(el('span', 'ch-rc-big', o.price));
-      const t = el('span', 'ch-rc-alt', o.time);
+      const t = el('span', 'ch-rc-alt');
+      t.appendChild(el('span', 'ch-rc-time', o.time));
       if (o.slower) { t.appendChild(document.createTextNode(' ')); t.appendChild(el('span', 'ch-rc-slower', o.slower)); }
       fig.appendChild(t);
     } else {
-      fig.appendChild(el('span', 'ch-rc-big', o.time));
+      fig.appendChild(el('span', 'ch-rc-big ch-rc-time', o.time));
       fig.appendChild(el('span', 'ch-rc-alt', o.price));
     }
     lab.appendChild(fig);
@@ -189,7 +190,7 @@
       if (closed) return;
       closed = true;
       current = null;
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       document.body.style.overflow = prevOverflow;
       if (scrim.parentNode) scrim.remove();
       // Deliberately no focus trap (as ch-map.js openExpanded); focus goes back where it was.
@@ -197,9 +198,11 @@
       if (typeof fn === 'function') fn(arg);
     };
     const dismiss = () => close(opts.onDismiss);
-    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+    // Captured on document and stopped there: while the popup is up, Escape is the popup's, and
+    // the page's own Escape handlers (site.js's place menu, say) never see it.
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); dismiss(); } };
 
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) dismiss(); });
     x.addEventListener('click', dismiss);
     later.addEventListener('click', dismiss);

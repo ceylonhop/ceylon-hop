@@ -329,11 +329,23 @@ function privateCardHtml(pending) {
 }
 function privateSkeletonHtml() { return privateCardHtml(true); }
 
+/* One road, one set of figures: the popup and the card switch describe each road with the same
+   rounding the meta line uses (route-estimate.js), so "Approx. 335 km · 5h" up top is never
+   "4h 57m" in the popup. Under an hour stays in minutes, as the meta line's durationWords does. */
+const estimatePolicy = () => (window.CH && CH.routeEstimate) || null;
+const roadKm = (km) => `${estimatePolicy() ? estimatePolicy().roundDistanceKm(km) : Math.round(km)} km`;
+const roadMin = (m) => (m == null ? null : estimatePolicy() ? estimatePolicy().roundDurationMin(m) : m);
+function roadTime(m) {
+  const r = roadMin(m);
+  if (r == null || !window.CH_ROUTE_CHOICE) return '';
+  return m < 60 ? `${r} min` : CH_ROUTE_CHOICE.fmtMinutes(r);
+}
+
 /* The two roads, both already priced, so switching asks nothing (spec §4.6). Native radios in
    labels: the arrow keys work, and the card-click delegation below leaves labels alone. */
 function roadSwitchHtml() {
   // "Expressway · 5h"; on a phone the time drops under the name (search.html), minus the dot.
-  const fmt = (m) => (m != null && window.CH_ROUTE_CHOICE ? `<span class="rs-dot"> · </span><span class="rs-t">${CH_ROUTE_CHOICE.fmtMinutes(m)}</span>` : '');
+  const fmt = (m) => (roadTime(m) ? `<span class="rs-dot"> · </span><span class="rs-t">${roadTime(m)}</span>` : '');
   const opt = (v, cls, name, min) => `<label class="rs-opt ${cls}${road === v ? ' is-on' : ''}"><input type="radio" name="ch-card-road" value="${v}"${road === v ? ' checked' : ''}><span class="rs-sw" aria-hidden="true"></span><span class="rs-txt">${name}${fmt(min)}</span></label>`;
   return `<div class="road-switch" role="radiogroup" aria-label="Road">${
     opt('fastest', 'rs-fast', 'Expressway', expresswayQuote.durationMin)}${
@@ -759,8 +771,9 @@ function takeRoads(car, van) {
   expresswayQuote = quote;
   if (road === 'no_tolls') applyRoad('no_tolls', false);
 }
-// What the local road saves on the car, against the expressway fare the card shows.
-const roadSaving = () => Math.round(expresswayQuote.car - roads.noTolls.car);
+// What the local road saves on the car, against the expressway fare the card shows. Whole dollars,
+// rounded DOWN (in cents, so float noise can't tip it): a saving is never overstated.
+const roadSaving = () => Math.floor((Math.round(expresswayQuote.car * 100) - Math.round(roads.noTolls.car * 100)) / 100);
 
 function applyRoad(v, track) {
   if (!roads || !expresswayQuote) return;
@@ -796,20 +809,19 @@ function maybeOffer() {
   if (bar && bar.contains(document.activeElement)) return;
   RC.markAsked(key);
   const saving = roadSaving();
-  const km = (n) => `${Math.round(n)} km`;
-  const time = (m) => (m != null ? RC.fmtMinutes(m) : '');
+  const fastMin = roadMin(expresswayQuote.durationMin), localMin = roadMin(roads.noTolls.min);
   RC.open({
     title: `Two roads to ${dispTo}`,
     sub: "The local road skips the expressway tolls. It's slower, but cheaper. Pick one and you can switch later.",
     fastest: {
-      time: time(expresswayQuote.durationMin), km: km(expresswayQuote.km),
+      time: roadTime(expresswayQuote.durationMin), km: roadKm(expresswayQuote.km),
       price: '$' + displayPrice(expresswayQuote.car), extra: 'van $' + displayPrice(expresswayQuote.van)
     },
     local: {
-      time: time(roads.noTolls.min),
-      slower: expresswayQuote.durationMin != null && roads.noTolls.min != null && roads.noTolls.min > expresswayQuote.durationMin
-        ? '+' + RC.fmtMinutes(roads.noTolls.min - expresswayQuote.durationMin) : '',
-      km: km(roads.noTolls.km),
+      time: roadTime(roads.noTolls.min),
+      // the difference between the two times SHOWN, so the sum always adds up on screen
+      slower: fastMin != null && localMin != null && localMin > fastMin ? '+' + RC.fmtMinutes(localMin - fastMin) : '',
+      km: roadKm(roads.noTolls.km),
       price: '$' + displayPrice(roads.noTolls.car), extra: 'van $' + displayPrice(roads.noTolls.van),
       save: 'Save $' + saving
     },
