@@ -23,9 +23,11 @@ import {
   type PromoBookingUse,
   type BookingStatusEvent,
   type BookingStatusEventMismatch,
+  type WebsitePricingSnapshot,
   BookingNotFoundError,
   BookingTransitionContextRequiredError,
   generateReference,
+  snapshotAddOns,
   PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
 import { toPromoCode } from './promoCodeRow';
@@ -329,12 +331,14 @@ export class PostgresBookingRepo implements BookingRepo {
       const req = row.mode === 'trip' ? tripBy.get(row.id) : row.mode === 'shared' ? sharedBy.get(row.id) : transferBy.get(row.id);
       if (!req) throw new Error(`booking ${row.id}: ${row.mode} request row missing`);
       const booking = build(row, cust, req);
-      const addOns = addOnsBy.get(row.id);
-      return addOns?.length ? { ...booking, addOns } : booking;
+      // The booking's quote names them; a website booking has none, so its own snapshot does.
+      const fromQuote = addOnsBy.get(row.id);
+      const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
+      return addOns.length ? { ...booking, addOns } : booking;
     });
   }
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking> {
     if (opts?.idempotencyKey) {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
@@ -360,7 +364,7 @@ export class PostgresBookingRepo implements BookingRepo {
     throw lastErr;
   }
 
-  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<BookingRow> {
+  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<BookingRow> {
     const c = b.input.customer;
     return this.db.transaction(async (tx) => {
       // Re-reads the code under FOR UPDATE: a code switched off or filled mid-request is not honoured.
@@ -404,6 +408,7 @@ export class PostgresBookingRepo implements BookingRepo {
           discountTotal: b.mode !== 'shared' && b.discountTotal !== undefined ? b.discountTotal : null,
           promoCodeId: opts?.promo ? opts.promo.code.id : null,
           promoHoldUntil: opts?.promo ? new Date(opts.promo.now.getTime() + PROMO_HOLD_MS) : null,
+          pricingSnapshotJson: opts?.pricingSnapshot ?? null,
         })
         .returning();
       if (b.mode === 'trip') {

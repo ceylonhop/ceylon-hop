@@ -23,7 +23,7 @@ import {
   InvalidPricingRequestError,
   type PriceOutcome,
 } from '../services/pricing';
-import type { BookingRepo, Booking } from '../db/bookingRepo';
+import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
@@ -507,7 +507,12 @@ function invalidRequest(error: ZodError) {
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
           ...(promo.code ? { discountTotal } : {}),
         },
-        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+        {
+          idempotencyKey: key,
+          ...(promo.code ? { promo: { code: promo.code, now } } : {}),
+          // The engine's own request and lines, kept so the booking can name the add-ons it paid for.
+          ...(outcome.priced && outcome.breakdown ? { pricingSnapshot: websitePricingSnapshot(outcome.breakdown) } : {}),
+        },
       );
     } catch (err) {
       if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);

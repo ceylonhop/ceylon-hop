@@ -7,6 +7,7 @@ import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
+import type { QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
   PromoCodeRefusedError,
@@ -112,9 +113,10 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
   promoCodeId?: string | null;
   promoHoldUntil?: string | null; // ISO
-  // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read from the booking's quote
-  // (quotes.converted_booking_id) on every load, never stored on the booking. Present only when
-  // there is at least one, so every surface shows them only when they were chosen.
+  // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read on every load from the priced
+  // lines that already exist — the booking's quote (quotes.converted_booking_id), or a website
+  // booking's own WebsitePricingSnapshot — never stored as a field. Present only when there is at
+  // least one, so every surface shows them only when they were chosen.
   addOns?: string[];
 };
 
@@ -185,6 +187,47 @@ export interface BookingPricingSnapshot {
   lineItems: unknown[];
 }
 
+/**
+ * What a website booking keeps of its price (bookings.pricing_snapshot_json). A website booking has
+ * no quote, so it keeps the engine's own request and lines in the fields the quote-conversion
+ * snapshot above uses (minus the quote), and its add-ons read exactly as a quote's do.
+ */
+export interface WebsitePricingSnapshot {
+  version: 1;
+  source: 'website';
+  engine: QuoteRequest;
+  subtotalCents: number;
+  discountTotalCents: number;
+  totalCents: number;
+  amountDueNowCents: number;
+  currency: string;
+  rateCardVersion: string;
+  lineItems: unknown[];
+}
+
+export function websitePricingSnapshot(priced: { engine: QuoteRequest; result: QuoteResult }): WebsitePricingSnapshot {
+  const { engine, result } = priced;
+  return {
+    version: 1,
+    source: 'website',
+    engine: structuredClone(engine),
+    subtotalCents: result.subtotalCents,
+    discountTotalCents: result.discountCents ?? 0,
+    totalCents: result.totalCents,
+    amountDueNowCents: result.amountDueNowCents,
+    currency: result.currency,
+    rateCardVersion: result.rateCardVersion,
+    lineItems: structuredClone(result.lineItems),
+  };
+}
+
+/** The add-ons a website booking's own snapshot names; none for anything else in the column. */
+export function snapshotAddOns(snapshot: unknown): string[] {
+  const s = snapshot as Partial<WebsitePricingSnapshot> | null;
+  if (!s || s.source !== 'website') return [];
+  return chosenAddOns({ request: { engine: s.engine }, result: { lineItems: s.lineItems } });
+}
+
 // The storage seam. The route layer depends only on this interface, so swapping the
 // in-memory store for Postgres later (M2) touches nothing else.
 export class BookingNotFoundError extends Error {
@@ -197,7 +240,7 @@ export class BookingNotFoundError extends Error {
 export interface BookingRepo {
   // `promo` takes one use of a code inside the same write; throws PromoCodeRefusedError when the
   // code no longer works or every use is paid or held (spec 2026-09-14 §5.3).
-  create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking>;
+  create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking>;
   /** Paid and held uses of a code at `now` (§5.1). */
   promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }>;
   /** Every booking that carried the code, newest first (§6.5). */
@@ -283,6 +326,8 @@ export class InMemoryBookingRepo implements BookingRepo {
   }
 
   private quotes?: Pick<QuoteRepo, 'findByConvertedBookingId'>;
+  // A website booking's own priced lines — the pricing_snapshot_json twin.
+  private websitePricing = new Map<string, WebsitePricingSnapshot>();
 
   /** Lets a booking name its quote's add-ons exactly as the Postgres repo's load does. */
   attachQuotes(quotes: Pick<QuoteRepo, 'findByConvertedBookingId'>): void {
@@ -293,7 +338,8 @@ export class InMemoryBookingRepo implements BookingRepo {
   // with none comes back as the very object stored, exactly as before.
   private async present(b: Booking): Promise<Booking> {
     const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
-    const addOns = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const fromQuote = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
     return addOns.length ? { ...b, addOns } : b;
   }
 
@@ -322,7 +368,7 @@ export class InMemoryBookingRepo implements BookingRepo {
     );
   }
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking> {
     const key = opts?.idempotencyKey;
     if (key) {
       // Synchronous check (no await before the insert below) so two concurrent create()
@@ -334,7 +380,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       if (existingId) return this.present(this.byId.get(existingId)!);
     }
     const promo = opts?.promo;
-    if (!promo) return this.insert(b, key);
+    if (!promo) return this.present(this.insert(b, key, undefined, opts?.pricingSnapshot));
     return this.withPromoLock(promo.code.id, async () => {
       // Re-check under the lock: a concurrent retry with the same key may have inserted meanwhile.
       if (key) {
@@ -345,14 +391,19 @@ export class InMemoryBookingRepo implements BookingRepo {
       if (unavailable) throw new PromoCodeRefusedError(unavailable);
       const { paid, held } = await this.promoUsage(promo.code.id, promo.now);
       if (paid + held >= promo.code.maxUses) throw new PromoCodeRefusedError('promo_code_used_up');
-      return this.insert(b, key, {
+      return this.present(this.insert(b, key, {
         promoCodeId: promo.code.id,
         promoHoldUntil: new Date(promo.now.getTime() + PROMO_HOLD_MS).toISOString(),
-      });
+      }, opts?.pricingSnapshot));
     });
   }
 
-  private insert(b: NewBooking, key: string | undefined, promo?: { promoCodeId: string; promoHoldUntil: string }): Booking {
+  private insert(
+    b: NewBooking,
+    key: string | undefined,
+    promo?: { promoCodeId: string; promoHoldUntil: string },
+    pricingSnapshot?: WebsitePricingSnapshot,
+  ): Booking {
     let reference = generateReference();
     while (this.refs.has(reference)) reference = generateReference();
     const booking: Booking = {
@@ -367,6 +418,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
+    if (pricingSnapshot) this.websitePricing.set(booking.id, structuredClone(pricingSnapshot));
     this.refs.add(reference);
     if (key) this.byKey.set(key, booking.id);
     return booking;
