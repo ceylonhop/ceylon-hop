@@ -23,7 +23,7 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
       headers: { 'x-admin-key': KEY },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, suppressed: 0 });
+    expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, overdueRideLists: 0, suppressed: 0 });
   });
 
   it('correlates each watchdog run to its request without changing the response', async () => {
@@ -47,7 +47,7 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
       expect(ticks[0]?.runId).toMatch(/^[0-9a-f-]{36}$/);
       expect(ticks[1]?.runId).toMatch(/^[0-9a-f-]{36}$/);
       expect(ticks[0]?.runId).not.toBe(ticks[1]?.runId);
-      expect(await first.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, suppressed: 0 });
+      expect(await first.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0, stuckRefunds: 0, overdueRideLists: 0, suppressed: 0 });
     } finally {
       spy.mockRestore();
     }
