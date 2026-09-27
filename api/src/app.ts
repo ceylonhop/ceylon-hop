@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
@@ -381,6 +382,12 @@ export function createApp(deps: AppDeps = {}) {
   // Founder promo-code API (spec 2026-09-14 §6.5). Session-gated, but still throttled like the other
   // admin surfaces. Hono's '/admin/promo-codes/*' also matches the bare parent path.
   app.use('/admin/promo-codes/*', rateLimit({ ...rl, methods: ['POST', 'GET', 'PATCH'] }));
+
+  // The limits above bound how OFTEN; this bounds how BIG. Uncapped, every write read and parsed a
+  // multi-megabyte body before Zod refused it. Whole app, so a new route can't be left out; 1 MB is
+  // ~100x the largest real booking (~10 KB). Its own 413, not the middleware's default throw —
+  // app.onError below would turn that into a 500 and an alert.
+  app.use('*', bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: 'payload_too_large' }, 413) }));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
