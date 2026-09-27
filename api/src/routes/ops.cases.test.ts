@@ -118,6 +118,18 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     }
   });
 
+  // Route choice (spec §4.3): the Lookup names the local road the customer bought, in the words
+  // their emails use. Null on the expressway, so an ordinary booking's case reads as before.
+  it('names the local road the customer chose, and null on the expressway', async () => {
+    const s = setup();
+    const local = await s.bookings.create({ ...draft, durationMin: 374, input: { ...draft.input, routeVariant: 'no_tolls' } } as NewBooking);
+    const plain = await s.bookings.create(draft);
+    const lb = (await (await s.get(local.reference)).json()).booking;
+    expect(lb.road).toBe('Local road, no expressway · about 6h 14m');
+    expect(lb.route).toBe('Colombo Airport → Galle');
+    expect((await (await s.get(plain.reference)).json()).booking.road).toBeNull();
+  });
+
   it('a quote ref opens the booking the quote became', async () => {
     const s = setup();
     const b = await s.bookings.create(draft);

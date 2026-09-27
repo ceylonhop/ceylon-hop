@@ -3,6 +3,7 @@ import type { RideOps } from '../db/rideOpsRepo';
 import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
+import { roadRow } from './notifications';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -44,6 +45,9 @@ export interface OpsBookingRow {
   /** The number the customer gave (their WhatsApp), shown on the queue row. Null when blank. */
   customerPhone: string | null;
   route: string;
+  /** 'Local road' when the customer bought the toll-free road (any leg of a trip), else null.
+   *  Separate from `route`, which search, the payment reminder and the Lookup read as-is. */
+  road: string | null;
   travelDate: string | null;
   travelTime: string | null;
   pax: number;
@@ -103,7 +107,7 @@ export function toOpsRow(
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
-    route: route(b), travelDate: t.date, travelTime: t.time, pax: pax(b),
+    route: route(b), road: roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,
