@@ -977,7 +977,7 @@ function tripIndex(T, photos) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sri Lanka shared taxi &amp; private transfer routes — fixed prices | Ceylon Hop</title>
+<title>Popular routes &amp; prices — Sri Lanka shared taxi &amp; transfers | Ceylon Hop</title>
 <meta name="description" content="Shared taxi seats and fixed-price private transfers on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
 <link rel="canonical" href="${url}">
 <meta property="og:type" content="website">

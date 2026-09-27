@@ -22,6 +22,7 @@ export interface FunnelReport {
     pipeline: Snapshot;
   };
   series: { bucketStart: string; created: number; sent: number; won: number }[];
+  cohort: { created: number; sent: number; decided: number; won: number; sendRatePct: number | null; winRatePct: number | null };
   lostReasons: { reason: string | null; count: number; valueCents: CurrencyMap }[];
   aging: { bucket: '0-2' | '3-7' | '8-14' | '15+'; count: number; valueCents: CurrencyMap }[];
 }
@@ -51,6 +52,22 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
   const created = count((r) => r.createdAt);
   const sent = count((r) => r.sentAt);
   const won = count((r) => r.decidedAt, (r) => r.status === 'won');
+
+  // A real conversion cohort: start with quotes CREATED in the selected window, then follow
+  // those same quotes to their current outcome. This is deliberately separate from the activity
+  // series above, whose sent/won stamps answer "what happened during this period?".
+  const cohortRows = rows.filter((r) => inRange(r.createdAt, from, to));
+  const cohortSent = cohortRows.filter((r) => r.sentAt !== null).length;
+  const cohortDecided = cohortRows.filter((r) => r.decidedAt !== null).length;
+  const cohortWon = cohortRows.filter((r) => r.status === 'won').length;
+  const cohort = {
+    created: cohortRows.length,
+    sent: cohortSent,
+    decided: cohortDecided,
+    won: cohortWon,
+    sendRatePct: cohortRows.length ? Math.round((cohortSent / cohortRows.length) * 100) : null,
+    winRatePct: cohortDecided ? Math.round((cohortWon / cohortDecided) * 100) : null,
+  };
 
   // Quote $ values — same in-range rules as the Won/Sent count tiles they sit beside.
   const wonValue: CurrencyMap = {};
@@ -120,6 +137,7 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
     range: { from: from.toISOString(), to: to.toISOString(), bucket },
     tiles: { created, sent, won, wonValue, sentValue, avgSentCents, pipeline },
     series: [...seriesMap.values()],
+    cohort,
     lostReasons: [...reasonMap.values()].sort((a, b) => b.count - a.count),
     aging: agingBuckets,
   };

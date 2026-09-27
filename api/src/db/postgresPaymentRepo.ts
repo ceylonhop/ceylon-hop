@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
-import type { PaymentRepo, NewPayment, Payment, PaymentStatus } from './paymentRepo';
+import type { PaymentRepo, NewPayment, Payment, PaymentProvenance, PaymentStatus } from './paymentRepo';
 
 type Row = typeof payments.$inferSelect;
 const toPayment = (r: Row): Payment => ({
@@ -117,6 +117,22 @@ export class PostgresPaymentRepo implements PaymentRepo {
     const [row] = await this.db.select({ settledBy: payments.settledBy })
       .from(payments).where(eq(payments.id, paymentId)).limit(1);
     return row?.settledBy ?? null;
+  }
+
+  async provenanceFor(paymentId: string): Promise<PaymentProvenance | null> {
+    const [row] = await this.db
+      .select({
+        createdAt: payments.createdAt,
+        settledAt: payments.settledAt,
+        settlementSource: payments.settlementSource,
+        settledBy: payments.settledBy,
+        gatewayPaymentId: payments.gatewayPaymentId,
+      })
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+      .limit(1);
+    if (!row) return null;
+    return { ...row, settlementSource: row.settlementSource as PaymentProvenance['settlementSource'] };
   }
 
   async hasManualSettlement(bookingId: string): Promise<boolean> {

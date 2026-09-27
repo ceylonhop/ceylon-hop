@@ -16,8 +16,12 @@ export interface DemandReport {
     kmBuckets: { bucket: '<50' | '50-100' | '100-200' | '200+'; count: number }[];
     avgPax: number | null;
   };
-  topDestinations: { place: string; touches: number; wonValueCents: CurrencyMap }[];
-  topCorridors: { from: string; to: string; count: number; avgKm: number | null }[];
+  topOrigins: { place: string; count: number }[];
+  topDestinations: { place: string; count: number; touches: number; wonValueCents: CurrencyMap }[];
+  topCorridors: {
+    from: string; to: string; count: number; wins: number; winRatePct: number;
+    bookedValueCents: CurrencyMap; avgKm: number | null;
+  }[];
   movers: { place: string; recent: number; prior: number; changePct: number }[];
   serviceTrend: { bucketStart: string; private: number; chauffeur: number; both: number }[];
   coverage: { parsed: number; total: number };
@@ -47,8 +51,9 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
   const kms: number[] = [];
   const paxes: number[] = [];
 
-  const dest = new Map<string, { place: string; touches: number; wonValueCents: CurrencyMap }>();
-  const corr = new Map<string, { from: string; to: string; count: number; kms: number[] }>();
+  const origins = new Map<string, number>();
+  const dest = new Map<string, { place: string; count: number; touches: number; wonValueCents: CurrencyMap }>();
+  const corr = new Map<string, { from: string; to: string; count: number; wins: number; bookedValueCents: CurrencyMap; kms: number[] }>();
   const halves = new Map<string, { recent: number; prior: number }>();
   const mid = new Date(from.getTime() + (to.getTime() - from.getTime()) / 2);
 
@@ -83,20 +88,27 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
     }
     if (trip.pax !== null) paxes.push(trip.pax);
 
-    for (const place of trip.places) {
-      const d = dest.get(place) ?? { place, touches: 0, wonValueCents: {} };
-      d.touches += 1;
+    for (const place of trip.origins) origins.set(place, (origins.get(place) ?? 0) + 1);
+    for (const place of trip.destinations) {
+      const d = dest.get(place) ?? { place, count: 0, touches: 0, wonValueCents: {} };
+      d.count += 1;
+      d.touches = d.count; // compatibility for API consumers of the original field
       if (r.status === 'won') d.wonValueCents[r.currency] = (d.wonValueCents[r.currency] ?? 0) + r.totalCents;
       dest.set(place, d);
-
+    }
+    for (const place of trip.places) {
       const h = halves.get(place) ?? { recent: 0, prior: 0 };
       if (r.createdAt > mid) h.recent += 1; else h.prior += 1;
       halves.set(place, h);
     }
     for (const c of trip.corridors) {
       const key = `${c.from}→${c.to}`;
-      const entry = corr.get(key) ?? { from: c.from, to: c.to, count: 0, kms: [] };
+      const entry = corr.get(key) ?? { from: c.from, to: c.to, count: 0, wins: 0, bookedValueCents: {}, kms: [] };
       entry.count += 1;
+      if (r.status === 'won') {
+        entry.wins += 1;
+        entry.bookedValueCents[r.currency] = (entry.bookedValueCents[r.currency] ?? 0) + r.totalCents;
+      }
       if (c.km !== null) entry.kms.push(c.km);
       corr.set(key, entry);
     }
@@ -120,7 +132,7 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
     .filter((m) => Math.abs(m.changePct) >= MOVER_MIN_CHANGE_PCT)
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
 
-  const byTouches = [...dest.values()].sort((a, b) => b.touches - a.touches || a.place.localeCompare(b.place));
+  const byTouches = [...dest.values()].sort((a, b) => b.count - a.count || a.place.localeCompare(b.place));
 
   return {
     range: { from: from.toISOString(), to: to.toISOString() },
@@ -131,12 +143,16 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
       kmBuckets,
       avgPax: paxes.length ? round1(paxes.reduce((s, p) => s + p, 0) / paxes.length) : null,
     },
+    topOrigins: [...origins].map(([place, count]) => ({ place, count }))
+      .sort((a, b) => b.count - a.count || a.place.localeCompare(b.place)).slice(0, TOP_N),
     topDestinations: byTouches.slice(0, TOP_N),
     topCorridors: [...corr.values()]
       .sort((a, b) => b.count - a.count || a.from.localeCompare(b.from))
       .slice(0, TOP_N)
       .map((c) => ({
-        from: c.from, to: c.to, count: c.count,
+        from: c.from, to: c.to, count: c.count, wins: c.wins,
+        winRatePct: Math.round((c.wins / c.count) * 100),
+        bookedValueCents: c.bookedValueCents,
         avgKm: c.kms.length ? round1(c.kms.reduce((s, k) => s + k, 0) / c.kms.length) : null,
       })),
     movers,

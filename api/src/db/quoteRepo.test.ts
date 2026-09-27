@@ -388,6 +388,20 @@ describe('analytics projections', () => {
     const ids = all.rows.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
   });
+
+  it('excludes TEAM_EMAILS contacts from every analytics projection', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const real = await repo.save(sample({ customerContact: 'customer@example.com' }));
+    const test = await repo.save(sample({ customerContact: ' OWNER@CEYLONHOP.COM ' }));
+    const excluded = new Set(['owner@ceylonhop.com']);
+    const from = new Date(Date.now() - DAY);
+    const funnel = await repo.listFunnelRows(from, 100, 'ops', excluded);
+    const demand = await repo.listDemandRows(from, new Date(), 100, 'ops', excluded);
+    expect(funnel.rows.map((r) => r.id)).toContain(real.id);
+    expect(funnel.rows.map((r) => r.id)).not.toContain(test.id);
+    expect(demand.rows.map((r) => r.id)).toContain(real.id);
+    expect(demand.rows.map((r) => r.id)).not.toContain(test.id);
+  });
 });
 
 describe('isUnpricedShell', () => {

@@ -7,6 +7,8 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { PaymentEventRepo } from '../db/paymentEventRepo';
+import type { RefundRepo } from '../db/refundRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -21,6 +23,7 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, manageUrl } from '../services/notifications';
+import { loadPaymentCase } from '../services/paymentCase';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -49,6 +52,10 @@ export interface OpsDeps {
   // Checkout attempt log (migration 0055) for the drawer's "Payment attempts" block. Optional so
   // every existing ops test keeps working; absent = no attempts shown.
   checkoutEvents?: BookingCheckoutEventRepo;
+  // The payment lookup (spec 2026-09-26) reads PayHere's stored notices and the refund ledger.
+  // Optional so every existing ops test keeps working; absent = that source is "unavailable".
+  paymentEvents?: PaymentEventRepo;
+  refunds?: RefundRepo;
 }
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
@@ -291,6 +298,21 @@ export function opsRoutes(deps: OpsDeps) {
       }
     }
     return c.json({ booking: b, ops, payments, payLink, coverage, checkoutEvents });
+  });
+
+  // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
+  // booking or quote reference, drafts included. Read-only; founder and finance only, because it
+  // gathers contact details, billing and payment history in one place.
+  r.get('/cases/:ref', requireCap('payments:act'), async (c) => {
+    const result = await loadPaymentCase({
+      bookings: deps.bookings, payments: deps.payments, paymentEvents: deps.paymentEvents,
+      checkoutEvents: deps.checkoutEvents, refunds: deps.refunds, notificationLog: deps.notificationLog,
+      quotes: deps.quotes, teamEmails: deps.teamEmails,
+      inQueue: (status) => (QUEUE_STATUSES as readonly string[]).includes(status),
+    }, c.req.param('ref'));
+    if (result.kind === 'bad_ref') return c.json({ error: 'bad_ref' }, 400);
+    if (result.kind === 'not_found') return c.json({ error: 'not_found' }, 404);
+    return c.json(result.body);
   });
 
   r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {

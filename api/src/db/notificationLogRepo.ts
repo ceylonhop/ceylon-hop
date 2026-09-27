@@ -40,10 +40,17 @@ export interface NotificationLogRepo {
    * over then.
    */
   release(bookingId: string, kind: NotificationKind): Promise<void>;
+  /**
+   * Every kind on record for the booking, oldest first — the ops payment lookup's "which emails
+   * went out" (spec 2026-09-26). One row per kind, so this is the FIRST send's time; and a row
+   * means the send was attempted, not that it was delivered, for the kinds written regardless.
+   */
+  listByBookingId(bookingId: string): Promise<Array<{ kind: NotificationKind; sentAt: Date }>>;
 }
 
 export class InMemoryNotificationLogRepo implements NotificationLogRepo {
-  private readonly sent = new Set<string>();
+  // key → the row, stamped when first recorded, like the table's sent_at default.
+  private readonly sent = new Map<string, { bookingId: string; kind: NotificationKind; sentAt: Date }>();
   private key(bookingId: string, kind: NotificationKind): string {
     return `${bookingId}:${kind}`;
   }
@@ -51,15 +58,22 @@ export class InMemoryNotificationLogRepo implements NotificationLogRepo {
     return this.sent.has(this.key(bookingId, kind));
   }
   async markSent(bookingId: string, kind: NotificationKind): Promise<void> {
-    this.sent.add(this.key(bookingId, kind));
+    const k = this.key(bookingId, kind);
+    if (!this.sent.has(k)) this.sent.set(k, { bookingId, kind, sentAt: new Date() });
   }
   async claim(bookingId: string, kind: NotificationKind): Promise<boolean> {
     const k = this.key(bookingId, kind);
     if (this.sent.has(k)) return false;
-    this.sent.add(k);
+    this.sent.set(k, { bookingId, kind, sentAt: new Date() });
     return true;
   }
   async release(bookingId: string, kind: NotificationKind): Promise<void> {
     this.sent.delete(this.key(bookingId, kind));
+  }
+  async listByBookingId(bookingId: string): Promise<Array<{ kind: NotificationKind; sentAt: Date }>> {
+    return [...this.sent.values()]
+      .filter((r) => r.bookingId === bookingId)
+      .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime())
+      .map((r) => ({ kind: r.kind, sentAt: new Date(r.sentAt) }));
   }
 }
