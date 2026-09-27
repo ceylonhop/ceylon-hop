@@ -104,7 +104,9 @@
     sw.setAttribute('aria-hidden', 'true');
     head.appendChild(sw);
     head.appendChild(el('span', 'ch-rc-name', local ? 'Local road' : 'Expressway'));
-    head.appendChild(el('span', 'ch-rc-tag', local ? o.save : 'Fastest'));
+    // A caller with no saving to state passes no tag, rather than an empty pill.
+    const tag = local ? o.save : 'Fastest';
+    if (tag) head.appendChild(el('span', 'ch-rc-tag', tag));
     lab.appendChild(head);
 
     // One layout for both roads (owner, 2026-09-27): the price leads, then that road's own drive

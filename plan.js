@@ -108,9 +108,19 @@ function legRouteEstimate(a,b){
   if(!base || !opt || roadChoice.get(key)!=='no_tolls') return base;
   return Object.assign({}, base, { distanceKm:opt.noTolls.km, durationMin:opt.noTolls.min, road:'no_tolls' });
 }
-function legKm(a,b){
-  const route=legRouteEstimate(a,b);
-  return route ? route.distanceKm : null;
+/* The minutes a drive adds to its day, for the same-day driving check. That check models time as
+   km/42 (drivingMinutes), which a local road's SHORTER km would turn into LESS driving although
+   the local road is slower. So a local-road drive counts the expressway's modelled minutes plus
+   the real extra time the engine measured: choosing it can only make a day longer. Every other
+   drive counts exactly as before. */
+function dayDrivingMinutes(a,b){
+  const base=baseRouteEstimate(a,b);
+  if(!base || base.distanceKm==null) return null;
+  const minutes=drivingMinutes(base.distanceKm);
+  const key=liveRouteKey(a,b), opt=roadOptions.get(key);
+  if(!opt || roadChoice.get(key)!=='no_tolls') return minutes;
+  const extra=Number.isFinite(opt.noTolls.min) && Number.isFinite(opt.fastest.min) ? Math.max(0, opt.noTolls.min-opt.fastest.min) : 0;
+  return minutes+extra;
 }
 function requestLiveRoute(a,b,cb){
   if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
@@ -604,7 +614,8 @@ function openRoad(key, source){
       time:roadTimeText(o.opt.noTolls.min),
       // the difference between the two times SHOWN, so the sum always adds up on screen
       slower: fastMin!=null && localMin!=null && localMin>fastMin ? '+'+RC.fmtMinutes(localMin-fastMin) : '',
-      km:roadKmText(o.opt.noTolls.km), price:'about '+money(o.localCents/100), save:'Save about $'+o.saving
+      // no tag at all rather than "Save about $0" (a chosen road whose saving has gone)
+      km:roadKmText(o.opt.noTolls.km), price:'about '+money(o.localCents/100), save:o.saving>=1 ? 'Save about $'+o.saving : ''
     },
     selected: o.choice==='no_tolls' ? 'no_tolls' : 'fastest',
     onPick: v => {
@@ -655,6 +666,8 @@ function maybeOfferRoad(){
 // blur closes 120 ms later (wirePlaceSearch), so the menu of the field just left doesn't count.
 document.addEventListener('focusout', ()=>{
   if(pendingOffer) setTimeout(()=>{ if(pendingOffer) maybeOfferRoad(); }, 150);
+  // a drive skipped while its field had focus is sent now, even if the field didn't change
+  if(roadSkipped) checkRoads();
 });
 
 /* One estimate-batch request per change of drives (debounced like the rest of the page), one
@@ -667,13 +680,22 @@ function checkRoads(){
   clearTimeout(roadTimer);
   roadTimer=setTimeout(sendRoadBatch, 800);
 }
+// The batch prices catalogue towns only (spec §4.1): a Google pick or free text is never sent.
+function isCatalogueTown(name){ const g=GEO[norm(name)]; return !!(g && g.id); }
+let roadSkipped=false;
 function sendRoadBatch(){
   if(!window.CEYLON_HOP_API) return;
+  roadSkipped=false;
+  // A drive whose field is being typed in isn't committed yet: skipped, NOT marked checked, so the
+  // render its 'change' triggers sends it.
+  const ae=document.activeElement;
+  const editing=ae && ae.closest && ae.closest('#rail .leg') && ae.matches('.place-input') ? +ae.closest('#rail .leg').dataset.i : -1;
   const drives=[];
-  state.legs.forEach(l=>{
+  state.legs.forEach((l,i)=>{
     if(l.type==='stay') return;
+    if(i===editing){ roadSkipped=true; return; }
     const from=(l.from||'').trim(), to=(l.to||'').trim();
-    if(!from || !to || norm(from)===norm(to)) return;
+    if(!from || !to || norm(from)===norm(to) || !isCatalogueTown(from) || !isCatalogueTown(to)) return;
     const key=liveRouteKey(from,to);
     if(roadChecked.has(key) || drives.some(d=>d.key===key) || drives.length>=10) return;
     drives.push({ key, from, to });
@@ -726,9 +748,13 @@ function distHtml(route, price, key){
   if(!route || route.distanceKm==null){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
   }
-  const source=route.source==='google' ? 'Google route'
+  // A local-road drive shows the engine's figures for that road, so it never borrows the
+  // expressway's source label (a "reviewed" catalogue row describes the expressway).
+  const local=route.road==='no_tolls';
+  const source=local ? 'Local road' : route.source==='google' ? 'Google route'
     : route.source==='reviewed' ? 'Reviewed route' : 'Estimated route';
-  const sourceTitle=route.source==='google' ? 'Distance and journey time routed by Google'
+  const sourceTitle=local ? 'Toll-free road distance and journey time, measured by Google'
+    : route.source==='google' ? 'Distance and journey time routed by Google'
     : route.source==='reviewed' ? 'Distance and journey time from the reviewed route table'
       : 'Approximate route until Google routing is available';
   return `<span class="lm-dist">${routeEstimateText(route)}</span>`+
@@ -902,7 +928,7 @@ function render(){
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
         // never here on raw keystrokes, so a half-typed string like "ga" is never geocoded
-        // or priced. Known places still price instantly above via the local legKm().
+        // or priced. Known places still price instantly above via the local route table.
         updateSummary();
       }
       fromI.addEventListener('input',recompute);
@@ -1502,11 +1528,11 @@ function sameDayDrivingIssue(){
   const byDate=new Map();
   state.legs.forEach(leg=>{
     if(leg.type==='stay' || !leg.date) return;
-    const km=legKm(leg.from, leg.to);
-    if(km==null) return;
+    const minutes=dayDrivingMinutes(leg.from, leg.to);
+    if(minutes==null) return;
     const key=fmtISO(leg.date);
     const day=byDate.get(key) || { minutes:0, count:0 };
-    day.minutes += drivingMinutes(km);
+    day.minutes += minutes;
     day.count += 1;
     byDate.set(key, day);
   });

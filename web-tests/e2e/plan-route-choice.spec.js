@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { blockLiveApi, installStubs } from './_stubs.js';
+import { futureIsoDate } from '../dates.js';
 
 /*
   Route choice on the plan page (spec 2026-09-26 §4.7).
@@ -23,17 +24,18 @@ const CHOICE = {
   noTolls: { distanceKm: 213, durationMin: 374, totalCents: 9100 },
 };
 const isCmbElla = (i) => i.legs && i.legs[0].from === 'Colombo Airport (CMB)' && i.legs[0].to === 'Ella';
+const pair = (i) => i.legs[0].from + '>' + i.legs[0].to;
 
-// Records every batch request and answers CMB → Ella with a cheaper local road. `gate`, when
-// given, holds each answer until the test releases it.
-async function stubBatch(page, { gate = null } = {}) {
+// Records every batch request and answers CMB → Ella with a cheaper local road (or whatever
+// `choiceFor` says). `gate`, when given, holds each answer until the test releases it.
+async function stubBatch(page, { gate = null, choiceFor = (i) => (isCmbElla(i) ? CHOICE : null) } = {}) {
   const calls = [];
   await page.route('**/quote/v2/estimate-batch', async (r) => {
     const body = JSON.parse(r.request().postData() || '{}');
     calls.push(body);
     if (gate) await gate;
-    const results = (body.intents || []).map((i) => (isCmbElla(i)
-      ? { totalCents: 14000, currency: 'USD', routeChoice: CHOICE }
+    const results = (body.intents || []).map((i) => (choiceFor(i)
+      ? { totalCents: 14000, currency: 'USD', routeChoice: choiceFor(i) }
       : { totalCents: 5600, currency: 'USD' }));
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
   });
@@ -130,6 +132,10 @@ test('picking the local road reprices the card, the guide total and the map', as
 
   await expect(chip(page, 0)).toHaveText('Road: Local road ▾');
   await expect(dist(page, 0)).toContainText('215 km');     // 213 km, rounded as every distance here is
+  // the engine's local-road figures never wear the expressway's "Reviewed route" source
+  const src = card(page, 0).locator('.lm-src');
+  await expect(src).toHaveText('Local road');
+  await expect(src).toHaveAttribute('title', 'Toll-free road distance and journey time, measured by Google');
   await expect(card(page, 0).locator('.lm-price b')).toHaveText('$89.99');
   await expect.poll(async () => dollars(await page.locator('#sum-amt').textContent())).toBeLessThan(totalBefore);
   expect(await pushes(page, 'route_choice')).toEqual([
@@ -213,4 +219,86 @@ test('with the API off no batch is sent and no chip is shown', async ({ page }) 
   expect(calls).toHaveLength(0);
   await expect(page.locator('#rail .lm-road')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('the local road never shortens the day it is driven on', async ({ page }) => {
+  await stubBatch(page);
+  await page.goto(PLAN);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  // Both drives on one day: the same-day check sums the day's driving.
+  const day = futureIsoDate(30);
+  const count = () => page.evaluate((iso) => {
+    state.legs.forEach((l) => { if (l.type !== 'stay') l.date = new Date(iso + 'T00:00:00'); });
+    return sameDayDrivingIssue();
+  }, day);
+  const expressway = await count();
+  expect(expressway).toEqual(expect.objectContaining({ count: 2, level: 'block' }));
+
+  await pickLocal(page);
+  const local = await count();
+  // counted as the expressway's minutes plus the local road's real extra (374 − 299 = 75 min),
+  // never as its shorter km — which would have read as a lighter day (block → warn)
+  expect(local.minutes).toBe(expressway.minutes + 75);
+  expect(local.level).toBe('block');
+});
+
+test('only catalogue towns are checked', async ({ page }) => {
+  const calls = await stubBatch(page);
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Ella|Ella Rock Guesthouse, Ella') + '&pax=2');
+  await expect(chip(page, 0)).toContainText('Cheaper local road');
+  expect(calls).toHaveLength(1);
+  expect(calls[0].intents.map(pair)).toEqual(['Colombo Airport (CMB)>Ella']);
+});
+
+test('a gapped trip\'s roads re-index onto the planner\'s own stops', async ({ page }) => {
+  const KANDY_ELLA = {
+    fastest: { distanceKm: 136, durationMin: 227, totalCents: 6000 },
+    noTolls: { distanceKm: 110, durationMin: 260, totalCents: 4800 },
+  };
+  await stubBatch(page, { choiceFor: (i) => (pair(i) === 'Kandy>Ella' ? KANDY_ELLA : null) });
+  // booking's link for a trip whose first stretch (CMB → Kandy) the traveller arranges: wire 0 is
+  // a gap, so the planner's own stops start at Kandy and its wires shift down by one
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Kandy|Ella|Yala')
+    + '&nights=0,1,1,0&gaps=0&roads=' + encodeURIComponent(',no_tolls,') + '&pax=2');
+  const kandyElla = card(page, 1);
+  await expect(kandyElla.locator('.lm-road')).toHaveText('Road: Local road ▾');
+  await expect(kandyElla.locator('.lm-dist')).toContainText('110 km');
+  const q = () => new URL(page.url()).searchParams;
+  expect(q().get('stops')).toBe('Kandy|Ella|Yala');
+  await expect.poll(() => q().get('roads')).toBe('no_tolls,');
+});
+
+test('two forked drives: only the first opens, and the second never follows', async ({ page }) => {
+  const ELLA_YALA = {
+    fastest: { distanceKm: 126, durationMin: 198, totalCents: 5600 },
+    noTolls: { distanceKm: 100, durationMin: 230, totalCents: 4400 },
+  };
+  await stubBatch(page, { choiceFor: (i) => (isCmbElla(i) ? CHOICE : pair(i) === 'Ella>Yala' ? ELLA_YALA : null) });
+  await page.goto(PLAN);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading')).toHaveText('Two roads to Ella');
+  await expect(chip(page, 2)).toContainText('Cheaper local road · save about $11');
+  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await expect(dialog).toHaveCount(0);
+  // a quiet moment (focus in and out of a field) does not bring the second drive's popup
+  await card(page, 2).locator('.leg-from').focus();
+  await page.locator('h1').first().click();
+  await page.waitForTimeout(800);
+  await expect(dialog).toHaveCount(0);
+  await expect(chip(page, 2)).toContainText('Cheaper local road');
+});
+
+test('a dismissed offer is not asked again after a reload', async ({ page }) => {
+  await stubBatch(page);
+  await page.goto(PLAN);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await pushes(page, 'route_choice')).toEqual([expect.objectContaining({ choice: 'dismissed', page: 'plan' })]);
+
+  await page.reload();
+  await expect(chip(page, 0)).toContainText('Cheaper local road · save about $50');
+  await page.waitForTimeout(500);
+  await expect(dialog).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.has('roads')).toBe(false);
 });
