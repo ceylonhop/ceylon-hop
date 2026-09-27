@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
-import { sampleBooking } from './__fixtures__/sampleBookings';
+import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
   id: 'q1',
@@ -374,6 +374,16 @@ describe('teamRescueEmail', () => {
     expect(text(local)).toContain('Colombo Fort → Kandy via the local road');
     expect(text(plain)).not.toContain('local road');
     expect(teamRescueEmail(local, PAY, 'https://ops.example').subject).toBe(teamRescueEmail(plain, PAY, 'https://ops.example').subject);
+  });
+
+  // A partly-local trip: the message goes to the customer, so it names the local legs and never
+  // claims the whole trip is on the local road.
+  it('names only the local legs of a partly-local trip in the pre-filled message', () => {
+    const plain = sampleVariants.tripPrivate;
+    const local = { ...plain, input: { ...plain.input, routeVariants: ['fastest', 'no_tolls', 'fastest'] } } as typeof plain;
+    const text = new URL(waHref(teamRescueEmail(local, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text).toContain('Colombo Fort → Kandy → Nuwara Eliya → Ella with the local road for Kandy → Nuwara Eliya');
+    expect(text).not.toContain('via the local road');
   });
 
   it('tells the team to check the booking is still unpaid before messaging', () => {

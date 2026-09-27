@@ -16,6 +16,9 @@ const ROW = {
   customerUpdated: false, opsNotes: '', source: 'booking', isTest: false,
 };
 const PLAIN = { ...ROW, id: 'b2', reference: 'CH-0002', customerName: 'Plain Customer', customerFirstName: 'Plain', road: null };
+// A partly-local trip: the row carries roadRow's leg text, not the single's 'Local road'.
+const TRIP = { ...ROW, id: 'b3', reference: 'CH-0003', customerName: 'Trip Customer', customerFirstName: 'Trip', mode: 'trip',
+  route: 'Colombo Airport → Kandy → Sigiriya', road: 'Local road for Kandy → Sigiriya' };
 
 const detail = (id) => ({
   payLink: `https://pay.example.test/PAY-${id}`,
@@ -52,9 +55,8 @@ async function boot(page, caps = ['bookings:read', 'bookings:operate']) {
   });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'x@e2e.test', role: 'x', caps })));
-  await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([ROW, PLAIN])));
-  await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json(detail('b1'))));
-  await page.route('**/admin/ops/bookings/b2', (r) => r.fulfill(json(detail('b2'))));
+  await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([ROW, PLAIN, TRIP])));
+  for (const id of ['b1', 'b2', 'b3']) await page.route(`**/admin/ops/bookings/${id}`, (r) => r.fulfill(json(detail(id))));
   await page.route('**/admin/bookings/*/refunds', (r) => r.fulfill(json([])));
   await page.route('**/admin/ops/cases/**', (r) => {
     const ref = decodeURIComponent(new URL(r.request().url()).pathname.split('/').pop()).toUpperCase();
@@ -87,6 +89,16 @@ test('the payment reminder says the booking is on the local road, and the expres
   const plain = await copyReminder(page, 'b2');
   expect(plain).toContain('your booking for Colombo Airport → Ella is held pending payment');
   expect(plain).not.toContain('local road');
+});
+
+test('a partly-local trip: the reminder names the local leg, and the tag stays short', async ({ page }) => {
+  await boot(page);
+  await expect(page.locator('.tk[data-id="b3"] .tk-road')).toHaveText('local road');
+  await expect(page.locator('.tk[data-id="b3"] .tk-road')).toHaveAttribute('title', 'Local road for Kandy → Sigiriya');
+  await expect(page.locator('.tk[data-id="b1"] .tk-road')).toHaveAttribute('title', 'The customer chose the local road — no expressway');
+  const text = await copyReminder(page, 'b3');
+  expect(text).toContain('your booking for Colombo Airport → Kandy → Sigiriya (local road for Kandy → Sigiriya) is held pending payment');
+  expect(text).not.toContain('via the local road');
 });
 
 test('the Lookup shows a Road row for a local-road booking, and none otherwise', async ({ page }) => {

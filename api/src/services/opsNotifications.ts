@@ -369,8 +369,12 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
   const c = b.input.customer;
   const amount = money(b.amountDueNow ?? b.total, b.currency);
   const subject = `Rescue: ${c.firstName} couldn’t pay ${b.reference} — ${f.subjectRoute}, ${f.when} — ${amount}`;
-  // The road they chose, when it was the local one — the booking must read as theirs.
-  const route = roadRow(b) ? `${f.route} via the local road` : f.route;
+  // The road they chose, when it was the local one — the booking must read as theirs. A trip
+  // names its local legs: "via the local road" would be false for the rest of it.
+  const road = roadRow(b)?.[1];
+  const route = !road ? f.route
+    : b.mode === 'trip' ? `${f.route} with the ${road.charAt(0).toLowerCase()}${road.slice(1)}`
+    : `${f.route} via the local road`;
   const trip = f.when === 'date TBC' ? route : `${route} (${f.when})`;
   const message =
     `Hi ${c.firstName}, this is Ceylon Hop — your card payment for ${trip} didn’t go through. ` +

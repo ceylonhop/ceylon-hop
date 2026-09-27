@@ -2060,7 +2060,11 @@ const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[
    and shipped no URL at all, so every reminder ops sent pointed at nothing. Without a link
    (a booking that can no longer be charged) the sentence about one is dropped rather than
    left as a promise nobody can keep. */
-const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route}${t.road?' (via the local road)':''} is held pending payment of ${money(t)}.`
+/* The local road: a transfer says "(via the local road)"; a trip names its local legs (the row's
+   `road` is roadRow's "Local road for A → B"), since the rest of it takes the expressway. Plain
+   clipboard text for WhatsApp — not HTML, so nothing to escape. */
+const reminderRoad=t=>!t.road?'':t.mode==='trip'?` (${t.road.charAt(0).toLowerCase()}${t.road.slice(1)})`:' (via the local road)';
+const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route}${reminderRoad(t)} is held pending payment of ${money(t)}.`
   +(link?`\n\nYou can pay securely by card here: ${link}`:'')
   +`\n\nReply if you have any questions! 🌴`;
 /* Stages a booking can still legally be cancelled from — the booking machine allows
@@ -2411,7 +2415,7 @@ function ticketRow(t,i){
   return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     ${tick}${lead}
     <div class="tk-main">
-      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?'<span class="id tk-road" title="The customer chose the local road — no expressway">local road</span>':''}</div>
+      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
       <div class="tk-meta">${meta}</div>
     </div>
@@ -3290,8 +3294,7 @@ function lookupHeaderHtml(d){
     ${lookupKv('WhatsApp',memberPhoneHtml(c.whatsapp))}
     ${lookupKv('Country',esc(c.country||'—'))}
     ${billing?lookupKv('Billing',esc(billing)):''}
-    ${lookupKv('Route',esc(b.route))}
-    ${b.road?lookupKv('Road',esc(b.road)):''}
+    ${lookupKv('Route',esc(b.route))}${b.road?lookupKv('Road',esc(b.road)):''}
     ${lookupKv('When',esc(when))}
     ${lookupKv('Total',esc(money({amount:b.total,currency:cur})))}
     ${b.amountDueNow!=null&&b.amountDueNow!==b.total?lookupKv('Due now',esc(money({amount:b.amountDueNow,currency:cur}))):''}

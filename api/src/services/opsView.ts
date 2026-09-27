@@ -45,8 +45,10 @@ export interface OpsBookingRow {
   /** The number the customer gave (their WhatsApp), shown on the queue row. Null when blank. */
   customerPhone: string | null;
   route: string;
-  /** 'Local road' when the customer bought the toll-free road (any leg of a trip), else null.
-   *  Separate from `route`, which search, the payment reminder and the Lookup read as-is. */
+  /** The toll-free road the customer bought, else null: 'Local road' on a transfer; on a trip,
+   *  the legs that take it ("Local road for Kandy → Sigiriya") — the payment reminder built from
+   *  this row goes to the customer, so it must not claim the whole trip. Separate from `route`,
+   *  which search, the payment reminder and the Lookup read as-is. */
   road: string | null;
   travelDate: string | null;
   travelTime: string | null;
@@ -107,7 +109,7 @@ export function toOpsRow(
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
-    route: route(b), road: roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
+    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,

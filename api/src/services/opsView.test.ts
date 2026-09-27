@@ -150,13 +150,15 @@ describe('opsView — road', () => {
     expect(row.route).toBe('Colombo Airport → Galle');
   });
 
-  it('a trip with any leg on the local road is marked', () => {
+  // A trip names its local legs (roadRow's words): the reminder built from this row goes to the
+  // customer, and "via the local road" would be false for the legs on the expressway.
+  it('a trip with a leg on the local road names that leg', () => {
     const trip = {
       ...base, mode: 'trip',
       input: { stops: ['Colombo Airport', 'Kandy', 'Ella'], pax: 2, vehicleType: 'car', serviceType: 'private',
         routeVariants: ['fastest', 'no_tolls'], customer: base.input.customer },
     } as unknown as Booking;
-    expect(toOpsRow(trip, { paid: true }).road).toBe('Local road');
+    expect(toOpsRow(trip, { paid: true }).road).toBe('Local road for Kandy → Ella');
     const allFast = { ...trip, input: { ...(trip.input as object), routeVariants: ['fastest', 'fastest'] } } as unknown as Booking;
     expect(toOpsRow(allFast, { paid: true }).road).toBeNull();
   });
