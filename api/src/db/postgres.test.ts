@@ -331,7 +331,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 
   // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): the road the
   // customer paid for round-trips through Postgres, and a booking that never named one reads
-  // back with the key ABSENT — not null — so old rows stay byte-identical (0060_route_variant).
+  // back with the key ABSENT — not null — so old rows stay byte-identical (0061_route_variant).
   it('persists and reads back a single transfer’s route variant', async () => {
     const withRoad: NewBooking = { ...sample, input: { ...sample.input, routeVariant: 'no_tolls' } };
     const created = await bookings.create(withRoad);

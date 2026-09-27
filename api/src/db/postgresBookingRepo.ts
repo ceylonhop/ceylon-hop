@@ -267,7 +267,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         days: tr.days ?? undefined,
         driverNights: tr.driverNights ?? undefined,
         // Undefined, not null, when the row never recorded any — so an old booking's shape is
-        // byte-identical (0060_route_variant is additive/nullable, no backfill).
+        // byte-identical (0061_route_variant is additive/nullable, no backfill).
         ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
         customer,
       },
@@ -308,7 +308,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       children: t.children,
       bags: t.bags,
       // Undefined, not null, when the row never recorded one — so an old booking's shape is
-      // byte-identical (0060_route_variant is additive/nullable, no backfill).
+      // byte-identical (0061_route_variant is additive/nullable, no backfill).
       ...(t.routeVariant ? { routeVariant: t.routeVariant as RouteVariant } : {}),
       customer,
     },

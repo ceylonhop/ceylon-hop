@@ -24,13 +24,12 @@ describe('0061_route_variant', () => {
     expect(sql).not.toMatch(/\b(insert\s+into|update\s+\w+\s+set|delete\s+from)\b/i);
   });
 
-  // RELEASE ORDER IS HARD: PR #837's 0059_booking_customer_notes (when 1790640000000) must merge
-  // and release BEFORE this 0060 (when 1790726400000). drizzle applies only migrations whose
-  // `when` is newer than the last one applied, so if 0060 reached a database first, 0059 would be
-  // silently skipped there forever. If the order must flip, #837 must re-stamp its `when` above
-  // 0060's before it merges. This test finds 0060 by tag at idx 60 and requires its `when` to be
-  // ahead of EVERY other entry, so it keeps passing once #837's 0059 entry joins the journal.
-  it('is journalled at idx 60, ahead of every other entry', () => {
+  // RELEASE ORDER IS HARD: this 0061 (when 1790812800000) must release after 0059 (#837) and
+  // 0060_customer_communications (#850). drizzle applies only migrations whose `when` is newer than
+  // the last one applied, so if 0061 reached a database first, those would be silently skipped
+  // there forever. This test finds 0061 by tag and requires its `when` to be ahead of EVERY other
+  // entry, so a later migration landing first (and taking a lower `when`) fails here loudly.
+  it('is journalled at idx 61, ahead of every other entry', () => {
     const at = journal.entries.findIndex((e) => e.tag === '0061_route_variant');
     expect(at).toBeGreaterThanOrEqual(0);
     expect(journal.entries[at]).toMatchObject({ idx: 61, tag: '0061_route_variant' });
