@@ -3434,7 +3434,10 @@ function legsHtmlFor(d){
     let rows='';
     for(let i=0;i<stops.length-1;i++){
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
-      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}</span></div>`;
+      /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
+         leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
+      const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
+      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }
@@ -3861,6 +3864,7 @@ function renderSheet(){
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
+        ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}

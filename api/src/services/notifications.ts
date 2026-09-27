@@ -81,6 +81,13 @@ function dateTime(date?: string, time?: string): string {
   if (!date) return 'To confirm';
   return time ? `${fmtDate(date)} · ${time}` : fmtDate(date);
 }
+// "374 minutes" → "6h 14m" ("6h" when the remainder is 0). Used only by roadRow — no existing
+// formatter in this file states a duration this way (the rest state a DATE, or a day count).
+function hoursMinutes(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
 function travellers(adults: number, children: number): string {
   let s = `${adults} adult${adults > 1 ? 's' : ''}`;
   if (children > 0) s += `, ${children} child${children > 1 ? 'ren' : ''}`;
@@ -163,6 +170,23 @@ function addOnsLabel(booking: Booking): string | null {
   return booking.mode === 'single' ? extrasLabel(booking.input.extras) : null;
 }
 
+// The road the customer paid for, when it isn't the expressway (spec §4.3). Null otherwise, so
+// every existing booking's emails are unchanged.
+export function roadRow(booking: Booking): [string, string] | null {
+  if (booking.mode === 'single' && booking.input.routeVariant === 'no_tolls') {
+    const t = booking.durationMin ? ` · about ${hoursMinutes(booking.durationMin)}` : '';
+    return ['Road', `Local road, no expressway${t}`];
+  }
+  if (booking.mode === 'trip' && booking.input.routeVariants?.includes('no_tolls')) {
+    const s = booking.input.stops;
+    const legs = booking.input.routeVariants
+      .map((v, i) => (v === 'no_tolls' && s[i + 1] ? `${shortPlace(s[i]!)} → ${shortPlace(s[i + 1]!)}` : null))
+      .filter(Boolean);
+    return legs.length ? ['Road', `Local road for ${legs.join(', ')}`] : null;
+  }
+  return null;
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
 // team's paid email states the vehicle and head-count in exactly the customer's words.
 export function factRows(booking: Booking): [string, string][] {
@@ -176,6 +200,8 @@ export function factRows(booking: Booking): [string, string][] {
     ];
     if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
     rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    const road = roadRow(booking);
+    if (road) rows.push(road);
     const addOns = addOnsLabel(booking);
     if (addOns) rows.push(['Extras', addOns]);
     return rows;
@@ -196,9 +222,13 @@ export function factRows(booking: Booking): [string, string][] {
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
+  ];
+  const road = roadRow(booking);
+  if (road) rows.push(road);
+  rows.push(
     ['Vehicle', vehicleLabel(booking.input.vehicleType)],
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
-  ];
+  );
   if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
   const extras = addOnsLabel(booking);
   if (extras) rows.push(['Extras', extras]);

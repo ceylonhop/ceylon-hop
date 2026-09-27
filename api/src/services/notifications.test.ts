@@ -10,7 +10,10 @@ import {
   sendDepositReceived,
   sendCustomerQuote,
   routeText,
+  factRows,
+  roadRow,
 } from './notifications';
+import { shortPlace } from '../quote/shortPlace';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
@@ -664,5 +667,69 @@ describe('confirmation email — the vehicle line does not invent a capacity', (
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(fiveUp, email);
     expect(email.sent[0].text).toContain('AC car');
+  });
+});
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): the road the
+// customer paid for, when it isn't the expressway. Absent (or 'fastest') means today's
+// behaviour — no Road row, no change to any existing email.
+describe('roadRow / factRows — the road the customer paid for (spec §4.3)', () => {
+  it('a single with the toll-free road and a known duration', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    expect(factRows(b)).toContainEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    // Right after the date row (index 0).
+    expect(factRows(b)[1]).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
+  it('a single with the toll-free road but no known duration omits the "about" clause', () => {
+    const b: Booking = { ...single, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway']);
+  });
+
+  it('a single with no road, or the fastest road, has no Road row', () => {
+    expect(roadRow(single)).toBeNull();
+    expect(factRows(single).some(([k]) => k === 'Road')).toBe(false);
+    const fastest: Booking = { ...single, input: { ...single.input, routeVariant: 'fastest' } };
+    expect(roadRow(fastest)).toBeNull();
+  });
+
+  it('a trip names the leg(s) that used the toll-free road, with shortPlace names', () => {
+    const stops = ['Colombo Airport (CMB)', 'Ella', 'Yala'];
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops,
+        nights: [0, 1, 0],
+        dates: ['2026-08-09'],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+        routeVariants: ['no_tolls', 'fastest'],
+      },
+    };
+    expect(roadRow(t)).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+    const rows = factRows(t);
+    const datesIdx = rows.findIndex(([k]) => k === 'Dates');
+    expect(rows[datesIdx + 1]).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+  });
+
+  it('a trip with no toll-free leg has no Road row', () => {
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport (CMB)', 'Ella'],
+        nights: [0],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+      },
+    };
+    expect(roadRow(t)).toBeNull();
+    expect(factRows(t).some(([k]) => k === 'Road')).toBe(false);
   });
 });

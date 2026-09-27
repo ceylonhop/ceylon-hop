@@ -240,6 +240,19 @@ describe('teamPaidEmail', () => {
     expect(m.text).not.toMatch(/^Note:/m);
     expect(m.html).not.toContain('>Note<');
   });
+
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): factRows feeds
+  // teamBookingBody's Trip section, so the "Paid:" body gets the Road row for free — but the
+  // subject (subjectRoute/when/people, never tripRows) must be byte-identical either way.
+  it('carries the Road row in the body, with no change to the subject', () => {
+    const plain = sampleBooking('single');
+    const withRoad = { ...plain, durationMin: 374, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const plainEmail = teamPaidEmail(plain, 'https://ops.example');
+    const roadEmail = teamPaidEmail(withRoad, 'https://ops.example');
+    expect(roadEmail.html).toContain('Local road, no expressway');
+    expect(roadEmail.text).toContain('Local road, no expressway');
+    expect(roadEmail.subject).toBe(plainEmail.subject);
+  });
 });
 
 describe('teamCancelledEmail / teamRefundedEmail', () => {
