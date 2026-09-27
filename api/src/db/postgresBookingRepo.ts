@@ -186,6 +186,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         }
       : null,
     termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
+    customerNotes: row.customerNotes,
     // Only bookings made with a code carry these, so every other booking's shape is unchanged.
     ...(row.promoCodeId
       ? {
@@ -405,6 +406,7 @@ export class PostgresBookingRepo implements BookingRepo {
           billingPostcode: b.billing?.postcode ?? null,
           billingState: b.billing?.state ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
+          customerNotes: b.customerNotes ?? null,
           discountTotal: b.mode !== 'shared' && b.discountTotal !== undefined ? b.discountTotal : null,
           promoCodeId: opts?.promo ? opts.promo.code.id : null,
           promoHoldUntil: opts?.promo ? new Date(opts.promo.now.getTime() + PROMO_HOLD_MS) : null,

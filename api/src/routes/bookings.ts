@@ -422,6 +422,27 @@ function billingFrom(body: unknown): BillingParse {
   return parsed.success ? { ok: true, billing: parsed.data } : { ok: false };
 }
 
+// The customer's "Anything we should know?" note (2026-09-27), read off the raw body for the same
+// reason as billing and terms above. It is free text straight from the public internet, so:
+// text only (a number, array or object is refused), line endings made \n, control characters
+// dropped (a NUL byte would make Postgres reject the insert), trimmed, and at most 1,000
+// characters (booking.html's maxlength; the DB checks the same bound). Blank counts as no note.
+// It is only ever stored as a bound parameter and escaped wherever it is shown, never run as code.
+const MAX_CUSTOMER_NOTES = 1000;
+function customerNotesFrom(body: unknown): { ok: true; notes: string | undefined } | { ok: false } {
+  const raw = (body as { customerNotes?: unknown } | null)?.customerNotes;
+  if (raw === undefined || raw === null) return { ok: true, notes: undefined };
+  if (typeof raw !== 'string') return { ok: false };
+  const notes = raw
+    .replace(/\r\n?/g, '\n')
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim();
+  if (notes.length > MAX_CUSTOMER_NOTES) return { ok: false };
+  return { ok: true, notes: notes || undefined };
+}
+const INVALID_NOTES = { error: 'invalid_notes', message: 'Please keep your note to 1,000 characters or fewer.' };
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -450,6 +471,8 @@ function invalidRequest(error: ZodError) {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
     // No past dates — a trip can't be booked for a day that has already passed (Asia/Colombo).
     if (isPastIsoDate(parsed.data.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -505,6 +528,7 @@ function invalidRequest(error: ZodError) {
           durationMin: distance?.durationMin ?? null,
           billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          customerNotes: notes.notes,
           ...(promo.code ? { discountTotal } : {}),
         },
         {
@@ -532,6 +556,8 @@ function invalidRequest(error: ZodError) {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -609,6 +635,7 @@ function invalidRequest(error: ZodError) {
           durationMin: tripMin === null ? null : Math.round(tripMin),
           billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          customerNotes: notes.notes,
           ...(promo.code ? { discountTotal } : {}),
         },
         { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
@@ -633,6 +660,8 @@ function invalidRequest(error: ZodError) {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const req = parsed.data;
     // No past dates — a seat can't be booked for a departure that has already passed.
     if (isPastIsoDate(req.date, isoToday())) {
@@ -731,7 +760,7 @@ function invalidRequest(error: ZodError) {
     let booking;
     try {
       booking = await bookings.create(
-        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing },
+        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
         { idempotencyKey: key },
       );
     } catch (err) {

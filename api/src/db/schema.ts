@@ -77,10 +77,17 @@ export const bookings = pgTable(
     // a code. Uses are COUNTED from these plus payments — never stored as a counter.
     promoCodeId: uuid('promo_code_id').references(() => promoCodes.id),
     promoHoldUntil: timestamp('promo_hold_until', { withTimezone: true }),
+    // The customer's own "Anything we should know?" note from the booking page (0059). Plain
+    // text, at most 1,000 characters. Null when they left none, and on every older row.
+    customerNotes: text('customer_notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check('bookings_total_nonnegative', sql`${t.total} >= 0`),
+    check(
+      'bookings_customer_notes_length',
+      sql`${t.customerNotes} is null or char_length(${t.customerNotes}) <= 1000`,
+    ),
     check(
       'bookings_amount_due_now_valid',
       sql`${t.amountDueNow} is null or (${t.amountDueNow} >= 0 and ${t.amountDueNow} <= ${t.total})`,
