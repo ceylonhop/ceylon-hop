@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { quoteSingleTransfer, quoteTrip, quoteShared, priceSingle, priceTrip, priceShared, InvalidPricingRequestError } from './pricing';
-import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import {
+  quoteSingleTransfer,
+  quoteTrip,
+  quoteShared,
+  priceSingle,
+  priceTrip,
+  priceShared,
+  InvalidPricingRequestError,
+  ROUTE_CHOICE_UNAVAILABLE,
+} from './pricing';
+import { FakeMapsAdapter, type MapsAdapter, type DistanceResult, type RouteVariants } from '../adapters/maps';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import { RATE_CARD } from '../quote/rateCard';
+import { quote } from '../quote/engine';
 
 const base: SingleTransferInput = {
   from: 'A',
@@ -213,6 +223,86 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
 describe('priceShared (engine-agnostic — the corridor DB price is already authoritative)', () => {
   it('prices seats × the corridor seat price, all due now', () => {
     expect(priceShared(3, 2100)).toEqual({ currency: 'USD', totalCents: 6300, amountDueNowCents: 6300, priced: true });
+  });
+});
+
+// ── Customer route choice (spec 2026-09-26 §4.2): a booking prices the road it was asked for,
+// server-side, and never silently swaps roads under the customer. Stub adapter shape copied from
+// routeChoice.test.ts (not imported across test files) — FAST is the expressway, SLOW is the
+// toll-free fork the fake pins to Colombo City → Ella-shaped corridors.
+const RV_FAST: DistanceResult = { km: 335, durationMin: 299 };
+const RV_SLOW: DistanceResult = { km: 213, durationMin: 374 };
+function routeVariantStub(variants: RouteVariants | null): MapsAdapter {
+  return {
+    provider: 'stub',
+    async distance() { return RV_FAST; },
+    async distanceVariants() { return variants; },
+    async places() { return []; },
+  };
+}
+const RV_FORK = routeVariantStub({ fastest: RV_FAST, noTolls: RV_SLOW, hasChoice: true });
+const RV_NO_FORK = routeVariantStub({ fastest: RV_FAST, noTolls: null, hasChoice: false });
+
+describe('priceSingle — route variant (spec §4.2)', () => {
+  const rvInput: SingleTransferInput = { ...base, from: 'Colombo City', to: 'Ella', adults: 2, bags: 2 };
+
+  it('prices the toll-free road at its own km when a fork exists', async () => {
+    const p = await priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_FORK);
+    if (!p.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvInput.adults + rvInput.children,
+      bags: rvInput.bags,
+      legs: [{ from: rvInput.from, to: rvInput.to, distanceKm: 213 }],
+    });
+    expect(p.totalCents).toBe(expected.totalCents);
+  });
+
+  it('throws route_choice_unavailable without a fork — never silently switches road', async () => {
+    await expect(priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_NO_FORK)).rejects.toThrow(InvalidPricingRequestError);
+    await expect(priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_NO_FORK)).rejects.toMatchObject({ code: ROUTE_CHOICE_UNAVAILABLE });
+  });
+
+  it('"fastest" or absent behaves exactly as today', async () => {
+    const plain = await priceSingle(rvInput, RV_FORK);
+    const fastest = await priceSingle({ ...rvInput, routeVariant: 'fastest' }, RV_FORK);
+    expect(plain).toEqual(fastest);
+    if (!plain.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvInput.adults + rvInput.children,
+      bags: rvInput.bags,
+      legs: [{ from: rvInput.from, to: rvInput.to, distanceKm: 335 }],
+    });
+    expect(plain.totalCents).toBe(expected.totalCents);
+  });
+});
+
+describe('priceTrip — route variant (spec §4.2)', () => {
+  const rvTrip: TripInput = { ...trip, stops: ['Colombo Airport (CMB)', 'Ella', 'Yala'] };
+
+  it('prices each leg at the road actually requested', async () => {
+    const p = await priceTrip({ ...rvTrip, routeVariants: ['no_tolls', 'fastest'] }, RV_FORK);
+    if (!p.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvTrip.pax,
+      bags: 0,
+      legs: [
+        { from: rvTrip.stops[0], to: rvTrip.stops[1], distanceKm: 213 },
+        { from: rvTrip.stops[1], to: rvTrip.stops[2], distanceKm: 335 },
+      ],
+    });
+    expect(p.totalCents).toBe(expected.totalCents);
+  });
+
+  it('throws route_choice_unavailable when the no_tolls leg has no fork', async () => {
+    await expect(priceTrip({ ...rvTrip, routeVariants: ['no_tolls', 'fastest'] }, RV_NO_FORK)).rejects.toMatchObject({
+      code: ROUTE_CHOICE_UNAVAILABLE,
+    });
   });
 });
 

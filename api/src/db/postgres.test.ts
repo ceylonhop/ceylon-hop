@@ -329,6 +329,66 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.total).toBe(12000);
   });
 
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): the road the
+  // customer paid for round-trips through Postgres, and a booking that never named one reads
+  // back with the key ABSENT — not null — so old rows stay byte-identical (0060_route_variant).
+  it('persists and reads back a single transfer’s route variant', async () => {
+    const withRoad: NewBooking = { ...sample, input: { ...sample.input, routeVariant: 'no_tolls' } };
+    const created = await bookings.create(withRoad);
+    const got = await bookings.get(created.id);
+    if (got?.mode !== 'single') throw new Error('expected a single booking');
+    expect(got.input.routeVariant).toBe('no_tolls');
+  });
+
+  it('persists and reads back a trip’s route variants', async () => {
+    const trip: NewBooking = {
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+        nights: [1, 2, 0],
+        dates: ['2026-07-20', '2026-07-22'],
+        pax: 2,
+        vehicleType: 'van',
+        serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+        routeVariants: ['no_tolls', 'fastest'],
+      },
+      total: 12000,
+      amountDueNow: 12000,
+      currency: 'USD',
+    };
+    const created = await bookings.create(trip);
+    const got = await bookings.get(created.id);
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.input.routeVariants).toEqual(['no_tolls', 'fastest']);
+  });
+
+  it('a booking that never named a road reads back with the key absent, not null', async () => {
+    const single = await bookings.create(sample);
+    const gotSingle = await bookings.get(single.id);
+    if (gotSingle?.mode !== 'single') throw new Error('expected a single booking');
+    expect('routeVariant' in gotSingle.input).toBe(false);
+
+    const trip: NewBooking = {
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+        nights: [1, 2, 0],
+        pax: 2,
+        vehicleType: 'van',
+        serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 12000,
+      amountDueNow: 12000,
+      currency: 'USD',
+    };
+    const createdTrip = await bookings.create(trip);
+    const gotTrip = await bookings.get(createdTrip.id);
+    if (gotTrip?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect('routeVariants' in gotTrip.input).toBe(false);
+  });
+
   it('persists and reads back a shared booking', async () => {
     const shared: NewBooking = {
       mode: 'shared',

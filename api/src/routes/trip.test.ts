@@ -210,3 +210,53 @@ describe('POST /bookings/trip — a self-arranged gap is not charged', () => {
     expect(body.message).toMatch(/^gaps: /);
   });
 });
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): one
+// routeVariants entry per leg, private only, and a fork that vanishes refuses to charge.
+describe('POST /bookings/trip — route choice (spec §4.2)', () => {
+  const forkMaps: MapsAdapter = {
+    provider: 'fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+  };
+
+  it('rejects routeVariants of the wrong length (400 invalid_request)', async () => {
+    const app = createApp({ maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls'], // 2 legs need 2 entries
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  it('rejects a chauffeur trip with any no_tolls leg (400 invalid_request)', async () => {
+    const app = createApp({ maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      serviceType: 'chauffeur',
+      vehicleType: 'car',
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  it('books a valid private trip and round-trips routeVariants', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      routeVariants: ['no_tolls', 'fastest'],
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.input.routeVariants).toEqual(['no_tolls', 'fastest']);
+  });
+});

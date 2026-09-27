@@ -119,6 +119,9 @@ export const transferRequests = pgTable('transfer_request', {
   // M8 — road distance + driving duration from the maps adapter. Null when unresolved.
   distanceKm: integer('distance_km'),
   durationMin: integer('duration_min'),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0060_route_variant).
+  // The road the customer paid for. Null means the customer never chose (today's behaviour).
+  routeVariant: text('route_variant'),
 });
 
 export const payments = pgTable(
@@ -291,6 +294,9 @@ export const tripRequests = pgTable('trip_request', {
   // accommodation nights (days − 1). Null for point-to-point transfers.
   days: integer('days'),
   driverNights: integer('driver_nights'),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0060_route_variant).
+  // One entry per consecutive stop pair. Null means no leg chose the toll-free road.
+  routeVariants: text('route_variants').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
