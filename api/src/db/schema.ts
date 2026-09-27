@@ -569,6 +569,64 @@ export const bookingStatusEvents = pgTable(
   ],
 );
 
+// M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
+// never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
+export const customerCommunications = pgTable(
+  'customer_communications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    kind: text('kind').notNull(),
+    channel: text('channel').notNull(),
+    templateKey: text('template_key').notNull(),
+    templateVersion: text('template_version').notNull(),
+    recipient: text('recipient').notNull(),
+    source: text('source').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    requestId: uuid('request_id'),
+    runId: uuid('run_id'),
+    trackingKey: text('tracking_key').notNull().unique(),
+    payloadSha256: text('payload_sha256').notNull(),
+    provider: text('provider'),
+    providerMessageId: text('provider_message_id').unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received')`),
+    check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
+    check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
+    check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
+    index('customer_communications_booking_created_idx').on(t.bookingId, t.createdAt, t.id),
+    index('customer_communications_request_id_idx').on(t.requestId),
+    index('customer_communications_run_id_idx').on(t.runId),
+  ],
+);
+
+export const customerCommunicationEvents = pgTable(
+  'customer_communication_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communicationId: uuid('communication_id').references(() => customerCommunications.id),
+    eventType: text('event_type').notNull(),
+    providerEventId: text('provider_event_id').unique(),
+    providerMessageId: text('provider_message_id'),
+    reasonCode: text('reason_code'),
+    detailJson: jsonb('detail_json').$type<Record<string, string>>(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('customer_communication_events_type_valid', sql`${t.eventType} in ('planned', 'suppressed', 'send_attempted', 'provider_accepted', 'send_failed', 'delivered', 'bounced', 'complained')`),
+    check('customer_communication_events_link_valid', sql`${t.communicationId} is not null or ${t.providerMessageId} is not null`),
+    check('customer_communication_events_detail_object', sql`${t.detailJson} is null or jsonb_typeof(${t.detailJson}) = 'object'`),
+    index('customer_communication_events_communication_recorded_idx').on(t.communicationId, t.recordedAt, t.id),
+    index('customer_communication_events_provider_message_idx').on(t.providerMessageId),
+  ],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {

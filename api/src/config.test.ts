@@ -145,6 +145,15 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow();
   });
 
+  it('keeps customer communication tracking default-off unless explicitly enabled', () => {
+    expect(buildConfig({ NODE_ENV: 'test' }).CUSTOMER_COMMUNICATION_TRACKING_ENABLED).toBe(false);
+    expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_COMMUNICATION_TRACKING_ENABLED: 'true' })
+      .CUSTOMER_COMMUNICATION_TRACKING_ENABLED).toBe(true);
+    expect(() => buildConfig({
+      NODE_ENV: 'test', CUSTOMER_COMMUNICATION_TRACKING_ENABLED: 'yes',
+    })).toThrow();
+  });
+
   it('keeps customer short links default-off and refuses an ambiguous value', () => {
     expect(buildConfig({ NODE_ENV: 'test' }).CUSTOMER_SHORT_LINKS_ENABLED).toBe(false);
     expect(buildConfig({ NODE_ENV: 'test', CUSTOMER_SHORT_LINKS_ENABLED: 'false' })

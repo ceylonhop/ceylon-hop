@@ -81,8 +81,7 @@ export class GuardedEmailAdapter implements EmailAdapter {
     if (!this.enabled && audience === 'customer') return this.drop(msg, 'disabled', audience);
     if (!isAllowed(msg.to, this.allowlist)) return this.drop(msg, 'allowlist', audience);
 
-    await this.inner.send(msg);
-    return DELIVERED;
+    return (await this.inner.send(msg)) ?? DELIVERED;
   }
 
   private drop(msg: EmailMessage, reason: 'disabled' | 'allowlist', audience: string): SendOutcome {

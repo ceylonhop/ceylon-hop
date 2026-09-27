@@ -16,6 +16,11 @@ import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
+import { ObservingEmailAdapter } from './adapters/observingEmail';
+import {
+  InMemoryCustomerCommunicationRepo,
+  type CustomerCommunicationRepo,
+} from './db/customerCommunicationRepo';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
@@ -85,6 +90,9 @@ export interface AppDeps {
   customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
   customerVerifier?: JwtVerifier; // test seam for the customer Google login
   email?: EmailAdapter;
+  customerCommunications?: CustomerCommunicationRepo;
+  /** Independent, default-off M23.5 customer email observation switch. */
+  communicationTrackingEnabled?: boolean;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
@@ -191,10 +199,16 @@ export function createApp(deps: AppDeps = {}) {
   const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
   // Every outbound message — customer, ops and alert alike — goes through the guard, so
   // there is one place that decides whether mail may leave this environment at all.
-  const email = new GuardedEmailAdapter(
+  const guardedEmail = new GuardedEmailAdapter(
     deps.email ?? new FakeEmailAdapter(),
     deps.emailPolicy ?? { enabled: config.NOTIFICATIONS_ENABLED, allowlist: parseAllowlist(config.EMAIL_ALLOWLIST) },
   );
+  const email = (deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED)
+    ? new ObservingEmailAdapter(
+        guardedEmail,
+        deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo(),
+      )
+    : guardedEmail;
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();

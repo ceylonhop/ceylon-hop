@@ -115,6 +115,12 @@ const Env = z.object({
     .enum(['0', '1', 'false', 'true'])
     .default('false')
     .transform((value) => value === '1' || value === 'true'),
+  // M23.5 — customer communication ledger. Independent from transition tracking so the
+  // schema can deploy dark and either stream can be disabled without changing email sends.
+  CUSTOMER_COMMUNICATION_TRACKING_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   // Temporary rollout seam: staging may accept the legacy tokenless checkout while the
   // website deploy catches up. Default-off; live production with real payments rejects it.
   CHECKOUT_TOKEN_COMPATIBILITY: z
