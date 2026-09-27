@@ -100,7 +100,8 @@ let bookRoad=null, tripRoads=[], roadNotice='';
 // Built at click time for that reason; `dates` lands on the planner's When step.
 function buildTripEditUrl(dates){
   const q=new URLSearchParams(tripEditQuery);
-  const roads=tripRoads.some(v=>v==='no_tolls') ? tripRoads.map(v=>v==='no_tolls'?'no_tolls':'').join(',') : '';
+  const local=tripLocalWires();
+  const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
   if(roads) q.set('roads', roads);
   if(dates) q.set('step', 'dates');
   return 'plan.html?'+q.toString();
@@ -111,6 +112,8 @@ function parsedKmList(v){
     return Number.isFinite(n) && n>0 ? n : null;
   });
 }
+// A trip leg's drive chip in the itinerary card.
+function tripDriveText(leg){ return leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request'; }
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
@@ -275,6 +278,10 @@ function selectedBrowseEstimate(){
       estimateId:params.get('estimateId')||'search-selection'
     };
   }
+  return catalogueRouteEstimate();
+}
+// The reviewed catalogue pair's figures (the expressway), or 'unavailable' off-catalogue.
+function catalogueRouteEstimate(){
   if(window.TRANSFERS && routeFromId && routeToId){
     const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
     if(q && (q.km>0 || q.durationMin>0)) return {
@@ -286,7 +293,8 @@ function selectedBrowseEstimate(){
   }
   return { state:'unavailable', estimateId:'unavailable' };
 }
-const browseRouteEstimate=selectedBrowseEstimate();
+// `let`: a dropped local road (dropLocalRoad) replaces search's local-road figures.
+let browseRouteEstimate=selectedBrowseEstimate();
 let activeRouteEstimate=Object.assign({},browseRouteEstimate);
 let routeEstimateUnavailable=false;
 let lastRouteAnnouncement='';
@@ -687,12 +695,11 @@ if(isTrip){
       return;
     }
     const dt=fmtLeg(tripDates[i]);
-    const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
-    html+=`<div class="tr-leg">`+
+    html+=`<div class="tr-leg" data-wire="${i}">`+
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
-        `<span class="tr-chip muted">${drive}</span>`+
+        `<span class="tr-chip muted tr-drive">${tripDriveText(leg)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
@@ -1456,7 +1463,54 @@ let estimatePending = false; // true while an estimate fetch for the current int
 // (Global Constraints) and never call the estimate endpoint.
 // The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
 // choice only applies to private transfers.
-function tripRoadAt(i){ return state.svc==='chauffeur' ? 'fastest' : (tripRoads[i]||'fastest'); }
+// A gap wire is the traveller's own stretch, so it never asks for a road either.
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+// The priced (non-gap) wires the customer chose the local road for, whatever the service.
+function tripLocalWires(){
+  const out=[];
+  for(let i=0;i<tripStops.length-1;i++) if(!tripGaps.has(i) && tripRoads[i]==='no_tolls') out.push(i);
+  return out;
+}
+// Drops the local road wherever it couldn't be confirmed, and with it every figure that described
+// it: the distance line and car/van fares (single), the leg km and local trip fares (trip).
+// estLegs = the estimate's legs (drop only legs echoed 'fastest', adopting their km), or null
+// after a 422 (drop every local road, back to the catalogue figures). True when anything dropped.
+function dropLocalRoad(estLegs){
+  const T=window.TRANSFERS;
+  if(!isTrip){
+    if(bookRoad!=='no_tolls') return false;
+    const leg=estLegs ? estLegs[0] : null;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) return false;
+    bookRoad=null;
+    browseRouteEstimate = (leg && (leg.distanceKm>0 || leg.durationMin>0))
+      ? { distanceKm:leg.distanceKm, durationMin:leg.durationMin, state:'browse', estimateId:'engine-v2' }
+      : catalogueRouteEstimate();
+    if(!hasExactRouteInputs()) activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    const q=(T && T.place(routeFromId) && T.place(routeToId)) ? T.privateQuote(routeFromId, routeToId) : null;
+    vehPrices = q ? { car:q.rawCar, van:q.rawVan } : null;
+    if(vehPrices){ unit=vehPrices[vehicleKey]; r.price=unit; }
+    scheduleRouteMap(); // redraw the map on the road now priced
+    return true;
+  }
+  let dropped=false;
+  for(let i=0, j=0; i<tripStops.length-1; i++){
+    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    const leg=estLegs ? estLegs[j++] : null;
+    if(tripRoads[i]!=='no_tolls') continue;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
+    tripRoads[i]='fastest';
+    tripKms[i]=(leg && leg.distanceKm>0) ? Math.round(leg.distanceKm) : null; // null → catalogue km
+    dropped=true;
+  }
+  if(dropped){
+    const q=tripQuoteWithKms(vehicleKey); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
+    document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
+      const leg=tripLegs[+el.dataset.wire], chip=el.querySelector('.tr-drive');
+      if(leg && chip) chip.textContent=tripDriveText(leg);
+    });
+  }
+  return dropped;
+}
 function buildEstimateIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
@@ -1690,19 +1744,7 @@ function handleEngineEstimate(est, sig){
   // Route choice: the engine echoes the road it actually priced on each leg. A local road asked
   // for but answered with 'fastest' could not be confirmed for these points — the figure is the
   // expressway fare, so the page stops claiming (and asking for) the local road.
-  if(est && Array.isArray(est.legs)){
-    if(!isTrip && bookRoad==='no_tolls' && est.legs[0] && est.legs[0].routeVariant==='fastest'){
-      bookRoad=null; roadNotice='echo';
-      scheduleRouteMap(); // redraw the map on the road now priced
-    } else if(isTrip && state.svc!=='chauffeur'){
-      // The estimate skips gap wires, so walk the wires and count only the priced ones.
-      for(let i=0, j=0; i<tripStops.length-1; i++){
-        if(tripGaps.has(i)) continue;
-        const leg=est.legs[j++];
-        if(tripRoads[i]==='no_tolls' && leg && leg.routeVariant==='fastest'){ tripRoads[i]='fastest'; roadNotice='echo'; }
-      }
-    }
-  }
+  if(est && Array.isArray(est.legs) && !(isTrip && state.svc==='chauffeur') && dropLocalRoad(est.legs)) roadNotice='echo';
   // Clearing a road moves the intent: an echoed 'fastest' is exactly the expressway price for
   // the NEW intent, so everything below settles against that one. render() still sends one more
   // estimate for it (lastRequestedSig holds the old sig) — deliberately not suppressed.
@@ -1927,10 +1969,7 @@ function paintRoadChoice(){
   let road='';
   if(isTrip){
     if(state.svc!=='chauffeur'){
-      const local=[];
-      for(let i=0;i<tripStops.length-1;i++){
-        if(!tripGaps.has(i) && tripRoads[i]==='no_tolls') local.push(shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
-      }
+      const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
       if(local.length) road='Local road for '+local.join(', ');
     }
   } else if(bookRoad==='no_tolls'){
@@ -1939,7 +1978,7 @@ function paintRoadChoice(){
   const roadEl=document.getElementById('sum-road');
   if(roadEl){ roadEl.textContent=road; roadEl.hidden=!road; }
   let note='';
-  if(isTrip && state.svc==='chauffeur' && tripRoads.includes('no_tolls')) note='Local roads apply to private transfers, so a chauffeur-guide takes the usual roads.';
+  if(isTrip && state.svc==='chauffeur' && tripLocalWires().length) note='Local roads apply to private transfers, so a chauffeur-guide takes the usual roads.';
   else if(roadNotice==='echo') note='The local road isn’t available for these exact points, so this is the expressway fare.';
   const noteEl=document.getElementById('sum-road-note');
   if(noteEl){ noteEl.textContent=note; noteEl.hidden=!note; }
@@ -2424,9 +2463,8 @@ async function runPayment(){
     // The local road couldn't be confirmed at booking time: drop it, re-price on the expressway,
     // and show why — with no one-click retry, so the customer sees the new price before paying.
     if(e && e.status===422 && e.body && e.body.error==='route_choice_unavailable'){
-      bookRoad=null; tripRoads=tripRoads.map(()=> 'fastest'); roadNotice='';
+      dropLocalRoad(null); roadNotice='';
       render();
-      if(!isTrip) scheduleRouteMap();
       return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
     }
     return phShowEnd(...bookingCreateFailure(e));
@@ -2831,7 +2869,7 @@ async function createApiBooking(){
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
-      routeVariants: (state.svc!=='chauffeur' && tripRoads.includes('no_tolls')) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined
     };
   } else if(isShared){
     endpoint = '/bookings/shared';

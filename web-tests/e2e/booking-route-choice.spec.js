@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, fillContact } from './_stubs.js';
+import { gotoBooking, fillContact, pickPlace } from './_stubs.js';
 import { futureIsoDate } from '../dates.js';
 
 /*
@@ -35,6 +35,15 @@ function captureIntents(page) {
     }
   });
   return intents;
+}
+
+// The local-road and catalogue (expressway) car/van fares for cmb-airport → ella, as the page
+// prints them in the capacity hint.
+async function vanFares(page) {
+  return page.evaluate((localKm) => {
+    const T = window.TRANSFERS;
+    return { local: window.money(T.legPrice(localKm, 'van')), catalogue: window.money(T.privateQuote('cmb-airport', 'ella').rawVan) };
+  }, LOCAL_KM);
 }
 
 const SINGLE = 'mode=private&from=cmb-airport&to=ella&vehicle=car&price=89.46&road=no_tolls&estimateKm=213&estimateMin=374';
@@ -74,6 +83,42 @@ test('when the engine can only price the expressway, the page says so and stops 
   await expect.poll(() => intents.length).toBeGreaterThan(1);
   expect(intents[0].legs[0].routeVariant).toBe('no_tolls');
   expect(intents[intents.length - 1].legs[0]).not.toHaveProperty('routeVariant');
+  // The distance line describes the road now priced, not search's local-road figures.
+  await expect(page.locator('#sum-route-estimate')).toContainText(`${EXPRESS_KM} km`);
+  await expect(page.locator('#sum-route-estimate')).not.toContainText('215 km');
+  // …and so does the van upsell: four travellers outgrow the car.
+  const fares = await vanFares(page);
+  expect(fares.local).not.toBe(fares.catalogue);
+  await page.evaluate(() => { window.goStep(3); window.step('ad', 1); window.step('ad', 1); window.step('ad', 1); });
+  await expect(page.locator('#cap-note')).toContainText(`Switch to AC van · ~${fares.catalogue}`);
+  await expect(page.locator('#cap-note')).not.toContainText(fares.local);
+});
+
+// The echo that matters most in practice: an exact spot the local road can't serve. The dearer
+// expressway figure is a raise the customer didn't drive, so it waits behind the gate — and
+// accepting it must land on the echoed total (the parked figure is keyed to the NEW intent).
+test('an exact spot that loses the local road parks the dearer fare, and accepting it keeps that fare', async ({ page }) => {
+  // The follow-up estimate for the new (expressway) intent is held back, so the accept below is
+  // settled by the PARKED figure alone — which only lands if it was parked against the new intent.
+  const echo = (intent) => {
+    const pinned = /Result/.test(intent.legs[0].to);
+    const out = echoRoads({ fastest: pinned })(intent);
+    return pinned && !intent.legs[0].routeVariant ? { ...out, delayMs: 8000 } : out;
+  };
+  await gotoBooking(page, { query: SINGLE, pickGeo: { lat: 6.87, lng: 81.05 }, estimate: { respond: echo } });
+  await expect(page.locator('#sum-total')).toHaveText('$89.46');
+
+  await pickPlace(page, '#loc-to', 'ac-to', 'Ella hotel', 1);
+
+  await expect(page.locator('#engine-reprice-note')).toBeVisible();
+  await expect(page.locator('#sum-total')).toHaveText('$89.46');
+  await expect(page.locator('#sum-road-note')).toHaveText(ECHO_COPY);
+  await expect(page.locator('#sum-road')).toBeHidden();
+
+  await page.locator('#engine-reprice-note button').click();
+
+  await expect(page.locator('#sum-total')).toHaveText('$140.70', { timeout: 2000 });
+  await expect(page.locator('#engine-reprice-note')).toHaveCount(0);
 });
 
 test('the single booking carries the local road', async ({ page }) => {
@@ -107,38 +152,58 @@ test('a trip asks for the local road on the chosen legs only and books one road 
   expect(body.routeVariants).toEqual(['no_tolls', 'fastest']);
 });
 
-// The estimate has no leg for a gap wire, so its legs must be matched to wires by skipping gaps.
+// The estimate has no leg for a gap wire, so its legs must be matched to wires by skipping gaps —
+// and a gap wire never asks for the local road, whatever the link says.
+const GAP_TRIP = [
+  'mode=trip',
+  'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla%7CYala',
+  'nights=0,1,1,0',
+  'gaps=0',
+  'kms=,213,213',
+  'roads=no_tolls,no_tolls,no_tolls',
+  'pax=2',
+  'vehicle=car',
+].join('&');
+// The engine can't confirm the local road for Ella → Yala: it prices (and echoes) the expressway.
+function echoExceptEllaYala(intent) {
+  const legs = (intent.legs || []).map((l) => (l.from === 'Ella' && l.to === 'Yala' ? { from: l.from, to: l.to } : l));
+  return echoRoads()({ ...intent, legs });
+}
+
 test('on a trip with a gap, only the leg the engine could not confirm drops its local road', async ({ page }) => {
-  const query = [
-    'mode=trip',
-    'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla%7CYala',
-    'nights=0,1,1,0',
-    'gaps=0',
-    'roads=,no_tolls,no_tolls',
-    'pax=2',
-    'vehicle=car',
-  ].join('&');
   const intents = captureIntents(page);
-  const echo = echoRoads();
-  await gotoBooking(page, {
-    query,
-    estimate: {
-      respond: (intent) => {
-        const out = echo(intent);
-        for (const l of out.legs) if (l.from === 'Ella' && l.to === 'Yala') l.routeVariant = 'fastest';
-        return out;
-      },
-    },
-  });
+  await gotoBooking(page, { query: GAP_TRIP, estimate: { respond: echoExceptEllaYala } });
 
   await expect(page.locator('#sum-road-note')).toHaveText(ECHO_COPY);
   await expect(page.locator('#sum-road')).toContainText('Kandy');
   await expect(page.locator('#sum-road')).not.toContainText('Yala');
+  await expect(page.locator('#sum-road')).not.toContainText('Colombo');
   await expect.poll(() => intents.length).toBeGreaterThan(1);
+  expect(intents[0].legs).toEqual([
+    { from: 'Kandy', to: 'Ella', routeVariant: 'no_tolls' },
+    { from: 'Ella', to: 'Yala', routeVariant: 'no_tolls' },
+  ]);
   expect(intents[intents.length - 1].legs).toEqual([
     { from: 'Kandy', to: 'Ella', routeVariant: 'no_tolls' },
     { from: 'Ella', to: 'Yala' },
   ]);
+  // The dropped leg's chip shows the road now priced; the kept one keeps the local km.
+  await expect(page.locator('.tr-leg[data-wire="2"] .tr-drive')).toContainText(`${EXPRESS_KM} km`);
+  await expect(page.locator('.tr-leg[data-wire="1"] .tr-drive')).toContainText(`${LOCAL_KM} km`);
+
+  await fillContact(page);
+  const bookP = page.waitForRequest('**/bookings/trip');
+  await page.click('#pay-btn');
+  const body = JSON.parse((await bookP).postData() || '{}');
+  expect(body.routeVariants).toEqual(['fastest', 'no_tolls', 'fastest']);
+});
+
+test('after a road is dropped, the planner link carries only the roads still chosen', async ({ page }) => {
+  await gotoBooking(page, { query: GAP_TRIP, estimate: { respond: echoExceptEllaYala } });
+  await expect(page.locator('#sum-road-note')).toHaveText(ECHO_COPY);
+  await page.locator('.tr-edit').click();
+  await page.waitForURL(/plan\.html\?/);
+  expect(new URL(page.url()).searchParams.get('roads')).toBe(',no_tolls,');
 });
 
 test('a chauffeur-guide trip drops the local road and says why', async ({ page }) => {
@@ -179,6 +244,22 @@ test('a booking refused because the local road cannot be confirmed shows why and
     const last = intents[intents.length - 1];
     return last && last.legs && !('routeVariant' in last.legs[0]);
   }).toBe(true);
+
+  // The distance line goes back to the catalogue (expressway) figures.
+  const catalogueText = await page.evaluate(() => {
+    const q = window.TRANSFERS.privateQuote('cmb-airport', 'ella');
+    return window.CH.routeEstimate.formatRouteEstimate({ distanceKm: q.km, durationMin: q.durationMin, state: 'browse' });
+  });
+  await expect(page.locator('#sum-route-estimate')).toHaveText(catalogueText);
+  await expect(page.locator('#sum-route-estimate')).not.toContainText('215 km');
+
+  // Pay stays shut until the customer has reviewed the expressway fare.
+  await page.locator('#ph-close').click();
+  await expect(page.locator('#engine-reprice-note')).toBeVisible();
+  await expect(page.locator('#pay-btn')).toBeDisabled();
+  await page.locator('#engine-reprice-note button').click();
+  await expect(page.locator('#sum-total')).toHaveText('$140.70');
+  await expect(page.locator('#pay-btn')).toBeEnabled();
 });
 
 test('going back to the planner keeps the chosen roads', async ({ page }) => {
