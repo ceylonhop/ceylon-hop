@@ -158,6 +158,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      slides 2 and 3 behind in the postcard. */
   .pc-photos{position:absolute;inset:0;will-change:transform}
   .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+  /* The first photo as a plain <img> under the slots, so the browser finds it in the HTML and
+     paints it without waiting for image-slot.js (it was the page's LCP, at 14s on a throttled
+     phone). #hero-photo renders the same file on top, so nothing visibly changes; once there is
+     a carousel the slides cross-fade over each other and this must not show through. */
+  .pc-photos .pc-base{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .pc-photos.hs-live .pc-base{display:none}
   /* The extra slots are empty until someone drops a photo in. A visitor has no editing
      runtime and must never see an empty slot's placeholder ring stacked over the real hero
      photo; the author must, because that IS how a slot gets filled. */
@@ -203,7 +209,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      style is what shows whenever motion is off or scripts fail; when motion is on,
      the animation plays once on load and HOLDS the end-state by wall-clock time, so
      it never depends on a JS class toggle or a transition completing in a throttled
-     tab (which was leaving the hero blank). */
+     tab (which was leaving the hero blank). The headline and photo slide/settle but do
+     NOT fade from opacity 0: Chrome skips invisible paints when timing the largest
+     content, so a fade-in delays LCP (the nav logo was being measured instead). */
   @media(prefers-reduced-motion:no-preference){
     html.js .hero-pc .hero-postcard{animation:heroPhoto 1.1s ease-out both}
     html.js .hero .hero-badge{animation:heroUp .6s .1s cubic-bezier(.2,.7,.2,1) both}
@@ -212,9 +220,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html.js .hero .hero-note{animation:heroUp .6s .34s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-card{animation:heroCard .7s .3s cubic-bezier(.2,.7,.2,1) both}
   }
-  @keyframes heroUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @keyframes heroUp{from{transform:translateY(18px)}to{transform:none}}
   @keyframes heroCard{from{opacity:0;transform:translateY(22px) scale(.985)}to{opacity:1;transform:none}}
-  @keyframes heroPhoto{from{opacity:0;transform:scale(1.045)}to{opacity:1;transform:none}}
+  @keyframes heroPhoto{from{transform:scale(1.045)}to{transform:none}}
   @keyframes heroFade{from{opacity:0}to{opacity:1}}
 
   /* origin → destination grouped control */
@@ -596,7 +604,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="pc-frame">
         <div class="pc-img" id="pc-img">
           <div class="pc-photos" id="pc-photos">
-            <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+            <img class="pc-base" src="img/hero-photo.jpg" alt="" width="1200" height="600">
+            <image-slot id="hero-photo" shape="rect" src="img/hero-photo.jpg" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
             <image-slot id="hero-photo-2" shape="rect" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
             <image-slot id="hero-photo-3" shape="rect" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
           </div>
