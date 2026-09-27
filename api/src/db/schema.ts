@@ -513,6 +513,54 @@ export const bookingCheckoutEvents = pgTable(
   ],
 );
 
+// M23.3 — append-only facts for booking status changes. The booking row and event are written
+// in one transaction by BookingRepo.setStatus; no synthetic baseline is created for legacy rows.
+export const bookingStatusEvents = pgTable(
+  'booking_status_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    fromStatus: text('from_status').notNull(),
+    toStatus: text('to_status').notNull(),
+    source: text('source').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    reason: text('reason'),
+    requestId: uuid('request_id'),
+    runId: uuid('run_id'),
+    relatedEntityType: text('related_entity_type'),
+    relatedEntityId: text('related_entity_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'booking_status_events_from_status_valid',
+      sql`${t.fromStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_to_status_valid',
+      sql`${t.toStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_source_valid',
+      sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_actor_type_valid',
+      sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_related_entity_type_valid',
+      sql`${t.relatedEntityType} is null or ${t.relatedEntityType} in ('payment', 'refund', 'quote', 'fulfilment')`,
+    ),
+    index('booking_status_events_booking_occurred_idx').on(t.bookingId, t.occurredAt, t.id),
+    index('booking_status_events_request_id_idx').on(t.requestId),
+    index('booking_status_events_run_id_idx').on(t.runId),
+  ],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {

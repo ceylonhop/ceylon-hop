@@ -124,7 +124,9 @@ const alerts = new ThrottledAlerts(
   config.ALERT_EMAIL ? new EmailAlertAdapter(email, config.ALERT_EMAIL) : new LogAlertAdapter(),
   alertLog,
 );
-const bookings = new PostgresBookingRepo(db);
+const bookings = new PostgresBookingRepo(db, {
+  transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+});
 const payments = new PostgresPaymentRepo(db);
 const quotes = new PostgresQuoteRepo(db);
 
