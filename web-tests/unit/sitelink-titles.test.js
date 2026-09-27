@@ -5,9 +5,9 @@ import { JSDOM } from 'jsdom';
 import { ROOT } from '../../tools/generate-route-pages.mjs';
 
 // The five Google sitelinks the owner chose on 2026-09-25, in order. Google picks sitelinks
-// itself and usually names one after the page's <title> or the anchor text pointing at it, so
-// each title LEADS with the same words as its header link (static-chrome-crawlable.test.js pins
-// the header). Read through JSDOM so "&amp;" decodes and the check can't pass vacuously.
+// itself and usually names one after the page's <title>, so each title LEADS with the name. The
+// header keeps its own shorter labels (owner, 2026-09-26; nav-links-parity.test.js pins them).
+// Read through JSDOM so "&amp;" decodes and the check can't pass vacuously.
 const SITELINKS = [
   ['Shared taxi', 'board.html'],
   ['Popular routes & prices', 'trip/index.html'],
