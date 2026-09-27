@@ -4,6 +4,7 @@ import type { DepartureRepo } from '../db/departureRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { IllegalTransitionError } from '../domain/status';
 import { routeText, travelWhenText } from './notifications';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // "Same customer, same trip" — one matcher, shared by the watchdog (which stops chasing a stuck
 // checkout the customer already paid for on a newer booking, #775) and the settle path (which
@@ -43,6 +44,7 @@ export interface DuplicateCloseDeps {
   departures: Pick<DepartureRepo, 'releaseSeats'>;
   payments: Pick<PaymentRepo, 'findByBookingId'>;
   alerts: AlertAdapter;
+  correlation?: TrackingCorrelation;
 }
 
 // Owner-approved 2026-09-25. A customer whose first checkout fails usually just tries again, and
@@ -74,6 +76,11 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
         cancelled = await deps.bookings.setStatus(b.id, 'cancelled', {
           reason: `duplicate — paid on ${paid.reference}`,
           by: DUPLICATE_CLOSED_BY,
+        }, {
+          source: 'system',
+          actorType: 'system',
+          ...deps.correlation,
+          reason: `duplicate — paid on ${paid.reference}`,
         });
       } catch (err) {
         if (err instanceof IllegalTransitionError) continue; // it moved on; not ours to close

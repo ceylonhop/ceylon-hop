@@ -72,6 +72,12 @@ describe('closeOlderDuplicates — the customer paid for the same trip on a newe
     expect(alerts.sent[0].title).toContain('CH-Y5RXW');
     expect(alerts.sent[0].title).toContain('CH-L72HX');
     expect(bookings.byId.get('id-CH-L72HX').status).toBe('paid');
+    expect(bookings.setStatus).toHaveBeenCalledWith(
+      'id-CH-Y5RXW',
+      'cancelled',
+      expect.objectContaining({ reason: 'duplicate — paid on CH-L72HX' }),
+      expect.objectContaining({ source: 'system', actorType: 'system', reason: 'duplicate — paid on CH-L72HX' }),
+    );
   });
 
   it('closes an older DRAFT too', async () => {

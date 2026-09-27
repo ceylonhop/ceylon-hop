@@ -133,8 +133,12 @@ const quotes = new PostgresQuoteRepo(db);
 const app = createApp({
   bookings,
   payments,
-  refunds: new PostgresRefundRepo(db),
-  settlements: new PostgresPaymentSettlementRepo(db, bookings),
+  refunds: new PostgresRefundRepo(db, {
+    transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+  }),
+  settlements: new PostgresPaymentSettlementRepo(db, bookings, undefined, {
+    transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+  }),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   rideLists: new PostgresRideListRepo(sql),

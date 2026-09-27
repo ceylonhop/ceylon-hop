@@ -54,6 +54,23 @@ describe('POST /bookings/:id/checkout', () => {
     expect(after!.status).toBe('payment_pending');
   });
 
+  it('records the website customer, request and payment behind the checkout transition', async () => {
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const b = await book(app);
+
+    expect((await checkout(app, b)).status).toBe(200);
+    const [payment] = await payments.findByBookingId(b.id);
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        fromStatus: 'draft', toStatus: 'payment_pending', source: 'website',
+        actorType: 'customer', actorId: valid.customer.email,
+        requestId: expect.any(String), relatedEntityType: 'payment', relatedEntityId: payment.id,
+      }),
+    ]);
+  });
+
   // What the payer sees named on their PayHere receipt. Owner, 2026-08-02: an unfamiliar line
   // on a card statement is a chargeback waiting to happen, so the charge should say who we are
   // and which booking it is. (The statement descriptor itself is PayHere's to set — their

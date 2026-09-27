@@ -28,8 +28,8 @@ async function cookie(email: string) {
   return (await app.request('/')).headers.get('set-cookie')!.split(';')[0];
 }
 
-async function fixture() {
-  const bookings = new InMemoryBookingRepo();
+async function fixture(tracked = false) {
+  const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: tracked });
   const payments = new InMemoryPaymentRepo();
   const email = new FakeEmailAdapter();
   const alerts = new FakeAlertAdapter();
@@ -63,8 +63,8 @@ async function fixture() {
     idempotencyKey: `refund-payment-${booking.id}`,
   });
   await payments.markSucceeded(payment.id);
-  await bookings.setStatus(booking.id, 'payment_pending');
-  await bookings.setStatus(booking.id, 'paid');
+  await bookings.setStatus(booking.id, 'payment_pending', undefined, tracked ? { source: 'website', actorType: 'customer' } : undefined);
+  await bookings.setStatus(booking.id, 'paid', undefined, tracked ? { source: 'payment_webhook', actorType: 'provider' } : undefined);
   return { app, bookings, payments, email, alerts, booking, payment };
 }
 
@@ -174,7 +174,7 @@ describe('manual refund ledger API', () => {
   });
 
   it('fully confirmed refunds transition once and duplicate confirmation sends no second email', async () => {
-    const { app, bookings, email, booking } = await fixture();
+    const { app, bookings, email, booking } = await fixture(true);
     const refund = await (await requestRefund(app, booking.id, booking.total)).json();
     const url = `/admin/bookings/${booking.id}/refunds/${refund.id}/confirm`;
     const options = {
@@ -186,6 +186,10 @@ describe('manual refund ledger API', () => {
     expect((await bookings.get(booking.id))?.status).toBe('refunded');
     expect((await app.request(url, options)).status).toBe(409);
     expect(email.sent).toHaveLength(1);
+    expect((await bookings.listStatusEvents(booking.id))[2]).toMatchObject({
+      fromStatus: 'paid', toStatus: 'refunded', source: 'refund', actorType: 'staff',
+      actorId: 'founder@test', relatedEntityType: 'refund', relatedEntityId: refund.id,
+    });
   });
 
   it('rejects excessive and concurrent reservations safely', async () => {
