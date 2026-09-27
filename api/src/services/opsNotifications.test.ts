@@ -178,6 +178,13 @@ describe('teamPaidEmail', () => {
     }
   });
 
+  it('names the add-ons a quote-booked trip carries', () => {
+    const trip = sampleBooking('trip');
+    const b = { ...trip, input: { ...trip.input, serviceType: 'private' }, addOns: ['Waiting fee — Kandy → Ella'] } as typeof trip;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('Waiting fee — Kandy → Ella');
+  });
+
   it('a chauffeur trip: vehicle, head-count and days', () => {
     const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
     expect(m.subject.startsWith('Paid: ')).toBe(true);

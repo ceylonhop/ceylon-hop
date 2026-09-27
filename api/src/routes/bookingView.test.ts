@@ -65,3 +65,19 @@ describe('projectBooking surfaces the whole journey', () => {
     }
   });
 });
+
+// The add-ons the customer chose reach the manage card as the booking carries them (booking.addOns,
+// read off its quote). Only when there are some: no empty row on a booking without add-ons.
+describe('projectBooking names the add-ons the customer chose', () => {
+  it('passes the booking add-ons through, on a trip and a transfer', () => {
+    const trip = { ...tripBooking, addOns: ['Waiting fee — Sigiriya → Kandy'] } as unknown as Booking;
+    const single = { ...singleBooking, addOns: ['Sightseeing stops (up to 3h)'] } as unknown as Booking;
+    expect(projectBooking(trip).addOns).toEqual(['Waiting fee — Sigiriya → Kandy']);
+    expect(projectBooking(single).addOns).toEqual(['Sightseeing stops (up to 3h)']);
+  });
+
+  it('leaves the field out when nothing was chosen', () => {
+    expect(projectBooking(singleBooking)).not.toHaveProperty('addOns');
+    expect(projectBooking(tripBooking)).not.toHaveProperty('addOns');
+  });
+});

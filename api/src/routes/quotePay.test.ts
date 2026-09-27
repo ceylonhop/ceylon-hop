@@ -348,6 +348,30 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.paid.reference).toBe(booking.reference);
     expect(body.paid.firstName).toBe('Nimal');
   });
+
+  // The add-ons the quote charged are named on the pay page (copy.addOns) and on the keepsake pass.
+  it('names the quote’s add-ons on the pay page and on the paid pass', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes, {
+      resultExtra: { lineItems: [
+        { label: 'CMB → Galle (car)', amountCents: 20900 },
+        { label: 'Waiting fee — CMB → Galle', amountCents: 1000, meta: { kind: 'extra', code: 'waiting', legIndex: 0 } },
+      ] },
+    });
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting fee — CMB → Galle']);
+
+    await start(app, t);
+    const booking = (await bookings.list())[0];
+    const p = await payments.create({ bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 21900, currency: 'USD', idempotencyKey: `checkout:${booking.id}` });
+    await payments.markSucceeded(p.id);
+    const paid = await (await view(app, t)).json();
+    expect(paid.state).toBe('paid');
+    expect(paid.paid.addOns).toEqual(['Waiting fee — CMB → Galle']);
+  });
 });
 
 // The founder's negotiation, carried onto the pay page (owner, 2026-08-10): "show the discount

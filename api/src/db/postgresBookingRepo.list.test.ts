@@ -58,8 +58,9 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
     const rows = await bookings.list({ status: ['draft'] });
 
     expect(rows.length).toBeGreaterThanOrEqual(6);
-    // bookings + customers + one per request table (transfer / trip / shared) = 5.
-    expect(statements).toBeLessThanOrEqual(5);
+    // bookings + customers + one per request table (transfer / trip / shared) + the quotes the
+    // add-ons are read from = 6. A fixed count: a per-row lookup would add 6 or 12.
+    expect(statements).toBeLessThanOrEqual(6);
   });
 
   it('list() assembles the same booking get() does', async () => {
