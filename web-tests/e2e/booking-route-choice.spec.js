@@ -201,9 +201,11 @@ test('on a trip with a gap, only the leg the engine could not confirm drops its 
 test('after a road is dropped, the planner link carries only the roads still chosen', async ({ page }) => {
   await gotoBooking(page, { query: GAP_TRIP, estimate: { respond: echoExceptEllaYala } });
   await expect(page.locator('#sum-road-note')).toHaveText(ECHO_COPY);
+  // The link booking builds, read off the navigation itself: once loaded, the planner rewrites its
+  // own URL around the drives it rebuilt (plan.js), and this trip's gap drops CMB from its stops.
+  const nav = page.waitForRequest(/plan\.html\?/);
   await page.locator('.tr-edit').click();
-  await page.waitForURL(/plan\.html\?/);
-  expect(new URL(page.url()).searchParams.get('roads')).toBe(',no_tolls,');
+  expect(new URL((await nav).url()).searchParams.get('roads')).toBe(',no_tolls,');
 });
 
 test('a chauffeur-guide trip drops the local road and says why', async ({ page }) => {

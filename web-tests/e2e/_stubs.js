@@ -104,6 +104,11 @@ const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSO
 export async function blockLiveApi(page) {
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
   await page.route('**/quote/v2/estimate', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }));
+  // plan.html checks every drive for a cheaper local road with one POST /quote/v2/estimate-batch
+  // (route choice, spec 2026-09-26 §4.7). Unstubbed, every plan load would ask the real API,
+  // which bills Google. 404 is the flag-off shape; a spec that wants an answer registers its
+  // own route AFTER this one (the later route wins).
+  await page.route('**/quote/v2/estimate-batch', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }));
 }
 
 // Engine price estimate (Phase 3, POST /quote/v2/estimate). Pass this via gotoBooking's own
@@ -252,6 +257,8 @@ export async function gotoBooking(page, opts = {}) {
   // Pass gotoBooking's `estimate` option (or call installEstimateStub again after navigating, to
   // change the response mid-test) to switch a spec into the engine-priced world.
   await installEstimateStub(page, estimate ? { ...estimate } : { status: 404 });
+  // plan.html's road check (see blockLiveApi): smoke.spec.js reaches the planner through here.
+  await page.route('**/quote/v2/estimate-batch', (r) => r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not_found"}' }));
 
   // checkout params
   const checkoutBodies = [];

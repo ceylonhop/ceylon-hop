@@ -245,6 +245,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:700}
   .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);white-space:nowrap}
   .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
+  /* route choice: a drive's cheaper-local-road chip (plan.js roadChipHtml). Its own line under the
+     distance, so the price row never reflows. The swatch matches route-choice.js's popup — dashed
+     amber for the local road, solid blue for the expressway. */
+  .leg-meta .lm-road-row{flex:1 0 100%;display:flex;justify-content:flex-end;min-width:0}
+  .leg-meta .lm-road{display:inline-flex;align-items:center;gap:7px;min-height:30px;max-width:100%;padding:4px 12px;border:1.5px solid #f1d9b3;border-radius:999px;background:#fbefdc;color:#8a4f07;font:inherit;font-size:.78rem;font-weight:600;line-height:1.3;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+  .leg-meta .lm-road:hover{border-color:#D9861A}
+  .leg-meta .lm-road:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  .leg-meta .lm-road-sw{flex:none;width:16px;height:0;border-top:3px dashed #D9861A}
+  .leg-meta .lm-road.is-set{background:var(--white,#fff);border-color:var(--line);color:var(--ink)}
+  .leg-meta .lm-road.is-set:hover{border-color:#cfc9b6}
+  .leg-meta .lm-road.is-set:not(.is-local) .lm-road-sw{border-top-style:solid;border-top-color:#2F6DB5;border-radius:2px}
+  @media(prefers-reduced-motion:reduce){.leg-meta .lm-road{transition:none}}
   @media(max-width:540px){
     .leg-meta .lm-src,.leg-meta .lm-sep{display:none}
     .leg-meta .lm-dist{flex:1 0 100%;line-height:1.4;text-align:right}
@@ -716,8 +728,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="tours-data.js?v=4273085929"></script>
 <script src="ch-map.js?v=9ccbce517b"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
+<!-- the shared "two roads" popup (route choice) — must load before plan.js offers it -->
+<script src="route-choice.js?v=bc64ed9cba"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=2e29f9e551"></script>
+<script src="plan.js?v=76d94c8588"></script>
 </body>
 </html>

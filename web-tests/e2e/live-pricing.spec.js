@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
 
 // Spec 2026-09-26 §9: plan, home and why draw copy prices on first paint. With the live list
 // available they show ITS numbers — held blank until it lands, never the baked ones first — and
@@ -76,6 +77,7 @@ test('why: the comparison shows the live car price', async ({ page }) => {
 });
 
 test('plan: a restored itinerary holds its leg price, then prices it on the live list', async ({ page }) => {
+  await blockLiveApi(page);   // the planner's road check (estimate-batch) must not reach the API
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   const release = await stubPricing(page, { held: true });
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car', { waitUntil: 'domcontentloaded' });
