@@ -307,7 +307,7 @@ function privateCardHtml(pending) {
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
     <p class="o-desc">Leave exactly when you want, and add stops along the way — tell us at booking. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
-    <div class="veh">${row('car', ICONS.car, 'AC car', 'Up to 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Up to 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
+    <div class="veh">${row('car', ICONS.car, 'AC car', 'Seats 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Seats 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
     </div>
     <div class="incl">
       <span class="chip">${ICONS.seat} Private to your group</span>
