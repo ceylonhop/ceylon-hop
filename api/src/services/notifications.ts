@@ -127,6 +127,13 @@ function extrasLabel(extras?: string[]): string | null {
   return labels.join(', ');
 }
 
+// The add-ons the customer chose. A booking made from a quote carries them as the quote named them
+// (booking.addOns, read off the quote's priced lines); otherwise a transfer's own extras codes.
+function addOnsLabel(booking: Booking): string | null {
+  if (booking.addOns?.length) return booking.addOns.join(', ');
+  return booking.mode === 'single' ? extrasLabel(booking.input.extras) : null;
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
 // team's paid email states the vehicle and head-count in exactly the customer's words.
 export function factRows(booking: Booking): [string, string][] {
@@ -140,6 +147,8 @@ export function factRows(booking: Booking): [string, string][] {
     ];
     if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
     rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    const addOns = addOnsLabel(booking);
+    if (addOns) rows.push(['Extras', addOns]);
     return rows;
   }
   if (booking.mode === 'shared') {
@@ -162,7 +171,7 @@ export function factRows(booking: Booking): [string, string][] {
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
   ];
   if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
-  const extras = extrasLabel(booking.input.extras);
+  const extras = addOnsLabel(booking);
   if (extras) rows.push(['Extras', extras]);
   return rows;
 }

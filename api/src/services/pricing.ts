@@ -3,7 +3,7 @@ import type { TripInput } from '../domain/trip';
 import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import type { QuoteRequest, ChauffeurTravelDay } from '../quote/types';
+import type { QuoteRequest, QuoteResult, ChauffeurTravelDay } from '../quote/types';
 import type { DiscountRequest } from '../quote/discount';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
@@ -18,6 +18,9 @@ export type PriceOutcome =
       /** Present only when a discount was requested (spec 2026-09-14 §7). 0 = limits removed it all. */
       discountCents?: number;
       totalBeforeDiscountCents?: number;
+      /** What the engine priced — its request and full result — for a booking to keep. Absent when
+       *  no engine ran (shared seats). Server-side only: the result carries the margin. */
+      breakdown?: { engine: QuoteRequest; result: QuoteResult };
     }
   | { priced: false; reason: string };
 
@@ -51,6 +54,7 @@ function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD, discount?:
       totalCents: result.totalCents,
       amountDueNowCents: result.totalCents,
       priced: true,
+      breakdown: { engine: req, result },
       ...(discount
         ? {
             discountCents: result.discountCents ?? 0,

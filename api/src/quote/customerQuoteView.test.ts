@@ -958,3 +958,53 @@ describe('per-journey prices', () => {
     expect(JSON.stringify(lp)).not.toMatch(/hotZone|Ella \+12%|vehicle/);
   });
 });
+
+// The add-ons the customer chose join the priced card's list of what the money buys — shown
+// whether or not ops ticked per-journey prices, and only when there are some.
+describe('the add-ons the customer chose, on the quote page', () => {
+  const legLines = [
+    { label: 'Colombo Airport → Sigiriya (car)', amountCents: 50_000, meta: { billableKm: 168 } },
+    { label: 'Sigiriya → Kandy (car)', amountCents: 33_000, meta: { billableKm: 92 } },
+  ];
+  const withLines = (lineItems: unknown[], over: Record<string, unknown> = {}) => {
+    const base = quote();
+    const request = base.request as { engine: Record<string, unknown>; tool: unknown };
+    return quote({
+      request: {
+        ...request,
+        engine: { ...request.engine, legs: [{ from: 'Colombo Airport', to: 'Sigiriya', distanceKm: 168 }, { from: 'Sigiriya', to: 'Kandy', distanceKm: 92 }] },
+      },
+      result: { lineItems },
+      ...over,
+    });
+  };
+  const waiting = { label: 'Waiting fee — Sigiriya → Kandy', amountCents: 1_000, meta: { kind: 'extra', code: 'waiting', legIndex: 1 } };
+
+  it('lists them on the priced card, whether or not journey prices are shown', () => {
+    for (const showLegPrices of [false, true]) {
+      const lead = customerQuoteView(withLines([...legLines, waiting], { showLegPrices }), p2pOnly).options[0];
+      expect(lead.included.items).toContain('Waiting fee — Sigiriya → Kandy');
+      expect(lead.includedText).toContain('Waiting fee — Sigiriya → Kandy');
+    }
+  });
+
+  it('never on the comparison card, and nothing added when none were chosen', () => {
+    const v = customerQuoteView(withLines([...legLines, waiting], { requestedService: 'both' }), both);
+    expect(v.options[0].included.items).toContain('Waiting fee — Sigiriya → Kandy');
+    expect(v.options[1].included.items).not.toContain('Waiting fee — Sigiriya → Kandy');
+    expect(customerQuoteView(withLines(legLines), p2pOnly).options[0].included.items)
+      .toEqual(['Pick up and drop off', 'Air-conditioned car with driver', 'Fuel, tolls and parking']);
+  });
+
+  // An add-on on no journey is priced on its own row of the breakdown; saying it twice would read
+  // as two charges.
+  it('does not list again one the journey breakdown already prices on its own row', () => {
+    const sightseeing = { label: 'Sightseeing stops (up to 3h)', amountCents: 1_000 };
+    const lead = customerQuoteView(withLines([...legLines, sightseeing], { showLegPrices: true }), p2pOnly).options[0];
+    expect(lead.legPrices?.rows.map((r) => r.label)).toContain('Sightseeing stops (up to 3h)');
+    expect(lead.included.items).not.toContain('Sightseeing stops (up to 3h)');
+    // Without the breakdown it is the only place the customer sees it.
+    const plain = customerQuoteView(withLines([...legLines, sightseeing]), p2pOnly).options[0];
+    expect(plain.included.items).toContain('Sightseeing stops (up to 3h)');
+  });
+});

@@ -45,7 +45,7 @@ export class NotLineablePriceError extends Error {}
  * quote — a chauffeur leg carries only its km share, so a subset of them sums to a meaningless
  * number (spec §3).
  */
-export function payLines(quote: SavedQuote): PayLine[] {
+export function payLines(quote: Pick<SavedQuote, 'request' | 'result'>): PayLine[] {
   const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engine || engine.product !== 'private') throw new NotLineablePriceError('not a private quote');
   const items = (quote.result as { lineItems?: LineItem[] } | null)?.lineItems;
@@ -85,6 +85,37 @@ export function payLines(quote: SavedQuote): PayLine[] {
     });
 
   return [...legLines, ...extraLines];
+}
+
+/**
+ * The add-ons the customer chose, as the quote labels them ("Waiting fee — Kandy → Ella"): the
+ * `extra` lines of payLines, so what counts as an add-on is decided in one place. On a partial
+ * link, only the add-ons it charges. A quote payLines cannot read has none to name — chauffeur
+ * (waiting, sightseeing and safari wait are part of its day rate, so the engine drops them),
+ * shared, or a shell/legacy row.
+ */
+export function chosenAddOns(
+  quote: Pick<SavedQuote, 'request' | 'result'>,
+  selection?: { legIndexes?: number[]; extraIndexes?: number[] } | null,
+): string[] {
+  // Booking loads (the ops queue, every email) and the quote and pay pages all come through here,
+  // so a malformed stored row must cost a missing line, never a page: check the shape payLines
+  // assumes (a legs list, object line items) before handing it over.
+  const engine = (quote.request as { engine?: { legs?: unknown } } | null)?.engine;
+  const items = (quote.result as { lineItems?: unknown } | null)?.lineItems;
+  if (!Array.isArray(engine?.legs)) return [];
+  if (Array.isArray(items) && items.some((i) => !i || typeof i !== 'object')) return [];
+  let lines: PayLine[];
+  try {
+    lines = payLines(quote);
+  } catch (err) {
+    if (err instanceof NotLineablePriceError) return [];
+    throw err;
+  }
+  const picked = Array.isArray(selection?.extraIndexes) ? selection.extraIndexes : null;
+  return lines
+    .filter((l) => l.kind === 'extra' && typeof l.label === 'string' && (!picked || picked.includes(l.index)))
+    .map((l) => l.label);
 }
 
 const ticked = (line: PayLine, sel: PaySelection): boolean =>

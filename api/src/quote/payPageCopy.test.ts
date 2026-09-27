@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { payPageCopy } from './payPageCopy';
+import { quote } from './engine';
+import { RATE_CARD } from './rateCard';
+import type { QuoteRequest } from './types';
 
 // The pay page's words are DERIVED, never typed: everything comes from the quote the
 // operator already built, so nothing surprising can be shown to a customer. These tests
@@ -261,5 +264,39 @@ describe('payPageCopy — partial link', () => {
     const copy = payPageCopy(q);
     expect(copy.totalLabel).toBe('Total · all 4 journeys');
     expect(copy.legs!.every((l) => l.covered === undefined)).toBe(true);
+  });
+});
+
+// The add-ons the customer chose, named as the quote names them. Read off the stored lines, so a
+// quote priced through the REAL engine is the fixture.
+describe('payPageCopy — the add-ons the customer chose', () => {
+  function priced(legs: ReturnType<typeof leg>[], extras: Extract<QuoteRequest, { product: 'private' }>['extras']) {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: legs.map((l) => ({ from: l.from, to: l.to, distanceKm: 120 })), extras,
+    };
+    const result = quote(engine, RATE_CARD);
+    return { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool(legs), engine }, result };
+  }
+
+  it('a single transfer names its add-on', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08')], [{ code: 'waiting', legIndex: 0 }]);
+    expect(payPageCopy(q).addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
+  it('a multi-leg trip names each add-on after its journey', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08'), leg('Ella', 'Yala', '2026-08-09')], [{ code: 'safari-wait', legIndex: 1 }]);
+    expect(payPageCopy(q).addOns).toEqual(['Wait for Safari — Ella → Yala']);
+  });
+
+  it('says nothing about add-ons when none were chosen', () => {
+    expect(payPageCopy(priced([leg('Kandy', 'Ella')], [])).addOns).toBeUndefined();
+    expect(payPageCopy(quoteOf({})).addOns).toBeUndefined(); // no stored lines at all
+  });
+
+  // A partial link's receipt lines (pay.html linesHtml) already name every add-on it charges.
+  it('leaves a partial link’s add-ons to its receipt lines', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08'), leg('Ella', 'Galle', '2026-08-09')], [{ code: 'waiting', legIndex: 0 }]);
+    expect(payPageCopy(q, { legIndexes: [0], extraIndexes: [0] }).addOns).toBeUndefined();
   });
 });

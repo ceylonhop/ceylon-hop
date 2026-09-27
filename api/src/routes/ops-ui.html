@@ -3671,6 +3671,14 @@ function refundHtmlFor(t,d){
 const MEMBER_STATE={held:'Held',charged:'Paid',charge_failed:'Card failed',scratched:'Scratched'};
 /* booking extras are stored as machine slugs; the sheet prints them for humans */
 const EXTRA_LBL={sightseeing:'Sightseeing stops',luggage:'Extra luggage',front:'Front seat',flex:'Flexible timing',waiting:'Waiting time','safari-wait':'Safari wait'};
+/* The add-ons the customer chose, for the booking sheet's Extras row. A booking made from a quote
+   carries them as the quote named them (booking.addOns, read off the quote's priced lines); a
+   website transfer still sends its own extras codes. Empty when nothing was chosen. */
+function bookingAddOns(booking) {
+  if (Array.isArray(booking?.addOns) && booking.addOns.length) return booking.addOns;
+  const codes = Array.isArray(booking?.input?.extras) ? booking.input.extras : [];
+  return codes.map((x) => EXTRA_LBL[x] || x);
+}
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
   const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
@@ -3833,8 +3841,8 @@ function renderSheet(){
       <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
       ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
   }
-  const extras=Array.isArray(d?.booking?.input?.extras)?d.booking.input.extras:[];
-  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(EXTRA_LBL[x]||x)).join(' · ')}</span></div>`:'';
+  const extras=bookingAddOns(d?.booking);
+  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
