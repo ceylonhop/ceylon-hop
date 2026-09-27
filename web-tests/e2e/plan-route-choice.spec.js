@@ -118,7 +118,7 @@ test('the popup opens once, and describes each road with the card\'s own figures
   await expect(dialog).toBeVisible();
   expect(await popupFigures(dialog, 'is-local')).toEqual(await cardFigures(page, 0));
   await expect(dialog.locator('.ch-rc-slower')).toHaveText('+1h');
-  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
 });
 
@@ -278,7 +278,7 @@ test('two forked drives: only the first opens, and the second never follows', as
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading')).toHaveText('Two roads to Ella');
   await expect(chip(page, 2)).toContainText('Cheaper local road · save about $11');
-  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
   // a quiet moment (focus in and out of a field) does not bring the second drive's popup
   await card(page, 2).locator('.leg-from').focus();
@@ -292,7 +292,7 @@ test('a dismissed offer is not asked again after a reload', async ({ page }) => 
   await stubBatch(page);
   await page.goto(PLAN);
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
   expect(await pushes(page, 'route_choice')).toEqual([expect.objectContaining({ choice: 'dismissed', page: 'plan' })]);
 
