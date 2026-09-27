@@ -14,6 +14,7 @@ import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
 import type { MapsAdapter } from '../adapters/maps';
+import { InMemoryCustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 
 const valid = {
   from: 'Colombo Airport (CMB)',
@@ -546,9 +547,9 @@ describe('POST /webhooks/resend (M17)', () => {
   const SECRET_KEY = Buffer.from('super-secret-signing-key').toString('base64');
   const SECRET = 'whsec_' + SECRET_KEY;
 
-  const signed = (payload: object, opts?: { timestamp?: number; badSig?: boolean }) => {
+  const signed = (payload: object, opts?: { timestamp?: number; badSig?: boolean; id?: string }) => {
     const raw = JSON.stringify(payload);
-    const id = 'msg_test1';
+    const id = opts?.id ?? 'msg_test1';
     const timestamp = String(opts?.timestamp ?? Math.floor(Date.now() / 1000));
     const sig = createHmac('sha256', Buffer.from(SECRET_KEY, 'base64'))
       .update(`${id}.${timestamp}.${raw}`)
@@ -600,6 +601,145 @@ describe('POST /webhooks/resend (M17)', () => {
     const res = await app.request('/webhooks/resend', { method: 'POST', body: ok.body, headers: ok.headers });
     expect(res.status).toBe(204);
     expect(alerts.sent).toHaveLength(0);
+  });
+
+  const seededCommunication = async (
+    ledger: InMemoryCustomerCommunicationRepo,
+    providerMessageId = 'email_provider_123',
+  ) => {
+    const row = await ledger.plan({
+      bookingId: '00000000-0000-4000-8000-000000000001',
+      kind: 'confirmation',
+      channel: 'email',
+      templateKey: 'booking-confirmation',
+      templateVersion: '1',
+      recipient: 'maya@example.com',
+      source: 'payment_webhook',
+      actorType: 'provider',
+      actorId: null,
+      requestId: null,
+      runId: null,
+      trackingKey: 'booking:confirmation',
+      payloadSha256: 'a'.repeat(64),
+    });
+    await ledger.markProviderAccepted(row.id, 'resend', providerMessageId);
+    return row;
+  };
+
+  it.each([
+    ['email.sent', 'provider_sent'],
+    ['email.delivered', 'delivered'],
+    ['email.delivery_delayed', 'delayed'],
+    ['email.failed', 'provider_failed'],
+    ['email.bounced', 'bounced'],
+    ['email.complained', 'complained'],
+  ] as const)('records signed %s as %s and correlates it to the logical email', async (providerType, eventType) => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const communication = await seededCommunication(ledger);
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({
+      alerts,
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const webhook = signed({
+      type: providerType,
+      created_at: '2026-09-27T12:00:00.000Z',
+      data: {
+        email_id: 'email_provider_123',
+        message_id: '<safe-provider-message@example.net>',
+        to: ['maya@example.com'],
+        subject: 'Your booking',
+      },
+    }, { id: `evt-${eventType}` });
+
+    expect((await app.request('/webhooks/resend', {
+      method: 'POST', body: webhook.body, headers: webhook.headers,
+    })).status).toBe(204);
+    expect(await ledger.listEvents(communication.id)).toEqual([
+      expect.objectContaining({
+        communicationId: communication.id,
+        eventType,
+        providerEventId: `evt-${eventType}`,
+        providerMessageId: 'email_provider_123',
+        occurredAt: new Date('2026-09-27T12:00:00.000Z'),
+      }),
+    ]);
+    expect(alerts.sent.map((alert) => alert.kind)).toEqual(
+      providerType === 'email.failed' ? ['email_failed']
+        : providerType === 'email.bounced' || providerType === 'email.complained' ? ['email_bounce'] : [],
+    );
+  });
+
+  it('deduplicates a replayed provider event and preserves out-of-order facts', async () => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const communication = await seededCommunication(ledger);
+    const app = createApp({
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const delivered = signed({
+      type: 'email.delivered', created_at: '2026-09-27T12:02:00.000Z',
+      data: { email_id: 'email_provider_123' },
+    }, { id: 'evt-delivered' });
+    const sent = signed({
+      type: 'email.sent', created_at: '2026-09-27T12:01:00.000Z',
+      data: { email_id: 'email_provider_123' },
+    }, { id: 'evt-sent' });
+
+    for (const webhook of [delivered, delivered, sent]) {
+      expect((await app.request('/webhooks/resend', {
+        method: 'POST', body: webhook.body, headers: webhook.headers,
+      })).status).toBe(204);
+    }
+    const events = await ledger.listEvents(communication.id);
+    expect(events.map((event) => event.eventType)).toEqual(['delivered', 'provider_sent']);
+    expect(events.map((event) => event.occurredAt.toISOString())).toEqual([
+      '2026-09-27T12:02:00.000Z', '2026-09-27T12:01:00.000Z',
+    ]);
+  });
+
+  it('stores an unknown provider message as orphan evidence with sanitized metadata', async () => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const app = createApp({
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const webhook = signed({
+      type: 'email.bounced',
+      created_at: '2026-09-27T12:00:00.000Z',
+      data: {
+        email_id: 'email_unknown',
+        message_id: '<provider-message@example.net>',
+        to: ['maya+secret@example.com'],
+        subject: 'Manage token-secret',
+        bounce: { type: 'Permanent', subType: 'Suppressed', message: 'raw-provider-secret' },
+      },
+    }, { id: 'evt-orphan' });
+
+    expect((await app.request('/webhooks/resend', {
+      method: 'POST', body: webhook.body, headers: webhook.headers,
+    })).status).toBe(204);
+    const [event] = await ledger.listEvents();
+    expect(event).toMatchObject({
+      communicationId: null,
+      providerMessageId: 'email_unknown',
+      eventType: 'bounced',
+      detailJson: {
+        provider: 'resend',
+        messageId: '<provider-message@example.net>',
+        recipientDomain: 'example.com',
+        bounceType: 'Permanent',
+        bounceSubType: 'Suppressed',
+      },
+    });
+    const persisted = JSON.stringify(event);
+    expect(persisted).not.toContain('maya+secret');
+    expect(persisted).not.toContain('token-secret');
+    expect(persisted).not.toContain('raw-provider-secret');
   });
 });
 

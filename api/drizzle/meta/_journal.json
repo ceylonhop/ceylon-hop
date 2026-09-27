@@ -435,6 +435,13 @@
       "when": 1790812800000,
       "tag": "0061_route_variant",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1790899200000,
+      "tag": "0062_resend_communication_events",
+      "breakpoints": true
     }
   ]
 }

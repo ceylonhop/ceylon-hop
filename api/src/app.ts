@@ -203,10 +203,14 @@ export function createApp(deps: AppDeps = {}) {
     deps.email ?? new FakeEmailAdapter(),
     deps.emailPolicy ?? { enabled: config.NOTIFICATIONS_ENABLED, allowlist: parseAllowlist(config.EMAIL_ALLOWLIST) },
   );
-  const email = (deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED)
+  const communicationTrackingEnabled =
+    deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED;
+  const customerCommunications =
+    deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo();
+  const email = communicationTrackingEnabled
     ? new ObservingEmailAdapter(
         guardedEmail,
-        deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo(),
+        customerCommunications,
       )
     : guardedEmail;
   const adapter = deps.adapter ?? new FakePaymentAdapter();
@@ -540,6 +544,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       notificationLog,
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
+      ...(communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
