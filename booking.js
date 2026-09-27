@@ -1991,18 +1991,20 @@ function customerRouteEstimateText(){
     ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
     : '';
 }
+// The local road being booked, in words — '' on the expressway, or once the road was dropped.
+// The summary (#sum-road) and step 4's Due now box both say it.
+function roadChoiceText(){
+  if(isTrip){
+    if(state.svc==='chauffeur') return '';
+    const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
+    return local.length ? 'Local road for '+local.join(', ') : '';
+  }
+  return bookRoad==='no_tolls' ? 'Via the local road · no expressway' : '';
+}
 // The road the customer chose, under the route estimate — and, beside it, why a chosen local road
 // no longer applies (the engine could only price the expressway, or a chauffeur-guide was picked).
 function paintRoadChoice(){
-  let road='';
-  if(isTrip){
-    if(state.svc!=='chauffeur'){
-      const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
-      if(local.length) road='Local road for '+local.join(', ');
-    }
-  } else if(bookRoad==='no_tolls'){
-    road='Via the local road · no expressway';
-  }
+  const road=roadChoiceText();
   const roadEl=document.getElementById('sum-road');
   if(roadEl){ roadEl.textContent=road; roadEl.hidden=!road; }
   let note='';
@@ -2291,7 +2293,9 @@ function render(){
       ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
       : r.name;
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
+    // The road being paid for, under the route — the summary's words, gone when the road is.
+    const dueRoad = roadChoiceText();
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');

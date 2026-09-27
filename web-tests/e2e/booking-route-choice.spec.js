@@ -297,3 +297,37 @@ test('a trip leg on the local road shows the engine\'s drive time and the rounde
   await expect(localLeg).toHaveText('215 km · 6h');
   await expect(page.locator('.tr-leg[data-wire="1"] .tr-drive')).toContainText('125 km');
 });
+
+// Owner 2026-09-27: the step-4 "Due now" box names the road being paid for, in the summary's
+// own words, under the route — and follows it: a dropped road disappears from the box too.
+const dueRoad = (page) => page.locator('#pay-due .due-road');
+
+test('the Due now box names the local road on a single transfer', async ({ page }) => {
+  await gotoBooking(page, { query: SINGLE, estimate: { respond: echoRoads() } });
+  await expect(page.locator('#sum-road')).toHaveText(SINGLE_COPY);
+  await expect(dueRoad(page)).toHaveText(SINGLE_COPY);
+});
+
+test('the Due now box has no road line once the engine can only price the expressway', async ({ page }) => {
+  await gotoBooking(page, { query: SINGLE, estimate: { respond: echoRoads({ fastest: true }) } });
+  await expect(page.locator('#sum-road-note')).toHaveText(ECHO_COPY);
+  await expect(page.locator('#pay-due .amt')).not.toHaveClass(/is-pricing/);
+  await expect(dueRoad(page)).toHaveCount(0);
+});
+
+test('the Due now box has no road line on the expressway', async ({ page }) => {
+  await gotoBooking(page, { query: SINGLE.replace('&road=no_tolls', ''), estimate: { respond: echoRoads() } });
+  await expect(page.locator('#pay-due .amt')).not.toHaveClass(/is-pricing/);
+  await expect(page.locator('#pay-due .lbl b')).toHaveText(/Ella/);
+  await expect(dueRoad(page)).toHaveCount(0);
+});
+
+test('the Due now box names a trip\'s local-road legs, and a chauffeur-guide drops them', async ({ page }) => {
+  await gotoBooking(page, { query: TRIP, estimate: { respond: echoRoads() } });
+  const summary = await page.locator('#sum-road').textContent();
+  expect(summary).toContain('Local road for ');
+  await expect(dueRoad(page)).toHaveText(summary);
+  await page.locator('[data-svc="chauffeur"]').click();
+  await expect(page.locator('#sum-road')).toBeHidden();
+  await expect(dueRoad(page)).toHaveCount(0);
+});
