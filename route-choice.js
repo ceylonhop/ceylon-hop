@@ -58,8 +58,6 @@
       '.ch-rc-best{font-size:.85rem;font-weight:600;color:var(--ink,#3A3739)}' +
       '.ch-rc-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px}' +
       '.ch-rc-foot button{min-height:46px;padding:0 22px;border-radius:999px;font:inherit;font-weight:700;font-size:.95rem;cursor:pointer}' +
-      '.ch-rc-later{border:1.5px solid var(--line,#e7e3d6);background:transparent;color:var(--ink,#3A3739)}' +
-      '.ch-rc-later:hover{border-color:#cfc9b6;background:rgba(58,55,57,.04)}' +
       '.ch-rc-primary{border:0;background:var(--btn-accent,#24758A);color:#fff}' +
       '.ch-rc-primary:hover{background:var(--btn-accent-hover,#1E6273)}' +
       '.ch-rc-foot button:focus-visible,.ch-rc-x:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}' +
@@ -77,7 +75,6 @@
         '.ch-rc-opt{padding:13px 14px}' +
         '.ch-rc-big{font-size:1.75rem}' +
         '.ch-rc-foot button{flex:1 1 0;padding:0 12px}' +
-        '.ch-rc-later{flex:0 1 auto!important}' +
       '}' +
       '@media (prefers-reduced-motion:reduce){.ch-rc,.ch-rc-scrim{transition:none}}';
     document.head.appendChild(st);
@@ -107,18 +104,14 @@
     head.appendChild(el('span', 'ch-rc-tag', local ? o.save : 'Fastest'));
     lab.appendChild(head);
 
-    // The expressway leads with its time, the local road with its price — each road's reason.
+    // One layout for both roads (owner, 2026-09-27): the price leads, the time follows, so the two
+    // cards compare line for line. The local road adds how much longer it takes.
     const fig = el('span', 'ch-rc-fig');
-    if (local) {
-      fig.appendChild(el('span', 'ch-rc-big', o.price));
-      const t = el('span', 'ch-rc-alt');
-      t.appendChild(el('span', 'ch-rc-time', o.time));
-      if (o.slower) { t.appendChild(document.createTextNode(' ')); t.appendChild(el('span', 'ch-rc-slower', o.slower)); }
-      fig.appendChild(t);
-    } else {
-      fig.appendChild(el('span', 'ch-rc-big ch-rc-time', o.time));
-      fig.appendChild(el('span', 'ch-rc-alt', o.price));
-    }
+    fig.appendChild(el('span', 'ch-rc-big ch-rc-price', o.price));
+    const t = el('span', 'ch-rc-alt');
+    t.appendChild(el('span', 'ch-rc-time', o.time));
+    if (local && o.slower) { t.appendChild(document.createTextNode(' ')); t.appendChild(el('span', 'ch-rc-slower', o.slower)); }
+    fig.appendChild(t);
     lab.appendChild(fig);
 
     const stats = [o.km, local ? 'no tolls' : 'tolls included', o.extra].filter(Boolean).join(' · ');
@@ -164,11 +157,10 @@
     dlg.appendChild(group);
 
     const foot = el('div', 'ch-rc-foot');
-    const later = el('button', 'ch-rc-later', 'Decide later');
-    later.type = 'button';
+    // One action (owner, 2026-09-27: no "Decide later"). The ×, Escape and the scrim still close it
+    // and keep the expressway.
     const primary = el('button', 'ch-rc-primary');
     primary.type = 'button';
-    foot.appendChild(later);
     foot.appendChild(primary);
     dlg.appendChild(foot);
     scrim.appendChild(dlg);
@@ -205,7 +197,6 @@
     document.addEventListener('keydown', onKey, true);
     scrim.addEventListener('mousedown', (e) => { if (e.target === scrim) dismiss(); });
     x.addEventListener('click', dismiss);
-    later.addEventListener('click', dismiss);
     primary.addEventListener('click', () => close(opts.onPick, selected()));
 
     current = close;

@@ -117,9 +117,26 @@ describe('CH_ROUTE_CHOICE.open', () => {
     expect(pageEsc).toHaveBeenCalledTimes(1);
   });
 
-  it('Decide later, the close button and the scrim all dismiss', () => {
+  it('both cards lead with the price, then the time (owner, 2026-09-27: one layout for both roads)', () => {
+    RC.open(opts());
+    const figs = [...document.querySelectorAll('.ch-rc-opt .ch-rc-fig')];
+    expect(figs).toHaveLength(2);
+    for (const fig of figs) {
+      expect(fig.firstElementChild.classList.contains('ch-rc-price')).toBe(true);
+      expect(fig.querySelector('.ch-rc-time')).not.toBeNull();
+      expect(fig.firstElementChild.contains(fig.querySelector('.ch-rc-time'))).toBe(false);
+    }
+  });
+
+  it('has one action button — no "Decide later" (owner, 2026-09-27)', () => {
+    RC.open(opts());
+    const foot = [...document.querySelectorAll('.ch-rc-foot button')].map((b) => b.textContent);
+    expect(foot).toEqual(['Use expressway']);
+    expect([...document.querySelectorAll('button')].some((b) => b.textContent === 'Decide later')).toBe(false);
+  });
+
+  it('the close button and the scrim both dismiss', () => {
     for (const hit of [
-      () => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Decide later').click(),
       () => document.querySelector('[aria-label="Close"]').click(),
       () => document.querySelector('.ch-rc-scrim').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
     ]) {

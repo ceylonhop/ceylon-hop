@@ -116,10 +116,10 @@ test('picking the local road reprices the card, the meta line and the Select lin
   await expect(cardSwitch(page).locator('input:checked')).toHaveValue('no_tolls');
 });
 
-test('Decide later keeps the expressway, and a reload does not ask again', async ({ page }) => {
+test('closing keeps the expressway, and a reload does not ask again', async ({ page }) => {
   await open(page);
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Decide later' }).click();
+  await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
   await expect(rows(page).nth(0)).toContainText('$140');
   expect(new URLSearchParams((await carHref(page)).split('?')[1]).has('road')).toBe(false);
@@ -133,7 +133,7 @@ test('Decide later keeps the expressway, and a reload does not ask again', async
 
 test('the card switch moves both ways without asking the engine again', async ({ page }) => {
   const calls = await open(page);
-  await page.getByRole('dialog').getByRole('button', { name: 'Decide later' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
   await expect(rows(page).nth(0)).toContainText('$140');
   const asked = calls.n;
 
