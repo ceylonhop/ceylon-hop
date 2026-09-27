@@ -139,3 +139,33 @@ describe('opsView — isTest', () => {
     expect(toOpsRow(base, { paid: true }).isTest).toBe(false);
   });
 });
+
+// Route choice (spec §4.3): the queue card says when the customer bought the local road, so ops
+// books a driver for the right road. A separate field — `route` feeds search, reminders and the
+// Lookup, and stays exactly what it was.
+describe('opsView — road', () => {
+  it('a transfer on the local road is marked, and its route is untouched', () => {
+    const row = toOpsRow({ ...base, input: { ...base.input, routeVariant: 'no_tolls' } } as Booking, { paid: true });
+    expect(row.road).toBe('Local road');
+    expect(row.route).toBe('Colombo Airport → Galle');
+  });
+
+  // A trip names its local legs (roadRow's words): the reminder built from this row goes to the
+  // customer, and "via the local road" would be false for the legs on the expressway.
+  it('a trip with a leg on the local road names that leg', () => {
+    const trip = {
+      ...base, mode: 'trip',
+      input: { stops: ['Colombo Airport', 'Kandy', 'Ella'], pax: 2, vehicleType: 'car', serviceType: 'private',
+        routeVariants: ['fastest', 'no_tolls'], customer: base.input.customer },
+    } as unknown as Booking;
+    expect(toOpsRow(trip, { paid: true }).road).toBe('Local road for Kandy → Ella');
+    const allFast = { ...trip, input: { ...(trip.input as object), routeVariants: ['fastest', 'fastest'] } } as unknown as Booking;
+    expect(toOpsRow(allFast, { paid: true }).road).toBeNull();
+  });
+
+  it('is null on the expressway, and nothing else in the row changes', () => {
+    const fastest = { ...base, input: { ...base.input, routeVariant: 'fastest' } } as Booking;
+    expect(toOpsRow(base, { paid: true }).road).toBeNull();
+    expect(toOpsRow(fastest, { paid: true })).toEqual(toOpsRow(base, { paid: true }));
+  });
+});

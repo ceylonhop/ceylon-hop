@@ -1,6 +1,7 @@
 import { and, eq, inArray, lt, sql as dsql } from 'drizzle-orm';
 import type { Db } from './client';
 import { bookings, payments, refunds } from './schema';
+import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
   RefundError,
   REFUNDED_STATUSES,
@@ -12,6 +13,7 @@ import {
   type RefundRepo,
   type RefundStatus,
 } from './refundRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 type Row = typeof refunds.$inferSelect;
 const toRefund = (row: Row): Refund => ({
@@ -29,8 +31,15 @@ function uniqueViolation(error: unknown): boolean {
   return false;
 }
 
+export type RefundFailurePoint = 'after_refund_update' | 'after_booking_update';
+export type RefundFailureHook = (point: RefundFailurePoint) => Promise<void> | void;
+
 export class PostgresRefundRepo implements RefundRepo {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: { transitionTrackingEnabled?: boolean } = {},
+    private readonly failureHook?: RefundFailureHook,
+  ) {}
 
   async request(input: {
     bookingId: string;
@@ -93,6 +102,7 @@ export class PostgresRefundRepo implements RefundRepo {
     refundId: string;
     gatewayRef: string;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     try {
       return await this.db.transaction(async (tx) => {
@@ -135,6 +145,7 @@ export class PostgresRefundRepo implements RefundRepo {
           })
           .where(eq(refunds.id, refund.id))
           .returning();
+        await this.failureHook?.('after_refund_update');
         const [{ refunded }] = await tx
           .select({ refunded: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
           .from(refunds)
@@ -147,17 +158,30 @@ export class PostgresRefundRepo implements RefundRepo {
         if (refunded > capturedCents) throw new RefundError('refund_exceeds_captured');
         const fully = refunded === capturedCents;
         if (fully) {
-          const [updated] = await tx
-            .update(bookings)
-            .set({ status: 'refunded' })
-            .where(
-              and(
-                eq(bookings.id, input.bookingId),
-                inArray(bookings.status, ['paid', 'confirmed', 'cancelled']),
-              ),
-            )
-            .returning({ id: bookings.id });
-          if (!updated) throw new RefundError('booking_state_conflict');
+          if (!['paid', 'confirmed', 'cancelled'].includes(booking.status)) {
+            throw new RefundError('booking_state_conflict');
+          }
+          try {
+            await applyBookingStatusTransition(tx, {
+              id: input.bookingId,
+              to: 'refunded',
+              transitionTrackingEnabled: this.options.transitionTrackingEnabled,
+              context: {
+                source: 'refund',
+                actorType: 'staff',
+                actorId: input.confirmedBy,
+                ...input.correlation,
+                relatedEntityType: 'refund',
+                relatedEntityId: refund.id,
+              },
+            });
+          } catch (error) {
+            if (error instanceof Error && (error.name === 'IllegalTransitionError' || error.name === 'BookingNotFoundError')) {
+              throw new RefundError('booking_state_conflict');
+            }
+            throw error;
+          }
+          await this.failureHook?.('after_booking_update');
         }
         return { refund: toRefund(confirmed), bookingFullyRefunded: fully };
       });
@@ -236,6 +260,7 @@ export class PostgresRefundRepo implements RefundRepo {
     refundId: string;
     outcome: RefundApiOutcome;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     if (input.outcome.kind === 'succeeded') {
       // Success reuses confirm() wholesale — same evidence rules, same fully-refunded
@@ -246,6 +271,7 @@ export class PostgresRefundRepo implements RefundRepo {
         refundId: input.refundId,
         gatewayRef,
         confirmedBy: input.confirmedBy,
+        correlation: input.correlation,
       });
       if (!providerMessage) return outcome;
       const [withMessage] = await this.db

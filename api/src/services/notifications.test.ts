@@ -10,7 +10,10 @@ import {
   sendDepositReceived,
   sendCustomerQuote,
   routeText,
+  factRows,
+  roadRow,
 } from './notifications';
+import { shortPlace } from '../quote/shortPlace';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
@@ -278,6 +281,31 @@ describe('sendRefundConfirmation', () => {
     expect(m.text).toContain('CH-ABC12');
     expect(m.text).not.toContain('<');
   });
+
+  // The refund letter drops the facts list (facts:false), so it was the one customer email that
+  // never said which road was refunded. It names the local road alone — nothing else returns.
+  it('names the local road the customer paid for, in the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } }, email);
+    const m = email.sent[0];
+    expect(m.html).toMatch(/>Road<\/td>\s*<td[^>]*>Local road, no expressway · about 6h 14m<\/td>/);
+    expect(m.text).toContain('Road: Local road, no expressway · about 6h 14m');
+    // Only the road — the letter still carries no facts list.
+    expect(m.html).not.toContain('Travellers');
+    expect(m.subject).toBe('Your Ceylon Hop refund is processed — CH-ABC12');
+  });
+
+  it('adds nothing when the booking took the expressway', async () => {
+    const plain = new FakeEmailAdapter();
+    await sendRefundConfirmation(single, plain);
+    const fastest = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, input: { ...single.input, routeVariant: 'fastest' } }, fastest);
+    for (const m of [plain.sent[0], fastest.sent[0]]) {
+      expect(m.html).not.toContain('Local road');
+      expect(m.text).not.toContain('Road:');
+    }
+    expect(fastest.sent[0].html).toBe(plain.sent[0].html);
+  });
 });
 
 // ── New lifecycle emails ────────────────────────────────────────────────────
@@ -326,7 +354,7 @@ describe('sendPaymentIncomplete — abandoned checkout recovery', () => {
   // The watchdog may only count (and keep the one-shot claim for) a recovery email that
   // actually left — so the sender has to hand back what the adapter said happened.
   it("returns the adapter's outcome — delivered, and suppressed", async () => {
-    expect(await sendPaymentIncomplete(pending, new FakeEmailAdapter())).toEqual({ delivered: true });
+    expect(await sendPaymentIncomplete(pending, new FakeEmailAdapter())).toMatchObject({ delivered: true });
     const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const }) };
     expect(await sendPaymentIncomplete(pending, suppressed)).toEqual({ delivered: false, reason: 'suppressed_allowlist' });
   });
@@ -664,5 +692,87 @@ describe('confirmation email — the vehicle line does not invent a capacity', (
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(fiveUp, email);
     expect(email.sent[0].text).toContain('AC car');
+  });
+});
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): the road the
+// customer paid for, when it isn't the expressway. Absent (or 'fastest') means today's
+// behaviour — no Road row, no change to any existing email.
+describe('roadRow / factRows — the road the customer paid for (spec §4.3)', () => {
+  it('a single with the toll-free road and a known duration', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    expect(factRows(b)).toContainEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    // Right after the date row (index 0).
+    expect(factRows(b)[1]).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
+  it('a single with the toll-free road but no known duration omits the "about" clause', () => {
+    const b: Booking = { ...single, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway']);
+  });
+
+  // hoursMinutes (private to this file, exercised only through roadRow): under an hour reads as
+  // plain minutes — "0h 45m" is an odd way to state a 45-minute detour — a whole hour drops the
+  // "0m" remainder, and anything else states both units.
+  it('states a sub-hour duration as plain minutes, not "0h 45m"', () => {
+    const b: Booking = { ...single, durationMin: 45, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 45 min']);
+  });
+
+  it('states a whole-hour duration without a "0m" remainder', () => {
+    const b: Booking = { ...single, durationMin: 360, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h']);
+  });
+
+  it('states an hours-and-minutes duration as both units', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
+  it('a single with no road, or the fastest road, has no Road row', () => {
+    expect(roadRow(single)).toBeNull();
+    expect(factRows(single).some(([k]) => k === 'Road')).toBe(false);
+    const fastest: Booking = { ...single, input: { ...single.input, routeVariant: 'fastest' } };
+    expect(roadRow(fastest)).toBeNull();
+  });
+
+  it('a trip names the leg(s) that used the toll-free road, with shortPlace names', () => {
+    const stops = ['Colombo Airport (CMB)', 'Ella', 'Yala'];
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops,
+        nights: [0, 1, 0],
+        dates: ['2026-08-09'],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+        routeVariants: ['no_tolls', 'fastest'],
+      },
+    };
+    expect(roadRow(t)).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+    const rows = factRows(t);
+    const datesIdx = rows.findIndex(([k]) => k === 'Dates');
+    expect(rows[datesIdx + 1]).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+  });
+
+  it('a trip with no toll-free leg has no Road row', () => {
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport (CMB)', 'Ella'],
+        nights: [0],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+      },
+    };
+    expect(roadRow(t)).toBeNull();
+    expect(factRows(t).some(([k]) => k === 'Road')).toBe(false);
   });
 });

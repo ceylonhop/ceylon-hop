@@ -113,7 +113,13 @@ export function adminRoutes(deps: {
     if (!booking) return c.json({ error: 'not_found' }, 404);
     let updated: Booking;
     try {
-      updated = await bookings.setStatus(id, to, audit);
+      updated = await bookings.setStatus(id, to, audit, {
+        source: 'ops',
+        actorType: 'staff',
+        actorId: c.get('identity').email,
+        requestId: c.get('requestId'),
+        reason: audit?.reason ?? `booking_${to}`,
+      });
     } catch (err) {
       if (err instanceof IllegalTransitionError) {
         return c.json({ error: 'illegal_transition', from: err.from, to: err.to }, 409);
@@ -307,6 +313,7 @@ export function adminRoutes(deps: {
         refundId: c.req.param('refundId'),
         gatewayRef: parsed.data.gatewayRef,
         confirmedBy: c.get('identity').email,
+        correlation: { requestId: c.get('requestId') },
       });
       await afterRefundConfirmed(c.req.param('id'), before.status, outcome);
       return c.json(outcome, 200);
@@ -386,6 +393,7 @@ export function adminRoutes(deps: {
             ? { kind: 'succeeded', gatewayRef: result.gatewayRef!, providerMessage: result.providerMessage }
             : { kind: 'failed', providerMessage: result.providerMessage ?? 'refund declined by gateway' },
         confirmedBy: c.get('identity').email,
+        correlation: { requestId: c.get('requestId') },
       });
       if (result.outcome === 'failed') {
         return c.json({ error: 'refund_declined', refund: outcome.refund }, 409);
@@ -486,6 +494,7 @@ export function adminRoutes(deps: {
     // Only when the money still has to be taken. On the repair path above it is already recorded,
     // so create/settle must not run again — and neither may the ledger guard, whose succeeded row
     // is OUR OWN: it would turn a legitimate repair into a 409 and leave the booking stranded.
+    let transitionPaymentId = claimed?.id;
     if (!recorded) {
       // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
       // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
@@ -511,11 +520,20 @@ export function adminRoutes(deps: {
       // The actor goes in a COLUMN, not just the ops note below: that note is editable via
       // /flags by the `ops` role, which is denied payments:act (0043).
       await deps.payments.markSucceededManually(payment.id, { reference, settledBy: c.get('identity').email });
+      transitionPaymentId = payment.id;
     }
 
     let paid: Booking;
     try {
-      paid = await bookings.setStatus(booking.id, 'paid');
+      paid = await bookings.setStatus(booking.id, 'paid', undefined, {
+        source: 'ops',
+        actorType: 'staff',
+        actorId: c.get('identity').email,
+        requestId: c.get('requestId'),
+        reason: `manual_payment:${method}`,
+        relatedEntityType: 'payment',
+        relatedEntityId: transitionPaymentId,
+      });
     } catch (err) {
       if (!(err instanceof IllegalTransitionError)) throw err;
       // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
@@ -567,7 +585,9 @@ export function adminRoutes(deps: {
     });
     let staleSharedHolds = 0;
     try {
-      staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
+      staleSharedHolds = (await sweepStaleSharedHolds({
+        bookings, departures, now: new Date(), correlation,
+      })).swept;
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
     }

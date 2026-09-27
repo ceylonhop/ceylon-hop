@@ -100,6 +100,8 @@ export function rideListToOpsRow(
     // One row per VAN, not per customer — and the board never stores a phone number.
     customerPhone: null,
     route: `${list.fromPlace} → ${list.toPlace}`,
+    // The board sells seats in a van, not a road choice.
+    road: null,
     travelDate: list.date,
     travelTime: departureTime(list),
     pax: seats,

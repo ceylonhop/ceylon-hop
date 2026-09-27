@@ -1,6 +1,11 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter, SendOutcome } from '../adapters/email';
+import type {
+  CustomerCommunicationKind,
+  CustomerCommunicationTracking,
+  EmailAdapter,
+  SendOutcome,
+} from '../adapters/email';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -30,6 +35,30 @@ const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
 
+const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
+  confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
+  details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
+  booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
+  refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
+  no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
+  trip_reminder: { templateKey: 'trip-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  review_request: { templateKey: 'review-request', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_recovery: { templateKey: 'payment-recovery', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
+  deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
+};
+
+function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
+  return {
+    bookingId: booking.id,
+    kind,
+    ...trackingDefaults[kind],
+    templateVersion: '1',
+    trackingKey: `${booking.id}:${kind}`,
+  };
+}
+
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 }
@@ -51,6 +80,15 @@ function fmtDate(d: string): string {
 function dateTime(date?: string, time?: string): string {
   if (!date) return 'To confirm';
   return time ? `${fmtDate(date)} · ${time}` : fmtDate(date);
+}
+// "374 minutes" → "6h 14m" ("6h" when the remainder is 0; under an hour, "45 min" — "0h 45m"
+// reads oddly for a short local-road detour). Used only by roadRow — no existing formatter in
+// this file states a duration this way (the rest state a DATE, or a day count).
+function hoursMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 function travellers(adults: number, children: number): string {
   let s = `${adults} adult${adults > 1 ? 's' : ''}`;
@@ -134,6 +172,29 @@ function addOnsLabel(booking: Booking): string | null {
   return booking.mode === 'single' ? extrasLabel(booking.input.extras) : null;
 }
 
+// The road the customer paid for, when it isn't the expressway (spec §4.3). Null otherwise, so
+// every existing booking's emails are unchanged.
+export function roadRow(booking: Booking): [string, string] | null {
+  if (booking.mode === 'single' && booking.input.routeVariant === 'no_tolls') {
+    const t = booking.durationMin ? ` · about ${hoursMinutes(booking.durationMin)}` : '';
+    return ['Road', `Local road, no expressway${t}`];
+  }
+  if (booking.mode === 'trip' && booking.input.routeVariants?.includes('no_tolls')) {
+    const s = booking.input.stops;
+    const legs = booking.input.routeVariants
+      .map((v, i) => (v === 'no_tolls' && s[i + 1] ? `${shortPlace(s[i]!)} → ${shortPlace(s[i + 1]!)}` : null))
+      .filter(Boolean);
+    return legs.length ? ['Road', `Local road for ${legs.join(', ')}`] : null;
+  }
+  return null;
+}
+
+// roadRow as a plain-text line ("Road: …"), or nothing — for the text emails and team alerts.
+export function roadLines(booking: Booking): string[] {
+  const road = roadRow(booking);
+  return road ? [`${road[0]}: ${road[1]}`] : [];
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
 // team's paid email states the vehicle and head-count in exactly the customer's words.
 export function factRows(booking: Booking): [string, string][] {
@@ -147,6 +208,8 @@ export function factRows(booking: Booking): [string, string][] {
     ];
     if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
     rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    const road = roadRow(booking);
+    if (road) rows.push(road);
     const addOns = addOnsLabel(booking);
     if (addOns) rows.push(['Extras', addOns]);
     return rows;
@@ -167,9 +230,13 @@ export function factRows(booking: Booking): [string, string][] {
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
+  ];
+  const road = roadRow(booking);
+  if (road) rows.push(road);
+  rows.push(
     ['Vehicle', vehicleLabel(booking.input.vehicleType)],
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
-  ];
+  );
   if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
   const extras = addOnsLabel(booking);
   if (extras) rows.push(['Extras', extras]);
@@ -342,8 +409,8 @@ function routeRow(booking: Booking): string {
 }
 
 // The non-route facts as an editorial list with hairline dividers.
-function detailsRow(booking: Booking): string {
-  const rows = factRows(booking)
+function detailsRow(facts: [string, string][]): string {
+  const rows = facts
     .map(
       ([k, v]) =>
         `<tr>
@@ -360,7 +427,7 @@ function detailsRow(booking: Booking): string {
 // Composes the letter body: reference + status, the journey line, then (optionally) the
 // facts list. Keeps the same call shape the senders already use.
 function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean } = {}): string {
-  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(booking) : '');
+  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(factRows(booking)) : '');
 }
 
 // Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
@@ -536,6 +603,7 @@ export async function sendBookingConfirmation(
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking, links.manage, links.coverage),
     text: renderText(booking, links.manage, links.coverage),
+    tracking: emailTracking(booking, 'confirmation'),
   });
 }
 
@@ -567,6 +635,7 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
     subject: `Your Ceylon Hop booking was cancelled — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'cancellation'),
   });
 }
 
@@ -579,6 +648,7 @@ export async function sendRefundConfirmation(
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
   const amount = money(amountCents, currency);
+  const road = roadRow(booking);
   const html = page(
     brandHeader() +
       introBlock(
@@ -588,6 +658,8 @@ export async function sendRefundConfirmation(
         'We&rsquo;ve processed a refund for the booking below.',
       ) +
       ticketCard(booking, BADGE_REFUNDED, { facts: false }) +
+      // No facts list on a refund — but the road they paid for, when it was the local one.
+      (road ? detailsRow([road]) : '') +
       totalBlock('Amount refunded', amount) +
       infoBox(
         'When will I see it?',
@@ -596,6 +668,7 @@ export async function sendRefundConfirmation(
       footer(),
   );
   const text = textShell('refund processed', "We've processed a refund for your booking.", booking, [
+    ...roadLines(booking),
     `Amount refunded: ${amount}`,
     '',
     'Refunds usually land in 5-10 business days, depending on your bank or card provider.',
@@ -605,6 +678,7 @@ export async function sendRefundConfirmation(
     subject: `Your Ceylon Hop refund is processed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'refund'),
   });
 }
 
@@ -642,6 +716,7 @@ export async function sendTripReminder(
     subject: `Your Ceylon Hop trip is coming up — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'trip_reminder'),
   });
 }
 
@@ -674,6 +749,7 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
     subject: `How was your trip? — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'review_request'),
   });
 }
 
@@ -728,6 +804,7 @@ export async function sendPaymentIncomplete(
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_recovery'),
   });
 }
 
@@ -778,6 +855,7 @@ export async function sendPaymentFailed(
     subject: `Your payment didn’t go through — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_failed'),
   });
 }
 
@@ -821,6 +899,7 @@ export async function sendDepositReceived(
     subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'deposit_received'),
   });
 }
 
@@ -860,6 +939,7 @@ export async function sendBookingConfirmed(
     subject: `You’re confirmed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'booking_confirmed'),
   });
 }
 
@@ -891,6 +971,7 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
     subject: `Your Ceylon Hop pickup — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'no_show_notice'),
   });
 }
 
@@ -928,6 +1009,7 @@ export async function sendDetailsNeeded(
     subject: `We need a couple of details — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'details_needed'),
   });
 }
 

@@ -110,6 +110,23 @@ describe('POST /admin/bookings/:id/cancel — the team is told', () => {
 });
 
 describe('POST /admin/bookings/:id/cancel', () => {
+  it('records the staff cancellation provenance', async () => {
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter() });
+    const b = await book(app);
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        source: 'ops', actorType: 'staff', actorId: 'f@x.com',
+        reason: 'Customer called it off', requestId: expect.any(String),
+      }),
+    ]);
+  });
   // Cancelling moved to payments:reverse — founder only (owner, 2026-08-02). Calling a
   // customer's trip off is not something finance should be able to do alone.
   it('cancels the booking for a FOUNDER session, transitions it to cancelled, and emails the customer', async () => {
@@ -705,6 +722,24 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect(settlement.settledAt).toBeInstanceOf(Date);
     // Explicit owner decision (2026-07-30): no customer email on this action.
     expect(email.sent).toHaveLength(0);
+  });
+
+  it('records the staff member, method and payment behind a manual settlement', async () => {
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, payments, rideOps: new InMemoryRideOpsRepo() });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending', undefined, {
+      source: 'quote_conversion', actorType: 'staff', actorId: 'f@x.com', relatedEntityType: 'quote', relatedEntityId: 'q-test',
+    });
+
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const [payment] = await payments.findByBookingId(b.id);
+    expect((await bookings.listStatusEvents(b.id))[1]).toMatchObject({
+      fromStatus: 'payment_pending', toStatus: 'paid', source: 'ops', actorType: 'staff',
+      actorId: 'f@x.com', reason: 'manual_payment:cash', relatedEntityType: 'payment',
+      relatedEntityId: payment.id,
+    });
   });
 
   it('lands the operator reference on the payment, and succeeds without one', async () => {

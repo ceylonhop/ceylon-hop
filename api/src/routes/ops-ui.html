@@ -2060,7 +2060,11 @@ const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[
    and shipped no URL at all, so every reminder ops sent pointed at nothing. Without a link
    (a booking that can no longer be charged) the sentence about one is dropped rather than
    left as a promise nobody can keep. */
-const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.`
+/* The local road: a transfer says "(via the local road)"; a trip names its local legs (the row's
+   `road` is roadRow's "Local road for A → B"), since the rest of it takes the expressway. Plain
+   clipboard text for WhatsApp — not HTML, so nothing to escape. */
+const reminderRoad=t=>!t.road?'':t.mode==='trip'?` (${t.road.charAt(0).toLowerCase()}${t.road.slice(1)})`:' (via the local road)';
+const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route}${reminderRoad(t)} is held pending payment of ${money(t)}.`
   +(link?`\n\nYou can pay securely by card here: ${link}`:'')
   +`\n\nReply if you have any questions! 🌴`;
 /* Stages a booking can still legally be cancelled from — the booking machine allows
@@ -2149,7 +2153,7 @@ const adminApi={
 function rowToTicket(row){
   return {
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
-    mode:row.mode, route:row.route, date:row.travelDate, time:row.travelTime, guests:row.pax,
+    mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
     notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
@@ -2411,7 +2415,7 @@ function ticketRow(t,i){
   return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     ${tick}${lead}
     <div class="tk-main">
-      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}</div>
+      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
       <div class="tk-meta">${meta}</div>
     </div>
@@ -3290,7 +3294,7 @@ function lookupHeaderHtml(d){
     ${lookupKv('WhatsApp',memberPhoneHtml(c.whatsapp))}
     ${lookupKv('Country',esc(c.country||'—'))}
     ${billing?lookupKv('Billing',esc(billing)):''}
-    ${lookupKv('Route',esc(b.route))}
+    ${lookupKv('Route',esc(b.route))}${b.road?lookupKv('Road',esc(b.road)):''}
     ${lookupKv('When',esc(when))}
     ${lookupKv('Total',esc(money({amount:b.total,currency:cur})))}
     ${b.amountDueNow!=null&&b.amountDueNow!==b.total?lookupKv('Due now',esc(money({amount:b.amountDueNow,currency:cur}))):''}
@@ -3434,7 +3438,10 @@ function legsHtmlFor(d){
     let rows='';
     for(let i=0;i<stops.length-1;i++){
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
-      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}</span></div>`;
+      /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
+         leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
+      const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
+      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }
@@ -3843,6 +3850,10 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
+     public, so it is escaped like every other value here; pre-line keeps their line breaks. */
+  const custNote=d?.booking?.customerNotes;
+  const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -3853,9 +3864,11 @@ function renderSheet(){
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
+        ${noteRow}
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
+        ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}

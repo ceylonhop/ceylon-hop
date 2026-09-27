@@ -8,6 +8,21 @@ describe('FakeEmailAdapter', () => {
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].to).toBe('a@b.com');
   });
+
+  it('returns a deterministic provider message ID for a tracked logical email', async () => {
+    const message = {
+      to: 'a@b.com', subject: 'hi', html: '<p>hi</p>',
+      tracking: {
+        bookingId: '00000000-0000-4000-8000-000000000001',
+        kind: 'confirmation' as const,
+        templateKey: 'booking-confirmation', templateVersion: '1',
+        source: 'payment_webhook' as const, actorType: 'provider' as const,
+        trackingKey: '00000000-0000-4000-8000-000000000001:confirmation',
+      },
+    };
+    expect(await new FakeEmailAdapter().send(message))
+      .toEqual(await new FakeEmailAdapter().send(message));
+  });
 });
 
 describe('ResendEmailAdapter', () => {
@@ -25,7 +40,7 @@ describe('ResendEmailAdapter', () => {
       from: 'Ceylon Hop <hello@ceylonhop.com>',
       replyTo: 'ops@ceylonhop.com',
     });
-    await email.send({ to: 'guest@example.com', subject: 'Your trip', html: '<p>Booked</p>', text: 'Booked' });
+    const outcome = await email.send({ to: 'guest@example.com', subject: 'Your trip', html: '<p>Booked</p>', text: 'Booked' });
 
     expect(captured).not.toBeNull();
     expect(captured!.url).toBe('https://api.resend.com/emails');
@@ -39,6 +54,7 @@ describe('ResendEmailAdapter', () => {
     expect(body.html).toBe('<p>Booked</p>');
     expect(body.text).toBe('Booked');
     expect(body.reply_to).toBe('ops@ceylonhop.com');
+    expect(outcome).toEqual({ delivered: true, provider: 'resend', providerMessageId: 'email_123' });
   });
 
   it('throws when the provider returns an error (so failures surface)', async () => {
@@ -59,7 +75,7 @@ describe('ResendEmailAdapter', () => {
     let body: Record<string, unknown> = {};
     global.fetch = (async (_url: string, init: RequestInit) => {
       body = JSON.parse(init.body as string);
-      return new Response('{}', { status: 200 });
+      return new Response('{"id":"email_456"}', { status: 200 });
     }) as unknown as typeof fetch;
     const email = new ResendEmailAdapter('k', { from: 'x@y.com' });
     await email.send({ to: 'a@b.com', subject: 's', html: '<p>h</p>' });

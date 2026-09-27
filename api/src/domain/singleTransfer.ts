@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { digitsOf, DIAL_CODE, NATIONAL_NUMBER, INTERNATIONAL_NUMBER } from './phone';
+import { ROUTE_VARIANTS } from '../quote/routeChoice';
 
 // Every phone field is bounded (CH-T74DT, 2026-08-27: a website booking landed with a 26-digit
 // WhatsApp number and a 24-digit phone number under the name "dsad sdax" — the schema checked
@@ -94,6 +95,11 @@ export const SingleTransferInput = z.object({
   // still within its 7-day window, the booking is priced against that quote's locked card.
   quoteId: z.string().optional(),
   extras: z.array(z.enum(['sightseeing', 'luggage', 'front', 'flex', 'waiting', 'safari-wait'])).optional(),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): the road the
+  // customer asked to be priced on. Absent means the expressway, exactly as before this field
+  // existed — server-side (measureLeg) confirms it still exists at booking time; a fork that
+  // vanished refuses to charge rather than silently switching road.
+  routeVariant: z.enum(ROUTE_VARIANTS).optional(),
 });
 
 export type SingleTransferInput = z.infer<typeof SingleTransferInput>;

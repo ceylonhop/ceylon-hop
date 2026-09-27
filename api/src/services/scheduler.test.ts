@@ -189,6 +189,22 @@ describe('sweepStaleSharedHolds', () => {
     expect(await departures.holdSeats({ ...DEPARTURE, seats: 12 })).not.toBeNull();
   });
 
+  it('records the scheduler run behind a stale-hold cancellation', async () => {
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 1);
+
+    await sweepStaleSharedHolds({
+      bookings, departures, now: hoursFromNow(25), correlation: { requestId: 'req-job', runId: 'run-job' },
+    });
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        source: 'scheduled_job', actorType: 'scheduler', reason: 'stale_shared_hold',
+        requestId: 'req-job', runId: 'run-job',
+      }),
+    ]);
+  });
+
   it('sweeps a stale payment_pending hold too (checkout started, never paid)', async () => {
     const bookings = new InMemoryBookingRepo();
     const departures = new InMemoryDepartureRepo();

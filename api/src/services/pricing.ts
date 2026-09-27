@@ -2,6 +2,7 @@ import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
+import { measureLeg } from '../quote/routeChoice';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult, ChauffeurTravelDay } from '../quote/types';
 import type { DiscountRequest } from '../quote/discount';
@@ -44,6 +45,11 @@ export class InvalidPricingRequestError extends Error {
   }
 }
 
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): a booking NEVER
+// silently switches road — the customer saw (and was quoted) the local-road price, so a fork
+// that can't be confirmed at booking time refuses to charge rather than billing the expressway.
+export const ROUTE_CHOICE_UNAVAILABLE = 'route_choice_unavailable';
+
 // Run the engine, translating a genuine pricing hiccup into an unpriced outcome — that must
 // never take the booking flow down. A malformed request, by contrast, is rejected outright.
 function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD, discount?: DiscountRequest): PriceOutcome {
@@ -77,7 +83,7 @@ export async function priceSingle(
 ): Promise<PriceOutcome> {
   let distance = null;
   try {
-    distance = await maps.distance(input.from, input.to);
+    distance = await measureLeg(maps, input.from, input.to, input.routeVariant);
   } catch {
     distance = null;
   }
@@ -85,6 +91,10 @@ export async function priceSingle(
   // A crow-flies fallback is not a road distance; pricing on it silently mis-charges by tens of
   // percent. Refuse, and let ops price it by hand.
   if (distance.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${input.from} → ${input.to}`);
+  // A booking NEVER silently switches road (spec §4.2): the customer saw the local-road price.
+  if (input.routeVariant === 'no_tolls' && distance.variant !== 'no_tolls') {
+    throw new InvalidPricingRequestError(ROUTE_CHOICE_UNAVAILABLE);
+  }
   return runEngine(
     {
       product: 'private',
@@ -142,17 +152,25 @@ export async function priceTrip(
   discount?: DiscountRequest,
 ): Promise<PriceOutcome> {
   const legs: { from: string; to: string; distanceKm: number }[] = [];
+  const gaps = new Set(input.gaps ?? []);
   for (let i = 0; i < input.stops.length - 1; i++) {
+    // A gap is the traveller's own stretch: not a leg we drive, so never measured or charged.
+    // (Chauffeur trips can't carry gaps — the route refuses them.)
+    if (gaps.has(i)) continue;
     const from = input.stops[i];
     const to = input.stops[i + 1];
     let leg = null;
     try {
-      leg = await maps.distance(from, to);
+      leg = await measureLeg(maps, from, to, input.routeVariants?.[i]);
     } catch {
       leg = null;
     }
     if (!leg) return unpriced(`distance unresolved: ${from} → ${to}`);
     if (leg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
+    // A booking NEVER silently switches road (spec §4.2): the customer saw the local-road price.
+    if (input.routeVariants?.[i] === 'no_tolls' && leg.variant !== 'no_tolls') {
+      throw new InvalidPricingRequestError(ROUTE_CHOICE_UNAVAILABLE);
+    }
     legs.push({ from, to, distanceKm: leg.km });
   }
 
@@ -208,7 +226,7 @@ export function quoteTrip(input: TripInput): { currency: string; total: number }
     const days = Math.max(nights + 1, legs);
     return { currency: 'USD', total: days * CHAUFFEUR_DAY_CENTS };
   }
-  const legs = Math.max(0, input.stops.length - 1);
+  const legs = Math.max(0, input.stops.length - 1 - (input.gaps?.length ?? 0));
   const perLeg = LEG_BASE_CENTS + (input.vehicleType === 'van' ? LEG_VAN_SURCHARGE_CENTS : 0);
   return { currency: 'USD', total: legs * perLeg };
 }

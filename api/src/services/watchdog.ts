@@ -11,7 +11,7 @@ import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { Booking } from '../db/bookingRepo';
 import type { Payment } from '../db/paymentRepo';
 import type { SendBudget } from './sendBudget';
-import { sendPaymentIncomplete, manageUrl, routeText, travelWhenText } from './notifications';
+import { sendPaymentIncomplete, manageUrl, roadLines, routeText, travelWhenText } from './notifications';
 import { bookingDeepLink } from './opsNotifications';
 import { isTeamEmail } from './testBookings';
 import { personKey, sameTrip } from './duplicateBookings';
@@ -392,6 +392,7 @@ function stuckPendingBody(b: Booking, now: Date, gateway: Payment[] | null, reco
   return [
     `Booking ${b.reference} (${b.currency} ${(due / 100).toFixed(2)}) has been payment_pending for ${minutes} min (since ${b.createdAt}).`,
     `Route: ${routeText(b)} · travels ${travelWhenText(b)}`,
+    ...roadLines(b),
     `Channel: ${b.channel}`,
     ...gatewayLines,
     `Recovery email: ${recovery}`,

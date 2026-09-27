@@ -277,9 +277,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
       { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
-      { k: 'Travellers', v: String(v.travellers) },
-      { k: 'Vehicle', v: vehicleLabel(v.vehicleType) },
     ];
+    // The local road the customer chose (the view carries it only then), in the emails' words.
+    if (v.road) rows.push({ k: 'Road', v: v.road });
+    rows.push(
+      { k: 'Travellers', v: String(v.travellers) },
+      { k: 'Vehicle', v: vehicleLabel(v.vehicleType) }
+    );
     // The add-ons the customer chose, as the quote named them. Only when there are some.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){

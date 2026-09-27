@@ -328,7 +328,14 @@ export function quotePayRoutes(deps: {
     let booking = created;
     if (created.status === 'draft') {
       try {
-        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending', undefined, {
+          source: 'quote_conversion',
+          actorType: 'customer',
+          actorId: body.data.customer.email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
       } catch {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }

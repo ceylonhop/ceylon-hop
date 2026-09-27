@@ -3,6 +3,7 @@ import type { VerifiedPaymentEvent } from '../adapters/payments';
 import type { BookingRepo } from './bookingRepo';
 import type { Db } from './client';
 import { paymentEvents, payments, bookings } from './schema';
+import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
   PaymentSettlementError,
   recordedCaptureId,
@@ -11,6 +12,7 @@ import {
   type SettlementFailureHook,
 } from './paymentSettlementRepo';
 import type { Payment, PaymentStatus } from './paymentRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 type PaymentRow = typeof payments.$inferSelect;
 
@@ -34,9 +36,10 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
     private readonly db: Db,
     private readonly bookingRepo: BookingRepo,
     private readonly failureHook?: SettlementFailureHook,
+    private readonly options: { transitionTrackingEnabled?: boolean } = {},
   ) {}
 
-  async acceptVerifiedEvent(event: VerifiedPaymentEvent): Promise<PaymentSettlementOutcome> {
+  async acceptVerifiedEvent(event: VerifiedPaymentEvent, correlation?: TrackingCorrelation): Promise<PaymentSettlementOutcome> {
     const committed = await this.db.transaction(async (tx) => {
       const [payment] = await tx
         .select()
@@ -159,10 +162,19 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         };
       }
 
-      await tx
-        .update(bookings)
-        .set({ status: 'paid' })
-        .where(eq(bookings.id, booking.id));
+      await applyBookingStatusTransition(tx, {
+        id: booking.id,
+        to: 'paid',
+        transitionTrackingEnabled: this.options.transitionTrackingEnabled,
+        context: {
+          source: 'payment_webhook',
+          actorType: 'provider',
+          actorId: event.provider,
+          ...correlation,
+          relatedEntityType: 'payment',
+          relatedEntityId: payment.id,
+        },
+      });
       await this.failureHook?.('after_booking_update');
       return { kind: 'settled' as const, payment: succeeded, bookingId: booking.id };
     });

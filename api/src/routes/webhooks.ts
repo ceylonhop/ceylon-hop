@@ -10,7 +10,7 @@ import {
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
 import { wasDelivered } from '../adapters/email';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
 import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
@@ -71,6 +71,8 @@ function teamPaidBody(b: Booking): string {
   const c = b.input.customer;
   return [
     `${routeText(b)}`,
+    // The road that was sold, when it is the local one (route choice, spec §4.3).
+    ...roadLines(b),
     // When they travel — omitted until 2026-09-22, so the one message telling the team a seat
     // sold could not tell them it departs in two days. The timestamp the alert transport adds
     // at the foot of that email is the send time, which is when the money landed (CH-6HE3V).
@@ -185,7 +187,7 @@ export function webhookRoutes(deps: {
 
     let outcome;
     try {
-      outcome = await settlements.acceptVerifiedEvent(event);
+      outcome = await settlements.acceptVerifiedEvent(event, { requestId: c.get('requestId') });
     } catch (error) {
       if (!(error instanceof PaymentSettlementError)) throw error;
       c.set('checkoutEvent', {
@@ -389,7 +391,11 @@ export function webhookRoutes(deps: {
       // must neither fail nor delay this 200 (PayHere would retry, hit the idempotent return and
       // skip nothing — but a slow lookup still holds the notify open). A replay never gets here.
       if (deps.duplicates) {
-        void closeOlderDuplicates(paid, { ...deps.duplicates, alerts }).catch((err) => {
+        void closeOlderDuplicates(paid, {
+          ...deps.duplicates,
+          alerts,
+          correlation: { requestId: c.get('requestId') },
+        }).catch((err) => {
           console.error(`duplicate close after ${paid.reference} failed:`, err);
         });
       }

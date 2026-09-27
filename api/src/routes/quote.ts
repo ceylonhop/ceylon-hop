@@ -21,6 +21,7 @@ import {
   safeDigestEqual,
   type WebQuoteIntent,
 } from '../quote/webQuoteV2';
+import { cheaperRouteChoice, measureLeg, MAX_COMPARE_PER_BATCH, type RouteChoice, type RouteVariant } from '../quote/routeChoice';
 import { randomBytes } from 'node:crypto';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
@@ -62,7 +63,7 @@ const V2UpdateSchema = z.object({
   intent: WebQuoteIntentSchema,
 }).strict();
 
-export interface ResolvedLeg { from: string; to: string; distanceKm: number; durationMin: number }
+export interface ResolvedLeg { from: string; to: string; distanceKm: number; durationMin: number; routeVariant?: RouteVariant }
 export interface ResolvedIntent { request: QuoteRequest; estimated: boolean; legs: ResolvedLeg[] }
 
 export async function engineRequestFor(
@@ -71,7 +72,7 @@ export async function engineRequestFor(
 ): Promise<ResolvedIntent | null> {
   if (intent.product === 'private') {
     const resolved = await Promise.all(
-      intent.legs.map(async (leg) => ({ leg, distance: await maps.distance(leg.from, leg.to) })),
+      intent.legs.map(async (leg) => ({ leg, distance: await measureLeg(maps, leg.from, leg.to, leg.routeVariant) })),
     );
     if (resolved.some(({ distance }) => !distance)) return null;
     const estimated = resolved.some(({ distance }) => distance!.estimated === true);
@@ -80,6 +81,8 @@ export async function engineRequestFor(
       to: leg.to,
       distanceKm: distance!.km,
       durationMin: distance!.durationMin,
+      // Echoed ONLY when asked, so every existing caller's response is byte-identical.
+      ...(leg.routeVariant ? { routeVariant: distance!.variant } : {}),
     }));
     return {
       estimated,
@@ -124,6 +127,42 @@ export async function engineRequestFor(
       extras: intent.extras,
     },
   };
+}
+
+// `compareRoutes` is a request FLAG, not part of the intent: lifted off the body before
+// WebQuoteIntentSchema (.strict) parses it — exactly as promoCode is — so it never enters an
+// intent fingerprint or a locked quote. Allowed only on a one-leg private intent (ops GC-10).
+export function liftCompareRoutes(raw: unknown): { body: unknown; compare: boolean; bad: boolean } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { body: raw, compare: false, bad: false };
+  const { compareRoutes, ...rest } = raw as Record<string, unknown>;
+  if (compareRoutes === undefined) return { body: rest, compare: false, bad: false };
+  return { body: rest, compare: compareRoutes === true, bad: compareRoutes !== true };
+}
+
+export async function routeChoiceFor(
+  intent: WebQuoteIntent,
+  resolved: ResolvedIntent,
+  maps: MapsAdapter,
+  card: RateCard,
+): Promise<RouteChoice | null> {
+  if (intent.product !== 'private' || intent.legs.length !== 1 || resolved.request.product !== 'private') return null;
+  if (resolved.estimated) return null;
+  const req = resolved.request;
+  const leg = intent.legs[0]!;
+  const measured = resolved.legs[0]!;
+  // A leg already priced on the LOCAL road has no "fastest" to compare against here.
+  if (measured.routeVariant === 'no_tolls') return null;
+  return cheaperRouteChoice(
+    maps, leg.from, leg.to,
+    { km: measured.distanceKm, durationMin: measured.durationMin },
+    (km) => quote({ ...req, legs: [{ from: leg.from, to: leg.to, distanceKm: km }] }, card).totalCents,
+  );
+}
+
+// A locked web quote converts to a booking through quoteToBooking, which has no road field —
+// it would charge the local-road price and tell ops nothing. Estimate-only until that carries it.
+function carriesRoad(intent: WebQuoteIntent): boolean {
+  return intent.product === 'private' && intent.legs.some((l) => l.routeVariant !== undefined);
 }
 
 // D9: the founder-only "Ella premium +15%" zone annotation (meta.hotZone) is a margin-class
@@ -256,12 +295,15 @@ export function quoteRoutes(deps: {
     if (!deps.v2Enabled) return c.notFound();
     if (!deps.maps) return c.json({ error: 'not_available' }, 501);
     const raw = await c.req.json().catch(() => null);
-    // WebQuoteIntentSchema is .strict(), so a promo code is lifted off the body before the intent is
-    // parsed (spec 2026-09-14 §6.4). Every other unknown field is still refused.
+    // WebQuoteIntentSchema is .strict(), so a promo code (and the compareRoutes flag) are lifted
+    // off the body before the intent is parsed (spec 2026-09-14 §6.4). Every other unknown field
+    // is still refused.
+    const lifted = liftCompareRoutes(raw);
+    if (lifted.bad) return c.json({ error: 'invalid_request' }, 400);
     let rawPromo: unknown;
-    let intentBody: unknown = raw;
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      const { promoCode, ...rest } = raw as Record<string, unknown>;
+    let intentBody: unknown = lifted.body;
+    if (lifted.body && typeof lifted.body === 'object' && !Array.isArray(lifted.body)) {
+      const { promoCode, ...rest } = lifted.body as Record<string, unknown>;
       rawPromo = promoCode;
       intentBody = rest;
     }
@@ -269,11 +311,15 @@ export function quoteRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    if (lifted.compare && (parsed.data.product !== 'private' || parsed.data.legs.length !== 1)) {
+      return c.json({ error: 'invalid_request' }, 400);
+    }
     const resolved = await engineRequestFor(parsed.data, deps.maps);
     if (!resolved) return c.json({ error: 'quote_unpriced' }, 422);
     try {
       const card = await liveCard();
       const result = quote(resolved.request, card);
+      const routeChoice = lifted.compare ? await routeChoiceFor(parsed.data, resolved, deps.maps, card) : null;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
       let promoCode: Record<string, unknown> | undefined;
@@ -300,6 +346,7 @@ export function quoteRoutes(deps: {
         estimated: resolved.estimated,
         legs: resolved.legs,
         ...(promoCode ? { promoCode } : {}),
+        ...(routeChoice ? { routeChoice } : {}),
       }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
@@ -330,15 +377,27 @@ export function quoteRoutes(deps: {
     if (!envelope.success) return c.json({ error: 'invalid_request', details: envelope.error.flatten() }, 400);
     const maps = memoizeDistance(deps.maps);
     const card = await liveCard();
+    // Server-side cap on compared intents per batch (MAX_COMPARE_PER_BATCH): claimed after the
+    // catalogue check and before the first await, so slots go to catalogue intents in request
+    // order — never contended across concurrently-resolving intents.
+    let compareSlots = MAX_COMPARE_PER_BATCH;
     const results = await Promise.all(envelope.data.intents.map(async (raw) => {
       try {
-        const parsed = WebQuoteIntentSchema.safeParse(raw);
+        const lifted = liftCompareRoutes(raw);
+        if (lifted.bad) return null;
+        const parsed = WebQuoteIntentSchema.safeParse(lifted.body);
         if (!parsed.success || parsed.data.product !== 'private') return null;
+        // No client sends a road in a batch (plan.js sends only compareRoutes), and each road-carrying
+        // leg would bill its own comparison outside MAX_COMPARE_PER_BATCH — so a road is refused here.
+        if (carriesRoad(parsed.data)) return null;
+        if (lifted.compare && parsed.data.legs.length !== 1) return null;
         if (!parsed.data.legs.every((l) => isCatalogTown(l.from) && isCatalogTown(l.to))) return null;
+        const compare = lifted.compare && compareSlots-- > 0;
         const resolved = await engineRequestFor(parsed.data, maps);
         if (!resolved || resolved.estimated) return null;
         const result = quote(resolved.request, card);
-        return { totalCents: result.totalCents, currency: result.currency };
+        const routeChoice = compare ? await routeChoiceFor(parsed.data, resolved, maps, card) : null;
+        return { totalCents: result.totalCents, currency: result.currency, ...(routeChoice ? { routeChoice } : {}) };
       } catch {
         return null;
       }
@@ -353,6 +412,8 @@ export function quoteRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    // A locked quote converts to a booking through quoteToBooking, which has no road field.
+    if (carriesRoad(parsed.data)) return c.json({ error: 'route_choice_not_supported' }, 400);
     const resolved = await engineRequestFor(parsed.data, deps.maps);
     // A LOCK is a commitment, so it still refuses an estimated distance — only /estimate may show one.
     if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
@@ -417,6 +478,8 @@ export function quoteRoutes(deps: {
     if (existing.revision !== parsed.data.revision) {
       return c.json({ error: 'stale_revision' }, 409);
     }
+    // A locked quote converts to a booking through quoteToBooking, which has no road field.
+    if (carriesRoad(parsed.data.intent)) return c.json({ error: 'route_choice_not_supported' }, 400);
     const resolved = await engineRequestFor(parsed.data.intent, deps.maps);
     // An UPDATE re-prices a locked quote, so it stays a commitment too — refuse an estimated distance.
     if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
