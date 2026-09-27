@@ -5,6 +5,8 @@ import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
+import type { QuoteRepo } from './quoteRepo';
+import { chosenAddOns } from '../quote/paySelection';
 import {
   PROMO_HOLD_MS,
   PromoCodeRefusedError,
@@ -110,6 +112,10 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
   promoCodeId?: string | null;
   promoHoldUntil?: string | null; // ISO
+  // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read from the booking's quote
+  // (quotes.converted_booking_id) on every load, never stored on the booking. Present only when
+  // there is at least one, so every surface shows them only when they were chosen.
+  addOns?: string[];
 };
 
 /** Who reversed a booking and why. Written only on a cancellation. */
@@ -276,6 +282,21 @@ export class InMemoryBookingRepo implements BookingRepo {
     this.payments = payments;
   }
 
+  private quotes?: Pick<QuoteRepo, 'findByConvertedBookingId'>;
+
+  /** Lets a booking name its quote's add-ons exactly as the Postgres repo's load does. */
+  attachQuotes(quotes: Pick<QuoteRepo, 'findByConvertedBookingId'>): void {
+    this.quotes = quotes;
+  }
+
+  // The stored booking as a read returns it: plus `addOns` when its quote charged any. A booking
+  // with none comes back as the very object stored, exactly as before.
+  private async present(b: Booking): Promise<Booking> {
+    const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
+    const addOns = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    return addOns.length ? { ...b, addOns } : b;
+  }
+
   private async withPromoLock<T>(codeId: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.promoLocks.get(codeId) ?? Promise.resolve();
     let release: () => void = () => {};
@@ -310,7 +331,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       const existingId = this.byKey.get(key);
       // `byId` is append-only (no eviction anywhere in this repo), so a live byKey entry
       // always resolves to a row — the non-null assertion holds.
-      if (existingId) return this.byId.get(existingId)!;
+      if (existingId) return this.present(this.byId.get(existingId)!);
     }
     const promo = opts?.promo;
     if (!promo) return this.insert(b, key);
@@ -318,7 +339,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       // Re-check under the lock: a concurrent retry with the same key may have inserted meanwhile.
       if (key) {
         const existingId = this.byKey.get(key);
-        if (existingId) return this.byId.get(existingId)!;
+        if (existingId) return this.present(this.byId.get(existingId)!);
       }
       const unavailable = promoCodeAvailability(promo.code, promo.now);
       if (unavailable) throw new PromoCodeRefusedError(unavailable);
@@ -352,24 +373,27 @@ export class InMemoryBookingRepo implements BookingRepo {
   }
 
   async get(id: string): Promise<Booking | null> {
-    return this.byId.get(id) ?? null;
+    const b = this.byId.get(id);
+    return b ? this.present(b) : null;
   }
 
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
     const id = this.byKey.get(key);
-    return id ? (this.byId.get(id) ?? null) : null;
+    const b = id ? this.byId.get(id) : undefined;
+    return b ? this.present(b) : null;
   }
 
   async findByReference(reference: string): Promise<Booking | null> {
-    for (const b of this.byId.values()) if (b.reference === reference) return b;
+    for (const b of this.byId.values()) if (b.reference === reference) return this.present(b);
     return null;
   }
 
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
-    return [...this.byId.values()]
+    const rows = [...this.byId.values()]
       .filter((b) => personKeyFor(b.input.customer.email) === personKey)
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, limit);
+    return Promise.all(rows.map((b) => this.present(b)));
   }
 
   async setStatus(
@@ -411,7 +435,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       });
     }
     this.byId.set(id, updated);
-    return updated;
+    return this.present(updated);
   }
 
   async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
@@ -438,7 +462,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
-    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return current;
+    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
     const updated: Booking = {
       ...current,
       input: { ...current.input, customer: { ...details.customer } },
@@ -451,14 +475,14 @@ export class InMemoryBookingRepo implements BookingRepo {
       termsAcceptedAt: details.termsAcceptedAt ? details.termsAcceptedAt.toISOString() : current.termsAcceptedAt,
     } as Booking;
     this.byId.set(id, updated);
-    return updated;
+    return this.present(updated);
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
     const all = [...this.byId.values()];
-    if (!filter?.status) return all;
-    const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
-    return all.filter((b) => statuses.includes(b.status));
+    const statuses = !filter?.status ? null : Array.isArray(filter.status) ? filter.status : [filter.status];
+    const rows = statuses ? all.filter((b) => statuses.includes(b.status)) : all;
+    return Promise.all(rows.map((b) => this.present(b)));
   }
 
   async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {

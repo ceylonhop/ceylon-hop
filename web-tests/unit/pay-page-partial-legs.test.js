@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Extract ticketBody from pay.html itself (house loadFn pattern), injecting esc.
-function loadFn(signature) {
+function loadFn(signature, deps = {}) {
   const html = readFileSync(path.resolve(__dirname, '../../pay.html'), 'utf8');
   const re = new RegExp('function ' + signature.replace(/[()]/g, '\\$&') + '\\s*\\{[\\s\\S]*?\\n  \\}');
   const m = html.match(re);
@@ -14,9 +14,10 @@ function loadFn(signature) {
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // eslint-disable-next-line no-new-func
-  return new Function('esc', 'return (' + m[0] + ')')(esc);
+  return new Function('esc', ...Object.keys(deps), 'return (' + m[0] + ')')(esc, ...Object.values(deps));
 }
-const ticketBody = loadFn('ticketBody(c)');
+// ticketBody appends the chosen add-ons (addOnsHtml); these partial-link cases carry none.
+const ticketBody = loadFn('ticketBody(c)', { addOnsHtml: loadFn('addOnsHtml(addOns)') });
 
 const legs = (covered) => ({
   facts: [],

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import {
   customers,
@@ -9,8 +9,10 @@ import {
   bookingLegs,
   payments,
   promoCodes,
+  quotes,
   bookingStatusEvents,
 } from './schema';
+import { chosenAddOns, type PaySelection } from '../quote/paySelection';
 import {
   type BookingRepo,
   type NewBooking,
@@ -306,20 +308,29 @@ export class PostgresBookingRepo implements BookingRepo {
     const idsFor = (mode: string) => rows.filter((r) => r.mode === mode).map((r) => r.id);
     const tripIds = idsFor('trip'); const sharedIds = idsFor('shared');
     const singleIds = rows.filter((r) => r.mode !== 'trip' && r.mode !== 'shared').map((r) => r.id);
-    const [trips, shareds, transfers] = await Promise.all([
+    const [trips, shareds, transfers, linkedQuotes] = await Promise.all([
       tripIds.length ? this.db.select().from(tripRequests).where(inArray(tripRequests.bookingId, tripIds)) : [],
       sharedIds.length ? this.db.select().from(sharedRequests).where(inArray(sharedRequests.bookingId, sharedIds)) : [],
       singleIds.length ? this.db.select().from(transferRequests).where(inArray(transferRequests.bookingId, singleIds)) : [],
+      // The add-ons live on the booking's quote as priced lines (same filter as
+      // PostgresQuoteRepo.findByConvertedBookingId). Parallel with the rest: no extra round-trip.
+      this.db
+        .select({ bookingId: quotes.convertedBookingId, request: quotes.requestJson, result: quotes.resultJson, selection: quotes.payLinkSelection })
+        .from(quotes)
+        .where(and(inArray(quotes.convertedBookingId, rows.map((r) => r.id)), isNull(quotes.deletedAt))),
     ]);
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
+    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PaySelection | null)]));
     return rows.map((row) => {
       const cust = custById.get(row.customerId);
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
       const req = row.mode === 'trip' ? tripBy.get(row.id) : row.mode === 'shared' ? sharedBy.get(row.id) : transferBy.get(row.id);
       if (!req) throw new Error(`booking ${row.id}: ${row.mode} request row missing`);
-      return build(row, cust, req);
+      const booking = build(row, cust, req);
+      const addOns = addOnsBy.get(row.id);
+      return addOns?.length ? { ...booking, addOns } : booking;
     });
   }
 
