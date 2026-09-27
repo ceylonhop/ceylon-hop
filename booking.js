@@ -2062,7 +2062,12 @@ function render(){
     // exactly to Total, and no raw pre-finishing number is ever shown here.
     let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
     const baseAmt = calcTotal() - otherRows;
-    setNum(document.getElementById('sum-adamt'), money(baseAmt));
+    // Not while a re-estimate is in flight, though. Total then reads PRICING_LABEL and calcTotal()
+    // HOLDS the figure priced before the change — without the extra just ticked — so subtracting
+    // that extra made the car line count $156 → $146 and back up once the estimate landed: the car
+    // looked cheaper because the customer had added something. It keeps the figure it last showed;
+    // the rows sum to Total again the moment the new one lands.
+    if(!repricing()) setNum(document.getElementById('sum-adamt'), money(baseAmt));
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travellers';
     setNum(document.getElementById('sum-chamt'), `${state.ad+state.ch} · included`);
