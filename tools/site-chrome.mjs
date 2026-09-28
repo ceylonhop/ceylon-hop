@@ -110,10 +110,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 //     change — they fire where permitted and stay silent where not.
 //   - analytics_storage is untouched: granted everywhere, as before.
 // A later consent banner would be what wins the European third back.
+//
+// 2026-09-27 — that banner (owner decision): consent.js asks visitors on a European clock,
+// and the third line below REPLAYS their answer on every later page. It has to live here,
+// ahead of the GTM loader: an update pushed after GTM's 'gtm.js' event lands too late for
+// that page's own tags. Only the three ad_* keys move; analytics_storage stays granted.
+// Why it was worth building: Clarity records EEA/UK/CH visitors with no ad consent
+// cookielessly, one "user" per page view (UK 162 sessions = 162 users, 25–27 Sep 2026).
 export const analyticsSnippet = `<script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
 
@@ -184,7 +192,7 @@ export function renderFooter(p) {
   </div>
   <div class="wrap foot-bottom">
     <span>© ${YEAR} Ceylon Hop. All rights reserved.</span>
-    <span><a href="${p}terms.html">Terms</a> · <a href="${p}privacy.html">Privacy</a> · <a href="${p}terms.html#refunds">Cancellation policy</a> · <a href="${p}credits.html">Photo credits</a></span>
+    <span><a href="${p}terms.html">Terms</a> · <a href="${p}privacy.html">Privacy</a> · <a href="${p}terms.html#refunds">Cancellation policy</a> · <a href="${p}credits.html">Photo credits</a> · <a href="${p}privacy.html#cookies" data-consent-open>Cookie choices</a></span>
   </div>
 </footer>`;
 }
