@@ -1887,7 +1887,11 @@ function heldPromo(){
   const est = (state.pendingReprice && state.pendingReprice.engineRaise) ? engineEst
     : (currentEngineEst() || (repricing() ? engineEst : null));
   const p = est && est.promo;
-  return (p && !p.error && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
+  // p.code === promoCode: a held estimate can go stale for the code it priced (a later re-check
+  // never lands) while the customer removes it and applies a DIFFERENT one — without this check
+  // the old code's discount could show under the new code's name while its own answer is still
+  // in flight (spec §4.1: the discount comes only from the same estimate as the full price).
+  return (p && !p.error && p.code === promoCode && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
 }
 // What the customer pays (spec §4.3). calcTotal() stays the FULL price on purpose: the summary's
 // vehicle row is calcTotal() − extras, and a discount folded in there would shrink the car's own

@@ -287,3 +287,25 @@ describe('the price-change notice with a code applied', () => {
     expect(ev(w, 'window.__tracked.new_value')).toBe(108);
   });
 });
+
+// Final-review fix 4: heldPromo() must never show a discount held under a DIFFERENT code than the
+// one currently applied. Scenario: code A is accepted, a later re-check for A never lands (stays
+// stale), the customer removes A and applies B while that re-check is still in flight — the stale
+// answer on engineEst is still A's, and must not be shown as B's discount.
+describe('heldPromo() only answers for the code currently applied', () => {
+  it('is null when the only promo block on the held estimate is for a different code', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'CODEA', { code: 'CODEA', discountCents: 900, totalBeforeDiscountCents: 9000, totalCents: 8100 });
+    // The trip changes; a re-check for CODEA never lands, so engineEst is now stale (a different
+    // sig than currentIntentSig()) but still carries CODEA's accepted block.
+    w.eval('state.ad = 2;');
+    expect(ev(w, 'currentEngineEst()')).toBe(null);
+    // Remove: dropPromo() only clears the block on currentEngineEst(), which is null here, so the
+    // stale CODEA block survives on engineEst untouched.
+    w.eval('dropPromo();');
+    expect(ev(w, 'engineEst.promo && engineEst.promo.code')).toBe('CODEA');
+    // Apply CODEB, with its own check still in flight.
+    w.eval("promoCode = 'CODEB'; promoConfirmed = false; estimatePending = true;");
+    expect(ev(w, 'heldPromo()')).toBe(null);
+  });
+});
