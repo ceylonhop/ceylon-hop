@@ -198,12 +198,12 @@ describe('the answer to a code', () => {
     const w = loadBooking(SINGLE);
     const codes = ['promo_code_invalid', 'promo_code_not_started', 'promo_code_expired', 'promo_code_used_up', 'promo_code_not_eligible', 'promo_unchecked'];
     expect(ev(w, `${JSON.stringify(codes)}.map(promoMessage)`)).toEqual([
-      "That code isn't valid.",
-      "That code isn't active yet.",
+      "That code isn’t valid.",
+      "That code isn’t active yet.",
       'That code has expired.',
       'That code has been fully used.',
-      "That code can't be used on this booking.",
-      "We couldn't check your code just now, please try again.",
+      "That code can’t be used on this booking.",
+      "We couldn’t check your code just now, please try again.",
     ]);
   });
 });

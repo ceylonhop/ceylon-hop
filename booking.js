@@ -1892,12 +1892,12 @@ function payableTotal(){
 }
 
 const PROMO_MESSAGES = {
-  promo_code_invalid: "That code isn't valid.",
-  promo_code_not_started: "That code isn't active yet.",
+  promo_code_invalid: "That code isn’t valid.",
+  promo_code_not_started: "That code isn’t active yet.",
   promo_code_expired: 'That code has expired.',
   promo_code_used_up: 'That code has been fully used.',
-  promo_code_not_eligible: "That code can't be used on this booking.",
-  promo_unchecked: "We couldn't check your code just now, please try again.",
+  promo_code_not_eligible: "That code can’t be used on this booking.",
+  promo_unchecked: "We couldn’t check your code just now, please try again.",
 };
 function promoMessage(err){ return PROMO_MESSAGES[err] || PROMO_MESSAGES.promo_code_invalid; }
 
