@@ -145,3 +145,33 @@ test('at 375px the applied chip and the summary row fit without sideways scrolli
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('a code refused when the booking is made takes no payment and shows the full price', async ({ page }) => {
+  await openPayment(page, { bookingTotal: FULL });
+  // The first booking attempt meets a code whose last use just went; later ones fall through to
+  // gotoBooking's own stub (Playwright runs the newest matching route first).
+  let refused = false;
+  await page.route('**/bookings/single', (r) => {
+    if (refused) return r.fallback();
+    refused = true;
+    return r.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"promo_code_used_up"}' });
+  });
+  await applyCode(page, 'SAVE10');
+  await expect(page.locator('#sum-total')).toHaveText('$90');
+
+  await page.click('#pay-btn');
+  await expect(page.locator('#ph-msg')).toHaveText('That code has been fully used. Your total is now the full price.');
+  await expect(page.locator('#ph-retry')).toBeHidden();
+  await page.click('#ph-close');
+
+  await expect(page.locator('#promo-msg')).toHaveText('That code has been fully used.');
+  await expect(page.locator('#promo-input')).toHaveValue('SAVE10');
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+  await expect(page.locator('#pay-due .amt')).toHaveText('$100');
+
+  const bodyP = bookingBody(page);
+  await page.click('#pay-btn');
+  const body = await bodyP;
+  expect(body).not.toHaveProperty('promoCode');
+  expect(body.quotedTotal).toBe(FULL);
+});

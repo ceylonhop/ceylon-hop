@@ -2662,6 +2662,16 @@ async function runPayment(){
       render();
       return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
     }
+    // A code the preview accepted can still be refused here — its last use went, or it expired,
+    // in between (spec §4.6). Same shape as the road refusal above: forget it, show the full
+    // price, and no one-click retry, so the customer presses Pay again at the price they now see.
+    if(e && e.status===422 && e.body && /^promo_code_/.test(e.body.error||'')){
+      promoApplyError=e.body.error;
+      promoOpen=true;
+      dropPromo();
+      render();
+      return phShowEnd('error', promoMessage(e.body.error)+' Your total is now the full price.', {retry:false});
+    }
     return phShowEnd(...bookingCreateFailure(e));
   }
   clearTimeout(slow);
