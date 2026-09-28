@@ -288,6 +288,30 @@ describe('the price-change notice with a code applied', () => {
   });
 });
 
+// Final-review fix 3: heldPromo()'s untested branches (the review flagged these as unexercised,
+// not as bugs). If either of these fails, that's a real regression to investigate, not a test to
+// adjust — heldPromo()'s own comment says it mirrors calcTotal()'s hold order exactly.
+describe('heldPromo() holds through a parked raise or an in-flight re-price', () => {
+  it('a parked engine raise keeps payableTotal() at the OLD discounted figure', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK); // payable $81
+    w.eval(`
+      state.bags = state.bags + 1;
+      handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: { code: 'SAVE10', discountCents: 1200, totalBeforeDiscountCents: 12000, totalCents: 10800 } })}, currentIntentSig());
+    `);
+    expect(ev(w, 'state.pendingReprice && state.pendingReprice.engineRaise')).toBe(true);
+    expect(ev(w, 'payableTotal()')).toBe(81);
+  });
+
+  it('an in-flight re-price for an older trip keeps payableTotal() at the OLD discounted figure', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK); // payable $81, priced for ad=1
+    w.eval('state.ad = 2; estimatePending = true;'); // the itinerary moved on; a new estimate is in flight
+    expect(ev(w, 'currentEngineEst()')).toBe(null);
+    expect(ev(w, 'payableTotal()')).toBe(81);
+  });
+});
+
 // Final-review fix 4: heldPromo() must never show a discount held under a DIFFERENT code than the
 // one currently applied. Scenario: code A is accepted, a later re-check for A never lands (stays
 // stale), the customer removes A and applies B while that re-check is still in flight — the stale
