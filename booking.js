@@ -1230,7 +1230,14 @@ function renderRepriceNote(){
   }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
-    const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
+    // With a code applied, the customer never saw the FULL fromCents/toCents on screen — they saw
+    // payableTotal() and, once they accept, the parked estimate's own (possibly re-priced) promo
+    // total. Quoting the full figures here would show a jump they never agreed to (spec §4.4).
+    const held=heldPromo();
+    const newPromo = p.est && p.est.promoCode;
+    const newAccepted = held && newPromo && !newPromo.error && typeof newPromo.totalCents === 'number';
+    const fromAmt = money(held ? payableTotal() : p.fromCents/100);
+    const toAmt = money(newAccepted ? newPromo.totalCents/100 : p.toCents/100);
     eEl.innerHTML =
       '<b>Your price has been updated.</b> '+
       'Based on your latest details, your total is now '+toAmt+' (it was '+fromAmt+').'+
@@ -1257,13 +1264,13 @@ window.acceptReprice=function(){
   if(p.engineRaise){
     adoptEngineEstimate(p.est, p.sig);
     state.pendingReprice=null;
-    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:calcTotal()});
+    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:payableTotal()});
     render(); checkWhere();
     return;
   }
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
-  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:payableTotal()});
   render(); checkWhere();
 };
 window.dismissReprice=function(){

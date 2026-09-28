@@ -32,6 +32,11 @@ function loadBooking(query, { promo = true } = {}) {
   const dom = new JSDOM(HTML, { url, runScripts: 'dangerously', pretendToBeVisual: true });
   const { window } = dom;
   window.scrollTo = () => {};
+  // render() -> renderRepriceNote() -> phoneLayout() reads matchMedia; only the reprice-note tests
+  // below reach render(), but jsdom has no matchMedia at all (mirrors the reviewer's probe.mjs).
+  window.matchMedia = () => ({
+    matches: false, addEventListener(){}, removeEventListener(){}, addListener(){}, removeListener(){},
+  });
   if (promo) window.CH_PROMO_FIELD = true;
   [...DEPS, BOOKING_SRC].forEach((src) => {
     const el = window.document.createElement('script');
@@ -226,5 +231,59 @@ describe('the code on the booking', () => {
     });
     expect(body).not.toHaveProperty('promoCode');
     expect(body.quotedTotal).toBe(9000);
+  });
+});
+
+// Final-review fix 1: the price-change notice quotes what the customer PAYS, not the full price
+// (spec §4.4). Scenario mirrors the reviewer's probe.mjs: SAVE10 accepted on a $90 estimate
+// (payable $81), then a parked raise to $120 whose OWN promo block is accepted at $108 — the
+// notice must show $108/$81, never $120/$90 (the FULL fromCents/toCents).
+describe('the price-change notice with a code applied', () => {
+  const RAISED_OK = { code: 'SAVE10', discountCents: 1200, totalBeforeDiscountCents: 12000, totalCents: 10800 };
+
+  it('quotes the payable "was" and the accepted-code "now", not the full fromCents/toCents', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK); // FULL 9000 (=$90), OK totalCents 8100 (=$81)
+    // A bags change doesn't count as the customer driving the raise (customerDroveTheRaise only
+    // looks at product/vehicle/extras), so a higher engine total is parked rather than adopted.
+    w.eval(`
+      state.bags = state.bags + 1;
+      handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
+    `);
+    const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
+    expect(note).toContain('$108');
+    expect(note).toContain('$81');
+    expect(note).not.toContain('$120');
+    expect(note).not.toContain('$90');
+    expect(note).toContain('Got it — use $108');
+  });
+
+  it('leaves a no-code parked raise unchanged: still the full fromCents/toCents', () => {
+    const w = loadBooking(SINGLE);
+    w.eval(`adoptEngineEstimate(${JSON.stringify(FULL)}, currentIntentSig())`);
+    w.eval(`
+      state.bags = state.bags + 1;
+      handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000 })}, currentIntentSig());
+    `);
+    const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
+    expect(note).toContain('$120');
+    expect(note).toContain('$90');
+    expect(note).toContain('Got it — use $120');
+  });
+
+  it('reprice_accepted analytics reports payableTotal(), not calcTotal()', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    w.eval(`
+      state.bags = state.bags + 1;
+      handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
+    `);
+    w.eval(`
+      window.__tracked = null;
+      window.chTrack = function(name, props){ window.__tracked = props; };
+      acceptReprice();
+    `);
+    expect(ev(w, 'payableTotal()')).toBe(108);
+    expect(ev(w, 'window.__tracked.new_value')).toBe(108);
   });
 });
