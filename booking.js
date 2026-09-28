@@ -1512,6 +1512,12 @@ let promoConfirmed = false;
 // whether the customer has opened the field at all.
 let promoApplyError = null;
 let promoOpen = false;
+// A code refused when the BOOKING was made this visit (normalised code → the error code), kept
+// for the rest of the visit so re-applying it shows the same refusal without asking the server
+// again. ch-pricing.js caches estimate answers by intent in sessionStorage, so a fresh preview for
+// the same code would just replay the OLD "accepted" answer — the server can't tell us anything
+// new until the code's hold or session state actually changes, which needs a fresh visit.
+let promoRefusedAtBooking = {};
 
 // The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
 // distance (Global Constraints: the intent carries names, distances come back on the response) —
@@ -2677,6 +2683,9 @@ async function runPayment(){
     // in between (spec §4.6). Same shape as the road refusal above: forget it, show the full
     // price, and no one-click retry, so the customer presses Pay again at the price they now see.
     if(e && e.status===422 && e.body && /^promo_code_/.test(e.body.error||'')){
+      // Captured before dropPromo() clears promoCode, so the SAME code stays refused for the
+      // rest of the visit (Apply won't ask the server again — see promoRefusedAtBooking above).
+      if(promoCode) promoRefusedAtBooking[promoCode] = e.body.error;
       promoApplyError=e.body.error;
       promoOpen=true;
       dropPromo();
@@ -2924,6 +2933,15 @@ document.getElementById('ph-close').addEventListener('click', ()=>document.getEl
   function apply(){
     const typed=(input.value||'').trim().toUpperCase();
     if(!typed) return;
+    if(promoRefusedAtBooking[typed]){
+      // Refused at booking time this visit already — re-asking would only replay the pricing
+      // module's cached "accepted" answer for it (see promoRefusedAtBooking above), so show the
+      // same message again without sending anything.
+      promoApplyError=promoRefusedAtBooking[typed];
+      promoOpen=true;
+      render();
+      return;
+    }
     promoApplyError=null;
     promoCode=typed;
     promoConfirmed=false;

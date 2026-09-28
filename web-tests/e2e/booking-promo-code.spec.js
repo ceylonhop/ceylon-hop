@@ -175,3 +175,37 @@ test('a code refused when the booking is made takes no payment and shows the ful
   expect(body).not.toHaveProperty('promoCode');
   expect(body.quotedTotal).toBe(FULL);
 });
+
+test('a code refused at booking time stays refused for the rest of the visit', async ({ page }) => {
+  await openPayment(page, { bookingTotal: FULL });
+  let refused = false;
+  await page.route('**/bookings/single', (r) => {
+    if (refused) return r.fallback();
+    refused = true;
+    return r.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"promo_code_used_up"}' });
+  });
+  await applyCode(page, 'SAVE10');
+  await page.click('#pay-btn');
+  await expect(page.locator('#ph-msg')).toHaveText('That code has been fully used. Your total is now the full price.');
+  await page.click('#ph-close');
+  await expect(page.locator('#promo-msg')).toHaveText('That code has been fully used.');
+  await expect(page.locator('#promo-input')).toHaveValue('SAVE10');
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+
+  // ch-pricing.js caches estimate answers by intent in sessionStorage, so re-asking the server
+  // about a code it already refused this visit would just replay the OLD "accepted" answer —
+  // the page must remember the refusal itself and never ask again.
+  const estimateBodies = [];
+  page.on('request', (r) => { if (r.url().includes('/quote/v2/estimate')) estimateBodies.push(JSON.parse(r.postData() || '{}')); });
+
+  await page.click('#promo-apply'); // the input still holds the typed "SAVE10"
+  await expect(page.locator('#promo-msg')).toHaveText('That code has been fully used.');
+  await expect(page.locator('#sum-total')).toHaveText('$100');
+  expect(estimateBodies.some((b) => b.promoCode)).toBe(false);
+
+  const bodyP = bookingBody(page);
+  await page.click('#pay-btn');
+  const body = await bodyP;
+  expect(body).not.toHaveProperty('promoCode');
+  expect(body.quotedTotal).toBe(FULL);
+});
