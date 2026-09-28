@@ -136,3 +136,95 @@ describe('payableTotal', () => {
     expect(body.quotedTotal).toBe(8100);
   });
 });
+
+describe('the answer to a code', () => {
+  it('confirms a code the estimate accepted', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    expect(ev(w, 'promoConfirmed')).toBe(true);
+    expect(ev(w, 'promoUiState()')).toBe('applied');
+    expect(ev(w, 'sendablePromoCode()')).toBe('SAVE10');
+  });
+
+  it('drops a code refused on Apply and keeps the price it had, without fetching it again', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'NOPE', { error: 'promo_code_invalid' });
+    expect(ev(w, 'promoCode')).toBe(null);
+    expect(ev(w, 'promoApplyError')).toBe('promo_code_invalid');
+    expect(ev(w, 'currentEngineEst() && currentEngineEst().totalCents')).toBe(9000);
+    expect(ev(w, 'lastRequestedSig === currentIntentSig()')).toBe(true);
+    expect(ev(w, 'sendablePromoCode()')).toBe(null);
+  });
+
+  it('keeps a confirmed code that stops applying after the trip changes', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    w.eval('state.ad = 2');
+    w.eval(`adoptEngineEstimate(${JSON.stringify({ ...FULL, promoCode: { error: 'promo_code_not_eligible' } })}, currentIntentSig())`);
+    expect(ev(w, 'promoCode')).toBe('SAVE10');
+    expect(ev(w, 'promoUiState()')).toBe('off');
+    expect(ev(w, 'promoOffReason()')).toBe('promo_code_not_eligible');
+    expect(ev(w, 'payableTotal()')).toBe(90);
+    expect(ev(w, 'sendablePromoCode()')).toBe(null);
+  });
+
+  it('says "checking" while the code estimate is in flight', () => {
+    const w = loadBooking(SINGLE);
+    w.eval("promoCode = 'SAVE10'; estimatePending = true;");
+    expect(ev(w, 'promoUiState()')).toBe('checking');
+  });
+
+  it('forgets an unconfirmed code whose check could not run, and keeps the price shown', () => {
+    const w = loadBooking(SINGLE);
+    w.eval(`adoptEngineEstimate(${JSON.stringify(FULL)}, currentIntentSig())`);
+    w.eval("promoCode = 'SAVE10'; settlePromoUnavailable();");
+    expect(ev(w, 'promoCode')).toBe(null);
+    expect(ev(w, 'promoApplyError')).toBe('promo_unchecked');
+    expect(ev(w, 'calcTotal()')).toBe(90);
+    expect(ev(w, 'lastRequestedSig === currentIntentSig()')).toBe(true);
+  });
+
+  it('dropPromo re-keys the held price for the trip without the code', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    w.eval('dropPromo()');
+    expect(ev(w, 'promoCode')).toBe(null);
+    expect(ev(w, 'currentEngineEst() !== null')).toBe(true);
+    expect(ev(w, 'currentEngineEst().promo')).toBe(null);
+    expect(ev(w, 'payableTotal()')).toBe(90);
+  });
+
+  it('has its own message for every refusal', () => {
+    const w = loadBooking(SINGLE);
+    const codes = ['promo_code_invalid', 'promo_code_not_started', 'promo_code_expired', 'promo_code_used_up', 'promo_code_not_eligible', 'promo_unchecked'];
+    expect(ev(w, `${JSON.stringify(codes)}.map(promoMessage)`)).toEqual([
+      "That code isn't valid.",
+      "That code isn't active yet.",
+      'That code has expired.',
+      'That code has been fully used.',
+      "That code can't be used on this booking.",
+      "We couldn't check your code just now, please try again.",
+    ]);
+  });
+});
+
+describe('the code on the booking', () => {
+  it('goes with a single booking the estimate accepted it for', async () => {
+    const body = await bookingBody(SINGLE, '/bookings/single', (w) => applyWith(w, 'SAVE10', OK));
+    expect(body.promoCode).toBe('SAVE10');
+  });
+
+  it('goes with a trip booking', async () => {
+    const body = await bookingBody(TRIP, '/bookings/trip', (w) => applyWith(w, 'SAVE10', OK));
+    expect(body.promoCode).toBe('SAVE10');
+  });
+
+  it('stays off a booking once the code stopped applying', async () => {
+    const body = await bookingBody(SINGLE, '/bookings/single', (w) => {
+      applyWith(w, 'SAVE10', OK);
+      w.eval(`adoptEngineEstimate(${JSON.stringify({ ...FULL, promoCode: { error: 'promo_code_used_up' } })}, currentIntentSig())`);
+    });
+    expect(body).not.toHaveProperty('promoCode');
+    expect(body.quotedTotal).toBe(9000);
+  });
+});

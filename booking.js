@@ -1639,6 +1639,7 @@ function adoptEngineEstimate(est, sig){
     promo: est.promoCode,
     intentSig: sig
   };
+  settlePromoAnswer();
 }
 
 // engineEst that is actually priced against the itinerary as it stands RIGHT NOW — the same
@@ -1736,6 +1737,7 @@ function requestEstimate(){
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
     onUnavailable: function(reason){
       estimatePending = false;
+      if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
         const text=window.CH && CH.routeEstimate
@@ -1888,6 +1890,72 @@ function payableTotal(){
   const p = heldPromo();
   return p ? p.totalCents/100 : calcTotal();
 }
+
+const PROMO_MESSAGES = {
+  promo_code_invalid: "That code isn't valid.",
+  promo_code_not_started: "That code isn't active yet.",
+  promo_code_expired: 'That code has expired.',
+  promo_code_used_up: 'That code has been fully used.',
+  promo_code_not_eligible: "That code can't be used on this booking.",
+  promo_unchecked: "We couldn't check your code just now, please try again.",
+};
+function promoMessage(err){ return PROMO_MESSAGES[err] || PROMO_MESSAGES.promo_code_invalid; }
+
+// Settles the promo answer on the estimate just adopted (spec §3.2). The FIRST answer for a code
+// decides whether it sticks: accepted → confirmed; refused → dropped, its message shown and the
+// typed text left in the field. Once confirmed, a later refusal (the trip changed) keeps the code
+// applied, so the summary can say "Doesn't apply" and the discount returns if the trip qualifies.
+function settlePromoAnswer(){
+  if(!promoCode || promoConfirmed || !engineEst || engineEst.intentSig !== currentIntentSig()) return;
+  const p = engineEst.promo;
+  if(p && !p.error){ promoConfirmed = true; promoApplyError = null; return; }
+  promoApplyError = (p && p.error) || 'promo_code_invalid';
+  dropPromo();
+}
+// The check for a code nobody has confirmed yet could not run. Pricing the trip "with a code" by
+// the local formula would put a different, never-shown figure on screen — so forget the code and
+// say so; the held engine answer for the trip without it is current again.
+function settlePromoUnavailable(){
+  if(!promoCode || promoConfirmed) return;
+  promoCode = null;
+  promoApplyError = 'promo_unchecked';
+  if(currentEngineEst()) lastRequestedSig = currentIntentSig();
+}
+// Forgets the applied code. The estimate's full price never depends on the code (the API lifts it
+// off the intent before pricing), so the answer held for "this trip + code" IS the answer for
+// "this trip": re-key it rather than fetch the same price again and shimmer the Total for it.
+function dropPromo(){
+  const cur = currentEngineEst();
+  promoCode = null;
+  promoConfirmed = false;
+  if(cur){
+    delete cur.promo;
+    cur.intentSig = currentIntentSig();
+    lastRequestedSig = cur.intentSig;
+  }
+}
+// The code a booking may carry: only while the estimate priced for THIS trip accepted it
+// (spec §4.5) — never in the doesn't-apply, couldn't-check or local-fallback states.
+function sendablePromoCode(){
+  const cur = currentEngineEst();
+  const p = cur && cur.promo;
+  return (promoFieldOn && promoCode && p && !p.error) ? p.code : undefined;
+}
+// Why an applied code is taking nothing off right now, or null when it is.
+function promoOffReason(){
+  const cur = currentEngineEst();
+  if(!cur) return 'promo_unchecked';
+  const p = cur.promo;
+  return (p && !p.error) ? null : ((p && p.error) || 'promo_code_invalid');
+}
+// Which face the field shows (spec §3.2).
+function promoUiState(){
+  if(!promoFieldOn) return 'hidden';
+  if(!promoCode) return promoOpen ? 'open' : 'collapsed';
+  if(currentEngineEst()) return promoOffReason() ? 'off' : 'applied';
+  return (estimatePending || state.pendingReprice) ? 'checking' : 'off';
+}
+
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -2953,7 +3021,9 @@ async function createApiBooking(){
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
-      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
+      // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
+      promoCode: sendablePromoCode()
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -2994,7 +3064,8 @@ async function createApiBooking(){
       quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
       extras: state.addons.size ? Array.from(state.addons) : undefined,
-      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined
+      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined,
+      promoCode: sendablePromoCode()
     };
   }
   // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
