@@ -112,6 +112,8 @@ export function rideListToOpsRow(
     source: 'ride_board',
     // A van row is a projection of many travellers, not one customer email.
     isTest: false,
+    createdAt: list.createdAt.toISOString(),
+    serviceType: null,
     board: {
       code: list.code,
       listStatus: list.status,
