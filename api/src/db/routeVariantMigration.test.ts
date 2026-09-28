@@ -24,19 +24,17 @@ describe('0061_route_variant', () => {
     expect(sql).not.toMatch(/\b(insert\s+into|update\s+\w+\s+set|delete\s+from)\b/i);
   });
 
-  // RELEASE ORDER IS HARD: this 0061 (when 1790812800000) must release after 0059 (#837) and
-  // 0060_customer_communications (#850). drizzle applies only migrations whose `when` is newer than
-  // the last one applied, so if 0061 reached a database first, those would be silently skipped
-  // there forever. This test finds 0061 by tag and requires its `when` to be ahead of EVERY other
-  // entry, so a later migration landing first (and taking a lower `when`) fails here loudly.
-  it('is journalled at idx 61, ahead of every other entry', () => {
+  // RELEASE ORDER IS HARD: this 0061 must release after 0059 (#837) and
+  // 0060_customer_communications (#850). Future migrations are valid only when their own `when`
+  // is newer, so this checks the invariant against every entry that precedes 0061 in the journal.
+  it('is journalled at idx 61, after every earlier entry', () => {
     const at = journal.entries.findIndex((e) => e.tag === '0061_route_variant');
     expect(at).toBeGreaterThanOrEqual(0);
     expect(journal.entries[at]).toMatchObject({ idx: 61, tag: '0061_route_variant' });
     const ownWhen = journal.entries[at]!.when;
-    for (let i = 0; i < journal.entries.length; i++) {
-      if (i === at) continue;
+    for (let i = 0; i < at; i++) {
       expect(ownWhen).toBeGreaterThan(journal.entries[i]!.when);
     }
+    if (journal.entries[at + 1]) expect(journal.entries[at + 1]!.when).toBeGreaterThan(ownWhen);
   });
 });

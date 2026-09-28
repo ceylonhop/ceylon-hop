@@ -7,6 +7,7 @@ import type {
   CustomerCommunicationRepo,
   PlanCustomerCommunication,
   RecordCustomerCommunicationEvent,
+  RecordProviderCommunicationEvent,
 } from './customerCommunicationRepo';
 
 type CommunicationRow = typeof customerCommunications.$inferSelect;
@@ -45,9 +46,28 @@ export class PostgresCustomerCommunicationRepo implements CustomerCommunicationR
     return event(row);
   }
 
+  async recordProviderEvent(input: RecordProviderCommunicationEvent): Promise<{
+    event: CustomerCommunicationEvent;
+    inserted: boolean;
+  }> {
+    const inserted = await this.db.insert(customerCommunicationEvents).values(input)
+      .onConflictDoNothing({ target: customerCommunicationEvents.providerEventId }).returning();
+    if (inserted[0]) return { event: event(inserted[0]), inserted: true };
+    const [existing] = await this.db.select().from(customerCommunicationEvents)
+      .where(eq(customerCommunicationEvents.providerEventId, input.providerEventId));
+    if (!existing) throw new Error('customer_communication_provider_event_conflict_missing');
+    return { event: event(existing), inserted: false };
+  }
+
   async markProviderAccepted(id: string, provider: string | null, providerMessageId: string | null): Promise<void> {
     await this.db.update(customerCommunications).set({ provider, providerMessageId, updatedAt: new Date() })
       .where(eq(customerCommunications.id, id));
+  }
+
+  async findByProviderMessageId(providerMessageId: string): Promise<CustomerCommunication | null> {
+    const [row] = await this.db.select().from(customerCommunications)
+      .where(eq(customerCommunications.providerMessageId, providerMessageId));
+    return row ? communication(row) : null;
   }
 
   async listByBookingId(bookingId: string): Promise<CustomerCommunication[]> {

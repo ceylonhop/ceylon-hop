@@ -24,6 +24,10 @@ import {
 import type { ProviderPaymentStatus } from '../adapters/payments';
 import { claimWonQuote } from '../services/quoteOutcome';
 import { closeOlderDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
+import type {
+  CustomerCommunicationEventType,
+  CustomerCommunicationRepo,
+} from '../db/customerCommunicationRepo';
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -93,6 +97,51 @@ const NOTIFY_OUTCOME: Record<ProviderPaymentStatus, CheckoutOutcome> = {
   charged_back: 'failed', // -3
 };
 
+const RESEND_EVENT_TYPE: Record<string, CustomerCommunicationEventType> = {
+  'email.sent': 'provider_sent',
+  'email.delivered': 'delivered',
+  'email.delivery_delayed': 'delayed',
+  'email.failed': 'provider_failed',
+  'email.bounced': 'bounced',
+  'email.complained': 'complained',
+};
+
+interface ResendWebhookEvent {
+  type?: string;
+  created_at?: string;
+  data?: {
+    email_id?: string;
+    message_id?: string;
+    to?: string[] | string;
+    subject?: string;
+    bounce?: { type?: string; subType?: string; message?: string };
+  };
+}
+
+function shortDiagnostic(value: unknown, max = 160): string | undefined {
+  return typeof value === 'string' && value ? value.slice(0, max) : undefined;
+}
+
+function recipientDomain(to: string[] | string | undefined): string | undefined {
+  const address = Array.isArray(to) ? to[0] : to;
+  if (typeof address !== 'string') return undefined;
+  const at = address.lastIndexOf('@');
+  return at >= 0 ? address.slice(at + 1).trim().toLowerCase().slice(0, 255) : undefined;
+}
+
+function resendDiagnostic(event: ResendWebhookEvent): Record<string, string> {
+  const detail: Record<string, string> = { provider: 'resend' };
+  const messageId = shortDiagnostic(event.data?.message_id);
+  const domain = recipientDomain(event.data?.to);
+  const bounceType = shortDiagnostic(event.data?.bounce?.type);
+  const bounceSubType = shortDiagnostic(event.data?.bounce?.subType);
+  if (messageId) detail.messageId = messageId;
+  if (domain) detail.recipientDomain = domain;
+  if (bounceType) detail.bounceType = bounceType;
+  if (bounceSubType) detail.bounceSubType = bounceSubType;
+  return detail;
+}
+
 // The attempt-log row a webhook request will write, set by the handler where the outcome is
 // decided and written once the response is known (so http_status is the real one).
 type WebhookVars = { Variables: { checkoutEvent?: Omit<BookingCheckoutEventInput, 'source' | 'httpStatus' | 'ua'> } };
@@ -109,8 +158,12 @@ export function webhookRoutes(deps: {
   // M17 — optional so existing callers/tests keep working; alerts default to no-op.
   alerts?: AlertAdapter;
   notificationLog?: NotificationLogRepo;
-  // Enables POST /webhooks/resend (bounce/complaint alerts). Unset → endpoint 404s.
+  // Enables POST /webhooks/resend (delivery evidence + bounce/complaint/failure alerts).
+  // Unset → endpoint 404s.
   resendWebhookSecret?: string;
+  // M23.6 — present only while communication tracking is enabled. It observes signed
+  // provider facts; it never authorizes a send or changes booking state.
+  customerCommunications?: CustomerCommunicationRepo;
   // Signs the customer's "manage my booking" link in the confirmation email.
   baseUrl: string;
   linkSecret: string;
@@ -414,8 +467,9 @@ export function webhookRoutes(deps: {
     return c.json({ ok: true }, 200);
   });
 
-  // M17 — Resend deliverability webhook (svix-signed). Alerts on bounces/complaints so a
-  // customer silently not receiving booking email is no longer invisible. Enabled only
+  // M17/M23.6 — Resend deliverability webhook (svix-signed). Alerts on provider failures,
+  // bounces and complaints so a customer silently not receiving booking email is no longer
+  // invisible. Enabled only
   // when the secret is configured; otherwise the route does not exist (404).
   r.post('/resend', async (c) => {
     const secret = deps.resendWebhookSecret;
@@ -444,14 +498,37 @@ export function webhookRoutes(deps: {
     });
     if (!match) return c.json({ error: 'invalid_signature' }, 401);
 
-    let event: { type?: string; data?: { to?: string[] | string; subject?: string } };
+    let event: ResendWebhookEvent;
     try {
       event = JSON.parse(raw);
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
 
-    if (event.type === 'email.bounced' || event.type === 'email.complained') {
+    const normalizedType = event.type ? RESEND_EVENT_TYPE[event.type] : undefined;
+    let newlyRecorded = true;
+    const communications = deps.customerCommunications;
+    if (communications && normalizedType) {
+      const providerMessageId = event.data?.email_id;
+      const occurredAt = event.created_at ? new Date(event.created_at) : null;
+      if (!providerMessageId || !occurredAt || Number.isNaN(occurredAt.getTime())) {
+        return c.json({ error: 'invalid_payload' }, 400);
+      }
+      const communication = await communications.findByProviderMessageId(providerMessageId);
+      const recorded = await communications.recordProviderEvent({
+        communicationId: communication?.id ?? null,
+        eventType: normalizedType,
+        providerEventId: id,
+        providerMessageId,
+        reasonCode: normalizedType === 'provider_failed' ? 'provider_failed'
+          : normalizedType === 'delayed' ? 'delivery_delayed' : null,
+        detailJson: resendDiagnostic(event),
+        occurredAt,
+      });
+      newlyRecorded = recorded.inserted;
+    }
+
+    if (newlyRecorded && (event.type === 'email.bounced' || event.type === 'email.complained')) {
       const to = Array.isArray(event.data?.to) ? event.data.to.join(', ') : (event.data?.to ?? 'unknown');
       void alerts.send({
         severity: 'warning',
@@ -459,6 +536,16 @@ export function webhookRoutes(deps: {
         title: `Email ${event.type === 'email.bounced' ? 'bounced' : 'flagged as spam'}: ${to}`,
         body: `to: ${to}\nsubject: ${event.data?.subject ?? '?'}\nevent: ${event.type}`,
         dedupeKey: to,
+      });
+    }
+    if (newlyRecorded && event.type === 'email.failed') {
+      const to = Array.isArray(event.data?.to) ? event.data.to.join(', ') : (event.data?.to ?? 'unknown');
+      void alerts.send({
+        severity: 'warning',
+        kind: 'email_failed',
+        title: `Email failed: ${to}`,
+        body: `to: ${to}\nsubject: ${event.data?.subject ?? '?'}\nevent: ${event.type}`,
+        dedupeKey: event.data?.email_id ?? to,
       });
     }
     return c.body(null, 204);

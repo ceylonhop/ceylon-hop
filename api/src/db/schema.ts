@@ -625,7 +625,7 @@ export const customerCommunicationEvents = pgTable(
     recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    check('customer_communication_events_type_valid', sql`${t.eventType} in ('planned', 'suppressed', 'send_attempted', 'provider_accepted', 'send_failed', 'delivered', 'bounced', 'complained')`),
+    check('customer_communication_events_type_valid', sql`${t.eventType} in ('planned', 'suppressed', 'send_attempted', 'provider_accepted', 'send_failed', 'provider_sent', 'delivered', 'delayed', 'provider_failed', 'bounced', 'complained')`),
     check('customer_communication_events_link_valid', sql`${t.communicationId} is not null or ${t.providerMessageId} is not null`),
     check('customer_communication_events_detail_object', sql`${t.detailJson} is null or jsonb_typeof(${t.detailJson}) = 'object'`),
     index('customer_communication_events_communication_recorded_idx').on(t.communicationId, t.recordedAt, t.id),
