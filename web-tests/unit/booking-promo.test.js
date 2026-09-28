@@ -258,6 +258,29 @@ describe('the price-change notice with a code applied', () => {
     expect(note).toContain('Got it — use $108');
   });
 
+  // A confirmed code that had stopped applying can apply again on the raised price. Nothing is
+  // taken off on screen right now ($90 full), but accepting lands the discounted $108 — so that,
+  // not the full $120, is the figure the button must name.
+  it('names the discounted "now" when a code that stopped applying applies again on the raise', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    // A second traveller (not a second extra bag, which would outgrow the car and hand the raise to
+    // the van-upgrade note instead) is the trip change the code stops applying on.
+    w.eval(`
+      state.ad = state.ad + 1;
+      adoptEngineEstimate(${JSON.stringify({ ...FULL, promoCode: { error: 'promo_code_not_eligible' } })}, currentIntentSig());
+    `);
+    expect(ev(w, 'promoUiState()')).toBe('off');
+    w.eval(`
+      state.bags = state.bags + 1;
+      handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
+    `);
+    const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
+    expect(note).toContain('it was $90');
+    expect(note).toContain('Got it — use $108');
+    expect(note).not.toContain('$120');
+  });
+
   it('leaves a no-code parked raise unchanged: still the full fromCents/toCents', () => {
     const w = loadBooking(SINGLE);
     w.eval(`adoptEngineEstimate(${JSON.stringify(FULL)}, currentIntentSig())`);

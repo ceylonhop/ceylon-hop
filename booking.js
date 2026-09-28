@@ -1233,9 +1233,13 @@ function renderRepriceNote(){
     // With a code applied, the customer never saw the FULL fromCents/toCents on screen — they saw
     // payableTotal() and, once they accept, the parked estimate's own (possibly re-priced) promo
     // total. Quoting the full figures here would show a jump they never agreed to (spec §4.4).
+    // "Now" follows the parked estimate's own answer, not whether a discount is on screen today: a
+    // code that had stopped applying can apply again on the raised price, and accepting then lands
+    // the discounted figure.
     const held=heldPromo();
     const newPromo = p.est && p.est.promoCode;
-    const newAccepted = held && newPromo && !newPromo.error && typeof newPromo.totalCents === 'number';
+    const newAccepted = promoFieldOn && promoCode && newPromo && !newPromo.error
+      && newPromo.code === promoCode && typeof newPromo.totalCents === 'number';
     const fromAmt = money(held ? payableTotal() : p.fromCents/100);
     const toAmt = money(newAccepted ? newPromo.totalCents/100 : p.toCents/100);
     eEl.innerHTML =
