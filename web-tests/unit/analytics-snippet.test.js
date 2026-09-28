@@ -98,11 +98,13 @@ describe('analytics snippet present on every hand-authored root page', () => {
   });
 });
 
-/* The banner is gone (owner, 2026-08-16) and the two scripts that drew it are deleted. This
-   sweeps EVERY page rather than the hand-authored ten, because a stale <script src> would
-   404 silently on the generated pages — and a page that still shipped consent.js would sit
-   there waiting to overwrite the granted default with whatever localStorage remembered. */
-describe('no consent banner ships anywhere', () => {
+/* The site-wide banner went (owner, 2026-08-16) and came back on 2026-09-27 as a Europe-only
+   strip. The new consent.js is LOADED ON DEMAND by analytics.js (a European clock, or the
+   footer's "Cookie choices"), never as a <script src>, so visitors outside Europe never fetch
+   it. This sweeps EVERY page rather than the hand-authored ten, because a stale <script src>
+   would 404 silently on the generated pages, or put the strip in front of everyone.
+   The strip itself is covered in cookie-consent.test.js. */
+describe('no page ships a consent script as a <script src>', () => {
   it('no page references consent.js or consent-transactional.js', () => {
     const offenders = [];
     const walk = (dir) => {
@@ -117,9 +119,10 @@ describe('no consent banner ships anywhere', () => {
     expect(offenders, `pages still loading a consent script: ${offenders.join(', ')}`).toEqual([]);
   });
 
-  it('the banner scripts are not in the repo', () => {
-    expect(existsSync(join(ROOT, 'consent.js'))).toBe(false);
+  it('the pay/quote strip stays deleted; consent.js exists only to be loaded on demand', () => {
     expect(existsSync(join(ROOT, 'consent-transactional.js'))).toBe(false);
+    expect(existsSync(join(ROOT, 'consent.js'))).toBe(true);
+    expect(read('analytics.js')).toContain("'consent.js'");
   });
 });
 
@@ -176,23 +179,23 @@ describe('privacy disclosure', () => {
     expect(src).toContain('cookie');
   });
 
-  /* The policy is the only thing left telling a visitor what we collect, so it has to match
-     the code. It used to promise a banner and advertising cookies; both claims are now false
-     and a false privacy policy is worse than a thin one. */
-  it('does not promise a cookie banner that no longer exists', () => {
+  /* The policy has to match the code; a false privacy policy is worse than a thin one. Twice
+     it has not: it promised a banner after #561 removed it (fixed then), and from #677
+     (2026-09-20) it said "we do not use advertising cookies" while ad_storage was granted by
+     default outside Europe. Since 2026-09-27 the banner is back for Europe only, so the policy
+     must say where it appears and where advertising is on without asking. */
+  it('describes the banner as a European one, not a site-wide promise', () => {
     const src = read('tools/legal/privacy.body.html').toLowerCase();
-    expect(src).not.toContain('cookie banner');
-    expect(src).not.toContain('until you accept');
+    expect(src).toContain('cookie banner');
+    expect(src).toMatch(/european economic area, the united kingdom and switzerland/);
   });
 
-  /* Matched on the AFFIRMATIVE claim, not the bare phrase: the replacement copy says "we do
-     not use advertising cookies and we do not personalise ads", so a naive
-     not.toContain('personalise ads') fails on the very sentence that makes it true. */
-  it('does not claim advertising cookies the site no longer sets', () => {
+  it('no longer denies the advertising cookies #677 switched on outside Europe', () => {
     const src = read('tools/legal/privacy.body.html').toLowerCase();
-    expect(src).not.toContain('advertising cookies (via google)');
-    expect(src).toContain('we do not use advertising cookies');
-    expect(src).toContain('we do not personalise ads');
+    expect(src).not.toContain('we do not use advertising cookies');
+    expect(src).toContain('advertising cookies (google and meta)');
+    expect(src).toContain('elsewhere they are on by default');
+    expect(src).toContain('cookie choices');
   });
 });
 
