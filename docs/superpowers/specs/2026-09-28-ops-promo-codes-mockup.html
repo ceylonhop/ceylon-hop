@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Promo Codes Panel Mockup</title>
+<!-- Design reference for 2026-09-28-ops-promo-codes-design.md. Static, no script. Colour tokens are
+     copied from api/src/routes/ops-ui.html :root (origin/main @ 4a70398f). -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600;6..96,700&family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+:root{
+  --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
+  --ink:#3A3739;--ink-soft:#6b645f;--ink-faint:#a59d92;
+  --cream:#F0EEE5;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+  --display:'Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
+  --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding:28px 16px 70px}
+h1{font-family:var(--display);font-size:30px;margin:0}
+.pagesub{color:var(--ink-soft);margin:2px 0 20px}
+.sec{margin:34px 0 10px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--teal-deep)}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px 20px 22px}
+.ghost{color:var(--ink-faint);font-size:12.5px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;margin-bottom:18px}
+h3{margin:0 0 4px;font-size:15px}
+.note{background:var(--cream);border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--ink-soft);margin-bottom:14px}
+.banner{background:var(--alert-bg);border:1px solid var(--alert-line);color:var(--alert);border-radius:10px;padding:10px 13px;font-size:12.5px;font-weight:600;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);font-weight:600;text-align:left;padding:6px 6px;border-bottom:1px solid var(--line)}
+td{padding:10px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+td.code{font-family:var(--mono);font-weight:600;letter-spacing:.02em}
+td.uses{color:var(--ink-soft);font-size:12.5px;white-space:nowrap}
+td.uses b{color:var(--ink);font-weight:600}
+td.act{text-align:right;white-space:nowrap}
+.chip{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 9px}
+.c-active{background:var(--ok-bg);color:var(--ok)}
+.c-later{background:var(--go-bg);color:var(--go)}
+.c-used{background:var(--wait-bg);color:var(--wait)}
+.c-expired,.c-ended{background:var(--idle-bg);color:var(--idle)}
+.btn{font:inherit;font-size:12.5px;font-weight:600;border-radius:8px;padding:6px 11px;border:1px solid transparent;cursor:pointer;background:none;color:var(--ink)}
+.btn-ghost:hover{background:var(--cream)}
+.btn-teal{background:var(--teal);color:#fff;box-shadow:0 2px 0 var(--teal-deep)}
+.btn-outline{border-color:var(--line);background:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+.form{display:grid;grid-template-columns:1.6fr .7fr .7fr 1fr 1fr;gap:10px;align-items:start;margin-top:18px;padding-top:16px;border-top:1px dashed var(--line)}
+.form .full{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+label{display:block;font-size:11.5px;font-weight:600;color:var(--ink-soft);margin-bottom:4px}
+.in{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:0 9px}
+.in input{border:none;outline:none;background:none;font:inherit;font-size:13.5px;padding:8px 0;width:100%;min-width:0;color:var(--ink)}
+.in input.mono{font-family:var(--mono);text-transform:uppercase}
+.in .suf{color:var(--ink-faint);font-size:12.5px}
+.in .sugg{font-size:11.5px;font-weight:600;color:var(--teal-deep);white-space:nowrap;background:none;border:none;cursor:pointer;padding:0}
+.err{color:var(--alert);font-size:11.5px;margin-top:4px}
+.hint{color:var(--ink-faint);font-size:11.5px;margin-top:4px}
+tr.editing td{background:var(--cream)}
+.mini{display:inline-flex;align-items:center;gap:6px}
+.mini .in{padding:0 7px}
+.mini .in input{padding:5px 0;font-size:12.5px;width:120px}
+.mini .in input.n{width:54px}
+.confirm{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 26px -12px rgba(40,33,28,.2);padding:16px 18px;max-width:440px;font-size:13.5px}
+.confirm .row{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.cap{font-size:12px;color:var(--ink-soft);margin:8px 0 0}
+@media(max-width:700px){
+  .form{grid-template-columns:1fr 1fr}
+  .form .codecol{grid-column:1/-1}
+  table.list thead{display:none}
+  table.list tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+  table.list td{border:none;padding:0}
+  table.list td.act{grid-column:1/-1;text-align:left;margin-top:6px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Rates</h1>
+  <p class="pagesub">What we charge, and the towns that carry a premium</p>
+
+  <div class="sec">1 · The Rates page, with the new panel at the bottom</div>
+  <div class="card">
+    <div class="ghost">Rates editor · History · Hot zones — unchanged, above</div>
+
+    <h3>Promo codes</h3>
+    <div class="note">Codes customers type at checkout for % off. Held = an unpaid booking is reserving a use for up to 2 hours.</div>
+
+    <table class="list">
+      <thead><tr><th>Code</th><th>Off</th><th>Uses</th><th>Starts</th><th>Ends</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="code">ROSHEN-7KQ2</td><td>10%</td><td class="uses"><b>3</b> paid · 1 held · <b>16</b> left of 20</td><td>Now</td><td>31 Oct</td><td><span class="chip c-active">Active</span></td><td class="act"><button class="btn btn-ghost">Edit</button><button class="btn btn-ghost">End now</button></td></tr>
+        <tr><td class="code">CH-X4TP9M</td><td>15%</td><td class="uses"><b>0</b> paid · 0 held · <b>50</b> left of 50</td><td>1 Nov</td><td>30 Nov</td><td><span class="chip c-later">Starts later</span></td><td class="act"><button class="btn btn-ghost">Edit</button><button class="btn btn-ghost">End now</button></td></tr>
+        <tr><td class="code">SURF-CAMP</td><td>20%</td><td class="uses"><b>5</b> paid · 0 held · <b>0</b> left of 5</td><td>Now</td><td>15 Oct</td><td><span class="chip c-used">Used up</span></td><td class="act"><button class="btn btn-ghost">Edit</button><button class="btn btn-ghost">End now</button></td></tr>
+        <tr><td class="code">SEPT-FRIENDS</td><td>10%</td><td class="uses"><b>7</b> paid · 0 held · <b>3</b> left of 10</td><td>1 Sep</td><td>27 Sep</td><td><span class="chip c-expired">Expired</span></td><td class="act"><button class="btn btn-ghost">Edit</button></td></tr>
+        <tr><td class="code">TEST-OLD</td><td>5%</td><td class="uses"><b>0</b> paid · 0 held · <b>1</b> left of 1</td><td>Now</td><td>30 Sep</td><td><span class="chip c-ended">Ended</span></td><td class="act"><button class="btn btn-ghost">Turn back on</button></td></tr>
+      </tbody>
+    </table>
+
+    <div class="form">
+      <div class="codecol"><label>Code</label><div class="in"><input class="mono" value="SPRING-26"><button class="sugg">Suggest</button></div></div>
+      <div><label>% off</label><div class="in"><input value="10"><span class="suf">%</span></div></div>
+      <div><label>Uses</label><div class="in"><input value="20"></div></div>
+      <div><label>Starts <span style="font-weight:400">(optional)</span></label><div class="in"><input value="1 Oct 2026"></div></div>
+      <div><label>Ends</label><div class="in"><input value="31 Oct 2026"></div><div class="hint">Works through the whole day, Sri Lanka time</div></div>
+      <div class="full"><button class="btn btn-teal">Create code</button></div>
+    </div>
+  </div>
+
+  <div class="sec">2 · Editing a row (only Ends and Uses can change)</div>
+  <div class="card">
+    <table class="list"><tbody>
+      <tr class="editing"><td class="code">ROSHEN-7KQ2</td><td>10%</td>
+        <td colspan="3"><span class="mini"><label style="margin:0">Ends</label><span class="in"><input value="15 Nov 2026"></span><label style="margin:0">Uses</label><span class="in"><input class="n" value="30"></span></span></td>
+        <td><span class="chip c-active">Active</span></td>
+        <td class="act"><button class="btn btn-teal">Save</button> <button class="btn btn-outline">Cancel</button></td></tr>
+    </tbody></table>
+    <p class="cap">The code and its % can't change after it's made. That protects bookings already made with it.</p>
+  </div>
+
+  <div class="sec">3 · End now asks first</div>
+  <div class="confirm">
+    <b>End ROSHEN-7KQ2 now?</b><br>
+    It stops working for new bookings immediately. Bookings already holding it (for up to 2 hours) can still pay at the discounted price.
+    <div class="row"><button class="btn btn-outline">Cancel</button><button class="btn btn-teal">OK</button></div>
+  </div>
+  <p class="cap">The real page uses the browser's own confirm box, as the hot-zones panel does. An Ended code shows <b>Turn back on</b>, which is the undo.</p>
+
+  <div class="sec">4 · Messages</div>
+  <div class="card">
+    <div class="banner">Promo codes are switched off on this server, so new codes can't be created here. Existing codes still show.</div>
+    <div class="form" style="margin-top:0;padding-top:0;border-top:none">
+      <div class="codecol"><label>Code</label><div class="in"><input class="mono" value="ROSHEN-7KQ2"><button class="sugg">Suggest</button></div><div class="err">That code already exists.</div></div>
+      <div><label>% off</label><div class="in"><input value="35"><span class="suf">%</span></div><div class="err">1–30%</div></div>
+      <div><label>Uses</label><div class="in"><input value="20"></div></div>
+      <div><label>Starts</label><div class="in"><input value=""></div></div>
+      <div><label>Ends</label><div class="in"><input value="31 Oct 2026"></div></div>
+      <div class="full"><button class="btn btn-teal" disabled>Create code</button></div>
+    </div>
+    <p class="cap">The banner appears after the server refuses a create because <code>PROMO_CODES_ENABLED</code> is off. That's the case on prod until go-live, and the form then stays disabled. The field messages are examples of the checks made before sending.</p>
+  </div>
+</div>
+</body>
+</html>
