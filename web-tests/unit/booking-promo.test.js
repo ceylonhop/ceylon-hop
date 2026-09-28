@@ -83,3 +83,56 @@ describe('promo switch + estimate intent', () => {
     expect(ev(w, 'engineEst.promo')).toEqual(OK);
   });
 });
+
+// Captures the JSON body createApiBooking() posts to `endpoint` ('/bookings/single' or '/bookings/trip').
+async function bookingBody(query, endpoint, setup) {
+  const w = loadBooking(query);
+  setup(w);
+  w.eval(`
+    window.CEYLON_HOP_API = 'https://api.test';
+    window.__body = null;
+    window.fetch = function(url, init){
+      if(String(url).indexOf(${JSON.stringify(endpoint)}) !== -1) window.__body = JSON.parse(init.body);
+      return Promise.resolve({ ok: true, status: 200, json: function(){ return Promise.resolve({ quoteId: 'q1' }); } });
+    };
+    window.__done = createApiBooking();
+  `);
+  await w.__done;
+  return ev(w, 'window.__body');
+}
+
+describe('payableTotal', () => {
+  it('takes the discount from the estimate while calcTotal() stays the full price', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    expect(ev(w, 'calcTotal()')).toBe(90);
+    expect(ev(w, 'payableTotal()')).toBe(81);
+    expect(ev(w, 'amountDueNow()')).toBe(81);
+  });
+
+  it('ignores a discount priced for a different trip', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    w.eval('state.ad = 2');
+    expect(ev(w, 'heldPromo()')).toBe(null);
+    expect(ev(w, 'payableTotal()')).toBe(ev(w, 'calcTotal()'));
+  });
+
+  it("is the booking's own total once the booking exists", () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    w.eval('adoptServerQuote({ total: 7700, amountDueNow: 7700 })');
+    expect(ev(w, 'payableTotal()')).toBe(77);
+  });
+
+  it('ignores a promo block while the switch is off', () => {
+    const w = loadBooking(SINGLE, { promo: false });
+    applyWith(w, 'SAVE10', OK);
+    expect(ev(w, 'payableTotal()')).toBe(90);
+  });
+
+  it('sends the discounted figure as quotedTotal', async () => {
+    const body = await bookingBody(SINGLE, '/bookings/single', (w) => applyWith(w, 'SAVE10', OK));
+    expect(body.quotedTotal).toBe(8100);
+  });
+});

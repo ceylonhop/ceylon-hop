@@ -1341,7 +1341,7 @@ const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',fr
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
-  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
+  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:payableTotal()}); };
 
 // Longest known dial code (digits only) that prefixes `digits`, or '' if none.
 function matchDialCode(digits){
@@ -1868,7 +1868,26 @@ function calcTotal(){
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
 const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
+// The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
+// order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds
+// engineEst. The local formula never carries one, and once the booking exists its own total
+// (serverQuote) already includes the discount.
+function heldPromo(){
+  if(!promoFieldOn || !promoCode || serverQuote) return null;
+  const est = (state.pendingReprice && state.pendingReprice.engineRaise) ? engineEst
+    : (currentEngineEst() || (repricing() ? engineEst : null));
+  const p = est && est.promo;
+  return (p && !p.error && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
+}
+// What the customer pays (spec §4.3). calcTotal() stays the FULL price on purpose: the summary's
+// vehicle row is calcTotal() − extras, and a discount folded in there would shrink the car's own
+// line. Total, Due now, quotedTotal and the final price check read this instead.
+function payableTotal(){
+  if(serverQuote) return serverQuote.total;
+  const p = heldPromo();
+  return p ? p.totalCents/100 : calcTotal();
+}
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -2268,7 +2287,7 @@ function render(){
   // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
   const busy = repricing();
   const totalEl = document.getElementById('sum-total');
-  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
   if(totalEl){
     totalEl.classList.toggle('is-pricing', busy);
     if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
@@ -2506,7 +2525,7 @@ async function runPayment(){
   // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
   const _payBtn = document.getElementById('pay-btn');
   if(_payBtn) _payBtn.disabled = true;
-  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:payableTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
@@ -2545,10 +2564,12 @@ async function runPayment(){
   // the LAST hop where the "never charge a figure not shown immediately beforehand" rule
   // (renderRepriceNote, applied mid-wizard) can still be broken, and gets the same gate here.
   const shownEngineEst = currentEngineEst();
-  const shownBeforeAdopt = calcTotal();
+  // payableTotal(), not calcTotal(): with a code the booking comes back DISCOUNTED, so comparing
+  // it with the full price would stop every discounted booking with a false "price changed".
+  const shownBeforeAdopt = payableTotal();
   adoptServerQuote(booking);
-  if(shownEngineEst && Math.abs(calcTotal()-shownBeforeAdopt) > 1){
-    return phShowFinalRepriceGate(booking, shownBeforeAdopt, calcTotal());
+  if(shownEngineEst && Math.abs(payableTotal()-shownBeforeAdopt) > 1){
+    return phShowFinalRepriceGate(booking, shownBeforeAdopt, payableTotal());
   }
   return continueToCheckout(booking);
 }
@@ -2898,7 +2919,7 @@ async function createApiBooking(){
   };
   // the price the customer was shown (minor units) — the backend records this, so the
   // confirmation, the DB and the eventual charge all agree.
-  const quotedTotal = calcTotal() > 0 ? Math.round(calcTotal() * 100) : undefined;
+  const quotedTotal = payableTotal() > 0 ? Math.round(payableTotal() * 100) : undefined;
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
