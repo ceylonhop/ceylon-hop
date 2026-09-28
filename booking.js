@@ -1956,6 +1956,50 @@ function promoUiState(){
   return (estimatePending || state.pendingReprice) ? 'checking' : 'off';
 }
 
+// Short reasons for the muted chip — the message's own words without "That code …".
+const PROMO_OFF_REASONS = {
+  promo_code_invalid: 'isn’t valid',
+  promo_code_not_started: 'isn’t active yet',
+  promo_code_expired: 'has expired',
+  promo_code_used_up: 'has been fully used',
+  promo_code_not_eligible: 'can’t be used on this booking',
+  promo_unchecked: 'couldn’t be checked just now',
+};
+// Draws the field and the summary row for promoUiState() (spec §3.2). The input's value is only
+// written while checking — otherwise it holds exactly what the customer typed.
+function renderPromo(){
+  const box=document.getElementById('promo'), row=document.getElementById('sum-promo');
+  if(!box || !row) return;
+  const ui=promoUiState();
+  box.hidden = ui==='hidden';
+  const form=document.getElementById('promo-form'), input=document.getElementById('promo-input');
+  const apply=document.getElementById('promo-apply'), chip=document.getElementById('promo-chip');
+  const msg=document.getElementById('promo-msg');
+  document.getElementById('promo-toggle').hidden = ui!=='collapsed';
+  form.hidden = !(ui==='open' || ui==='checking');
+  input.readOnly = ui==='checking';
+  if(ui==='checking') input.value = promoCode;
+  apply.disabled = ui==='checking';
+  apply.textContent = ui==='checking' ? 'Checking…' : 'Apply';
+  chip.hidden = !(ui==='applied' || ui==='off');
+  chip.classList.toggle('off', ui==='off');
+  const chipHtml = ui==='applied' ? `<b>${acEsc(promoCode)}</b> applied`
+    : ui==='off' ? `<b>${acEsc(promoCode)}</b> · ${PROMO_OFF_REASONS[promoOffReason()] || PROMO_OFF_REASONS.promo_code_invalid}` : '';
+  const chipText=document.getElementById('promo-chip-text');
+  if(chipText.innerHTML!==chipHtml) chipText.innerHTML=chipHtml;
+  const text = (ui==='open' && promoApplyError) ? promoMessage(promoApplyError) : '';
+  if(msg.textContent!==text) msg.textContent=text;
+  msg.classList.toggle('soft', promoApplyError==='promo_unchecked');
+  form.classList.toggle('has-error', ui==='open' && !!promoApplyError && promoApplyError!=='promo_unchecked');
+  // Summary row: the discount held with the price on screen (it keeps its figure through a
+  // re-price, like the vehicle row), or "Doesn't apply" for a code that stopped applying.
+  const held=heldPromo();
+  row.hidden = !(ui==='off' || held);
+  row.classList.toggle('off', ui==='off');
+  document.getElementById('sum-promo-label').textContent = promoCode ? 'Promo '+promoCode : '';
+  document.getElementById('sum-promo-amt').textContent = ui==='off' ? 'Doesn’t apply' : held ? '−'+money(held.discountCents/100) : '';
+}
+
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -2419,6 +2463,7 @@ function render(){
   if(choice){
     choice.style.display = 'none';
   }
+  renderPromo();
 
   // Pay gate (Task 3): the established disabled treatment (same idiom as #n1/#n4 above) for the
   // three states a charge must never start from — a fresh price still in flight, a raise
@@ -2850,6 +2895,28 @@ function phShowEnd(kind, msg, opts){
 }
 document.getElementById('ph-retry').addEventListener('click', ()=>runPayment());
 document.getElementById('ph-close').addEventListener('click', ()=>document.getElementById('ph-overlay').classList.remove('show'));
+
+// Promo field controls (spec §3.2). Wired only when the field can show at all.
+(function wirePromo(){
+  if(!promoFieldOn) return;
+  const input=document.getElementById('promo-input');
+  function apply(){
+    const typed=(input.value||'').trim().toUpperCase();
+    if(!typed) return;
+    promoApplyError=null;
+    promoCode=typed;
+    promoConfirmed=false;
+    lastRequestedSig=null; // a retry after "couldn't check" must really ask again
+    render();
+  }
+  document.getElementById('promo-toggle').addEventListener('click', ()=>{ promoOpen=true; render(); input.focus(); });
+  document.getElementById('promo-apply').addEventListener('click', apply);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); apply(); } });
+  input.addEventListener('input', ()=>{ if(promoApplyError){ promoApplyError=null; render(); } });
+  document.getElementById('promo-remove').addEventListener('click', ()=>{
+    dropPromo(); promoApplyError=null; promoOpen=true; input.value=''; render(); input.focus();
+  });
+})();
 
 // Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
 function simulatePayThenConfirm(booking){
