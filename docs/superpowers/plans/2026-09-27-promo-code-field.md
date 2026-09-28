@@ -8,7 +8,7 @@
 
 **Tech Stack:** Plain browser JS (`booking.js` is a classic, non-module script) + `booking.html` markup/`<style>`. Tests: Vitest + jsdom (`web-tests/unit/`), Playwright (`web-tests/e2e/`).
 
-**Spec:** `docs/superpowers/specs/2026-09-24-promo-code-field-design.md` (approved 2026-09-27, including its §9 calls). **Mockup:** `docs/superpowers/specs/2026-09-24-promo-code-field-mockup.html`.
+**Spec:** `docs/superpowers/specs/2026-09-24-promo-code-field-design.md` (approved 2026-09-27, including its §9 calls, the review corrections, and the §10 known limits). **Mockup:** `docs/superpowers/specs/2026-09-24-promo-code-field-mockup.html`.
 
 ## Global Constraints
 
@@ -44,7 +44,6 @@
 | `booking.html` | promo markup in the Payment step, summary row, promo styles in the page `<style>` | 4 |
 | `web-tests/unit/booking-promo.test.js` (new) | jsdom unit tests of the logic | 1–3 |
 | `web-tests/e2e/booking-promo-code.spec.js` (new) | Playwright: the field in the real page, mocked API | 4–5 |
-| `docs/superpowers/specs/2026-09-24-promo-code-field-design.md` | one refinement (Task 3, Step 7) | 3 |
 
 ---
 
@@ -427,7 +426,6 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `booking.js` (`adoptEngineEstimate`, `requestEstimate`'s `onUnavailable`, new helpers after `payableTotal`, `createApiBooking` payloads at the `routeVariant:` / `routeVariants:` lines)
-- Modify: `docs/superpowers/specs/2026-09-24-promo-code-field-design.md` (§3.2, §4.7)
 - Test: `web-tests/unit/booking-promo.test.js`
 
 **Interfaces:**
@@ -644,13 +642,7 @@ and after `routeVariant: …` in the **single** payload:
 ```
 Leave the shared payload alone.
 
-- [ ] **Step 7: Record the refinement in the spec.** In `docs/superpowers/specs/2026-09-24-promo-code-field-design.md`:
-  - In the §3.2 table, replace the **Price check unavailable** row with:
-    `| **Price check unavailable** | On Apply: the code is not kept; the field stays open with the typed text and the grey message "We couldn’t check your code just now, please try again." For a code already applied: the muted chip reads "SAVE10 · couldn’t be checked just now". | No discount; the price already shown stays (Apply) or the page's offline price (later re-price) |`
-  - Replace §4.7's body with:
-    `When the engine can't be reached while a code is being applied, the code is not kept: the page keeps the full engine price it already had (it does not fall to the local formula for "the trip with a code"), and the field shows the message with the typed text so Apply retries. If a code that was already accepted can't be re-checked after a later trip change, it stays applied but muted ("couldn’t be checked just now"), nothing is taken off, and the page is on its offline price exactly as it is today without codes. No code is sent in either case.`
-
-- [ ] **Step 8: Run tests**
+- [ ] **Step 7: Run tests**
 
 ```bash
 cd /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/promo-field-spec/web-tests || exit 1
@@ -658,12 +650,12 @@ npx vitest run unit/booking-promo.test.js unit/booking-intent.test.js unit/booki
 ```
 Expected: `Test Files  3 passed`, `exit=0`.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 cd /Users/roshenw/claude_code/ceylon-hop/.claude/worktrees/promo-field-spec || exit 1
 GIT=/Library/Developer/CommandLineTools/usr/bin/git
-$GIT add booking.js web-tests/unit/booking-promo.test.js docs/superpowers/specs/2026-09-24-promo-code-field-design.md
+$GIT add booking.js web-tests/unit/booking-promo.test.js
 $GIT commit -m "feat(booking): settle each code answer and send an accepted code with the booking
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1136,7 +1128,8 @@ gh pr create --repo ceylonhop/ceylon-hop --base main --head docs/promo-code-fiel
 ```
 The PR body contains: what it does, the switch and why it is off, the red→green evidence from Tasks 1–5, the `test:all` and `npm run check` summary lines, a screenshot of the applied state, and the go-live steps (spec §8). End it with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 
-## Known edges (accepted, not fixed here)
+## Known limits (accepted, not fixed here)
 
-- **Cached previews:** `ch-pricing.js` caches estimate answers in `sessionStorage` by intent, so a preview can be minutes old. A code that was used up in the meantime is caught at booking time (Task 5).
-- **A single-use code after a failed payment:** the customer's own unpaid booking holds the use for 2 hours. If they then change the trip, the fresh preview counts their own hold and says "fully used". A retry of the *same* trip re-sends the same booking (same idempotency key), which the backend honours.
+See spec §10: single-use codes after a failed payment, guessable codes, and minutes-old cached
+previews. None of them is in scope for this plan. The first two are handled by how the owner makes
+codes (spec §8).
