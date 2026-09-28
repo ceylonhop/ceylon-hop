@@ -1075,6 +1075,41 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* When the composer sits at the bottom of the Rate Settings modal, the zone picker menu
    would spill past the (overflow-hidden) card; .flip-up opens it above the field instead. */
 .qv .ch-ac-menu.flip-up { top: auto; bottom: calc(100% + 5px); }
+
+/* Promo codes panel (spec 2026-09-28-ops-promo-codes) — rows wrap like the hot-zone rows, so a
+   phone gets the actions on a second line instead of a table running off the card. */
+.qv .pc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.qv .pc-code { flex: 1 1 130px; min-width: 0; font-family: var(--mono); font-weight: 700; overflow-wrap: anywhere; }
+.qv .pc-off { font-weight: 700; min-width: 36px; }
+.qv .pc-uses { flex: 1 1 200px; color: var(--muted); }
+.qv .pc-uses b { color: var(--ink); }
+.qv .pc-dates { color: var(--muted); white-space: nowrap; }
+.qv .pc-acts { display: flex; gap: 6px; margin-left: auto; }
+.qv .pc-chip { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.qv .pc-chip.s-active { color: var(--ok); background: var(--ok-bg); }
+.qv .pc-chip.s-later { color: var(--wait); background: var(--wait-bg); }
+.qv .pc-chip.s-used, .qv .pc-chip.s-expired { color: var(--idle); background: var(--idle-bg); }
+.qv .pc-chip.s-ended { color: var(--alert); background: var(--alert-bg); }
+.qv .pc-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 260px; }
+.qv .pc-edit .ch-input { width: auto; }
+.qv .pc-edit .pc-edit-uses { width: 80px; }
+.qv .pc-grid { display: grid; grid-template-columns: minmax(0,1.4fr) 88px 88px minmax(0,1fr) minmax(0,1fr); gap: 12px; align-items: start; }
+.qv .pc-codecell .ch-input-wrap { display: flex; }
+.qv .pc-grid .ch-input { min-width: 0; width: 100%; }
+/* The theme's surface, not the zone form's hard-coded #fff: dark mode's near-white input text was
+   unreadable on it. */
+.qv #pc-form .ch-input-wrap { background: var(--surface); }
+.qv #pc-code { text-transform: uppercase; font-family: var(--mono); }
+.qv .pc-sugg { border: 0; background: none; color: var(--teal-d); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 10px; white-space: nowrap; }
+.qv .pc-hint { font-size: 11px; color: var(--muted-2); margin-top: 5px; }
+.qv .pc-err { font-size: 12px; font-weight: 600; color: var(--alert); margin-top: 5px; }
+.qv .pc-banner { border: 1px solid var(--alert-line); background: var(--alert-bg); color: var(--alert); border-radius: var(--r-md); padding: 10px 13px; font-size: 12.5px; font-weight: 600; margin: 0 0 12px; }
+.qv .pc-foot { margin-top: 14px; }
+@media (max-width: 700px) {
+  .qv .pc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qv .pc-codecell, .qv .pc-datecell { grid-column: 1 / -1; } /* a date clips below ~150px */
+  .qv .pc-acts { margin-left: 0; }
+}
 .qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -4796,6 +4831,12 @@ var ratesEl = null;       // the shell's #rates-mount while the Rates page is sh
 var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
+var promoCodes = null;      // Promo codes: GET /admin/promo-codes list (null = not loaded yet)
+var promoLoadFailed = false;
+var promoBusy = false;      // a promo-code write is in flight (disables the form and row buttons)
+var promoEditId = null;     // id of the code being edited inline, or null
+var promoDisabled = false;  // the server refused a create: PROMO_CODES_ENABLED is off there
+var promoFieldError = null; // { field: 'code'|'pct'|'uses'|'starts'|'ends'|'form', msg } — one at a time
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 // "Not ready to submit" panel: opened by pressing Submit/Approve with blockers outstanding,
 // closed when the operator dismisses it or the submission actually goes through. Not derived
@@ -7764,6 +7805,205 @@ function renderHotZonesPanel() {
     + '</div>';
 }
 
+// ── Promo codes (spec 2026-09-28-ops-promo-codes) — founder-only, below Hot zones. ──
+// Codes customers type at checkout for % off. The backend owns every rule (#618); this is the
+// screen for it. Forms are uncontrolled like the zone form, and each render writes the fields'
+// CURRENT values back as their value attributes, so a morph (a list landing, the form disabling)
+// can never wipe what the founder has typed.
+// The founder picks Sri Lanka DAYS; the API takes instants. Starts D = D 00:00 +05:30; Ends D =
+// the next day 00:00 +05:30, so the code works through the whole of D (expiry is exclusive).
+var PROMO_TZ = 'Asia/Colombo';
+function promoNextDay(d) { var x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); }
+function promoDayToStartIso(d) { return d + 'T00:00:00+05:30'; }
+function promoDayToExpiryIso(d) { return promoNextDay(d) + 'T00:00:00+05:30'; }
+function promoSlDay(ms) { return new Date(ms).toLocaleDateString('en-CA', { timeZone: PROMO_TZ }); } // YYYY-MM-DD
+function promoExpiryDay(iso) { return promoSlDay(Date.parse(iso) - 1); } // the last day it works
+function promoFmtDay(d) { return new Date(d + 'T12:00:00+05:30').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROMO_TZ }); }
+// First match wins (spec §4.2).
+function promoStatus(c, now) {
+  if (!c.active) return 'ended';
+  if (now >= Date.parse(c.expiresAt)) return 'expired';
+  if (c.uses && c.uses.remaining <= 0) return 'used';
+  if (c.startsAt && now < Date.parse(c.startsAt)) return 'later';
+  return 'active';
+}
+var PROMO_STATUS_LABEL = { active: 'Active', later: 'Starts later', used: 'Used up', expired: 'Expired', ended: 'Ended' };
+// CH- + 6 from an alphabet without 0/O/1/I. 32 symbols, so a byte & 31 is uniform.
+function promoSuggestCode() {
+  var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint8Array(6), out = 'CH-';
+  crypto.getRandomValues(b);
+  for (var i = 0; i < b.length; i++) out += abc[b[i] & 31];
+  return out;
+}
+function promoVal(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+async function loadPromoCodes() {
+  try {
+    var r = await api('/admin/promo-codes');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (d && Array.isArray(d.codes)) { promoCodes = d.codes; promoLoadFailed = false; }
+    else promoLoadFailed = true;
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes list', e); promoLoadFailed = true; }
+  renderRatesPage();
+}
+
+// Read and check the create form (spec §4.3). Returns { body } or { error: { field, msg } }.
+function promoReadForm() {
+  var code = promoVal('pc-code').trim().toUpperCase();
+  var pctRaw = promoVal('pc-pct').trim(), usesRaw = promoVal('pc-uses').trim();
+  var starts = promoVal('pc-starts'), ends = promoVal('pc-ends');
+  var pct = Number(pctRaw), uses = Number(usesRaw);
+  if (!/^[A-Z0-9-]{3,32}$/.test(code)) return { error: { field: 'code', msg: '3–32 letters, numbers or -' } };
+  if (!pctRaw || !Number.isInteger(pct) || pct < 1 || pct > 30) return { error: { field: 'pct', msg: '1–30%' } };
+  if (!usesRaw || !Number.isInteger(uses) || uses < 1) return { error: { field: 'uses', msg: 'At least 1' } };
+  if (!ends) return { error: { field: 'ends', msg: 'Pick the last day' } };
+  if (ends < promoSlDay(Date.now())) return { error: { field: 'ends', msg: 'Today or later' } };
+  if (starts && ends < starts) return { error: { field: 'ends', msg: 'On or after the start' } };
+  var body = { code: code, method: 'percentage', value: pct * 100, maxUses: uses };
+  if (starts) body.startsAt = promoDayToStartIso(starts);
+  body.expiresAt = promoDayToExpiryIso(ends);
+  return { body: body };
+}
+
+var PROMO_API_FIELD = { code: 'code', value: 'pct', maxUses: 'uses', startsAt: 'starts', expiresAt: 'ends' };
+
+async function promoCreate() {
+  var f = promoReadForm();
+  promoFieldError = f.error || null;
+  if (f.error) { renderRatesPage(); return; }
+  promoBusy = true; renderRatesPage();
+  try {
+    // Not api(): it turns every 403 into "Founder access required" and leaves the page, but a 403
+    // here is the server saying PROMO_CODES_ENABLED is off — the founder should see that, in place.
+    var r = await fetch('/admin/promo-codes', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
+    if (r.status === 401 && window.opsShowLogin) window.opsShowLogin();
+    var d = await jsonOrNull(r);
+    promoBusy = false;
+    if (r.status === 201) {
+      ['pc-code', 'pc-pct', 'pc-uses', 'pc-starts', 'pc-ends'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+      ratesToast('Code ' + f.body.code + ' created');
+      await loadPromoCodes();
+      return;
+    }
+    var err = d && d.error;
+    if (err === 'promo_codes_disabled') promoDisabled = true;
+    else if (err === 'code_taken') promoFieldError = { field: 'code', msg: 'That code already exists.' };
+    else if (err === 'invalid_request') {
+      var fe = (d.details && d.details.fieldErrors) || {}, k = Object.keys(fe).find(function (x) { return fe[x] && fe[x].length; });
+      promoFieldError = k ? { field: PROMO_API_FIELD[k] || 'form', msg: fe[k][0] } : { field: 'form', msg: 'Check the values.' };
+    } else if (r.status !== 401) ratesToast('Couldn’t save — try again.', 'error');
+    renderRatesPage();
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes create', e); promoBusy = false; ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); }
+}
+
+// PATCH one code; on success the edit closes and the list reloads, on failure the row keeps its
+// old values (the list is only replaced by a fresh GET).
+async function promoPatch(id, body) {
+  promoBusy = true; renderRatesPage();
+  try {
+    var r = await api('/admin/promo-codes/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    promoBusy = false;
+    if (!r.ok) { ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); return; }
+    if (promoEditId === id) promoEditId = null;
+    await loadPromoCodes();
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes update', e); promoBusy = false; ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); }
+}
+
+function promoEditSave(id) {
+  var c = (promoCodes || []).find(function (x) { return x.id === id; });
+  if (!c) return;
+  var ends = promoVal('pc-edit-ends'), usesRaw = promoVal('pc-edit-uses').trim(), uses = Number(usesRaw);
+  if (!ends) { ratesToast('Pick the last day', 'error'); return; }
+  if (!usesRaw || !Number.isInteger(uses) || uses < 1) { ratesToast('Uses must be at least 1', 'error'); return; }
+  var body = {};
+  if (ends !== promoExpiryDay(c.expiresAt)) body.expiresAt = promoDayToExpiryIso(ends);
+  if (uses !== c.maxUses) body.maxUses = uses;
+  if (!Object.keys(body).length) { promoEditId = null; renderRatesPage(); return; }
+  var taken = c.uses ? c.uses.paid + c.uses.held : 0;
+  if (body.maxUses !== undefined && body.maxUses < taken
+    && !window.confirm(taken + ' uses are already paid or held. Set the limit to ' + uses + ' anyway? No new bookings will be able to use it.')) return;
+  promoPatch(id, body);
+}
+
+function promoEnd(id) {
+  var c = (promoCodes || []).find(function (x) { return x.id === id; });
+  if (!c) return;
+  if (!window.confirm('End ' + c.code + ' now? It stops working for new bookings immediately. Bookings already holding it (for up to 2 hours) can still pay at the discounted price.')) return;
+  promoPatch(id, { active: false });
+}
+
+function renderPromoCodesPanel() {
+  if (!viewerCan('promo_codes:manage')) return '';
+  var now = Date.now(), dis = promoBusy ? ' disabled' : '';
+  var rows;
+  if (promoCodes === null && promoLoadFailed) {
+    rows = '<div class="pc-row" style="color:var(--muted)">Couldn’t load promo codes. <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoRetry">Retry</button></div>';
+  } else if (promoCodes === null) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading codes…</div>';
+  } else if (!promoCodes.length) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No promo codes yet.</div>';
+  } else {
+    rows = promoCodes.slice().sort(function (a, b) { return Date.parse(b.createdAt) - Date.parse(a.createdAt); }).map(function (c) {
+      var st = promoStatus(c, now), u = c.uses || { paid: 0, held: 0, remaining: c.maxUses };
+      var chip = '<span class="pc-chip s-' + st + '">' + PROMO_STATUS_LABEL[st] + '</span>';
+      var head = '<span class="pc-code">' + esc(c.code) + '</span><span class="pc-off">' + esc(String(c.value / 100)) + '%</span>';
+      if (promoEditId === c.id) {
+        // Keep what's typed across a re-render; first render starts from the saved values.
+        var endsV = document.getElementById('pc-edit-ends') ? promoVal('pc-edit-ends') : promoExpiryDay(c.expiresAt);
+        var usesV = document.getElementById('pc-edit-uses') ? promoVal('pc-edit-uses') : String(c.maxUses);
+        return '<div class="pc-row" data-promo-row="' + esc(c.id) + '">' + head
+          + '<span class="pc-edit"><label class="ch-hz-lbl" for="pc-edit-ends" style="margin:0">Ends</label>'
+          + '<input id="pc-edit-ends" class="ch-input pc-edit-ends" type="date" value="' + esc(endsV) + '"' + dis + '>'
+          + '<label class="ch-hz-lbl" for="pc-edit-uses" style="margin:0">Uses</label>'
+          + '<input id="pc-edit-uses" class="ch-input pc-edit-uses" type="number" min="1" step="1" value="' + esc(usesV) + '"' + dis + '></span>'
+          + chip
+          + '<span class="pc-acts"><button class="ch-btn ch-btn-teal ch-btn-sm" data-action="promoEditSave" data-id="' + esc(c.id) + '"' + dis + '>Save</button>'
+          + '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="promoEditCancel"' + dis + '>Cancel</button></span></div>';
+      }
+      var acts = c.active
+        ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoEditStart" data-id="' + esc(c.id) + '"' + dis + '>Edit</button>'
+          + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoEnd" data-id="' + esc(c.id) + '"' + dis + '>End now</button>'
+        : '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoReactivate" data-id="' + esc(c.id) + '"' + dis + '>Turn back on</button>';
+      return '<div class="pc-row" data-promo-row="' + esc(c.id) + '">' + head
+        + '<span class="pc-uses"><b>' + u.paid + '</b> paid · ' + u.held + ' held · <b>' + u.remaining + '</b> left of ' + esc(String(c.maxUses)) + '</span>'
+        + '<span class="pc-dates">' + (c.startsAt ? promoFmtDay(promoSlDay(Date.parse(c.startsAt))) : 'Now') + ' → ' + promoFmtDay(promoExpiryDay(c.expiresAt)) + '</span>'
+        + chip + '<span class="pc-acts">' + acts + '</span></div>';
+    }).join('');
+  }
+
+  var off = promoDisabled || promoBusy ? ' disabled' : '';
+  var fe = promoFieldError;
+  var err = function (field) { return fe && fe.field === field ? '<div class="pc-err">' + esc(fe.msg) + '</div>' : ''; };
+  var field = function (id, label, input, field, hint) {
+    var cell = field === 'code' ? 'pc-codecell' : (field === 'starts' || field === 'ends') ? 'pc-datecell' : '';
+    return '<div class="' + cell + '"><label class="ch-hz-lbl" for="' + id + '">' + label + '</label>' + input + (hint || '') + err(field) + '</div>';
+  };
+  var inp = function (id, attrs) { return '<input id="' + id + '" class="ch-input" ' + attrs + ' value="' + esc(promoVal(id)) + '"' + off + '>'; };
+  var banner = promoDisabled
+    ? '<div class="pc-banner">Promo codes are switched off on this server, so new codes can’t be created here. Existing codes still show.</div>'
+    : '';
+  var form = '<div class="ch-hz-form" id="pc-form">'
+    + '<div class="ch-hz-head">Create a code</div>'
+    + '<div class="ch-hz-caption">Prefer codes that are hard to guess: a name plus random characters, like ROSHEN-7KQ2. The code and its % can’t change once it’s made.</div>'
+    + banner
+    + '<div class="pc-grid">'
+    +   field('pc-code', 'Code', '<div class="ch-input-wrap">' + inp('pc-code', 'maxlength="32" autocomplete="off" spellcheck="false" placeholder="ROSHEN-7KQ2"') + '<button class="pc-sugg" data-action="promoSuggest"' + off + '>Suggest</button></div>', 'code')
+    +   field('pc-pct', '% off', '<div class="ch-input-wrap">' + inp('pc-pct', 'type="number" min="1" max="30" step="1" placeholder="10"') + '<span class="ch-input-suffix">%</span></div>', 'pct')
+    +   field('pc-uses', 'Uses', '<div class="ch-input-wrap">' + inp('pc-uses', 'type="number" min="1" step="1" placeholder="20"') + '</div>', 'uses')
+    +   field('pc-starts', 'Starts <span style="font-weight:400;text-transform:none">(optional)</span>', '<div class="ch-input-wrap">' + inp('pc-starts', 'type="date"') + '</div>', 'starts')
+    +   field('pc-ends', 'Ends', '<div class="ch-input-wrap">' + inp('pc-ends', 'type="date"') + '</div>', 'ends', '<div class="pc-hint">Works through the whole day, Sri Lanka time</div>')
+    + '</div>'
+    + '<div class="pc-foot"><button class="ch-btn ch-btn-teal ch-btn-sm" data-action="promoCreate"' + off + '>Create code</button>' + err('form') + '</div>'
+    + '</div>';
+
+  return '<div class="ch-hz-panel" data-testid="promo-panel" style="margin-top:20px">'
+    + '<h3 style="margin:0 0 4px;font-size:15px">Promo codes</h3>'
+    + '<div class="ch-lock-note">Codes customers type at checkout for % off. Held = an unpaid booking is reserving a use for up to 2 hours.</div>'
+    + rows
+    + form
+    + '</div>';
+}
+
 // ── Rates page (spec 2026-09-26 §5–§7) ───────────────────────────────────────
 // Rate Settings used to be a popup over the builder; it is a founder-only page in the ops side
 // menu. The shell owns the page header and hands us #rates-mount; the page renders here because it
@@ -8067,6 +8307,7 @@ function renderRatesPage() {
     + renderRatesEditor()
     + renderRatesHistory()
     + renderHotZonesPanel()
+    + renderPromoCodesPanel()
     + '</div>'
     + '</div>';
   // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field. And the
@@ -8172,6 +8413,8 @@ function showRates(el) {
     ratesLoadFailed = false;
     loadRates();
     loadHotZones();
+    promoCodes = null; promoLoadFailed = false; promoEditId = null; promoFieldError = null; promoDisabled = false;
+    if (viewerCan('promo_codes:manage')) loadPromoCodes();
   }
   renderRatesPage();
 }
@@ -8180,6 +8423,7 @@ function hideRates() {
   if (!ratesEl) return;
   ratesEl = null;
   hzEditId = null;
+  promoEditId = null;
   ratesEditing = false;
   ratesReview = null;
   if (rtModalRoot) rtModalRoot.innerHTML = '';
@@ -8204,6 +8448,27 @@ document.addEventListener('click', function (e) {
     hzToggleZone(el.getAttribute('data-id'));
   } else if (action === 'hzDelete') {
     hzDeleteZone(el.getAttribute('data-id'));
+  } else if (action === 'promoCreate') {
+    promoCreate();
+  } else if (action === 'promoSuggest') {
+    var pcCode = document.getElementById('pc-code');
+    if (pcCode) { pcCode.value = promoSuggestCode(); if (promoFieldError && promoFieldError.field === 'code') { promoFieldError = null; renderRatesPage(); } }
+  } else if (action === 'promoEditStart') {
+    promoEditId = el.getAttribute('data-id');
+    renderRatesPage();
+  } else if (action === 'promoEditCancel') {
+    promoEditId = null;
+    renderRatesPage();
+  } else if (action === 'promoEditSave') {
+    promoEditSave(el.getAttribute('data-id'));
+  } else if (action === 'promoEnd') {
+    promoEnd(el.getAttribute('data-id'));
+  } else if (action === 'promoReactivate') {
+    promoPatch(el.getAttribute('data-id'), { active: true });
+  } else if (action === 'promoRetry') {
+    promoLoadFailed = false;
+    renderRatesPage();
+    loadPromoCodes();
   } else if (action === 'rtEdit') {
     if (!rtCanEdit() || !ratesData) return;
     ratesEditing = true;
