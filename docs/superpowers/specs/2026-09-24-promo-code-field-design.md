@@ -159,6 +159,8 @@ routing drift and is gated exactly as today.
 | Final price check before checkout (`booking.js:2518-2521`) | `calcTotal()` before vs after the booking lands | `payableTotal()` before vs after |
 | Analytics `add_payment_info`, `payment_initiated` | `calcTotal()` | `payableTotal()` (what the customer pays) |
 | Confirmation pass, `purchase` event | `calcTotal()` after the booking lands | unchanged; that is `serverQuote.total`, already discounted |
+| Price-change notice (was / now / button) | full `fromCents`/`toCents` | `payableTotal()` / the parked estimate's own accepted promo total, else full |
+| WhatsApp pre-filled message ("Quoted …") | `calcTotal()` | `payableTotal()` |
 
 The final-price-check row matters. Without it, every booking with a code would compare the full
 price (before) with the discounted booking total (after), differ by more than $1, and show the
@@ -192,6 +194,10 @@ follows it exactly:
    message plus "Your total is now the full price." **No payment is taken.** Closing the overlay
    returns the customer to the Payment step, where they can press Pay again at the full price they
    can now see, or try another code.
+5. The refused code is remembered for the rest of the visit (`promoRefusedAtBooking`, keyed by the
+   normalised code). Re-applying the SAME code shows the same §3.3 message again without asking the
+   server: `ch-pricing.js` caches estimate answers by intent in `sessionStorage`, so a fresh preview
+   would just replay the OLD "accepted" answer for it, not the refusal the booking just hit.
 
 ### 4.7 Pricing server unreachable
 
