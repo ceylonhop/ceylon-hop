@@ -342,6 +342,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     .an-seg{max-width:100%;overflow:auto}.an-seg button{padding:8px 12px;white-space:nowrap}
     .an-funnel{grid-template-columns:1fr}.an-funnel>div+div:before{content:'↓';left:50%;top:-5px}
     .an-card.an-wide{grid-column:auto}.an-attn button{align-items:flex-start}.an-attn strong{font-size:.82rem}
+    /* Bookings on a phone: search on its own line, channel + type side by side under it. The bar
+       must not shrink back to its 62px min-height — the wrapped selects spilled onto the heading. */
+    .topbar{flex-shrink:0}.topbar .search{flex:1 1 100%;max-width:none}.topbar .spacer{display:none}.topbar .sel{flex:1 1 0;min-width:0}
+    .qhead{flex-wrap:wrap}.qhead .an-seg{width:100%}.qhead .an-seg button{flex:1;padding:8px 6px}
   }
   /* Bulk close-out bar — sits under the Needs closing header, quiet until something is ticked. */
   .bulkbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 2px 10px;padding:9px 12px;
@@ -2117,6 +2121,40 @@ const inGroup=(t,g)=>{
   if(g==='done')return CLOSED.includes(t.stage);
   return true;
 };
+/* Product type (owner 2026-09-28) — the queue's type filter. A private multi-stop trip is still
+   "my own car", so it files with the A→B transfers; only a chauffeur-guide trip stands apart.
+   A trip stored without a service type is a private car, never a guide. */
+const TYPES=[['','All types'],['private','Private transfers'],['chauffeur','Chauffeur guide'],['shared','Shared ride'],['board','Ride board']];
+const productType=t=>{
+  if(t.mode==='board')return 'board';
+  if(t.mode==='shared')return 'shared';
+  if(t.mode==='trip'&&t.serviceType==='chauffeur')return 'chauffeur';
+  return 'private';
+};
+/* Two views of one queue: 'date' is the day-grouped timeline, where the stage chip decides what
+   shows; 'recent' is a feed of what came in — every stage, closed and expired included — so the
+   chip does not apply there. Type and channel filter both. */
+const inQueue=(t,s)=>{
+  if(s.view!=='recent'&&!inGroup(t,s.group))return false;
+  if(s.chan&&t.chan!==s.chan)return false;
+  if(s.type&&productType(t)!==s.type)return false;
+  return true;
+};
+/* Newest booking first; a row with no booking time sinks. ISO strings from one server compare
+   as dates only when parsed — the booking and ride-list timestamps differ in precision. */
+const byRecent=(a,b)=>{
+  const ta=a.created?Date.parse(a.created):-Infinity,tb=b.created?Date.parse(b.created):-Infinity;
+  return tb-ta;
+};
+/* "booked 3h ago" on a fresh row, the day and time once it is older than a day. */
+const fmtBooked=iso=>{
+  const ms=Date.now()-Date.parse(iso);
+  if(!(ms>=0))return '';
+  if(ms<3600000)return `booked ${Math.max(1,Math.round(ms/60000))}m ago`;
+  if(ms<86400000)return `booked ${Math.round(ms/3600000)}h ago`;
+  const d=new Date(iso);
+  return 'booked '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+', '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+};
 const ICON={
   wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>',
   web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
@@ -2162,6 +2200,7 @@ function rowToTicket(row){
     source:row.source||'booking', board:row.board||null,
     /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
     test:!!row.isTest,
+    created:row.createdAt||null, serviceType:row.serviceType||null,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
@@ -2194,7 +2233,7 @@ let tickets=[];
    reload so a stale id can never be actioned. */
 let closeSel=new Set();
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
-let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
+let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',view:'date',type:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
 let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
 /* The one "we're fetching a list" idiom, shared by the Bookings and Quotes queues. Rows rather
@@ -2405,10 +2444,11 @@ function ticketRow(t,i){
   const meta=board
     ?`${esc(boardSeats(t))}`
     :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+  const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
      advance. The box swallows its own click so ticking never opens the drawer. */
-  const closable=!board&&dayGroup(t)==='Needs closing';
+  const closable=!board&&state.view==='date'&&dayGroup(t)==='Needs closing';
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
@@ -2417,7 +2457,7 @@ function ticketRow(t,i){
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
-      <div class="tk-meta">${meta}</div>
+      <div class="tk-meta">${meta}${booked}</div>
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
@@ -2465,21 +2505,23 @@ function viewTickets(){
   $('#topbar').innerHTML=`
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
     <div class="spacer"></div>
-    <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>`;
+    <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>
+    <select class="sel" id="typesel" aria-label="Booking type">${TYPES.map(([v,l])=>`<option value="${v}"${state.type===v?' selected':''}>${l}</option>`).join('')}</select>`;
   const q=state.q.trim().toLowerCase();
+  const recent=state.view==='recent';
   let list=tickets.filter(t=>{
-    if(!inGroup(t,state.group))return false;
-    if(state.chan&&t.chan!==state.chan)return false;
+    if(!inQueue(t,state))return false;
     if(q&&!`${t.cust} ${t.ref} ${t.route}`.toLowerCase().includes(q))return false;
     return true;
   });
   const tkey=t=>(t.date||'9999-99-99')+'T'+(t.time||'99:99');
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
-  let html=`<div class="pagehead"><h1>Bookings</h1></div>
-    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
-    <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
-  DAYGROUPS.forEach(g=>{
+  let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
+    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · ${recent?'newest first, every stage':'paid &amp; upcoming, website &amp; WhatsApp in one timeline'} · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
+    ${recent?'':`<div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
+  if(recent)html+=list.sort(byRecent).map(ticketRow).join('');
+  else DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
@@ -4241,9 +4283,10 @@ document.addEventListener('click',e=>{
 });
 $('#scrim').addEventListener('click',()=>closeDetail('push'));
 document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
-document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
+document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}if(e.target.id==='typesel'){state.type=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
+  const bv=e.target.closest('[data-bview]');if(bv){state.view=bv.dataset.bview;viewTickets();return;}
   const el=e.target.closest('[data-act]');if(!el)return;
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row

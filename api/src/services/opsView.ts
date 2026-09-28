@@ -61,6 +61,11 @@ export interface OpsBookingRow {
   /** Customer email is one of the team's (config.TEAM_EMAILS) — a test booking, not a customer.
    *  The queue labels it and leaves it out of its counts; the row itself stays. */
   isTest: boolean;
+  /** When the booking was made (ISO) — the ride list's creation time on a board row. Drives the
+   *  queue's "Recently booked" view. */
+  createdAt: string;
+  /** A trip's service: a private car or a chauffeur guide. Null on every other mode. */
+  serviceType: 'private' | 'chauffeur' | null;
 }
 
 const NO_TEAM: ReadonlySet<string> = new Set();
@@ -115,5 +120,7 @@ export function toOpsRow(
     opsNotes: opts.rideOps?.opsNotes ?? null,
     source: 'booking',
     isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),
+    createdAt: b.createdAt,
+    serviceType: b.mode === 'trip' ? b.input.serviceType : null,
   };
 }
