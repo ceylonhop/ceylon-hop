@@ -74,7 +74,7 @@ describe('booking page analytics for a real-gateway payment', () => {
   });
 
   it('still fires payment_initiated at the start of the attempt', () => {
-    expect(js).toMatch(/chTrack\('payment_initiated',\{payment_type:state\.payPlan,currency:'USD',value:calcTotal\(\)\}\)/);
+    expect(js).toMatch(/chTrack\('payment_initiated',\{payment_type:state\.payPlan,currency:'USD',value:payableTotal\(\)\}\)/);
   });
 });
 
