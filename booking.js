@@ -253,6 +253,14 @@ const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
 
+// ---- promo code field (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md) ----
+// Off until the owner turns codes on: setting PROMO_FIELD_ENABLED to true IS the go-live. The
+// window override exists only so web-tests can drive the field while it is off; it unlocks
+// nothing on the server, where PROMO_CODES_ENABLED still refuses every code.
+const PROMO_FIELD_ENABLED = false;
+// Shared seats never take a code (POST /bookings/shared refuses one), so the field never draws there.
+const promoFieldOn = (PROMO_FIELD_ENABLED || window.CH_PROMO_FIELD === true) && !isShared;
+
 // Shared rides run a fixed weekly schedule — seats depart only on set weekdays
 // (0=Sun … 6=Sat), passed via ?days= (search builds it from the corridor). Mirrors the
 // backend `serviceDays` (POST /bookings/shared rejects off-schedule dates); default Wed &
@@ -1487,6 +1495,17 @@ function isDeposit(){
 let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
 let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
 
+// The code the customer applied (trimmed, upper-cased), or null. While set it rides in every
+// estimate intent, so each re-price re-checks it (spec §4.2).
+let promoCode = null;
+// True once an estimate has accepted the current code. Until then a refusal drops the code (a
+// typo stays a typo); after it, a refusal keeps it applied as "doesn't apply" (spec §9.1).
+let promoConfirmed = false;
+// Why the open field is showing a message (an API error code, or 'promo_unchecked'), and
+// whether the customer has opened the field at all.
+let promoApplyError = null;
+let promoOpen = false;
+
 // The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
 // distance (Global Constraints: the intent carries names, distances come back on the response) —
 // so a routing change on the API side is never shadowed by a stale km the browser had on hand.
@@ -1539,7 +1558,7 @@ function dropLocalRoad(estLegs){
   }
   return dropped;
 }
-function buildEstimateIntent(){
+function itineraryIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
   const pax = state.ad + state.ch;
@@ -1580,6 +1599,14 @@ function buildEstimateIntent(){
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
 }
+// The intent POST /quote/v2/estimate prices: the itinerary, plus the applied code. The API lifts
+// promoCode off before pricing (api/src/routes/quote.ts:298-308), so the top-level total is the
+// same with or without it; only the promoCode block in the answer differs.
+function buildEstimateIntent(){
+  const intent = itineraryIntent();
+  if(intent && promoFieldOn && promoCode) intent.promoCode = promoCode;
+  return intent;
+}
 // A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
 // handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
 // called fresh rather than cached across state mutations — that keeps calcTotal() honest the
@@ -1607,6 +1634,9 @@ function adoptEngineEstimate(est, sig){
     amountDueNowCents: est.amountDueNowCents,
     estimated: est.estimated,
     legs: est.legs,
+    // The promo answer lives ON the estimate it came with, so a discount is only ever taken off
+    // the full price it was computed for — it goes stale together with that price (spec §4.1).
+    promo: est.promoCode,
     intentSig: sig
   };
 }
