@@ -78,6 +78,10 @@ const EVENTS = [
     why: 'Customer skipped giving an exact pickup/drop — a driver-side problem later.' },
   { name: 'exact_location_out_of_range', params: ['which', 'km'],
     why: 'The pin was outside the serviceable radius; `km` sizes the demand you are refusing.' },
+
+  // ---- the Europe-only cookie strip (2026-09-27) ---------------------------------------------
+  { name: 'consent_choice', params: ['choice'],
+    why: 'Accept vs Reject on the cookie strip. The accept rate is how much of Europe Clarity can follow across pages again.' },
 ];
 
 /* ch_context is deliberately NOT tagged. It carries ch_property / ch_env to label which
