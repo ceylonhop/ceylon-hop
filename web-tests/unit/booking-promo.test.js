@@ -309,3 +309,17 @@ describe('heldPromo() only answers for the code currently applied', () => {
     expect(ev(w, 'heldPromo()')).toBe(null);
   });
 });
+
+// Final-review fix 5: the WhatsApp pre-filled draft quotes what the customer PAYS, mirroring
+// Total/Due now — not the full price (spec §4.4).
+describe('the WhatsApp draft', () => {
+  it('quotes payableTotal(), not calcTotal()', () => {
+    const w = loadBooking(SINGLE);
+    applyWith(w, 'SAVE10', OK);
+    expect(ev(w, 'calcTotal()')).toBe(90);
+    expect(ev(w, 'payableTotal()')).toBe(81);
+    const text = ev(w, 'waTripSummary()');
+    expect(text).toContain('Quoted $81');
+    expect(text).not.toContain('Quoted $90');
+  });
+});

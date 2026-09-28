@@ -2051,7 +2051,7 @@ function waTripSummary(){
   const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
   const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
   let priced = '';
-  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  try { const t = payableTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
   return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
     + (route ? route + '\n' : '')
     + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
