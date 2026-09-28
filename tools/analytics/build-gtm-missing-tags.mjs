@@ -70,12 +70,18 @@ const EVENTS = [
     why: 'A live estimate replaced a catalogue one. Tells you if the engine is answering in time.' },
   { name: 'route_estimate_unavailable', params: ['surface', 'reason'],
     why: 'The engine did not answer and the customer saw a fallback price.' },
+  { name: 'route_choice', params: ['choice', 'source', 'page', 'saving_usd'],
+    why: 'Which road customers pick when the local road is cheaper (fastest / no_tolls / dismissed), from the popup or the card switch — the take-up of the cheaper road.' },
 
   // ---- location quality ---------------------------------------------------------------------
   { name: 'exact_location_deferred', params: ['which'],
     why: 'Customer skipped giving an exact pickup/drop — a driver-side problem later.' },
   { name: 'exact_location_out_of_range', params: ['which', 'km'],
     why: 'The pin was outside the serviceable radius; `km` sizes the demand you are refusing.' },
+
+  // ---- the Europe-only cookie strip (2026-09-27) ---------------------------------------------
+  { name: 'consent_choice', params: ['choice'],
+    why: 'Accept vs Reject on the cookie strip. The accept rate is how much of Europe Clarity can follow across pages again.' },
 ];
 
 /* ch_context is deliberately NOT tagged. It carries ch_property / ch_env to label which

@@ -362,7 +362,7 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
       ] },
     });
     const t = signQuotePayToken(q.id, q.revision, SECRET);
-    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting fee — CMB → Galle']);
+    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting up to 3hrs']);
 
     await start(app, t);
     const booking = (await bookings.list())[0];
@@ -370,7 +370,7 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     await payments.markSucceeded(p.id);
     const paid = await (await view(app, t)).json();
     expect(paid.state).toBe('paid');
-    expect(paid.paid.addOns).toEqual(['Waiting fee — CMB → Galle']);
+    expect(paid.paid.addOns).toEqual(['Waiting up to 3hrs']);
   });
 });
 
@@ -438,7 +438,7 @@ describe('GET /quotes/pay/view — the discount a customer was given', () => {
 describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
   it('creates one booking at the frozen total; the quote stays sent', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const bookings = new InMemoryBookingRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const app = createApp({ quotes, bookings });
     const q = await readyQuote(quotes);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
@@ -454,6 +454,12 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
     expect(after.status).toBe('sent');           // NEVER won here — that's settlement's job
     expect(after.convertedBookingId).toBe(bookingId);
     expect(checkoutToken).toBeTruthy();
+    expect(await bookings.listStatusEvents(bookingId)).toEqual([
+      expect.objectContaining({
+        source: 'quote_conversion', actorType: 'customer', actorId: CUSTOMER.email,
+        relatedEntityType: 'quote', relatedEntityId: q.id, requestId: expect.any(String),
+      }),
+    ]);
 
     // The checkout token actually opens a checkout on the fake gateway.
     const co = await app.request(`/bookings/${bookingId}/checkout`, {

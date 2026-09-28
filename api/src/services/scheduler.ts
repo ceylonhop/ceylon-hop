@@ -156,6 +156,7 @@ export async function sweepStaleSharedHolds(deps: {
   bookings: BookingRepo;
   departures: DepartureRepo;
   now: Date;
+  correlation?: TrackingCorrelation;
 }): Promise<{ swept: number }> {
   const { bookings, departures, now } = deps;
   let swept = 0;
@@ -164,7 +165,12 @@ export async function sweepStaleSharedHolds(deps: {
       if (b.mode !== 'shared') continue;
       if (now.getTime() - Date.parse(b.createdAt) <= STALE_HOLD_MS) continue;
       try {
-        await bookings.setStatus(b.id, 'cancelled');
+        await bookings.setStatus(b.id, 'cancelled', undefined, {
+          source: 'scheduled_job',
+          actorType: 'scheduler',
+          ...deps.correlation,
+          reason: 'stale_shared_hold',
+        });
         await departures.releaseSeats({
           corridorId: b.input.corridorId,
           date: b.input.date,

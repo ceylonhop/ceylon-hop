@@ -54,6 +54,7 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
       // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
       discountTotal?: number;
     }
@@ -70,6 +71,7 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
       // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
       discountTotal?: number;
     }
@@ -83,12 +85,13 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt' | 'customerNotes'> & {
   // Billing details for the card (2026-08-01). Absent on website bookings and on every row
   // predating the pay page — the checkout adapter then OMITS the fields so PayHere collects
   // them itself, rather than sending the placeholder it used to.
@@ -96,6 +99,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // When they accepted the terms + cancellation policy. Null on website bookings and every
   // row predating this — absence means "never recorded", never "declined".
   termsAcceptedAt?: string | null;
+  // The customer's own note from the booking page ("Anything we should know?"). Plain text,
+  // already cleaned and bounded at the door. Null when they left none, and on older rows.
+  customerNotes?: string | null;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -415,6 +421,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       channel: b.channel ?? 'website',
       billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
       termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
+      customerNotes: b.customerNotes ?? null,
       ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
@@ -579,12 +586,16 @@ export class InMemoryBookingRepo implements BookingRepo {
     });
   }
 
-  snapshotForSettlement(): Map<string, Booking> {
-    return new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)]));
+  snapshotForSettlement(): { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] } {
+    return {
+      bookings: new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)])),
+      statusEvents: structuredClone(this.statusEvents),
+    };
   }
 
-  restoreForSettlement(snapshot: Map<string, Booking>): void {
-    this.byId = new Map([...snapshot].map(([id, booking]) => [id, structuredClone(booking)]));
+  restoreForSettlement(snapshot: { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] }): void {
+    this.byId = new Map([...snapshot.bookings].map(([id, booking]) => [id, structuredClone(booking)]));
+    this.statusEvents = structuredClone(snapshot.statusEvents);
   }
 
   snapshotForQuoteConversion(): {

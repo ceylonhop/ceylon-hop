@@ -3,7 +3,7 @@ import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, 
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
 import type { Booking } from '../db/bookingRepo';
-import { factRows, routeText } from './notifications';
+import { factRows, roadRow, routeText } from './notifications';
 import { shortPlace } from '../quote/shortPlace';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
@@ -274,6 +274,8 @@ function bookingFacts(b: Booking) {
     ['Name', `${c.firstName} ${c.lastName}`],
     ['Email', c.email],
     ['WhatsApp', c.whatsapp, whatsappButton(c.whatsapp)],
+    // What they wrote in "Anything we should know?" — only when they wrote something.
+    ...(b.customerNotes ? [['Note', b.customerNotes] as SectionRow] : []),
   ];
   // What a paid booking actually took: a deposit booking charges amountDueNow, not the total.
   const paidNow = b.amountDueNow != null && b.amountDueNow < b.total ? b.amountDueNow : b.total;
@@ -367,7 +369,13 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
   const c = b.input.customer;
   const amount = money(b.amountDueNow ?? b.total, b.currency);
   const subject = `Rescue: ${c.firstName} couldn’t pay ${b.reference} — ${f.subjectRoute}, ${f.when} — ${amount}`;
-  const trip = f.when === 'date TBC' ? f.route : `${f.route} (${f.when})`;
+  // The road they chose, when it was the local one — the booking must read as theirs. A trip
+  // names its local legs: "via the local road" would be false for the rest of it.
+  const road = roadRow(b)?.[1];
+  const route = !road ? f.route
+    : b.mode === 'trip' ? `${f.route} with the ${road.charAt(0).toLowerCase()}${road.slice(1)}`
+    : `${f.route} via the local road`;
+  const trip = f.when === 'date TBC' ? route : `${route} (${f.when})`;
   const message =
     `Hi ${c.firstName}, this is Ceylon Hop — your card payment for ${trip} didn’t go through. ` +
     `You can pay here: ${payLink} — or reply and we’ll help.`;

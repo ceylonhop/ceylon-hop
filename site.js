@@ -123,7 +123,7 @@
       </div>
       <div class="wrap foot-bottom">
         <span>© ${new Date().getFullYear()} Ceylon Hop. All rights reserved.</span>
-        <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
+        <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a> · <a href="privacy.html#cookies" data-consent-open>Cookie choices</a></span>
       </div>
     </footer>`;
   };

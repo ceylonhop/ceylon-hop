@@ -1708,7 +1708,7 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
 
   it('books a sent quote: draft booking at the quote price, quote stamped won+linked', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const bookings = new InMemoryBookingRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const id = await sentQuote(quotes);
     const res = await book(createApp({ quotes, bookings }), id, BODY);
     expect(res.status).toBe(201);
@@ -1722,6 +1722,12 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(q?.status).toBe('won');
     expect(q?.convertedBookingId).toBe(b.id);
     expect(await bookings.get(b.id)).not.toBeNull();
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        source: 'quote_conversion', actorType: 'staff', actorId: 'f@x.com',
+        relatedEntityType: 'quote', relatedEntityId: id, requestId: expect.any(String),
+      }),
+    ]);
   });
 
   // The add-ons live on the quote as its priced lines, and the booking only links back to it.

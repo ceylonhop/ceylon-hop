@@ -9,8 +9,8 @@ import {
 } from './paymentSettlementRepo';
 import type { VerifiedPaymentEvent } from '../adapters/payments';
 
-async function fixture() {
-  const bookings = new InMemoryBookingRepo();
+async function fixture(tracked = false) {
+  const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: tracked });
   const payments = new InMemoryPaymentRepo();
   const events = new InMemoryPaymentEventRepo();
   const booking = await bookings.create({
@@ -34,7 +34,9 @@ async function fixture() {
     amountDueNow: 4_000,
     currency: 'USD',
   });
-  await bookings.setStatus(booking.id, 'payment_pending');
+  await bookings.setStatus(booking.id, 'payment_pending', undefined, tracked ? {
+    source: 'website', actorType: 'customer', actorId: 'maya@example.com', requestId: 'req-checkout',
+  } : undefined);
   const payment = await payments.create({
     bookingId: booking.id,
     provider: 'payhere',
@@ -60,6 +62,36 @@ async function fixture() {
 }
 
 describe('InMemoryPaymentSettlementRepo', () => {
+  it('records one provider-correlated paid transition and no second event on a duplicate webhook', async () => {
+    const f = await fixture(true);
+    const repo = new InMemoryPaymentSettlementRepo(f);
+
+    expect((await repo.acceptVerifiedEvent(f.event, { requestId: 'req-webhook' })).kind).toBe('settled');
+    expect((await repo.acceptVerifiedEvent(f.event, { requestId: 'req-webhook' })).kind).toBe('duplicate');
+
+    expect(await f.bookings.listStatusEvents(f.booking.id)).toEqual([
+      expect.objectContaining({
+        fromStatus: 'draft', toStatus: 'payment_pending', source: 'website', requestId: 'req-checkout',
+      }),
+      expect.objectContaining({
+        fromStatus: 'payment_pending', toStatus: 'paid', source: 'payment_webhook',
+        actorType: 'provider', actorId: 'payhere', requestId: 'req-webhook',
+        relatedEntityType: 'payment', relatedEntityId: f.payment.id,
+      }),
+    ]);
+  });
+
+  it('rolls back the paid transition event with the financial writes after an injected failure', async () => {
+    const f = await fixture(true);
+    const broken = new InMemoryPaymentSettlementRepo(f, async (point) => {
+      if (point === 'after_booking_update') throw new Error('injected_after_booking_update');
+    });
+
+    await expect(broken.acceptVerifiedEvent(f.event, { requestId: 'req-webhook' }))
+      .rejects.toThrow('injected_after_booking_update');
+    expect((await f.bookings.get(f.booking.id))?.status).toBe('payment_pending');
+    expect(await f.bookings.listStatusEvents(f.booking.id)).toHaveLength(1);
+  });
   it.each([
     'after_event_insert',
     'after_payment_update',

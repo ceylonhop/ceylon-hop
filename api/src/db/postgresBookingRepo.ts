@@ -13,6 +13,7 @@ import {
   bookingStatusEvents,
 } from './schema';
 import { chosenAddOns, type PaySelection } from '../quote/paySelection';
+import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
   type NewBooking,
@@ -48,10 +49,65 @@ import type { BookingTransitionContext } from '../domain/trackingContract';
 
 type BookingRow = typeof bookings.$inferSelect;
 type BookingStatusEventRow = typeof bookingStatusEvents.$inferSelect;
-type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+export type BookingTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 export interface PostgresBookingRepoOptions {
   transitionTrackingEnabled?: boolean;
+}
+
+export async function applyBookingStatusTransition(
+  tx: BookingTransaction,
+  input: {
+    id: string;
+    to: BookingStatus;
+    audit?: StatusAudit;
+    context?: BookingTransitionContext;
+    transitionTrackingEnabled?: boolean;
+  },
+): Promise<BookingRow> {
+  const [row] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
+  if (!row) throw new BookingNotFoundError(input.id);
+  const from = row.status as BookingStatus;
+  assertTransition(from, input.to);
+  if (input.transitionTrackingEnabled && !input.context) {
+    throw new BookingTransitionContextRequiredError();
+  }
+
+  const [moved] = await tx
+    .update(bookings)
+    .set({
+      status: input.to,
+      ...(input.to === 'cancelled' && input.audit
+        ? {
+            cancellationReason: input.audit.reason,
+            cancelledBy: input.audit.by,
+            cancelledAt: input.audit.at ?? new Date(),
+          }
+        : {}),
+    })
+    .where(and(eq(bookings.id, input.id), eq(bookings.status, from)))
+    .returning();
+  if (!moved) {
+    const [current] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
+    throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, input.to);
+  }
+
+  if (input.transitionTrackingEnabled && input.context) {
+    await tx.insert(bookingStatusEvents).values({
+      bookingId: input.id,
+      fromStatus: from,
+      toStatus: input.to,
+      source: input.context.source,
+      actorType: input.context.actorType,
+      actorId: input.context.actorId ?? null,
+      reason: input.context.reason ?? input.audit?.reason ?? null,
+      requestId: input.context.requestId ?? null,
+      runId: input.context.runId ?? null,
+      relatedEntityType: input.context.relatedEntityType ?? null,
+      relatedEntityId: input.context.relatedEntityId ?? null,
+    });
+  }
+  return moved;
 }
 
 function buildStatusEvent(row: BookingStatusEventRow): BookingStatusEvent {
@@ -186,6 +242,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         }
       : null,
     termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
+    customerNotes: row.customerNotes,
     // Only bookings made with a code carry these, so every other booking's shape is unchanged.
     ...(row.promoCodeId
       ? {
@@ -209,6 +266,9 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         serviceType: tr.serviceType as 'private' | 'chauffeur',
         days: tr.days ?? undefined,
         driverNights: tr.driverNights ?? undefined,
+        // Undefined, not null, when the row never recorded any — so an old booking's shape is
+        // byte-identical (0061_route_variant is additive/nullable, no backfill).
+        ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
         customer,
       },
     };
@@ -247,6 +307,9 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       adults: t.adults,
       children: t.children,
       bags: t.bags,
+      // Undefined, not null, when the row never recorded one — so an old booking's shape is
+      // byte-identical (0061_route_variant is additive/nullable, no backfill).
+      ...(t.routeVariant ? { routeVariant: t.routeVariant as RouteVariant } : {}),
       customer,
     },
   };
@@ -268,7 +331,7 @@ export class PostgresBookingRepo implements BookingRepo {
     );
   }
 
-  private async countUses(tx: Transaction, codeId: string, now: Date): Promise<{ paid: number; held: number }> {
+  private async countUses(tx: BookingTransaction, codeId: string, now: Date): Promise<{ paid: number; held: number }> {
     const paid = or(inArray(bookings.status, [...PROMO_PAID_STATUSES]), this.succeededPayment());
     const held = and(inArray(bookings.status, [...PROMO_HELD_STATUSES]), gt(bookings.promoHoldUntil, now));
     const [row] = await tx
@@ -282,7 +345,7 @@ export class PostgresBookingRepo implements BookingRepo {
   }
 
   /** Lock the code row and prove a use can be taken at `now` (§5.3). */
-  private async takeUse(tx: Transaction, codeId: string, now: Date): Promise<PromoCode> {
+  private async takeUse(tx: BookingTransaction, codeId: string, now: Date): Promise<PromoCode> {
     const [locked] = await tx.select().from(promoCodes).where(eq(promoCodes.id, codeId)).for('update');
     if (!locked) throw new PromoCodeRefusedError('promo_code_invalid');
     const code = toPromoCode(locked);
@@ -405,6 +468,7 @@ export class PostgresBookingRepo implements BookingRepo {
           billingPostcode: b.billing?.postcode ?? null,
           billingState: b.billing?.state ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
+          customerNotes: b.customerNotes ?? null,
           discountTotal: b.mode !== 'shared' && b.discountTotal !== undefined ? b.discountTotal : null,
           promoCodeId: opts?.promo ? opts.promo.code.id : null,
           promoHoldUntil: opts?.promo ? new Date(opts.promo.now.getTime() + PROMO_HOLD_MS) : null,
@@ -423,6 +487,7 @@ export class PostgresBookingRepo implements BookingRepo {
           dates: t.dates ?? null,
           days: t.days ?? null,
           driverNights: t.driverNights ?? null,
+          routeVariants: t.routeVariants ?? null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;
@@ -450,6 +515,7 @@ export class PostgresBookingRepo implements BookingRepo {
           bags: t.bags,
           distanceKm: b.distanceKm ?? null,
           durationMin: b.durationMin ?? null,
+          routeVariant: t.routeVariant ?? null,
         });
       }
       const legs = safeLegRowsForBooking(bk.id, b);
@@ -607,50 +673,10 @@ export class PostgresBookingRepo implements BookingRepo {
     audit?: StatusAudit,
     context?: BookingTransitionContext,
   ): Promise<Booking> {
-    const updated = await this.db.transaction(async (tx) => {
-      const [row] = await tx.select().from(bookings).where(eq(bookings.id, id));
-      if (!row) throw new BookingNotFoundError(id);
-      const from = row.status as BookingStatus;
-      assertTransition(from, to);
-      if (this.options.transitionTrackingEnabled && !context) {
-        throw new BookingTransitionContextRequiredError();
-      }
-
-      // Compare-and-set: only move the row if it is STILL in `from`, so two concurrent
-      // transitions cannot both win. The event insert below shares this transaction.
-      const [moved] = await tx
-        .update(bookings)
-        .set({
-          status: to,
-          // Only a cancellation carries a reason; every other transition leaves these untouched.
-          ...(to === 'cancelled' && audit
-            ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
-            : {}),
-        })
-        .where(and(eq(bookings.id, id), eq(bookings.status, from)))
-        .returning();
-      if (!moved) {
-        const [current] = await tx.select().from(bookings).where(eq(bookings.id, id));
-        throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, to);
-      }
-
-      if (this.options.transitionTrackingEnabled && context) {
-        await tx.insert(bookingStatusEvents).values({
-          bookingId: id,
-          fromStatus: from,
-          toStatus: to,
-          source: context.source,
-          actorType: context.actorType,
-          actorId: context.actorId ?? null,
-          reason: context.reason ?? audit?.reason ?? null,
-          requestId: context.requestId ?? null,
-          runId: context.runId ?? null,
-          relatedEntityType: context.relatedEntityType ?? null,
-          relatedEntityId: context.relatedEntityId ?? null,
-        });
-      }
-      return moved;
-    });
+    const updated = await this.db.transaction((tx) => applyBookingStatusTransition(tx, {
+      id, to, audit, context,
+      transitionTrackingEnabled: this.options.transitionTrackingEnabled,
+    }));
     return this.assemble(updated);
   }
 

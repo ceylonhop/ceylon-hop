@@ -33,6 +33,7 @@ interface ToolLegLite {
 
 import { shortPlace } from './shortPlace';
 import { chosenAddOns } from './paySelection';
+import { EXTRA_LABELS } from './extrasDeposit';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
@@ -124,6 +125,27 @@ function legRoute(l: ToolLegLite): string {
   return `${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
 }
 
+// An add-on's stored label names its journey by EVERY stop ("Waiting fee — Galle → Seetha Amman
+// Temple, … → Nuwara Eliya"; extrasDeposit.ts), which repeated a multi-stop day's whole chain on
+// each row (owner-reported 2026-09-27). Owner call: waiting and sightseeing read "Waiting up to 3hrs" and
+// "Sightseeing up to 3hrs" in the Included list; any other add-on keeps its journey, named by its two ends
+// like legRoute. Render-time only: the stored label, ops and emails are untouched. Exported so the
+// quote page can match a priced row against the same name.
+const INCLUDED_NAMES: [string, string][] = [
+  [EXTRA_LABELS.waiting, 'Waiting up to 3hrs'],
+  [EXTRA_LABELS.sightseeing, 'Sightseeing up to 3hrs'],
+];
+export function includedName(label: string): string {
+  for (const [stored, name] of INCLUDED_NAMES) {
+    if (label === stored || label.startsWith(`${stored} — `)) return name;
+  }
+  const at = label.indexOf(' — ');
+  if (at < 0) return label;
+  const stops = label.slice(at + 3).split(' → ');
+  if (stops.length < 2) return label;
+  return `${label.slice(0, at)} — ${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
+}
+
 // `selection` (spec 2026-08-04 partial links) — the legs THIS payment covers, by index into the
 // engine's driving legs. Omit it, or pass one covering everything, and every word below is
 // byte-identical to the whole-trip page.
@@ -144,7 +166,7 @@ export function payPageCopy(quote: {
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
   const engine = req.engine ?? null;
-  const addOns = selection ? [] : chosenAddOns({ request: quote.request, result: quote.result });
+  const addOns = selection ? [] : [...new Set(chosenAddOns({ request: quote.request, result: quote.result }).map(includedName))];
   const withAddOns = addOns.length ? { addOns } : {};
 
   const greetingName = (quote.customerName ?? '').trim().split(/\s+/)[0] || null;
