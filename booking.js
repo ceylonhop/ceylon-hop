@@ -253,6 +253,14 @@ const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
 
+// ---- promo code field (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md) ----
+// Off until the owner turns codes on: setting PROMO_FIELD_ENABLED to true IS the go-live. The
+// window override exists only so web-tests can drive the field while it is off; it unlocks
+// nothing on the server, where PROMO_CODES_ENABLED still refuses every code.
+const PROMO_FIELD_ENABLED = false;
+// Shared seats never take a code (POST /bookings/shared refuses one), so the field never draws there.
+const promoFieldOn = (PROMO_FIELD_ENABLED || window.CH_PROMO_FIELD === true) && !isShared;
+
 // Shared rides run a fixed weekly schedule — seats depart only on set weekdays
 // (0=Sun … 6=Sat), passed via ?days= (search builds it from the corridor). Mirrors the
 // backend `serviceDays` (POST /bookings/shared rejects off-schedule dates); default Wed &
@@ -1222,7 +1230,18 @@ function renderRepriceNote(){
   }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
-    const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
+    // With a code applied, the customer never saw the FULL fromCents/toCents on screen — they saw
+    // payableTotal() and, once they accept, the parked estimate's own (possibly re-priced) promo
+    // total. Quoting the full figures here would show a jump they never agreed to (spec §4.4).
+    // "Now" follows the parked estimate's own answer, not whether a discount is on screen today: a
+    // code that had stopped applying can apply again on the raised price, and accepting then lands
+    // the discounted figure.
+    const held=heldPromo();
+    const newPromo = p.est && p.est.promoCode;
+    const newAccepted = promoFieldOn && promoCode && newPromo && !newPromo.error
+      && newPromo.code === promoCode && typeof newPromo.totalCents === 'number';
+    const fromAmt = money(held ? payableTotal() : p.fromCents/100);
+    const toAmt = money(newAccepted ? newPromo.totalCents/100 : p.toCents/100);
     eEl.innerHTML =
       '<b>Your price has been updated.</b> '+
       'Based on your latest details, your total is now '+toAmt+' (it was '+fromAmt+').'+
@@ -1249,13 +1268,13 @@ window.acceptReprice=function(){
   if(p.engineRaise){
     adoptEngineEstimate(p.est, p.sig);
     state.pendingReprice=null;
-    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:calcTotal()});
+    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:payableTotal()});
     render(); checkWhere();
     return;
   }
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
-  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:payableTotal()});
   render(); checkWhere();
 };
 window.dismissReprice=function(){
@@ -1333,7 +1352,7 @@ const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',fr
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
-  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
+  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:payableTotal()}); };
 
 // Longest known dial code (digits only) that prefixes `digits`, or '' if none.
 function matchDialCode(digits){
@@ -1487,6 +1506,23 @@ function isDeposit(){
 let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
 let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
 
+// The code the customer applied (trimmed, upper-cased), or null. While set it rides in every
+// estimate intent, so each re-price re-checks it (spec §4.2).
+let promoCode = null;
+// True once an estimate has accepted the current code. Until then a refusal drops the code (a
+// typo stays a typo); after it, a refusal keeps it applied as "doesn't apply" (spec §9.1).
+let promoConfirmed = false;
+// Why the open field is showing a message (an API error code, or 'promo_unchecked'), and
+// whether the customer has opened the field at all.
+let promoApplyError = null;
+let promoOpen = false;
+// A code refused when the BOOKING was made this visit (normalised code → the error code), kept
+// for the rest of the visit so re-applying it shows the same refusal without asking the server
+// again. ch-pricing.js caches estimate answers by intent in sessionStorage, so a fresh preview for
+// the same code would just replay the OLD "accepted" answer — the server can't tell us anything
+// new until the code's hold or session state actually changes, which needs a fresh visit.
+let promoRefusedAtBooking = {};
+
 // The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
 // distance (Global Constraints: the intent carries names, distances come back on the response) —
 // so a routing change on the API side is never shadowed by a stale km the browser had on hand.
@@ -1539,7 +1575,7 @@ function dropLocalRoad(estLegs){
   }
   return dropped;
 }
-function buildEstimateIntent(){
+function itineraryIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
   const pax = state.ad + state.ch;
@@ -1580,6 +1616,14 @@ function buildEstimateIntent(){
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
 }
+// The intent POST /quote/v2/estimate prices: the itinerary, plus the applied code. The API lifts
+// promoCode off before pricing (api/src/routes/quote.ts:298-308), so the top-level total is the
+// same with or without it; only the promoCode block in the answer differs.
+function buildEstimateIntent(){
+  const intent = itineraryIntent();
+  if(intent && promoFieldOn && promoCode) intent.promoCode = promoCode;
+  return intent;
+}
 // A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
 // handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
 // called fresh rather than cached across state mutations — that keeps calcTotal() honest the
@@ -1607,8 +1651,12 @@ function adoptEngineEstimate(est, sig){
     amountDueNowCents: est.amountDueNowCents,
     estimated: est.estimated,
     legs: est.legs,
+    // The promo answer lives ON the estimate it came with, so a discount is only ever taken off
+    // the full price it was computed for — it goes stale together with that price (spec §4.1).
+    promo: est.promoCode,
     intentSig: sig
   };
+  settlePromoAnswer();
 }
 
 // engineEst that is actually priced against the itinerary as it stands RIGHT NOW — the same
@@ -1706,6 +1754,7 @@ function requestEstimate(){
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
     onUnavailable: function(reason){
       estimatePending = false;
+      if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
         const text=window.CH && CH.routeEstimate
@@ -1838,7 +1887,140 @@ function calcTotal(){
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
 const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
+// The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
+// order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds
+// engineEst. The local formula never carries one, and once the booking exists its own total
+// (serverQuote) already includes the discount.
+function heldPromo(){
+  if(!promoFieldOn || !promoCode || serverQuote) return null;
+  const est = (state.pendingReprice && state.pendingReprice.engineRaise) ? engineEst
+    : (currentEngineEst() || (repricing() ? engineEst : null));
+  const p = est && est.promo;
+  // p.code === promoCode: a held estimate can go stale for the code it priced (a later re-check
+  // never lands) while the customer removes it and applies a DIFFERENT one — without this check
+  // the old code's discount could show under the new code's name while its own answer is still
+  // in flight (spec §4.1: the discount comes only from the same estimate as the full price).
+  return (p && !p.error && p.code === promoCode && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
+}
+// What the customer pays (spec §4.3). calcTotal() stays the FULL price on purpose: the summary's
+// vehicle row is calcTotal() − extras, and a discount folded in there would shrink the car's own
+// line. Total, Due now, quotedTotal and the final price check read this instead.
+function payableTotal(){
+  if(serverQuote) return serverQuote.total;
+  const p = heldPromo();
+  return p ? p.totalCents/100 : calcTotal();
+}
+
+const PROMO_MESSAGES = {
+  promo_code_invalid: "That code isn’t valid.",
+  promo_code_not_started: "That code isn’t active yet.",
+  promo_code_expired: 'That code has expired.',
+  promo_code_used_up: 'That code has been fully used.',
+  promo_code_not_eligible: "That code can’t be used on this booking.",
+  promo_unchecked: "We couldn’t check your code just now, please try again.",
+};
+function promoMessage(err){ return PROMO_MESSAGES[err] || PROMO_MESSAGES.promo_code_invalid; }
+
+// Settles the promo answer on the estimate just adopted (spec §3.2). The FIRST answer for a code
+// decides whether it sticks: accepted → confirmed; refused → dropped, its message shown and the
+// typed text left in the field. Once confirmed, a later refusal (the trip changed) keeps the code
+// applied, so the summary can say "Doesn't apply" and the discount returns if the trip qualifies.
+function settlePromoAnswer(){
+  if(!promoCode || promoConfirmed || !engineEst || engineEst.intentSig !== currentIntentSig()) return;
+  const p = engineEst.promo;
+  if(p && !p.error){ promoConfirmed = true; promoApplyError = null; return; }
+  promoApplyError = (p && p.error) || 'promo_code_invalid';
+  dropPromo();
+}
+// The check for a code nobody has confirmed yet could not run. Pricing the trip "with a code" by
+// the local formula would put a different, never-shown figure on screen — so forget the code and
+// say so; the held engine answer for the trip without it is current again.
+function settlePromoUnavailable(){
+  if(!promoCode || promoConfirmed) return;
+  promoCode = null;
+  promoApplyError = 'promo_unchecked';
+  if(currentEngineEst()) lastRequestedSig = currentIntentSig();
+}
+// Forgets the applied code. The estimate's full price never depends on the code (the API lifts it
+// off the intent before pricing), so the answer held for "this trip + code" IS the answer for
+// "this trip": re-key it rather than fetch the same price again and shimmer the Total for it.
+function dropPromo(){
+  const cur = currentEngineEst();
+  promoCode = null;
+  promoConfirmed = false;
+  if(cur){
+    delete cur.promo;
+    cur.intentSig = currentIntentSig();
+    lastRequestedSig = cur.intentSig;
+  }
+}
+// The code a booking may carry: only while the estimate priced for THIS trip accepted it
+// (spec §4.5) — never in the doesn't-apply, couldn't-check or local-fallback states.
+function sendablePromoCode(){
+  const cur = currentEngineEst();
+  const p = cur && cur.promo;
+  return (promoFieldOn && promoCode && p && !p.error) ? p.code : undefined;
+}
+// Why an applied code is taking nothing off right now, or null when it is.
+function promoOffReason(){
+  const cur = currentEngineEst();
+  if(!cur) return 'promo_unchecked';
+  const p = cur.promo;
+  return (p && !p.error) ? null : ((p && p.error) || 'promo_code_invalid');
+}
+// Which face the field shows (spec §3.2).
+function promoUiState(){
+  if(!promoFieldOn) return 'hidden';
+  if(!promoCode) return promoOpen ? 'open' : 'collapsed';
+  if(currentEngineEst()) return promoOffReason() ? 'off' : 'applied';
+  return (estimatePending || state.pendingReprice) ? 'checking' : 'off';
+}
+
+// Short reasons for the muted chip — the message's own words without "That code …".
+const PROMO_OFF_REASONS = {
+  promo_code_invalid: 'isn’t valid',
+  promo_code_not_started: 'isn’t active yet',
+  promo_code_expired: 'has expired',
+  promo_code_used_up: 'has been fully used',
+  promo_code_not_eligible: 'can’t be used on this booking',
+  promo_unchecked: 'couldn’t be checked just now',
+};
+// Draws the field and the summary row for promoUiState() (spec §3.2). The input's value is only
+// written while checking — otherwise it holds exactly what the customer typed.
+function renderPromo(){
+  const box=document.getElementById('promo'), row=document.getElementById('sum-promo');
+  if(!box || !row) return;
+  const ui=promoUiState();
+  box.hidden = ui==='hidden';
+  const form=document.getElementById('promo-form'), input=document.getElementById('promo-input');
+  const apply=document.getElementById('promo-apply'), chip=document.getElementById('promo-chip');
+  const msg=document.getElementById('promo-msg');
+  document.getElementById('promo-toggle').hidden = ui!=='collapsed';
+  form.hidden = !(ui==='open' || ui==='checking');
+  input.readOnly = ui==='checking';
+  if(ui==='checking') input.value = promoCode;
+  apply.disabled = ui==='checking';
+  apply.textContent = ui==='checking' ? 'Checking…' : 'Apply';
+  chip.hidden = !(ui==='applied' || ui==='off');
+  chip.classList.toggle('off', ui==='off');
+  const chipHtml = ui==='applied' ? `<b>${acEsc(promoCode)}</b> applied`
+    : ui==='off' ? `<b>${acEsc(promoCode)}</b> · ${PROMO_OFF_REASONS[promoOffReason()] || PROMO_OFF_REASONS.promo_code_invalid}` : '';
+  const chipText=document.getElementById('promo-chip-text');
+  if(chipText.innerHTML!==chipHtml) chipText.innerHTML=chipHtml;
+  const text = (ui==='open' && promoApplyError) ? promoMessage(promoApplyError) : '';
+  if(msg.textContent!==text) msg.textContent=text;
+  msg.classList.toggle('soft', promoApplyError==='promo_unchecked');
+  form.classList.toggle('has-error', ui==='open' && !!promoApplyError && promoApplyError!=='promo_unchecked');
+  // Summary row: the discount held with the price on screen (it keeps its figure through a
+  // re-price, like the vehicle row), or "Doesn't apply" for a code that stopped applying.
+  const held=heldPromo();
+  row.hidden = !(ui==='off' || held);
+  row.classList.toggle('off', ui==='off');
+  document.getElementById('sum-promo-label').textContent = promoCode ? 'Promo '+promoCode : '';
+  document.getElementById('sum-promo-amt').textContent = ui==='off' ? 'Doesn’t apply' : held ? '−'+money(held.discountCents/100) : '';
+}
+
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -1879,7 +2061,7 @@ function waTripSummary(){
   const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
   const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
   let priced = '';
-  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  try { const t = payableTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
   return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
     + (route ? route + '\n' : '')
     + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
@@ -2238,7 +2420,7 @@ function render(){
   // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
   const busy = repricing();
   const totalEl = document.getElementById('sum-total');
-  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
   if(totalEl){
     totalEl.classList.toggle('is-pricing', busy);
     if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
@@ -2302,6 +2484,7 @@ function render(){
   if(choice){
     choice.style.display = 'none';
   }
+  renderPromo();
 
   // Pay gate (Task 3): the established disabled treatment (same idiom as #n1/#n4 above) for the
   // three states a charge must never start from — a fresh price still in flight, a raise
@@ -2476,7 +2659,7 @@ async function runPayment(){
   // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
   const _payBtn = document.getElementById('pay-btn');
   if(_payBtn) _payBtn.disabled = true;
-  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:payableTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
@@ -2500,6 +2683,19 @@ async function runPayment(){
       render();
       return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
     }
+    // A code the preview accepted can still be refused here — its last use went, or it expired,
+    // in between (spec §4.6). Same shape as the road refusal above: forget it, show the full
+    // price, and no one-click retry, so the customer presses Pay again at the price they now see.
+    if(e && e.status===422 && e.body && /^promo_code_/.test(e.body.error||'')){
+      // Captured before dropPromo() clears promoCode, so the SAME code stays refused for the
+      // rest of the visit (Apply won't ask the server again — see promoRefusedAtBooking above).
+      if(promoCode) promoRefusedAtBooking[promoCode] = e.body.error;
+      promoApplyError=e.body.error;
+      promoOpen=true;
+      dropPromo();
+      render();
+      return phShowEnd('error', promoMessage(e.body.error)+' Your total is now the full price.', {retry:false});
+    }
     return phShowEnd(...bookingCreateFailure(e));
   }
   clearTimeout(slow);
@@ -2515,10 +2711,12 @@ async function runPayment(){
   // the LAST hop where the "never charge a figure not shown immediately beforehand" rule
   // (renderRepriceNote, applied mid-wizard) can still be broken, and gets the same gate here.
   const shownEngineEst = currentEngineEst();
-  const shownBeforeAdopt = calcTotal();
+  // payableTotal(), not calcTotal(): with a code the booking comes back DISCOUNTED, so comparing
+  // it with the full price would stop every discounted booking with a false "price changed".
+  const shownBeforeAdopt = payableTotal();
   adoptServerQuote(booking);
-  if(shownEngineEst && Math.abs(calcTotal()-shownBeforeAdopt) > 1){
-    return phShowFinalRepriceGate(booking, shownBeforeAdopt, calcTotal());
+  if(shownEngineEst && Math.abs(payableTotal()-shownBeforeAdopt) > 1){
+    return phShowFinalRepriceGate(booking, shownBeforeAdopt, payableTotal());
   }
   return continueToCheckout(booking);
 }
@@ -2732,6 +2930,37 @@ function phShowEnd(kind, msg, opts){
 document.getElementById('ph-retry').addEventListener('click', ()=>runPayment());
 document.getElementById('ph-close').addEventListener('click', ()=>document.getElementById('ph-overlay').classList.remove('show'));
 
+// Promo field controls (spec §3.2). Wired only when the field can show at all.
+(function wirePromo(){
+  if(!promoFieldOn) return;
+  const input=document.getElementById('promo-input');
+  function apply(){
+    const typed=(input.value||'').trim().toUpperCase();
+    if(!typed) return;
+    if(promoRefusedAtBooking[typed]){
+      // Refused at booking time this visit already — re-asking would only replay the pricing
+      // module's cached "accepted" answer for it (see promoRefusedAtBooking above), so show the
+      // same message again without sending anything.
+      promoApplyError=promoRefusedAtBooking[typed];
+      promoOpen=true;
+      render();
+      return;
+    }
+    promoApplyError=null;
+    promoCode=typed;
+    promoConfirmed=false;
+    lastRequestedSig=null; // a retry after "couldn't check" must really ask again
+    render();
+  }
+  document.getElementById('promo-toggle').addEventListener('click', ()=>{ promoOpen=true; render(); input.focus(); });
+  document.getElementById('promo-apply').addEventListener('click', apply);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); apply(); } });
+  input.addEventListener('input', ()=>{ if(promoApplyError){ promoApplyError=null; render(); } });
+  document.getElementById('promo-remove').addEventListener('click', ()=>{
+    dropPromo(); promoApplyError=null; promoOpen=true; input.value=''; render(); input.focus();
+  });
+})();
+
 // Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
 function simulatePayThenConfirm(booking){
   const ov=document.getElementById('ph-overlay');
@@ -2868,7 +3097,7 @@ async function createApiBooking(){
   };
   // the price the customer was shown (minor units) — the backend records this, so the
   // confirmation, the DB and the eventual charge all agree.
-  const quotedTotal = calcTotal() > 0 ? Math.round(calcTotal() * 100) : undefined;
+  const quotedTotal = payableTotal() > 0 ? Math.round(payableTotal() * 100) : undefined;
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
@@ -2902,7 +3131,9 @@ async function createApiBooking(){
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
-      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
+      // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
+      promoCode: sendablePromoCode()
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -2943,7 +3174,8 @@ async function createApiBooking(){
       quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
       extras: state.addons.size ? Array.from(state.addons) : undefined,
-      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined
+      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined,
+      promoCode: sendablePromoCode()
     };
   }
   // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
