@@ -92,6 +92,20 @@ describe('opsView', () => {
     expect(row.travelTime).toBe('08:00');
   });
 
+  // Owner 2026-09-28: a "Recently booked" view (newest first) and a product-type filter. The
+  // list needs when each booking came in, and which trips are a chauffeur guide vs a private car.
+  it('carries when the booking was made', () => {
+    expect(toOpsRow(base, { paid: true }).createdAt).toBe('2026-06-21T00:00:00Z');
+  });
+
+  it('carries the trip service type, and null for every other mode', () => {
+    expect(toOpsRow(trip, { paid: true }).serviceType).toBe('chauffeur');
+    const privateTrip = { ...trip, input: { ...trip.input, serviceType: 'private' } } as Booking;
+    expect(toOpsRow(privateTrip, { paid: true }).serviceType).toBe('private');
+    expect(toOpsRow(base, { paid: true }).serviceType).toBeNull();
+    expect(toOpsRow(shared, { paid: true }).serviceType).toBeNull();
+  });
+
   it('exposes booking channel on the ops row', () => {
     const row = toOpsRow({ ...base, channel: 'whatsapp' }, { paid: true });
     expect(row.channel).toBe('whatsapp');
