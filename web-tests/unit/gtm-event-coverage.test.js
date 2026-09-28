@@ -13,15 +13,18 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EVENTS } from '../../tools/analytics/build-gtm-missing-tags.mjs';
+import { EVENTS as FUNNEL_EVENTS } from '../../tools/analytics/build-gtm-funnel-tags.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SKIP = new Set(['api', 'docs', 'tools', 'web-tests', 'img', 'node_modules', '.git', '.github', '.claude']);
 
-/** Events already covered by tags in the LIVE container, verified 2026-09-20. */
-const ALREADY_LIVE = new Set([
-  'search', 'view_item_list', 'select_item', 'begin_checkout', 'checkout_step',
-  'add_payment_info', 'purchase', 'view_item', 'exception',
-]);
+/** Events tagged in the live container by hand rather than by one of our import files.
+    EMPTY on purpose. Until 2026-09-28 this listed the nine core funnel events as "verified
+    2026-09-20", and that was never true: the published container had no tag for any of them,
+    so the exemption hid the loss of every search, checkout and purchase. Tag an event through
+    a builder in tools/analytics/ instead; only add it here after reading the published
+    container (gtm.js?id=GTM-NL6K22CM) and finding the tag. */
+const ALREADY_LIVE = new Set([]);
 /** Deliberately never a GA4 event — it labels the session, it is not a thing that happened. */
 const DELIBERATELY_UNTAGGED = new Set(['ch_context']);
 
@@ -46,7 +49,7 @@ function emittedEvents() {
   return found;
 }
 
-const planned = new Set(EVENTS.map((e) => e.name));
+const planned = new Set([...EVENTS, ...FUNNEL_EVENTS].map((e) => e.name));
 
 describe('GTM import covers the events the site emits', () => {
   it('finds the call sites at all — a rename must not make this vacuous', () => {
@@ -82,7 +85,7 @@ describe('GTM import covers the events the site emits', () => {
     const file = JSON.parse(readFileSync(path.join(ROOT, 'docs/analytics/gtm-missing-tags.json'), 'utf8'));
     const tagged = file.containerVersion.tag.map((t) => t.parameter.find((p) => p.key === 'eventName').value);
     expect(tagged.sort(), 'regenerate: node tools/analytics/build-gtm-missing-tags.mjs docs/analytics/gtm-missing-tags.json')
-      .toEqual([...planned].sort());
+      .toEqual(EVENTS.map((e) => e.name).sort());
     for (const t of file.containerVersion.tag) {
       expect(t.firingTriggerId, `${t.name} must fire on exactly one trigger`).toHaveLength(1);
       expect(t.consentSettings.consentStatus, `${t.name} must require consent`).toBe('NEEDED');
