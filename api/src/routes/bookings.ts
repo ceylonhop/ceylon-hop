@@ -25,7 +25,7 @@ import {
   type PriceOutcome,
 } from '../services/pricing';
 import { measureLeg } from '../quote/routeChoice';
-import { roadRow } from '../services/notifications';
+import { promoDiscount, roadRow } from '../services/notifications';
 import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
@@ -178,11 +178,16 @@ export interface CustomerBookingView {
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
   road?: string;
+  // The promo code the booking was made with and what it took off (promoDiscount) — the card's
+  // Promo row above Total. Both absent on every booking without a code.
+  promoCode?: string;
+  discountCents?: number;
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
   const road = roadRow(b)?.[1];
+  const promo = promoDiscount(b);
   const base = {
     reference: b.reference,
     status: b.status,
@@ -194,6 +199,7 @@ export function projectBooking(b: Booking): CustomerBookingView {
     balanceDueCents: Math.max(0, b.total - dueNow),
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
+    ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
   };
   if (b.mode === 'single') {
     return {

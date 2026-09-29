@@ -776,3 +776,48 @@ describe('roadRow / factRows — the road the customer paid for (spec §4.3)', (
     expect(factRows(t).some(([k]) => k === 'Road')).toBe(false);
   });
 });
+
+// A booking made with a promo code names the code and what it took off, right above the total —
+// the total alone (lower than the page's advertised price) read as a mistake. Never otherwise.
+describe('promo code row', () => {
+  const promo: Booking = { ...single, total: 4500, amountDueNow: 4500, promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 500 } as Booking;
+  const pendingPromo: Booking = { ...promo, status: 'payment_pending' };
+
+  it('the confirmation shows the code and the discount above the total paid', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(promo, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Promo SUMMER-15');
+    expect(m.html).toContain('−$5.00');
+    expect(m.html.indexOf('Promo SUMMER-15')).toBeLessThan(m.html.indexOf('Total paid'));
+    expect(m.html).toContain('$45.00');
+    expect(m.text).toContain('Promo SUMMER-15: −$5.00\nTotal paid: $45.00');
+  });
+
+  it('the payment-incomplete and payment-failed emails show it above the amount due', async () => {
+    for (const send of [sendPaymentIncomplete, sendPaymentFailed]) {
+      const email = new FakeEmailAdapter();
+      await send(pendingPromo, email);
+      const m = email.sent[0];
+      expect(m.html.indexOf('Promo SUMMER-15')).toBeGreaterThan(-1);
+      expect(m.html.indexOf('Promo SUMMER-15')).toBeLessThan(m.html.indexOf('Amount due'));
+      expect(m.text).toContain('Promo SUMMER-15: −$5.00\nAmount due: $45.00');
+    }
+  });
+
+  it('escapes the code', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation({ ...promo, promoCode: '<b>X</b>' } as Booking, email);
+    expect(email.sent[0].html).not.toContain('<b>X</b>');
+  });
+
+  it('no row without a code', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email);
+    await sendPaymentFailed(single, email);
+    for (const m of email.sent) {
+      expect(m.html).not.toContain('Promo');
+      expect(m.text).not.toContain('Promo');
+    }
+  });
+});
