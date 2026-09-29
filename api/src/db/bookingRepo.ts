@@ -119,6 +119,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
   promoCodeId?: string | null;
   promoHoldUntil?: string | null; // ISO
+  // The code's own name ("SUMMER-15"), read on every load from promo_codes — what the emails, the
+  // manage page and the ops sheet print. A code's name never changes once created.
+  promoCode?: string;
   // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read on every load from the priced
   // lines that already exist — the booking's quote (quotes.converted_booking_id), or a website
   // booking's own WebsitePricingSnapshot — never stored as a field. Present only when there is at
@@ -400,6 +403,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       return this.present(this.insert(b, key, {
         promoCodeId: promo.code.id,
         promoHoldUntil: new Date(promo.now.getTime() + PROMO_HOLD_MS).toISOString(),
+        promoCode: promo.code.code,
       }, opts?.pricingSnapshot));
     });
   }
@@ -407,7 +411,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   private insert(
     b: NewBooking,
     key: string | undefined,
-    promo?: { promoCodeId: string; promoHoldUntil: string },
+    promo?: { promoCodeId: string; promoHoldUntil: string; promoCode: string },
     pricingSnapshot?: WebsitePricingSnapshot,
   ): Booking {
     let reference = generateReference();

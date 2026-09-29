@@ -3,7 +3,7 @@ import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, 
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
 import type { Booking } from '../db/bookingRepo';
-import { factRows, roadRow, routeText } from './notifications';
+import { factRows, promoDiscount, roadRow, routeText } from './notifications';
 import { shortPlace } from '../quote/shortPlace';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
@@ -344,7 +344,9 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   const balance = b.total - f.paidNow;
   const paid = money(f.paidNow, b.currency);
   const subject = `Paid: ${f.subjectRoute}, ${f.when} — ${f.people} — ${paid}`;
+  const promo = promoDiscount(b);
   const moneyRows: [string, string][] = [
+    ...(promo ? [['Promo', `${promo.code} · −${money(promo.cents, b.currency)}`] as [string, string]] : []),
     ['Paid', paid],
     ...(balance > 0 ? [['Balance due', money(balance, b.currency)] as [string, string]] : []),
     ['Channel', channelLabel(b)],

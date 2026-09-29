@@ -77,6 +77,25 @@ test('an outstanding balance does get its own row', async ({ page }) => {
   await expect(page.locator('.tot.due .v')).toHaveText('$100.00');
 });
 
+// A promo-code booking names the code and what it took off, right above the (lower) Total — the
+// view carries promoCode + discountCents only then (projectBooking).
+test('a promo code gets its own row above Total', async ({ page }) => {
+  await stub(page, { ...BOOKING, totalCents: 20610, amountDueNowCents: 20610, promoCode: 'SUMMER-15', discountCents: 2290 });
+  await page.goto(PAGE);
+  await expect(page.locator('.tot-disc .l')).toHaveText('Promo SUMMER-15');
+  await expect(page.locator('.tot-disc .v')).toHaveText('−$22.90');
+  await expect(page.locator('.tot-final .l')).toHaveText('Total');
+  await expect(page.locator('.tot-final .v')).toHaveText('$206.10');
+});
+
+test('no promo row without a code', async ({ page }) => {
+  await stub(page, BOOKING);
+  await page.goto(PAGE);
+  await expect(page.locator('.ticket')).toBeVisible();
+  await expect(page.locator('.tot-disc')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('Promo');
+});
+
 test('the pay button is the approved one, with the same reassurance line', async ({ page }) => {
   await stub(page, BOOKING);
   await page.goto(PAGE);

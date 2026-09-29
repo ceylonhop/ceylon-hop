@@ -107,3 +107,22 @@ describe('projectBooking names the local road the customer chose', () => {
     expect(JSON.stringify(projectBooking(fastest))).toBe(JSON.stringify(projectBooking(singleBooking)));
   });
 });
+
+// A booking made with a promo code shows the code and what it took off (manage card: a Promo row
+// above Total). Only then: every other booking's view keeps exactly the keys it had.
+describe('projectBooking names the promo code the customer used', () => {
+  it('passes the code and the discount through', () => {
+    const b = { ...singleBooking, total: 20610, amountDueNow: 20610, promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 2290 } as unknown as Booking;
+    const v = projectBooking(b);
+    expect(v.promoCode).toBe('SUMMER-15');
+    expect(v.discountCents).toBe(2290);
+    expect(v.totalCents).toBe(20610);
+  });
+
+  it('leaves both out without a code', () => {
+    for (const b of [singleBooking, tripBooking]) {
+      expect(projectBooking(b)).not.toHaveProperty('promoCode');
+      expect(projectBooking(b)).not.toHaveProperty('discountCents');
+    }
+  });
+});
