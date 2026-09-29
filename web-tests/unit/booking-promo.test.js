@@ -37,7 +37,9 @@ function loadBooking(query, { promo = true } = {}) {
   window.matchMedia = () => ({
     matches: false, addEventListener(){}, removeEventListener(){}, addListener(){}, removeListener(){},
   });
-  if (promo) window.CH_PROMO_FIELD = true;
+  // true/false forces the switch either way (booking.js reads window.CH_PROMO_FIELD); null leaves
+  // the page's own PROMO_FIELD_ENABLED in charge.
+  if (typeof promo === 'boolean') window.CH_PROMO_FIELD = promo;
   [...DEPS, BOOKING_SRC].forEach((src) => {
     const el = window.document.createElement('script');
     el.textContent = src;
@@ -64,7 +66,14 @@ function applyWith(w, code, promo) {
 }
 
 describe('promo switch + estimate intent', () => {
-  it('is off by default: no code ever enters the intent', () => {
+  it('is on: with no test override the field is live', () => {
+    const w = loadBooking(SINGLE, { promo: null });
+    expect(ev(w, 'promoFieldOn')).toBe(true);
+    w.eval("promoCode = 'SAVE10'");
+    expect(ev(w, 'buildEstimateIntent()').promoCode).toBe('SAVE10');
+  });
+
+  it('forced off: no code ever enters the intent', () => {
     const w = loadBooking(SINGLE, { promo: false });
     w.eval("promoCode = 'SAVE10'");
     expect(ev(w, 'buildEstimateIntent()')).not.toHaveProperty('promoCode');
@@ -130,7 +139,7 @@ describe('payableTotal', () => {
     expect(ev(w, 'payableTotal()')).toBe(77);
   });
 
-  it('ignores a promo block while the switch is off', () => {
+  it('ignores a promo block while the switch is forced off', () => {
     const w = loadBooking(SINGLE, { promo: false });
     applyWith(w, 'SAVE10', OK);
     expect(ev(w, 'payableTotal()')).toBe(90);
