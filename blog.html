@@ -94,6 +94,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       </div>
     </div>
 
+    <!-- Destination guides: generated from tools/guides/<slug>.json by tools/generate-guides.mjs.
+         Static HTML on purpose — crawlable without JS, unlike the #posts list below. -->
+    <div id="guides" style="margin-top:48px">
+      <span class="eyebrow">Destination guides</span>
+      <h2 style="margin:.3rem 0 .8rem">Where you&rsquo;re going, from the people who drive there every week</h2>
+      <div class="grid cols-3">
+        <a class="bcard" href="guides/nuwara-eliya/">
+          <img src="img/guides/nuwara-eliya/hero-900.jpg" alt="Tea-covered hills of Nuwara Eliya under a blue sky" width="1800" height="1013" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
+          <div class="meta" style="margin-top:14px">Guide &middot; Hill country</div>
+          <h3>Nuwara Eliya</h3>
+          <p>Horton Plains before the mist, the tea estates, what to wear when it&rsquo;s 8&deg; at dawn &mdash; and how we get you up the hill.</p>
+          <span class="more">Read the guide &rarr;</span>
+        </a>
+      </div>
+    </div>
     <div class="grid cols-3" id="posts" style="margin-top:40px"></div>
   </div>
 </section>
