@@ -90,4 +90,13 @@ describe('generateGuides', () => {
     expect(blog).toContain('href="guides/nuwara-eliya/"');
     expect(blog).toContain('src="img/guides/nuwara-eliya/hero-900.jpg"');
   });
+  it("shared links unfurl with the guide's own hero image, not the site-wide cover", () => {
+    const img = 'https://ceylonhop.com/img/guides/nuwara-eliya/og.jpg';
+    expect(html).toContain(`<meta property="og:image" content="${img}">`);
+    expect(html).toContain('<meta property="og:image:width" content="1200">');
+    expect(html).toContain('<meta property="og:image:height" content="630">');
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+    expect(html).toContain(`<meta name="twitter:image" content="${img}">`);
+    expect(html).not.toContain('og-cover.jpg');
+  });
 });
