@@ -67,6 +67,12 @@ describe('destination guide content', () => {
           expect([width, height], k).toEqual([meta.w, meta.h]);
         }
       });
+      it('has a 1200×630 share image under 300 KB (WhatsApp drops larger previews)', () => {
+        const f = path.join(ROOT, 'img/guides', g.slug, 'og.jpg');
+        expect(existsSync(f), f).toBe(true);
+        expect(jpegSize(f)).toEqual({ width: 1200, height: 630 });
+        expect(readFileSync(f).length).toBeLessThan(300 * 1024);
+      });
       it('credits every photographer in credits.html', () => {
         const credits = readFileSync(path.join(ROOT, 'credits.html'), 'utf8');
         for (const [k, meta] of Object.entries(g.photos)) {
