@@ -68,6 +68,17 @@ export function bookingPromoContract(name: string, make: () => Promise<PromoEnv>
       expect(read?.mode === 'single' && read.discountTotal).toBe(780);
     });
 
+    // The emails, the manage page and the ops sheet name the code the customer typed.
+    it('reads back the code by name, and a booking without one has no promoCode', async () => {
+      const { env, code, book } = await setup();
+      const b = await book();
+      expect(b.promoCode).toBe(code.code);
+      expect((await env.bookings.get(b.id))?.promoCode).toBe(code.code);
+      const plain = await env.bookings.create(sample());
+      expect(plain).not.toHaveProperty('promoCode');
+      expect(await env.bookings.get(plain.id)).not.toHaveProperty('promoCode');
+    });
+
     it('counts a held booking until its hold passes, with no clean-up job', async () => {
       const { env, code, book } = await setup();
       await book();

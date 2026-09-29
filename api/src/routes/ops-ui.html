@@ -3763,6 +3763,12 @@ function bookingAddOns(booking) {
   const codes = Array.isArray(booking?.input?.extras) ? booking.input.extras : [];
   return codes.map((x) => EXTRA_LBL[x] || x);
 }
+/* The promo code a booking was made with and what it took off ("SUMMER-15 · −$6.70") — the Payment
+   block's Promo row. Empty on every booking without one. */
+function bookingPromo(booking) {
+  if (!booking?.promoCode || !(booking.discountTotal > 0)) return '';
+  return booking.promoCode + ' · −' + money({ amount: booking.discountTotal, currency: booking.currency });
+}
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
   const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
@@ -3927,6 +3933,8 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  const promo=bookingPromo(d?.booking);
+  const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
   /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
      public, so it is escaped like every other value here; pre-line keeps their line breaks. */
   const custNote=d?.booking?.customerNotes;
@@ -3953,6 +3961,7 @@ function renderSheet(){
       </div>
       <div class="block"><h4>Payment</h4>
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
+        ${promoRow}
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}

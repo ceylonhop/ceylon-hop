@@ -185,6 +185,14 @@ describe('teamPaidEmail', () => {
     for (const part of [m.html, m.text]) expect(part).toContain('Waiting fee — Kandy → Ella');
   });
 
+  it('names the promo code and what it took off, above what was paid', () => {
+    const b = { ...sampleBooking('single'), promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 1850 } as ReturnType<typeof sampleBooking>;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('SUMMER-15 · −LKR 18.50');
+    expect(m.text.indexOf('Promo:')).toBeLessThan(m.text.indexOf('Paid:', m.text.indexOf('PAYMENT')));
+    expect(teamPaidEmail(sampleBooking('single'), '').text).not.toContain('Promo');
+  });
+
   it('a chauffeur trip: vehicle, head-count and days', () => {
     const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
     expect(m.subject.startsWith('Paid: ')).toBe(true);

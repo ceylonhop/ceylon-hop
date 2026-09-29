@@ -373,7 +373,8 @@ export class PostgresBookingRepo implements BookingRepo {
     const idsFor = (mode: string) => rows.filter((r) => r.mode === mode).map((r) => r.id);
     const tripIds = idsFor('trip'); const sharedIds = idsFor('shared');
     const singleIds = rows.filter((r) => r.mode !== 'trip' && r.mode !== 'shared').map((r) => r.id);
-    const [trips, shareds, transfers, linkedQuotes] = await Promise.all([
+    const promoIds = [...new Set(rows.flatMap((r) => (r.promoCodeId ? [r.promoCodeId] : [])))];
+    const [trips, shareds, transfers, linkedQuotes, codes] = await Promise.all([
       tripIds.length ? this.db.select().from(tripRequests).where(inArray(tripRequests.bookingId, tripIds)) : [],
       sharedIds.length ? this.db.select().from(sharedRequests).where(inArray(sharedRequests.bookingId, sharedIds)) : [],
       singleIds.length ? this.db.select().from(transferRequests).where(inArray(transferRequests.bookingId, singleIds)) : [],
@@ -383,7 +384,10 @@ export class PostgresBookingRepo implements BookingRepo {
         .select({ bookingId: quotes.convertedBookingId, request: quotes.requestJson, result: quotes.resultJson, selection: quotes.payLinkSelection })
         .from(quotes)
         .where(and(inArray(quotes.convertedBookingId, rows.map((r) => r.id)), isNull(quotes.deletedAt))),
+      // The promo codes' names, only when a booking here carried one — same round-trip as the rest.
+      promoIds.length ? this.db.select({ id: promoCodes.id, code: promoCodes.code }).from(promoCodes).where(inArray(promoCodes.id, promoIds)) : [],
     ]);
+    const codeBy = new Map(codes.map((c) => [c.id, c.code]));
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
@@ -393,7 +397,9 @@ export class PostgresBookingRepo implements BookingRepo {
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
       const req = row.mode === 'trip' ? tripBy.get(row.id) : row.mode === 'shared' ? sharedBy.get(row.id) : transferBy.get(row.id);
       if (!req) throw new Error(`booking ${row.id}: ${row.mode} request row missing`);
-      const booking = build(row, cust, req);
+      const built = build(row, cust, req);
+      const promoCode = row.promoCodeId ? codeBy.get(row.promoCodeId) : undefined;
+      const booking = promoCode ? { ...built, promoCode } : built;
       // The booking's quote names them; a website booking has none, so its own snapshot does.
       const fromQuote = addOnsBy.get(row.id);
       const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
