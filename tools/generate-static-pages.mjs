@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { renderStandalone, ORIGIN } from './render-page.mjs';
 import { ROOT } from './generate-route-pages.mjs';
+import { generateGuides } from './generate-guides.mjs';
 
 const legalStyle = `
   .legal-hero{background:linear-gradient(160deg,#1E6273,#24758A 60%,#277F97);color:#fff;padding:104px 0 40px;margin-top:-74px}
@@ -350,6 +351,8 @@ export function generateStaticPages() {
     'Ceylon Hop privacy policy — how we collect, use and protect your personal information when you book transfers and shared rides in Sri Lanka.', 'privacy.body.html'));
   out.set('404.html', notFoundPage());
   for (const post of BLOG_POSTS) out.set(`${post.slug}/index.html`, blogPost(post));
+  // Destination guides (tools/guides/*.json → guides/<slug>/index.html).
+  for (const [rel, html] of generateGuides()) out.set(rel, html);
   return out;
 }
 

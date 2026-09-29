@@ -16,7 +16,7 @@ const OG_IMAGE = `${ORIGIN}/og-cover.jpg`;
 
 // The 22 curated corridors (spec §1). Each generates BOTH directions → 44 pages.
 // Content is keyed by this canonical order; the reverse page uses `back` for its intro.
-const BASE_PAIRS = [
+export const BASE_PAIRS = [
   ['cmb-airport', 'kandy'], ['cmb-airport', 'sigiriya'], ['cmb-airport', 'galle'], ['cmb-airport', 'mirissa'],
   ['cmb-airport', 'ella'], ['cmb-airport', 'negombo'], ['cmb-airport', 'colombo'], ['negombo', 'sigiriya'],
   ['negombo', 'kandy'], ['colombo', 'kandy'], ['colombo', 'galle'], ['colombo', 'ella'], ['sigiriya', 'kandy'],
@@ -1298,6 +1298,8 @@ export const SITEMAP_EXTRA = [
   '9-must-visit-places-in-sri-lanka/',
   'discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure/',
   'why-we-started-ceylon-hop/',
+  // Destination guides (tools/generate-guides.mjs). One line per guide; guide-pages.test.js pins it.
+  'guides/nuwara-eliya/',
 ];
 
 // CLI: write every generated file to disk.
