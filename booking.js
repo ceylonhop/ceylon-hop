@@ -254,12 +254,12 @@ const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
 
 // ---- promo code field (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md) ----
-// Off until the owner turns codes on: setting PROMO_FIELD_ENABLED to true IS the go-live. The
-// window override exists only so web-tests can drive the field while it is off; it unlocks
-// nothing on the server, where PROMO_CODES_ENABLED still refuses every code.
-const PROMO_FIELD_ENABLED = false;
+// Live since 2026-09-28 (owner go). Setting it back to false is the rollback. The window
+// override forces it either way, only so web-tests can drive both paths; it unlocks nothing on
+// the server, where PROMO_CODES_ENABLED still refuses every code while it is off.
+const PROMO_FIELD_ENABLED = true;
 // Shared seats never take a code (POST /bookings/shared refuses one), so the field never draws there.
-const promoFieldOn = (PROMO_FIELD_ENABLED || window.CH_PROMO_FIELD === true) && !isShared;
+const promoFieldOn = (typeof window.CH_PROMO_FIELD === 'boolean' ? window.CH_PROMO_FIELD : PROMO_FIELD_ENABLED) && !isShared;
 
 // Shared rides run a fixed weekly schedule — seats depart only on set weekdays
 // (0=Sun … 6=Sat), passed via ?days= (search builds it from the corridor). Mirrors the
