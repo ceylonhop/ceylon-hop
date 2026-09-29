@@ -189,6 +189,20 @@ export function roadRow(booking: Booking): [string, string] | null {
   return null;
 }
 
+// The promo code a booking was made with and what it took off (spec 2026-09-14). Null on every
+// other booking — and on a shared seat, which a code never applies to. The emails, the manage page
+// and the team's paid alert all print it, so a total below the advertised price reads as meant.
+export function promoDiscount(booking: Booking): { code: string; cents: number } | null {
+  if (booking.mode === 'shared' || !booking.promoCode || !booking.discountTotal) return null;
+  return { code: booking.promoCode, cents: booking.discountTotal };
+}
+
+// promoDiscount as the customer emails' row, right above the total: "Promo SUMMER-15  −$6.70".
+function promoRows(booking: Booking): [string, string][] {
+  const p = promoDiscount(booking);
+  return p ? [[`Promo ${p.code}`, `−${money(p.cents, booking.currency)}`]] : [];
+}
+
 // roadRow as a plain-text line ("Road: …"), or nothing — for the text emails and team alerts.
 export function roadLines(booking: Booking): string[] {
   const road = roadRow(booking);
@@ -455,6 +469,19 @@ function totalBlock(label: string, amount: string): string {
   </td></tr>`;
 }
 
+// A quiet line above totalBlock — the promo discount. Deep accent for the amount, as the pay page
+// colours its Discount row.
+function discountBlock(label: string, amount: string): string {
+  return `<tr><td style="padding:12px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="padding:0 0 4px;font-size:14px;color:${MUTED}">${esc(label)}</td>
+        <td align="right" style="padding:0 0 4px;font-size:14px;font-weight:600;color:${TEAL_DEEP}">${esc(amount)}</td>
+      </tr>
+    </table>
+  </td></tr>`;
+}
+
 interface Cta { href: string; label: string; bg: string }
 // #0B7A44, not WhatsApp's own #25D366 — white text on the raw green is 1.98:1. Same
 // decision as site.css's .btn-wa, and the same label the site settled on in #462.
@@ -563,6 +590,7 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
         ? `<tr><td style="padding:0 34px 14px"><p style="margin:0;font-size:13px;color:${MUTED}">${esc(coverageLine(coverage))}</p></td></tr>`
         : '') +
       ticketCard(booking, BADGE_PAID) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
@@ -578,6 +606,7 @@ function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...(coverage ? [coverageLine(coverage), ''] : []),
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     'What happens next: our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
@@ -780,6 +809,7 @@ export async function sendPaymentIncomplete(
         'We saved your booking, but the payment didn’t complete — so your spot isn’t held yet.',
       ) +
       ticketCard(booking, BADGE_ACTION) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       totalBlock('Amount due', due) +
       (links.resume ? ctaRow(links.resume, 'Finish your booking') : '') +
       infoBox(
@@ -792,6 +822,7 @@ export async function sendPaymentIncomplete(
   );
   const text = textShell('finish your booking', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Finish your booking: ${links.resume}`] : []),
     '',
@@ -829,6 +860,7 @@ export async function sendPaymentFailed(
         'Your payment didn’t complete, so your booking isn’t held yet — but nothing’s lost. You can pick up right where you left off.',
       ) +
       ticketCard(booking, BADGE_FAILED) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       totalBlock('Amount due', due) +
       (links.resume ? ctaRow(links.resume, 'Try payment again') : '') +
       // Was one sentence telling them to have "a quick note to your bank". The common case is
@@ -845,6 +877,7 @@ export async function sendPaymentFailed(
   );
   const text = textShell('your payment didn’t go through', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Try payment again: ${links.resume}`] : []),
     '',
@@ -878,6 +911,7 @@ export async function sendDepositReceived(
         'We’ve received your deposit and your spot is secured. The balance is due before you travel.',
       ) +
       ticketCard(booking, BADGE_DEPOSIT) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
@@ -889,6 +923,7 @@ export async function sendDepositReceived(
   );
   const text = textShell('deposit received', 'We’ve received your deposit — your spot is secured.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     `Balance due before travel: ${balance}`,

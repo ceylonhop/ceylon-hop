@@ -27,6 +27,12 @@
   .pp-quiet summary:after{content:' \25BE'}
   .pp-quiet[open] summary:after{content:' \25B4'}
   .pp-quiet ol{margin-top:9px}
+  /* A promo code's row above Total — pay.html's Discount row (.tot-sub/.tot-disc/.tot-final), so a
+     discounted booking reads the same on both pages. .tot .v is 2rem in ticket.css, so the size is
+     set on .v itself, as pay.html does. */
+  .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
+  .tot.tot-disc .v{color:var(--accent-deep)}
+  .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -324,6 +330,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
+    var promo = !!v.promoCode && Number(v.discountCents || 0) > 0;
     var html =
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
@@ -342,7 +349,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         }).join('') + '</div>' : '')
       + factsOf(v)
       + '</div><div class="perf"></div><div class="t-stub">'
-      + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
+      // The promo code the booking was made with, and what it took off — only on such a booking.
+      + (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
+          + esc(money(v.discountCents, v.currency)) + '</span></div>' : '')
+      + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
       // A zero balance is not news — it earns a row only when something is left to pay.
       + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
 
