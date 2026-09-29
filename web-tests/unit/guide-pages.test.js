@@ -85,4 +85,9 @@ describe('generateGuides', () => {
   it('the committed page equals the generator output (run npm run generate if this fails)', () => {
     expect(readFileSync(path.join(ROOT, REL), 'utf8')).toBe(html);
   });
+  it('blog.html links the guide in static HTML (crawlable without JS)', () => {
+    const blog = readFileSync(path.join(ROOT, 'blog.html'), 'utf8').replace(/<script[\s\S]*?<\/script>/g, '');
+    expect(blog).toContain('href="guides/nuwara-eliya/"');
+    expect(blog).toContain('src="img/guides/nuwara-eliya/hero-900.jpg"');
+  });
 });
