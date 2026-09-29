@@ -3,11 +3,27 @@
 // the box; a wrong ratio shifts layout — same lesson as tools/place-photos.mjs).
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+/** Real pixel size from a JPEG's SOF marker — the same reader as place-photos.test.js. No `sips`:
+    that is macOS-only and CI runs on Linux (it failed there with `spawnSync sips ENOENT`). */
+function jpegSize(file) {
+  const buf = readFileSync(file);
+  let offset = 2; // past SOI (0xFFD8)
+  while (offset < buf.length) {
+    if (buf[offset] !== 0xff) throw new Error(`bad JPEG marker at ${offset} in ${file}`);
+    const marker = buf[offset + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+    const len = buf.readUInt16BE(offset + 2);
+    const isSOF = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isSOF) return { height: buf.readUInt16BE(offset + 5), width: buf.readUInt16BE(offset + 7) };
+    offset += 2 + len;
+  }
+  throw new Error(`no SOF marker found in ${file}`);
+}
 const DIR = path.join(ROOT, 'tools/guides');
 const guides = readdirSync(DIR).filter(f => f.endsWith('.json'))
   .map(f => JSON.parse(readFileSync(path.join(DIR, f), 'utf8')));
@@ -47,10 +63,8 @@ describe('destination guide content', () => {
       it('declares the real pixel size of each -1800 file', () => {
         for (const [k, meta] of Object.entries(g.photos)) {
           const f = path.join(ROOT, 'img/guides', g.slug, `${k}-1800.jpg`);
-          const out = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', f], { encoding: 'utf8' });
-          const w = Number(/pixelWidth:\s*(\d+)/.exec(out)[1]);
-          const h = Number(/pixelHeight:\s*(\d+)/.exec(out)[1]);
-          expect([w, h], k).toEqual([meta.w, meta.h]);
+          const { width, height } = jpegSize(f);
+          expect([width, height], k).toEqual([meta.w, meta.h]);
         }
       });
       it('credits every photographer in credits.html', () => {
