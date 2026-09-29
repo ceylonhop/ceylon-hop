@@ -264,6 +264,7 @@ export function renderGuide(g, T, placePhotos) {
 
   return renderStandalone({
     title: g.title, description: g.description, canonicalPath: `/${guidePath(g.slug)}`, depth: 2, active: 'blog.html',
+    ogImage: `img/guides/${g.slug}/og.jpg`, // 1200×630 cut of the hero, so shared links unfurl with it
     style: GUIDE_STYLE,
     bodyHtml: `${head}
 ${jsonLd(g, url)}
