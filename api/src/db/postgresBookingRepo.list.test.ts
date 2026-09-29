@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as schema from './schema';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
+import { seedCorridors } from './postgresDepartureRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -45,6 +46,9 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
     const sql = postgres(TEST_URL as string, { debug: (_conn, query) => { if (!query.includes('pg_catalog')) statements += 1; } });
     const db = drizzle(sql, { schema });
     await migrate(db, { migrationsFolder: 'drizzle' });
+    // The `shared` fixture books corridor 'hill-line', a foreign key into the corridor catalogue.
+    // Seed it here rather than rely on another test file having seeded the same database first.
+    await seedCorridors(sql);
     bookings = new PostgresBookingRepo(db);
     payments = new PostgresPaymentRepo(db);
   });
