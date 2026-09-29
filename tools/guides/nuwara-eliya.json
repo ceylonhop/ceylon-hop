@@ -1,0 +1,197 @@
+{
+  "slug": "nuwara-eliya",
+  "name": "Nuwara Eliya",
+  "region": "Hill country",
+  "placeId": "nuwara-eliya",
+  "title": "Nuwara Eliya guide — Horton Plains, tea, where to stay | Ceylon Hop",
+  "description": "What to do in Nuwara Eliya — Horton Plains at dawn, the tea estates, what to wear, where to eat and stay, and how we drive you up the hill.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "Mornings are misty, nights are cold, and it feels nothing like the coast. A hill-country town at 1,868 m, ringed by tea — the British called it Little England and built it to match."
+  },
+  "facts": [
+    { "label": "Stay", "value": "2 nights" },
+    { "label": "Altitude", "value": "1,868 m" },
+    { "label": "Daytime", "value": "18–24", "unit": "°C" },
+    { "label": "Between", "value": "Kandy & Ella" }
+  ],
+  "lede": "Most people stay two nights, usually on their way between Kandy and Ella —",
+  "ledeEm": "one day for Horton Plains, one for the town and tea.",
+  "gettingHere": {
+    "heading": "We’ll bring you up the hill",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      { "id": "kandy", "title": "From Kandy", "from": "75 km · 2 h 45 · most people arrive from here",
+        "sell": "The A5 is 60 km of hairpins after Gampola. Our drivers do it every week — no overtaking on the bends, a stop at Ramboda Falls, and they know which roadside stall has the good strawberries." },
+      { "id": "ella", "title": "From Ella", "from": "55 km · 1 h 45 · the return leg of the loop",
+        "sell": "Up through the Ella Gap with the southern plain opening below you, past Hakgala gardens, then tea all the way. We can stop at the gardens on the way in if you’d like." },
+      { "id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 170 km · about 5 h 30 with a lunch stop",
+        "sell": "Your driver meets you at arrivals with your name; you sleep in the hills that night. The easiest way to start a trip if you want the cool air first and the beaches last." }
+    ],
+    "train": "It’s a beautiful ride and we’ll never tell you not to. Two things to know: the line stops at <b>Nanu Oya, 9 km from town</b>, so you still need a ride at the end; and reserved seats go on sale 30 days ahead and sell out in season (the unreserved carriages always have room if you don’t mind standing). From Kandy it’s about 4 h, from Ella about 3 h. Message us and we’ll check seats for your date — and tell you which side to sit on."
+  },
+  "places": [
+    { "id": "horton-plains", "name": "Horton Plains & World’s End", "photo": "horton",
+      "text": "A high plateau with a 9.5 km walking loop that leads to World’s End — a cliff with a drop of around 880 m — and Baker’s Falls. It is not near town: 32 km and about an hour on a narrow mountain road, which is why the early start matters.",
+      "spec": { "from": "32 km · about 1 h from town", "open": "Gate opens 6 AM · last entry mid-afternoon", "give": "3–4 hours on the loop", "ticket": "≈ Rs 7,000 foreign adult · pay at the gate" },
+      "tip": { "kind": "drivers", "text": "Go first thing in the morning. By mid-morning the mist usually rolls in and the view disappears. No phone signal on the plains — download the map before you leave the hotel. Leave the hotel by 5:30 and you’ll be at World’s End before the tour buses. Bring a jumper you can take off — it’s 8° at the gate and 20° by ten." },
+      "offer": { "title": "5:30 AM pickup with Ceylon Hop", "sub": "Wait at the park and the drive back included",
+        "wa": "Hi Ceylon Hop — I’m reading your Nuwara Eliya guide. Could you give me a price for a 5:30 AM Horton Plains pickup from my hotel, with the wait and the drive back?" } },
+    { "id": "pedro", "name": "Pedro Tea Estate", "photo": "pedro",
+      "text": "A working tea estate 3 km from town. A short tour shows you withering, rolling and firing, then you get a cup in the café over the bushes it came from.",
+      "spec": { "from": "3 km · 10 min from town", "open": "Tours Mon–Sat, mornings · factory idle Sun", "give": "45 min–1 h" },
+      "tip": { "kind": "drivers", "text": "Go in the morning while the machines are running — an idle factory is just a big shed. Lover’s Leap waterfall is a 20-minute walk up from the estate gate and free." } },
+    { "id": "gregory-lake", "name": "Gregory Lake", "photo": "gregory",
+      "text": "The lake in the middle of town. It’s nice for a slow walk in the morning or late afternoon; the full loop is about 4 km and flat.",
+      "spec": { "from": "In town · walk from most hotels", "open": "Open all day · small entry fee to the lakeside park", "give": "1 h for the loop" },
+      "tip": { "kind": "warn", "text": "If you fancy a boat or horse ride, agree on the price first. It isn’t fixed, and some visitors felt short rides weren’t great value." } },
+    { "id": "hakgala", "name": "Hakgala Botanical Garden", "photo": "hakgala",
+      "text": "A cool, shady botanical garden on the road to Ella — ferns, roses, an orchid house and a lot of monkeys. Easy walking, good for families and for the day after Horton Plains.",
+      "spec": { "from": "10 km · 20 min, on the Ella road", "open": "Opens 7:30 AM · closes late afternoon", "give": "1–2 hours" },
+      "tip": { "kind": "drivers", "text": "If you’re leaving for Ella, we stop here on the way out — no need to come back for it." } },
+    { "id": "town", "name": "Victoria Park & the old town", "photo": "town",
+      "text": "A neat Victorian park next to the red-brick post office, with the racecourse and the golf course beyond it. Birdwatchers come for the hill-country species; everyone else comes in April when the flower beds peak. Give the town itself an hour: the covered market for strawberries and vegetables, the post office, a look at the Hill Club from the road.",
+      "spec": { "from": "In town", "open": "Park opens 7 AM · small entry fee", "give": "1 h with the market" } },
+    { "id": "single-tree-hill", "name": "Single Tree Hill at sunrise", "photo": "single-tree",
+      "text": "The viewpoint above town. A steep 40-minute walk up through tea from the Haddon Hill road, and the whole valley below you as the mist burns off. The morning you’re not doing Horton Plains, do this.",
+      "spec": { "from": "2 km · start on foot from town", "open": "Free · go for 6 AM", "give": "2 hours there and back" } },
+    { "id": "moon-plains", "name": "Moon Plains", "photo": "moon-plains",
+      "text": "The gentle alternative to Horton Plains: a grassland plateau 15 minutes from town with a jeep ride to a 360° viewpoint and, on a clear day, Adam’s Peak on the horizon. Sambar deer most mornings.",
+      "spec": { "from": "6 km · 15 min from town", "open": "Opens 7 AM · jeep included in the ticket", "give": "1–1.5 hours" },
+      "tip": { "kind": "drivers", "text": "Can’t face the 5:30 start, or travelling with small children? This gives you the plains feeling without the long road." } },
+    { "id": "ambewela", "name": "Ambewela farms", "photo": "ambewela",
+      "text": "Dairy country on the way to Horton Plains — black-and-white cows, wide green paddocks and a farm shop with fresh milk, yoghurt and cheese. Locals call it Little New Zealand. Children love it; adults like the yoghurt.",
+      "spec": { "from": "20 km · on the Horton Plains road", "open": "Open daily, daytime · small entry fee", "give": "45 min" },
+      "tip": { "kind": "drivers", "text": "The easy add-on to a Horton Plains morning — you pass the gate on the way back down." } },
+    { "id": "lovers-leap", "name": "Lover’s Leap waterfall", "photo": "lovers-leap",
+      "text": "A 30 m fall above the Pedro estate with a legend attached (a prince, a village girl, a leap). The walk up from the estate is 20 minutes through tea, the pool at the bottom is cold, and it costs nothing.",
+      "spec": { "from": "4 km · walk up from Pedro estate", "open": "Free · daylight", "give": "1 h with the walk" } }
+  ],
+  "furtherAfield": [
+    { "time": "2 h", "name": "Adam’s Peak (Sri Pada)", "text": "The night climb to the summit for sunrise: 5,500 steps, pilgrims all the way up. Season is December to May; outside it the path is dark and the tea shops shut. We drive you to Dalhousie the evening before." },
+    { "time": "1 h 45", "name": "Lipton’s Seat & Haputale", "text": "Where Sir Thomas Lipton looked at his tea. A tuk-tuk up through the Dambatenne estate, five provinces in view on a clear morning. Combine with the road to Ella." },
+    { "time": "1 h 15", "name": "Ramboda & the tea-country waterfalls", "text": "Ramboda, Devon and St Clair’s, all on or just off the Kandy road — the reason to do that drive in daylight rather than by night bus." }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: mist by mid-morning, factories closed on Sundays, cold after dark.",
+    "days": [
+      { "title": "Day 1 · The plains", "sub": "Early start, easy afternoon", "steps": [
+        { "time": "5:30", "title": "Pickup from your hotel", "text": "It’s cold. Jacket, water, no plastic bags.", "us": true },
+        { "time": "6:30", "title": "Horton Plains loop", "text": "World’s End first while it’s clear, then Baker’s Falls. 3–4 h." },
+        { "time": "11:00", "title": "Pedro Tea Estate", "text": "Factory running, tea in the café after." },
+        { "time": "16:00", "title": "Gregory Lake", "text": "Slow walk, agree any boat price first." },
+        { "time": "19:00", "title": "Dinner at The Hill Club", "text": "Smart dress code. Ask for extra blankets at the hotel." } ] },
+      { "title": "Day 2 · Town, gardens, onward", "sub": "Unhurried, then the road to Ella", "steps": [
+        { "time": "9:00", "title": "Hakgala Botanical Garden", "text": "Shady, easy walking, 1–2 h." },
+        { "time": "11:30", "title": "Victoria Park & the post office", "text": "Cash from the ATMs in town while you’re here." },
+        { "time": "13:00", "title": "Lunch, then check out" },
+        { "time": "14:00", "title": "Onward to Ella with us", "text": "1 h 45 by car, past Hakgala and down through the Ella Gap with the whole southern plain opening up below you. Or the 3 h train from Nanu Oya, if you have a seat.", "us": true } ],
+        "book": { "stops": ["Nuwara Eliya", "Ella"], "nights": [0, 0], "preload": "Opens the planner with <b>Nuwara Eliya → Ella</b> already in — we stop at Hakgala on the way." } }
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Two monsoons hit the hill country from opposite sides, so the town has two wet seasons and one long clear one. Views are never guaranteed, but the odds change a lot.",
+    "blocks": [
+      { "label": "Dec – Feb", "title": "Clear & cold", "text": "The best odds of a view at World’s End. Nights can touch 5°; hotels sell out over Christmas.", "tag": "Best for Horton Plains", "tone": "best" },
+      { "label": "Mar – Apr", "title": "Season", "text": "Flower shows, the races, Sinhala & Tamil New Year in April. Warm days, busy town — book everything early.", "tag": "Busiest", "tone": "best" },
+      { "label": "May – Sep", "title": "South-west monsoon", "text": "Rain and mist on the western slopes, often clearing by afternoon. Fewer people, greener tea, cheaper rooms.", "tone": "wet" },
+      { "label": "Oct – Nov", "title": "Showers", "text": "The wettest weeks: afternoon storms most days. Mornings are still your friend. Leech socks for the plains.", "tone": "wet" }
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road from Kandy",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in town. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      { "km": "Ramboda · on the A5", "name": "Seetha Amman Temple & Ramboda Falls", "photo": "ramboda",
+        "text": "A temple linked to the Ramayana, with a tall waterfall nearby. Cover shoulders and knees; shoes off at the temple.",
+        "wa": "Hi Ceylon Hop — on my Kandy → Nuwara Eliya transfer, could we stop at Ramboda Falls and Seetha Amman Temple? (From your Nuwara Eliya guide.)" },
+      { "km": "Roadside · above 1,500 m", "name": "Strawberry & veggie stalls", "photo": "strawberries",
+        "text": "The hill country grows strawberries, carrots and leeks. Stalls sell them fresh along the road — great for snacks.",
+        "wa": "Hi Ceylon Hop — on my Kandy → Nuwara Eliya transfer, could we stop at a roadside strawberry stall? (From your Nuwara Eliya guide.)" }
+    ]
+  },
+  "eat": [
+    { "tier": "Family", "pick": true, "photo": "hill-club", "name": "The Hill Club",
+      "text": "Old-style dining in a 19th-century club — five courses, a fire in the grate. <em>Smart dress code: jacket for men, and they lend one.</em>",
+      "band": "$$$", "flags": ["Dinner", "Book ahead"], "map": "The Hill Club, Nuwara Eliya" },
+    { "tier": "Café", "photo": "pedro-cafe", "name": "Pedro Tea Estate café",
+      "text": "A cup of the estate’s own tea looking over the bushes it came from. <em>Go after the factory tour, before the mist.</em>",
+      "band": "$", "flags": ["Morning"], "warn": ["Cash only"], "map": "Pedro Tea Estate, Nuwara Eliya" },
+    { "tier": "Budget", "photo": "rice-curry", "name": "Rice & curry by the bus stand",
+      "text": "The lunch places around the bus stand and the market do a plate of rice, dhal and four curries for a few hundred rupees, 11:30 to about 2. <b>This is where our drivers eat.</b> <em>Ask for it “not too spicy” if you mean it.</em>",
+      "band": "$", "flags": ["Lunch"], "warn": ["Cash only"], "map": "Nuwara Eliya bus stand" }
+  ],
+  "eatCollector": { "title": "Where did you eat well?", "text": "Tell us your favourite place in Nuwara Eliya and we’ll check it out for the next traveller.", "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Nuwara Eliya: " },
+  "stay": [
+    { "tier": "Luxury", "pick": true, "photo": "heritance", "name": "Heritance Tea Factory",
+      "text": "A real 1930s tea factory turned hotel, 15 min above town, tea bushes to the door. <em>The one people talk about afterwards.</em>",
+      "band": "$$$", "flags": ["Couples", "Out of town"] },
+    { "tier": "Luxury", "photo": "grand-hotel", "name": "The Grand Hotel · Jetwing St Andrew’s",
+      "text": "The two colonial classics in town — lawns, afternoon tea, walking distance to the lake and the park. <em>Grand is bigger; St Andrew’s is quieter.</em>",
+      "band": "$$$", "flags": ["Families", "In town"] },
+    { "tier": "Mid-range", "photo": "gregory", "name": "Guesthouses around Gregory Lake",
+      "text": "The family-run places on the lake road and up Haddon Hill are where most of our customers stay: $30–60 a night with breakfast, hot water, and owners who’ll book your Horton Plains driver at reception. <em>Ask for a room with a heater or a fireplace — it’s worth the extra.</em> Travelling solo? There are two or three decent hostels in the centre — message us and we’ll say which.",
+      "band": "$–$$", "flags": ["Couples, families, solo", "Near town"] }
+  ],
+  "stayCollector": { "title": "Stayed somewhere great?", "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Nuwara Eliya: " },
+  "faq": [
+    { "tab": "Planning", "items": [
+      { "q": "Is Nuwara Eliya worth visiting?", "a": "<p>If you like cool air, tea country and a morning on the plains — yes, and it breaks the Kandy–Ella journey in the right place. If you want beaches, nightlife or a warm swim, this isn’t that. The town itself is a half-day; the country around it is the point.</p>" },
+      { "q": "How many days do I need?", "a": "<p>Two nights. One morning for Horton Plains, one for the town and a tea estate. A single night works if you skip the plains; three if you want Adam’s Peak or a slow day.</p>" },
+      { "q": "When is the best time to visit?", "a": "<p>December to April for clear mornings; April is the busiest and the most fun. May to November is wetter but quieter and cheaper — mornings are usually still fine. <a href=\"#when\">Month by month ↑</a></p>" },
+      { "q": "Can I do it as a day trip from Kandy?", "a": "<p>You can, but it’s five and a half hours of driving for a few hours in town, and you miss the one thing worth coming for — the plains at dawn. Stay the night.</p>" } ] },
+    { "tab": "Trains", "items": [
+      { "q": "Does the train go into Nuwara Eliya?", "a": "<p>Not quite. The train stops at Nanu Oya, about 9 km from town, so you’ll still need a ride for the last stretch.</p><p>If you’d rather skip the change, we do the whole trip from Kandy hotel to hotel, and stop at Ramboda Falls on the way. <a href=\"#here\">See how we get you here ↑</a></p>" },
+      { "q": "Which train should I take?", "a": "<p>From Kandy, take the train to Nanu Oya. To carry on to Ella, take Nanu Oya → Ella — one of the prettiest stretches on the whole line.</p>" },
+      { "q": "Can I go from Kandy to Ella in one day?", "a": "<p>You can, but it’s a very long day. Stopping in Nuwara Eliya makes it much easier.</p>" },
+      { "q": "Are train tickets easy to get?", "a": "<p>Reserved seats go on sale 30 days ahead and sell out fast in season. If they’re gone, the unreserved second-class carriages always have space — you may stand for part of it, and it’s the same view. Message us on WhatsApp and we’ll check what’s left for your date.</p>" },
+      { "q": "What if the train is delayed or cancelled?", "a": "<p>It happens, especially in heavy rain. Don’t plan anything tight on the same day.</p>" } ] },
+    { "tab": "Pack & wear", "items": [
+      { "q": "How cold does it really get?", "a": "<div class=\"temps\"><div><b>18–24°</b><small>Day</small></div><div><b>10–14°</b><small>Night</small></div><div><b>8–10°</b><small>Dawn</small></div><div><b>Colder</b><small>Horton</small></div></div><p>Mist and rain can show up any time, which makes it feel colder than the number says.</p>" },
+      { "q": "What should I wear?", "a": "<ul class=\"pack\"><li>Layers: t-shirt, jumper, jacket</li><li>Long trousers</li><li>A rain jacket</li><li>Closed shoes with grip</li></ul>" },
+      { "q": "What should I bring for Horton Plains?", "a": "<p>A warm layer for the early start, a rain jacket, sunscreen and water. Plastic bags aren’t allowed in the park.</p>" },
+      { "q": "Will my hotel have heating?", "a": "<p>Many places don’t. Ask for extra blankets when you check in, or pick a room with a fireplace — the guesthouses here charge a little more for them and it’s worth it in December.</p>" },
+      { "q": "What if I get ill or hurt up here?", "a": "<p>There are pharmacies along the main street and a district general hospital in town. Altitude and cold catch people out more than anything else — drink water, take the first day slowly.</p>" } ] },
+    { "tab": "Good to know", "tips": [
+      "Carry some cash. Tea factories, stalls and small shops are often cash-only. The bank ATMs are around the post office — and they can run dry on long weekends, so don’t arrive with nothing.",
+      "Tuk-tuk fares aren’t metered. Agree the price first: a few hundred rupees across town, more to the tea estates, and a proper negotiation for Horton Plains. Your hotel will tell you what’s fair today.",
+      "No phone signal on Horton Plains and patchy on the Kandy road. Download your map and this page before you set off.",
+      "The Hill Club means it about the dress code — jacket and tie for men at dinner (they lend both), no trainers. Ask the day before.",
+      "If someone says a place is “closed today” and offers another, check with us first — it usually isn’t.",
+      "Leeches in the wet months at Horton Plains. Long socks, or buy leech socks at the gate.",
+      "The roads are twisty. If you get car sick, take a tablet before the drive up.",
+      "April is busy — flower shows, horse races, New Year travel. Book early.",
+      "Full-moon (Poya) days: alcohol isn’t sold, the temples are packed and some places close early. Check the date before you plan a big dinner.",
+      "Views aren’t guaranteed. The mist comes and goes." ] }
+  ],
+  "ask": { "eyebrow": "Real people, real answers", "heading": "Not sure about something?",
+    "text": "Train seats, factory opening days, what the entrance fee is this month — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Nuwara Eliya: " },
+  "photos": {
+    "hero":         { "alt": "Tea-covered hills of Nuwara Eliya under a blue sky", "credit": "Juho S", "creditUrl": "https://unsplash.com/@jhshelsinki?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-lush-green-hillside-covered-in-lots-of-trees-uDk9n1yKxTw?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 45%", "w": 1800, "h": 1013 },
+    "horton":       { "alt": "Golden grassland of Horton Plains at sunrise, cloud sitting on the hills behind", "credit": "Madhawa Mihiran", "creditUrl": "https://unsplash.com/@madhawams?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-grassy-field-with-a-hill-in-the-background-gG-4Lu0G46A?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 60%", "w": 1800, "h": 1125 },
+    "pedro":        { "alt": "Rows of tea bushes on a bright hillside", "credit": "Rowan Heuvel", "creditUrl": "https://unsplash.com/@insolitus?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/green-grass-field-under-cloudy-sky-during-daytime-Fh4CAo8ba6c?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "gregory":      { "alt": "Boats moored on Gregory Lake with the town and hills behind", "credit": "Saaketh PVR", "creditUrl": "https://unsplash.com/@pvrs02?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/boats-docked-by-a-misty-lakeside-town-with-green-hills-RG9VTsSH8Ow?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 55%", "w": 1800, "h": 1125 },
+    "hakgala":      { "alt": "A garden with a fountain and flower beds", "credit": "Secret Travel Guide", "creditUrl": "https://unsplash.com/@secrettravelguide?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-garden-with-a-fountain-and-flowers--SEDkuh-T8Y?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "town":         { "alt": "The red-brick colonial post office in Nuwara Eliya town", "credit": "Ranmali Kirinde", "creditUrl": "https://unsplash.com/@ranmali_k?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/historic-red-brick-building-with-white-trim-and-gables-RvawCDaJmo0?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "single-tree":  { "alt": "The sun rising behind a lone tree above a sea of cloud in the hill country", "credit": "Kennett Etugala", "creditUrl": "https://unsplash.com/@etugala?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/the-sun-shines-through-the-clouds-in-the-mountains-q_GXjVnIs1w?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 40%", "w": 1800, "h": 1125 },
+    "moon-plains":  { "alt": "A sambar stag resting in long grass on the plains", "credit": "Bianca Ahangama", "creditUrl": "https://unsplash.com/@wildlifeserendipitywithbianca?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-deer-laying-down-in-a-grassy-field-W9j4pYCrRIU?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 45%", "w": 1800, "h": 1125 },
+    "ambewela":     { "alt": "Green pasture beside water under a blue sky", "credit": "Subodha Karunarathne", "creditUrl": "https://unsplash.com/@mr_subz?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/green-grass-field-near-body-of-water-under-blue-sky-during-daytime-PuWCoG8WHok?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "lovers-leap":  { "alt": "A tall waterfall dropping down a green cliff", "credit": "Thushal Madhushankha", "creditUrl": "https://unsplash.com/@thushal98?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/waterfall-cascading-down-lush-mountain-cliff-Wak57_M4JKM?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "ramboda":      { "alt": "A waterfall in the hills near Nuwara Eliya", "credit": "Heshan Weeramanthri", "creditUrl": "https://unsplash.com/@kolithaheshan?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/waterfalls-in-the-middle-of-green-grass-field-ytNk5s_4Wys?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "strawberries": { "alt": "A roadside fruit stall in warm light", "credit": "Divyansh Dwivedi", "creditUrl": "https://unsplash.com/@iamdivyanshdwivedi?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/street-vendor-stall-with-scooter-and-produce-displayed--aycSBI7ZKo?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "hill-club":    { "alt": "A spread of Sri Lankan curries", "credit": "Zoshua Colah", "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-variety-of-delicious-appetizing-curry-dishes-i0Dd1oxMz6c?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "pedro-cafe":   { "alt": "Tea fields seen from above", "credit": "Jerry Kavan", "creditUrl": "https://unsplash.com/@jerrykavan?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/aerial-photography-of-green-fields-during-daytime-i9eaAR4dWi8?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "rice-curry":   { "alt": "Rice and curry served on a banana leaf", "credit": "Zoshua Colah", "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-sri-lankan-meal-is-presented-on-a-leaf-3gvwRZ_Omgw?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "heritance":    { "alt": "A white hotel building on a tea-covered hillside", "credit": "Tharindu Madhusanka", "creditUrl": "https://unsplash.com/@tharindu_madhusanka?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-large-white-building-sitting-on-top-of-a-lush-green-hillside-bJrOfRUgItU?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "grand-hotel":  { "alt": "A formal garden with flower beds and trees", "credit": "Uravrgphotographer", "creditUrl": "https://unsplash.com/@uravrgphotographer_2611?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-garden-with-flowers-and-trees-CUtp0OVGKJQ?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 }
+  }
+}
