@@ -21,7 +21,9 @@ function estimateStub(promo) {
 }
 
 async function openPayment(page, { promo = acceptSave10, on = true, bookingTotal = 9000 } = {}) {
-  if (on) await page.addInitScript(() => { window.CH_PROMO_FIELD = true; });
+  // on: true/false forces the switch through the test override; 'default' leaves booking.js's own
+  // PROMO_FIELD_ENABLED in charge.
+  if (on !== 'default') await page.addInitScript((v) => { window.CH_PROMO_FIELD = v; }, on);
   const handles = await gotoBooking(page, { estimate: estimateStub(promo), bookingTotal });
   await expect(page.locator('#sum-total')).toHaveText('$100');
   await fillContact(page);
@@ -38,7 +40,14 @@ function bookingBody(page) {
   return page.waitForRequest('**/bookings/single').then((r) => JSON.parse(r.postData()));
 }
 
-test('nothing shows, and no code is sent, while the switch is off', async ({ page }) => {
+test('live: with no test override the field shows on the Payment step', async ({ page }) => {
+  await openPayment(page, { on: 'default' });
+  await expect(page.locator('#promo-toggle')).toBeVisible();
+  await applyCode(page, 'SAVE10');
+  await expect(page.locator('#sum-total')).toHaveText('$90');
+});
+
+test('nothing shows, and no code is sent, while the switch is forced off', async ({ page }) => {
   const bodies = [];
   page.on('request', (r) => { if (r.url().includes('/quote/v2/estimate')) bodies.push(JSON.parse(r.postData() || '{}')); });
   await openPayment(page, { on: false });
