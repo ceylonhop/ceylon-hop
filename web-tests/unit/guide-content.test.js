@@ -73,6 +73,9 @@ describe('destination guide content', () => {
         expect(jpegSize(f)).toEqual({ width: 1200, height: 630 });
         expect(readFileSync(f).length).toBeLessThan(300 * 1024);
       });
+      it('keeps <b> out of place tips (.tip b is the tip’s own label, so it would render as a heading)', () => {
+        for (const p of g.places) if (p.tip) expect(p.tip.text, p.id).not.toContain('<b>');
+      });
       it('credits every photographer in credits.html', () => {
         const credits = readFileSync(path.join(ROOT, 'credits.html'), 'utf8');
         for (const [k, meta] of Object.entries(g.photos)) {

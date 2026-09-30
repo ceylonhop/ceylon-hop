@@ -1,0 +1,404 @@
+{
+  "slug": "sigiriya",
+  "name": "Sigiriya & Dambulla",
+  "region": "Cultural Triangle",
+  "placeId": "sigiriya",
+  "title": "Sigiriya & Dambulla guide — climbs, caves, where to stay | Ceylon Hop",
+  "description": "Sigiriya Rock at opening time, Pidurangala at sunrise, the Dambulla caves, the elephant gathering, where to eat and stay — and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A 180 m rock fortress rising straight out of the jungle, with a king’s palace on top and frescoes halfway up. Twenty minutes down the road, the painted caves of Dambulla add a second World Heritage Site to the same trip."
+  },
+  "facts": [
+    {"label": "Stay", "value": "1–2 nights"},
+    {"label": "The climb", "value": "1,200", "unit": "steps"},
+    {"label": "Daytime", "value": "28–34", "unit": "°C"},
+    {"label": "Between", "value": "Kandy & Trinco"}
+  ],
+  "lede": "Most people give it one or two nights, often straight from the airport —",
+  "ledeEm": "the big climb first thing, the caves when it cools off, a sunrise from the rock next door.",
+  "gettingHere": {
+    "heading": "We’ll drive you to the rock",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 150 km · about 3 h 15 · most people arrive this way", "sell": "Your driver meets you at arrivals and you’re in the dry zone by the afternoon. The easiest way to start a trip: do the big climb early, then unwind in the hills and on the coast."},
+      {"id": "kandy", "title": "From Kandy", "from": "90 km · about 2 h 30 · through the spice country", "sell": "North through Matale, where cinnamon, pepper and cardamom grow by the road, past the Aluvihare cave temple and Dambulla. We can stop at a spice garden on the way if you’d like."},
+      {"id": "negombo", "title": "From Negombo", "from": "150 km · about 3 h 15 · after a night by the beach", "sell": "The same road as the airport run, so your first night can be by the sea near the airport. Leave after breakfast and you’ll be at Dambulla in time for the caves before they close."}
+    ],
+    "train": "There’s no station in Sigiriya or Dambulla. The nearest is <b>Habarana, about 20 km away</b> and a few kilometres outside the town itself, with only a couple of useful trains a day — so you’d still need a ride at the end. Almost everyone comes by road. If you’re carrying on to Trincomalee or Batticaloa afterwards, the line east from Habarana is running again; message us and we’ll check the times for your date."
+  },
+  "places": [
+    {
+      "id": "sigiriya-rock",
+      "name": "Sigiriya Rock Fortress",
+      "photo": "sigiriya",
+      "text": "King Kashyapa built his palace on top of this rock in the 5th century and a UNESCO World Heritage Site grew around it. The way up passes the water gardens, the painted ladies of the frescoes, the Mirror Wall with 1,000-year-old graffiti, and the two giant Lion’s Paws before the last metal stairs to the summit. The museum by the ticket office is covered by your ticket — do it after, when you’re back in the shade.",
+      "spec": {"from": "At the ticket office in the village", "open": "Counters 7 AM–5 PM · single entry", "give": "3 hours with the museum", "level": "Moderate · about 1,200 steps", "ticket": "USD 35 foreign adult · USD 20 age 6–12 · paid in rupees"},
+      "tip": {"kind": "drivers", "text": "Be at the counter when it opens. By ten the rock is hot to touch, the stairs are queued and the climb takes twice as long. Keep quiet near the Lion’s Paw — the hornets there don’t like noise or perfume, and staff will stop the climb if they’re restless. No photos of the frescoes; the guards mean it."},
+      "offer": {"title": "Early pickup with Ceylon Hop", "sub": "From your hotel to the counter at opening time", "wa": "Hi Ceylon Hop — I’m reading your Sigiriya guide. Could you give me a price for an early pickup to Sigiriya Rock at opening time, with the wait and the drive back?"}
+    },
+    {
+      "id": "pidurangala",
+      "name": "Pidurangala Rock",
+      "photo": "pidurangala",
+      "text": "The rock next door, and the view of Sigiriya on every postcard. It’s shorter but rougher: a temple at the bottom, a brick reclining Buddha halfway, and a boulder scramble at the top where you’ll use your hands. This is the one for sunrise.",
+      "spec": {"from": "3 km · 10 min by tuk-tuk", "open": "From about 5 AM · temple tickets", "give": "1–1.5 hours", "level": "Moderate–hard · a scramble at the top", "ticket": "Rs 1,000 adult · Rs 500 child"},
+      "tip": {"kind": "warn", "text": "Cover shoulders and knees to pass the temple (they lend a wrap). Wear proper shoes and skip it after heavy rain — the top is bare rock. The last stretch isn’t for anyone who hates heights."}
+    },
+    {
+      "id": "dambulla",
+      "name": "Dambulla Cave Temple",
+      "photo": "dambulla",
+      "text": "Five caves cut into a rock 160 m above the plain, every wall and ceiling painted, and more than 150 Buddha statues inside — including a 14 m reclining Buddha. It’s been a place of worship for over 2,000 years and is still a working temple.",
+      "spec": {"from": "20 km · 20–30 min from Sigiriya", "open": "7 AM–7 PM · tickets until 5 PM", "give": "1–1.5 hours", "level": "Easy · about 350 steps up", "ticket": "≈ Rs 3,000 foreign adult · cash"},
+      "tip": {"kind": "warn", "text": "Buy your ticket before you climb — the office is by the car park on the main road, not at the Golden Temple and not at the top. Shoulders and knees covered, shoes off at the entrance (bring socks; the rock gets hot). Keep food out of sight of the monkeys."}
+    },
+    {
+      "id": "thalkote",
+      "name": "Thalkote lake at sunset",
+      "photo": "lake",
+      "text": "A quieter way to see the rock: a punt or catamaran across Pahala Thalkote Wewa, a village tank a few kilometres out, with Sigiriya reflected in the water and herons on every stump. Some trips add a bullock-cart ride through the paddy fields.",
+      "spec": {"from": "6–7 km · 15 min from the rock", "open": "Late afternoon is best", "give": "1–2 hours", "ticket": "≈ USD 12–50 per person, by operator"},
+      "tip": {"kind": "drivers", "text": "Go at sunset. Fewer people, the best light on the rock, and it’s the one thing first-timers don’t know to ask for."}
+    },
+    {
+      "id": "minneriya",
+      "name": "Minneriya & the elephant gathering",
+      "photo": "elephants",
+      "text": "From about July to October, as the reservoirs shrink, hundreds of wild elephants come to graze the grass on the old tank beds — one of the biggest gatherings of Asian elephants anywhere. The herds move between Minneriya, Kaudulla and Hurulu as the water changes, and the jeep drivers know where they are that week.",
+      "spec": {"from": "About 45 min to the park gates", "open": "Jeeps go at 6 AM or around 3 PM", "give": "Half a day", "ticket": "Park ≈ USD 35–40 per adult all-in, plus the jeep"},
+      "tip": {"kind": "drivers", "text": "Go in the afternoon — the elephants come out to the grass as it cools. Outside the gathering months you’ll still see elephants most days; ask us which park is best for your dates."}
+    },
+    {
+      "id": "village",
+      "name": "A village day",
+      "photo": "village",
+      "text": "Get off the tourist track for a few hours: a catamaran across a village lake, a walk through the paddy and vegetable plots, and a family lunch cooked over firewood — often a dozen curries in clay pots. The slower, more human side of the area, and good for children.",
+      "spec": {"from": "Around Sigiriya & Habarana", "open": "Mornings, or late afternoon", "give": "2–3 hours", "ticket": "≈ USD 25–90 per person, by what’s included"}
+    },
+    {
+      "id": "ayurveda",
+      "name": "An Ayurvedic treatment",
+      "photo": "ayurveda",
+      "text": "Sri Lanka’s traditional medicine: warm herbal oils, a proper massage and, if you want it, a consultation with a doctor. The resorts around Sigiriya and Habarana have Ayurveda centres that take outside guests. The best way to recover the day after the climbs.",
+      "spec": {"from": "Around Sigiriya & Habarana", "open": "Book the day before", "give": "1 hour or more"}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "1 h 15",
+      "name": "Polonnaruwa",
+      "text": "The medieval royal capital: palaces, dagobas and the four great Buddhas carved into one granite wall at Gal Vihara. Flat and spread out — hire a bicycle at the gate. CCF ticket ≈ USD 30."
+    },
+    {
+      "time": "1 h 45",
+      "name": "Anuradhapura",
+      "text": "The first great capital, over 2,000 years old: giant white dagobas and the sacred Bodhi tree, grown from a cutting of the one the Buddha sat under. A long, hot, unforgettable day. CCF ticket ≈ USD 30."
+    },
+    {
+      "time": "1 h",
+      "name": "Ritigala forest monastery",
+      "text": "Ruined meditation platforms and stone paths lost in the jungle on a mountain — almost nobody goes. Cool, shady and quiet. Leeches after rain; ticket ≈ USD 6."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: the rock is best at opening time, the caves when it cools, and the elephants come out in the afternoon.",
+    "days": [
+      {"title": "Day 1 · The climb", "sub": "Early start, easy afternoon", "steps": [{"time": "7:00", "title": "Sigiriya Rock Fortress", "text": "At the counter when it opens. 2–3 h up and down."}, {"time": "10:00", "title": "Sigiriya Museum", "text": "By the ticket office, included in your ticket."}, {"time": "12:00", "title": "Lunch, rest, a swim", "text": "The hottest hours — stay in the shade."}, {"time": "15:30", "title": "Dambulla Cave Temple", "text": "Ticket from the car-park office first; it closes at 5."}, {"time": "19:00", "title": "Dinner, early night", "text": "Don’t walk the village roads after dark — elephants use them too."}]},
+      {"title": "Day 2 · Sunrise, then onward", "sub": "One more rock, then Kandy", "steps": [{"time": "5:30", "title": "Pidurangala Rock at sunrise", "text": "The classic view back at Sigiriya. Or the lake at sunrise instead."}, {"time": "9:00", "title": "Breakfast, then a village visit or Ayurveda", "text": "Slow morning after two early starts."}, {"time": "13:00", "title": "Check out"}, {"time": "13:30", "title": "Onward to Kandy with us", "text": "About 2 h 30 through Matale’s spice country — we can stop at a spice garden or the Aluvihare cave temple on the way.", "us": true}], "book": {"stops": ["Sigiriya / Dambulla", "Kandy"], "nights": [0, 0], "preload": "Opens the planner with <b>Sigiriya → Kandy</b> already in — tell us if you’d like a stop on the way."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Sigiriya is in the dry zone: hot all year, with one long dry spell mid-year and its real rain at the end of the year — the opposite of the south coast.",
+    "blocks": [
+      {"label": "Jan – Mar", "title": "Dry & warm", "text": "The most comfortable months: clear mornings, 28–32° by day, cooler nights. Peak season — the rock is busiest.", "tag": "Best for the climb", "tone": "best"},
+      {"label": "Apr – May", "title": "Hottest", "text": "April is the hottest month, with afternoon thunderstorms. Climb at opening time and carry more water than you think.", "tone": "wet"},
+      {"label": "Jun – Sep", "title": "Dry & windy", "text": "The driest months: hot, clear and breezy. The elephant gathering at Minneriya and Kaudulla peaks in August.", "tag": "Best for elephants", "tone": "best"},
+      {"label": "Oct – Dec", "title": "The rains", "text": "The wettest weeks of the year: heavy afternoon storms, green everything, fewer people. Mornings are usually still fine for the climb.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road from Kandy",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in Sigiriya. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "Matale · on the A9", "name": "A spice garden", "photo": "spices", "text": "See cinnamon peeled, pepper on the vine and cardamom growing. Enjoy the tour — you don’t have to buy the oils and remedies at the end, and nobody should push you to.", "wa": "Hi Ceylon Hop — on my Kandy → Sigiriya transfer, could we stop at a spice garden in Matale? (From your Sigiriya guide.)"},
+      {"km": "Just north of Matale", "name": "Aluvihare Rock Temple", "photo": "aluvihare", "text": "Cave shrines tucked between huge boulders, where monks first wrote the Buddha’s teachings down on palm leaves in the 1st century BC. Twenty minutes is enough; cover shoulders and knees.", "wa": "Hi Ceylon Hop — on my Kandy → Sigiriya transfer, could we stop at Aluvihare Rock Temple? (From your Sigiriya guide.)"}
+    ]
+  },
+  "eatSub": "Mostly cafés and family-run kitchens. Cash for almost everything.",
+  "eat": [
+    {
+      "tier": "Café",
+      "pick": true,
+      "photo": "soul-food",
+      "name": "Soul Food",
+      "text": "Vegetarian café in the village with plenty of vegan dishes — Sri Lankan and Western, all day from breakfast. <em>A view of the rock at sunset if you get the right table.</em>",
+      "band": "$",
+      "flags": ["All day", "Vegetarian"],
+      "warn": ["Cash only"],
+      "map": "Soul Food Sigiriya"
+    },
+    {
+      "tier": "Family",
+      "photo": "family-food",
+      "name": "Cappuccino Bistro · Sigiriya Village",
+      "text": "Easy crowd-pleasers for mixed tastes: granola, avocado toast and bowls at Cappuccino Bistro in the daytime, or the restaurant at the Sigiriya Village hotel, with a pool that faces the rock. <em>Barista does a proper coffee if you need one.</em>",
+      "band": "$–$$",
+      "flags": ["Families", "Daytime"],
+      "map": "Cappuccino Bistro Sigiriya"
+    },
+    {
+      "tier": "Budget",
+      "photo": "roti",
+      "name": "Roti Café & the village kitchens",
+      "text": "Kottu, roti and rice and curry for a few hundred rupees, from Roti Café and the small family places along the village road. <b>This is where our drivers eat.</b> <em>Ask for it “not too spicy” if you mean it.</em>",
+      "band": "$",
+      "flags": ["Lunch", "Dinner"],
+      "warn": ["Cash only"],
+      "map": "Roti Cafe Sigiriya"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Sigiriya or Dambulla and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Sigiriya: "
+  },
+  "staySub": "Most places are a short tuk-tuk from the rock. Ask for a room with a view of it — and don’t walk back along the roads after dark.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "kandalama",
+      "name": "Heritance Kandalama · Elephant Corridor",
+      "text": "Geoffrey Bawa’s hotel built into a cliff above Kandalama lake, 20 minutes from both sites, with jungle growing over the walls. <em>Elephant Corridor is the smaller, pricier option: suites with their own plunge pools.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Out of town"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "village-hotel",
+      "name": "Sigiriya Village Hotel",
+      "text": "Cottages in a big garden, a pool facing the rock and an Ayurveda centre on site. Close to the ticket office. <em>Good for families.</em>",
+      "band": "$$",
+      "flags": ["Families", "Near the rock"]
+    },
+    {
+      "tier": "Solo",
+      "pick": true,
+      "photo": "hostel",
+      "name": "Roy’s Villa · Sigiri Hostel",
+      "text": "Roy’s Villa is the one our solo travellers talk about — friendly, famous for its barbecue nights, a short ride out of the centre. <em>Sigiri Hostel & Café is the walkable option in the village.</em>",
+      "band": "$",
+      "flags": ["Solo", "Backpackers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Sigiriya: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "How many nights should I stay?", "a": "<p>One is enough for Sigiriya and the Dambulla caves. Two lets you add Pidurangala at sunrise, the lake, or an afternoon with the elephants without rushing — and you won’t be doing two climbs in the same heat.</p>"},
+        {"q": "Can I visit as a day trip from Colombo or Kandy?", "a": "<p>From Kandy, yes — it’s a long day, 2 h 30 each way. From Colombo it’s over six hours in the car for a few hours at the rock, and you miss the only cool part of the day. Stay a night nearby.</p>"},
+        {"q": "Do I need to book Sigiriya tickets in advance?", "a": "<p>No. You can pay online at the Central Cultural Fund’s site (eservices.ccf.gov.lk), but you still exchange the receipt at the counter, so it saves the payment, not the queue. Tickets are priced in dollars and paid in rupees at the day’s rate; bring your passport if you’re claiming a SAARC or child ticket.</p>"},
+        {"q": "Do I need a guide?", "a": "<p>No — the path is one way up and one way down, and the museum tells the story. A licensed guide from the office by the car park adds a lot on the frescoes and the water gardens; expect around Rs 3,000 for two hours, plus a tip.</p>"},
+        {"q": "Where do people go after Sigiriya?", "a": "<p>Most go south to Kandy and then the hill country. If you want beaches in the European summer, the east coast is the one in season — Trincomalee is about 2–2 h 30 from here. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "The climbs",
+      "items": [
+        {"q": "Which climb should I do?", "a": "<p>If you only do one, make it Sigiriya — it’s the one people build the trip around. With two days, add Pidurangala for the view back at the fortress. Dambulla is the easiest of the three and pairs well with either.</p>"},
+        {"q": "How hard is Sigiriya?", "a": "<p>Moderate: about 1,200 steps, some narrow metal staircases bolted to the rock near the top, and the heat does the rest. Most people reach the summit in 45 to 75 minutes. Go at opening time; the metal stairs are uncomfortable to touch by late morning.</p>"},
+        {"q": "Is Pidurangala harder than Sigiriya?", "a": "<p>Shorter but rougher. Most people are up in 30 to 45 minutes, but the path is less built-up and the last part is a scramble over boulders. It’s the one for sunrise, and the one with the famous view of Sigiriya itself.</p>"},
+        {"q": "Is Dambulla a hard climb?", "a": "<p>No — paved steps and a steady uphill walk, 20 to 30 minutes to the caves. It’s hot and exposed, so go in the late afternoon, after an early climb up Sigiriya.</p>"},
+        {"q": "Is it OK for children or anyone scared of heights?", "a": "<p>Children who are fine on stairs love Sigiriya, but the last section is steep, open metal stairs — hold hands. Pidurangala’s final scramble isn’t for small children or anyone nervous of heights. Dambulla is fine for everyone.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "How hot does it get?", "a": "<div class=\"temps\"><div><b>24–26°</b><small>Dawn</small></div><div><b>28–34°</b><small>Day</small></div><div><b>22–25°</b><small>Night</small></div><div><b>Hot</b><small>The rock</small></div></div><p>It’s humid as well as hot, and the bare rock throws the heat back at you by mid-morning.</p>"},
+        {"q": "What should I wear?", "a": "<ul class=\"pack\"><li>Light, breathable clothes</li><li>Shoulders and knees covered for temples</li><li>Closed shoes with grip</li><li>A hat and sunglasses</li></ul>"},
+        {"q": "What should I bring?", "a": "<p>At least a litre of water each, sunscreen, insect repellent, socks for the hot temple floors, and cash. No strong perfume on the climb — the hornets notice.</p>"},
+        {"q": "What if I get ill or hurt here?", "a": "<p>There are pharmacies in Dambulla and Kimbissa and a hospital in Dambulla. Heat is what catches people out — climb early, drink more than you think and rest in the middle of the day.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Carry cash. Pidurangala, the Dambulla caves, the cafés and the jeep drivers are cash-only, and ATMs in Sigiriya village are hard to find — take out rupees in Dambulla or before you arrive.",
+        "Elephants walk the roads around Sigiriya, especially at dawn, dusk and after dark. Don’t walk or cycle the village roads then — take a tuk-tuk.",
+        "Your Sigiriya ticket is single entry: once you’re out, you’re out. Do the museum on the way out, not before.",
+        "Hornets nest near the Lion’s Paw. Keep your voice down there, skip the perfume, and follow the staff if they stop the climb.",
+        "No photographs of the Sigiriya frescoes. And at any temple, never pose with your back to a Buddha statue.",
+        "Drones need written permission at Sigiriya — don’t bring one out.",
+        "At the Dambulla caves, buy the ticket at the office by the car park before you climb — there’s no booth at the top.",
+        "Spice gardens are lovely, but the oils and remedies at the end are expensive. You never have to buy.",
+        "Tuk-tuk fares aren’t metered. Agree the price first; your hotel will tell you what’s fair today.",
+        "Full-moon (Poya) days: alcohol isn’t sold and the temples are busy with pilgrims. Check the date before you plan a big dinner."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Ticket prices, sunrise entry, which park the elephants are in this week — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Sigiriya: "
+  },
+  "photos": {
+    "hero": {
+      "alt": "Sigiriya Rock glowing in afternoon light above the jungle, hills behind",
+      "credit": "Awishka Koshala",
+      "creditUrl": "https://unsplash.com/@aw_i_sh_ka?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-rock-in-the-middle-of-a-forest-l2_8b6Se-q4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1013
+    },
+    "sigiriya": {
+      "alt": "Aerial view of Sigiriya Rock with the palace ruins on its flat summit",
+      "credit": "Dylan Shaw",
+      "creditUrl": "https://unsplash.com/@dylanshaw?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/sigiriya-rock-fortress-in-sri-lanka-smUAKwMT8XA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 45%",
+      "w": 1800,
+      "h": 1125
+    },
+    "pidurangala": {
+      "alt": "Two travellers on Pidurangala Rock looking across the forest to Sigiriya",
+      "credit": "Lou Lou B Photo",
+      "creditUrl": "https://unsplash.com/@louloubphoto?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/man-and-woman-sitting-beside-cliff-xSI-8hwyUzE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "dambulla": {
+      "alt": "A seated Buddha and a row of statues inside a painted cave at Dambulla",
+      "credit": "Agnieszka Stankiewicz",
+      "creditUrl": "https://unsplash.com/@dubai_love_story?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/woman-in-brown-dress-sitting-on-floor-bkfBxbI7a1g?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lake": {
+      "alt": "Sigiriya Rock reflected in a lake beyond the reeds",
+      "credit": "Polina Kocheva",
+      "creditUrl": "https://unsplash.com/@kocheva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-body-of-water-sitting-next-to-a-lush-green-hillside-LOEX_3QeKr4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "elephants": {
+      "alt": "Wild elephants walking across grassland by a reservoir",
+      "credit": "Annya Rana",
+      "creditUrl": "https://unsplash.com/@amnya09?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-herd-of-elephants-walking-across-a-lush-green-field-DHA7O7oMcYo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "village": {
+      "alt": "Canoes on a still, tree-lined waterway under a blue sky",
+      "credit": "Ishan Kahapola Arachchi",
+      "creditUrl": "https://unsplash.com/@ishan629?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-people-in-canoes-paddling-down-a-river-98AMdmD2Kiw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ayurveda": {
+      "alt": "Warm herbal oil being poured on a woman’s forehead during an Ayurvedic treatment",
+      "credit": "Charanjeet Dhiman",
+      "creditUrl": "https://unsplash.com/@charanjeet_dhiman?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/woman-receiving-oil-treatment-on-her-forehead-kvf5kfVMqng?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "spices": {
+      "alt": "Red new leaves on a cinnamon tree",
+      "credit": "Ramseena H",
+      "creditUrl": "https://unsplash.com/@ramseena_h?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/new-red-leaves-on-a-tropical-plant-8RjEpX_octI?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "aluvihare": {
+      "alt": "Two Buddhist monks in robes walking under trees",
+      "credit": "Riccardo Chiarini",
+      "creditUrl": "https://unsplash.com/@riccardoch?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/woman-in-red-dress-standing-near-green-trees-during-daytime-djGkcOUaEBQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 35%",
+      "w": 1800,
+      "h": 1125
+    },
+    "soul-food": {
+      "alt": "Gotukola sambol — a fresh green herb and coconut salad — on a banana leaf",
+      "credit": "Kalindu Waranga",
+      "creditUrl": "https://unsplash.com/@kalindu0waranga?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/fresh-green-salad-with-herbs-and-vegetables-TQPAlA0IikY?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "family-food": {
+      "alt": "A bowl of porridge topped with kiwi, nuts and dates",
+      "credit": "K8",
+      "creditUrl": "https://unsplash.com/@_k8_?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/sliced-fruits-in-blue-ceramic-bowl-zlLM0FkA5Q4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "roti": {
+      "alt": "Coconut roti with sambol on a clay plate, dried chillies around it",
+      "credit": "Nilantha Sanjeewa",
+      "creditUrl": "https://unsplash.com/@nila1992?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/brown-round-plate-with-food-OE87GAgPG18?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kandalama": {
+      "alt": "An infinity pool on the rocks above Kandalama lake",
+      "credit": "Anthony Lim",
+      "creditUrl": "https://unsplash.com/@neonboiiz?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-person-taking-a-picture-of-a-body-of-water-OoaugsoQzSQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "village-hotel": {
+      "alt": "A white bungalow with wooden windows, a tiled roof and potted plants",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-house-has-wooden-windows-and-a-red-roof-i1OZyG83-eo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "hostel": {
+      "alt": "Wooden bunk beds in a sunny hostel dorm",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-room-filled-with-lots-of-bunk-beds-next-to-a-window-TzMGehZmocI?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
