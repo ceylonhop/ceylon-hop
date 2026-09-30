@@ -241,13 +241,14 @@ const trustStrip = () =>
   `<div class="trip-trust"><div class="wrap"><ul>${TRUST_CLAIMS.map(([ic, t]) => `<li>${ic} ${t}</li>`).join('')}</ul></div></div>`;
 
 /* ── "What's included" ────────────────────────────────────────────────────────────────────
-   Four claims, and only four. Every one of them is something we actually do on every private
-   transfer; the row is not a place to add a fifth nice-sounding line. In particular there is
+   Three claims, and only three. Every one of them is something we actually do on every private
+   transfer; the row is not a place to add a fourth nice-sounding line. "Stops when you want"
+   was cut by the owner (2026-09-30) — stops are the paid sightseeing add-on, not included. In particular there is
    NO meet-and-greet here — we hold no name board at arrivals (docs: #679), and the pickup
    copy stays generic on purpose.
 
-   The marks are the house line family (img/icons/line/{rate-lock,door-to-door,your-line,
-   free-cancel}.svg), the same four ideas search.html's own "included" chips carry — its
+   The marks are the house line family (img/icons/line/{rate-lock,door-to-door,
+   free-cancel}.svg), ideas search.html's own "included" chips also carry — its
    `.incl .chip` row is the precedent, down to filling the waypoint dot in saffron. An inlined
    `class="wp"` dot and a `.wp{fill:…}` rule are a matched pair: without the rule the dot is an
    invisible hairline ring, so `.included svg .wp` in the page CSS is not optional. */
@@ -257,8 +258,6 @@ const INCLUDED = [
     'A fixed price', 'The price you see is the price you pay &mdash; no haggling at the kerb.'],
   [ic('<circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/>'),
     'Door to door', 'Picked up exactly where you are, dropped exactly where you&rsquo;re staying.'],
-  [ic('<path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/>'),
-    'Stops when you want', 'Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.'],
   [ic('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/>'),
     'Free cancellation', 'Up to 24 hours before, and no fees to change your date.'],
 ];
@@ -644,7 +643,7 @@ ${headAssets}
   .trip-head{margin-bottom:34px}
   .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
   .trip-head .eyebrow{margin:0 0 .7rem}
-  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
   .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
   .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
@@ -733,7 +732,7 @@ ${headAssets}
     .veh-ic svg{width:38px;height:25px}
     .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
     .drive-photo img{aspect-ratio:4/3}
-    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    .included{grid-template-columns:1fr;gap:22px}
     /* The quote runs to five lines in a phone column, and a vertically centred avatar then
        floats in the middle of it with white space above and below. Align it to the first line. */
     .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
