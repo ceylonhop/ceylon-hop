@@ -1300,6 +1300,8 @@ export const SITEMAP_EXTRA = [
   'why-we-started-ceylon-hop/',
   // Destination guides (tools/generate-guides.mjs). One line per guide; guide-pages.test.js pins it.
   'guides/nuwara-eliya/',
+  'guides/ella/',
+  'guides/sigiriya/',
 ];
 
 // CLI: write every generated file to disk.
