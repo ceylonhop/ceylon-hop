@@ -85,7 +85,7 @@ function gettingHere(g, p) {
   </div></section>`;
 }
 
-const SPEC_LABELS = { from: 'From town', open: 'Open', give: 'Give it', ticket: 'Ticket' };
+const SPEC_LABELS = { from: 'From town', open: 'Open', give: 'Give it', level: 'Effort', ticket: 'Ticket' };
 function placeCard(g, pl, i, p) {
   const spec = pl.spec ? `<div class="spec">${Object.entries(SPEC_LABELS).filter(([k]) => pl.spec[k])
     .map(([k, label]) => `<div><small>${label}</small><b>${esc(pl.spec[k])}</b></div>`).join('')}</div>` : '';
@@ -168,11 +168,11 @@ function placeRow(g, items, collector, p, withMap) {
 function eatStay(g, p) {
   return `<section class="section" id="eat"><div class="wrap">
     <div class="es-block">
-      ${sh('Where to eat', 'Eat', 'Nothing fancy on this list unless it earns it. Cash for most places.')}
+      ${sh('Where to eat', 'Eat', esc(g.eatSub || 'Nothing fancy on this list unless it earns it. Cash for most places.'))}
       ${placeRow(g, g.eat, g.eatCollector, p, true)}
     </div>
     <div class="es-block">
-      ${sh('Where to stay', 'Stay', 'Nights are cold and most places don’t have heating — ask for extra blankets wherever you stay.')}
+      ${sh('Where to stay', 'Stay', esc(g.staySub || 'Nights are cold and most places don’t have heating — ask for extra blankets wherever you stay.'))}
       ${placeRow(g, g.stay, g.stayCollector, p, false)}
     </div>
   </div></section>`;
@@ -195,13 +195,23 @@ function faq(g) {
   </div></section>`;
 }
 
-/** Every rate-card corridor that touches the destination, outbound first, then the way in.
-    Byte-compatible with the trip pages' cards so route-list-fares.js prices them live. */
+/** Every rate-card corridor that touches the destination, outbound first, then the way in —
+    or, when the guide lists `next` (a hub like Ella has too many corridors for one row), just the
+    outbound legs to those places, in that order. Byte-compatible with the trip pages' cards so
+    route-list-fares.js prices them live. */
 function whereNext(g, T, placePhotos, p) {
   const id = g.placeId;
   const legs = [];
-  for (const [a, b] of BASE_PAIRS) { if (a === id) legs.push([a, b]); else if (b === id) legs.push([b, a]); }
-  for (const [a, b] of BASE_PAIRS) { if (a === id) legs.push([b, a]); else if (b === id) legs.push([a, b]); }
+  const onCorridor = to => BASE_PAIRS.some(([a, b]) => (a === id && b === to) || (b === id && a === to));
+  if (g.next) {
+    for (const to of g.next) {
+      if (!onCorridor(to)) throw new Error(`guide "${g.slug}": next "${to}" is not a BASE_PAIRS corridor from "${id}"`);
+      legs.push([id, to]);
+    }
+  } else {
+    for (const [a, b] of BASE_PAIRS) { if (a === id) legs.push([a, b]); else if (b === id) legs.push([b, a]); }
+    for (const [a, b] of BASE_PAIRS) { if (a === id) legs.push([b, a]); else if (b === id) legs.push([a, b]); }
+  }
   if (!legs.length) throw new Error(`guide "${g.slug}": placeId "${id}" is on no BASE_PAIRS corridor`);
   const cards = legs.map(([from, to]) => {
     const q = T.privateQuote(from, to);

@@ -1,0 +1,405 @@
+{
+  "slug": "ella",
+  "name": "Ella",
+  "region": "Hill country",
+  "placeId": "ella",
+  "title": "Ella guide — Nine Arch Bridge, Ella Rock, where to stay | Ceylon Hop",
+  "description": "What to do in Ella — Nine Arch Bridge, Little Adam’s Peak and Ella Rock, the train right now, where to eat and stay, and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A village in a gap in the mountains, 1,041 m up, with the whole southern plain falling away below it. Tea on every slope, a railway bridge everyone’s seen a photo of, two peaks to climb and a main street full of cafés."
+  },
+  "facts": [
+    {"label": "Stay", "value": "2–3 nights"},
+    {"label": "Altitude", "value": "1,041 m"},
+    {"label": "Daytime", "value": "22–28", "unit": "°C"},
+    {"label": "Between", "value": "The hills & the coast"}
+  ],
+  "lede": "Most people stay two or three nights, on their way down from the tea country to the beaches —",
+  "ledeEm": "one early morning for each peak, and time left over to do nothing on a balcony.",
+  "gettingHere": {
+    "heading": "We’ll bring you to Ella",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "nuwara-eliya", "title": "From Nuwara Eliya", "from": "55 km · about 1 h 45 · the prettiest short drive in the hills", "sell": "Past Hakgala gardens and the Seetha Amman temple, then down through Welimada’s vegetable terraces and Bandarawela. We can stop at the gardens on the way if you’d like."},
+      {"id": "kandy", "title": "From Kandy", "from": "135 km · about 3 h 45 · a full day’s scenery", "sell": "Up through the tea country via Nuwara Eliya — waterfalls, tea estates and hairpins most of the way. We’ll stop for lunch and wherever you want a photo."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 335 km · about 5 h with a lunch stop", "sell": "Your driver meets you at arrivals and you wake up in the hills. The easiest way to start a trip if you want the cool air first and the beaches last."}
+    ],
+    "train": "<b>Right now the famous Kandy → Ella train doesn’t run.</b> Cyclone Ditwah damaged the line in late 2025; trains from Colombo and Kandy stop short of the hills, and the railway is aiming to reopen the whole line at the end of 2026 or early 2027.</p><p>The best bit is running again, though: <b>Nanu Oya → Ella has been back since June 2026</b>, a couple of trains each way a day, about 2 h 30–3 h. Sit on the <b>left</b>. Shorter hops work too — Haputale, Bandarawela or Demodara to Ella. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk (you need every passenger’s passport number). Message us and we’ll check seats for your date — and we can drive you to Nanu Oya for it."
+  },
+  "places": [
+    {
+      "id": "nine-arch",
+      "name": "Nine Arch Bridge",
+      "photo": "nine-arch",
+      "text": "Ella’s landmark and one of the most photographed places in Sri Lanka: a curving viaduct 91 m long and 24 m high, finished in 1921 in stone, brick and cement — the story goes the steel meant for it went to the First World War instead. Set in jungle and tea, it’s best when a blue train rolls across.",
+      "spec": {"from": "About 20 min on foot from town", "open": "Always open · free by day", "give": "1 hour", "level": "Easy"},
+      "tip": {"kind": "drivers", "text": "Go before nine — by late morning it’s shoulder to shoulder. Trains are fewer since the line reopened in June, so ask your guesthouse for today’s crossing times. Never stand on the tracks or the bridge for a photo when a train’s due. Too hot to walk? A tuk-tuk goes to the car park above it (≈ Rs 500–800), then it’s ten minutes down."}
+    },
+    {
+      "id": "little-adams-peak",
+      "name": "Little Adam’s Peak",
+      "photo": "little-adams",
+      "text": "The easy one, and one of the gentlest hikes in the country: a path through tea from the Passara road to a 1,141 m summit, then a ridge with views down the Ella Gap and across to Ella Rock. The Flying Ravana zipline runs across the valley below if you want to come down faster.",
+      "spec": {"from": "About 45 min up from town", "open": "Free · go for sunrise", "give": "2 hours there and back", "level": "Easy"},
+      "tip": {"kind": "drivers", "text": "Go for sunrise, then carry on to Nine Arch Bridge — they’re on the same side of town, so it’s one easy morning walk."}
+    },
+    {
+      "id": "ella-rock",
+      "name": "Ella Rock",
+      "photo": "ella-rock",
+      "text": "The proper hike: along the railway from Kital Ella station, through eucalyptus and tea, then a steep climb to a cliff edge at around 1,350 m with the whole plain below. Bigger views than Little Adam’s Peak, and a real workout.",
+      "spec": {"from": "Start at Kital Ella station, 2 km from town", "open": "Free · start by 6 AM", "give": "3–4 hours return", "level": "Challenging"},
+      "tip": {"kind": "warn", "text": "The paths split a lot. Download the map before you go, or take a local guide (≈ Rs 1,500–3,000) — especially for sunrise, when it’s dark. Friendly people who tell you you’re on the wrong path usually want to be paid to guide you. Proper shoes, water, and leech socks after rain."}
+    },
+    {
+      "id": "ravana-falls",
+      "name": "Ravana Falls",
+      "photo": "ravana",
+      "text": "A 25 m waterfall right beside the road down to the plains, tied to the Ramayana: the demon king Ravana is said to have hidden Sita in the caves behind it. Ravana Cave, up a few hundred steps from the temple nearer town, has been lived in for tens of thousands of years.",
+      "spec": {"from": "6 km · 15 min by tuk-tuk, on the Wellawaya road", "open": "Free · daylight", "give": "30–45 min", "level": "Easy"},
+      "tip": {"kind": "warn", "text": "The rocks are slippery — admire it from the path. It’s at its best after rain and just a trickle in the driest weeks. Stalls and monkeys at the roadside: keep food in your bag."}
+    },
+    {
+      "id": "diyaluma-falls",
+      "name": "Diyaluma Falls",
+      "photo": "diyaluma",
+      "text": "Sri Lanka’s second-highest waterfall, 220 m in one long drop. The best part is at the top: a string of natural rock pools you can swim in, with the whole valley below. The best day trip from Ella.",
+      "spec": {"from": "About 1 h by car, via Wellawaya & Koslanda", "open": "Free · daylight", "give": "Half a day", "level": "Moderate · 30 min down to the upper pools"},
+      "tip": {"kind": "warn", "text": "The trail to the upper pools starts in Poonagala village: loose and uneven going down, harder coming back up. There are no barriers at the drop — stay well back from the edge, and don’t swim when the river is high after heavy rain."},
+      "offer": {"title": "Diyaluma day trip with Ceylon Hop", "sub": "Your driver waits while you swim, then brings you back", "wa": "Hi Ceylon Hop — I’m reading your Ella guide. Could you give me a price for a Diyaluma Falls day trip from my hotel, with the wait and the drive back?"}
+    },
+    {
+      "id": "demodara-loop",
+      "name": "Demodara Loop",
+      "photo": "demodara",
+      "text": "A clever bit of 1920s railway building: to gain height, the line spirals right round the hill and through a tunnel directly underneath Demodara station — said to be the only loop like it anywhere. Watch a train go under the platform it’s about to stop at.",
+      "spec": {"from": "10–15 min by tuk-tuk, or one stop by train", "open": "Free", "give": "30–45 min"},
+      "tip": {"kind": "drivers", "text": "Take the train one stop from Ella to Demodara: you cross Nine Arch Bridge on the way, and you’re riding the loop instead of looking at it. Tuk-tuk back."}
+    },
+    {
+      "id": "tea-factory",
+      "name": "A tea factory visit",
+      "photo": "tea",
+      "text": "Ella sits in the middle of the Uva tea country. At Uva Halpewatte, on the hill above town, you watch the leaf withered, rolled, fermented and fired, then taste the result looking over the estate it came from.",
+      "spec": {"from": "A short tuk-tuk ride from town", "open": "Tours 8 AM–4:30 PM", "give": "45 min–1 hour", "ticket": "≈ Rs 3,000 factory tour"},
+      "tip": {"kind": "drivers", "text": "Go in the morning while the machines are running. If you want it smaller and quieter, the Newburgh green-tea factory is a walk from town."}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "1 h 30",
+      "name": "Lipton’s Seat & Dambatenne",
+      "text": "The viewpoint above Haputale where Sir Thomas Lipton surveyed his tea, with five provinces in view on a clear morning. Go early — the cloud comes up by ten. Stop at the Dambatenne tea factory on the way down."
+    },
+    {
+      "time": "1 h",
+      "name": "Badulla & Dunhinda Falls",
+      "text": "The old provincial town at the end of the railway, with a lively market, the ancient Muthiyangana temple and, just outside, Dunhinda Falls — a wide curtain of spray at the end of a short forest path."
+    },
+    {
+      "time": "3 h",
+      "name": "Yala, on the way south",
+      "text": "Better as a stop than a day trip: head south via Tissamaharama, do an afternoon jeep safari for leopards and elephants, then carry on to the beaches the next day. Tell us your days and we’ll plan the route."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: the peaks are clearest at dawn, the bridge is quietest before nine, and the afternoons are for cafés.",
+    "days": [
+      {"title": "Day 1 · The easy peak and the bridge", "sub": "Early start, slow afternoon", "steps": [{"time": "6:00", "title": "Little Adam’s Peak", "text": "Sunrise from the top, before the heat and the crowds."}, {"time": "8:00", "title": "Nine Arch Bridge", "text": "Walk over from the peak road. Ask about train times the day before."}, {"time": "9:30", "title": "Breakfast in town", "text": "Hoppers or a coconut bowl on a café balcony."}, {"time": "14:00", "title": "A tea factory visit", "text": "Tuk-tuk up to Uva Halpewatte; tour and tasting."}, {"time": "19:00", "title": "Dinner, then a drink", "text": "Café One Love if you want a later night. Tuk-tuk home."}]},
+      {"title": "Day 2 · Ella Rock, then onward", "sub": "The big hike, then the road to the coast", "steps": [{"time": "5:30", "title": "Ella Rock", "text": "From Kital Ella station. Guide if you’re going in the dark."}, {"time": "11:00", "title": "Brunch and a rest", "text": "Or a massage — the town has several spas."}, {"time": "15:00", "title": "Ravana Falls", "text": "Fifteen minutes by tuk-tuk; go on to Ravana Cave if you still have legs."}, {"time": "Next day", "title": "Down to the beaches with us", "text": "Three hours to Mirissa, down through the Ella Gap past Ravana Falls — or stop at Yala on the way.", "us": true}], "book": {"stops": ["Ella", "Mirissa"], "nights": [0, 0], "preload": "Opens the planner with <b>Ella → Mirissa</b> already in — swap in Yala or Arugam Bay if that’s your way."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Ella is on the east side of the hills, so its seasons run almost opposite to the south coast’s: dry in the European summer, wettest at the end of the year.",
+    "blocks": [
+      {"label": "Jan – Mar", "title": "Clear & cool", "text": "The rains ease through January; February and March have the clearest mornings of the year. Busy and lovely.", "tag": "Best for views", "tone": "best"},
+      {"label": "Apr – May", "title": "Warm, some storms", "text": "Afternoon thunderstorms between the monsoons. Mid-April is Sinhala & Tamil New Year — buses and trains are packed and some places close.", "tone": "wet"},
+      {"label": "Jun – Sep", "title": "Dry & sunny", "text": "The south-west monsoon mostly misses this side of the hills: Ella’s driest months, often windy. The waterfalls are thinner.", "tag": "Driest", "tone": "best"},
+      {"label": "Oct – Dec", "title": "The rains", "text": "The wettest weeks, November most of all. Mornings are still often clear; landslides can close the road down to Wellawaya for a day.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road in",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in Ella. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "From Nuwara Eliya · 5–10 km out", "name": "Hakgala Gardens & Seetha Amman Temple", "photo": "hakgala", "text": "A cool botanical garden of ferns, roses and orchids, and just before it a bright Hindu temple tied to the Ramayana. Cover shoulders and knees; shoes off at the temple.", "wa": "Hi Ceylon Hop — on my Nuwara Eliya → Ella transfer, could we stop at Hakgala Gardens and the Seetha Amman Temple? (From your Ella guide.)"},
+      {"km": "From the south coast · near Wellawaya", "name": "Buduruwagala rock carvings", "photo": "buduruwagala", "text": "Seven figures carved into a granite cliff over a thousand years ago, the standing Buddha in the middle about 15 m tall, at the end of a quiet lane through the paddy. Half an hour is plenty.", "wa": "Hi Ceylon Hop — on my transfer to Ella from the south coast, could we stop at Buduruwagala? (From your Ella guide.)"}
+    ]
+  },
+  "eatSub": "The main street is all cafés. Most tourist places take cards; the small local ones are cash only.",
+  "eat": [
+    {
+      "tier": "Cafés",
+      "photo": "cafe",
+      "name": "Kiri Kopi · Avocado Café · Wild Café",
+      "text": "Coffee, brunch and smoothie bowls after an early hike: Kiri Kopi for coffee and gluten-free options, Avocado Café for avocado toast and hoppers, Wild Café for its balcony over the main street. <em>The Barn by Starbeans has the view, and is busiest at weekends.</em>",
+      "band": "$–$$",
+      "flags": ["Breakfast", "Brunch"],
+      "map": "Kiri Kopi Ella"
+    },
+    {
+      "tier": "Family",
+      "photo": "family-food",
+      "name": "Café UFO · 360 Ella · MozzarElla",
+      "text": "Something for everyone: Café UFO’s big mixed menu under a bamboo roof, 360 Ella’s rooftop for the evening, and MozzarElla — a tiny place doing thin-crust pizza that children love. <em>Bring your own bottle to MozzarElla.</em>",
+      "band": "$–$$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "Cafe UFO Ella"
+    },
+    {
+      "tier": "Budget",
+      "photo": "rice-curry",
+      "name": "Remo’s · Matey Hut",
+      "text": "Proper Sri Lankan rice and curry for not much: Remo’s for lump rice and lamprais, Matey Hut — a tiny log hut — for a plate of a dozen curries. Both run cooking classes. <em>Matey Hut has a queue; it’s worth it.</em>",
+      "band": "$",
+      "flags": ["Lunch", "Dinner"],
+      "warn": ["Cash"],
+      "map": "Matey Hut Ella"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Ella and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Ella: "
+  },
+  "staySub": "Most places are up steep lanes off the main road — pack light, ask about the view, and take a tuk-tuk back after dark.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "view-hotel",
+      "name": "EKHO Ella · HIDE Ella · 98 Acres",
+      "text": "Three ways to wake up with the Ella Gap outside: EKHO’s railway-themed rooms above the gap, HIDE’s fourteen rooms built into the slope with a pool, and 98 Acres’ tea-estate chalets at the foot of Little Adam’s Peak, with a well-liked spa. <em>Book early for Jan–Mar.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Views"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "retreat",
+      "name": "Ella Retreat · Chill Ville Viewpoint",
+      "text": "Ella Retreat for daily yoga and meditation in the hills, with longer retreat packages if you want to switch off properly. Chill Ville for a pool with a view, a short walk from Nine Arch Bridge. <em>Ask for a room facing the gap.</em>",
+      "band": "$$",
+      "flags": ["Couples", "Wellness"]
+    },
+    {
+      "tier": "Solo",
+      "photo": "backpackers",
+      "name": "Backpackers Hostel · Wild Bee · Ella Escapade",
+      "text": "Backpackers Hostel has a treehouse feel and rents scooters; Wild Bee is an eco hostel near the station with breakfast included and a women-only dorm; Ella Escapade has private rooms and a kitchen. <em>All easy places to find a hiking partner for Ella Rock.</em>",
+      "band": "$",
+      "flags": ["Solo", "Backpackers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Ella: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "How many nights should I stay?", "a": "<p>Two or three. That gives you one early morning for each peak, Nine Arch Bridge, a tea factory and Ravana Falls without rushing. Add a night for Diyaluma Falls — it’s the best day out from here.</p>"},
+        {"q": "Can I visit as a day trip?", "a": "<p>From Nuwara Eliya it’s possible, but the things worth doing here are best at dawn and spread around the valley. Stay at least two nights.</p>"},
+        {"q": "Which hike is best for me?", "a": "<p>If you want easy, choose Little Adam’s Peak: 45 minutes up, paths all the way, fine for children. If you’re fit and want a proper hike, do Ella Rock — 3–4 hours return, steep in places and easy to lose the path. <a href=\"#see\">See both ↑</a></p>"},
+        {"q": "Is Ella good for families?", "a": "<p>Yes. Nine Arch Bridge, Ravana Falls, a tea factory and Little Adam’s Peak are all easy at a relaxed pace, and there’s a pizza place children love. Keep hands held near the railway.</p>"},
+        {"q": "Is there any nightlife?", "a": "<p>A little. Café One Love stays open latest, with music and a pool table; 360 Ella and Café Chill are good for a drink. Ella is quiet after midnight. Alcohol isn’t sold on full-moon (Poya) days.</p>"},
+        {"q": "Where do people go after Ella?", "a": "<p>Most go down to the south coast — Mirissa is three hours — often stopping for a safari at Yala on the way. From May to September, Arugam Bay on the east coast is the one in season. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "Trains",
+      "items": [
+        {"q": "Can I take the train from Kandy to Ella?", "a": "<p>Not at the moment. The line between Kandy and Nanu Oya was badly damaged in the late-2025 cyclone and is still being rebuilt; the railway is aiming for the end of 2026 or early 2027. We drive you from Kandy in about 3 h 45. <a href=\"#here\">See how we get you here ↑</a></p>"},
+        {"q": "So which trains are running?", "a": "<p>Nanu Oya → Ella → Badulla has run again since June 2026, with a couple of trains each way a day on a special timetable. That’s the prettiest part of the line anyway. Times change, so check before you plan around one.</p>"},
+        {"q": "Which side should I sit on?", "a": "<p>From Nanu Oya to Ella, sit on the <b>left</b> for the best of the valleys. (When the Kandy section reopens, the right side is better for that stretch.)</p>"},
+        {"q": "Which class should I book?", "a": "<ul><li><b>Second class reserved</b> is the sweet spot: windows open, you can stand in the doorway, and your seat is guaranteed.</li><li><b>First class air-conditioned</b> is comfier, but the windows don’t open — you’re looking through glass.</li><li><b>Observation car</b>, on some trains, faces backwards with big windows. It sells out first.</li><li><b>Unreserved</b> is cheapest and bought at the station on the day. Crowded in season, and an experience of its own.</li></ul>"},
+        {"q": "How do I get tickets?", "a": "<p>Reserved seats go on sale 30 days ahead on the railway’s own site, seatreservation.railway.gov.lk — the only official one. You need every passenger’s passport number, and seats sell out weeks ahead in season. Don’t buy from resellers at stations or online. Message us on WhatsApp and we’ll help you check what’s left.</p>"},
+        {"q": "What if the train is delayed or cancelled?", "a": "<p>It happens, especially in heavy rain. Don’t plan anything tight on the same day. If your plans change, message us and we’ll get you there by road.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "What’s the weather like?", "a": "<div class=\"temps\"><div><b>22–28°</b><small>Day</small></div><div><b>15–19°</b><small>Night</small></div><div><b>~15°</b><small>Dawn</small></div><div><b>Colder</b><small>After rain</small></div></div><p>Cooler than the coast and warmer than Nuwara Eliya. Evenings are chilly all year, more so after rain.</p>"},
+        {"q": "What should I pack?", "a": "<ul class=\"pack\"><li>Walking shoes with grip</li><li>A light jumper or jacket</li><li>A rain jacket</li><li>Sunscreen & insect repellent</li></ul>"},
+        {"q": "Anything else for the hikes?", "a": "<p>Water, a torch if you’re going up for sunrise, and a charged phone with the map downloaded. After rain the trails have leeches — long socks help, and the pharmacies in town sell leech socks.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Carry some cash. Tourist cafés take cards, but tuk-tuks, small shops and local places don’t. People’s Bank has an ATM at the station and in town; not every machine takes foreign cards.",
+        "Tuk-tuk fares aren’t metered. Agree the price first — about Rs 500–800 from town to Nine Arch Bridge. Your guesthouse will tell you what’s fair today.",
+        "Walking along the tracks is how everyone gets around, and it’s also against the rules. Step well clear when you hear a train, and never stand on Nine Arch Bridge as one comes.",
+        "Train tickets only from seatreservation.railway.gov.lk or the station. Touts reselling seats at many times the price are a known racket.",
+        "On Ella Rock, friendly strangers pointing you the ‘right’ way usually want paying. Download the map before you set off.",
+        "Nine Arch Bridge gets packed on weekends and holidays. Be there before nine.",
+        "The lanes are steep and dark at night. Take a tuk-tuk back to your guesthouse after dinner.",
+        "Full-moon (Poya) days: alcohol isn’t sold anywhere and some places close early. Check the date before you plan a night out.",
+        "Flying a drone needs registering with the Civil Aviation Authority first — police have taken drones near the bridge.",
+        "Mid-April (Sinhala & Tamil New Year): public transport is packed and many places shut for a few days. Book your car early."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Train seats, crossing times at the bridge, whether the Kandy line has reopened yet — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Ella: "
+  },
+  "next": ["mirissa", "yala", "arugam-bay", "nuwara-eliya", "galle", "kandy", "colombo", "cmb-airport"],
+  "photos": {
+    "hero": {
+      "alt": "Ella Rock and the Ella Gap seen from Little Adam’s Peak, the road winding below",
+      "credit": "Tom Nicholson",
+      "creditUrl": "https://unsplash.com/@tomnpics?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/green-and-brown-mountains-under-blue-sky-during-daytime-tjrJCBj1fs4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
+      "w": 1800,
+      "h": 1013
+    },
+    "nine-arch": {
+      "alt": "A blue train curving across Nine Arch Bridge in golden morning light",
+      "credit": "Adam Vandermeer",
+      "creditUrl": "https://unsplash.com/@adamgoguru?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/blue-and-white-train-on-rail-tracks-Dw9dWTzzsUE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "little-adams": {
+      "alt": "A hiker sitting on a rock above the valley, Ella Rock across the gap",
+      "credit": "Kirsty barnby",
+      "creditUrl": "https://unsplash.com/@kirstybarnby?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/woman-sitting-on-brown-rock-JbZG7U093Bw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ella-rock": {
+      "alt": "Ella Rock rising above tea bushes and a grassy path",
+      "credit": "Pasan Jayaweera",
+      "creditUrl": "https://unsplash.com/@pasanjayaweera?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-landscape-with-trees-and-hills-ZHREWItgO54?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ravana": {
+      "alt": "Ravana Falls tumbling over dark rock beside the roadside railing",
+      "credit": "The ILP",
+      "creditUrl": "https://unsplash.com/@theilp?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-small-waterfall-in-the-middle-of-a-forest-lpVHWNSCqAA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "diyaluma": {
+      "alt": "Water pouring over rock ledges into a pool at the top of Diyaluma Falls",
+      "credit": "Lakshan Mamalgaha",
+      "creditUrl": "https://unsplash.com/@lakshanmamalgaha?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-waterfall-with-a-man-standing-on-top-of-it-6H8q7nZn-LE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "demodara": {
+      "alt": "A blue train curving through tea country, seen from an open door",
+      "credit": "Egle Sidaraviciute",
+      "creditUrl": "https://unsplash.com/@egle_sidaraviciute?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/gray-train-TsyNiYziKiQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "tea": {
+      "alt": "A tea plucker picking leaves on a hillside estate",
+      "credit": "Asantha Abeysooriya",
+      "creditUrl": "https://unsplash.com/@asanthapdn003?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/woman-picking-up-green-plants-in-field-during-daytime-beNiTTa8Pp8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 40%",
+      "w": 1800,
+      "h": 1125
+    },
+    "buduruwagala": {
+      "alt": "A standing Buddha carved into a rock face, half hidden by leaves",
+      "credit": "Aravinda Jayathilaka",
+      "creditUrl": "https://unsplash.com/@asjay89?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-face-carved-into-a-tree-noMtJ71nhlc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 30%",
+      "w": 1800,
+      "h": 1125
+    },
+    "family-food": {
+      "alt": "Fresh juices and breakfast plates on a café table",
+      "credit": "Dinuka Lankaloka",
+      "creditUrl": "https://unsplash.com/@bawva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/person-holding-silver-fork-and-knife-slicing-a-vegetable-on-white-ceramic-plate-5TfECqsedcg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "A fruit and granola bowl served in a coconut shell",
+      "credit": "Tomi Saputra",
+      "creditUrl": "https://unsplash.com/@udatommo?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/fresh-fruit-granola-bowl-served-in-a-coconut-GGl3Gj912Kc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "A plate of rice and curry with sambol and poppadoms",
+      "credit": "Rakitha Perera",
+      "creditUrl": "https://unsplash.com/@rakithaperera?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-plate-topped-with-rice-meat-and-veggies-tP8dXmCHqBc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "view-hotel": {
+      "alt": "Evening light on Ella Rock above tea-covered hills and a thatched hut",
+      "credit": "Datingscout",
+      "creditUrl": "https://unsplash.com/@datingscout?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-house-in-a-forest-wo4JzWW8iRQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "retreat": {
+      "alt": "A woman looking out over a garden of palms",
+      "credit": "Maximus Beaumont",
+      "creditUrl": "https://unsplash.com/@mllewelynb?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-woman-looking-out-a-window-at-a-lush-green-forest-8vzayp_AkLg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "backpackers": {
+      "alt": "A traveller leaning out of a train door as it winds through green hills",
+      "credit": "Matt Dany",
+      "creditUrl": "https://unsplash.com/@mattdany?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-woman-standing-on-the-side-of-a-train-1zhStSedlMs?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "hakgala": {
+      "alt": "A garden with a fountain and flower beds",
+      "credit": "Secret Travel Guide",
+      "creditUrl": "https://unsplash.com/@secrettravelguide?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-garden-with-a-fountain-and-flowers--SEDkuh-T8Y?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
