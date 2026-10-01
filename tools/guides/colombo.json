@@ -1,0 +1,406 @@
+{
+  "slug": "colombo",
+  "name": "Colombo",
+  "region": "West coast",
+  "placeId": "colombo",
+  "title": "Colombo guide — Pettah, Galle Face, where to stay | Ceylon Hop",
+  "description": "What to do with a day in Colombo — Pettah and the Red Mosque, Galle Face at sunset, Lotus Tower, where to eat and stay, and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "Sri Lanka’s biggest city, and the one most people only pass through. Give it a day: Pettah’s markets and the Red Mosque in the morning, a temple by the lake in the afternoon, and sunset with isso vadai on Galle Face Green."
+  },
+  "facts": [
+    {"label": "Stay", "value": "1–2 nights"},
+    {"label": "Daytime", "value": "30–32", "unit": "°C"},
+    {"label": "To the airport", "value": "50 min"},
+    {"label": "Between", "value": "The airport & Galle"}
+  ],
+  "lede": "Most people give Colombo one night, at the start or the end of the trip —",
+  "ledeEm": "one well-planned day is plenty, and the airport is only fifty minutes up the road.",
+  "gettingHere": {
+    "heading": "We’ll bring you into Colombo",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 35 km · about 50 min · most of it on the expressway", "sell": "Your driver meets you at arrivals and takes the airport expressway into the city. Rush hour can stretch it to an hour or more, so tell us your flight and we’ll plan around it."},
+      {"id": "kandy", "title": "From Kandy", "from": "125 km · about 3 h 30 · down from the hills", "sell": "Down the old Kandy road through the low country, past the cashew sellers of Cadjugama. The new expressway won’t be finished before 2028, so this is still the way. We can stop for cashews if you’d like."},
+      {"id": "galle", "title": "From Galle", "from": "135 km · about 2 h 15 · up the Southern Expressway", "sell": "Most of the way on the expressway, through paddy and rubber country. Want the sea instead? The old coast road takes about 3 hours and passes Kalutara’s white temple — just ask."}
+    ],
+    "train": "<b>The coastal line between Colombo and Galle is running normally.</b> It’s the one worth taking: sit on the <b>right</b> going south for the sea, and on the left coming back. Reserved seats are sold only on seatreservation.railway.gov.lk — you need every passenger’s passport number when you book, and the original passport on the train.</p><p><b>The Kandy line still isn’t running through.</b> Since Cyclone Ditwah, trains from Colombo go only as far as Rambukkana. The railway expects to reopen it in stages, but a bridge just outside Kandy is still being repaired, so check before you plan. Message us and we’ll check for your date — and drive you if it’s not running."
+  },
+  "places": [
+    {
+      "id": "pettah",
+      "name": "Pettah market & the Red Mosque",
+      "photo": "pettah",
+      "text": "Colombo at full volume: crowded market lanes next to the Fort, carts and horns, fabric, shoes and gadgets piled high. In the middle of it stands Jami Ul-Alfar, the Red Mosque, striped red and white like a stick of rock — free to visit, with a guide from the mosque to show you round.",
+      "spec": {"from": "Next to the Fort", "open": "Market about 9 AM–7 PM · mosque from 9:30 AM", "give": "2 hours", "level": "Moderate · hot, crowded, on foot", "ticket": "Free · the mosque guide is free too"},
+      "tip": {"kind": "warn", "text": "Go before ten, ahead of the heat and the crush. It’s mostly cash, keep your phone and wallet in front of you, and treat every famous brand as a copy. At the mosque, use gate 3 and dress modestly. On Fridays visitors are let in only in the afternoon — times change, so check the day before."}
+    },
+    {
+      "id": "fort",
+      "name": "Colombo Fort & the Old Dutch Hospital",
+      "photo": "fort",
+      "text": "The old colonial heart, now banks and office towers with the old buildings still standing between them: the Cargills building, the Grand Oriental Hotel and Wolvendaal Church nearby. The Old Dutch Hospital, thought to be the oldest building in the Fort, is now courtyards of shops and cafés, a big Spa Ceylon and Ministry of Crab.",
+      "spec": {"from": "Central · a short walk from Pettah", "open": "Shops and cafés keep their own hours", "give": "1–1.5 hours on foot", "level": "Easy", "ticket": "Free"},
+      "tip": {"kind": "drivers", "text": "Walk it straight after Pettah, then stop for a coffee in the Dutch Hospital’s courtyards before the midday heat. If you want the history to make sense, this is where a walking guide earns the fee."}
+    },
+    {
+      "id": "museum",
+      "name": "National Museum & Independence Square",
+      "photo": "museum",
+      "text": "Sri Lanka’s national collection, in Cinnamon Gardens — the leafy side of the city — next to Viharamahadevi Park, Colombo’s oldest and largest. A short ride away, Independence Memorial Hall marks the day Sri Lanka became independent, 4 February 1948.",
+      "spec": {"from": "Cinnamon Gardens · 10–15 min from the Fort", "open": "9 AM–6 PM · last tickets 5 PM", "give": "1.5–2 hours", "level": "Easy", "ticket": "≈ Rs 1,200 foreign adult · check at the gate"},
+      "tip": {"kind": "warn", "text": "The museum closes on public holidays, including every full-moon Poya day — check the date. Reviews are mixed on value: go if you love history, skip it if you’d rather be outside."}
+    },
+    {
+      "id": "gangaramaya",
+      "name": "Gangaramaya & Seema Malakaya",
+      "photo": "gangaramaya",
+      "text": "Gangaramaya is a busy working temple by Beira Lake, with a museum and row upon row of Buddha statues. Seema Malakaya, a short walk away, is the calm one: Geoffrey Bawa’s 1979 pavilion that seems to float on the lake.",
+      "spec": {"from": "Beira Lake, central", "open": "About 6 AM–10 PM · Seema Malakaya to 9 PM", "give": "About 1.5 hours", "level": "Easy", "ticket": "≈ Rs 500, one ticket for both · cash"},
+      "tip": {"kind": "drivers", "text": "Cover shoulders and knees, shoes off, and never pose with your back to a Buddha — it’s taken seriously here. If a friendly stranger tells you there’s a special festival today and waves down a tuk-tuk, smile and walk on: that ride ends at a gem shop."}
+    },
+    {
+      "id": "galle-face",
+      "name": "Galle Face Green at sunset",
+      "photo": "galle-face",
+      "text": "A long stretch of grass between Galle Road and the sea, Colombo’s seafront playground since 1859. Come at about five: kites go up, the food carts fire up, and families stroll the promenade as the sun drops into the Indian Ocean. Part of the new Port City promenade next door is open too.",
+      "spec": {"from": "Colombo 3 · by the Galle Face Hotel", "open": "Always open · food stalls from about 5 PM", "give": "1 hour at sunset", "level": "Easy", "ticket": "Free"},
+      "tip": {"kind": "drivers", "text": "Eat isso vadai — a fried patty topped with prawns — from the cart with the longest local queue. Then walk over to the Galle Face Hotel next door, where a bagpiper lowers the flag at sunset."}
+    },
+    {
+      "id": "lotus-tower",
+      "name": "Lotus Tower",
+      "photo": "lotus",
+      "text": "The pink-and-green spire you can see from all over the city, with an observation deck about 240 m above sea level. Go after dark, when Colombo lights up below you and the tower glows. Twenty minutes at the top is plenty for most people.",
+      "spec": {"from": "Near Beira Lake, Colombo 10", "open": "Tickets 9 AM–9 PM · weekends to 10 PM", "give": "30–45 min", "level": "Easy · there’s a lift", "ticket": "USD 20 adult · USD 10 age 3–10 · paid in rupees"},
+      "tip": {"kind": "warn", "text": "Book a time slot on the official site, tickets.colombolotustower.lk, up to three months ahead — tickets can’t be refunded or transferred. Bring your passport: it’s checked at the door. An evening slot is the one worth paying for."}
+    },
+    {
+      "id": "food-tour",
+      "name": "A street-food tour by tuk-tuk",
+      "photo": "food-tour",
+      "text": "The best way to spend a single evening here: about three hours, hopping between hoppers, kottu, isso vadai and a king coconut, from Pettah’s lanes to tea on Galle Face Green. Several local operators run them, and it doubles as dinner.",
+      "spec": {"from": "Usually from your hotel", "open": "Evenings", "give": "About 3 hours", "ticket": "≈ USD 36–40 per person, by operator"}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "30–60 min",
+      "name": "Negombo",
+      "text": "The beach town by the airport: a fish market where the catch dries on the sand, St Mary’s Church and the old Dutch canal. Handy for your last night before an early flight."
+    },
+    {
+      "time": "30–45 min",
+      "name": "Kelaniya Raja Maha Vihara",
+      "text": "A big working temple about 11 km north-east of the centre, with Solias Mendis’s murals of the Buddha’s past lives inside. No foreigner ticket — a donation is welcome. Shoulders and knees covered."
+    },
+    {
+      "time": "1 h 30",
+      "name": "Bentota & the Madu River",
+      "text": "A mangrove river of 64 islands, explored by boat in about an hour, with Bevis Bawa’s Brief Garden and Geoffrey Bawa’s Lunuganga close by. Best as a stop on the way to Galle, not a day trip there and back."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "One full day in the city, in the order that beats the heat and the closing times — then on down the coast, or up to the hills.",
+    "days": [
+      {"title": "Day 1 · The city in a day", "sub": "Markets early, temples late, sunset by the sea", "steps": [{"time": "8:30", "title": "Pettah market", "text": "Before the heat and the crowds. Cash only."}, {"time": "9:30", "title": "The Red Mosque", "text": "Gate 3. On Fridays it’s afternoons only."}, {"time": "10:30", "title": "The Fort & the Dutch Hospital", "text": "The old buildings on foot, then a coffee in the courtyards."}, {"time": "12:30", "title": "Lunch at Upali’s", "text": "Rice and curry, facing Viharamahadevi Park."}, {"time": "14:00", "title": "National Museum", "text": "Last tickets at 5. Closed on Poya days."}, {"time": "15:30", "title": "Gangaramaya & Seema Malakaya", "text": "One ticket for both. Cover up for the temple."}, {"time": "17:15", "title": "Galle Face Green", "text": "Isso vadai from the carts as the sun goes down."}, {"time": "19:30", "title": "Ministry of Crab, or Lotus Tower", "text": "Crab if you’ve booked a table; the tower at night if you haven’t."}]},
+      {"title": "Day 2 · Down the coast to Galle", "sub": "The slow coast road, with stops", "steps": [{"time": "8:00", "title": "South with us, by the coast road", "text": "In a hurry? The expressway gets you to Galle in about 2 h 15.", "us": true}, {"time": "9:00", "title": "Kalutara Bodhiya", "text": "The hollow white dagoba by the bridge. Shoes off."}, {"time": "10:30", "title": "Brief Garden or Lunuganga", "text": "The Bawa brothers’ gardens, near Bentota."}, {"time": "12:00", "title": "A Madu River boat trip", "text": "About an hour through the mangroves, then lunch."}, {"time": "15:00", "title": "Arrive in Galle", "text": "Check in and walk the Fort before dinner."}], "book": {"stops": ["Colombo city", "Galle"], "nights": [0, 0], "preload": "Opens the planner with <b>Colombo city → Galle</b> already in — swap in Kandy if you’re heading for the hills (about 3 h 30, with a cashew stop on the way)."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Colombo is on the west coast, so it gets the south-west monsoon: driest from December to March, wettest in October and November.",
+    "blocks": [
+      {"label": "Dec – Mar", "title": "Dry & busy", "text": "The driest months — January and February see rain on only about five days each. Peak season: book hotels and Ministry of Crab well ahead.", "tag": "Best time", "tone": "best"},
+      {"label": "Apr – Jun", "title": "Hot, then the monsoon", "text": "Hot and sticky, with the first monsoon rains peaking in May. Mid-April is Sinhala & Tamil New Year; Vesak falls at the May full moon.", "tone": "wet"},
+      {"label": "Jul – Aug", "title": "A drier lull", "text": "The rain eases to well under half of May’s — still showers, but plenty of dry days. The Vel festival procession usually runs down Galle Road around now.", "tone": "best"},
+      {"label": "Sep – Nov", "title": "The wettest", "text": "October and November are the wettest months, with rain on more than half the days in October. Fewer visitors; Deepavali falls in October or November.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road out",
+    "heading": "Worth stopping for",
+    "sub": "These are on the drives out of Colombo, not in the city. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "To Kandy · about 40 km out", "name": "Cadjugama cashew stalls", "photo": "cashews", "text": "A village of roadside stalls that has sold cashews to passing travellers for over a century — “cadju” is cashew, “gama” is village. Taste before you buy.", "wa": "Hi Ceylon Hop — on my Colombo → Kandy transfer, could we stop at the Cadjugama cashew stalls? (From your Colombo guide.)"},
+      {"km": "To Galle · coast road, about 42 km", "name": "Kalutara Bodhiya", "photo": "kalutara", "text": "A white, hollow dagoba by the Kalutara bridge — step inside to see 74 painted panels of the Buddha’s life. Shoes off, shoulders and knees covered. It’s on the coast road, not the expressway, so ask us to go that way.", "wa": "Hi Ceylon Hop — on my Colombo → Galle transfer, could we take the coast road and stop at Kalutara Bodhiya? (From your Colombo guide.)"}
+    ]
+  },
+  "eatSub": "From seafront carts to the island’s most famous crab. Street food and small places are cash only.",
+  "eat": [
+    {
+      "tier": "Budget",
+      "photo": "street-food",
+      "name": "Galle Face stalls · Hotel de Pilawoos",
+      "text": "Isso vadai and kottu from the carts on Galle Face Green — there are at least five stalls called Nana’s, each claiming to be the original. Hotel de Pilawoos on Galle Road does kottu around the clock. <b>Follow the local queue.</b> <em>Pilawoos’s reviews have been mixed lately.</em>",
+      "band": "$",
+      "flags": ["Evening", "Late night"],
+      "warn": ["Cash only"],
+      "map": "Galle Face Green Colombo"
+    },
+    {
+      "tier": "Family",
+      "photo": "rice-curry",
+      "name": "Upali’s · Nuga Gama · Carnival",
+      "text": "Upali’s by Nawaloka, facing Viharamahadevi Park, for rice and curry, mutton and watalappan — it fills up after six. Nuga Gama at the Cinnamon Grand serves village-style rice and curry outdoors, with a kids’ club in the same hotel. <em>For afters, Carnival Ice Cream’s old-style parlour in Colombo 3, or coffee and cake at The Gallery Café, in a building by Geoffrey Bawa.</em>",
+      "band": "$–$$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "Upali's by Nawaloka Colombo"
+    },
+    {
+      "tier": "Splurge",
+      "pick": true,
+      "photo": "city-view",
+      "name": "Ministry of Crab · The Verandah",
+      "text": "Ministry of Crab, in the Old Dutch Hospital, is the famous one: order the garlic chilli or the pepper crab, and book well ahead in peak season — tables aren’t held after 15 minutes. <em>For a drink first: the Verandah at the Galle Face Hotel at sunset, or Cloud Red, 26 floors up at Cinnamon Red.</em>",
+      "band": "$$$",
+      "flags": ["Dinner", "Book ahead"],
+      "warn": ["Closed on Poya days"],
+      "map": "Ministry of Crab Colombo"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Colombo and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Colombo: "
+  },
+  "staySub": "Stay in Colombo 3 or 7 for the seafront and the best restaurants, or the Fort to be near the station. Flying out early? Sleep near the airport instead.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "ratnadipa",
+      "name": "ITC Ratnadipa · Cinnamon Life · Galle Face Hotel",
+      "text": "The new towers — ITC Ratnadipa by Galle Face Green, with its spa, and Cinnamon Life at City of Dreams, with eight restaurants and two pools — or the Galle Face Hotel, the grand old dame since 1864, for the sunset bagpiper. <em>Galle Face Hotel reviews have been mixed lately; go for the history and the Verandah.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Seafront"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "rooftop",
+      "name": "Jetwing Colombo Seven · OZO · Fairway",
+      "text": "Jetwing Colombo Seven, 27 rooms with a rooftop pool and a spa in leafy Cinnamon Gardens; OZO, compact rooms and a rooftop pool that’s the social hub; Fairway, in the Fort near the station. <em>Flight before about 8 AM? Skip the city traffic: sleep in Negombo — Jetwing Lagoon or Heritance Negombo — or at the KYNROCK Airport Hotel, right by the terminal.</em>",
+      "band": "$$",
+      "flags": ["Couples", "Rooftop pools"]
+    },
+    {
+      "tier": "Solo",
+      "pick": true,
+      "photo": "pettah-street",
+      "name": "C1 Colombo Fort · Clock Inn · Colombo Beach Hostel",
+      "text": "C1 Colombo Fort is the hostel with the freshest good reviews, in the Fort near the station. Clock Inn in Dehiwala has female-only dorms; Colombo Beach Hostel is known for its free family dinners. <em>Clock Inn is south of the centre — nearer the beach, further from the sights.</em>",
+      "band": "$",
+      "flags": ["Solo", "Backpackers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Colombo: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "Is Colombo worth a day?", "a": "<p>Yes — one. Most people land, sleep and leave, but one well-planned day is enough for Pettah, the Fort, a temple by the lake and sunset on Galle Face Green. Stay a second night only for a day trip, or to rest after a long flight.</p>"},
+        {"q": "First or last night: Colombo or Negombo?", "a": "<p>For a flight before about 8 AM, sleep in Negombo or by the airport — no city traffic between you and the terminal. With a day to spare, stay in Colombo and see it: the airport is about 50 minutes away, longer at rush hour.</p>"},
+        {"q": "Which area should I stay in?", "a": "<p><b>Colombo 3 and 7</b> (Kollupitiya, Cinnamon Gardens): the seafront, the best restaurants and most of the big hotels. <b>The Fort</b>: the old buildings and the station, busy by day and quiet at night. <b>Mount Lavinia</b>: a beach suburb to the south, sleepier and further from everything. <b>Negombo</b>: your last night before an early flight.</p>"},
+        {"q": "Do I need a guide?", "a": "<p>In Pettah and the Fort, a guide earns the fee: the lanes start to make sense and the touts leave you alone. Walks run from tip-based to about USD 128 for a four-hour premium walk. Galle Face, the temples and the tower are easy on your own.</p>"},
+        {"q": "What closes on Poya days?", "a": "<p>Every full moon is a public holiday. Expect a dry day: bars and shops stop selling alcohol, though some hotels serve their own guests. The National Museum and Ministry of Crab close. Check the date before you plan a big dinner.</p>"},
+        {"q": "Where do people go after Colombo?", "a": "<p>South to Galle — about 2 h 15 down the expressway — or inland to Kandy, about 3 h 30. From May to September, the east coast is the beach in season. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "The airport",
+      "items": [
+        {"q": "How long is the drive to the airport?", "a": "<p>About 50 minutes from the city on the expressway, and an hour or more at rush hour. Aim to be at the terminal about three hours before an international flight — tell us your flight time and we’ll set the pickup.</p>"},
+        {"q": "Can I check in early?", "a": "<p>Bandaranaike International has started letting passengers check in up to four hours before departure, and has self-service kiosks and bag drop. Useful if your hotel checkout is at noon and your flight is in the evening.</p>"},
+        {"q": "Where do I get a SIM card?", "a": "<p>At the mobile-network counters in the arrivals hall. Sort it before you leave the terminal, so the app and the maps work from the start.</p>"},
+        {"q": "Can I use ride-hailing apps?", "a": "<p>PickMe is the main app, for cars and tuk-tuks; Uber works mostly in Colombo. At the airport, check the plate and the driver match the app before you get in. Or book with us, and your driver meets you at arrivals.</p>"},
+        {"q": "Is there a bus from the airport?", "a": "<p>Yes — route 187, an air-conditioned bus along the expressway to the Colombo Fort bus stand. It leaves from the outer porch of the departure terminal.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "How hot is it?", "a": "<div class=\"temps\"><div><b>30–32°</b><small>Day</small></div><div><b>23–26°</b><small>Night</small></div><div><b>~75%</b><small>Humidity</small></div><div><b>Hot</b><small>All year</small></div></div><p>Hot and sticky all year, so it feels warmer than the numbers. Plan the middle of the day indoors — a museum, a long lunch, the hotel pool.</p>"},
+        {"q": "What should I wear?", "a": "<ul class=\"pack\"><li>Loose cotton or linen</li><li>Shoulders and knees covered for temples</li><li>Shoes that slip off easily</li><li>A compact umbrella (Apr–Jun, Sep–Nov)</li></ul>"},
+        {"q": "What should I bring?", "a": "<p>Your passport for Lotus Tower and any reserved train. A sarong or shawl — Pettah and Barefoot sell them — doubles as temple cover. Sunscreen, a hat, a refillable bottle, and rupees for Pettah and the temples.</p>"},
+        {"q": "Is it a problem to have a Buddha tattoo?", "a": "<p>It can be. Visible Buddha tattoos can get you refused entry to temples, or even deported. Keep them covered.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "The festival scam: a friendly, respectable-looking stranger says there’s a special temple festival today and flags you a tuk-tuk. There’s no festival — the ride ends at a gem shop. Smile and walk on.",
+        "Use ATMs inside banks or hotels — card fraud is a known problem. Bag-snatching from motorbikes happens too, so keep your bag on the side away from the road.",
+        "Carry cash for Pettah, the street food and the temples. Lotus Tower charges your card in rupees; the National Museum takes cards but prefers cash.",
+        "Tuk-tuks: book through PickMe or Uber so the fare is set, or agree the price before you get in.",
+        "Poya (full-moon) days: expect a dry day — some hotels serve their own guests. The National Museum and Ministry of Crab are closed.",
+        "Never pose with your back to a Buddha statue, at Gangaramaya or anywhere else.",
+        "Book Ministry of Crab ahead, especially December to March, and be on time: tables aren’t held after 15 minutes.",
+        "Mount Lavinia’s beach is for sunsets, not swimming: rip currents have pulled swimmers out, and lifeguards only work at busy times.",
+        "Drink-spiking and harassment in crowded places are both reported. Watch your drink at night, and in the Pettah crowds keep your wits about you.",
+        "Rush hour turns the 50-minute airport run into an hour or more. Tell us your flight time and we’ll plan the pickup around it."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Lotus Tower slots, whether the Kandy train is running yet, where to sleep before an early flight — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Colombo: "
+  },
+  "next": ["galle", "kandy", "cmb-airport", "ella"],
+  "photos": {
+    "hero": {
+      "alt": "Sunset over Galle Face Green and the sea, the promenade and Port City beyond",
+      "credit": "Sajeevan Balachandran",
+      "creditUrl": "https://unsplash.com/@sajeee?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-road-with-cars-on-it-next-to-a-body-of-water-cbziHTgK8VE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1013
+    },
+    "pettah": {
+      "alt": "The red-and-white striped domes of the Red Mosque against a blue sky",
+      "credit": "Thilina Alagiyawanna",
+      "creditUrl": "https://unsplash.com/@thilinaalagiyawanna?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/ornate-red-and-white-striped-domes-under-a-blue-sky-jYZk-a_Fzxc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "fort": {
+      "alt": "The red Cargills building in Colombo Fort, the World Trade Center towers behind",
+      "credit": "Vlada",
+      "creditUrl": "https://unsplash.com/@flashback_travel_guide?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-red-building-with-a-clock-on-the-top-of-it-7-agpe5IB9s?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "museum": {
+      "alt": "Independence Memorial Hall, an open pavilion of stone columns under a tiled roof",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-building-with-columns-and-a-flag-pole-in-front-of-it-fz-s1xOej4c?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "gangaramaya": {
+      "alt": "Gangaramaya Temple’s yellow shrine with its blue roof, beside a white colonial-style building",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/beautiful-ornate-temple-buildings-with-blue-roofs-E3QRzVr1QfY?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "galle-face": {
+      "alt": "Waves and a grey evening sky over the sea off Galle Face",
+      "credit": "Bobbie M",
+      "creditUrl": "https://unsplash.com/@mispishiwi?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-body-of-water-with-a-bridge-in-the-background-JNOa0iu28Zk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lotus": {
+      "alt": "The Lotus Tower lit up at night above the city lights and Beira Lake",
+      "credit": "Manorie Kodithuwakku",
+      "creditUrl": "https://unsplash.com/@manoriekodi?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-tall-illuminated-tower-stands-over-a-city-at-night-yZCvXdx0Obw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "food-tour": {
+      "alt": "A street-food vendor serving fritters and prawn snacks from a lit-up cart",
+      "credit": "Sandaru Muthuwadige",
+      "creditUrl": "https://unsplash.com/@sandarumuthuwadige?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-man-standing-in-front-of-a-display-of-food-udaeGDLQxyA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cashews": {
+      "alt": "A pile of cashew nuts on a wooden board",
+      "credit": "Emma Miller",
+      "creditUrl": "https://unsplash.com/@littlegemstudio?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-pile-of-cashews-sitting-on-top-of-a-wooden-table-juOaQQKFFKo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kalutara": {
+      "alt": "The white dagoba at Kalutara seen across the water through overhanging branches",
+      "credit": "Oshadha Viduranga",
+      "creditUrl": "https://unsplash.com/@oshadha_viduranga?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-body-of-water-surrounded-by-trees-unRXdZ_xe60?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "street-food": {
+      "alt": "Prawn fritters and spiced street food piled behind a cart’s glass",
+      "credit": "Sandaru Muthuwadige",
+      "creditUrl": "https://unsplash.com/@sandarumuthuwadige?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-bunch-of-food-that-is-on-a-table-BppfliLOw8E?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "Bowls of Sri Lankan curries — dhal, a vegetable curry and a dark devilled dish",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-variety-of-delicious-appetizing-curry-dishes-i0Dd1oxMz6c?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "city-view": {
+      "alt": "Colombo from a high window at first light, the Lotus Tower on the skyline",
+      "credit": "Christoph Theisinger",
+      "creditUrl": "https://unsplash.com/@chippenpuepp?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/aerial-view-of-city-buildings-9PPYa3LK6II?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "60% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ratnadipa": {
+      "alt": "The curved towers of ITC Ratnadipa lit up at night",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/illuminated-skyscrapers-at-night-create-a-stunning-scene-XXO6dCVq6nA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "35% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rooftop": {
+      "alt": "Colombo’s rooftops and towers running down to the sea, seen from a hotel roof",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-view-of-a-city-with-tall-buildings-and-a-body-of-water-ARaCgQopbcw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "pettah-street": {
+      "alt": "Tuk-tuks and people on a Pettah street, the Lotus Tower behind",
+      "credit": "dasith kavin",
+      "creditUrl": "https://unsplash.com/@dasithkavin?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-people-walking-on-a-street-with-cars-and-buildings-S7c0CaxO2TI?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
