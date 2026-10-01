@@ -1,0 +1,403 @@
+{
+  "slug": "kandy",
+  "name": "Kandy",
+  "region": "Hill country",
+  "placeId": "kandy",
+  "title": "Kandy guide — Temple of the Tooth, lake, where to stay | Ceylon Hop",
+  "description": "What to do in Kandy — the Temple of the Tooth, the lake, Peradeniya and a dance show, the train right now, where to eat and stay, and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "Sri Lanka’s last royal capital, wrapped around a lake 500 m up in the hills. The Temple of the Tooth stands on its shore, and the whole city has been a UNESCO World Heritage Site since 1988."
+  },
+  "facts": [
+    {"label": "Stay", "value": "1–2 nights"},
+    {"label": "Altitude", "value": "500 m"},
+    {"label": "Daytime", "value": "27–30", "unit": "°C"},
+    {"label": "Between", "value": "Sigiriya & Nuwara Eliya"}
+  ],
+  "lede": "Most people give Kandy one or two nights, between the rock country and the tea hills —",
+  "ledeEm": "the gardens first thing, drums at the temple in the evening, then on up into the tea.",
+  "gettingHere": {
+    "heading": "We’ll bring you to Kandy",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 120 km · about 3 h · most people arrive this way", "sell": "Your driver meets you at arrivals and you’re in the hills by the afternoon. Ask and we’ll come up the Kadugannawa Pass and stop at the Dawson Tower lookout on the way."},
+      {"id": "ella", "title": "From Ella", "from": "135 km · about 3 h 45 · a full day’s scenery", "sell": "Down through the tea country via Nuwara Eliya — waterfalls, tea estates and hairpins most of the way. We’ll stop at Ramboda Falls, for lunch, and wherever you want a photo."},
+      {"id": "sigiriya", "title": "From Sigiriya & Dambulla", "from": "90 km · about 2 h 30 · through the spice country", "sell": "South through Matale, where cinnamon, pepper and cardamom grow by the road. We can stop at a spice garden if you’d like — and you never have to buy anything at the end."}
+    ],
+    "train": "<b>Right now no train reaches Kandy.</b> Cyclone Ditwah cut the main line in late 2025, and trains from Colombo currently turn back at Rambukkana, well short of the hills. The railway says Colombo–Kandy trains are expected back in October 2026, but there’s no timetable yet and a bridge just outside Kandy is still being repaired — so check before you plan around one. Kandy → Nanu Oya, the start of the famous ride to Ella, is still suspended.</p><p>Until it’s back, we drive it: about 3 h from the airport, 3 h 45 to Ella. When the line reopens, sit on the <b>right</b> out of Colombo, and on the right from Kandy as far as Nanu Oya. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk. Message us and we’ll tell you what’s running on your date."
+  },
+  "places": [
+    {
+      "id": "temple-of-the-tooth",
+      "name": "Temple of the Sacred Tooth Relic",
+      "photo": "temple",
+      "text": "Sri Dalada Maligawa keeps Sri Lanka’s most precious relic, a tooth of the Buddha, in a golden casket behind the doors of an inner chamber. It’s a working temple first: pilgrims dressed in white, and drums at the services. One ticket also covers three museums and the royal elephant stable in the same grounds.",
+      "spec": {"from": "In the centre, on the lake’s north shore", "open": "5:30 AM–8 PM daily · services at 5:30, 9:30 & 6:30 PM", "give": "1–1.5 hours", "level": "Easy", "ticket": "Rs 3,000 non-SAARC · Rs 2,500 SAARC · from the machines only"},
+      "tip": {"kind": "drivers", "text": "Come for the 6:30 PM service: drums, oil lamps, and the chamber doors open — you see the golden casket, not the tooth itself. Go at 5:30 AM if you want it quiet. Buy only from the ticket machines; anyone selling a ‘special ticket’ to see the relic is running a scam. The audio guide is free, in 8 languages."},
+      "offer": {"title": "Evening at the temple with Ceylon Hop", "sub": "From your hotel to the 6:30 service, and back after", "wa": "Hi Ceylon Hop — I’m reading your Kandy guide. Could you give me a price for a ride from my hotel to the evening service at the Temple of the Tooth, with the wait and the drive back?"}
+    },
+    {
+      "id": "kandy-lake",
+      "name": "Kandy Lake & the viewpoint",
+      "photo": "lake",
+      "text": "Kiri Muhuda, the ‘sea of milk’, was made in 1807 by King Sri Wickrama Rajasinghe, right beside the temple. A 3.4 km path runs all the way round it under the trees. Above it on Rajapihilla Mawatha, Arthur’s Seat — the Kandy View Point — gives you the postcard: lake, temple and city in one frame, with the hills behind.",
+      "spec": {"from": "The centre of town", "open": "Lake path always open · no ticket", "give": "1 hour round the lake · 20 min at the viewpoint", "level": "Easy"},
+      "tip": {"kind": "drivers", "text": "Walk the loop at about four, then take a tuk-tuk up to the viewpoint for the late light, in time for a 5 PM dance show. Painting and souvenir sellers work the rail at the top — a smile and a no is fine."}
+    },
+    {
+      "id": "peradeniya",
+      "name": "Royal Botanic Gardens, Peradeniya",
+      "photo": "peradeniya",
+      "text": "Sri Lanka’s royal botanic gardens, a short drive out of town: avenues of palms, old trees and enough paths to fill a whole morning. The walking is flat, but the grounds are big — this is the one place in Kandy to give real time.",
+      "spec": {"from": "A short drive out of town", "open": "7:30 AM–6 PM, every day · last tickets about 5 PM", "give": "2–3 hours", "level": "Easy · flat, but big", "ticket": "≈ Rs 3,540 foreign adult · ≈ Rs 1,770 child"},
+      "tip": {"kind": "drivers", "text": "Be there at 7:30 when the gates open, before the heat. Bring water and a hat — the grounds are huge. If your legs give out, electric buggies can be hired inside. There’s no working online booking; pay at the gate."}
+    },
+    {
+      "id": "bahirawakanda",
+      "name": "Bahirawakanda Buddha",
+      "photo": "bahirawakanda",
+      "text": "The big white Buddha you can see from all over town, seated in meditation on the hill above the city, about 27 m tall. It’s a short, steep climb from the centre, and the terrace looks out over the rooftops, the lake and the hills beyond.",
+      "spec": {"from": "About 2 km · a steep walk or a short tuk-tuk", "open": "About 6 AM–6 PM", "give": "45–60 min", "level": "Moderate · short and steep", "ticket": "≈ Rs 300 · cash"},
+      "tip": {"kind": "warn", "text": "It’s a working temple: shoes off at the kiosk, shoulders and knees covered. The lane up is steep and exposed — take a tuk-tuk in the midday heat and walk down."}
+    },
+    {
+      "id": "udawattakele",
+      "name": "Udawattakele Forest Reserve",
+      "photo": "udawattakele",
+      "text": "A hill of forest right behind the Temple of the Tooth: shady trails, birds and monkeys, a quiet escape minutes from the busiest streets in town. Few open views — it’s about the trees and the quiet.",
+      "spec": {"from": "Behind the temple, about 1 km", "open": "8 AM–6 PM · tickets until 4 PM", "give": "1.5–2 hours", "level": "Moderate · hilly trails", "ticket": "≈ Rs 570–930 · check at the gate"},
+      "tip": {"kind": "warn", "text": "Leeches in the wet months — long socks or leech socks help. Keep food out of sight of the monkeys. Keen birders can arrange an early entry from 6 AM; a guide is about Rs 500 extra."}
+    },
+    {
+      "id": "kandyan-dance",
+      "name": "A Kandyan dance show",
+      "photo": "dance",
+      "text": "An hour of drums, spinning, leaping dancers in the Kandyan costume and, at the end, fire-walking. Several halls in town put on a show at about five: the Kandy Lake Club, the YMBA and the Red Cross hall.",
+      "spec": {"from": "Halls in the centre", "open": "About 5–6 PM", "give": "1 hour", "level": "Easy", "ticket": "≈ USD 20 reserved at the Lake Club · ≈ Rs 2,000 at the YMBA or the Red Cross hall"},
+      "tip": {"kind": "drivers", "text": "The 5 PM show finishes in time to walk to the 6:30 service at the temple — the best evening in Kandy. Get there 10–15 minutes early for a good seat."}
+    },
+    {
+      "id": "tea-museum",
+      "name": "Ceylon Tea Museum",
+      "photo": "tea-museum",
+      "text": "An old tea factory in the Hantane hills, turned into four floors of machinery, history and, at the end, tea. Finish in the top-floor tea café, where a telescope looks out to the Knuckles and Hunnasgiriya ranges.",
+      "spec": {"from": "3 km · in the Hantane hills", "open": "Tue–Fri 8:30 AM–4 PM · Sat–Sun 8 AM–5 PM · closed Mondays", "give": "1–1.5 hours", "level": "Easy", "ticket": "Rs 1,000 adult · Rs 500 child"},
+      "tip": {"kind": "drivers", "text": "Closed on Mondays, but open on Poya days and public holidays — handy when everything else is quiet. Want more tea? Ask us about a walk or a guided ride through the estates in the Hanthana hills, just above it."}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "1 h",
+      "name": "Ambuluwawa Tower",
+      "text": "A spiral tower on a hilltop near Gampola, with 360° views over the hills. The last stairs are narrow and exposed — not for anyone who hates heights. Ticket ≈ Rs 2,000–2,750; sources differ, so check at the gate."
+    },
+    {
+      "time": "≈ 2 h",
+      "name": "Kitulgala rafting",
+      "text": "White water on the Kelani River — grade 2–3 rapids, with water all year. Better as a stop on the drive to or from Colombo than a day trip there and back. Tell us and we’ll build it in, and check the operators are running."
+    },
+    {
+      "time": "≈ 3 h",
+      "name": "The Knuckles Range",
+      "text": "Cloud forest, villages, waterfalls and very few people. Tour operators reckon about three hours to the trails, so it’s a full day, best with a local guide — message us and we’ll help you plan it."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: the gardens are coolest at opening time, the dance shows start at five, and the temple is at its best at the 6:30 service.",
+    "days": [
+      {"title": "Day 1 · Gardens, lake & temple", "sub": "Early start, the best evening last", "steps": [{"time": "7:30", "title": "Peradeniya gardens", "text": "At opening, before the heat. 2–2.5 h."}, {"time": "10:30", "title": "Ceylon Tea Museum", "text": "3 km out — not on Mondays. Or the Bahirawakanda Buddha."}, {"time": "12:30", "title": "Lunch", "text": "Koththu at the Muslim Hotel, or dosa at Balaji Dosai by the temple."}, {"time": "16:00", "title": "Round the lake, then the viewpoint", "text": "Tuk-tuk up to Arthur’s Seat for the late light."}, {"time": "17:00", "title": "Kandyan dance show", "text": "Lake Club or YMBA; it ends with fire-walking."}, {"time": "18:30", "title": "Temple of the Tooth", "text": "The evening service — drums, lamps, the chamber doors open."}]},
+      {"title": "Day 2 · Up into the tea, then Ella", "sub": "The prettiest road in the hills", "steps": [{"time": "8:00", "title": "Onward with us", "text": "3 h 45 of driving to Ella — allow 6–7 h with the stops below.", "us": true}, {"time": "10:00", "title": "Ramboda Falls", "text": "A stretch of the legs on the hairpins."}, {"time": "11:00", "title": "A tea factory", "text": "Around Ramboda or Nuwara Eliya."}, {"time": "12:30", "title": "Lunch in Nuwara Eliya"}, {"time": "14:00", "title": "Down to Ella", "text": "Through the tea estates; there by mid-afternoon."}], "book": {"stops": ["Kandy", "Ella"], "nights": [0, 0], "preload": "Opens the planner with <b>Kandy → Ella</b> already in — add Nuwara Eliya if you’d like a night in the tea country on the way."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Kandy is warm all year, 27–30° by day, and barely changes. Rain is what matters: March is the driest month and November the wettest.",
+    "blocks": [
+      {"label": "Jan – Apr", "title": "Dry & clear", "text": "The driest, clearest months — March most of all — and peak season. Mid-April is Sinhala & Tamil New Year, one of the busiest weeks for hotels.", "tag": "Best weather", "tone": "best"},
+      {"label": "May – Jul", "title": "Some showers", "text": "Rain comes and goes with the south-west monsoon. Quieter than the dry months, and very green.", "tone": "wet"},
+      {"label": "Aug", "title": "Perahera month", "text": "The Esala Perahera usually falls in July or August, on dates the temple sets by the lunar calendar — 2026’s ran 18–28 August; 2027’s aren’t announced yet. Book rooms early.", "tag": "Festival", "tone": "best"},
+      {"label": "Sep – Dec", "title": "The rains", "text": "The wettest stretch of the year, peaking in October and November. Take a rain jacket, and expect leeches on the forest trails.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road in",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in Kandy. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "From the airport · on the A1", "name": "Kadugannawa Pass & Dawson Tower", "photo": "kadugannawa", "text": "The old road’s climb into the hills, topped by Dawson Tower (1832), in memory of the captain who began the Colombo–Kandy road in 1820. The lookout faces Bible Rock across the Kegalle valley.", "wa": "Hi Ceylon Hop — on my transfer to Kandy, could we come up the Kadugannawa Pass and stop at the Dawson Tower lookout? (From your Kandy guide.)"},
+      {"km": "From Ella or Nuwara Eliya · on the A5", "name": "Ramboda Falls", "photo": "ramboda", "text": "A tall waterfall right beside the hairpins on the way down from Nuwara Eliya — the natural place to stretch your legs. This road was hit by landslides after the 2025 cyclone and reopened that December.", "wa": "Hi Ceylon Hop — on my transfer to Kandy from the hills, could we stop at Ramboda Falls? (From your Kandy guide.)"}
+    ]
+  },
+  "eatSub": "Most of it is in the few streets between the temple, Dalada Veediya and the KCC mall. Bring cash for the small places.",
+  "eat": [
+    {
+      "tier": "Cafés",
+      "photo": "cafe",
+      "name": "Buono · Soul Food · Department of Coffee",
+      "text": "Coffee and something good after the temple: Buono for coconut coffee and avocado toast, Soul Food for vegan juices and wraps, Department of Coffee for a proper specialty cup somewhere quiet. For dessert, The Soya Centre has done soy soft-serve for 30 years. <em>Buono is cash only; Soul Food can be slow when it’s busy.</em>",
+      "band": "$–$$",
+      "flags": ["Breakfast", "Coffee"],
+      "map": "Buono Kandy"
+    },
+    {
+      "tier": "Family",
+      "photo": "family-food",
+      "name": "WorldSpice · Vito · Queen’s Hotel",
+      "text": "Something for everyone: WorldSpice, the food court on the top floor of the KCC mall — five kitchens, order from any, pay at the exit; wood-fired pizza with a lake view at Vito; or lunch in the old Queen’s Hotel by the temple. <em>Easy wins with children.</em>",
+      "band": "$–$$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "WorldSpice Kandy City Centre"
+    },
+    {
+      "tier": "Budget",
+      "photo": "rice-curry",
+      "name": "Muslim Hotel · Balaji Dosai · Cafe The Vibe",
+      "text": "Cheese koththu and biryani at the Muslim Hotel on Dalada Veediya, famous for decades; vegetarian South Indian dosa at Balaji Dosai, opposite the temple entrance; generous rice and curry at Cafe The Vibe. <em>The Muslim Hotel is basic and cramped — that’s part of it.</em>",
+      "band": "$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "Balaji Dosai Kandy"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Kandy and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Kandy: "
+  },
+  "staySub": "Stay in the centre or by the lake and you can walk to everything; the hill hotels have the views, but you’ll need a tuk-tuk. Book well ahead for August.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "pool-hotel",
+      "name": "The Kandy House · Santani",
+      "text": "The Kandy House is an 1804 manor outside town, eight rooms and a suite around an infinity pool, with a Michelin listing (over-12s only). Santani, 14 km out in the hills, is a proper Ayurveda retreat — a doctor’s consultation and programmes of 5 to 21 days. <em>Both are a drive from the centre; we’ll get you in and out.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Wellness"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "queens",
+      "name": "Queen’s Hotel · Ru Boutique · Amaya Hills",
+      "text": "Queen’s Hotel is the colonial landmark by the lake and the temple, with a pool, and you walk to everything. Ru Boutique has 14 rooms right on the lakefront. Amaya Hills, near Peradeniya, is a traditional hotel with mountain views and its own Ayurvedic spa. <em>In town, ask for a room facing the lake.</em>",
+      "band": "$$",
+      "flags": ["Families", "Central"]
+    },
+    {
+      "tier": "Solo",
+      "photo": "lakeside",
+      "name": "Funk Bunks · Tribe · Good Karma",
+      "text": "Funk Bunks By The Lake is the top-rated hostel in town, steps from the water; Tribe runs tuk-tuk tours of the city; Good Karma is central and homely. Eden Kandy sits up in the Bahirawakanda hills if you want it quieter. <em>All easy places to find someone for the evening dance show.</em>",
+      "band": "$",
+      "flags": ["Solo", "Backpackers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Kandy: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "How many nights should I stay?", "a": "<p>One or two. One full day covers the gardens, the lake, a dance show and the evening service at the temple. A second lets you add the Tea Museum, a forest walk or Ambuluwawa without rushing.</p>"},
+        {"q": "Is there a train to Kandy?", "a": "<p>Not right now. Cyclone Ditwah cut the line in late 2025. Colombo–Kandy trains are expected back from October 2026, but nothing is timetabled yet and Kandy → Nanu Oya is still suspended — so check before you plan. We drive it: about 3 h from the airport, 3 h 45 to Ella. <a href=\"#here\">See how we get you here ↑</a></p>"},
+        {"q": "When is the Esala Perahera?", "a": "<p>Usually in July or August. The temple sets the dates each year by the lunar calendar and auspicious times; 2026’s ran 18–28 August, and 2027’s haven’t been announced yet. The centre is reported to close to traffic on procession evenings, so plan to reach your hotel by mid-afternoon — and book your room early.</p>"},
+        {"q": "Which viewpoint or short hike is for me?", "a": "<p>Short on time: Arthur’s Seat, a tuk-tuk ride up for the lake-and-temple view. The landmark: the Bahirawakanda Buddha. Shade and birds: Udawattakele. A real hike: the Hanthana hills — trails of one to three hours through tea. The thrill: Ambuluwawa’s spiral tower, an hour away. <a href=\"#see\">See them ↑</a></p>"},
+        {"q": "Is there any nightlife?", "a": "<p>A little, and it’s low-key. Slightly Chilled Lounge has a rooftop, pool tables and fruit bats over the terrace at dusk; The Pub on Dalada Veediya has sport on the screens; Tavern 29 does cocktails on a rooftop. Alcohol isn’t sold on full-moon (Poya) days.</p>"},
+        {"q": "Where do people go after Kandy?", "a": "<p>Most go up into the tea country — Nuwara Eliya is 2 h 45, Ella 3 h 45 — or north to Sigiriya, 2 h 30, if they haven’t been yet. At the end of a trip, the airport is about 3 h. From roughly April to September, Trincomalee on the east coast is the beach that’s in season, about 4 h away. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "The temple",
+      "items": [
+        {"q": "What should I wear?", "a": "<p>Shoulders and knees covered — shorts, sleeveless tops and anything revealing aren’t allowed in, though you can get suitable clothes at the entrance. White is traditional but not required. Shoes go into the foreigners’ booths for a token, so bring socks; the stone gets hot.</p>"},
+        {"q": "Can I see the tooth?", "a": "<p>No. During the services the doors of the relic chamber open and you see the golden casket that holds it — that’s as close as anyone gets.</p>"},
+        {"q": "When is the best time to go?", "a": "<p>The 6:30 PM service is the most atmospheric — drums, oil lamps, the chamber doors open — and the busiest. 5:30 AM is the quietest; 9:30 AM is in between. The temple is open 5:30 AM–8 PM every day.</p>"},
+        {"q": "How much is it, and where do I buy tickets?", "a": "<p>Rs 3,000 if you’re from outside the SAARC countries; Rs 2,500 from SAARC countries, Thailand and Myanmar. Tickets come only from the temple’s own machines, and cover the temple, three museums and the royal elephant stable. There’s no online booking, and tickets sold by anyone else aren’t valid. No child rate is published. Bring cash in case the machines don’t take your card.</p>"},
+        {"q": "Do I need a guide?", "a": "<p>No. Foreign visitors get a free audio guide in 8 languages. Skip the touts at the gate.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "What’s the weather like?", "a": "<div class=\"temps\"><div><b>27–30°</b><small>Day</small></div><div><b>18–20°</b><small>Night</small></div><div><b>~18°</b><small>Dawn, Dec–Mar</small></div><div><b>Wet</b><small>Oct–Nov</small></div></div><p>Warm all year, cooler than the coast at night. Bring a light layer for the 5:30 AM service and a rain jacket from October to December.</p>"},
+        {"q": "What should I pack?", "a": "<ul class=\"pack\"><li>Clothes that cover shoulders and knees</li><li>Socks for hot temple floors</li><li>A light layer for early mornings</li><li>A rain jacket, Oct–Dec</li></ul>"},
+        {"q": "Anything for the gardens and the forest?", "a": "<p>Water and a hat for Peradeniya — there’s a lot of ground to cover. Proper shoes for Udawattakele, and long socks or leech socks there in the wet months.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Carry cash in small notes. Temple tickets come from machines, and the smaller sights, dance halls and some cafés are cash only. Bank of Ceylon and People’s Bank ATMs are reported not to charge foreign cards; when the machine asks, choose rupees, not your home currency.",
+        "PickMe and Uber both work in Kandy, and PickMe shows the fare upfront. For a tuk-tuk off the street, agree the price first.",
+        "At the Temple of the Tooth, buy only from the ticket machines. ‘Special tickets’ to see the relic are a scam.",
+        "If anyone offers a ‘free gem museum’ visit, it ends in a showroom. We’ll only stop if you ask.",
+        "Spice gardens on the Sigiriya road are lovely, but the oils and remedies at the end are a hard sell. You never have to buy.",
+        "The Ceylon Tea Museum is closed on Mondays — and open on Poya days and public holidays.",
+        "Poya (full-moon) days are dry: bars and shops stop selling alcohol. Some big hotels may still serve their own guests. Check the date before you plan a night out.",
+        "Busiest times: the Perahera (usually August), Sinhala & Tamil New Year in mid-April, and Vesak. Book your room and your car early.",
+        "The climb at Kadugannawa and the road to Nuwara Eliya both twist. If you get car-sick, sit up front, eat light and tell your driver — we’ll stop.",
+        "Ambuluwawa’s top stairs are narrow and exposed. Skip the last bit if you don’t like heights."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Whether the trains are running again, Perahera dates, today’s ticket prices — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Kandy: "
+  },
+  "next": ["ella", "nuwara-eliya", "sigiriya", "cmb-airport", "colombo", "negombo"],
+  "photos": {
+    "hero": {
+      "alt": "The Temple of the Tooth at dusk, its gold-roofed octagon above the white moat wall",
+      "credit": "Chathura Anuradha Subasinghe",
+      "creditUrl": "https://unsplash.com/@chathuraanuradha?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-building-with-a-gold-roof-with-temple-of-the-tooth-in-the-background-40uQmE9Zq8g?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1013
+    },
+    "temple": {
+      "alt": "Pilgrims in white crossing the square in front of the Temple of the Tooth",
+      "credit": "Chathura Anuradha Subasinghe",
+      "creditUrl": "https://unsplash.com/@chathuraanuradha?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-people-walking-around-temple-of-the-tooth-Xj28T1jQSlc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lake": {
+      "alt": "Kandy Lake and the city from the Kandy View Point, hills behind",
+      "credit": "Aravindhan Sathiyanathan",
+      "creditUrl": "https://unsplash.com/@aravindhan96?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-scenic-view-of-a-lake-surrounded-by-trees-wEoB5vyJlC4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
+      "w": 1800,
+      "h": 1125
+    },
+    "peradeniya": {
+      "alt": "A man walking down an avenue of towering palms in the morning sun",
+      "credit": "sander traa",
+      "creditUrl": "https://unsplash.com/@sandertraa?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-man-walking-down-a-road-surrounded-by-palm-trees-kGiHN1CJ7Bo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1125
+    },
+    "udawattakele": {
+      "alt": "Looking up into a wide, spreading forest canopy",
+      "credit": "Pushpalanka Mankotte Kankanamalage",
+      "creditUrl": "https://unsplash.com/@pushpalanka?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-lush-canopy-of-green-trees-YkX00bmDp4M?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "bahirawakanda": {
+      "alt": "The white Bahirawakanda Buddha on its hilltop above the city",
+      "credit": "Yves Alarie",
+      "creditUrl": "https://unsplash.com/@yvesalarie?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/gautama-buddha-statue-under-white-clouds-tZUpuq5w3-8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 40%",
+      "w": 1800,
+      "h": 1125
+    },
+    "dance": {
+      "alt": "A dancer in Kandyan costume mid-leap beside a drummer",
+      "credit": "Dinuka De Silva",
+      "creditUrl": "https://unsplash.com/@dinukade?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-people-dancing-zWGVVOsg0eA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 40%",
+      "w": 1800,
+      "h": 1125
+    },
+    "tea-museum": {
+      "alt": "The drive at the Ceylon Tea Museum, lined with flowering hedges",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-house-sits-beside-a-grassy-path-EwITUDiAXdk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kadugannawa": {
+      "alt": "Green hills from the Kadugannawa road, a flat-topped peak on the skyline",
+      "credit": "Naduni Ranasinghe",
+      "creditUrl": "https://unsplash.com/@naduni3000?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-view-of-a-lush-green-valley-with-mountains-in-the-background-5c9zkulwLQA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ramboda": {
+      "alt": "A tall waterfall dropping through forested hills, seen from above",
+      "credit": "Ilia",
+      "creditUrl": "https://unsplash.com/@swipt?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-waterfall-in-the-middle-of-a-lush-green-forest-I-Jd75Em998?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "A café counter stacked with buns, pastries and sandwiches",
+      "credit": "Thilina Alagiyawanna",
+      "creditUrl": "https://unsplash.com/@thilinaalagiyawanna?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-display-case-filled-with-various-baked-goods-and-sandwiches-QxSV-yRyzVg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "family-food": {
+      "alt": "A cook at a wood-fired pizza oven",
+      "credit": "Anthony Lim",
+      "creditUrl": "https://unsplash.com/@neonboiiz?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-man-standing-in-front-of-a-pizza-oven-to3xNPHEMIw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "Sri Lankan rice and curry with bowls of sambol, onions and beans",
+      "credit": "Nilantha Sanjeewa",
+      "creditUrl": "https://unsplash.com/@nila1992?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/cooked-rice-on-brown-wooden-bowl-EXHIHvJu4VU?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "pool-hotel": {
+      "alt": "An infinity pool looking out over green hills at a hilltop hotel in central Sri Lanka",
+      "credit": "Dinuka Lankaloka",
+      "creditUrl": "https://unsplash.com/@bawva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-swimming-pool-surrounded-by-a-lush-green-hillside-9bP7IwyBFJk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "queens": {
+      "alt": "The white colonial front of Queen’s Hotel in the centre of Kandy",
+      "credit": "Promodhya Abeysekara",
+      "creditUrl": "https://unsplash.com/@promodhya?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-large-white-building-with-a-bus-parked-in-front-of-it-gjd-7_3Ek_w?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 40%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lakeside": {
+      "alt": "Guesthouses and hotels on the wooded hillside above Kandy Lake",
+      "credit": "Matthew Dlr",
+      "creditUrl": "https://unsplash.com/@matthewdlr?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/buildings-nestled-on-a-lush-green-hillside-overlooking-water-9bKgs5K5Vh4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
