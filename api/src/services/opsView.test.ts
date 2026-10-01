@@ -92,6 +92,20 @@ describe('opsView', () => {
     expect(row.travelTime).toBe('08:00');
   });
 
+  // Owner 2026-09-28: a "Recently booked" view (newest first) and a product-type filter. The
+  // list needs when each booking came in, and which trips are a chauffeur guide vs a private car.
+  it('carries when the booking was made', () => {
+    expect(toOpsRow(base, { paid: true }).createdAt).toBe('2026-06-21T00:00:00Z');
+  });
+
+  it('carries the trip service type, and null for every other mode', () => {
+    expect(toOpsRow(trip, { paid: true }).serviceType).toBe('chauffeur');
+    const privateTrip = { ...trip, input: { ...trip.input, serviceType: 'private' } } as Booking;
+    expect(toOpsRow(privateTrip, { paid: true }).serviceType).toBe('private');
+    expect(toOpsRow(base, { paid: true }).serviceType).toBeNull();
+    expect(toOpsRow(shared, { paid: true }).serviceType).toBeNull();
+  });
+
   it('exposes booking channel on the ops row', () => {
     const row = toOpsRow({ ...base, channel: 'whatsapp' }, { paid: true });
     expect(row.channel).toBe('whatsapp');
@@ -137,5 +151,35 @@ describe('opsView — isTest', () => {
   it('is false when the team set is empty or omitted', () => {
     expect(toOpsRow(base, { paid: true, teamEmails: new Set() }).isTest).toBe(false);
     expect(toOpsRow(base, { paid: true }).isTest).toBe(false);
+  });
+});
+
+// Route choice (spec §4.3): the queue card says when the customer bought the local road, so ops
+// books a driver for the right road. A separate field — `route` feeds search, reminders and the
+// Lookup, and stays exactly what it was.
+describe('opsView — road', () => {
+  it('a transfer on the local road is marked, and its route is untouched', () => {
+    const row = toOpsRow({ ...base, input: { ...base.input, routeVariant: 'no_tolls' } } as Booking, { paid: true });
+    expect(row.road).toBe('Local road');
+    expect(row.route).toBe('Colombo Airport → Galle');
+  });
+
+  // A trip names its local legs (roadRow's words): the reminder built from this row goes to the
+  // customer, and "via the local road" would be false for the legs on the expressway.
+  it('a trip with a leg on the local road names that leg', () => {
+    const trip = {
+      ...base, mode: 'trip',
+      input: { stops: ['Colombo Airport', 'Kandy', 'Ella'], pax: 2, vehicleType: 'car', serviceType: 'private',
+        routeVariants: ['fastest', 'no_tolls'], customer: base.input.customer },
+    } as unknown as Booking;
+    expect(toOpsRow(trip, { paid: true }).road).toBe('Local road for Kandy → Ella');
+    const allFast = { ...trip, input: { ...(trip.input as object), routeVariants: ['fastest', 'fastest'] } } as unknown as Booking;
+    expect(toOpsRow(allFast, { paid: true }).road).toBeNull();
+  });
+
+  it('is null on the expressway, and nothing else in the row changes', () => {
+    const fastest = { ...base, input: { ...base.input, routeVariant: 'fastest' } } as Booking;
+    expect(toOpsRow(base, { paid: true }).road).toBeNull();
+    expect(toOpsRow(fastest, { paid: true })).toEqual(toOpsRow(base, { paid: true }));
   });
 });

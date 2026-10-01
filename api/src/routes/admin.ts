@@ -34,6 +34,7 @@ import { mayReverse } from '../domain/reversalWindow';
 import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
+import { createJobCorrelation } from '../lib/correlation';
 
 // Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
 // session with payments:act (founder or finance) — the machine key (system) does NOT
@@ -112,7 +113,13 @@ export function adminRoutes(deps: {
     if (!booking) return c.json({ error: 'not_found' }, 404);
     let updated: Booking;
     try {
-      updated = await bookings.setStatus(id, to, audit);
+      updated = await bookings.setStatus(id, to, audit, {
+        source: 'ops',
+        actorType: 'staff',
+        actorId: c.get('identity').email,
+        requestId: c.get('requestId'),
+        reason: audit?.reason ?? `booking_${to}`,
+      });
     } catch (err) {
       if (err instanceof IllegalTransitionError) {
         return c.json({ error: 'illegal_transition', from: err.from, to: err.to }, 409);
@@ -306,6 +313,7 @@ export function adminRoutes(deps: {
         refundId: c.req.param('refundId'),
         gatewayRef: parsed.data.gatewayRef,
         confirmedBy: c.get('identity').email,
+        correlation: { requestId: c.get('requestId') },
       });
       await afterRefundConfirmed(c.req.param('id'), before.status, outcome);
       return c.json(outcome, 200);
@@ -385,6 +393,7 @@ export function adminRoutes(deps: {
             ? { kind: 'succeeded', gatewayRef: result.gatewayRef!, providerMessage: result.providerMessage }
             : { kind: 'failed', providerMessage: result.providerMessage ?? 'refund declined by gateway' },
         confirmedBy: c.get('identity').email,
+        correlation: { requestId: c.get('requestId') },
       });
       if (result.outcome === 'failed') {
         return c.json({ error: 'refund_declined', refund: outcome.refund }, 409);
@@ -485,6 +494,7 @@ export function adminRoutes(deps: {
     // Only when the money still has to be taken. On the repair path above it is already recorded,
     // so create/settle must not run again — and neither may the ledger guard, whose succeeded row
     // is OUR OWN: it would turn a legitimate repair into a 409 and leave the booking stranded.
+    let transitionPaymentId = claimed?.id;
     if (!recorded) {
       // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
       // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
@@ -510,11 +520,20 @@ export function adminRoutes(deps: {
       // The actor goes in a COLUMN, not just the ops note below: that note is editable via
       // /flags by the `ops` role, which is denied payments:act (0043).
       await deps.payments.markSucceededManually(payment.id, { reference, settledBy: c.get('identity').email });
+      transitionPaymentId = payment.id;
     }
 
     let paid: Booking;
     try {
-      paid = await bookings.setStatus(booking.id, 'paid');
+      paid = await bookings.setStatus(booking.id, 'paid', undefined, {
+        source: 'ops',
+        actorType: 'staff',
+        actorId: c.get('identity').email,
+        requestId: c.get('requestId'),
+        reason: `manual_payment:${method}`,
+        relatedEntityType: 'payment',
+        relatedEntityId: transitionPaymentId,
+      });
     } catch (err) {
       if (!(err instanceof IllegalTransitionError)) throw err;
       // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
@@ -544,6 +563,7 @@ export function adminRoutes(deps: {
   // The stale shared-hold sweep (GL-3) rides the same tick, best-effort: a sweep failure
   // must never block the notifications the caller asked for.
   r.post('/jobs/notifications', requireCap('admin:jobs'), async (c) => {
+    const correlation = createJobCorrelation({ requestId: c.get('requestId') });
     // ONE budget for the whole tick: the scheduler and the Ride Board sweep both draw on
     // it, so the cap bounds everything this endpoint can send, not each sweep separately.
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
@@ -555,15 +575,19 @@ export function adminRoutes(deps: {
     // it is not a safe thing to run after a migration.
     if (c.req.query('dryRun')) {
       const preview = await runScheduledNotifications(new Date(), {
-        bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true,
+        bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true, correlation,
       });
       return c.json({ ...preview, dryRun: true }, 200);
     }
 
-    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window });
+    const result = await runScheduledNotifications(new Date(), {
+      bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, correlation,
+    });
     let staleSharedHolds = 0;
     try {
-      staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
+      staleSharedHolds = (await sweepStaleSharedHolds({
+        bookings, departures, now: new Date(), correlation,
+      })).swept;
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
     }
@@ -662,14 +686,17 @@ export function adminRoutes(deps: {
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
+    const correlation = createJobCorrelation({ requestId: c.get('requestId') });
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
     const result = await runWatchdog(new Date(), {
       bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget,
       alertLog: deps.alertLog, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents,
+      rideLists: deps.rideLists,
+      correlation,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it
     // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).
-    console.log(JSON.stringify({ event: 'watchdog_tick', at: new Date().toISOString(), ...result }));
+    console.log(JSON.stringify({ event: 'watchdog_tick', at: new Date().toISOString(), ...correlation, ...result }));
     const burst = budget && burstAlert(budget, 'watchdog');
     if (burst) await alerts.send(burst);
     return c.json({ ...result, suppressed: budget?.report().suppressed ?? 0 }, 200);

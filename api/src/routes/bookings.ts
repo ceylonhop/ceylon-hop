@@ -21,14 +21,19 @@ import {
   quoteSingleTransfer,
   quoteTrip,
   InvalidPricingRequestError,
+  ROUTE_CHOICE_UNAVAILABLE,
   type PriceOutcome,
 } from '../services/pricing';
-import type { BookingRepo, Booking } from '../db/bookingRepo';
+import { measureLeg } from '../quote/routeChoice';
+import { promoDiscount, roadRow } from '../services/notifications';
+import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
-import type { MapsAdapter, DistanceResult } from '../adapters/maps';
+import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
+import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
@@ -64,6 +69,10 @@ import { SeenOnce } from '../lib/seenOnce';
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
 const CHAUFFEUR_NOTICE_MESSAGE = `Chauffeur-guide trips need at least ${CHAUFFEUR_MIN_LEAD_DAYS} days' notice — please pick a later start date.`;
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): shown when the
+// toll-free road the customer was quoted no longer forks at booking time. Nothing is charged.
+const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
+  "The local road isn't available for this trip right now, so nothing was charged. We've switched the price back to the expressway. Please check it and book again.";
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
 // flagged ($1 absorbs rounding differences, never a real disagreement).
@@ -72,16 +81,33 @@ const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
 const UNPRICED_NOTE_PREFIX = 'unpriced booking — set a price before this can be paid';
 
 // One maps lookup per route pair per request: engine pricing and the M8 enrichment share
-// results, so going engine-first doesn't double the billed Google calls. Exported: quote.ts's
-// /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a (from,to)
-// pair (e.g. one corridor priced for car and for van) share one lookup instead of both racing
-// a cold cache miss under Promise.all.
+// results, so going engine-first doesn't double the billed Google calls — and the route-choice
+// comparison, so an estimate that measures and compares one pair bills it once. Exported:
+// quote.ts's /v2/estimate-batch wraps the SAME adapter once per batch so two intents sharing a
+// (from,to) pair (e.g. one corridor priced for car and for van) share one lookup instead of both
+// racing a cold cache miss under Promise.all.
 export function memoizeDistance(maps: MapsAdapter): MapsAdapter {
   const cache = new Map<string, Promise<DistanceResult | null>>();
+  const variants = new Map<string, Promise<RouteVariants | null>>();
   return {
     provider: maps.provider,
     places: (q) => maps.places(q),
-    distanceVariants: (from, to) => maps.distanceVariants(from, to),
+    distanceVariants(from, to) {
+      // Keyed on the canonical place: "KANDY" and "kandy" both pass isCatalogTown, and must share
+      // one comparison rather than each billing their own.
+      const key = `${canonPlace(from)}|${canonPlace(to)}`;
+      let hit = variants.get(key);
+      if (!hit) {
+        hit = maps.distanceVariants(from, to);
+        variants.set(key, hit);
+        // A rejected comparison must not poison the request: drop it so a retry can ask again.
+        // Only delete OUR entry — a retry that already installed its own promise under this key
+        // must not have it evicted by this (now-stale) rejection handler.
+        const installed = hit;
+        installed.catch(() => { if (variants.get(key) === installed) variants.delete(key); });
+      }
+      return hit;
+    },
     distance(from, to) {
       const key = `${from}|${to}`;
       let hit = cache.get(key);
@@ -148,10 +174,20 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // The add-ons the customer chose, as the quote named them. Absent when there are none.
+  addOns?: string[];
+  // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
+  road?: string;
+  // The promo code the booking was made with and what it took off (promoDiscount) — the card's
+  // Promo row above Total. Both absent on every booking without a code.
+  promoCode?: string;
+  discountCents?: number;
 }
 
 export function projectBooking(b: Booking): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
+  const road = roadRow(b)?.[1];
+  const promo = promoDiscount(b);
   const base = {
     reference: b.reference,
     status: b.status,
@@ -161,6 +197,9 @@ export function projectBooking(b: Booking): CustomerBookingView {
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: Math.max(0, b.total - dueNow),
+    ...(b.addOns?.length ? { addOns: b.addOns } : {}),
+    ...(road ? { road } : {}),
+    ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
   };
   if (b.mode === 'single') {
     return {
@@ -418,6 +457,42 @@ function billingFrom(body: unknown): BillingParse {
   return parsed.success ? { ok: true, billing: parsed.data } : { ok: false };
 }
 
+// The customer's "Anything we should know?" note (2026-09-27), read off the raw body for the same
+// reason as billing and terms above. It is free text straight from the public internet, so:
+// text only (a number, array or object is refused), line endings made \n, control characters
+// dropped (a NUL byte would make Postgres reject the insert), trimmed, and at most 1,000
+// characters (booking.html's maxlength; the DB checks the same bound). Blank counts as no note.
+// It is only ever stored as a bound parameter and escaped wherever it is shown, never run as code.
+const MAX_CUSTOMER_NOTES = 1000;
+function customerNotesFrom(body: unknown): { ok: true; notes: string | undefined } | { ok: false } {
+  const raw = (body as { customerNotes?: unknown } | null)?.customerNotes;
+  if (raw === undefined || raw === null) return { ok: true, notes: undefined };
+  if (typeof raw !== 'string') return { ok: false };
+  const notes = raw
+    .replace(/\r\n?/g, '\n')
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim();
+  if (notes.length > MAX_CUSTOMER_NOTES) return { ok: false };
+  return { ok: true, notes: notes || undefined };
+}
+const INVALID_NOTES = { error: 'invalid_notes', message: 'Please keep your note to 1,000 characters or fewer.' };
+
+// A trip's self-arranged gaps (TripInput.gaps) must name real, distinct wires and leave at least
+// one leg for us to drive. A chauffeur-guide keeps the car for the whole trip, so it has no gaps —
+// and pricing one would skip distance the car really covers. The planner never produces either
+// case (booking.js only offers chauffeur once every wire is dated, and a gap wire never is).
+function tripGapsProblem(t: TripInput): string | null {
+  const gaps = t.gaps ?? [];
+  if (!gaps.length) return null;
+  const wires = t.stops.length - 1;
+  if (t.serviceType === 'chauffeur') return 'a chauffeur-guide trip cannot have self-arranged legs';
+  if (gaps.some((g) => g >= wires)) return `this ${t.stops.length}-stop trip has legs 0–${wires - 1} only`;
+  if (new Set(gaps).size !== gaps.length) return 'each leg can be listed once';
+  if (gaps.length >= wires) return 'at least one leg must be one we drive';
+  return null;
+}
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -446,6 +521,8 @@ function invalidRequest(error: ZodError) {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
     // No past dates — a trip can't be booked for a day that has already passed (Asia/Colombo).
     if (isPastIsoDate(parsed.data.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -473,17 +550,26 @@ function invalidRequest(error: ZodError) {
     try {
       outcome = await priceSingle(parsed.data, legMaps, rateCard, promo.code ? promoDiscountRequest(promo.code) : undefined);
     } catch (err) {
-      if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
+      if (err instanceof InvalidPricingRequestError) {
+        return c.json(
+          err.code === ROUTE_CHOICE_UNAVAILABLE
+            ? { error: err.code, message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE }
+            : { error: err.code },
+          422,
+        );
+      }
       throw err;
     }
     // §4.3 — a code that cannot price, or that the limits reduce to $0, does not apply.
     const discountTotal = promo.code && outcome.priced ? (outcome.discountCents ?? 0) : 0;
     if (promo.code && discountTotal <= 0) return c.json({ error: 'promo_code_not_eligible' }, 422);
     const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total);
-    // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
+    // M8 — enrich with road distance/duration (best-effort; never blocks the booking). Measures
+    // the SAME road that was priced (§4.2) — otherwise a no_tolls booking would store the
+    // expressway's km/minutes. The memoized adapter makes this call free.
     let distance = null;
     try {
-      distance = await legMaps.distance(parsed.data.from, parsed.data.to);
+      distance = await measureLeg(legMaps, parsed.data.from, parsed.data.to, parsed.data.routeVariant);
     } catch {
       distance = null;
     }
@@ -501,9 +587,15 @@ function invalidRequest(error: ZodError) {
           durationMin: distance?.durationMin ?? null,
           billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          customerNotes: notes.notes,
           ...(promo.code ? { discountTotal } : {}),
         },
-        { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
+        {
+          idempotencyKey: key,
+          ...(promo.code ? { promo: { code: promo.code, now } } : {}),
+          // The engine's own request and lines, kept so the booking can name the add-ons it paid for.
+          ...(outcome.priced && outcome.breakdown ? { pricingSnapshot: websitePricingSnapshot(outcome.breakdown) } : {}),
+        },
       );
     } catch (err) {
       if (err instanceof PromoCodeRefusedError) return c.json({ error: err.code }, 422);
@@ -521,8 +613,23 @@ function invalidRequest(error: ZodError) {
     if (!parsed.success) {
       return c.json(invalidRequest(parsed.error), 400);
     }
+    // Customer route choice (spec §4.2): one entry per consecutive stop pair, private only — a
+    // chauffeur-guide's price does not fork on the road, so offering it there would be a choice
+    // that does nothing (or worse, silently does nothing while looking like it did).
+    const rv = parsed.data.routeVariants;
+    if (
+      rv &&
+      (rv.length !== parsed.data.stops.length - 1 ||
+        (parsed.data.serviceType === 'chauffeur' && rv.includes('no_tolls')))
+    ) {
+      return c.json({ error: 'invalid_request' }, 400);
+    }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
+    const gapsProblem = tripGapsProblem(parsed.data);
+    if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -556,7 +663,14 @@ function invalidRequest(error: ZodError) {
     try {
       outcome = await priceTrip(parsed.data, legMaps, rateCard, promo.code ? promoDiscountRequest(promo.code) : undefined);
     } catch (err) {
-      if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
+      if (err instanceof InvalidPricingRequestError) {
+        return c.json(
+          err.code === ROUTE_CHOICE_UNAVAILABLE
+            ? { error: err.code, message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE }
+            : { error: err.code },
+          422,
+        );
+      }
       throw err;
     }
     const discountTotal = promo.code && outcome.priced ? (outcome.discountCents ?? 0) : 0;
@@ -567,13 +681,17 @@ function invalidRequest(error: ZodError) {
       quoteTrip(parsed.data).total,
     );
     // M8 — total road distance/duration across the trip's legs (best-effort; null if any
-    // leg can't be resolved, since a partial sum would understate the trip).
+    // leg can't be resolved, since a partial sum would understate the trip). Measures the SAME
+    // road that was priced (§4.2) — otherwise the stored trip km/minutes would be the
+    // expressway's, even for a leg booked on the local road.
     const stops = parsed.data.stops;
+    const gaps = new Set(parsed.data.gaps ?? []);
     let tripKm: number | null = 0;
     let tripMin: number | null = 0;
     try {
       for (let i = 0; i < stops.length - 1; i++) {
-        const leg = await legMaps.distance(stops[i], stops[i + 1]);
+        if (gaps.has(i)) continue; // the traveller's own stretch — not distance we drive
+        const leg = await measureLeg(legMaps, stops[i], stops[i + 1], parsed.data.routeVariants?.[i]);
         if (!leg) {
           tripKm = null;
           tripMin = null;
@@ -600,6 +718,7 @@ function invalidRequest(error: ZodError) {
           durationMin: tripMin === null ? null : Math.round(tripMin),
           billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
           termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
+          customerNotes: notes.notes,
           ...(promo.code ? { discountTotal } : {}),
         },
         { idempotencyKey: key, ...(promo.code ? { promo: { code: promo.code, now } } : {}) },
@@ -624,6 +743,8 @@ function invalidRequest(error: ZodError) {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    const notes = customerNotesFrom(body);
+    if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const req = parsed.data;
     // No past dates — a seat can't be booked for a departure that has already passed.
     if (isPastIsoDate(req.date, isoToday())) {
@@ -722,7 +843,7 @@ function invalidRequest(error: ZodError) {
     let booking;
     try {
       booking = await bookings.create(
-        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing },
+        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
         { idempotencyKey: key },
       );
     } catch (err) {
@@ -886,7 +1007,29 @@ function invalidRequest(error: ZodError) {
         currency: booking.currency,
         idempotencyKey,
       });
-      if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
+    }
+    // Outside `if (!payment)` on purpose: the payment row and this move are two writes, and when
+    // the move failed after the insert, every retry found the payment, skipped the move, and still
+    // handed out a live PayHere form for a DRAFT booking — a payment the webhook then could not
+    // settle. Repair it here, before any gateway fields leave the server. A concurrent checkout
+    // (a double tap) may have moved it first: that refusal is fine as long as it is now pending.
+    if (booking.status === 'draft') {
+      try {
+        await bookings.setStatus(booking.id, 'payment_pending', undefined, {
+          source: 'website',
+          actorType: 'customer',
+          actorId: booking.input.customer.email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'payment',
+          relatedEntityId: payment.id,
+        });
+      } catch (err) {
+        if (!(err instanceof IllegalTransitionError)) throw err;
+        const now = await bookings.get(booking.id);
+        if (now?.status !== 'payment_pending') {
+          return c.json({ error: 'not_chargeable', status: now?.status ?? booking.status }, 409);
+        }
+      }
     }
 
     // Where the gateway sends the customer back to (spec: docs/checkout-redirect-spec.md §D3).

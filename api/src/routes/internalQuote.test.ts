@@ -1708,7 +1708,7 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
 
   it('books a sent quote: draft booking at the quote price, quote stamped won+linked', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const bookings = new InMemoryBookingRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const id = await sentQuote(quotes);
     const res = await book(createApp({ quotes, bookings }), id, BODY);
     expect(res.status).toBe(201);
@@ -1722,6 +1722,43 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(q?.status).toBe('won');
     expect(q?.convertedBookingId).toBe(b.id);
     expect(await bookings.get(b.id)).not.toBeNull();
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        source: 'quote_conversion', actorType: 'staff', actorId: 'f@x.com',
+        relatedEntityType: 'quote', relatedEntityId: id, requestId: expect.any(String),
+      }),
+    ]);
+  });
+
+  // The add-ons live on the quote as its priced lines, and the booking only links back to it.
+  // Every surface that names them (booking emails, the ops drawer, the manage page) reads the
+  // booking, so the booking must carry them — the waiting fee was invisible after booking.
+  it('the booking names the add-ons its quote charged, and none when nothing was chosen', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const engineReq: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 1,
+      legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engineReq, RATE_CARD);
+    const withWaiting = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+      rateCardVersion: 'v1', result, request: { engine: engineReq },
+    });
+    await quotes.patch(withWaiting.id, { status: 'sent' });
+
+    const res = await book(app, withWaiting.id, BODY);
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Waiting fee — CMB → Galle']);
+    const drawer = await app.request(`/admin/ops/bookings/${b.id}`, { headers: { cookie: FOUNDER_COOKIE } });
+    expect((await drawer.json()).booking.addOns).toEqual(['Waiting fee — CMB → Galle']);
+
+    const plain = await book(app, await sentQuote(quotes), BODY);
+    expect(plain.status).toBe(201);
+    expect((await bookings.get((await plain.json()).id))?.addOns).toBeUndefined();
   });
 
   // CH-T74DT: the shared CustomerInput now bounds every phone field, so the ops "Mark booked"

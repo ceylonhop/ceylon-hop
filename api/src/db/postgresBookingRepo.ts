@@ -1,6 +1,19 @@
-import { and, desc, eq, exists, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs, payments, promoCodes } from './schema';
+import {
+  customers,
+  bookings,
+  transferRequests,
+  tripRequests,
+  sharedRequests,
+  bookingLegs,
+  payments,
+  promoCodes,
+  quotes,
+  bookingStatusEvents,
+} from './schema';
+import { chosenAddOns, type PaySelection } from '../quote/paySelection';
+import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
   type NewBooking,
@@ -9,8 +22,13 @@ import {
   type StatusAudit,
   type PromoHold,
   type PromoBookingUse,
+  type BookingStatusEvent,
+  type BookingStatusEventMismatch,
+  type WebsitePricingSnapshot,
   BookingNotFoundError,
+  BookingTransitionContextRequiredError,
   generateReference,
+  snapshotAddOns,
   PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
 import { toPromoCode } from './promoCodeRow';
@@ -27,9 +45,88 @@ import { assertTransition, IllegalTransitionError, type BookingStatus } from '..
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 import { track } from '../observability/track';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 type BookingRow = typeof bookings.$inferSelect;
-type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+type BookingStatusEventRow = typeof bookingStatusEvents.$inferSelect;
+export type BookingTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+export interface PostgresBookingRepoOptions {
+  transitionTrackingEnabled?: boolean;
+}
+
+export async function applyBookingStatusTransition(
+  tx: BookingTransaction,
+  input: {
+    id: string;
+    to: BookingStatus;
+    audit?: StatusAudit;
+    context?: BookingTransitionContext;
+    transitionTrackingEnabled?: boolean;
+  },
+): Promise<BookingRow> {
+  const [row] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
+  if (!row) throw new BookingNotFoundError(input.id);
+  const from = row.status as BookingStatus;
+  assertTransition(from, input.to);
+  if (input.transitionTrackingEnabled && !input.context) {
+    throw new BookingTransitionContextRequiredError();
+  }
+
+  const [moved] = await tx
+    .update(bookings)
+    .set({
+      status: input.to,
+      ...(input.to === 'cancelled' && input.audit
+        ? {
+            cancellationReason: input.audit.reason,
+            cancelledBy: input.audit.by,
+            cancelledAt: input.audit.at ?? new Date(),
+          }
+        : {}),
+    })
+    .where(and(eq(bookings.id, input.id), eq(bookings.status, from)))
+    .returning();
+  if (!moved) {
+    const [current] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
+    throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, input.to);
+  }
+
+  if (input.transitionTrackingEnabled && input.context) {
+    await tx.insert(bookingStatusEvents).values({
+      bookingId: input.id,
+      fromStatus: from,
+      toStatus: input.to,
+      source: input.context.source,
+      actorType: input.context.actorType,
+      actorId: input.context.actorId ?? null,
+      reason: input.context.reason ?? input.audit?.reason ?? null,
+      requestId: input.context.requestId ?? null,
+      runId: input.context.runId ?? null,
+      relatedEntityType: input.context.relatedEntityType ?? null,
+      relatedEntityId: input.context.relatedEntityId ?? null,
+    });
+  }
+  return moved;
+}
+
+function buildStatusEvent(row: BookingStatusEventRow): BookingStatusEvent {
+  return {
+    id: row.id,
+    bookingId: row.bookingId,
+    fromStatus: row.fromStatus as BookingStatus,
+    toStatus: row.toStatus as BookingStatus,
+    source: row.source as BookingStatusEvent['source'],
+    actorType: row.actorType as BookingStatusEvent['actorType'],
+    actorId: row.actorId,
+    reason: row.reason,
+    requestId: row.requestId,
+    runId: row.runId,
+    relatedEntityType: row.relatedEntityType as BookingStatusEvent['relatedEntityType'],
+    relatedEntityId: row.relatedEntityId,
+    occurredAt: row.occurredAt.toISOString(),
+  };
+}
 
 // A Postgres unique-violation (23505). Drizzle wraps the driver error as `Error: Failed
 // query…` with the real PostgresError on `.cause`; the raw postgres.js error carries
@@ -145,6 +242,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         }
       : null,
     termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
+    customerNotes: row.customerNotes,
     // Only bookings made with a code carry these, so every other booking's shape is unchanged.
     ...(row.promoCodeId
       ? {
@@ -168,6 +266,9 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         serviceType: tr.serviceType as 'private' | 'chauffeur',
         days: tr.days ?? undefined,
         driverNights: tr.driverNights ?? undefined,
+        // Undefined, not null, when the row never recorded any — so an old booking's shape is
+        // byte-identical (0061_route_variant is additive/nullable, no backfill).
+        ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
         customer,
       },
     };
@@ -206,13 +307,19 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       adults: t.adults,
       children: t.children,
       bags: t.bags,
+      // Undefined, not null, when the row never recorded one — so an old booking's shape is
+      // byte-identical (0061_route_variant is additive/nullable, no backfill).
+      ...(t.routeVariant ? { routeVariant: t.routeVariant as RouteVariant } : {}),
       customer,
     },
   };
 }
 
 export class PostgresBookingRepo implements BookingRepo {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: PostgresBookingRepoOptions = {},
+  ) {}
 
   // SQL twin of promoUseState() (domain/promoCode.ts); bookingPromo.test.ts holds both to the same cases.
   private succeededPayment() {
@@ -224,7 +331,7 @@ export class PostgresBookingRepo implements BookingRepo {
     );
   }
 
-  private async countUses(tx: Transaction, codeId: string, now: Date): Promise<{ paid: number; held: number }> {
+  private async countUses(tx: BookingTransaction, codeId: string, now: Date): Promise<{ paid: number; held: number }> {
     const paid = or(inArray(bookings.status, [...PROMO_PAID_STATUSES]), this.succeededPayment());
     const held = and(inArray(bookings.status, [...PROMO_HELD_STATUSES]), gt(bookings.promoHoldUntil, now));
     const [row] = await tx
@@ -238,7 +345,7 @@ export class PostgresBookingRepo implements BookingRepo {
   }
 
   /** Lock the code row and prove a use can be taken at `now` (§5.3). */
-  private async takeUse(tx: Transaction, codeId: string, now: Date): Promise<PromoCode> {
+  private async takeUse(tx: BookingTransaction, codeId: string, now: Date): Promise<PromoCode> {
     const [locked] = await tx.select().from(promoCodes).where(eq(promoCodes.id, codeId)).for('update');
     if (!locked) throw new PromoCodeRefusedError('promo_code_invalid');
     const code = toPromoCode(locked);
@@ -266,24 +373,41 @@ export class PostgresBookingRepo implements BookingRepo {
     const idsFor = (mode: string) => rows.filter((r) => r.mode === mode).map((r) => r.id);
     const tripIds = idsFor('trip'); const sharedIds = idsFor('shared');
     const singleIds = rows.filter((r) => r.mode !== 'trip' && r.mode !== 'shared').map((r) => r.id);
-    const [trips, shareds, transfers] = await Promise.all([
+    const promoIds = [...new Set(rows.flatMap((r) => (r.promoCodeId ? [r.promoCodeId] : [])))];
+    const [trips, shareds, transfers, linkedQuotes, codes] = await Promise.all([
       tripIds.length ? this.db.select().from(tripRequests).where(inArray(tripRequests.bookingId, tripIds)) : [],
       sharedIds.length ? this.db.select().from(sharedRequests).where(inArray(sharedRequests.bookingId, sharedIds)) : [],
       singleIds.length ? this.db.select().from(transferRequests).where(inArray(transferRequests.bookingId, singleIds)) : [],
+      // The add-ons live on the booking's quote as priced lines (same filter as
+      // PostgresQuoteRepo.findByConvertedBookingId). Parallel with the rest: no extra round-trip.
+      this.db
+        .select({ bookingId: quotes.convertedBookingId, request: quotes.requestJson, result: quotes.resultJson, selection: quotes.payLinkSelection })
+        .from(quotes)
+        .where(and(inArray(quotes.convertedBookingId, rows.map((r) => r.id)), isNull(quotes.deletedAt))),
+      // The promo codes' names, only when a booking here carried one — same round-trip as the rest.
+      promoIds.length ? this.db.select({ id: promoCodes.id, code: promoCodes.code }).from(promoCodes).where(inArray(promoCodes.id, promoIds)) : [],
     ]);
+    const codeBy = new Map(codes.map((c) => [c.id, c.code]));
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
+    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PaySelection | null)]));
     return rows.map((row) => {
       const cust = custById.get(row.customerId);
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
       const req = row.mode === 'trip' ? tripBy.get(row.id) : row.mode === 'shared' ? sharedBy.get(row.id) : transferBy.get(row.id);
       if (!req) throw new Error(`booking ${row.id}: ${row.mode} request row missing`);
-      return build(row, cust, req);
+      const built = build(row, cust, req);
+      const promoCode = row.promoCodeId ? codeBy.get(row.promoCodeId) : undefined;
+      const booking = promoCode ? { ...built, promoCode } : built;
+      // The booking's quote names them; a website booking has none, so its own snapshot does.
+      const fromQuote = addOnsBy.get(row.id);
+      const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
+      return addOns.length ? { ...booking, addOns } : booking;
     });
   }
 
-  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<Booking> {
+  async create(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<Booking> {
     if (opts?.idempotencyKey) {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
@@ -309,7 +433,7 @@ export class PostgresBookingRepo implements BookingRepo {
     throw lastErr;
   }
 
-  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold }): Promise<BookingRow> {
+  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string; promo?: PromoHold; pricingSnapshot?: WebsitePricingSnapshot }): Promise<BookingRow> {
     const c = b.input.customer;
     return this.db.transaction(async (tx) => {
       // Re-reads the code under FOR UPDATE: a code switched off or filled mid-request is not honoured.
@@ -350,9 +474,11 @@ export class PostgresBookingRepo implements BookingRepo {
           billingPostcode: b.billing?.postcode ?? null,
           billingState: b.billing?.state ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
+          customerNotes: b.customerNotes ?? null,
           discountTotal: b.mode !== 'shared' && b.discountTotal !== undefined ? b.discountTotal : null,
           promoCodeId: opts?.promo ? opts.promo.code.id : null,
           promoHoldUntil: opts?.promo ? new Date(opts.promo.now.getTime() + PROMO_HOLD_MS) : null,
+          pricingSnapshotJson: opts?.pricingSnapshot ?? null,
         })
         .returning();
       if (b.mode === 'trip') {
@@ -367,6 +493,7 @@ export class PostgresBookingRepo implements BookingRepo {
           dates: t.dates ?? null,
           days: t.days ?? null,
           driverNights: t.driverNights ?? null,
+          routeVariants: t.routeVariants ?? null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;
@@ -394,6 +521,7 @@ export class PostgresBookingRepo implements BookingRepo {
           bags: t.bags,
           distanceKm: b.distanceKm ?? null,
           durationMin: b.durationMin ?? null,
+          routeVariant: t.routeVariant ?? null,
         });
       }
       const legs = safeLegRowsForBooking(bk.id, b);
@@ -545,29 +673,59 @@ export class PostgresBookingRepo implements BookingRepo {
     return fresh;
   }
 
-  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
-    const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
-    if (!row) throw new BookingNotFoundError(id);
-    const from = row.status as BookingStatus;
-    assertTransition(from, to);
-    // Compare-and-set: only move the row if it is STILL in `from`, so two concurrent
-    // transitions (e.g. a double-cancel) can't both win and double-release seats.
-    const [updated] = await this.db
-      .update(bookings)
-      .set({
-        status: to,
-        // Only a cancellation carries a reason; every other transition leaves these untouched.
-        ...(to === 'cancelled' && audit
-          ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
-          : {}),
-      })
-      .where(and(eq(bookings.id, id), eq(bookings.status, from)))
-      .returning();
-    if (!updated) {
-      const [current] = await this.db.select().from(bookings).where(eq(bookings.id, id));
-      throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, to);
-    }
+  async setStatus(
+    id: string,
+    to: BookingStatus,
+    audit?: StatusAudit,
+    context?: BookingTransitionContext,
+  ): Promise<Booking> {
+    const updated = await this.db.transaction((tx) => applyBookingStatusTransition(tx, {
+      id, to, audit, context,
+      transitionTrackingEnabled: this.options.transitionTrackingEnabled,
+    }));
     return this.assemble(updated);
+  }
+
+  async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
+    const rows = await this.db
+      .select()
+      .from(bookingStatusEvents)
+      .where(eq(bookingStatusEvents.bookingId, bookingId))
+      .orderBy(
+        asc(bookingStatusEvents.occurredAt),
+        asc(bookingStatusEvents.id),
+      );
+    return rows.map(buildStatusEvent);
+  }
+
+  async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
+    const latest = this.db
+      .selectDistinctOn([bookingStatusEvents.bookingId], {
+        bookingId: bookingStatusEvents.bookingId,
+        eventStatus: bookingStatusEvents.toStatus,
+      })
+      .from(bookingStatusEvents)
+      .orderBy(
+        bookingStatusEvents.bookingId,
+        desc(bookingStatusEvents.occurredAt),
+        desc(bookingStatusEvents.id),
+      )
+      .as('latest_booking_status_event');
+    const rows = await this.db
+      .select({
+        bookingId: bookings.id,
+        currentStatus: bookings.status,
+        eventStatus: latest.eventStatus,
+      })
+      .from(bookings)
+      .innerJoin(latest, eq(bookings.id, latest.bookingId))
+      .where(ne(bookings.status, latest.eventStatus))
+      .orderBy(asc(bookings.id));
+    return rows.map((row) => ({
+      bookingId: row.bookingId,
+      currentStatus: row.currentStatus as BookingStatus,
+      eventStatus: row.eventStatus as BookingStatus,
+    }));
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {

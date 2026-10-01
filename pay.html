@@ -14,13 +14,14 @@
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js: it tags every event, the Clarity session and
      the error beacon, and it is what lets one GTM container tell the pay page apart from a
      blog post. See docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='pay';</script>
-<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="analytics.js?v=72fed96a54"></script>
 <!-- No consent script at all (owner, 2026-08-16). A customer mid-payment was never the
      audience for a floating cookie card, and the strip that replaced it is gone too: the
      head now defaults analytics_storage to GRANTED site-wide, so this page collects without
@@ -455,6 +456,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return v ? '<div' + (sensitive ? MASK : '') + '><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>' : '';
   }
 
+  // The add-ons on the pass get its full width, one per line: in a third of a phone-width grid,
+  // two of them wrapped into seven lines. Nothing when none were chosen.
+  function passAddOnsCell(addOns){
+    if (!addOns || !addOns.length) return '';
+    return '<div style="grid-column:1/-1"><div class="k">Extras</div><div class="v">'
+      + addOns.map(function(a){ return esc(a); }).join('<br>') + '</div></div>';
+  }
+
   function renderPaid(p){
     p = p || {};
     var wrap = document.querySelector('.pp-wrap');
@@ -489,6 +498,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +       passCell('Days', fact('Days'))
       +       passCell('Lead guest', p.leadName || '', true)
       +       passCell('Paid', p.amountUsd || '')
+      +       passAddOnsCell(p.addOns)
       +     '</div>'
       +   '</div>'
       +   '<div class="pass-stub">'
@@ -504,6 +514,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<li>Your driver and vehicle details will be sent on WhatsApp before pickup.</li>'
       + '<li>Need anything? Just reply on WhatsApp.</li></ul></div>'
       + '</div>' + waLine();
+  }
+
+  // The add-ons the customer chose, as the quote names them (copy.addOns). Whole-trip links only:
+  // a partial link's receipt lines already name each add-on it charges. Nothing when none.
+  function addOnsHtml(addOns){
+    if (!addOns || !addOns.length) return '';
+    return '<div class="fact"><span class="k">Extras</span><span class="v">'
+      + addOns.map(function(a){ return esc(a); }).join('<br>') + '</span></div>';
   }
 
   // ── the ticket ──────────────────────────────────────────────────────────────────────
@@ -524,12 +542,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           + (uncovered ? '<span class="hop-x">not in this payment</span>' : '')
           + '</div></div></div>';
       }).join('');
-      return '<div class="hops">' + rows + '</div>';
+      return '<div class="hops">' + rows + '</div>' + addOnsHtml(c.addOns);
     }
     return c.facts.map(function(f){
       return '<div class="fact"><span class="k">' + esc(f.k) + '</span><span class="v">' + esc(f.v)
         + (f.sub ? '<small>' + esc(f.sub) + '</small>' : '') + '</span></div>';
-    }).join('');
+    }).join('') + addOnsHtml(c.addOns);
   }
 
   function renderPayable(){

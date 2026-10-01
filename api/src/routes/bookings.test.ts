@@ -147,6 +147,24 @@ describe('POST /bookings/single', () => {
     expect(b.total).toBe(8999); // raw 9149¢ incl. extras → crosses the $90 threshold
   });
 
+  // The add-on a website customer paid for used to be priced and then dropped: nothing on the
+  // booking said which. The booking now keeps the engine's own priced lines, so every email, the ops
+  // drawer and the manage card can name it — and only when one was chosen.
+  it('keeps the add-ons a website customer paid for, and names them on the booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['sightseeing'] });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    expect((await bookings.get(body.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    // The stored lines stay server-side (they carry pricing internals); the response never has them.
+    expect(JSON.stringify(body)).not.toContain('lineItems');
+
+    const plain = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' })).json();
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
+  });
+
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
     const fake = new FakeMapsAdapter();
     let calls = 0;
@@ -213,6 +231,102 @@ describe('POST /bookings/single', () => {
     expect(r1.status).toBe(201);
     expect(r2.status).toBe(200);
     expect((await r1.json()).id).toBe((await r2.json()).id);
+  });
+});
+
+// The details step asks "Anything we should know?" (hotel name, dietary needs, surf gear). Until
+// 2026-09-27 nothing read that box, so what a customer wrote there never reached ops. The note is
+// the customer's own free text, so it is bounded and cleaned at the door, then kept as plain text.
+describe("the customer's note is kept on the booking", () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  // A future shared service day (Wed=3 / Sat=6), so a shared request reaches bookings.create.
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  it('keeps a transfer note, trimmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: '  Hilton Colombo, two surfboards  ' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hilton Colombo, two surfboards');
+  });
+
+  it('keeps the note on a trip and on a shared seat', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const trip = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: 'Vegetarian',
+    });
+    const shared = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+      customer: valid.customer, customerNotes: 'One big backpack',
+    });
+    expect(trip.status).toBe(201);
+    expect(shared.status).toBe(201);
+    expect((await bookings.get((await trip.json()).id))?.customerNotes).toBe('Vegetarian');
+    expect((await bookings.get((await shared.json()).id))?.customerNotes).toBe('One big backpack');
+  });
+
+  it('stores a blank note as no note', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const blank = await (await post(app, { ...valid, customerNotes: ' \n\t ' })).json();
+    const none = await (await post(app, valid)).json();
+    expect((await bookings.get(blank.id))?.customerNotes).toBeNull();
+    expect((await bookings.get(none.id))?.customerNotes).toBeNull();
+  });
+
+  // A NUL byte is rejected by Postgres text columns, so left in it would 500 the booking.
+  it('keeps line breaks and drops invisible control characters', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: 'Hotel: Galle Face\r\nFlight\u0000 UL\u0007 504\u001b' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hotel: Galle Face\nFlight UL 504');
+  });
+
+  it('refuses a note over 1,000 characters on every booking route, and creates no booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const long = 'x'.repeat(1001);
+    const responses = [
+      await post(app, { ...valid, customerNotes: long }),
+      await jpost(app, '/bookings/trip', {
+        stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+        pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: long,
+      }),
+      await jpost(app, '/bookings/shared', {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+        customer: valid.customer, customerNotes: long,
+      }),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('invalid_notes');
+      expect(body.message).toContain('1,000');
+    }
+    expect(await bookings.list()).toHaveLength(0);
+    // Exactly at the limit is fine.
+    expect((await post(app, { ...valid, customerNotes: 'x'.repeat(1000) })).status).toBe(201);
+  });
+
+  it('refuses a note that is not text', async () => {
+    const app = createApp();
+    for (const customerNotes of [42, { $gt: '' }, ['a', 'b'], true]) {
+      const res = await post(app, { ...valid, customerNotes });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('invalid_notes');
+    }
   });
 });
 
@@ -571,6 +685,50 @@ describe('a Maps outage must not silently reprice', () => {
       headers: { authorization: `Bearer ${b.checkoutToken}` },
     });
     expect(checkout.status).toBe(200);
+  });
+});
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): a single
+// transfer prices the road it was asked for, server-side, and never silently swaps roads
+// under the customer — a fork that vanishes between quote and booking refuses to charge.
+describe('POST /bookings/single — route choice (spec §4.2)', () => {
+  const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
+    "The local road isn't available for this trip right now, so nothing was charged. We've switched the price back to the expressway. Please check it and book again.";
+
+  const forkMaps: MapsAdapter = {
+    provider: 'fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+  };
+  const noForkMaps: MapsAdapter = {
+    provider: 'no-fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: null, hasChoice: false }),
+  };
+
+  it('books the toll-free road and stores/returns its own km + minutes', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.distanceKm).toBe(213);
+    expect(b.durationMin).toBe(374);
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'single') throw new Error('expected a single booking');
+    expect(got.input.routeVariant).toBe('no_tolls');
+  });
+
+  it('422s with route_choice_unavailable and creates no booking when the road cannot be confirmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: noForkMaps });
+    const before = await bookings.list();
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'route_choice_unavailable', message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE });
+    expect(await bookings.list()).toHaveLength(before.length);
   });
 });
 

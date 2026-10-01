@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
@@ -15,6 +16,11 @@ import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
+import { ObservingEmailAdapter } from './adapters/observingEmail';
+import {
+  InMemoryCustomerCommunicationRepo,
+  type CustomerCommunicationRepo,
+} from './db/customerCommunicationRepo';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
@@ -63,6 +69,7 @@ import { customerShortLinkRoutes } from './routes/customerShortLink';
 import { InMemoryPromoCodeRepo, type PromoCodeRepo } from './db/promoCodeRepo';
 import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './services/watchdog';
 import type { AnalyticsDataRepo } from './db/analyticsDataRepo';
+import { requestCorrelation, REQUEST_ID_HEADER } from './lib/correlation';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -83,6 +90,9 @@ export interface AppDeps {
   customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
   customerVerifier?: JwtVerifier; // test seam for the customer Google login
   email?: EmailAdapter;
+  customerCommunications?: CustomerCommunicationRepo;
+  /** Independent, default-off M23.5 customer email observation switch. */
+  communicationTrackingEnabled?: boolean;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
@@ -189,10 +199,20 @@ export function createApp(deps: AppDeps = {}) {
   const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
   // Every outbound message — customer, ops and alert alike — goes through the guard, so
   // there is one place that decides whether mail may leave this environment at all.
-  const email = new GuardedEmailAdapter(
+  const guardedEmail = new GuardedEmailAdapter(
     deps.email ?? new FakeEmailAdapter(),
     deps.emailPolicy ?? { enabled: config.NOTIFICATIONS_ENABLED, allowlist: parseAllowlist(config.EMAIL_ALLOWLIST) },
   );
+  const communicationTrackingEnabled =
+    deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED;
+  const customerCommunications =
+    deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo();
+  const email = communicationTrackingEnabled
+    ? new ObservingEmailAdapter(
+        guardedEmail,
+        customerCommunications,
+      )
+    : guardedEmail;
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
@@ -203,6 +223,9 @@ export function createApp(deps: AppDeps = {}) {
   // discount saves into an object nothing ever queries.
   const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
+  // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
+  // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
   // save is seen by all of them at once. Empty ⇒ the code card.
@@ -252,6 +275,10 @@ export function createApp(deps: AppDeps = {}) {
     ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
+
+  // One server-owned id follows the request through every mounted route and is returned to the
+  // caller for support diagnosis. Incoming X-Request-Id is never trusted as this primary id.
+  app.use('*', requestCorrelation());
 
   const reportApiError = (failure: unknown, method: string, route: string): void => {
     const err = failure instanceof Error ? failure : new Error(String(failure));
@@ -329,6 +356,7 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      exposeHeaders: [REQUEST_ID_HEADER],
       // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
       // on Pages → API on Render). Only the allow-listed origins above can read responses;
       // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
@@ -372,6 +400,12 @@ export function createApp(deps: AppDeps = {}) {
   // Founder promo-code API (spec 2026-09-14 §6.5). Session-gated, but still throttled like the other
   // admin surfaces. Hono's '/admin/promo-codes/*' also matches the bare parent path.
   app.use('/admin/promo-codes/*', rateLimit({ ...rl, methods: ['POST', 'GET', 'PATCH'] }));
+
+  // The limits above bound how OFTEN; this bounds how BIG. Uncapped, every write read and parsed a
+  // multi-megabyte body before Zod refused it. Whole app, so a new route can't be left out; 1 MB is
+  // ~100x the largest real booking (~10 KB). Its own 413, not the middleware's default throw —
+  // app.onError below would turn that into a 500 and an alert.
+  app.use('*', bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: 'payload_too_large' }, 413) }));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
@@ -510,6 +544,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       notificationLog,
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
+      ...(communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,

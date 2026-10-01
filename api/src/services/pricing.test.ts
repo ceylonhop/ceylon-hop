@@ -1,9 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { quoteSingleTransfer, quoteTrip, quoteShared, priceSingle, priceTrip, priceShared, InvalidPricingRequestError } from './pricing';
-import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import {
+  quoteSingleTransfer,
+  quoteTrip,
+  quoteShared,
+  priceSingle,
+  priceTrip,
+  priceShared,
+  InvalidPricingRequestError,
+  ROUTE_CHOICE_UNAVAILABLE,
+} from './pricing';
+import { FakeMapsAdapter, type MapsAdapter, type DistanceResult, type RouteVariants } from '../adapters/maps';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import { RATE_CARD } from '../quote/rateCard';
+import { quote } from '../quote/engine';
 
 const base: SingleTransferInput = {
   from: 'A',
@@ -78,24 +88,34 @@ const single: SingleTransferInput = { ...base, from: 'Kandy', to: 'Ella', adults
 describe('priceSingle (engine-backed)', () => {
   it('prices a resolvable route with the engine (car per-km × billable km)', async () => {
     const p = await priceSingle(single, maps);
-    expect(p).toEqual({ currency: 'USD', totalCents: 3900, amountDueNowCents: 3900, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 3900, amountDueNowCents: 3900, priced: true, breakdown: expect.anything() });
   });
 
   it('prices a van at the van rate', async () => {
     const p = await priceSingle({ ...single, vehicleType: 'van' }, maps);
     // $53.45 crosses to the van floor itself, $49.99 — the threshold and the floor coincide.
-    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true, breakdown: expect.anything() });
   });
 
   it('adds priced extras from the payload', async () => {
     const p = await priceSingle({ ...single, extras: ['luggage', 'front'] }, maps);
     // 3945 + luggage 500 + front 800 = 5245, which is in reach of the $50 threshold
-    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true, breakdown: expect.anything() });
+  });
+
+  // A website booking keeps what the engine priced — its request and lines — so it can later name
+  // the add-ons the customer paid for, the same way a quote's stored lines do.
+  it('keeps the request and the lines it priced', async () => {
+    const p = await priceSingle({ ...single, extras: ['sightseeing'] }, maps);
+    if (!p.priced) throw new Error('expected a priced outcome');
+    expect(p.breakdown?.engine).toMatchObject({ product: 'private', vehicle: 'car', extras: ['sightseeing'] });
+    expect(p.breakdown?.result.lineItems.map((l) => l.label)).toContain('Sightseeing stops (up to 3h)');
+    expect(p.breakdown?.result.totalCents).toBe(p.totalCents);
   });
 
   it('upgrades the vehicle when the party does not fit (engine authority, never underprice)', async () => {
     const p = await priceSingle({ ...single, adults: 5 }, maps); // 5 pax can't ride a car
-    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 4999, amountDueNowCents: 4999, priced: true, breakdown: expect.anything() });
   });
 
   it('returns priced:false when the route cannot be resolved', async () => {
@@ -130,7 +150,7 @@ describe('priceTrip (engine-backed) — private', () => {
   it('prices each consecutive stop pair as an engine leg', async () => {
     const p = await priceTrip(knownTrip, maps);
     // CMB→Kandy 4991 + Kandy→Ella 3945
-    expect(p).toEqual({ currency: 'USD', totalCents: 8900, amountDueNowCents: 8900, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 8900, amountDueNowCents: 8900, priced: true, breakdown: expect.anything() });
   });
 
   it('returns priced:false when any leg cannot be resolved', async () => {
@@ -169,26 +189,26 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
     );
     // days 3 (20th→22nd), idle 1 → billable 222 + 50 = 272 km
     // 3×3105 + round(272×40.25) = 9315 + 10948 = 20263
-    expect(p).toEqual({ currency: 'USD', totalCents: 19900, amountDueNowCents: 19900, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 19900, amountDueNowCents: 19900, priced: true, breakdown: expect.anything() });
   });
 
   it('synthesizes dates from `days` when the trip is flexible (engine only counts the span)', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 4 }, maps);
     // days 4, 2 travel legs → idle 2 → billable 222 + 100 = 322 km
     // 4×3105 + round(322×40.25) = 12420 + 12961 = 25381; $249 is out of budget, cents drop
-    expect(p).toEqual({ currency: 'USD', totalCents: 25300, amountDueNowCents: 25300, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 25300, amountDueNowCents: 25300, priced: true, breakdown: expect.anything() });
   });
 
   it('defaults the span to one day per leg when `days` is absent', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur' }, maps);
     // days 2, idle 0 → 2×3105 + round(222×40.25) = 6210 + 8936 = 15146
-    expect(p).toEqual({ currency: 'USD', totalCents: 14900, amountDueNowCents: 14900, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 14900, amountDueNowCents: 14900, priced: true, breakdown: expect.anything() });
   });
 
   it('clamps extra legs onto the last day when there are more legs than days', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 1 }, maps);
     // both legs share the single day → days 1, idle 0 → 3105 + round(222×40.25)=8936 = 12041
-    expect(p).toEqual({ currency: 'USD', totalCents: 12000, amountDueNowCents: 12000, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 12000, amountDueNowCents: 12000, priced: true, breakdown: expect.anything() });
   });
 
   it('synthesizes when the payload dates are unusable (blank/partial)', async () => {
@@ -196,13 +216,93 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
       { ...knownTrip, serviceType: 'chauffeur', dates: ['2026-07-20', ''], days: 4 },
       maps,
     );
-    expect(p).toEqual({ currency: 'USD', totalCents: 25300, amountDueNowCents: 25300, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 25300, amountDueNowCents: 25300, priced: true, breakdown: expect.anything() });
   });
 });
 
 describe('priceShared (engine-agnostic — the corridor DB price is already authoritative)', () => {
   it('prices seats × the corridor seat price, all due now', () => {
     expect(priceShared(3, 2100)).toEqual({ currency: 'USD', totalCents: 6300, amountDueNowCents: 6300, priced: true });
+  });
+});
+
+// ── Customer route choice (spec 2026-09-26 §4.2): a booking prices the road it was asked for,
+// server-side, and never silently swaps roads under the customer. Stub adapter shape copied from
+// routeChoice.test.ts (not imported across test files) — FAST is the expressway, SLOW is the
+// toll-free fork the fake pins to Colombo City → Ella-shaped corridors.
+const RV_FAST: DistanceResult = { km: 335, durationMin: 299 };
+const RV_SLOW: DistanceResult = { km: 213, durationMin: 374 };
+function routeVariantStub(variants: RouteVariants | null): MapsAdapter {
+  return {
+    provider: 'stub',
+    async distance() { return RV_FAST; },
+    async distanceVariants() { return variants; },
+    async places() { return []; },
+  };
+}
+const RV_FORK = routeVariantStub({ fastest: RV_FAST, noTolls: RV_SLOW, hasChoice: true });
+const RV_NO_FORK = routeVariantStub({ fastest: RV_FAST, noTolls: null, hasChoice: false });
+
+describe('priceSingle — route variant (spec §4.2)', () => {
+  const rvInput: SingleTransferInput = { ...base, from: 'Colombo City', to: 'Ella', adults: 2, bags: 2 };
+
+  it('prices the toll-free road at its own km when a fork exists', async () => {
+    const p = await priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_FORK);
+    if (!p.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvInput.adults + rvInput.children,
+      bags: rvInput.bags,
+      legs: [{ from: rvInput.from, to: rvInput.to, distanceKm: 213 }],
+    });
+    expect(p.totalCents).toBe(expected.totalCents);
+  });
+
+  it('throws route_choice_unavailable without a fork — never silently switches road', async () => {
+    await expect(priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_NO_FORK)).rejects.toThrow(InvalidPricingRequestError);
+    await expect(priceSingle({ ...rvInput, routeVariant: 'no_tolls' }, RV_NO_FORK)).rejects.toMatchObject({ code: ROUTE_CHOICE_UNAVAILABLE });
+  });
+
+  it('"fastest" or absent behaves exactly as today', async () => {
+    const plain = await priceSingle(rvInput, RV_FORK);
+    const fastest = await priceSingle({ ...rvInput, routeVariant: 'fastest' }, RV_FORK);
+    expect(plain).toEqual(fastest);
+    if (!plain.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvInput.adults + rvInput.children,
+      bags: rvInput.bags,
+      legs: [{ from: rvInput.from, to: rvInput.to, distanceKm: 335 }],
+    });
+    expect(plain.totalCents).toBe(expected.totalCents);
+  });
+});
+
+describe('priceTrip — route variant (spec §4.2)', () => {
+  const rvTrip: TripInput = { ...trip, stops: ['Colombo Airport (CMB)', 'Ella', 'Yala'] };
+
+  it('prices each leg at the road actually requested', async () => {
+    const p = await priceTrip({ ...rvTrip, routeVariants: ['no_tolls', 'fastest'] }, RV_FORK);
+    if (!p.priced) throw new Error('expected a priced outcome');
+    const expected = quote({
+      product: 'private',
+      vehicle: 'car',
+      pax: rvTrip.pax,
+      bags: 0,
+      legs: [
+        { from: rvTrip.stops[0], to: rvTrip.stops[1], distanceKm: 213 },
+        { from: rvTrip.stops[1], to: rvTrip.stops[2], distanceKm: 335 },
+      ],
+    });
+    expect(p.totalCents).toBe(expected.totalCents);
+  });
+
+  it('throws route_choice_unavailable when the no_tolls leg has no fork', async () => {
+    await expect(priceTrip({ ...rvTrip, routeVariants: ['no_tolls', 'fastest'] }, RV_NO_FORK)).rejects.toMatchObject({
+      code: ROUTE_CHOICE_UNAVAILABLE,
+    });
   });
 });
 

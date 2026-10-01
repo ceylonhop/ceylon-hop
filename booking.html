@@ -26,9 +26,10 @@
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="analytics.js?v=72fed96a54"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -478,8 +479,34 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      price can neither shrink nor break across two lines. */
   .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft);min-width:0}
   .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem;overflow-wrap:anywhere}
+  .pay-summary-row .lbl .due-road{display:block;margin-top:2px;font-size:.8rem;color:var(--ink-soft);overflow-wrap:anywhere}
   .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem;flex:none;white-space:nowrap}
   .pay-summary-row .amt small{display:block;font-family:var(--body);font-weight:500;font-size:.72rem;color:var(--ink-soft);text-align:right}
+  /* Promo code (spec 2026-09-24-promo-code-field-design.md; mockup beside it) */
+  .promo{margin:0 0 12px}
+  .promo[hidden],.promo [hidden]{display:none!important}
+  .promo-toggle{background:none;border:none;padding:0;font-size:.88rem;font-weight:600;color:var(--accent-deep);display:inline-flex;align-items:center;gap:.4rem}
+  .promo-toggle:hover{text-decoration:underline;text-underline-offset:3px}
+  .promo-toggle svg,.promo-chip svg{width:15px;height:15px;flex:none}
+  .promo-form label{display:block;font-size:.82rem;font-weight:600;margin-bottom:.4rem;color:var(--ink)}
+  .promo-row{display:flex;gap:8px}
+  .promo-row input{flex:1;min-width:0;padding:.62rem .9rem;border:1.5px solid var(--line);border-radius:var(--r-sm);font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink);text-transform:uppercase;letter-spacing:.06em;transition:border .15s, box-shadow .15s}
+  .promo-row input::placeholder{text-transform:none;letter-spacing:0}
+  .promo-row input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.15)}
+  .promo-row input[readonly]{background:var(--cream)}
+  .promo-form.has-error input{border-color:#f4c9bb}
+  .promo-msg{margin:.4rem 0 0;font-size:.84rem;font-weight:500;color:#b13b22}
+  .promo-msg:empty{display:none}
+  .promo-msg.soft{color:var(--ink-soft)}
+  .promo-chip{display:inline-flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--pc-teal);border:1px solid #c6e8de;color:var(--teal-deep);border-radius:999px;padding:.4rem .5rem .4rem .8rem;font-size:.86rem}
+  .promo-chip b{color:var(--ink);letter-spacing:.06em}
+  .promo-chip .rm{background:none;border:none;padding:.1rem .45rem;border-radius:999px;font-size:.82rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
+  .promo-chip.off{display:flex;border-radius:12px;background:var(--cream-deep);border-color:var(--line);color:var(--ink-soft);padding:.5rem .5rem .5rem .8rem}
+  .promo-chip.off>span{flex:1;min-width:0;line-height:1.4}
+  .promo-chip.off b{color:var(--ink-soft)}
+  .s-row.s-promo[hidden]{display:none}
+  .s-row.s-promo b{color:var(--teal-deep)}
+  .s-row.s-promo.off b{color:var(--ink-soft);font-weight:500}
   .pay-choice{display:grid;gap:8px;margin-bottom:18px}
   .pay-choice .pc-opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s}
   .pay-choice .pc-opt.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
@@ -587,23 +614,32 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .summary .s-body{padding:20px}
   .summary h3{font-size:1.1rem;line-height:1.2;margin-bottom:.3rem;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3}
   .summary .s-estimate{margin:.55rem 0 .9rem;color:var(--ink-soft);font-size:.82rem;line-height:1.45}
+  .summary .s-road,.summary .s-road-note{margin:.55rem 0 .9rem;color:var(--ink-soft);font-size:.82rem;line-height:1.45}
+  .summary .s-estimate:not([hidden]) ~ .s-road,.summary .s-estimate:not([hidden]) ~ .s-road-note{margin-top:-.45rem}
   .route-estimate-status{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
   .s-row{display:flex;justify-content:space-between;font-size:.88rem;padding:.45rem 0;color:var(--ink-soft)}
   .s-row b{color:var(--ink);font-weight:600}
   .s-div{height:1px;background:var(--line);margin:8px 0}
   .s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
   .s-total b{font-family:var(--display);font-size:1.7rem}
-  /* While a fresh engine estimate is in flight the total is a STATUS, not a price, so it drops
-     the display face and the price weight — at 1.7rem "Calculating…" would also wrap the row.
-     Same rule serves #pay-due's amount and the sticky bar's mirror of this figure. The pulse is
-     decoration only: anyone who asked for less motion still gets the words. */
+  /* While a fresh engine estimate is in flight the figure is a placeholder, not a price: the
+     skeleton shimmer the search page shows where a fare will land (search.html .sk-amt), in the
+     same box. PRICING_LABEL stays inside it, transparent, so a screen reader still hears
+     "Calculating…" (the total also carries aria-busy). Same rule serves #pay-due's amount and the
+     sticky bar's mirror of this figure. Anyone who asked for less motion gets the still block. */
   .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
-    font-family:inherit;font-size:.92rem;font-weight:600;color:var(--ink-soft)}
+    display:inline-block;width:74px;height:1.6rem;overflow:hidden;white-space:nowrap;vertical-align:middle;
+    font-family:inherit;font-size:.92rem;color:transparent;border-radius:7px;
+    background:linear-gradient(90deg,var(--cream-deep) 25%,var(--paper) 50%,var(--cream-deep) 75%);
+    background-size:240% 100%}
+  /* Due now sits on a --cream-deep row, where that block would vanish: same shimmer, a tone up. */
+  #pay-due .amt.is-pricing{
+    background-image:linear-gradient(90deg,var(--paper) 25%,var(--cream) 50%,var(--paper) 75%)}
   @media (prefers-reduced-motion:no-preference){
     .s-total b.is-pricing,#pay-due .amt.is-pricing,.mbar-total b.is-pricing{
-      animation:chPricing 1.15s ease-in-out infinite}
+      animation:chPricing 1.3s ease-in-out infinite}
   }
-  @keyframes chPricing{0%,100%{opacity:.5}50%{opacity:1}}
+  @keyframes chPricing{0%{background-position:120% 0}100%{background-position:-120% 0}}
   .s-perks{margin-top:14px;display:grid;gap:6px;font-size:.78rem;color:var(--ink-soft)}
   .s-perks div{display:flex;gap:.4rem;align-items:center}.s-perks svg{width:13px;height:13px;color:var(--teal-deep);flex:none}
 
@@ -928,7 +964,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="field"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name"><option>Sri Lanka</option><option>Australia</option><option>Austria</option><option>Belgium</option><option>Canada</option><option>China</option><option>Denmark</option><option>Finland</option><option>France</option><option>Germany</option><option>India</option><option>Ireland</option><option>Italy</option><option>Japan</option><option>Netherlands</option><option>New Zealand</option><option>Norway</option><option>Singapore</option><option>Spain</option><option>Sweden</option><option>Switzerland</option><option>United Arab Emirates</option><option>United Kingdom</option><option>United States</option><option>Other</option></select></div>
         <div class="field"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="77 123 4567"></div>
       </div>
-      <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
+      <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" maxlength="1000" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
 
       <!-- Billing details (2026-08-03). These go to the card gateway, and until now this page
            collected none of them: PayHere asked for the address in its own popup a step later,
@@ -956,6 +992,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <h2 id="pay-title">Payment</h2>
       <p class="sub" id="pay-sub">Pay securely to confirm. Free cancellation up to 24 hours before.</p>
       <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from <span data-ta-count>31</span> travellers on Tripadvisor</p>
+      <!-- Promo code (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md). Hidden
+           until booking.js's PROMO_FIELD_ENABLED switch is on; renderPromo() owns every state. -->
+      <div class="promo" id="promo" hidden>
+        <button type="button" class="promo-toggle" id="promo-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>Have a promo code?</button>
+        <div class="promo-form" id="promo-form" hidden>
+          <label for="promo-input">Promo code</label>
+          <div class="promo-row"><input id="promo-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" placeholder="Enter code"><button type="button" class="btn btn-primary btn-sm" id="promo-apply">Apply</button></div>
+        </div>
+        <div class="promo-chip" id="promo-chip" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg><span id="promo-chip-text"></span><button type="button" class="rm" id="promo-remove">Remove</button></div>
+        <p class="promo-msg" id="promo-msg" role="status" aria-live="polite"></p>
+      </div>
       <div class="pay-summary-row" id="pay-due"></div>
       <div class="pay-methods">
         <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12.5" rx="2.5"/><path d="M3 10.5h18"/><path d="M6.5 15h4" stroke-dasharray="2.2 2.6"/><circle class="wp" cx="17.2" cy="14.9" r="1.5"/></svg> Card &middot; via PayHere secure checkout</div>
@@ -995,6 +1042,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <span class="pill pill-teal pill-dot" id="sum-type" style="margin-bottom:8px"></span>
         <h3 id="sum-name"></h3>
         <p class="s-estimate" id="sum-route-estimate"></p>
+        <p class="s-road" id="sum-road" hidden></p>
+        <p class="s-road-note" id="sum-road-note" role="status" hidden></p>
         <div class="route-estimate-status" id="route-estimate-status" aria-live="polite" aria-atomic="true"></div>
         <div class="s-row"><span>Date</span><b id="sum-date">—</b></div>
         <div class="s-row"><span>Departure</span><b id="sum-time">—</b></div>
@@ -1003,6 +1052,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="s-row"><span id="sum-adlabel">Adults</span><b id="sum-adamt"></b></div>
         <div class="s-row" id="sum-chrow" style="display:none"><span id="sum-chlabel">Children</span><b id="sum-chamt"></b></div>
         <div id="sum-addons"></div>
+        <div class="s-row s-promo" id="sum-promo" hidden><span id="sum-promo-label"></span><b id="sum-promo-amt"></b></div>
         <div class="s-div"></div>
         <div class="s-total"><span class="muted">Total</span><b id="sum-total"></b></div>
         <div class="s-perks">
@@ -1107,7 +1157,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
 </div>
 
-<script src="site.js?v=81c109a6ac"></script>
+<script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
 <script src="transfers-data.js?v=7988bba57e"></script>
@@ -1124,6 +1174,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=fe293b228e"></script>
+<script src="booking.js?v=715426f48b"></script>
 </body>
 </html>

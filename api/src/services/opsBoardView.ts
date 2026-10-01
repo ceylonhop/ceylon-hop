@@ -100,6 +100,8 @@ export function rideListToOpsRow(
     // One row per VAN, not per customer — and the board never stores a phone number.
     customerPhone: null,
     route: `${list.fromPlace} → ${list.toPlace}`,
+    // The board sells seats in a van, not a road choice.
+    road: null,
     travelDate: list.date,
     travelTime: departureTime(list),
     pax: seats,
@@ -110,6 +112,8 @@ export function rideListToOpsRow(
     source: 'ride_board',
     // A van row is a projection of many travellers, not one customer email.
     isTest: false,
+    createdAt: list.createdAt.toISOString(),
+    serviceType: null,
     board: {
       code: list.code,
       listStatus: list.status,

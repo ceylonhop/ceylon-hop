@@ -5,6 +5,8 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as schema from './schema';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
+import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
+import { makePromoCode } from './promoCodeRepo.test';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -38,6 +40,7 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
   let statements = 0;
   let bookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
+  let promoCodes: PostgresPromoCodeRepo;
 
   beforeAll(async () => {
     // postgres.js runs a one-off pg_catalog type lookup the first time each pooled connection
@@ -47,19 +50,27 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
     await migrate(db, { migrationsFolder: 'drizzle' });
     bookings = new PostgresBookingRepo(db);
     payments = new PostgresPaymentRepo(db);
+    promoCodes = new PostgresPromoCodeRepo(db);
   });
 
   it('reads a queue of N bookings across every mode in a fixed number of statements', async () => {
     // Six bookings, two per mode, so a per-row customer or request lookup shows up as 6 or 12
     // extra statements — unmistakable against the bound below.
     for (const b of [single, trip, shared, single, trip, shared]) await bookings.create(b);
+    // Two made with a promo code, so the codes' names are always read here — not only when another
+    // file sharing this database happened to leave a promo draft behind.
+    const now = new Date();
+    const code = await promoCodes.create(makePromoCode(), now);
+    for (let i = 0; i < 2; i++) await bookings.create({ ...single, discountTotal: 500 }, { promo: { code, now } });
 
     statements = 0;
     const rows = await bookings.list({ status: ['draft'] });
 
     expect(rows.length).toBeGreaterThanOrEqual(6);
-    // bookings + customers + one per request table (transfer / trip / shared) = 5.
-    expect(statements).toBeLessThanOrEqual(5);
+    // bookings + customers + one per request table (transfer / trip / shared) + the quotes the
+    // add-ons are read from + the promo codes' names = 7. A fixed count: a per-row lookup would add
+    // 6 or 12. The last five run side by side (Promise.all), so they are not five more round-trips.
+    expect(statements).toBeLessThanOrEqual(7);
   });
 
   it('list() assembles the same booking get() does', async () => {

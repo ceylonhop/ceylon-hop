@@ -4,6 +4,7 @@ import type { NotificationLogRepo, NotificationKind } from '../db/notificationLo
 import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
 // review request once travel is this far in the past. The cron tick is idempotent via
@@ -68,6 +69,9 @@ export async function runScheduledNotifications(
     // Dry run (R7) — evaluate everything, write nothing, send nothing, and report the plan.
     // What you run after a migration touches booking state, before letting the real tick fire.
     dryRun?: boolean;
+    // Phase A correlation seam. Production job routes always provide it; persistence lands in
+    // later slices. Optional so pure service callers and existing tests remain source-compatible.
+    correlation?: TrackingCorrelation;
   },
 ): Promise<{ reminders: number; reviews: number; plan?: PlannedSend[] }> {
   const { bookings, log, email, baseUrl, linkSecret, budget, maxTripAgeDays, epoch, dryRun } = deps;
@@ -152,6 +156,7 @@ export async function sweepStaleSharedHolds(deps: {
   bookings: BookingRepo;
   departures: DepartureRepo;
   now: Date;
+  correlation?: TrackingCorrelation;
 }): Promise<{ swept: number }> {
   const { bookings, departures, now } = deps;
   let swept = 0;
@@ -160,7 +165,12 @@ export async function sweepStaleSharedHolds(deps: {
       if (b.mode !== 'shared') continue;
       if (now.getTime() - Date.parse(b.createdAt) <= STALE_HOLD_MS) continue;
       try {
-        await bookings.setStatus(b.id, 'cancelled');
+        await bookings.setStatus(b.id, 'cancelled', undefined, {
+          source: 'scheduled_job',
+          actorType: 'scheduler',
+          ...deps.correlation,
+          reason: 'stale_shared_hold',
+        });
         await departures.releaseSeats({
           corridorId: b.input.corridorId,
           date: b.input.date,

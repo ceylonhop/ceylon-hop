@@ -305,6 +305,15 @@ export class PostgresRideListRepo implements RideListRepo {
     await this.sql`update ride_list_member set status = ${status} where list_id = ${listId} and sub = ${sub}`;
   }
 
+  async claimMemberForCharge(listId: string, sub: string): Promise<boolean> {
+    // One conditional UPDATE: two sweeps racing for the same member cannot both see `held`.
+    const rows = await this.sql`
+      update ride_list_member set status = 'charged'
+      where list_id = ${listId} and sub = ${sub} and status = 'held'
+      returning sub`;
+    return rows.length === 1;
+  }
+
   async dueForCutoff(now: Date): Promise<RideListWithMembers[]> {
     const rows = await this.sql<ListRow[]>`
       select * from ride_list where status = 'gathering' and cutoff_at <= ${now}`;

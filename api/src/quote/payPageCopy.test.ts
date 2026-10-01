@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { payPageCopy } from './payPageCopy';
+import { quote } from './engine';
+import { RATE_CARD } from './rateCard';
+import type { QuoteRequest } from './types';
 
 // The pay page's words are DERIVED, never typed: everything comes from the quote the
 // operator already built, so nothing surprising can be shown to a customer. These tests
@@ -261,5 +264,71 @@ describe('payPageCopy — partial link', () => {
     const copy = payPageCopy(q);
     expect(copy.totalLabel).toBe('Total · all 4 journeys');
     expect(copy.legs!.every((l) => l.covered === undefined)).toBe(true);
+  });
+});
+
+// The add-ons the customer chose, named as the quote names them. Read off the stored lines, so a
+// quote priced through the REAL engine is the fixture.
+describe('payPageCopy — the add-ons the customer chose', () => {
+  function priced(legs: ReturnType<typeof leg>[], extras: Extract<QuoteRequest, { product: 'private' }>['extras']) {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: legs.map((l) => ({ from: l.from, to: l.to, distanceKm: 120 })), extras,
+    };
+    const result = quote(engine, RATE_CARD);
+    return { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool(legs), engine }, result };
+  }
+
+  it('a single transfer names its add-on', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08')], [{ code: 'waiting', legIndex: 0 }]);
+    expect(payPageCopy(q).addOns).toEqual(['Waiting up to 3hrs']);
+  });
+
+  it('a multi-leg trip names each add-on after its journey', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08'), leg('Ella', 'Yala', '2026-08-09')], [{ code: 'safari-wait', legIndex: 1 }]);
+    expect(payPageCopy(q).addOns).toEqual(['Wait for Safari — Ella → Yala']);
+  });
+
+  // Owner call 2026-09-27: in the Included list waiting and sightseeing read "Waiting up to 3hrs" and
+  // "Sightseeing up to 3hrs" — the stored label carries the whole stop chain ("Sightseeing stops (up to 3h) —
+  // Galle → Seetha Amman Temple, Seetha Eliya, Sri Lanka → … → Nuwara Eliya"), which repeated
+  // every stop on every row. Listed once each, however many journeys carry one.
+  it('lists waiting and sightseeing by name only, once each', () => {
+    const stops = ['Galle', 'Seetha Amman Temple, Seetha Eliya, Sri Lanka', 'Gregory Lake, Nuwara Eliya, Sri Lanka', 'Nuwara Eliya'];
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ stops, segmentKms: [100, 5, 3] }, { from: 'Nuwara Eliya', to: 'Negombo', distanceKm: 180 }],
+      extras: [
+        { code: 'sightseeing', legIndex: 0 }, { code: 'waiting', legIndex: 0 },
+        { code: 'sightseeing', legIndex: 1 }, { code: 'waiting', legIndex: 1 },
+      ],
+    };
+    const result = quote(engine, RATE_CARD);
+    const toolLegs = [{ stops, category: 'transfer' }, leg('Nuwara Eliya', 'Negombo')];
+    const q = { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool(toolLegs), engine }, result };
+    expect(payPageCopy(q).addOns).toEqual(['Sightseeing up to 3hrs', 'Waiting up to 3hrs']);
+  });
+
+  // Any other add-on keeps its journey, named by its ends like the leg row — never every stop.
+  it('names another add-on\'s multi-stop journey by its ends', () => {
+    const stops = ['Ella', 'Ravana Falls, Ella, Sri Lanka', 'Yala'];
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ stops, segmentKms: [5, 90] }], extras: [{ code: 'safari-wait', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = { customerName: 'Emma', vehicle: 'car', totalCents: result.totalCents, request: { tool: tool([{ stops, category: 'transfer' }]), engine }, result };
+    expect(payPageCopy(q).addOns).toEqual(['Wait for Safari — Ella → Yala']);
+  });
+
+  it('says nothing about add-ons when none were chosen', () => {
+    expect(payPageCopy(priced([leg('Kandy', 'Ella')], [])).addOns).toBeUndefined();
+    expect(payPageCopy(quoteOf({})).addOns).toBeUndefined(); // no stored lines at all
+  });
+
+  // A partial link's receipt lines (pay.html linesHtml) already name every add-on it charges.
+  it('leaves a partial link’s add-ons to its receipt lines', () => {
+    const q = priced([leg('Kandy', 'Ella', '2026-08-08'), leg('Ella', 'Galle', '2026-08-09')], [{ code: 'waiting', legIndex: 0 }]);
+    expect(payPageCopy(q, { legIndexes: [0], extraIndexes: [0] }).addOns).toBeUndefined();
   });
 });

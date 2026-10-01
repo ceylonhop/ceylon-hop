@@ -65,3 +65,64 @@ describe('projectBooking surfaces the whole journey', () => {
     }
   });
 });
+
+// The add-ons the customer chose reach the manage card as the booking carries them (booking.addOns,
+// read off its quote). Only when there are some: no empty row on a booking without add-ons.
+describe('projectBooking names the add-ons the customer chose', () => {
+  it('passes the booking add-ons through, on a trip and a transfer', () => {
+    const trip = { ...tripBooking, addOns: ['Waiting fee — Sigiriya → Kandy'] } as unknown as Booking;
+    const single = { ...singleBooking, addOns: ['Sightseeing stops (up to 3h)'] } as unknown as Booking;
+    expect(projectBooking(trip).addOns).toEqual(['Waiting fee — Sigiriya → Kandy']);
+    expect(projectBooking(single).addOns).toEqual(['Sightseeing stops (up to 3h)']);
+  });
+
+  it('leaves the field out when nothing was chosen', () => {
+    expect(projectBooking(singleBooking)).not.toHaveProperty('addOns');
+    expect(projectBooking(tripBooking)).not.toHaveProperty('addOns');
+  });
+});
+
+// The road the customer paid for, when it isn't the expressway (route choice, spec §4.3). The
+// manage card is where a paying customer lands, and it was the one customer view that never said
+// which road they bought. Same words as the emails (roadRow). Only when there is one: every
+// existing booking's view keeps exactly the keys it had.
+describe('projectBooking names the local road the customer chose', () => {
+  it('a transfer on the local road says so, with its drive time', () => {
+    const b = { ...singleBooking, durationMin: 374, input: { ...(singleBooking as never as { input: Record<string, unknown> }).input, routeVariant: 'no_tolls' } } as unknown as Booking;
+    expect(projectBooking(b).road).toBe('Local road, no expressway · about 6h 14m');
+  });
+
+  it('a trip names the legs that take the local road', () => {
+    const b = { ...tripBooking, input: { ...(tripBooking as never as { input: Record<string, unknown> }).input, routeVariants: ['fastest', 'no_tolls', 'fastest'] } } as unknown as Booking;
+    expect(projectBooking(b).road).toBe('Local road for Sigiriya → Kandy');
+  });
+
+  it('leaves the field out on the expressway — the view keeps exactly its old keys', () => {
+    const fastest = { ...singleBooking, input: { ...(singleBooking as never as { input: Record<string, unknown> }).input, routeVariant: 'fastest' } } as unknown as Booking;
+    for (const b of [singleBooking, tripBooking, fastest]) expect(projectBooking(b)).not.toHaveProperty('road');
+    expect(Object.keys(projectBooking(singleBooking))).toEqual([
+      'reference', 'status', 'mode', 'firstName', 'currency', 'totalCents', 'amountDueNowCents', 'balanceDueCents',
+      'from', 'to', 'date', 'time', 'stops', 'legDates', 'endDate', 'travellers', 'bags', 'vehicleType',
+    ]);
+    expect(JSON.stringify(projectBooking(fastest))).toBe(JSON.stringify(projectBooking(singleBooking)));
+  });
+});
+
+// A booking made with a promo code shows the code and what it took off (manage card: a Promo row
+// above Total). Only then: every other booking's view keeps exactly the keys it had.
+describe('projectBooking names the promo code the customer used', () => {
+  it('passes the code and the discount through', () => {
+    const b = { ...singleBooking, total: 20610, amountDueNow: 20610, promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 2290 } as unknown as Booking;
+    const v = projectBooking(b);
+    expect(v.promoCode).toBe('SUMMER-15');
+    expect(v.discountCents).toBe(2290);
+    expect(v.totalCents).toBe(20610);
+  });
+
+  it('leaves both out without a code', () => {
+    for (const b of [singleBooking, tripBooking]) {
+      expect(projectBooking(b)).not.toHaveProperty('promoCode');
+      expect(projectBooking(b)).not.toHaveProperty('discountCents');
+    }
+  });
+});

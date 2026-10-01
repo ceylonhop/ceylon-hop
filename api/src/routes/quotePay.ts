@@ -188,6 +188,7 @@ export function quotePayRoutes(deps: {
       const payment = paidVia
         ? (await deps.payments.findByBookingId(paidVia.bookingId)).find((p) => p.status === 'succeeded')
         : undefined;
+      const paidCopy = payPageCopy(quote, quote.payLinkSelection);
       return c.json({
         state,
         paid: {
@@ -196,7 +197,9 @@ export function quotePayRoutes(deps: {
           amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
           // Selection-aware here too: a keepsake for a two-leg payment must not be headed
           // "Four journeys" either.
-          title: payPageCopy(quote, quote.payLinkSelection).title,
+          title: paidCopy.title,
+          // The add-ons it bought, on the keepsake pass too. Absent when there are none.
+          ...(paidCopy.addOns ? { addOns: paidCopy.addOns } : {}),
         },
       });
     }
@@ -325,7 +328,14 @@ export function quotePayRoutes(deps: {
     let booking = created;
     if (created.status === 'draft') {
       try {
-        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending', undefined, {
+          source: 'quote_conversion',
+          actorType: 'customer',
+          actorId: body.data.customer.email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
       } catch {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }

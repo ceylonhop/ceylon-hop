@@ -7,6 +7,7 @@ import type { Refund, RefundRepo } from '../db/refundRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { BillingInput } from '../domain/singleTransfer';
 import { toOpsRow } from './opsView';
+import { roadRow } from './notifications';
 import {
   caseGaps, caseTimeline, normaliseCaseRef, paymentVerdict,
   type CaseEvidence, type CasePayment, type CaseRow, type CaseSource, type GapCode, type Verdict,
@@ -38,6 +39,8 @@ export interface CaseBooking {
   channel: 'website' | 'whatsapp';
   createdAt: string;
   route: string;
+  // The local road the customer bought, in the emails' words (roadRow); null on the expressway.
+  road: string | null;
   travelDate: string | null;
   travelTime: string | null;
   pax: number;
@@ -184,7 +187,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
       quote,
       booking: {
         id: b.id, reference: b.reference, status: b.status, mode: b.mode, channel: b.channel, createdAt: b.createdAt,
-        route: row.route, travelDate: row.travelDate, travelTime: row.travelTime, pax: row.pax,
+        route: row.route, road: roadRow(b)?.[1] ?? null, travelDate: row.travelDate, travelTime: row.travelTime, pax: row.pax,
         total: b.total, amountDueNow: b.amountDueNow ?? null, currency: b.currency,
         customer: { firstName: c.firstName, lastName: c.lastName ?? '', email: c.email, whatsapp: c.whatsapp, country: c.country },
         billing: b.billing ?? null,

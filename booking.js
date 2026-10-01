@@ -88,13 +88,61 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
+// The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
+// the planner's `roads=` (one per stop pair, 'no_tolls' or blank) for a trip. roadNotice says
+// why a chosen local road was dropped: 'echo' when the engine could only price the expressway.
+let bookRoad=null, tripRoads=[], roadNotice='';
+// Back to the planner, carrying the roads as they stand NOW — a road dropped on this page (the
+// engine or the booking couldn't confirm it) must not come back when the customer returns.
+// Built at click time for that reason; `dates` lands on the planner's When step.
+function buildTripEditUrl(dates){
+  const q=new URLSearchParams(tripEditQuery);
+  const local=tripLocalWires();
+  const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
+  if(roads) q.set('roads', roads);
+  if(dates) q.set('step', 'dates');
+  return 'plan.html?'+q.toString();
+}
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
     const n=parseInt((s||'').trim(),10);
     return Number.isFinite(n) && n>0 ? n : null;
+  });
+}
+// A trip leg's drive chip in the itinerary card.
+// A trip leg's chip, in the words every other screen uses (route-estimate.js rounding): "215 km",
+// never the raw 213 the search and plan pages rounded. A leg on the local road is timed by the
+// engine's own answer (`est`, the current estimate), never by the distance model — that would time
+// the shorter local road FASTER than the expressway it is slower than ("5h" for a 6h drive).
+// `est` is passed in, not read here: the itinerary is first drawn before engineEst exists.
+function tripKmText(km){
+  const RE=window.CH && CH.routeEstimate, k=RE ? RE.roundDistanceKm(km) : null;
+  return `${k!=null ? k : km} km`;
+}
+function tripMinText(min){
+  const RE=window.CH && CH.routeEstimate, m=RE ? RE.roundDurationMin(min) : Math.round(min);
+  if(min<60) return `${m} min`;
+  const h=Math.floor(m/60), r=m%60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+function tripDriveText(leg, i, est){
+  if(leg.km==null) return 'Distance on request';
+  if(tripRoads[i]==='no_tolls' && state.svc!=='chauffeur' && !tripGaps.has(i)){
+    const e=est && Array.isArray(est.legs)
+      ? est.legs.find(l=>l && l.from===tripStops[i] && l.to===tripStops[i+1] && l.routeVariant==='no_tolls') : null;
+    return e && e.durationMin>0 ? `${tripKmText(e.distanceKm>0 ? e.distanceKm : leg.km)} · ${tripMinText(e.durationMin)}` : tripKmText(leg.km);
+  }
+  return `${tripKmText(leg.km)} · ${leg.duration}`;
+}
+// Repaint every leg chip against the itinerary and estimate as they stand now.
+function repaintTripDrives(){
+  const est=currentEngineEst();
+  document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
+    const i=+el.dataset.wire, leg=tripLegs[i], chip=el.querySelector('.tr-drive');
+    if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
 function tripQuoteWithKms(veh){
@@ -138,6 +186,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
@@ -164,12 +213,17 @@ if(mode==='trip' && window.TRANSFERS){
   let price=parseFloat(params.get('rawPrice') || params.get('price'))||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  if(mode==='private') bookRoad = params.get('road')==='no_tolls' ? 'no_tolls' : null;
   // pre-compute both vehicle prices so we can switch car→van when over capacity
   if(T.place(routeFromId) && T.place(routeToId)){
     const q=T.privateQuote(routeFromId, routeToId);
     // Keep the unfinished vehicle fares internally so extras are added before the one final
     // price-finishing pass in calcTotal(). privateQuote's car/van fields are display totals.
     vehPrices={ car:q.rawCar, van:q.rawVan };
+    // A local-road pick carries its own (shorter) km from search; the catalogue km is the
+    // expressway's, so the car↔van figures come from the passed distance instead.
+    const k=positiveNumberParam('estimateKm');
+    if(bookRoad && k) vehPrices={ car:T.legPrice(k,'car'), van:T.legPrice(k,'van') };
   }
   r={
     id:'transfer', type:mode,
@@ -198,6 +252,14 @@ let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
+
+// ---- promo code field (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md) ----
+// Live since 2026-09-28 (owner go). Setting it back to false is the rollback. The window
+// override forces it either way, only so web-tests can drive both paths; it unlocks nothing on
+// the server, where PROMO_CODES_ENABLED still refuses every code while it is off.
+const PROMO_FIELD_ENABLED = true;
+// Shared seats never take a code (POST /bookings/shared refuses one), so the field never draws there.
+const promoFieldOn = (typeof window.CH_PROMO_FIELD === 'boolean' ? window.CH_PROMO_FIELD : PROMO_FIELD_ENABLED) && !isShared;
 
 // Shared rides run a fixed weekly schedule — seats depart only on set weekdays
 // (0=Sun … 6=Sat), passed via ?days= (search builds it from the corridor). Mirrors the
@@ -255,6 +317,10 @@ function selectedBrowseEstimate(){
       estimateId:params.get('estimateId')||'search-selection'
     };
   }
+  return catalogueRouteEstimate();
+}
+// The reviewed catalogue pair's figures (the expressway), or 'unavailable' off-catalogue.
+function catalogueRouteEstimate(){
   if(window.TRANSFERS && routeFromId && routeToId){
     const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
     if(q && (q.km>0 || q.durationMin>0)) return {
@@ -266,7 +332,8 @@ function selectedBrowseEstimate(){
   }
   return { state:'unavailable', estimateId:'unavailable' };
 }
-const browseRouteEstimate=selectedBrowseEstimate();
+// `let`: a dropped local road (dropLocalRoad) replaces search's local-road figures.
+let browseRouteEstimate=selectedBrowseEstimate();
 let activeRouteEstimate=Object.assign({},browseRouteEstimate);
 let routeEstimateUnavailable=false;
 let lastRouteAnnouncement='';
@@ -603,7 +670,7 @@ function renderRouteMap(){
   if(window.CH_MAP && window.CH_MAP.renderRoute){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
-    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], Object.assign({
       expandable: true,
       // pFrom/pTo are {lat,lng} once the customer picks from autocomplete, so the legend
       // can't read a name off them — hand it the display names explicitly.
@@ -637,7 +704,7 @@ function renderRouteMap(){
           render(); checkWhere();
         }
       },
-    });
+    }, bookRoad==='no_tolls' ? { runs:[{ stops:[pFrom,pTo], avoidTolls:true, continues:false }] } : {}));
   } else {
     showFallback();
   }
@@ -667,31 +734,30 @@ if(isTrip){
       return;
     }
     const dt=fmtLeg(tripDates[i]);
-    const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
-    html+=`<div class="tr-leg">`+
+    html+=`<div class="tr-leg" data-wire="${i}">`+
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
-        `<span class="tr-chip muted">${drive}</span>`+
+        `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
-  const datesUrl=editUrl+'&step=dates';
+  // (buildTripEditUrl(true) vs buildTripEditUrl()).
   // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
-  html+=`<div class="tr-foot"><button type="button" class="tr-edit" onclick="location.href='${editUrl}'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
+  html+=`<div class="tr-foot"><button type="button" class="tr-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
   tr.innerHTML=html;
-  tripEditUrl=datesUrl;
+  tr.querySelector('.tr-edit').addEventListener('click',()=>{ location.href=buildTripEditUrl(); });
   // a clear way back to the planner from the booking flow (task: no way back)
   const nav1=document.getElementById('nav1');
   if(nav1 && nav1.firstElementChild){
     const back=document.createElement('button');
     back.type='button'; back.className='back-link'; back.textContent='← Back to planner';
-    back.onclick=()=>location.href=datesUrl;
+    back.onclick=()=>location.href=buildTripEditUrl(true);
     nav1.replaceChild(back, nav1.firstElementChild);
   }
   // Show the private vs chauffeur chooser ONLY when there's a real choice — i.e. a multi-day
@@ -783,7 +849,7 @@ if(isTrip){
         '<div class="pline"></div>'+
         '<div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Pay</span></div>';
       // the two leading nodes jump back to the planner (Route / Dates live there)
-      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=editUrl; }); });
+      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=buildTripEditUrl(); }); });
     }
     // rewire navigation to the journey numbering (n1’s click listener is made trip-aware where it’s bound)
     const n4=document.getElementById('n4'); if(n4) n4.setAttribute('onclick','goStep(4)'); // (parked) Travellers → Payment
@@ -1053,7 +1119,7 @@ window.pickSvc=function(svc){
   // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
   // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
-    if(tripEditUrl) location.href=tripEditUrl;
+    location.href=buildTripEditUrl(true);
     return;
   }
   // Inside the notice window the card can't be chosen online — pressing it opens the explainer
@@ -1164,7 +1230,18 @@ function renderRepriceNote(){
   }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
-    const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
+    // With a code applied, the customer never saw the FULL fromCents/toCents on screen — they saw
+    // payableTotal() and, once they accept, the parked estimate's own (possibly re-priced) promo
+    // total. Quoting the full figures here would show a jump they never agreed to (spec §4.4).
+    // "Now" follows the parked estimate's own answer, not whether a discount is on screen today: a
+    // code that had stopped applying can apply again on the raised price, and accepting then lands
+    // the discounted figure.
+    const held=heldPromo();
+    const newPromo = p.est && p.est.promoCode;
+    const newAccepted = promoFieldOn && promoCode && newPromo && !newPromo.error
+      && newPromo.code === promoCode && typeof newPromo.totalCents === 'number';
+    const fromAmt = money(held ? payableTotal() : p.fromCents/100);
+    const toAmt = money(newAccepted ? newPromo.totalCents/100 : p.toCents/100);
     eEl.innerHTML =
       '<b>Your price has been updated.</b> '+
       'Based on your latest details, your total is now '+toAmt+' (it was '+fromAmt+').'+
@@ -1191,13 +1268,13 @@ window.acceptReprice=function(){
   if(p.engineRaise){
     adoptEngineEstimate(p.est, p.sig);
     state.pendingReprice=null;
-    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:calcTotal()});
+    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:payableTotal()});
     render(); checkWhere();
     return;
   }
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
-  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:payableTotal()});
   render(); checkWhere();
 };
 window.dismissReprice=function(){
@@ -1275,7 +1352,7 @@ const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',fr
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
-  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
+  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:payableTotal()}); };
 
 // Longest known dial code (digits only) that prefixes `digits`, or '' if none.
 function matchDialCode(digits){
@@ -1429,12 +1506,76 @@ function isDeposit(){
 let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
 let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
 
+// The code the customer applied (trimmed, upper-cased), or null. While set it rides in every
+// estimate intent, so each re-price re-checks it (spec §4.2).
+let promoCode = null;
+// True once an estimate has accepted the current code. Until then a refusal drops the code (a
+// typo stays a typo); after it, a refusal keeps it applied as "doesn't apply" (spec §9.1).
+let promoConfirmed = false;
+// Why the open field is showing a message (an API error code, or 'promo_unchecked'), and
+// whether the customer has opened the field at all.
+let promoApplyError = null;
+let promoOpen = false;
+// A code refused when the BOOKING was made this visit (normalised code → the error code), kept
+// for the rest of the visit so re-applying it shows the same refusal without asking the server
+// again. ch-pricing.js caches estimate answers by intent in sessionStorage, so a fresh preview for
+// the same code would just replay the OLD "accepted" answer — the server can't tell us anything
+// new until the code's hold or session state actually changes, which needs a fresh visit.
+let promoRefusedAtBooking = {};
+
 // The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
 // distance (Global Constraints: the intent carries names, distances come back on the response) —
 // so a routing change on the API side is never shadowed by a stale km the browser had on hand.
 // null means "nothing to price": shared seats run their own fixed-schedule local formula
 // (Global Constraints) and never call the estimate endpoint.
-function buildEstimateIntent(){
+// The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
+// choice only applies to private transfers.
+// A gap wire is the traveller's own stretch, so it never asks for a road either.
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+// The priced (non-gap) wires the customer chose the local road for, whatever the service.
+function tripLocalWires(){
+  const out=[];
+  for(let i=0;i<tripStops.length-1;i++) if(!tripGaps.has(i) && tripRoads[i]==='no_tolls') out.push(i);
+  return out;
+}
+// Drops the local road wherever it couldn't be confirmed, and with it every figure that described
+// it: the distance line and car/van fares (single), the leg km and local trip fares (trip).
+// estLegs = the estimate's legs (drop only legs echoed 'fastest', adopting their km), or null
+// after a 422 (drop every local road, back to the catalogue figures). True when anything dropped.
+function dropLocalRoad(estLegs){
+  const T=window.TRANSFERS;
+  if(!isTrip){
+    if(bookRoad!=='no_tolls') return false;
+    const leg=estLegs ? estLegs[0] : null;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) return false;
+    bookRoad=null;
+    browseRouteEstimate = (leg && (leg.distanceKm>0 || leg.durationMin>0))
+      ? { distanceKm:leg.distanceKm, durationMin:leg.durationMin, state:'browse', estimateId:'engine-v2' }
+      : catalogueRouteEstimate();
+    if(!hasExactRouteInputs()) activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    const q=(T && T.place(routeFromId) && T.place(routeToId)) ? T.privateQuote(routeFromId, routeToId) : null;
+    vehPrices = q ? { car:q.rawCar, van:q.rawVan } : null;
+    if(vehPrices){ unit=vehPrices[vehicleKey]; r.price=unit; }
+    scheduleRouteMap(); // redraw the map on the road now priced
+    return true;
+  }
+  let dropped=false;
+  for(let i=0, j=0; i<tripStops.length-1; i++){
+    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    const leg=estLegs ? estLegs[j++] : null;
+    if(tripRoads[i]!=='no_tolls') continue;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
+    tripRoads[i]='fastest';
+    tripKms[i]=(leg && leg.distanceKm>0) ? Math.round(leg.distanceKm) : null; // null → catalogue km
+    dropped=true;
+  }
+  if(dropped){
+    const q=tripQuoteWithKms(vehicleKey); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
+    repaintTripDrives();
+  }
+  return dropped;
+}
+function itineraryIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
   const pax = state.ad + state.ch;
@@ -1463,16 +1604,25 @@ function buildEstimateIntent(){
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
       if(tripGaps.has(i)) continue;
-      legs.push({ from: tripStops[i], to: tripStops[i+1] });
+      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
   // Single transfer: the same place strings the booking payload sends (createApiBooking,
   // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
-  const legs = [{ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] }];
+  const legs = [Object.assign({ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] },
+    bookRoad==='no_tolls' ? { routeVariant:'no_tolls' } : {})];
   const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
+}
+// The intent POST /quote/v2/estimate prices: the itinerary, plus the applied code. The API lifts
+// promoCode off before pricing (api/src/routes/quote.ts:298-308), so the top-level total is the
+// same with or without it; only the promoCode block in the answer differs.
+function buildEstimateIntent(){
+  const intent = itineraryIntent();
+  if(intent && promoFieldOn && promoCode) intent.promoCode = promoCode;
+  return intent;
 }
 // A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
 // handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
@@ -1501,8 +1651,12 @@ function adoptEngineEstimate(est, sig){
     amountDueNowCents: est.amountDueNowCents,
     estimated: est.estimated,
     legs: est.legs,
+    // The promo answer lives ON the estimate it came with, so a discount is only ever taken off
+    // the full price it was computed for — it goes stale together with that price (spec §4.1).
+    promo: est.promoCode,
     intentSig: sig
   };
+  settlePromoAnswer();
 }
 
 // engineEst that is actually priced against the itinerary as it stands RIGHT NOW — the same
@@ -1600,6 +1754,7 @@ function requestEstimate(){
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
     onUnavailable: function(reason){
       estimatePending = false;
+      if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
         const text=window.CH && CH.routeEstimate
@@ -1663,20 +1818,28 @@ function handleEngineEstimate(est, sig){
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
-  adoptCustomerRouteEstimate(est,sig);
+  // Route choice: the engine echoes the road it actually priced on each leg. A local road asked
+  // for but answered with 'fastest' could not be confirmed for these points — the figure is the
+  // expressway fare, so the page stops claiming (and asking for) the local road.
+  if(est && Array.isArray(est.legs) && !(isTrip && state.svc==='chauffeur') && dropLocalRoad(est.legs)) roadNotice='echo';
+  // Clearing a road moves the intent: an echoed 'fastest' is exactly the expressway price for
+  // the NEW intent, so everything below settles against that one. render() still sends one more
+  // estimate for it (lastRequestedSig holds the old sig) — deliberately not suppressed.
+  const sigNow = currentIntentSig();
+  adoptCustomerRouteEstimate(est,sigNow);
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
+  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sigNow, engineEst.intentSig)){
     // `vehicleUpgrade`: the party has outgrown the car, so the engine priced a van on its own.
     // The capacity note already owns that decision (it blocks Continue until it's resolved) and
     // is the ONE control for it — see carOutgrownVanFits(). The figure is still held, exactly as
     // for any undriven raise; it just isn't announced a second time by renderRepriceNote.
     state.pendingReprice = { engineRaise:true, vehicleUpgrade:carOutgrownVanFits(),
-      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sigNow };
     render();
     checkWhere();
     return;
   }
-  adoptEngineEstimate(est, sig);
+  adoptEngineEstimate(est, sigNow);
   state.pendingReprice = null; // a fresh figure supersedes any stale reprice notice too
   render();
   checkWhere();
@@ -1724,7 +1887,140 @@ function calcTotal(){
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
 const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
+// The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
+// order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds
+// engineEst. The local formula never carries one, and once the booking exists its own total
+// (serverQuote) already includes the discount.
+function heldPromo(){
+  if(!promoFieldOn || !promoCode || serverQuote) return null;
+  const est = (state.pendingReprice && state.pendingReprice.engineRaise) ? engineEst
+    : (currentEngineEst() || (repricing() ? engineEst : null));
+  const p = est && est.promo;
+  // p.code === promoCode: a held estimate can go stale for the code it priced (a later re-check
+  // never lands) while the customer removes it and applies a DIFFERENT one — without this check
+  // the old code's discount could show under the new code's name while its own answer is still
+  // in flight (spec §4.1: the discount comes only from the same estimate as the full price).
+  return (p && !p.error && p.code === promoCode && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
+}
+// What the customer pays (spec §4.3). calcTotal() stays the FULL price on purpose: the summary's
+// vehicle row is calcTotal() − extras, and a discount folded in there would shrink the car's own
+// line. Total, Due now, quotedTotal and the final price check read this instead.
+function payableTotal(){
+  if(serverQuote) return serverQuote.total;
+  const p = heldPromo();
+  return p ? p.totalCents/100 : calcTotal();
+}
+
+const PROMO_MESSAGES = {
+  promo_code_invalid: "That code isn’t valid.",
+  promo_code_not_started: "That code isn’t active yet.",
+  promo_code_expired: 'That code has expired.',
+  promo_code_used_up: 'That code has been fully used.',
+  promo_code_not_eligible: "That code can’t be used on this booking.",
+  promo_unchecked: "We couldn’t check your code just now, please try again.",
+};
+function promoMessage(err){ return PROMO_MESSAGES[err] || PROMO_MESSAGES.promo_code_invalid; }
+
+// Settles the promo answer on the estimate just adopted (spec §3.2). The FIRST answer for a code
+// decides whether it sticks: accepted → confirmed; refused → dropped, its message shown and the
+// typed text left in the field. Once confirmed, a later refusal (the trip changed) keeps the code
+// applied, so the summary can say "Doesn't apply" and the discount returns if the trip qualifies.
+function settlePromoAnswer(){
+  if(!promoCode || promoConfirmed || !engineEst || engineEst.intentSig !== currentIntentSig()) return;
+  const p = engineEst.promo;
+  if(p && !p.error){ promoConfirmed = true; promoApplyError = null; return; }
+  promoApplyError = (p && p.error) || 'promo_code_invalid';
+  dropPromo();
+}
+// The check for a code nobody has confirmed yet could not run. Pricing the trip "with a code" by
+// the local formula would put a different, never-shown figure on screen — so forget the code and
+// say so; the held engine answer for the trip without it is current again.
+function settlePromoUnavailable(){
+  if(!promoCode || promoConfirmed) return;
+  promoCode = null;
+  promoApplyError = 'promo_unchecked';
+  if(currentEngineEst()) lastRequestedSig = currentIntentSig();
+}
+// Forgets the applied code. The estimate's full price never depends on the code (the API lifts it
+// off the intent before pricing), so the answer held for "this trip + code" IS the answer for
+// "this trip": re-key it rather than fetch the same price again and shimmer the Total for it.
+function dropPromo(){
+  const cur = currentEngineEst();
+  promoCode = null;
+  promoConfirmed = false;
+  if(cur){
+    delete cur.promo;
+    cur.intentSig = currentIntentSig();
+    lastRequestedSig = cur.intentSig;
+  }
+}
+// The code a booking may carry: only while the estimate priced for THIS trip accepted it
+// (spec §4.5) — never in the doesn't-apply, couldn't-check or local-fallback states.
+function sendablePromoCode(){
+  const cur = currentEngineEst();
+  const p = cur && cur.promo;
+  return (promoFieldOn && promoCode && p && !p.error) ? p.code : undefined;
+}
+// Why an applied code is taking nothing off right now, or null when it is.
+function promoOffReason(){
+  const cur = currentEngineEst();
+  if(!cur) return 'promo_unchecked';
+  const p = cur.promo;
+  return (p && !p.error) ? null : ((p && p.error) || 'promo_code_invalid');
+}
+// Which face the field shows (spec §3.2).
+function promoUiState(){
+  if(!promoFieldOn) return 'hidden';
+  if(!promoCode) return promoOpen ? 'open' : 'collapsed';
+  if(currentEngineEst()) return promoOffReason() ? 'off' : 'applied';
+  return (estimatePending || state.pendingReprice) ? 'checking' : 'off';
+}
+
+// Short reasons for the muted chip — the message's own words without "That code …".
+const PROMO_OFF_REASONS = {
+  promo_code_invalid: 'isn’t valid',
+  promo_code_not_started: 'isn’t active yet',
+  promo_code_expired: 'has expired',
+  promo_code_used_up: 'has been fully used',
+  promo_code_not_eligible: 'can’t be used on this booking',
+  promo_unchecked: 'couldn’t be checked just now',
+};
+// Draws the field and the summary row for promoUiState() (spec §3.2). The input's value is only
+// written while checking — otherwise it holds exactly what the customer typed.
+function renderPromo(){
+  const box=document.getElementById('promo'), row=document.getElementById('sum-promo');
+  if(!box || !row) return;
+  const ui=promoUiState();
+  box.hidden = ui==='hidden';
+  const form=document.getElementById('promo-form'), input=document.getElementById('promo-input');
+  const apply=document.getElementById('promo-apply'), chip=document.getElementById('promo-chip');
+  const msg=document.getElementById('promo-msg');
+  document.getElementById('promo-toggle').hidden = ui!=='collapsed';
+  form.hidden = !(ui==='open' || ui==='checking');
+  input.readOnly = ui==='checking';
+  if(ui==='checking') input.value = promoCode;
+  apply.disabled = ui==='checking';
+  apply.textContent = ui==='checking' ? 'Checking…' : 'Apply';
+  chip.hidden = !(ui==='applied' || ui==='off');
+  chip.classList.toggle('off', ui==='off');
+  const chipHtml = ui==='applied' ? `<b>${acEsc(promoCode)}</b> applied`
+    : ui==='off' ? `<b>${acEsc(promoCode)}</b> · ${PROMO_OFF_REASONS[promoOffReason()] || PROMO_OFF_REASONS.promo_code_invalid}` : '';
+  const chipText=document.getElementById('promo-chip-text');
+  if(chipText.innerHTML!==chipHtml) chipText.innerHTML=chipHtml;
+  const text = (ui==='open' && promoApplyError) ? promoMessage(promoApplyError) : '';
+  if(msg.textContent!==text) msg.textContent=text;
+  msg.classList.toggle('soft', promoApplyError==='promo_unchecked');
+  form.classList.toggle('has-error', ui==='open' && !!promoApplyError && promoApplyError!=='promo_unchecked');
+  // Summary row: the discount held with the price on screen (it keeps its figure through a
+  // re-price, like the vehicle row), or "Doesn't apply" for a code that stopped applying.
+  const held=heldPromo();
+  row.hidden = !(ui==='off' || held);
+  row.classList.toggle('off', ui==='off');
+  document.getElementById('sum-promo-label').textContent = promoCode ? 'Promo '+promoCode : '';
+  document.getElementById('sum-promo-amt').textContent = ui==='off' ? 'Doesn’t apply' : held ? '−'+money(held.discountCents/100) : '';
+}
+
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -1765,7 +2061,7 @@ function waTripSummary(){
   const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
   const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
   let priced = '';
-  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  try { const t = payableTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
   return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
     + (route ? route + '\n' : '')
     + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
@@ -1877,10 +2173,33 @@ function customerRouteEstimateText(){
     ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
     : '';
 }
+// The local road being booked, in words — '' on the expressway, or once the road was dropped.
+// The summary (#sum-road) and step 4's Due now box both say it.
+function roadChoiceText(){
+  if(isTrip){
+    if(state.svc==='chauffeur') return '';
+    const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
+    return local.length ? 'Local road for '+local.join(', ') : '';
+  }
+  return bookRoad==='no_tolls' ? 'Via the local road · no expressway' : '';
+}
+// The road the customer chose, under the route estimate — and, beside it, why a chosen local road
+// no longer applies (the engine could only price the expressway, or a chauffeur-guide was picked).
+function paintRoadChoice(){
+  const road=roadChoiceText();
+  const roadEl=document.getElementById('sum-road');
+  if(roadEl){ roadEl.textContent=road; roadEl.hidden=!road; }
+  let note='';
+  if(isTrip && state.svc==='chauffeur' && tripLocalWires().length) note='Local roads apply to private transfers, so a chauffeur-guide takes the usual roads.';
+  else if(roadNotice==='echo') note='The local road isn’t available for these exact points, so this is the expressway fare.';
+  const noteEl=document.getElementById('sum-road-note');
+  if(noteEl){ noteEl.textContent=note; noteEl.hidden=!note; }
+}
 function paintCustomerRouteEstimate(){
   const text=customerRouteEstimateText();
   const summary=document.getElementById('sum-route-estimate');
   if(summary){ summary.textContent=text; summary.hidden=!text; }
+  paintRoadChoice();
   const bar=document.getElementById('rm-bar');
   if(!bar || isTrip) return;
   const from=shortPlaceLabel(state.locFrom || r.stops[0]);
@@ -1891,6 +2210,7 @@ function paintCustomerRouteEstimate(){
     `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
 }
 function render(){
+  if(isTrip) repaintTripDrives(); // a local-road leg takes the engine's drive time once it lands
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen
@@ -1949,7 +2269,7 @@ function render(){
           // one route that still works. waTripSummary() carries the itinerary, so the
           // traveller does not retype what they just entered.
           '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we’ll see what we can do.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Change your dates →</button>';
       } else { note.hidden=true; note.innerHTML=''; }
     }
     if(!chOK && state.svc==='chauffeur'){
@@ -1963,7 +2283,7 @@ function render(){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
@@ -2062,7 +2382,12 @@ function render(){
     // exactly to Total, and no raw pre-finishing number is ever shown here.
     let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
     const baseAmt = calcTotal() - otherRows;
-    setNum(document.getElementById('sum-adamt'), money(baseAmt));
+    // Not while a re-estimate is in flight, though. Total then reads PRICING_LABEL and calcTotal()
+    // HOLDS the figure priced before the change — without the extra just ticked — so subtracting
+    // that extra made the car line count $156 → $146 and back up once the estimate landed: the car
+    // looked cheaper because the customer had added something. It keeps the figure it last showed;
+    // the rows sum to Total again the moment the new one lands.
+    if(!repricing()) setNum(document.getElementById('sum-adamt'), money(baseAmt));
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travellers';
     setNum(document.getElementById('sum-chamt'), `${state.ad+state.ch} · included`);
@@ -2095,7 +2420,7 @@ function render(){
   // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
   const busy = repricing();
   const totalEl = document.getElementById('sum-total');
-  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
   if(totalEl){
     totalEl.classList.toggle('is-pricing', busy);
     if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
@@ -2150,13 +2475,16 @@ function render(){
       ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
       : r.name;
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
+    // The road being paid for, under the route — the summary's words, gone when the road is.
+    const dueRoad = roadChoiceText();
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
   if(choice){
     choice.style.display = 'none';
   }
+  renderPromo();
 
   // Pay gate (Task 3): the established disabled treatment (same idiom as #n1/#n4 above) for the
   // three states a charge must never start from — a fresh price still in flight, a raise
@@ -2331,7 +2659,7 @@ async function runPayment(){
   // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
   const _payBtn = document.getElementById('pay-btn');
   if(_payBtn) _payBtn.disabled = true;
-  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:payableTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
@@ -2346,7 +2674,30 @@ async function runPayment(){
   let booking;
   payRef = null; // a fresh attempt: no reference until the create answers
   try { booking = await createApiBooking(); }
-  catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
+  catch(e){
+    clearTimeout(slow);
+    // The local road couldn't be confirmed at booking time: drop it, re-price on the expressway,
+    // and show why — with no one-click retry, so the customer sees the new price before paying.
+    if(e && e.status===422 && e.body && e.body.error==='route_choice_unavailable'){
+      dropLocalRoad(null); roadNotice='';
+      render();
+      return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
+    }
+    // A code the preview accepted can still be refused here — its last use went, or it expired,
+    // in between (spec §4.6). Same shape as the road refusal above: forget it, show the full
+    // price, and no one-click retry, so the customer presses Pay again at the price they now see.
+    if(e && e.status===422 && e.body && /^promo_code_/.test(e.body.error||'')){
+      // Captured before dropPromo() clears promoCode, so the SAME code stays refused for the
+      // rest of the visit (Apply won't ask the server again — see promoRefusedAtBooking above).
+      if(promoCode) promoRefusedAtBooking[promoCode] = e.body.error;
+      promoApplyError=e.body.error;
+      promoOpen=true;
+      dropPromo();
+      render();
+      return phShowEnd('error', promoMessage(e.body.error)+' Your total is now the full price.', {retry:false});
+    }
+    return phShowEnd(...bookingCreateFailure(e));
+  }
   clearTimeout(slow);
   payRef = (booking && booking.reference) || null;
   if(!booking){ return simulatePayThenConfirm(null); }
@@ -2360,10 +2711,12 @@ async function runPayment(){
   // the LAST hop where the "never charge a figure not shown immediately beforehand" rule
   // (renderRepriceNote, applied mid-wizard) can still be broken, and gets the same gate here.
   const shownEngineEst = currentEngineEst();
-  const shownBeforeAdopt = calcTotal();
+  // payableTotal(), not calcTotal(): with a code the booking comes back DISCOUNTED, so comparing
+  // it with the full price would stop every discounted booking with a false "price changed".
+  const shownBeforeAdopt = payableTotal();
   adoptServerQuote(booking);
-  if(shownEngineEst && Math.abs(calcTotal()-shownBeforeAdopt) > 1){
-    return phShowFinalRepriceGate(booking, shownBeforeAdopt, calcTotal());
+  if(shownEngineEst && Math.abs(payableTotal()-shownBeforeAdopt) > 1){
+    return phShowFinalRepriceGate(booking, shownBeforeAdopt, payableTotal());
   }
   return continueToCheckout(booking);
 }
@@ -2577,6 +2930,37 @@ function phShowEnd(kind, msg, opts){
 document.getElementById('ph-retry').addEventListener('click', ()=>runPayment());
 document.getElementById('ph-close').addEventListener('click', ()=>document.getElementById('ph-overlay').classList.remove('show'));
 
+// Promo field controls (spec §3.2). Wired only when the field can show at all.
+(function wirePromo(){
+  if(!promoFieldOn) return;
+  const input=document.getElementById('promo-input');
+  function apply(){
+    const typed=(input.value||'').trim().toUpperCase();
+    if(!typed) return;
+    if(promoRefusedAtBooking[typed]){
+      // Refused at booking time this visit already — re-asking would only replay the pricing
+      // module's cached "accepted" answer for it (see promoRefusedAtBooking above), so show the
+      // same message again without sending anything.
+      promoApplyError=promoRefusedAtBooking[typed];
+      promoOpen=true;
+      render();
+      return;
+    }
+    promoApplyError=null;
+    promoCode=typed;
+    promoConfirmed=false;
+    lastRequestedSig=null; // a retry after "couldn't check" must really ask again
+    render();
+  }
+  document.getElementById('promo-toggle').addEventListener('click', ()=>{ promoOpen=true; render(); input.focus(); });
+  document.getElementById('promo-apply').addEventListener('click', apply);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); apply(); } });
+  input.addEventListener('input', ()=>{ if(promoApplyError){ promoApplyError=null; render(); } });
+  document.getElementById('promo-remove').addEventListener('click', ()=>{
+    dropPromo(); promoApplyError=null; promoOpen=true; input.value=''; render(); input.focus();
+  });
+})();
+
 // Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
 function simulatePayThenConfirm(booking){
   const ov=document.getElementById('ph-overlay');
@@ -2713,7 +3097,7 @@ async function createApiBooking(){
   };
   // the price the customer was shown (minor units) — the backend records this, so the
   // confirmation, the DB and the eventual charge all agree.
-  const quotedTotal = calcTotal() > 0 ? Math.round(calcTotal() * 100) : undefined;
+  const quotedTotal = payableTotal() > 0 ? Math.round(payableTotal() * 100) : undefined;
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
@@ -2742,7 +3126,14 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: tQuoteId,
       days: (state.svc==='chauffeur') ? tripDays : undefined,
-      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined
+      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined,
+      // The server prices from THIS payload, so it must know which wires are the traveller's own
+      // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
+      gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // One road per consecutive stop pair; sent only when a local road is actually chosen.
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
+      // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
+      promoCode: sendablePromoCode()
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -2782,7 +3173,9 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
-      extras: state.addons.size ? Array.from(state.addons) : undefined
+      extras: state.addons.size ? Array.from(state.addons) : undefined,
+      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined,
+      promoCode: sendablePromoCode()
     };
   }
   // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
@@ -2808,6 +3201,10 @@ async function createApiBooking(){
     bill.lastName  = document.getElementById('f-blast').value.trim();
   }
   payload.billing = bill;
+  // The "Anything we should know?" note (2026-09-27) — hotel, dietary needs, surf gear. Nothing
+  // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
+  const notes = document.getElementById('f-notes').value.trim();
+  if(notes) payload.customerNotes = notes;
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);

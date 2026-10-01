@@ -22,9 +22,10 @@
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="analytics.js?v=72fed96a54"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -63,13 +64,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div data-header><header class="nav on-dark" data-nav>
   <div class="wrap nav-inner">
     <a href="index.html" class="brand"><img class="cmark" src="img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
-    <nav class="nav-links"><a href="board.html">Shared taxi</a><a href="trip/">Popular routes & prices</a><a href="plan.html">Plan a multi-stop trip</a><a href="tours.html">Full tours</a><a href="about.html" class="active">About us</a></nav>
+    <nav class="nav-links"><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html" class="active">About</a></nav>
     <div class="nav-cta">
       <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
     </div>
   </div>
 </header>
-<div class="mobile-menu" data-mobile><a href="board.html">Shared taxi</a><a href="trip/">Popular routes & prices</a><a href="plan.html">Plan a multi-stop trip</a><a href="tours.html">Full tours</a><a href="about.html">About us</a></div></div>
+<div class="mobile-menu" data-mobile><a href="trip/">Routes & prices</a><a href="board.html">Share a ride</a><a href="plan.html">Plan a trip</a><a href="tours.html">Tours</a><a href="about.html">About</a></div></div>
 
 <section class="hero-banner" data-screen-label="About hero">
   <image-slot id="about-hero" shape="rect" src="img/about-hero.jpg" placeholder="Drop a photo — founders on a Sri Lanka beach at golden hour"></image-slot>
@@ -179,10 +180,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
   <div class="wrap foot-bottom">
     <span>© 2026 Ceylon Hop. All rights reserved.</span>
-    <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
+    <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a> · <a href="privacy.html#cookies" data-consent-open>Cookie choices</a></span>
   </div>
 </footer></div>
-<script src="site.js?v=81c109a6ac"></script>
+<script src="site.js?v=47f8ca3df7"></script>
 <script src="image-slot.js?v=f20592da50"></script>
 <script>
   initChrome({active:'about.html', onDark:true});

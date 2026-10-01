@@ -3,6 +3,7 @@ import type { RideOps } from '../db/rideOpsRepo';
 import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
+import { roadRow } from './notifications';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -44,6 +45,11 @@ export interface OpsBookingRow {
   /** The number the customer gave (their WhatsApp), shown on the queue row. Null when blank. */
   customerPhone: string | null;
   route: string;
+  /** The toll-free road the customer bought, else null: 'Local road' on a transfer; on a trip,
+   *  the legs that take it ("Local road for Kandy → Sigiriya") — the payment reminder built from
+   *  this row goes to the customer, so it must not claim the whole trip. Separate from `route`,
+   *  which search, the payment reminder and the Lookup read as-is. */
+  road: string | null;
   travelDate: string | null;
   travelTime: string | null;
   pax: number;
@@ -55,6 +61,11 @@ export interface OpsBookingRow {
   /** Customer email is one of the team's (config.TEAM_EMAILS) — a test booking, not a customer.
    *  The queue labels it and leaves it out of its counts; the row itself stays. */
   isTest: boolean;
+  /** When the booking was made (ISO) — the ride list's creation time on a board row. Drives the
+   *  queue's "Recently booked" view. */
+  createdAt: string;
+  /** A trip's service: a private car or a chauffeur guide. Null on every other mode. */
+  serviceType: 'private' | 'chauffeur' | null;
 }
 
 const NO_TEAM: ReadonlySet<string> = new Set();
@@ -103,11 +114,13 @@ export function toOpsRow(
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
-    route: route(b), travelDate: t.date, travelTime: t.time, pax: pax(b),
+    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,
     source: 'booking',
     isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),
+    createdAt: b.createdAt,
+    serviceType: b.mode === 'trip' ? b.input.serviceType : null,
   };
 }

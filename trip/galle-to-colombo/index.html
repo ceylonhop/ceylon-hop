@@ -22,9 +22,10 @@
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="../../analytics.js?v=a1d10c14f3"></script>
+<script src="../../analytics.js?v=72fed96a54"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -130,6 +131,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  .share-board{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e7e3d6)}
+  .share-board h3{margin:0 0 .3rem;font-family:var(--body);font-size:.98rem;font-weight:600}
+  .share-board p{margin:0;font-size:.88rem;line-height:1.55;color:var(--ink-soft,#6c6a6b)}
+  .share-board-link{display:inline-block;margin-top:12px;font-weight:600;font-size:.92rem;color:var(--blue-deep,#24758A)}
   .fares .opt-cta{margin-top:0}
   /* ── sticky book bar — shipped hidden; a later step turns it on while scrolling ── */
   .trip-bookbar{display:none}
@@ -202,7 +207,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-head{margin-bottom:34px}
   .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
   .trip-head .eyebrow{margin:0 0 .7rem}
-  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
   .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
   .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
@@ -291,7 +296,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .veh-ic svg{width:38px;height:25px}
     .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
     .drive-photo img{aspect-ratio:4/3}
-    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    .included{grid-template-columns:1fr;gap:22px}
     /* The quote runs to five lines in a phone column, and a vertically centred avatar then
        floats in the middle of it with white space above and below. Align it to the first line. */
     .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
@@ -367,13 +372,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <header class="nav" data-nav>
   <div class="wrap nav-inner">
     <a href="../../index.html" class="brand"><img class="cmark" src="../../img/brand-c.svg" style="width:34px;height:34px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true"><span>Ceylon Hop</span></a>
-    <nav class="nav-links"><a href="../../board.html">Shared taxi</a><a href="../../trip/" class="active">Popular routes & prices</a><a href="../../plan.html">Plan a multi-stop trip</a><a href="../../tours.html">Full tours</a><a href="../../about.html">About us</a></nav>
+    <nav class="nav-links"><a href="../../trip/" class="active">Routes & prices</a><a href="../../board.html">Share a ride</a><a href="../../plan.html">Plan a trip</a><a href="../../tours.html">Tours</a><a href="../../about.html">About</a></nav>
     <div class="nav-cta">
       <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
     </div>
   </div>
 </header>
-<div class="mobile-menu" data-mobile><a href="../../board.html">Shared taxi</a><a href="../../trip/">Popular routes & prices</a><a href="../../plan.html">Plan a multi-stop trip</a><a href="../../tours.html">Full tours</a><a href="../../about.html">About us</a></div>
+<div class="mobile-menu" data-mobile><a href="../../trip/">Routes & prices</a><a href="../../board.html">Share a ride</a><a href="../../plan.html">Plan a trip</a><a href="../../tours.html">Tours</a><a href="../../about.html">About</a></div>
 <main>
   <section class="route-hero" id="top-options">
     <div class="wrap">
@@ -425,7 +430,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <section class="section trip-included">
     <div class="wrap">
       <div class="trip-head"><span class="eyebrow">Every private transfer</span><h2>What&rsquo;s included</h2></div>
-      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg><h3>Stops when you want</h3><p>Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
+      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
       <figure class="proof">
         <img src="../../img/team-roshen.jpg" alt="Roshen, co-founder of Ceylon Hop" width="848" height="933" loading="lazy" decoding="async">
         <blockquote>&ldquo;We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we&rsquo;d trust with our own family.&rdquo;<cite>Roshen &mdash; Co-founder, Ceylon&nbsp;Hop</cite></blockquote>
@@ -497,7 +502,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </div>
   <div class="wrap foot-bottom">
     <span>© 2026 Ceylon Hop. All rights reserved.</span>
-    <span><a href="../../terms.html">Terms</a> · <a href="../../privacy.html">Privacy</a> · <a href="../../terms.html#refunds">Cancellation policy</a> · <a href="../../credits.html">Photo credits</a></span>
+    <span><a href="../../terms.html">Terms</a> · <a href="../../privacy.html">Privacy</a> · <a href="../../terms.html#refunds">Cancellation policy</a> · <a href="../../credits.html">Photo credits</a> · <a href="../../privacy.html#cookies" data-consent-open>Cookie choices</a></span>
   </div>
 </footer>
 <script>
@@ -507,6 +512,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>
-<script src="../../route-page.js?v=0115cdae0d"></script>
+<script src="../../route-page.js?v=a8852b9ace"></script>
 </body>
 </html>

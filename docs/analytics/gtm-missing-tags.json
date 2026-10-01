@@ -21,6 +21,30 @@
         "accountId": "0",
         "containerId": "0",
         "variableId": "1",
+        "name": "DLV - choice",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "choice"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "2",
         "name": "DLV - currency",
         "type": "v",
         "parameter": [
@@ -44,7 +68,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "2",
+        "variableId": "3",
         "name": "DLV - estimate_state",
         "type": "v",
         "parameter": [
@@ -68,7 +92,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "3",
+        "variableId": "4",
         "name": "DLV - extra_km",
         "type": "v",
         "parameter": [
@@ -92,7 +116,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "4",
+        "variableId": "5",
         "name": "DLV - flow",
         "type": "v",
         "parameter": [
@@ -116,7 +140,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "5",
+        "variableId": "6",
         "name": "DLV - has_balance",
         "type": "v",
         "parameter": [
@@ -140,7 +164,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "6",
+        "variableId": "7",
         "name": "DLV - http_status",
         "type": "v",
         "parameter": [
@@ -164,7 +188,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "7",
+        "variableId": "8",
         "name": "DLV - item_id",
         "type": "v",
         "parameter": [
@@ -188,7 +212,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "8",
+        "variableId": "9",
         "name": "DLV - item_list_id",
         "type": "v",
         "parameter": [
@@ -212,7 +236,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "9",
+        "variableId": "10",
         "name": "DLV - km",
         "type": "v",
         "parameter": [
@@ -236,7 +260,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "10",
+        "variableId": "11",
         "name": "DLV - leg",
         "type": "v",
         "parameter": [
@@ -260,7 +284,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "11",
+        "variableId": "12",
         "name": "DLV - link_id",
         "type": "v",
         "parameter": [
@@ -284,7 +308,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "12",
+        "variableId": "13",
         "name": "DLV - material",
         "type": "v",
         "parameter": [
@@ -308,7 +332,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "13",
+        "variableId": "14",
         "name": "DLV - method",
         "type": "v",
         "parameter": [
@@ -332,7 +356,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "14",
+        "variableId": "15",
         "name": "DLV - new_value",
         "type": "v",
         "parameter": [
@@ -356,7 +380,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "15",
+        "variableId": "16",
         "name": "DLV - page",
         "type": "v",
         "parameter": [
@@ -380,7 +404,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "16",
+        "variableId": "17",
         "name": "DLV - payment_type",
         "type": "v",
         "parameter": [
@@ -404,7 +428,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "17",
+        "variableId": "18",
         "name": "DLV - reason",
         "type": "v",
         "parameter": [
@@ -428,7 +452,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "18",
+        "variableId": "19",
         "name": "DLV - route_fingerprint",
         "type": "v",
         "parameter": [
@@ -452,7 +476,55 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "19",
+        "variableId": "20",
+        "name": "DLV - saving_usd",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "saving_usd"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "21",
+        "name": "DLV - source",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "source"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "22",
         "name": "DLV - state",
         "type": "v",
         "parameter": [
@@ -476,7 +548,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "20",
+        "variableId": "23",
         "name": "DLV - status",
         "type": "v",
         "parameter": [
@@ -500,7 +572,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "21",
+        "variableId": "24",
         "name": "DLV - surface",
         "type": "v",
         "parameter": [
@@ -524,7 +596,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "22",
+        "variableId": "25",
         "name": "DLV - tries",
         "type": "v",
         "parameter": [
@@ -548,7 +620,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "23",
+        "variableId": "26",
         "name": "DLV - value",
         "type": "v",
         "parameter": [
@@ -572,7 +644,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "24",
+        "variableId": "27",
         "name": "DLV - which",
         "type": "v",
         "parameter": [
@@ -1055,6 +1127,30 @@
         "accountId": "0",
         "containerId": "0",
         "triggerId": "20",
+        "name": "CE - route_choice",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "route_choice"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "21",
         "name": "CE - exact_location_deferred",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1078,7 +1174,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "21",
+        "triggerId": "22",
         "name": "CE - exact_location_out_of_range",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1094,6 +1190,30 @@
                 "type": "TEMPLATE",
                 "key": "arg1",
                 "value": "exact_location_out_of_range"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "23",
+        "name": "CE - consent_choice",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "consent_choice"
               }
             ]
           }
@@ -2648,6 +2768,112 @@
         "accountId": "0",
         "containerId": "0",
         "tagId": "20",
+        "name": "GA4 - route_choice",
+        "type": "gaawe",
+        "notes": "Which road customers pick when the local road is cheaper (fastest / no_tolls / dismissed), from the popup or the card switch — the take-up of the cheaper road.",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "route_choice"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "choice"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - choice}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "source"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - source}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "page"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - page}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "saving_usd"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - saving_usd}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XEW62ZD7B3"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "analytics_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "20"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "21",
         "name": "GA4 - exact_location_deferred",
         "type": "gaawe",
         "notes": "Customer skipped giving an exact pickup/drop — a driver-side problem later.",
@@ -2702,13 +2928,13 @@
           }
         },
         "firingTriggerId": [
-          "20"
+          "21"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "21",
+        "tagId": "22",
         "name": "GA4 - exact_location_out_of_range",
         "type": "gaawe",
         "notes": "The pin was outside the serviceable radius; `km` sizes the demand you are refusing.",
@@ -2778,7 +3004,68 @@
           }
         },
         "firingTriggerId": [
-          "21"
+          "22"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "23",
+        "name": "GA4 - consent_choice",
+        "type": "gaawe",
+        "notes": "Accept vs Reject on the cookie strip. The accept rate is how much of Europe Clarity can follow across pages again.",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "consent_choice"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "choice"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - choice}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XEW62ZD7B3"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "analytics_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "23"
         ]
       }
     ]

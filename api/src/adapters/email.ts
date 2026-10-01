@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 // Who a message is FOR, not what it says. The distinction earns its keep in exactly one
 // place — the kill switch (see adapters/emailGuard.ts), which stops customer mail while
 // letting ops alerts through, because silencing the alerts would hide the incident the
@@ -5,12 +7,40 @@
 // all ten customer senders mean without saying so.
 export type EmailAudience = 'customer' | 'ops';
 
+export type CustomerCommunicationKind =
+  | 'confirmation'
+  | 'details_needed'
+  | 'booking_confirmed'
+  | 'cancellation'
+  | 'refund'
+  | 'no_show_notice'
+  | 'trip_reminder'
+  | 'review_request'
+  | 'payment_recovery'
+  | 'payment_failed'
+  | 'deposit_received';
+
+export interface CustomerCommunicationTracking {
+  bookingId: string;
+  kind: CustomerCommunicationKind;
+  templateKey: string;
+  templateVersion: string;
+  source: 'website' | 'ops' | 'payment_webhook' | 'quote_conversion' | 'refund' | 'scheduled_job' | 'migration' | 'system';
+  actorType: 'customer' | 'staff' | 'provider' | 'scheduler' | 'migration' | 'system';
+  actorId?: string;
+  requestId?: string;
+  runId?: string;
+  trackingKey: string;
+}
+
 export interface EmailMessage {
   to: string;
   subject: string;
   html: string;
   text?: string;
   audience?: EmailAudience;
+  /** Audit metadata only. Quote, ops and Ride Board email remain outside this ledger. */
+  tracking?: CustomerCommunicationTracking;
 }
 
 // What actually happened to a message. Only a DELIVERED outcome may be written to the
@@ -21,7 +51,7 @@ export interface EmailMessage {
 // is a fact about the customer; a suppression is an operator setting. The watchdog must
 // exempt the first and shout about the second, and it cannot if they look the same.
 export type SendOutcome =
-  | { delivered: true }
+  | { delivered: true; provider?: string; providerMessageId?: string }
   | { delivered: false; reason: 'no_address' | 'suppressed_disabled' | 'suppressed_allowlist' };
 
 export const DELIVERED: SendOutcome = { delivered: true };
@@ -54,7 +84,10 @@ export class FakeEmailAdapter implements EmailAdapter {
   async send(msg: EmailMessage): Promise<SendOutcome> {
     if (!hasDeliverableAddress(msg.to)) return { delivered: false, reason: 'no_address' };
     this.sent.push(msg);
-    return DELIVERED;
+    const providerMessageId = `fake-${createHash('sha256')
+      .update(msg.tracking?.trackingKey ?? `${msg.to}:${msg.subject}:${this.sent.length}`)
+      .digest('hex').slice(0, 24)}`;
+    return { delivered: true, provider: 'fake', providerMessageId };
   }
 }
 
@@ -73,10 +106,10 @@ export class ResendEmailAdapter implements EmailAdapter {
     private readonly opts: ResendOptions,
   ) {}
 
-  async send(msg: EmailMessage): Promise<void> {
+  async send(msg: EmailMessage): Promise<SendOutcome> {
     // No address, nothing to send. Resend would answer 4xx for `to: ['']`, which reads in the
     // logs as a delivery failure rather than a customer we never had an address for.
-    if (!hasDeliverableAddress(msg.to)) return;
+    if (!hasDeliverableAddress(msg.to)) return { delivered: false, reason: 'no_address' };
     // Bound the outbound call so a hung Resend endpoint can't stall the awaited webhook path
     // (the confirmation email is sent inline in the PayHere webhook) or the notifications cron.
     const ctrl = new AbortController();
@@ -106,5 +139,11 @@ export class ResendEmailAdapter implements EmailAdapter {
       const detail = await res.text().catch(() => '');
       throw new Error(`resend_send_failed_${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
     }
+    const response = await res.json().catch(() => ({})) as { id?: unknown };
+    return {
+      delivered: true,
+      provider: this.provider,
+      ...(typeof response.id === 'string' && response.id ? { providerMessageId: response.id } : {}),
+    };
   }
 }

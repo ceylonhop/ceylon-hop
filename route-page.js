@@ -20,6 +20,9 @@
   var FROM = host.getAttribute('data-from');
   var TO = host.getAttribute('data-to');
   var MIN = parseInt(host.getAttribute('data-min') || '3', 10);
+  // The shared taxi's own weekdays (0 = Sunday). The board refuses a ride on them
+  // (409 scheduled_day), so a date picked here that the taxi runs is sent to the seat instead.
+  var DAYS = (host.getAttribute('data-days') || '').split(',').filter(Boolean).map(Number);
   if (!FROM || !TO) return;
 
   /* Where the board lives FROM HERE. A route page sits two directories deep
@@ -45,11 +48,12 @@
   }
   var state = { date: null, lists: [] };
 
-  /* ---- the live block, appended after the static CTA ---- */
+  /* ---- the live block, inside the ride-board part, just above its link ---- */
+  var boardLink = host.querySelector('a[href*="board.html"]');
   var live = document.createElement('div');
   live.className = 'live-dates';
   live.hidden = true;
-  host.parentNode.insertBefore(live, host);
+  (boardLink ? boardLink.parentNode : host).insertBefore(live, boardLink);
 
   /* Who is already on a list, as initials. GET /board's projectList returns first names
      only — no email, no sub — so this is exactly what the board itself shows. A row with
@@ -112,7 +116,11 @@
     var head, body = '';
     var mine = state.date ? listOn(state.date) : null;
 
-    if (state.date && !mine) {
+    if (state.date && DAYS.indexOf(state.date.getDay()) !== -1) {
+      // A shared-taxi day: the seat above is the answer, not a board ride.
+      head = 'The shared taxi runs ' + esc(fmt(state.date));
+      body = '<p class="ld-first">Book a seat above — a guaranteed departure, paid when you book.</p>';
+    } else if (state.date && !mine) {
       // The traveller named a date nobody is on yet. Under design A this is not an
       // "unavailable" state — it is an invitation, and the only branch on the page.
       head = 'No one\'s going ' + esc(fmt(state.date)) + ' yet';

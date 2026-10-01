@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { generateAll } from '../../tools/generate-route-pages.mjs';
 import { loadTransfers } from '../../tools/load-transfers.mjs';
 
-/* Design A — the route page is THE product page.
+/* The route page is THE product page.
    docs/superpowers/plans/2026-08-16-unified-route-page.md
 
-   Two options, never three: private transfer, and ONE shared card. A shared seat is a
-   date with names on it, so the words "scheduled" and "ride board" never reach the
-   customer, and there is no "unavailable" state for shared — any date can run.
+   Two options: private transfer, and the shared taxi where we run one. The shared taxi runs
+   on its set days (Wed & Sat) at set times and is paid at booking; on any other day the
+   traveller starts their own ride on the ride board, which runs once enough travellers
+   commit and only charges once it's confirmed (owner, 2026-09-30). The page names both and
+   never lets one borrow the other's promise.
 
    The load-bearing constraint is SEO: these pages exist to be indexed, so the generator
    must emit the complete flexible state as static HTML. JS may only layer date behaviour
@@ -63,20 +65,49 @@ describe('route page — renders completely without JavaScript', () => {
   });
 });
 
-describe('route page — one shared option, never two', () => {
-  it('never uses the words that name the distinction we removed', () => {
+const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+describe('route page — the shared taxi on its days, the ride board for the rest', () => {
+  it('states the days the shared taxi runs wherever we sell a seat', () => {
     for (const [path, html] of pages) {
-      const t = text(html);
-      expect(t, `${path} must not say "scheduled"`).not.toMatch(/scheduled/i);
-      expect(t, `${path} must not say "ride board"`).not.toMatch(/ride board/i);
+      const [from, to] = legOf(path);
+      const s = T.sharedOption(from, to);
+      if (!s) continue;
+      const days = s.days.map(d => DAY_LONG[d]).join(' & ');
+      expect(text(html), `${path} running days`).toContain(`Runs every ${days}`);
     }
   });
 
-  it('never tells a traveller a shared seat is unavailable on a date', () => {
-    // Under A every date can run, so there is no off-day language to render.
+  it('sends every other day to the ride board, with the board\'s own terms', () => {
     for (const [path, html] of pages) {
+      const [from, to] = legOf(path);
+      if (!T.sharedOption(from, to)) continue;
       const t = text(html);
-      expect(t, `${path}`).not.toMatch(/Wed & Sat|Wednesday and Saturday|only departs on/i);
+      expect(t, `${path} ride board`).toMatch(/start your own ride on the ride board/i);
+      expect(t, `${path} board terms`).toMatch(/runs once 3 travellers are going/);
+    }
+  });
+
+  it('never describes the shared taxi with the ride board\'s payment terms', () => {
+    // The shared taxi is paid at booking; "charged only once it's confirmed" is the board's.
+    for (const [path, html] of pages) {
+      const [from, to] = legOf(path);
+      if (!T.sharedOption(from, to)) continue;
+      // The FAQ answers are the JSON-LD FAQPage too — read them from there, entity-free.
+      const faq = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+        .map(m => JSON.parse(m[1])).find(o => o['@type'] === 'FAQPage');
+      const a = faq.mainEntity.find(q => /shared taxi work/.test(q.name)).acceptedAnswer.text;
+      expect(a, `${path} FAQ`).toMatch(/^The shared taxi runs every Wednesday and Saturday/);
+      expect(a, `${path} FAQ`).toMatch(/paid when you book/);
+      expect(a, `${path} FAQ`).toMatch(/ride board/);
+    }
+  });
+
+  it('never promises running days on a route with no shared taxi', () => {
+    for (const [path, html] of pages) {
+      const [from, to] = legOf(path);
+      if (T.sharedOption(from, to)) continue;
+      expect(text(html), `${path}`).not.toMatch(/Wed & Sat|Wednesday and Saturday|Wednesday & Saturday/i);
     }
   });
 
@@ -106,8 +137,18 @@ describe('route page — it is the destination, not a signpost', () => {
       const [from, to] = legOf(path);
       const n = noJs(html);
       expect(n, `${path} private CTA`).toMatch(/href="[^"]*booking\.html[^"]*"/);
-      if (T.sharedOption(from, to)) {
-        expect(n, `${path} shared CTA`).toMatch(/data-shared-cta|href="[^"]*board\.html/);
+      const s = T.sharedOption(from, to);
+      if (s) {
+        // The seat books straight into checkout — search.js's own shared bookUrl contract.
+        const href = (n.match(/href="([^"]*booking\.html[^"]*mode=shared[^"]*)"/) || [])[1];
+        expect(href, `${path} shared CTA`).toBeTruthy();
+        const qs = new URLSearchParams(href.replace(/&amp;/g, '&').split('?')[1]);
+        expect(qs.get('from')).toBe(from);
+        expect(qs.get('to')).toBe(to);
+        expect(Number(qs.get('price'))).toBe(s.seat);
+        expect(qs.get('days')).toBe(s.days.join(','));
+        expect(qs.get('times')).toBe(s.times.join(','));
+        expect(qs.get('corridor')).toBe(s.corridorId);
       }
     }
   });

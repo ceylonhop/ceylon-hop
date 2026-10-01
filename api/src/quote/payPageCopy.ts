@@ -17,6 +17,10 @@ export interface PayPageCopy {
   legs: { route: string; date: string | null; covered?: boolean }[] | null;
   includedText: string;
   totalLabel: string;
+  // The add-ons the customer chose, as the quote names them ("Waiting fee — Kandy → Ella"). Whole-
+  // trip pages only: a partial link's receipt lines already name every add-on it charges. Absent
+  // when there are none.
+  addOns?: string[];
 }
 
 interface ToolLegLite {
@@ -28,6 +32,8 @@ interface ToolLegLite {
 }
 
 import { shortPlace } from './shortPlace';
+import { chosenAddOns } from './paySelection';
+import { EXTRA_LABELS } from './extrasDeposit';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
@@ -119,6 +125,27 @@ function legRoute(l: ToolLegLite): string {
   return `${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
 }
 
+// An add-on's stored label names its journey by EVERY stop ("Waiting fee — Galle → Seetha Amman
+// Temple, … → Nuwara Eliya"; extrasDeposit.ts), which repeated a multi-stop day's whole chain on
+// each row (owner-reported 2026-09-27). Owner call: waiting and sightseeing read "Waiting up to 3hrs" and
+// "Sightseeing up to 3hrs" in the Included list; any other add-on keeps its journey, named by its two ends
+// like legRoute. Render-time only: the stored label, ops and emails are untouched. Exported so the
+// quote page can match a priced row against the same name.
+const INCLUDED_NAMES: [string, string][] = [
+  [EXTRA_LABELS.waiting, 'Waiting up to 3hrs'],
+  [EXTRA_LABELS.sightseeing, 'Sightseeing up to 3hrs'],
+];
+export function includedName(label: string): string {
+  for (const [stored, name] of INCLUDED_NAMES) {
+    if (label === stored || label.startsWith(`${stored} — `)) return name;
+  }
+  const at = label.indexOf(' — ');
+  if (at < 0) return label;
+  const stops = label.slice(at + 3).split(' → ');
+  if (stops.length < 2) return label;
+  return `${label.slice(0, at)} — ${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
+}
+
 // `selection` (spec 2026-08-04 partial links) — the legs THIS payment covers, by index into the
 // engine's driving legs. Omit it, or pass one covering everything, and every word below is
 // byte-identical to the whole-trip page.
@@ -132,11 +159,15 @@ export function payPageCopy(quote: {
   vehicle: string | null;
   request: unknown;
   totalCents: number;
+  /** The stored QuoteResult: its lines name the add-ons. */
+  result?: unknown;
 }, selection?: { legIndexes: number[]; extraIndexes?: number[] } | null): PayPageCopy {
   const req = (quote.request ?? {}) as { tool?: { legs?: ToolLegLite[]; passengerCount?: number }; engine?: { product?: string; firstDate?: string; lastDate?: string } | null };
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
   const engine = req.engine ?? null;
+  const addOns = selection ? [] : [...new Set(chosenAddOns({ request: quote.request, result: quote.result }).map(includedName))];
+  const withAddOns = addOns.length ? { addOns } : {};
 
   const greetingName = (quote.customerName ?? '').trim().split(/\s+/)[0] || null;
   const veh = vehicleLabel(quote.vehicle);
@@ -191,6 +222,7 @@ export function payPageCopy(quote: {
       legs: null,
       includedText: transferIncludedText(l),
       totalLabel: 'Total',
+      ...withAddOns,
     };
   }
 
@@ -233,6 +265,7 @@ export function payPageCopy(quote: {
       // NEVER "all N journeys" on a partial payment — that is the sentence that misled a paying
       // customer in prod.
       totalLabel: partial ? `Total · ${sold!.length} of your ${count} journeys` : `Total · all ${count} journeys`,
+      ...withAddOns,
     };
   }
 

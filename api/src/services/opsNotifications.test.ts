@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
-import { sampleBooking } from './__fixtures__/sampleBookings';
+import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
   id: 'q1',
@@ -178,6 +178,21 @@ describe('teamPaidEmail', () => {
     }
   });
 
+  it('names the add-ons a quote-booked trip carries', () => {
+    const trip = sampleBooking('trip');
+    const b = { ...trip, input: { ...trip.input, serviceType: 'private' }, addOns: ['Waiting fee — Kandy → Ella'] } as typeof trip;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('Waiting fee — Kandy → Ella');
+  });
+
+  it('names the promo code and what it took off, above what was paid', () => {
+    const b = { ...sampleBooking('single'), promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 1850 } as ReturnType<typeof sampleBooking>;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('SUMMER-15 · −LKR 18.50');
+    expect(m.text.indexOf('Promo:')).toBeLessThan(m.text.indexOf('Paid:', m.text.indexOf('PAYMENT')));
+    expect(teamPaidEmail(sampleBooking('single'), '').text).not.toContain('Promo');
+  });
+
   it('a chauffeur trip: vehicle, head-count and days', () => {
     const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
     expect(m.subject.startsWith('Paid: ')).toBe(true);
@@ -215,6 +230,36 @@ describe('teamPaidEmail', () => {
     const b = sampleBooking('single');
     const evil = { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<img src=x>' } } } as typeof b;
     expect(teamPaidEmail(evil, '').html).not.toContain('<img src=x>');
+  });
+
+  it("carries the customer's note, escaped, and leaves the subject alone", () => {
+    const plain = sampleBooking('single');
+    const b = { ...plain, customerNotes: 'Hilton Colombo <img src=x onerror=alert(1)>\nTwo surfboards' };
+    const m = teamPaidEmail(b, '');
+    expect(m.subject).toBe(teamPaidEmail(plain, '').subject);
+    expect(m.html).toContain('Hilton Colombo &lt;img src=x onerror=alert(1)&gt;');
+    expect(m.html).not.toContain('<img src=x');
+    expect(m.text).toMatch(/^Note: +Hilton Colombo/m);
+    expect(m.text).toContain('Two surfboards');
+  });
+
+  it('shows no note row when the customer left none', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '');
+    expect(m.text).not.toMatch(/^Note:/m);
+    expect(m.html).not.toContain('>Note<');
+  });
+
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): factRows feeds
+  // teamBookingBody's Trip section, so the "Paid:" body gets the Road row for free — but the
+  // subject (subjectRoute/when/people, never tripRows) must be byte-identical either way.
+  it('carries the Road row in the body, with no change to the subject', () => {
+    const plain = sampleBooking('single');
+    const withRoad = { ...plain, durationMin: 374, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const plainEmail = teamPaidEmail(plain, 'https://ops.example');
+    const roadEmail = teamPaidEmail(withRoad, 'https://ops.example');
+    expect(roadEmail.html).toContain('Local road, no expressway');
+    expect(roadEmail.text).toContain('Local road, no expressway');
+    expect(roadEmail.subject).toBe(plainEmail.subject);
   });
 });
 
@@ -326,6 +371,27 @@ describe('teamRescueEmail', () => {
     expect(text).toContain(PAY);
     // The plain-text part carries the same link, for mail clients that drop HTML.
     expect(m.text).toContain(href!);
+  });
+
+  // Route choice (spec §4.3): the customer bought the local road — the message says so, so the
+  // booking they are asked to pay for is recognisably theirs. The expressway message is unchanged.
+  it('names the local road in the pre-filled message when the customer chose it', () => {
+    const plain = sampleBooking('single');
+    const local = { ...plain, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const text = (b: typeof plain) => new URL(waHref(teamRescueEmail(b, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text(local)).toContain('Colombo Fort → Kandy via the local road');
+    expect(text(plain)).not.toContain('local road');
+    expect(teamRescueEmail(local, PAY, 'https://ops.example').subject).toBe(teamRescueEmail(plain, PAY, 'https://ops.example').subject);
+  });
+
+  // A partly-local trip: the message goes to the customer, so it names the local legs and never
+  // claims the whole trip is on the local road.
+  it('names only the local legs of a partly-local trip in the pre-filled message', () => {
+    const plain = sampleVariants.tripPrivate;
+    const local = { ...plain, input: { ...plain.input, routeVariants: ['fastest', 'no_tolls', 'fastest'] } } as typeof plain;
+    const text = new URL(waHref(teamRescueEmail(local, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text).toContain('Colombo Fort → Kandy → Nuwara Eliya → Ella with the local road for Kandy → Nuwara Eliya');
+    expect(text).not.toContain('via the local road');
   });
 
   it('tells the team to check the booking is still unpaid before messaging', () => {

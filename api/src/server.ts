@@ -37,6 +37,7 @@ import { PostgresRefundRepo } from './db/postgresRefundRepo';
 import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
+import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -124,15 +125,21 @@ const alerts = new ThrottledAlerts(
   config.ALERT_EMAIL ? new EmailAlertAdapter(email, config.ALERT_EMAIL) : new LogAlertAdapter(),
   alertLog,
 );
-const bookings = new PostgresBookingRepo(db);
+const bookings = new PostgresBookingRepo(db, {
+  transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+});
 const payments = new PostgresPaymentRepo(db);
 const quotes = new PostgresQuoteRepo(db);
 
 const app = createApp({
   bookings,
   payments,
-  refunds: new PostgresRefundRepo(db),
-  settlements: new PostgresPaymentSettlementRepo(db, bookings),
+  refunds: new PostgresRefundRepo(db, {
+    transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+  }),
+  settlements: new PostgresPaymentSettlementRepo(db, bookings, undefined, {
+    transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
+  }),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   rideLists: new PostgresRideListRepo(sql),
@@ -165,6 +172,8 @@ const app = createApp({
   paygw: ridePaygw,
   maps,
   email,
+  customerCommunications: new PostgresCustomerCommunicationRepo(db),
+  communicationTrackingEnabled: config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED,
   alerts,
   alertLog,
   pingDb: async () => {

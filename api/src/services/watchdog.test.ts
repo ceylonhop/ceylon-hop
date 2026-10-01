@@ -9,6 +9,8 @@ import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryBookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import { SendBudget } from './sendBudget';
 import { futureIsoDate } from '../testSupport/dates';
+import { InMemoryRideListRepo } from '../db/rideListRepo';
+import { cutoffAt, SEED_MEMBER_SUB_PREFIX } from '../domain/rideList';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -54,6 +56,20 @@ describe('runWatchdog', () => {
     expect(res.stuckPending).toBe(1);
     expect(alerts.sent[0].kind).toBe('watchdog_stuck_pending');
     expect(alerts.sent[0].body).toContain(booking.reference);
+  });
+
+  // Route choice (spec §4.3): the stuck-checkout alert names the local road when that is what
+  // the customer was buying; an expressway booking's alert has no Road line.
+  it('names the local road in the stuck-pending alert, and only then', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const local = await bookings.create({ ...sample, durationMin: 374, input: { ...sample.input, routeVariant: 'no_tolls' } } as NewBooking);
+    const plain = await bookings.create(sample);
+    for (const b of [local, plain]) await bookings.setStatus(b.id, 'payment_pending');
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
+    const bodyOf = (ref: string) => alerts.sent.find((a) => a.kind === 'watchdog_stuck_pending' && a.body.includes(ref))!.body;
+    expect(bodyOf(local.reference)).toContain('Road: Local road, no expressway · about 6h 14m');
+    expect(bodyOf(plain.reference)).not.toContain('Road:');
   });
 
   it('alerts on a paid booking with no confirmation logged after 15 minutes', async () => {
@@ -733,4 +749,59 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       expect(stuck[0].body).not.toContain('cancel this duplicate');
     });
   }
+});
+
+// The Ride Board cutoff sweep charges and confirms a van, and it only runs from the once-a-day
+// notifications tick. If that run is missed or fails, a list just stays `gathering` past its
+// cutoff: nobody charged, nobody told, until travellers turn up to a van that was never confirmed.
+// The watchdog (every ~15 min) is the one sweep that can notice. It pages only once departure is
+// close, so the normal wait between a cutoff and the next daily run never alerts.
+describe('runWatchdog: Ride Board lists left open past their cutoff', () => {
+  const listFor = async (repo: InMemoryRideListRepo, departsInHours: number, sub = 'real-traveller') => {
+    // Morning slot departs 07:00 Sri Lanka time (01:30 UTC). Pick a date whose departure lands
+    // `departsInHours` from now, then make the cutoff 24 h earlier, as the board does.
+    const departure = new Date(Date.now() + departsInHours * 3600_000);
+    const date = new Date(departure.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const exact = cutoffAt(date, 'morning', 0);
+    const list = await repo.createList({
+      corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date, slot: 'morning',
+      minSeats: 3, capacity: 6, seatPrice: 2400, note: null, cutoffAt: cutoffAt(date, 'morning'), createdBy: null,
+    });
+    await repo.addMember(list.id, { sub, firstName: 'Ana', country: 'LK', email: 'ana@x.com', seats: 1, preapprovalRef: 'pa_1', preferredTime: null });
+    return { list, now: new Date(exact.getTime() - departsInHours * 3600_000) };
+  };
+  const base = () => ({ bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo() });
+
+  it('pages when a list is still gathering past its cutoff and departs within 12 hours', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const { list, now } = await listFor(rideLists, 6);
+
+    const res = await runWatchdog(now, { ...base(), alerts, rideLists });
+
+    expect(res).toMatchObject({ overdueRideLists: 1 });
+    const alert = alerts.sent.find((a) => a.kind === 'ride_list_overdue');
+    expect(alert?.severity).toBe('critical');
+    expect(alert?.title).toContain(list.code);
+  });
+
+  it('stays quiet in the normal wait between a cutoff and the next daily run', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const { now } = await listFor(rideLists, 20); // cutoff passed 4 h ago, departs in 20 h
+
+    await runWatchdog(now, { ...base(), alerts, rideLists });
+
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('ride_list_overdue');
+  });
+
+  it('stays quiet about a list with only seeded placeholders on it', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const { now } = await listFor(rideLists, 6, `${SEED_MEMBER_SUB_PREFIX}1`);
+
+    await runWatchdog(now, { ...base(), alerts, rideLists });
+
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('ride_list_overdue');
+  });
 });

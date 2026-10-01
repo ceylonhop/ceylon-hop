@@ -31,8 +31,9 @@ export const bookings = pgTable(
     status: text('status').notNull(),
     mode: text('mode').notNull().default('single'),
     total: integer('total').notNull(),
-    // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
-    // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
+    // Immutable pricing evidence. Nullable so every legacy booking keeps its exact
+    // storage/checkout behaviour; written by POST /bookings/from-quote-v2 (quote conversion) and by
+    // POST /bookings/single (the website's own priced lines — WebsitePricingSnapshot, source 'website').
     subtotal: integer('subtotal'),
     discountTotal: integer('discount_total'),
     pricingSnapshotJson: jsonb('pricing_snapshot_json'),
@@ -76,10 +77,17 @@ export const bookings = pgTable(
     // a code. Uses are COUNTED from these plus payments — never stored as a counter.
     promoCodeId: uuid('promo_code_id').references(() => promoCodes.id),
     promoHoldUntil: timestamp('promo_hold_until', { withTimezone: true }),
+    // The customer's own "Anything we should know?" note from the booking page (0059). Plain
+    // text, at most 1,000 characters. Null when they left none, and on every older row.
+    customerNotes: text('customer_notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check('bookings_total_nonnegative', sql`${t.total} >= 0`),
+    check(
+      'bookings_customer_notes_length',
+      sql`${t.customerNotes} is null or char_length(${t.customerNotes}) <= 1000`,
+    ),
     check(
       'bookings_amount_due_now_valid',
       sql`${t.amountDueNow} is null or (${t.amountDueNow} >= 0 and ${t.amountDueNow} <= ${t.total})`,
@@ -111,6 +119,9 @@ export const transferRequests = pgTable('transfer_request', {
   // M8 — road distance + driving duration from the maps adapter. Null when unresolved.
   distanceKm: integer('distance_km'),
   durationMin: integer('duration_min'),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0061_route_variant).
+  // The road the customer paid for. Null means the customer never chose (today's behaviour).
+  routeVariant: text('route_variant'),
 });
 
 export const payments = pgTable(
@@ -283,6 +294,9 @@ export const tripRequests = pgTable('trip_request', {
   // accommodation nights (days − 1). Null for point-to-point transfers.
   days: integer('days'),
   driverNights: integer('driver_nights'),
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0061_route_variant).
+  // One entry per consecutive stop pair. Null means no leg chose the toll-free road.
+  routeVariants: text('route_variants').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
@@ -510,6 +524,112 @@ export const bookingCheckoutEvents = pgTable(
     index('booking_checkout_event_at_idx').on(t.at),
     index('booking_checkout_event_booking_id_idx').on(t.bookingId),
     index('booking_checkout_event_order_id_idx').on(t.orderId),
+  ],
+);
+
+// M23.3 — append-only facts for booking status changes. The booking row and event are written
+// in one transaction by BookingRepo.setStatus; no synthetic baseline is created for legacy rows.
+export const bookingStatusEvents = pgTable(
+  'booking_status_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    fromStatus: text('from_status').notNull(),
+    toStatus: text('to_status').notNull(),
+    source: text('source').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    reason: text('reason'),
+    requestId: uuid('request_id'),
+    runId: uuid('run_id'),
+    relatedEntityType: text('related_entity_type'),
+    relatedEntityId: text('related_entity_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'booking_status_events_from_status_valid',
+      sql`${t.fromStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_to_status_valid',
+      sql`${t.toStatus} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+    check(
+      'booking_status_events_source_valid',
+      sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_actor_type_valid',
+      sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`,
+    ),
+    check(
+      'booking_status_events_related_entity_type_valid',
+      sql`${t.relatedEntityType} is null or ${t.relatedEntityType} in ('payment', 'refund', 'quote', 'fulfilment')`,
+    ),
+    index('booking_status_events_booking_occurred_idx').on(t.bookingId, t.occurredAt, t.id),
+    index('booking_status_events_request_id_idx').on(t.requestId),
+    index('booking_status_events_run_id_idx').on(t.runId),
+  ],
+);
+
+// M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
+// never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
+export const customerCommunications = pgTable(
+  'customer_communications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    kind: text('kind').notNull(),
+    channel: text('channel').notNull(),
+    templateKey: text('template_key').notNull(),
+    templateVersion: text('template_version').notNull(),
+    recipient: text('recipient').notNull(),
+    source: text('source').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id'),
+    requestId: uuid('request_id'),
+    runId: uuid('run_id'),
+    trackingKey: text('tracking_key').notNull().unique(),
+    payloadSha256: text('payload_sha256').notNull(),
+    provider: text('provider'),
+    providerMessageId: text('provider_message_id').unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received')`),
+    check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
+    check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
+    check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
+    index('customer_communications_booking_created_idx').on(t.bookingId, t.createdAt, t.id),
+    index('customer_communications_request_id_idx').on(t.requestId),
+    index('customer_communications_run_id_idx').on(t.runId),
+  ],
+);
+
+export const customerCommunicationEvents = pgTable(
+  'customer_communication_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communicationId: uuid('communication_id').references(() => customerCommunications.id),
+    eventType: text('event_type').notNull(),
+    providerEventId: text('provider_event_id').unique(),
+    providerMessageId: text('provider_message_id'),
+    reasonCode: text('reason_code'),
+    detailJson: jsonb('detail_json').$type<Record<string, string>>(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('customer_communication_events_type_valid', sql`${t.eventType} in ('planned', 'suppressed', 'send_attempted', 'provider_accepted', 'send_failed', 'provider_sent', 'delivered', 'delayed', 'provider_failed', 'bounced', 'complained')`),
+    check('customer_communication_events_link_valid', sql`${t.communicationId} is not null or ${t.providerMessageId} is not null`),
+    check('customer_communication_events_detail_object', sql`${t.detailJson} is null or jsonb_typeof(${t.detailJson}) = 'object'`),
+    index('customer_communication_events_communication_recorded_idx').on(t.communicationId, t.recordedAt, t.id),
+    index('customer_communication_events_provider_message_idx').on(t.providerMessageId),
   ],
 );
 

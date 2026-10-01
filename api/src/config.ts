@@ -109,6 +109,18 @@ const Env = z.object({
     .enum(['0', '1', 'false', 'true'])
     .default('false')
     .transform((value) => value === '1' || value === 'true'),
+  // M23.3 — additive booking transition ledger rollout. Deploy the table first, then enable
+  // writes only after every status writer has adopted provenance in M23.4.
+  BOOKING_TRANSITION_TRACKING_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
+  // M23.5 — customer communication ledger. Independent from transition tracking so the
+  // schema can deploy dark and either stream can be disabled without changing email sends.
+  CUSTOMER_COMMUNICATION_TRACKING_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   // Temporary rollout seam: staging may accept the legacy tokenless checkout while the
   // website deploy catches up. Default-off; live production with real payments rejects it.
   CHECKOUT_TOKEN_COMPATIBILITY: z
@@ -124,7 +136,8 @@ const Env = z.object({
   ALERT_EMAIL: z.string().optional(),
   // SENTRY_DSN: error tracking activates when the owner creates the Sentry project (O2).
   SENTRY_DSN: z.string().optional(),
-  // RESEND_WEBHOOK_SECRET: enables POST /webhooks/resend (bounce/complaint alerts).
+  // RESEND_WEBHOOK_SECRET: enables signed POST /webhooks/resend delivery evidence and
+  // bounce/complaint/failure alerts.
   RESEND_WEBHOOK_SECRET: z.string().optional(),
   // Notification blast-radius cap (docs/notification-safety-rails-spec.md, R1). The most
   // outbound emails ONE cron tick may send before it stops and pages the founder. Guards the

@@ -348,6 +348,30 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.paid.reference).toBe(booking.reference);
     expect(body.paid.firstName).toBe('Nimal');
   });
+
+  // The add-ons the quote charged are named on the pay page (copy.addOns) and on the keepsake pass.
+  it('names the quote’s add-ons on the pay page and on the paid pass', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes, {
+      resultExtra: { lineItems: [
+        { label: 'CMB → Galle (car)', amountCents: 20900 },
+        { label: 'Waiting fee — CMB → Galle', amountCents: 1000, meta: { kind: 'extra', code: 'waiting', legIndex: 0 } },
+      ] },
+    });
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await (await view(app, t)).json()).copy.addOns).toEqual(['Waiting up to 3hrs']);
+
+    await start(app, t);
+    const booking = (await bookings.list())[0];
+    const p = await payments.create({ bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 21900, currency: 'USD', idempotencyKey: `checkout:${booking.id}` });
+    await payments.markSucceeded(p.id);
+    const paid = await (await view(app, t)).json();
+    expect(paid.state).toBe('paid');
+    expect(paid.paid.addOns).toEqual(['Waiting up to 3hrs']);
+  });
 });
 
 // The founder's negotiation, carried onto the pay page (owner, 2026-08-10): "show the discount
@@ -414,7 +438,7 @@ describe('GET /quotes/pay/view — the discount a customer was given', () => {
 describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
   it('creates one booking at the frozen total; the quote stays sent', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const bookings = new InMemoryBookingRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const app = createApp({ quotes, bookings });
     const q = await readyQuote(quotes);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
@@ -430,6 +454,12 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
     expect(after.status).toBe('sent');           // NEVER won here — that's settlement's job
     expect(after.convertedBookingId).toBe(bookingId);
     expect(checkoutToken).toBeTruthy();
+    expect(await bookings.listStatusEvents(bookingId)).toEqual([
+      expect.objectContaining({
+        source: 'quote_conversion', actorType: 'customer', actorId: CUSTOMER.email,
+        relatedEntityType: 'quote', relatedEntityId: q.id, requestId: expect.any(String),
+      }),
+    ]);
 
     // The checkout token actually opens a checkout on the fake gateway.
     const co = await app.request(`/bookings/${bookingId}/checkout`, {

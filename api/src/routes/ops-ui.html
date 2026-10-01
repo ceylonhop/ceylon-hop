@@ -342,6 +342,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     .an-seg{max-width:100%;overflow:auto}.an-seg button{padding:8px 12px;white-space:nowrap}
     .an-funnel{grid-template-columns:1fr}.an-funnel>div+div:before{content:'↓';left:50%;top:-5px}
     .an-card.an-wide{grid-column:auto}.an-attn button{align-items:flex-start}.an-attn strong{font-size:.82rem}
+    /* Bookings on a phone: search on its own line, channel + type side by side under it. The bar
+       must not shrink back to its 62px min-height — the wrapped selects spilled onto the heading. */
+    .topbar{flex-shrink:0}.topbar .search{flex:1 1 100%;max-width:none}.topbar .spacer{display:none}.topbar .sel{flex:1 1 0;min-width:0}
+    .qhead{flex-wrap:wrap}.qhead .an-seg{width:100%}.qhead .an-seg button{flex:1;padding:8px 6px}
   }
   /* Bulk close-out bar — sits under the Needs closing header, quiet until something is ticked. */
   .bulkbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 2px 10px;padding:9px 12px;
@@ -910,7 +914,36 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    the page scrolls with #view like every other shell page instead of nesting a scroll box. */
 .qv.qv-page { height: auto; overflow: visible; }
 .qv .ch-rates-card { max-width: 760px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px 22px; }
-.qv .ch-rates-head { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+/* Rates editor (spec 2026-09-26 §6–§7): the live-version bar, exact values, the review dialog's
+   tables and warnings, and the history rows. Reuses .ch-rate-* rows, .ch-field/.ch-input-wrap
+   inputs and .ch-hist-* chips; these rules only add what those don't cover. */
+.qv .ch-rates-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.qv .ch-rates-live { font-size: 12.5px; color: var(--muted); min-width: 0; }
+.qv .ch-rates-live b { color: var(--ink); }
+.qv .ch-rates-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.qv .ch-rt-val { display: inline-flex; flex-direction: column; align-items: flex-end; font-size: 13px; font-weight: 600; color: var(--ink); }
+.qv .ch-rt-val i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.qv .ch-rt-val small { font-size: 11px; font-weight: 500; color: var(--muted-2); }
+.qv .ch-rt-editing .ch-rate-row { align-items: flex-start; }
+.qv .ch-rt-editing .ch-rate-label { padding-top: 9px; }
+.qv .ch-rt-h3 { margin: 18px 0 6px; font-size: 15px; }
+.qv .ch-rt-hist-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.qv .ch-rt-hist-row .ch-hist-chips { flex: 1 1 240px; justify-content: flex-start; min-width: 0; }
+.qv .ch-rt-hist-row .ch-hist-chip { white-space: normal; }
+/* The builder's history meta truncates to one line; here who and when must read in full. */
+.qv .ch-rt-hist-row .ch-hist-meta { flex: 0 1 auto; white-space: normal; overflow: visible; }
+.qv .ch-rt-hist-row .ch-hist-rev { color: var(--ink); font-weight: 700; }
+.qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
+.qv .ch-rt-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted-2); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.qv .ch-rt-table td { padding: 6px; border-bottom: 1px dashed var(--line); vertical-align: top; }
+.qv .ch-rt-table td:not(:first-child), .qv .ch-rt-table th:not(:first-child) { text-align: right; white-space: nowrap; }
+.qv .ch-rt-table tr.is-big td { background: rgba(236,58,36,.05); }
+.qv .ch-rt-flag { display: inline-block; font-size: 10px; font-weight: 700; color: #8a5a00; background: #fdf0d2; border: 1px solid #f0d9a6; border-radius: 999px; padding: 0 6px; }
+.qv .ch-rt-warn { margin: 10px 0; padding: 10px 12px; border-radius: var(--r-md); background: #fdf0d2; color: #6b4600; font-size: 12.5px; border: 1px solid #f0d9a6; line-height: 1.45; }
+.qv .ch-rt-samples-title { margin-top: 14px; }
+.qv .ch-rt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+:root[data-theme="dark"] .qv .ch-rt-flag,
+:root[data-theme="dark"] .qv .ch-rt-warn { color: #f5c96a; background: rgba(245,201,106,.12); border-color: rgba(245,201,106,.35); }
 
 /* ---------- Itinerary (premium timeline) ---------- */
 .qv .ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -1030,7 +1063,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-hz-grid { display: grid; grid-template-columns: minmax(0,1fr) 104px auto auto; gap: 12px; align-items: end; }
 .qv .ch-hz-lbl { display: block; font-size: 10px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
 .qv .ch-hz-acwrap { position: relative; }
-.qv .ch-hz-form .ch-input-wrap { background: #fff; }
+.qv .ch-hz-form .ch-input-wrap { background: var(--surface); }
 .qv .ch-hz-prefix { font-size: 13px; opacity: .65; }
 .qv .ch-hz-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; cursor: pointer; padding-bottom: 9px; }
 .qv .ch-hz-toggle input { accent-color: var(--teal); width: 15px; height: 15px; cursor: pointer; }
@@ -1042,6 +1075,41 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* When the composer sits at the bottom of the Rate Settings modal, the zone picker menu
    would spill past the (overflow-hidden) card; .flip-up opens it above the field instead. */
 .qv .ch-ac-menu.flip-up { top: auto; bottom: calc(100% + 5px); }
+
+/* Promo codes panel (spec 2026-09-28-ops-promo-codes) — rows wrap like the hot-zone rows, so a
+   phone gets the actions on a second line instead of a table running off the card. */
+.qv .pc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.qv .pc-code { flex: 1 1 130px; min-width: 0; font-family: var(--mono); font-weight: 700; overflow-wrap: anywhere; }
+.qv .pc-off { font-weight: 700; min-width: 36px; }
+.qv .pc-uses { flex: 1 1 200px; color: var(--muted); }
+.qv .pc-uses b { color: var(--ink); }
+.qv .pc-dates { color: var(--muted); white-space: nowrap; }
+.qv .pc-acts { display: flex; gap: 6px; margin-left: auto; }
+.qv .pc-chip { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.qv .pc-chip.s-active { color: var(--ok); background: var(--ok-bg); }
+.qv .pc-chip.s-later { color: var(--wait); background: var(--wait-bg); }
+.qv .pc-chip.s-used, .qv .pc-chip.s-expired { color: var(--idle); background: var(--idle-bg); }
+.qv .pc-chip.s-ended { color: var(--alert); background: var(--alert-bg); }
+.qv .pc-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 260px; }
+.qv .pc-edit .ch-input { width: auto; }
+.qv .pc-edit .pc-edit-uses { width: 80px; }
+.qv .pc-grid { display: grid; grid-template-columns: minmax(0,1.4fr) 88px 88px minmax(0,1fr) minmax(0,1fr); gap: 12px; align-items: start; }
+.qv .pc-codecell .ch-input-wrap { display: flex; }
+.qv .pc-grid .ch-input { min-width: 0; width: 100%; }
+/* The theme's surface, not the zone form's hard-coded #fff: dark mode's near-white input text was
+   unreadable on it. */
+.qv #pc-form .ch-input-wrap { background: var(--surface); }
+.qv #pc-code { text-transform: uppercase; font-family: var(--mono); }
+.qv .pc-sugg { border: 0; background: none; color: var(--teal-d); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0 10px; white-space: nowrap; }
+.qv .pc-hint { font-size: 11px; color: var(--muted-2); margin-top: 5px; }
+.qv .pc-err { font-size: 12px; font-weight: 600; color: var(--alert); margin-top: 5px; }
+.qv .pc-banner { border: 1px solid var(--alert-line); background: var(--alert-bg); color: var(--alert); border-radius: var(--r-md); padding: 10px 13px; font-size: 12.5px; font-weight: 600; margin: 0 0 12px; }
+.qv .pc-foot { margin-top: 14px; }
+@media (max-width: 700px) {
+  .qv .pc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qv .pc-codecell, .qv .pc-datecell { grid-column: 1 / -1; } /* a date clips below ~150px */
+  .qv .pc-acts { margin-left: 0; }
+}
 .qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -2031,7 +2099,11 @@ const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[
    and shipped no URL at all, so every reminder ops sent pointed at nothing. Without a link
    (a booking that can no longer be charged) the sentence about one is dropped rather than
    left as a promise nobody can keep. */
-const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.`
+/* The local road: a transfer says "(via the local road)"; a trip names its local legs (the row's
+   `road` is roadRow's "Local road for A → B"), since the rest of it takes the expressway. Plain
+   clipboard text for WhatsApp — not HTML, so nothing to escape. */
+const reminderRoad=t=>!t.road?'':t.mode==='trip'?` (${t.road.charAt(0).toLowerCase()}${t.road.slice(1)})`:' (via the local road)';
+const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route}${reminderRoad(t)} is held pending payment of ${money(t)}.`
   +(link?`\n\nYou can pay securely by card here: ${link}`:'')
   +`\n\nReply if you have any questions! 🌴`;
 /* Stages a booking can still legally be cancelled from — the booking machine allows
@@ -2084,6 +2156,40 @@ const inGroup=(t,g)=>{
   if(g==='done')return CLOSED.includes(t.stage);
   return true;
 };
+/* Product type (owner 2026-09-28) — the queue's type filter. A private multi-stop trip is still
+   "my own car", so it files with the A→B transfers; only a chauffeur-guide trip stands apart.
+   A trip stored without a service type is a private car, never a guide. */
+const TYPES=[['','All types'],['private','Private transfers'],['chauffeur','Chauffeur guide'],['shared','Shared ride'],['board','Ride board']];
+const productType=t=>{
+  if(t.mode==='board')return 'board';
+  if(t.mode==='shared')return 'shared';
+  if(t.mode==='trip'&&t.serviceType==='chauffeur')return 'chauffeur';
+  return 'private';
+};
+/* Two views of one queue: 'date' is the day-grouped timeline, where the stage chip decides what
+   shows; 'recent' is a feed of what came in — every stage, closed and expired included — so the
+   chip does not apply there. Type and channel filter both. */
+const inQueue=(t,s)=>{
+  if(s.view!=='recent'&&!inGroup(t,s.group))return false;
+  if(s.chan&&t.chan!==s.chan)return false;
+  if(s.type&&productType(t)!==s.type)return false;
+  return true;
+};
+/* Newest booking first; a row with no booking time sinks. ISO strings from one server compare
+   as dates only when parsed — the booking and ride-list timestamps differ in precision. */
+const byRecent=(a,b)=>{
+  const ta=a.created?Date.parse(a.created):-Infinity,tb=b.created?Date.parse(b.created):-Infinity;
+  return tb-ta;
+};
+/* "booked 3h ago" on a fresh row, the day and time once it is older than a day. */
+const fmtBooked=iso=>{
+  const ms=Date.now()-Date.parse(iso);
+  if(!(ms>=0))return '';
+  if(ms<3600000)return `booked ${Math.max(1,Math.round(ms/60000))}m ago`;
+  if(ms<86400000)return `booked ${Math.round(ms/3600000)}h ago`;
+  const d=new Date(iso);
+  return 'booked '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+', '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+};
 const ICON={
   wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>',
   web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
@@ -2120,7 +2226,7 @@ const adminApi={
 function rowToTicket(row){
   return {
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
-    mode:row.mode, route:row.route, date:row.travelDate, time:row.travelTime, guests:row.pax,
+    mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
     notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
@@ -2129,6 +2235,7 @@ function rowToTicket(row){
     source:row.source||'booking', board:row.board||null,
     /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
     test:!!row.isTest,
+    created:row.createdAt||null, serviceType:row.serviceType||null,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
@@ -2161,7 +2268,7 @@ let tickets=[];
    reload so a stale id can never be actioned. */
 let closeSel=new Set();
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
-let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
+let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',view:'date',type:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
 let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
 /* The one "we're fetching a list" idiom, shared by the Bookings and Quotes queues. Rows rather
@@ -2372,19 +2479,20 @@ function ticketRow(t,i){
   const meta=board
     ?`${esc(boardSeats(t))}`
     :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+  const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
      advance. The box swallows its own click so ticking never opens the drawer. */
-  const closable=!board&&dayGroup(t)==='Needs closing';
+  const closable=!board&&state.view==='date'&&dayGroup(t)==='Needs closing';
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
   return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     ${tick}${lead}
     <div class="tk-main">
-      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}</div>
+      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
-      <div class="tk-meta">${meta}</div>
+      <div class="tk-meta">${meta}${booked}</div>
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
@@ -2432,21 +2540,23 @@ function viewTickets(){
   $('#topbar').innerHTML=`
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
     <div class="spacer"></div>
-    <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>`;
+    <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>
+    <select class="sel" id="typesel" aria-label="Booking type">${TYPES.map(([v,l])=>`<option value="${v}"${state.type===v?' selected':''}>${l}</option>`).join('')}</select>`;
   const q=state.q.trim().toLowerCase();
+  const recent=state.view==='recent';
   let list=tickets.filter(t=>{
-    if(!inGroup(t,state.group))return false;
-    if(state.chan&&t.chan!==state.chan)return false;
+    if(!inQueue(t,state))return false;
     if(q&&!`${t.cust} ${t.ref} ${t.route}`.toLowerCase().includes(q))return false;
     return true;
   });
   const tkey=t=>(t.date||'9999-99-99')+'T'+(t.time||'99:99');
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
-  let html=`<div class="pagehead"><h1>Bookings</h1></div>
-    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
-    <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
-  DAYGROUPS.forEach(g=>{
+  let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
+    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · ${recent?'newest first, every stage':'paid &amp; upcoming, website &amp; WhatsApp in one timeline'} · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
+    ${recent?'':`<div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
+  if(recent)html+=list.sort(byRecent).map(ticketRow).join('');
+  else DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
@@ -3261,7 +3371,7 @@ function lookupHeaderHtml(d){
     ${lookupKv('WhatsApp',memberPhoneHtml(c.whatsapp))}
     ${lookupKv('Country',esc(c.country||'—'))}
     ${billing?lookupKv('Billing',esc(billing)):''}
-    ${lookupKv('Route',esc(b.route))}
+    ${lookupKv('Route',esc(b.route))}${b.road?lookupKv('Road',esc(b.road)):''}
     ${lookupKv('When',esc(when))}
     ${lookupKv('Total',esc(money({amount:b.total,currency:cur})))}
     ${b.amountDueNow!=null&&b.amountDueNow!==b.total?lookupKv('Due now',esc(money({amount:b.amountDueNow,currency:cur}))):''}
@@ -3405,7 +3515,10 @@ function legsHtmlFor(d){
     let rows='';
     for(let i=0;i<stops.length-1;i++){
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
-      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}</span></div>`;
+      /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
+         leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
+      const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
+      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }
@@ -3642,6 +3755,20 @@ function refundHtmlFor(t,d){
 const MEMBER_STATE={held:'Held',charged:'Paid',charge_failed:'Card failed',scratched:'Scratched'};
 /* booking extras are stored as machine slugs; the sheet prints them for humans */
 const EXTRA_LBL={sightseeing:'Sightseeing stops',luggage:'Extra luggage',front:'Front seat',flex:'Flexible timing',waiting:'Waiting time','safari-wait':'Safari wait'};
+/* The add-ons the customer chose, for the booking sheet's Extras row. A booking made from a quote
+   carries them as the quote named them (booking.addOns, read off the quote's priced lines); a
+   website transfer still sends its own extras codes. Empty when nothing was chosen. */
+function bookingAddOns(booking) {
+  if (Array.isArray(booking?.addOns) && booking.addOns.length) return booking.addOns;
+  const codes = Array.isArray(booking?.input?.extras) ? booking.input.extras : [];
+  return codes.map((x) => EXTRA_LBL[x] || x);
+}
+/* The promo code a booking was made with and what it took off ("SUMMER-15 · −$6.70") — the Payment
+   block's Promo row. Empty on every booking without one. */
+function bookingPromo(booking) {
+  if (!booking?.promoCode || !(booking.discountTotal > 0)) return '';
+  return booking.promoCode + ' · −' + money({ amount: booking.discountTotal, currency: booking.currency });
+}
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
   const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
@@ -3804,8 +3931,14 @@ function renderSheet(){
       <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
       ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
   }
-  const extras=Array.isArray(d?.booking?.input?.extras)?d.booking.input.extras:[];
-  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(EXTRA_LBL[x]||x)).join(' · ')}</span></div>`:'';
+  const extras=bookingAddOns(d?.booking);
+  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  const promo=bookingPromo(d?.booking);
+  const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
+  /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
+     public, so it is escaped like every other value here; pre-line keeps their line breaks. */
+  const custNote=d?.booking?.customerNotes;
+  const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -3816,9 +3949,11 @@ function renderSheet(){
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
+        ${noteRow}
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
+        ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}
@@ -3826,6 +3961,7 @@ function renderSheet(){
       </div>
       <div class="block"><h4>Payment</h4>
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
+        ${promoRow}
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
@@ -4191,9 +4327,10 @@ document.addEventListener('click',e=>{
 });
 $('#scrim').addEventListener('click',()=>closeDetail('push'));
 document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
-document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
+document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}if(e.target.id==='typesel'){state.type=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
+  const bv=e.target.closest('[data-bview]');if(bv){state.view=bv.dataset.bview;viewTickets();return;}
   const el=e.target.closest('[data-act]');if(!el)return;
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
@@ -4703,6 +4840,12 @@ var ratesEl = null;       // the shell's #rates-mount while the Rates page is sh
 var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
+var promoCodes = null;      // Promo codes: GET /admin/promo-codes list (null = not loaded yet)
+var promoLoadFailed = false;
+var promoBusy = false;      // a promo-code write is in flight (disables the form and row buttons)
+var promoEditId = null;     // id of the code being edited inline, or null
+var promoDisabled = false;  // the server refused a create: PROMO_CODES_ENABLED is off there
+var promoFieldError = null; // { field: 'code'|'pct'|'uses'|'starts'|'ends'|'form', msg } — one at a time
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 // "Not ready to submit" panel: opened by pressing Submit/Approve with blockers outstanding,
 // closed when the operator dismisses it or the submission actually goes through. Not derived
@@ -7526,102 +7669,6 @@ function renderLegCard(leg, idx, total) {
   ].join('');
 }
 
-// ── Rate card body renderer ────────────────────────────────────────────────────
-function renderRateCardBody() {
-  if (!rateCard) {
-    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rate card…</div>';
-  }
-
-  var fx = rateCard.fxUsdToLkr;
-
-  // Helper: cents → "$X.XX"
-  function usd(cents) {
-    return '$' + (cents / 100).toFixed(2);
-  }
-
-  // Helper: cents → "Rs X,XXX" (LKR = round(cents × fx / 100))
-  function lkr(cents) {
-    var val = Math.round(cents * fx / 100);
-    return 'Rs ' + val.toLocaleString('en-US');
-  }
-
-  // Helper: render a static rate row
-  function rateRow(label, hint, valueHtml) {
-    return [
-      '<div class="ch-rate-row">',
-      '  <span class="ch-rate-label">',
-      esc(label),
-      hint ? '<span class="ch-rate-hint">' + esc(hint) + '</span>' : '',
-      '  </span>',
-      '  <span class="ch-rate-control" style="font-size:13px;font-weight:600;color:var(--ink);text-align:right">',
-      valueHtml,
-      '  </span>',
-      '</div>',
-    ].join('');
-  }
-
-  var carKmCents = rateCard.perKmCents.car;
-  var vanKmCents = rateCard.perKmCents.van;
-  var van14KmCents = rateCard.perKmCents.van14;
-  var customKmCents = rateCard.perKmCents.custom;
-  var carFloorCents = rateCard.floorCents.car;
-  var vanFloorCents = rateCard.floorCents.van;
-  var driverCents = rateCard.chauffeurDayRateCents;
-  var bufferPct = rateCard.bufferPct;
-  var depositPct = rateCard.depositPct;
-  var extras = rateCard.extras;
-
-  var leftCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Per-km rates</div>',
-    rateRow('Car', null,
-      esc(usd(carKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carKmCents)) + ' /km</span>'),
-    rateRow('Van', null,
-      esc(usd(vanKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanKmCents)) + ' /km</span>'),
-    rateRow('Van 14', null,
-      esc(usd(van14KmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(van14KmCents)) + ' /km</span>'),
-    rateRow('Custom', null,
-      esc(usd(customKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(customKmCents)) + ' /km</span>'),
-    '  <div class="ch-rate-group-title">Minimum per leg</div>',
-    rateRow('Car floor', null,
-      esc(usd(carFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carFloorCents)) + '</span>'),
-    rateRow('Van floor', null,
-      esc(usd(vanFloorCents))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanFloorCents)) + '</span>'),
-    '</div>',
-  ].join('');
-
-  var rightCol = [
-    '<div class="ch-rate-col">',
-    '  <div class="ch-rate-group-title">Chauffeur &amp; buffer</div>',
-    rateRow('Driver day rate', null,
-      esc(usd(driverCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /day</span>'
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(driverCents)) + ' /day</span>'),
-    rateRow('Buffer', null, esc(String(bufferPct)) + '%'),
-    rateRow('Deposit', null, esc(String(depositPct)) + '%'),
-    '  <div class="ch-rate-group-title">Add-ons &amp; FX</div>',
-    rateRow('Sightseeing', null,
-      esc(usd(extras.sightseeing))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.sightseeing)) + '</span>'),
-    rateRow('Waiting', null,
-      esc(usd(extras.waiting))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.waiting)) + '</span>'),
-    rateRow('Safari wait', null,
-      esc(usd(extras['safari-wait']))
-      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras['safari-wait'])) + '</span>'),
-    rateRow('FX', 'LKR per USD', 'Rs ' + esc(String(fx)) + ' / $'),
-    rateRow('Rate card', 'version', esc(rateCard.version)),
-    '</div>',
-  ].join('');
-
-  return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
-}
-
 // ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever on the Rates page. ──
 // A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
 // (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
@@ -7767,44 +7814,616 @@ function renderHotZonesPanel() {
     + '</div>';
 }
 
-// ── Rates page (spec 2026-09-26 §5) ──────────────────────────────────────────
-// Rate Settings used to be a popup over the builder; it is now a founder-only page in the ops
-// side menu. The shell owns the page header and hands us #rates-mount; the card and the zones
-// panel render here because they share this module's helpers (api, esc, apiPlaces) and its
-// .qv-scoped CSS. `ratesEl` is non-null only while the page is showing — every async repaint
-// checks it, so a response that lands after the founder has moved on paints nothing.
+// ── Promo codes (spec 2026-09-28-ops-promo-codes) — founder-only, below Hot zones. ──
+// Codes customers type at checkout for % off. The backend owns every rule (#618); this is the
+// screen for it. Forms are uncontrolled like the zone form, and each render writes the fields'
+// CURRENT values back as their value attributes, so a morph (a list landing, the form disabling)
+// can never wipe what the founder has typed.
+// The founder picks Sri Lanka DAYS; the API takes instants. Starts D = D 00:00 +05:30; Ends D =
+// the next day 00:00 +05:30, so the code works through the whole of D (expiry is exclusive).
+var PROMO_TZ = 'Asia/Colombo';
+function promoNextDay(d) { var x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); }
+function promoDayToStartIso(d) { return d + 'T00:00:00+05:30'; }
+function promoDayToExpiryIso(d) { return promoNextDay(d) + 'T00:00:00+05:30'; }
+function promoSlDay(ms) { return new Date(ms).toLocaleDateString('en-CA', { timeZone: PROMO_TZ }); } // YYYY-MM-DD
+function promoExpiryDay(iso) { return promoSlDay(Date.parse(iso) - 1); } // the last day it works
+function promoFmtDay(d) { return new Date(d + 'T12:00:00+05:30').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROMO_TZ }); }
+// First match wins (spec §4.2).
+function promoStatus(c, now) {
+  if (!c.active) return 'ended';
+  if (now >= Date.parse(c.expiresAt)) return 'expired';
+  if (c.uses && c.uses.remaining <= 0) return 'used';
+  if (c.startsAt && now < Date.parse(c.startsAt)) return 'later';
+  return 'active';
+}
+var PROMO_STATUS_LABEL = { active: 'Active', later: 'Starts later', used: 'Used up', expired: 'Expired', ended: 'Ended' };
+// CH- + 6 from an alphabet without 0/O/1/I. 32 symbols, so a byte & 31 is uniform.
+function promoSuggestCode() {
+  var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint8Array(6), out = 'CH-';
+  crypto.getRandomValues(b);
+  for (var i = 0; i < b.length; i++) out += abc[b[i] & 31];
+  return out;
+}
+function promoVal(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+async function loadPromoCodes() {
+  try {
+    var r = await api('/admin/promo-codes');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (d && Array.isArray(d.codes)) { promoCodes = d.codes; promoLoadFailed = false; }
+    else promoLoadFailed = true;
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes list', e); promoLoadFailed = true; }
+  renderRatesPage();
+}
+
+// Read and check the create form (spec §4.3). Returns { body } or { error: { field, msg } }.
+function promoReadForm() {
+  var code = promoVal('pc-code').trim().toUpperCase();
+  var pctRaw = promoVal('pc-pct').trim(), usesRaw = promoVal('pc-uses').trim();
+  var starts = promoVal('pc-starts'), ends = promoVal('pc-ends');
+  var pct = Number(pctRaw), uses = Number(usesRaw);
+  if (!/^[A-Z0-9-]{3,32}$/.test(code)) return { error: { field: 'code', msg: '3–32 letters, numbers or -' } };
+  if (!pctRaw || !Number.isInteger(pct) || pct < 1 || pct > 30) return { error: { field: 'pct', msg: '1–30%' } };
+  if (!usesRaw || !Number.isInteger(uses) || uses < 1) return { error: { field: 'uses', msg: 'At least 1' } };
+  if (!ends) return { error: { field: 'ends', msg: 'Pick the last day' } };
+  if (ends < promoSlDay(Date.now())) return { error: { field: 'ends', msg: 'Today or later' } };
+  if (starts && ends < starts) return { error: { field: 'ends', msg: 'On or after the start' } };
+  var body = { code: code, method: 'percentage', value: pct * 100, maxUses: uses };
+  if (starts) body.startsAt = promoDayToStartIso(starts);
+  body.expiresAt = promoDayToExpiryIso(ends);
+  return { body: body };
+}
+
+var PROMO_API_FIELD = { code: 'code', value: 'pct', maxUses: 'uses', startsAt: 'starts', expiresAt: 'ends' };
+
+async function promoCreate() {
+  var f = promoReadForm();
+  promoFieldError = f.error || null;
+  if (f.error) { renderRatesPage(); return; }
+  promoBusy = true; renderRatesPage();
+  try {
+    // Not api(): it turns every 403 into "Founder access required" and leaves the page, but a 403
+    // here is the server saying PROMO_CODES_ENABLED is off — the founder should see that, in place.
+    var r = await fetch('/admin/promo-codes', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
+    if (r.status === 401 && window.opsShowLogin) window.opsShowLogin();
+    var d = await jsonOrNull(r);
+    promoBusy = false;
+    if (r.status === 201) {
+      ['pc-code', 'pc-pct', 'pc-uses', 'pc-starts', 'pc-ends'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+      ratesToast('Code ' + f.body.code + ' created');
+      await loadPromoCodes();
+      return;
+    }
+    var err = d && d.error;
+    if (err === 'promo_codes_disabled') promoDisabled = true;
+    else if (err === 'code_taken') promoFieldError = { field: 'code', msg: 'That code already exists.' };
+    else if (err === 'invalid_request') {
+      var fe = (d.details && d.details.fieldErrors) || {}, k = Object.keys(fe).find(function (x) { return fe[x] && fe[x].length; });
+      promoFieldError = k ? { field: PROMO_API_FIELD[k] || 'form', msg: fe[k][0] } : { field: 'form', msg: 'Check the values.' };
+    } else if (r.status !== 401) ratesToast('Couldn’t save — try again.', 'error');
+    renderRatesPage();
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes create', e); promoBusy = false; ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); }
+}
+
+// PATCH one code; on success the edit closes and the list reloads, on failure the row keeps its
+// old values (the list is only replaced by a fresh GET).
+async function promoPatch(id, body) {
+  promoBusy = true; renderRatesPage();
+  try {
+    var r = await api('/admin/promo-codes/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    promoBusy = false;
+    if (!r.ok) { ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); return; }
+    if (promoEditId === id) promoEditId = null;
+    await loadPromoCodes();
+  } catch (e) { window.opsReportError && window.opsReportError('promoCodes update', e); promoBusy = false; ratesToast('Couldn’t save — try again.', 'error'); renderRatesPage(); }
+}
+
+function promoEditSave(id) {
+  var c = (promoCodes || []).find(function (x) { return x.id === id; });
+  if (!c) return;
+  var ends = promoVal('pc-edit-ends'), usesRaw = promoVal('pc-edit-uses').trim(), uses = Number(usesRaw);
+  if (!ends) { ratesToast('Pick the last day', 'error'); return; }
+  if (!usesRaw || !Number.isInteger(uses) || uses < 1) { ratesToast('Uses must be at least 1', 'error'); return; }
+  var body = {};
+  if (ends !== promoExpiryDay(c.expiresAt)) body.expiresAt = promoDayToExpiryIso(ends);
+  if (uses !== c.maxUses) body.maxUses = uses;
+  if (!Object.keys(body).length) { promoEditId = null; renderRatesPage(); return; }
+  var taken = c.uses ? c.uses.paid + c.uses.held : 0;
+  if (body.maxUses !== undefined && body.maxUses < taken
+    && !window.confirm(taken + ' uses are already paid or held. Set the limit to ' + uses + ' anyway? No new bookings will be able to use it.')) return;
+  promoPatch(id, body);
+}
+
+function promoEnd(id) {
+  var c = (promoCodes || []).find(function (x) { return x.id === id; });
+  if (!c) return;
+  if (!window.confirm('End ' + c.code + ' now? It stops working for new bookings immediately. Bookings already holding it (for up to 2 hours) can still pay at the discounted price.')) return;
+  promoPatch(id, { active: false });
+}
+
+function renderPromoCodesPanel() {
+  if (!viewerCan('promo_codes:manage')) return '';
+  var now = Date.now(), dis = promoBusy ? ' disabled' : '';
+  var rows;
+  if (promoCodes === null && promoLoadFailed) {
+    rows = '<div class="pc-row" style="color:var(--muted)">Couldn’t load promo codes. <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoRetry">Retry</button></div>';
+  } else if (promoCodes === null) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading codes…</div>';
+  } else if (!promoCodes.length) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No promo codes yet.</div>';
+  } else {
+    rows = promoCodes.slice().sort(function (a, b) { return Date.parse(b.createdAt) - Date.parse(a.createdAt); }).map(function (c) {
+      var st = promoStatus(c, now), u = c.uses || { paid: 0, held: 0, remaining: c.maxUses };
+      var chip = '<span class="pc-chip s-' + st + '">' + PROMO_STATUS_LABEL[st] + '</span>';
+      var head = '<span class="pc-code">' + esc(c.code) + '</span><span class="pc-off">' + esc(String(c.value / 100)) + '%</span>';
+      if (promoEditId === c.id) {
+        // Keep what's typed across a re-render; first render starts from the saved values.
+        var endsV = document.getElementById('pc-edit-ends') ? promoVal('pc-edit-ends') : promoExpiryDay(c.expiresAt);
+        var usesV = document.getElementById('pc-edit-uses') ? promoVal('pc-edit-uses') : String(c.maxUses);
+        return '<div class="pc-row" data-promo-row="' + esc(c.id) + '">' + head
+          + '<span class="pc-edit"><label class="ch-hz-lbl" for="pc-edit-ends" style="margin:0">Ends</label>'
+          + '<input id="pc-edit-ends" class="ch-input pc-edit-ends" type="date" value="' + esc(endsV) + '"' + dis + '>'
+          + '<label class="ch-hz-lbl" for="pc-edit-uses" style="margin:0">Uses</label>'
+          + '<input id="pc-edit-uses" class="ch-input pc-edit-uses" type="number" min="1" step="1" value="' + esc(usesV) + '"' + dis + '></span>'
+          + chip
+          + '<span class="pc-acts"><button class="ch-btn ch-btn-teal ch-btn-sm" data-action="promoEditSave" data-id="' + esc(c.id) + '"' + dis + '>Save</button>'
+          + '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="promoEditCancel"' + dis + '>Cancel</button></span></div>';
+      }
+      var acts = c.active
+        ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoEditStart" data-id="' + esc(c.id) + '"' + dis + '>Edit</button>'
+          + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoEnd" data-id="' + esc(c.id) + '"' + dis + '>End now</button>'
+        : '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="promoReactivate" data-id="' + esc(c.id) + '"' + dis + '>Turn back on</button>';
+      return '<div class="pc-row" data-promo-row="' + esc(c.id) + '">' + head
+        + '<span class="pc-uses"><b>' + u.paid + '</b> paid · ' + u.held + ' held · <b>' + u.remaining + '</b> left of ' + esc(String(c.maxUses)) + '</span>'
+        + '<span class="pc-dates">' + (c.startsAt ? promoFmtDay(promoSlDay(Date.parse(c.startsAt))) : 'Now') + ' → ' + promoFmtDay(promoExpiryDay(c.expiresAt)) + '</span>'
+        + chip + '<span class="pc-acts">' + acts + '</span></div>';
+    }).join('');
+  }
+
+  var off = promoDisabled || promoBusy ? ' disabled' : '';
+  var fe = promoFieldError;
+  var err = function (field) { return fe && fe.field === field ? '<div class="pc-err">' + esc(fe.msg) + '</div>' : ''; };
+  var field = function (id, label, input, field, hint) {
+    var cell = field === 'code' ? 'pc-codecell' : (field === 'starts' || field === 'ends') ? 'pc-datecell' : '';
+    return '<div class="' + cell + '"><label class="ch-hz-lbl" for="' + id + '">' + label + '</label>' + input + (hint || '') + err(field) + '</div>';
+  };
+  var inp = function (id, attrs) { return '<input id="' + id + '" class="ch-input" ' + attrs + ' value="' + esc(promoVal(id)) + '"' + off + '>'; };
+  var banner = promoDisabled
+    ? '<div class="pc-banner">Promo codes are switched off on this server, so new codes can’t be created here. Existing codes still show.</div>'
+    : '';
+  var form = '<div class="ch-hz-form" id="pc-form">'
+    + '<div class="ch-hz-head">Create a code</div>'
+    + '<div class="ch-hz-caption">Prefer codes that are hard to guess: a name plus random characters, like ROSHEN-7KQ2. The code and its % can’t change once it’s made.</div>'
+    + banner
+    + '<div class="pc-grid">'
+    +   field('pc-code', 'Code', '<div class="ch-input-wrap">' + inp('pc-code', 'maxlength="32" autocomplete="off" spellcheck="false" placeholder="ROSHEN-7KQ2"') + '<button class="pc-sugg" data-action="promoSuggest"' + off + '>Suggest</button></div>', 'code')
+    +   field('pc-pct', '% off', '<div class="ch-input-wrap">' + inp('pc-pct', 'type="number" min="1" max="30" step="1" placeholder="10"') + '<span class="ch-input-suffix">%</span></div>', 'pct')
+    +   field('pc-uses', 'Uses', '<div class="ch-input-wrap">' + inp('pc-uses', 'type="number" min="1" step="1" placeholder="20"') + '</div>', 'uses')
+    +   field('pc-starts', 'Starts <span style="font-weight:400;text-transform:none">(optional)</span>', '<div class="ch-input-wrap">' + inp('pc-starts', 'type="date"') + '</div>', 'starts')
+    +   field('pc-ends', 'Ends', '<div class="ch-input-wrap">' + inp('pc-ends', 'type="date"') + '</div>', 'ends', '<div class="pc-hint">Works through the whole day, Sri Lanka time</div>')
+    + '</div>'
+    + '<div class="pc-foot"><button class="ch-btn ch-btn-teal ch-btn-sm" data-action="promoCreate"' + off + '>Create code</button>' + err('form') + '</div>'
+    + '</div>';
+
+  return '<div class="ch-hz-panel" data-testid="promo-panel" style="margin-top:20px">'
+    + '<h3 style="margin:0 0 4px;font-size:15px">Promo codes</h3>'
+    + '<div class="ch-lock-note">Codes customers type at checkout for % off. Held = an unpaid booking is reserving a use for up to 2 hours.</div>'
+    + rows
+    + form
+    + '</div>';
+}
+
+// ── Rates page (spec 2026-09-26 §5–§7) ───────────────────────────────────────
+// Rate Settings used to be a popup over the builder; it is a founder-only page in the ops side
+// menu. The shell owns the page header and hands us #rates-mount; the page renders here because it
+// shares this module's helpers (api, esc, apiPlaces) and its .qv-scoped CSS. `ratesEl` is non-null
+// only while the page is showing — every async repaint checks it, so a response that lands after
+// the founder has moved on paints nothing.
+//
+// The rates come from GET /admin/rates (the live set, the code defaults, the history and the
+// read-only deposit) and are saved through a review step as a new revision (POST /admin/rates).
+// Per-km figures are shown and edited EXACTLY — two decimals of a cent, $0.4025 — so saving an
+// untouched field can never move a price. The form is uncontrolled, like the zone form: values are
+// read from the DOM at Review time, and the open form is never re-rendered (see renderRatesPage).
+var ratesData = null;       // GET /admin/rates body; null until loaded
+var ratesLoadFailed = false;
+var ratesEditing = false;   // the edit form is open
+var ratesReview = null;     // the open review: { rates, revertedToVersion, changes, warnings, samples, samplesFailed, saving, error }
+
+var RT_VEHICLES = [['car', 'Car'], ['van', 'Van 6'], ['van9', 'Van 9'], ['van14', 'Van 14'], ['custom', 'Custom']];
+var RT_EXTRAS = [['sightseeing', 'Sightseeing stops'], ['safari-wait', 'Safari wait'], ['waiting', 'Waiting'],
+  ['luggage', 'Luggage rack'], ['front', 'Child seat'], ['flex', 'Flexi ticket']];
+
 function ratesToast(msg, kind) {
   // The builder's own #ch-toast sits inside the hidden #quoteRoot on this route; use the shell's.
   if (window.opsToast) window.opsToast(msg, kind);
+}
+function rtCanEdit() { return viewerCan('rates:manage'); }
+// The version the form was opened on (null = nothing saved yet, the code defaults).
+function rtBaseVersion() { return ratesData && ratesData.live.source === 'revision' ? ratesData.live.version : null; }
+
+// "0.4025": up to two decimals of a cent, trailing zeros trimmed to at least two places.
+function rtKmPlain(cents) { return (cents / 100).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1'); }
+function rtUsdPlain(cents) { return (cents / 100).toFixed(2); }
+function rtKm(cents) { return '$' + rtKmPlain(cents); }
+function rtUsd(cents) { return '$' + rtUsdPlain(cents); }
+function rtLkr(cents, fx) { return 'Rs ' + Math.round((cents * fx) / 100).toLocaleString('en-US'); }
+// Markup on cost — the owner's July model — so today's card reads 15% on every vehicle.
+function rtMargin(price, cost) { return cost > 0 ? (Math.round(((price - cost) / cost) * 1000) / 10) + '%' : '—'; }
+function rtShow(kind, v) {
+  if (kind === 'km') return rtKm(v);
+  if (kind === 'pct') return v + '%';
+  if (kind === 'fx') return 'Rs ' + v;
+  return rtUsd(v);
+}
+function rtWho(email) { return String(email || '').split('@')[0] || 'unknown'; }
+function rtWhen(iso) { var s = String(iso || ''); return s ? s.slice(0, 10) + ' ' + s.slice(11, 16) + ' UTC' : ''; }
+
+// Every field that differs between two rate sets, in reading order. A change of more than 20% either
+// way is flagged — a slipped decimal point should look alarming before it is saved.
+function rtChanges(a, b) {
+  var out = [];
+  function cmp(label, x, y, kind) {
+    if (x === y) return;
+    var pct = x ? ((y - x) / x) * 100 : null;
+    out.push({ label: label, from: x, to: y, kind: kind, pct: pct, big: pct == null || Math.abs(pct) > 20 });
+  }
+  RT_VEHICLES.forEach(function (v) {
+    cmp(v[1] + ' — price per km', a.perKmCents[v[0]], b.perKmCents[v[0]], 'km');
+    cmp(v[1] + ' — our cost per km', a.costPerKmCents[v[0]], b.costPerKmCents[v[0]], 'km');
+  });
+  RT_VEHICLES.forEach(function (v) { cmp(v[1] + ' — minimum fare', a.floorCents[v[0]], b.floorCents[v[0]], 'usd'); });
+  cmp('Driver day rate', a.dayRateCents, b.dayRateCents, 'usd');
+  cmp('Our driver day cost', a.dayRateCostCents, b.dayRateCostCents, 'usd');
+  RT_EXTRAS.forEach(function (x) { cmp(x[1], a.extrasCents[x[0]], b.extrasCents[x[0]], 'usd'); });
+  cmp('Buffer', a.bufferPct, b.bufferPct, 'pct');
+  cmp('FX (LKR per USD)', a.fxUsdToLkr, b.fxUsdToLkr, 'fx');
+  return out;
+}
+
+// A price set below what it costs us is allowed — a promotion is a business call — but said out loud.
+function rtBelowCost(r) {
+  var out = [];
+  RT_VEHICLES.forEach(function (v) {
+    if (r.perKmCents[v[0]] < r.costPerKmCents[v[0]]) out.push(v[1] + ': the price per km is below our cost');
+  });
+  if (r.dayRateCents < r.dayRateCostCents) out.push('The driver day rate is below our day cost');
+  return out;
+}
+
+function rtVal(id) { var el = document.getElementById(id); return el ? String(el.value).trim().replace(/^\$/, '') : ''; }
+// Dollars as typed → cents. `places` = decimals of a dollar allowed: 4 for a per-km figure, else 2.
+function rtCents(raw, places) {
+  var re = places === 4 ? /^\d+(\.\d{1,4})?$/ : /^\d+(\.\d{1,2})?$/;
+  if (!re.test(raw)) return null;
+  return Math.round(Number(raw) * 10000) / 100;
+}
+
+// Read the form into a rate set, checking each figure against the limits the server enforces
+// (api/src/quote/rateRevision.ts). Returns { rates, errors }: rates is null while any field is bad.
+function rtReadForm() {
+  var errors = {};
+  var rates = { perKmCents: {}, costPerKmCents: {}, floorCents: {}, extrasCents: {} };
+  function money(id, places, maxCents) {
+    var c = rtCents(rtVal(id), places);
+    if (c == null) errors[id] = places === 4 ? 'Dollars, up to 4 decimals (0.4025)' : 'Dollars and cents (29.00)';
+    else if (c <= 0 || c > maxCents) errors[id] = 'Between $0.01 and ' + rtUsd(maxCents);
+    return c;
+  }
+  RT_VEHICLES.forEach(function (v) {
+    rates.perKmCents[v[0]] = money('rt-km-' + v[0], 4, 1000);
+    rates.costPerKmCents[v[0]] = money('rt-cost-' + v[0], 4, 1000);
+    rates.floorCents[v[0]] = money('rt-floor-' + v[0], 2, 100000);
+  });
+  rates.dayRateCents = money('rt-day', 2, 100000);
+  rates.dayRateCostCents = money('rt-daycost', 2, 100000);
+  RT_EXTRAS.forEach(function (x) { rates.extrasCents[x[0]] = money('rt-x-' + x[0], 2, 50000); });
+  var buf = rtVal('rt-buffer');
+  if (!/^\d+$/.test(buf) || Number(buf) > 50) errors['rt-buffer'] = 'A whole percent, 0–50';
+  rates.bufferPct = Number(buf);
+  var fx = rtVal('rt-fx');
+  if (!/^\d+(\.\d{1,2})?$/.test(fx) || Number(fx) <= 0 || Number(fx) > 1000) errors['rt-fx'] = 'Rupees per dollar, up to 2 decimals';
+  rates.fxUsdToLkr = Number(fx);
+  return { rates: Object.keys(errors).length ? null : rates, errors: errors };
+}
+
+// Errors go straight onto the inputs, not through a render: the open form is never re-rendered.
+function rtShowErrors(errors) {
+  if (!ratesEl) return;
+  ratesEl.querySelectorAll('.ch-rt-input').forEach(function (el) {
+    var msg = errors[el.id] || '';
+    el.classList.toggle('invalid', !!msg);
+    var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('.ch-field-err');
+    if (err) err.textContent = msg;
+  });
+}
+
+function rtInput(id, value, prefix, suffix, label) {
+  return '<div class="ch-field"><div class="ch-input-wrap">'
+    + (prefix ? '<span class="ch-input-prefix">' + prefix + '</span>' : '')
+    + '<input class="ch-input ch-rt-input" id="' + id + '" inputmode="decimal" autocomplete="off" aria-label="' + esc(label) + '" value="' + esc(value) + '">'
+    + (suffix ? '<span class="ch-input-suffix">' + suffix + '</span>' : '')
+    + '</div><div class="ch-field-err"></div></div>';
+}
+
+function renderRatesEditor() {
+  if (ratesLoadFailed) {
+    return '<div class="ch-lock-note" data-testid="rates-load-failed">Couldn’t load the rates. '
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtReload">Try again</button></div>';
+  }
+  if (!ratesData) return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rates…</div>';
+  var d = ratesData, r = d.live.rates, fx = r.fxUsdToLkr, edit = ratesEditing;
+  function row(label, hint, viewHtml, inputHtml) {
+    return '<div class="ch-rate-row">'
+      + '<span class="ch-rate-label">' + esc(label) + (hint ? '<span class="ch-rate-hint">' + hint + '</span>' : '') + '</span>'
+      + '<span class="ch-rate-control">' + (edit && inputHtml ? inputHtml : viewHtml) + '</span></div>';
+  }
+  // Value and unit share one line; the rupee equivalent sits under them.
+  function view(main, sub) { return '<span class="ch-rt-val"><span>' + main + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>'; }
+
+  var perKm = RT_VEHICLES.map(function (v) {
+    var c = r.perKmCents[v[0]];
+    return row(v[1], null, view(esc(rtKm(c)) + '<i> /km</i>', rtLkr(c, fx) + ' /km'),
+      rtInput('rt-km-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' price per km'));
+  }).join('');
+  var cost = RT_VEHICLES.map(function (v) {
+    var c = r.costPerKmCents[v[0]];
+    var m = '<span data-margin-for="' + v[0] + '">margin ' + esc(rtMargin(r.perKmCents[v[0]], c)) + '</span>';
+    return row(v[1], m, view(esc(rtKm(c)) + '<i> /km</i>'), rtInput('rt-cost-' + v[0], rtKmPlain(c), '$', '/km', v[1] + ' our cost per km'));
+  }).join('');
+  var floors = RT_VEHICLES.map(function (v) {
+    var c = r.floorCents[v[0]];
+    return row(v[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-floor-' + v[0], rtUsdPlain(c), '$', '', v[1] + ' minimum fare'));
+  }).join('');
+  var day = row('Driver day rate', null, view(esc(rtUsd(r.dayRateCents)) + '<i> /day</i>', rtLkr(r.dayRateCents, fx) + ' /day'),
+      rtInput('rt-day', rtUsdPlain(r.dayRateCents), '$', '/day', 'Driver day rate'))
+    + row('Our day cost', '<span data-margin-for="day">margin ' + esc(rtMargin(r.dayRateCents, r.dayRateCostCents)) + '</span>',
+      view(esc(rtUsd(r.dayRateCostCents)) + '<i> /day</i>'), rtInput('rt-daycost', rtUsdPlain(r.dayRateCostCents), '$', '/day', 'Our driver day cost'));
+  var extras = RT_EXTRAS.map(function (x) {
+    var c = r.extrasCents[x[0]];
+    return row(x[1], null, view(esc(rtUsd(c)), rtLkr(c, fx)), rtInput('rt-x-' + x[0], rtUsdPlain(c), '$', '', x[1]));
+  }).join('');
+  var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
+    + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
+  // Read-only in both modes (owner, 2026-09-26): no booking charges a deposit today.
+  var deposit = row('Deposit', 'not charged — bookings are paid in full',
+    view(esc(String(d.readOnly.depositPct)) + '%', 'cap ' + rtUsd(d.readOnly.depositCapCents)), null);
+
+  var live = d.live;
+  var liveLabel = live.source === 'revision'
+    ? 'Live: version <b>' + esc(live.version) + '</b> · saved by ' + esc(rtWho(live.createdBy)) + ' · ' + esc(rtWhen(live.createdAt))
+    : 'Live: the code defaults (<b>' + esc(d.defaults.version) + '</b>) — nothing saved yet';
+  var actions = !rtCanEdit() ? '' : (edit
+    ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="rtCancel">Cancel</button>'
+      + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtReview">Review changes</button>'
+    : '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="rtEdit">Edit rates</button>');
+  var note = edit
+    ? 'Change any figure, then Review. Prices are what the customer pays; costs only feed the margin. Nothing is live until you save.'
+    : 'These are the live prices: a saved change applies to the next quote, website estimate and booking. Approved quotes, and web quotes inside their 7-day lock, keep their prices.';
+
+  return '<div class="ch-rates-top"><div class="ch-rates-live" data-testid="rates-live">' + liveLabel + '</div>'
+    + '<div class="ch-rates-actions">' + actions + '</div></div>'
+    + '<div class="ch-lock-note">' + note + '</div>'
+    + '<div class="ch-rate-grid' + (edit ? ' ch-rt-editing" id="rt-form' : '') + '">'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Price per km</div>' + perKm
+    + '<div class="ch-rate-group-title">Minimum fare</div>' + floors + '</div>'
+    + '<div class="ch-rate-col"><div class="ch-rate-group-title">Our cost per km</div>' + cost
+    + '<div class="ch-rate-group-title">Chauffeur day</div>' + day
+    + '<div class="ch-rate-group-title">Add-ons</div>' + extras
+    + '<div class="ch-rate-group-title">Buffer &amp; FX</div>' + bufFx
+    + '<div class="ch-rate-group-title">Deposit</div>' + deposit + '</div>'
+    + '</div>';
+}
+
+function renderRatesHistory() {
+  var d = ratesData;
+  if (!d) return '';
+  var canRevert = rtCanEdit() && !ratesEditing;
+  var rows = d.history.map(function (h, i) {
+    var older = d.history[i + 1] ? d.history[i + 1].rates : d.defaults.rates;
+    var ch = rtChanges(older, h.rates);
+    var chips = ch.length
+      ? ch.slice(0, 4).map(function (c) { return '<span class="ch-hist-chip">' + esc(c.label + ' ' + rtShow(c.kind, c.from) + ' → ' + rtShow(c.kind, c.to)) + '</span>'; }).join('')
+        + (ch.length > 4 ? '<span class="ch-hist-chip is-quiet">+' + (ch.length - 4) + ' more</span>' : '')
+      : '<span class="ch-hist-chip is-quiet">no price change</span>';
+    return '<div class="ch-rt-hist-row" data-testid="rates-history-row">'
+      + '<span class="ch-hist-rev">' + esc(h.version) + (i === 0 ? ' <span class="ch-badge tone-teal">live</span>' : '') + '</span>'
+      + '<span class="ch-hist-meta">' + esc(rtWho(h.createdBy)) + ' · ' + esc(rtWhen(h.createdAt))
+      + (h.revertedToVersion ? ' · reverted to ' + esc(h.revertedToVersion) : '') + '</span>'
+      + '<span class="ch-hist-chips">' + chips + '</span>'
+      + (canRevert && i > 0 ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(h.version) + '">Revert to this</button>' : '')
+      + '</div>';
+  });
+  rows.push('<div class="ch-rt-hist-row" data-testid="rates-history-defaults">'
+    + '<span class="ch-hist-rev">Code defaults' + (d.history.length ? '' : ' <span class="ch-badge tone-teal">live</span>') + '</span>'
+    + '<span class="ch-hist-meta">' + esc(d.defaults.version) + ' · rateCard.ts</span>'
+    + '<span class="ch-hist-chips"></span>'
+    + (canRevert && d.history.length ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="rtRevert" data-version="' + esc(d.defaults.version) + '">Revert to this</button>' : '')
+    + '</div>');
+  return '<div class="ch-rt-history"><h3 class="ch-rt-h3">History</h3>' + rows.join('') + '</div>';
+}
+
+function renderRatesReview() {
+  var rv = ratesReview;
+  if (!rv || !ratesData) return '';
+  var changes = rv.changes.length
+    ? '<table class="ch-rt-table" data-testid="rates-changes"><thead><tr><th>What</th><th>Now</th><th>New</th><th>Change</th></tr></thead><tbody>'
+      + rv.changes.map(function (c) {
+        var pct = c.pct == null ? '—' : (c.pct > 0 ? '+' : '') + (Math.round(c.pct * 10) / 10) + '%';
+        return '<tr' + (c.big ? ' class="is-big"' : '') + '><td>' + esc(c.label) + '</td><td>' + esc(rtShow(c.kind, c.from)) + '</td>'
+          + '<td><b>' + esc(rtShow(c.kind, c.to)) + '</b></td><td>' + esc(pct)
+          + (c.big ? ' <span class="ch-rt-flag" title="More than 20% either way">check</span>' : '') + '</td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty" data-testid="rates-no-change">Nothing has changed — every figure matches the live rates.</div>';
+  var warn = rv.warnings.length
+    ? '<div class="ch-rt-warn" data-testid="rates-below-cost">' + rv.warnings.map(esc).join('<br>') + '</div>' : '';
+  var samples = rv.samples
+    ? '<table class="ch-rt-table" data-testid="rates-samples"><thead><tr><th>Sample trip</th><th>Now</th><th>New</th></tr></thead><tbody>'
+      + rv.samples.map(function (s) {
+        return '<tr><td>' + esc(s.label) + '</td><td>' + esc(rtUsd(s.currentCents)) + '</td><td><b>' + esc(rtUsd(s.proposedCents)) + '</b></td></tr>';
+      }).join('') + '</tbody></table>'
+    : '<div class="ch-hist-empty">' + (rv.samplesFailed ? 'Couldn’t price the sample trips — the changes above are still exact.' : 'Pricing sample trips…') + '</div>';
+  var revertNote = rv.revertedToVersion
+    ? '<div class="ch-lock-note">Reverting to ' + (rv.revertedToVersion === ratesData.defaults.version
+      ? 'the code defaults (' + esc(rv.revertedToVersion) + ')' : 'version ' + esc(rv.revertedToVersion))
+      + '. History keeps every version: this saves a new one.</div>' : '';
+  var err = '';
+  if (rv.error && rv.error.kind === 'stale') {
+    var cur = rv.error.current;
+    err = '<div class="ch-rt-warn" data-testid="rates-stale">Someone saved rates since you opened this page'
+      + (cur ? ' — version ' + esc(cur.version) + ' by ' + esc(rtWho(cur.createdBy)) + ', ' + esc(rtWhen(cur.createdAt)) : '')
+      + '. Reload to see them, then make your change again.</div>';
+  } else if (rv.error && rv.error.kind === 'invalid') {
+    err = '<div class="ch-rt-warn">The server refused: ' + esc(rv.error.issues.map(function (i) { return (i.path || []).join('.'); }).join(', ') || 'invalid figures') + '.</div>';
+  } else if (rv.error) {
+    err = '<div class="ch-rt-warn">Couldn’t save — nothing changed. Try again.</div>';
+  }
+  var buttons = (rv.error && rv.error.kind === 'stale')
+    ? '<button class="ch-btn ch-btn-teal" data-action="rtReload">Reload rates</button>'
+    : '<button class="ch-btn ch-btn-outline" data-action="rtReviewClose">' + (rv.revertedToVersion ? 'Cancel' : 'Back to editing') + '</button>'
+      + '<button class="ch-btn ch-btn-teal" data-action="rtSave"' + (rv.saving || !rv.changes.length ? ' disabled' : '') + '>'
+      + (rv.saving ? 'Saving…' : (rv.revertedToVersion ? 'Revert' : 'Save rates')) + '</button>';
+  return '<div class="ch-scrim show" data-action="rtReviewClose"></div>'
+    + '<div class="ch-modal" data-testid="rates-review"><div class="ch-modal-card">'
+    + '<div class="ch-modal-head"><h2>' + (rv.revertedToVersion ? 'Review the revert' : 'Review rate changes') + '</h2>'
+    + '<button class="ch-x-btn" data-action="rtReviewClose" title="Close">&times;</button></div>'
+    + '<div class="ch-modal-body">'
+    + '<div class="ch-lock-note">Saving makes these the live prices: the next quote, website estimate and booking use them. Approved quotes keep the prices they were approved at.</div>'
+    + revertNote + warn + changes
+    + '<div class="ch-rate-group-title ch-rt-samples-title">Sample trips</div>' + samples
+    + err
+    + '<div class="ch-rt-modal-actions">' + buttons + '</div>'
+    + '</div></div></div>';
+}
+
+// The review dialog renders into its own .qv host on <body>, not inside the page: #view sits at
+// z-index 1 under the side rail (z-index 2), so a dialog inside it would be half-covered by the rail
+// on a phone however high its own z-index went.
+var rtModalRoot = null;
+function rtModalHost() {
+  if (!rtModalRoot || !rtModalRoot.isConnected) {
+    rtModalRoot = document.createElement('div');
+    rtModalRoot.className = 'qv qv-page';
+    document.body.appendChild(rtModalRoot);
+  }
+  return rtModalRoot;
 }
 
 function renderRatesPage() {
   if (!ratesEl || !ratesEl.isConnected) return;
   var html = '<div class="qv qv-page" data-testid="rates-page">'
     + '<div class="ch-rates-card">'
-    + '<div class="ch-rates-head"><span class="ch-badge tone-slate">&#x1F512; Locked</span></div>'
-    + '<div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>'
-    + renderRateCardBody()
+    + renderRatesEditor()
+    + renderRatesHistory()
     + renderHotZonesPanel()
+    + renderPromoCodesPanel()
     + '</div>'
     + '</div>';
-  // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field.
+  // Diff, not innerHTML: a zone list landing mid-typing must not wipe the Add-a-zone field. And the
+  // open rates form is the founder's draft — never diff it, or a render mid-edit (a zone list
+  // landing, the review opening) would reset a typed figure to its saved value.
   morphdom(ratesEl, '<div>' + html + '</div>', {
+    childrenOnly: true,
+    onBeforeElUpdated: function (fromEl, toEl) {
+      if (ratesEditing && fromEl.id === 'rt-form') return false;
+      return !fromEl.isEqualNode(toEl);
+    },
+  });
+  morphdom(rtModalHost(), '<div>' + renderRatesReview() + '</div>', {
     childrenOnly: true,
     onBeforeElUpdated: function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); },
   });
   attachHotZoneAutoComplete();
 }
 
+async function loadRates() {
+  try {
+    var r = await api('/admin/rates');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (!d || !d.live || !d.live.rates || !d.defaults || !Array.isArray(d.history) || !d.readOnly) {
+      ratesLoadFailed = true;
+    } else {
+      ratesData = d;
+      ratesLoadFailed = false;
+    }
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates load', e);
+    ratesLoadFailed = true;
+  }
+  renderRatesPage();
+}
+
+// Open the review for a proposed set (a form read, or a revert). The sample trips are priced by the
+// server with the real engine; the change list is exact and needs no round trip.
+async function rtOpenReview(rates, revertedToVersion) {
+  var rv = {
+    rates: rates, revertedToVersion: revertedToVersion || null,
+    changes: rtChanges(ratesData.live.rates, rates), warnings: rtBelowCost(rates),
+    samples: null, samplesFailed: false, saving: false, error: null,
+  };
+  ratesReview = rv;
+  renderRatesPage();
+  try {
+    var r = await api('/admin/rates/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rates: rates }) });
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (ratesReview !== rv) return; // closed or replaced meanwhile
+    if (d && Array.isArray(d.samples)) rv.samples = d.samples; else rv.samplesFailed = true;
+  } catch (e) {
+    if (ratesReview !== rv) return;
+    rv.samplesFailed = true;
+  }
+  renderRatesPage();
+}
+
+async function rtSave() {
+  var rv = ratesReview;
+  if (!rv || rv.saving || !rv.changes.length) return;
+  rv.saving = true;
+  rv.error = null;
+  renderRatesPage();
+  try {
+    var body = { baseVersion: rtBaseVersion(), rates: rv.rates };
+    if (rv.revertedToVersion) body.revertedToVersion = rv.revertedToVersion;
+    var r = await api('/admin/rates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    var d = await jsonOrNull(r);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    if (r.status === 201 && d && d.revision) {
+      ratesReview = null;
+      ratesEditing = false;
+      ratesToast('Rates saved — version ' + d.revision.version + ' is live');
+      await loadRates();
+      apiRateCard().then(function (rc) { if (rc) rateCard = rc; }); // the builder's copy (add-ons, caps) follows
+      return;
+    }
+    if (r.status === 409) rv.error = { kind: 'stale', current: d && d.current };
+    else if (r.status === 400) rv.error = { kind: 'invalid', issues: (d && d.issues) || [] };
+    else rv.error = { kind: 'failed' };
+    renderRatesPage();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('rates save', e);
+    if (ratesReview !== rv) return;
+    rv.saving = false;
+    rv.error = { kind: 'failed' };
+    renderRatesPage();
+  }
+}
+
 // Mount (or re-mount) into the shell's #rates-mount. A NEW mount node means the founder just
-// arrived — fetch the card and the zones fresh; the same node again is a routine shell repaint.
+// arrived — fetch the rates and the zones fresh; the same node again is a routine shell repaint.
 function showRates(el) {
   var arriving = ratesEl !== el;
   ratesEl = el;
   if (arriving) {
     hzEditId = null;
-    apiRateCard().then(function (rc) { if (rc) rateCard = rc; renderRatesPage(); });
+    ratesEditing = false;
+    ratesReview = null;
+    ratesData = null;
+    ratesLoadFailed = false;
+    loadRates();
     loadHotZones();
+    promoCodes = null; promoLoadFailed = false; promoEditId = null; promoFieldError = null; promoDisabled = false;
+    if (viewerCan('promo_codes:manage')) loadPromoCodes();
   }
   renderRatesPage();
 }
@@ -7813,6 +8432,10 @@ function hideRates() {
   if (!ratesEl) return;
   ratesEl = null;
   hzEditId = null;
+  promoEditId = null;
+  ratesEditing = false;
+  ratesReview = null;
+  if (rtModalRoot) rtModalRoot.innerHTML = '';
   hzacClose();
 }
 
@@ -7820,7 +8443,7 @@ function hideRates() {
 document.addEventListener('click', function (e) {
   if (!ratesEl) return;
   var el = e.target.closest('[data-action]');
-  if (!el || !ratesEl.contains(el)) return;
+  if (!el || !(ratesEl.contains(el) || (rtModalRoot && rtModalRoot.contains(el)))) return;
   var action = el.getAttribute('data-action');
   if (action === 'hzSubmit') {
     hzSubmitZone();
@@ -7834,7 +8457,77 @@ document.addEventListener('click', function (e) {
     hzToggleZone(el.getAttribute('data-id'));
   } else if (action === 'hzDelete') {
     hzDeleteZone(el.getAttribute('data-id'));
+  } else if (action === 'promoCreate') {
+    promoCreate();
+  } else if (action === 'promoSuggest') {
+    var pcCode = document.getElementById('pc-code');
+    if (pcCode) { pcCode.value = promoSuggestCode(); if (promoFieldError && promoFieldError.field === 'code') { promoFieldError = null; renderRatesPage(); } }
+  } else if (action === 'promoEditStart') {
+    promoEditId = el.getAttribute('data-id');
+    renderRatesPage();
+  } else if (action === 'promoEditCancel') {
+    promoEditId = null;
+    renderRatesPage();
+  } else if (action === 'promoEditSave') {
+    promoEditSave(el.getAttribute('data-id'));
+  } else if (action === 'promoEnd') {
+    promoEnd(el.getAttribute('data-id'));
+  } else if (action === 'promoReactivate') {
+    promoPatch(el.getAttribute('data-id'), { active: true });
+  } else if (action === 'promoRetry') {
+    promoLoadFailed = false;
+    renderRatesPage();
+    loadPromoCodes();
+  } else if (action === 'rtEdit') {
+    if (!rtCanEdit() || !ratesData) return;
+    ratesEditing = true;
+    renderRatesPage();
+  } else if (action === 'rtCancel') {
+    ratesEditing = false;
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtReview') {
+    var form = rtReadForm();
+    rtShowErrors(form.errors);
+    if (!form.rates) { ratesToast('Check the highlighted figures', 'error'); return; }
+    rtOpenReview(form.rates, null);
+  } else if (action === 'rtReviewClose') {
+    ratesReview = null;
+    renderRatesPage();
+  } else if (action === 'rtSave') {
+    rtSave();
+  } else if (action === 'rtRevert') {
+    if (!rtCanEdit() || !ratesData) return;
+    var v = el.getAttribute('data-version');
+    var target = v === ratesData.defaults.version ? ratesData.defaults
+      : ratesData.history.find(function (h) { return h.version === v; });
+    if (target) rtOpenReview(target.rates, v);
+  } else if (action === 'rtReload') {
+    ratesReview = null;
+    ratesEditing = false;
+    ratesData = null;
+    ratesLoadFailed = false;
+    renderRatesPage();
+    loadRates();
   }
+});
+
+// Margins follow the typed figures as they change — straight onto the page, no render (the open
+// form is never re-rendered). Editing a field also clears its error.
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!ratesEl || !ratesEditing || !t || !t.classList || !t.classList.contains('ch-rt-input') || !ratesEl.contains(t)) return;
+  t.classList.remove('invalid');
+  var err = t.closest('.ch-field') && t.closest('.ch-field').querySelector('.ch-field-err');
+  if (err) err.textContent = '';
+  var m = /^rt-(km|cost)-(.+)$/.exec(t.id);
+  var key = m ? m[2] : ((t.id === 'rt-day' || t.id === 'rt-daycost') ? 'day' : null);
+  if (!key) return;
+  var places = key === 'day' ? 2 : 4;
+  var price = rtCents(rtVal(key === 'day' ? 'rt-day' : 'rt-km-' + key), places);
+  var cost = rtCents(rtVal(key === 'day' ? 'rt-daycost' : 'rt-cost-' + key), places);
+  var out = ratesEl.querySelector('[data-margin-for="' + key + '"]');
+  if (out) out.textContent = 'margin ' + (price != null && cost != null ? rtMargin(price, cost) : '—');
 });
 
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────

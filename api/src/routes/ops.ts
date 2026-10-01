@@ -91,14 +91,27 @@ const BOOKING_STATUS_FOR_STAGE: Partial<Record<RideStatus, BookingStatus>> = {
 // turn a successful advance into a 500. Silently does nothing when the move is not a legal
 // booking transition — every ride_ops backtrack, a re-set of the same stage, and any stage
 // reached on a booking already cancelled or refunded.
-async function mirrorToBooking(deps: OpsDeps, bookingId: string, to: RideStatus): Promise<void> {
+async function mirrorToBooking(
+  deps: OpsDeps,
+  bookingId: string,
+  to: RideStatus,
+  context: { actorId: string; requestId: string },
+): Promise<void> {
   const target = BOOKING_STATUS_FOR_STAGE[to];
   if (!target) return;
   try {
     const booking = await deps.bookings.get(bookingId);
     if (!booking || booking.status === target) return;
     if (!canTransition(booking.status, target)) return;
-    await deps.bookings.setStatus(bookingId, target);
+    await deps.bookings.setStatus(bookingId, target, undefined, {
+      source: 'ops',
+      actorType: 'staff',
+      actorId: context.actorId,
+      requestId: context.requestId,
+      reason: `fulfilment:${to}`,
+      relatedEntityType: 'fulfilment',
+      relatedEntityId: bookingId,
+    });
   } catch (err) {
     console.error(`ops stage mirror to booking status failed for ${bookingId} (${to}):`, err);
   }
@@ -329,7 +342,10 @@ export function opsRoutes(deps: OpsDeps) {
     // Carry the milestone across to the booking's own lifecycle, then fire the matching
     // customer email once (idempotent via the log). Both best-effort: neither may fail the
     // ops action the operator just took.
-    await mirrorToBooking(deps, id, body.data.to as RideStatus);
+    await mirrorToBooking(deps, id, body.data.to as RideStatus, {
+      actorId: c.get('identity').email,
+      requestId: c.get('requestId'),
+    });
     await maybeEmailForStage(deps, id, body.data.to);
     return c.json(updated);
   });

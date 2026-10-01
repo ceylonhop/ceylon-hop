@@ -11,7 +11,10 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import type { NewBooking } from './bookingRepo';
+import { personKeyFor, websitePricingSnapshot, type NewBooking } from './bookingRepo';
+import { quote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import type { QuoteRequest } from '../quote/types';
 import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
@@ -19,11 +22,13 @@ import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
 import { bookings as bookingRows, distanceCache } from './schema';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
 import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
+import type { BookingTransitionContext } from '../domain/trackingContract';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -46,6 +51,7 @@ const sample: NewBooking = {
 // Runs only when a test database is configured (CI provisions an ephemeral Postgres).
 describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
+  let trackedBookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
   let paymentEvents: PostgresPaymentEventRepo;
   let tasks: PostgresConciergeTaskRepo;
@@ -63,6 +69,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     await seedCorridors(sql);
     bookings = new PostgresBookingRepo(conn.db);
+    trackedBookings = new PostgresBookingRepo(conn.db, { transitionTrackingEnabled: true });
     payments = new PostgresPaymentRepo(conn.db);
     paymentEvents = new PostgresPaymentEventRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
@@ -80,6 +87,46 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await notifLog.wasSent(b.id, 'review_request')).toBe(false);
     await notifLog.markSent(b.id, 'trip_reminder'); // duplicate → no-op via unique constraint
     expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
+  });
+
+  // The add-ons live on the quote; the booking only links back (converted_booking_id). A load —
+  // one booking or a list, which share assembleMany — must name them, and a booking with no quote
+  // behind it carries no addOns field at all.
+  it('a booking loads the add-ons its quote charged, and none without a quote', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+      rateCardVersion: RATE_CARD.version, result, request: { engine },
+    });
+    const linked = await bookings.create(sample);
+    const plain = await bookings.create(sample);
+    await quotes.patch(q.id, { convertedBookingId: linked.id, status: 'won' });
+
+    expect((await bookings.get(linked.id))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 5);
+    expect(listed.find((b) => b.id === linked.id)?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
+  });
+
+  // A website booking has no quote: it keeps the engine's own priced lines in
+  // pricing_snapshot_json, and a load names its add-ons from them.
+  it('a website booking keeps the lines it was priced with and names its add-ons', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }],
+      extras: ['sightseeing'],
+    };
+    const result = quote(engine, RATE_CARD);
+    const b = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(b.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
+    const [row] = await db.select({ s: bookingRows.pricingSnapshotJson }).from(bookingRows).where(eq(bookingRows.id, b.id));
+    expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
@@ -121,6 +168,25 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.input.from).toBe('Colombo Airport');
   });
 
+  // The in-memory repo copies every field it is handed, so only this round trip proves the note
+  // survives Postgres. The note is bound as a query parameter, never spliced into SQL: text that
+  // looks like an attack is stored and read back as the inert characters it is.
+  it("keeps the customer's note exactly as typed — SQL and HTML stay plain text", async () => {
+    const hostile = "Robert'); DROP TABLE bookings;-- <script>alert(1)</script>\n' OR '1'='1";
+    const b = await bookings.create({ ...sample, customerNotes: hostile });
+    expect((await bookings.get(b.id))?.customerNotes).toBe(hostile);
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from bookings where id = ${b.id}`;
+    expect(n).toBe(1); // the table is still there, and so is the row
+    expect((await bookings.get((await bookings.create(sample)).id))?.customerNotes).toBeNull();
+  });
+
+  it('the database itself refuses a customer note over 1,000 characters', async () => {
+    const b = await bookings.create(sample);
+    await expect(sql`update bookings set customer_notes = ${'x'.repeat(1001)} where id = ${b.id}`)
+      .rejects.toMatchObject({ code: '23514', constraint_name: 'bookings_customer_notes_length' });
+    await expect(sql`update bookings set customer_notes = ${'x'.repeat(1000)} where id = ${b.id}`).resolves.toBeDefined();
+  });
+
   it('is idempotent on the booking idempotency key', async () => {
     const key = `it-${Date.now()}`;
     const a = await bookings.create(sample, { idempotencyKey: key });
@@ -154,6 +220,89 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await expect(bookings.setStatus(b.id, 'completed')).rejects.toThrow();
   });
 
+  it('atomically records applied transitions and preserves stable order', async () => {
+    const b = await trackedBookings.create(sample);
+    const firstContext: BookingTransitionContext = {
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: '11111111-1111-4111-8111-111111111111',
+    };
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, firstContext);
+    await trackedBookings.setStatus(b.id, 'paid', undefined, {
+      source: 'payment_webhook',
+      actorType: 'provider',
+      requestId: '22222222-2222-4222-8222-222222222222',
+      relatedEntityType: 'payment',
+      relatedEntityId: 'payment-1',
+    });
+
+    const firstRead = await trackedBookings.listStatusEvents(b.id);
+    expect((await trackedBookings.listStatusEvents(b.id))).toEqual(firstRead);
+    expect(firstRead.map((event) => [event.fromStatus, event.toStatus])).toEqual([
+      ['draft', 'payment_pending'],
+      ['payment_pending', 'paid'],
+    ]);
+    expect(firstRead[0]).toMatchObject({
+      source: 'website',
+      actorType: 'customer',
+      actorId: 'maya@example.com',
+      requestId: firstContext.requestId,
+      runId: null,
+    });
+  });
+
+  it('writes no event for a legacy row or an illegal transition', async () => {
+    const legacy = await bookings.create(sample);
+    await bookings.setStatus(legacy.id, 'payment_pending');
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+    await expect(
+      trackedBookings.setStatus(legacy.id, 'completed', undefined, {
+        source: 'system', actorType: 'system',
+      }),
+    ).rejects.toThrow();
+    expect(await trackedBookings.listStatusEvents(legacy.id)).toEqual([]);
+  });
+
+  it('rolls back the status when the transition event insert fails', async () => {
+    const b = await trackedBookings.create(sample);
+    await expect(
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+        source: 'website',
+        actorType: 'customer',
+        requestId: 'not-a-uuid',
+      }),
+    ).rejects.toThrow();
+    expect((await trackedBookings.get(b.id))?.status).toBe('draft');
+    expect(await trackedBookings.listStatusEvents(b.id)).toEqual([]);
+  });
+
+  it('records only the winning concurrent transition', async () => {
+    const b = await trackedBookings.create(sample);
+    const context: BookingTransitionContext = { source: 'system', actorType: 'system' };
+    const results = await Promise.allSettled([
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+      trackedBookings.setStatus(b.id, 'payment_pending', undefined, context),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await trackedBookings.listStatusEvents(b.id)).toHaveLength(1);
+  });
+
+  it('reconciles a booking whose current status differs from its latest event', async () => {
+    const b = await trackedBookings.create(sample);
+    await trackedBookings.setStatus(b.id, 'payment_pending', undefined, {
+      source: 'system', actorType: 'system',
+    });
+    await db.update(bookingRows).set({ status: 'cancelled' }).where(eq(bookingRows.id, b.id));
+
+    expect(await trackedBookings.listStatusEventMismatches()).toContainEqual({
+      bookingId: b.id,
+      currentStatus: 'cancelled',
+      eventStatus: 'payment_pending',
+    });
+  });
+
   it('persists and reads back a multi-stop trip', async () => {
     const trip: NewBooking = {
       mode: 'trip',
@@ -178,6 +327,66 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.input.serviceType).toBe('private');
     expect(got.input.customer.email).toBe('maya@example.com');
     expect(got.total).toBe(12000);
+  });
+
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): the road the
+  // customer paid for round-trips through Postgres, and a booking that never named one reads
+  // back with the key ABSENT — not null — so old rows stay byte-identical (0061_route_variant).
+  it('persists and reads back a single transfer’s route variant', async () => {
+    const withRoad: NewBooking = { ...sample, input: { ...sample.input, routeVariant: 'no_tolls' } };
+    const created = await bookings.create(withRoad);
+    const got = await bookings.get(created.id);
+    if (got?.mode !== 'single') throw new Error('expected a single booking');
+    expect(got.input.routeVariant).toBe('no_tolls');
+  });
+
+  it('persists and reads back a trip’s route variants', async () => {
+    const trip: NewBooking = {
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+        nights: [1, 2, 0],
+        dates: ['2026-07-20', '2026-07-22'],
+        pax: 2,
+        vehicleType: 'van',
+        serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+        routeVariants: ['no_tolls', 'fastest'],
+      },
+      total: 12000,
+      amountDueNow: 12000,
+      currency: 'USD',
+    };
+    const created = await bookings.create(trip);
+    const got = await bookings.get(created.id);
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.input.routeVariants).toEqual(['no_tolls', 'fastest']);
+  });
+
+  it('a booking that never named a road reads back with the key absent, not null', async () => {
+    const single = await bookings.create(sample);
+    const gotSingle = await bookings.get(single.id);
+    if (gotSingle?.mode !== 'single') throw new Error('expected a single booking');
+    expect('routeVariant' in gotSingle.input).toBe(false);
+
+    const trip: NewBooking = {
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+        nights: [1, 2, 0],
+        pax: 2,
+        vehicleType: 'van',
+        serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 12000,
+      amountDueNow: 12000,
+      currency: 'USD',
+    };
+    const createdTrip = await bookings.create(trip);
+    const gotTrip = await bookings.get(createdTrip.id);
+    if (gotTrip?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect('routeVariants' in gotTrip.input).toBe(false);
   });
 
   it('persists and reads back a shared booking', async () => {
@@ -559,6 +768,84 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         confirmedBy: 'finance@test',
       }),
     ).rejects.toMatchObject({ code: 'refund_already_confirmed' });
+  });
+
+  it('atomically records a full-refund transition and rolls both ledgers back on failure', async () => {
+    const checkoutRequestId = randomUUID();
+    const paidRequestId = randomUUID();
+    const refundRequestId = randomUUID();
+    const booking = await trackedBookings.create(sample);
+    await trackedBookings.setStatus(booking.id, 'payment_pending', undefined, {
+      source: 'website', actorType: 'customer', requestId: checkoutRequestId,
+    });
+    await trackedBookings.setStatus(booking.id, 'paid', undefined, {
+      source: 'payment_webhook', actorType: 'provider', requestId: paidRequestId,
+    });
+    const payment = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: booking.total, currency: booking.currency, idempotencyKey: `refund-atomic-${booking.id}`,
+    });
+    await payments.markSucceeded(payment.id);
+    const broken = new PostgresRefundRepo(
+      db,
+      { transitionTrackingEnabled: true },
+      async (point) => { if (point === 'after_booking_update') throw new Error('injected_refund'); },
+    );
+    const pending = await broken.request({
+      bookingId: booking.id, amountCents: booking.total, currency: 'USD',
+      reason: 'full refund', requestedBy: 'founder@test',
+    });
+
+    await expect(broken.confirm({
+      bookingId: booking.id, refundId: pending.id, gatewayRef: `FAIL-${pending.id}`,
+      confirmedBy: 'founder@test', correlation: { requestId: refundRequestId },
+    })).rejects.toThrow('injected_refund');
+    expect((await trackedBookings.get(booking.id))?.status).toBe('paid');
+    expect((await broken.list(booking.id))[0].status).toBe('manual_pending');
+    expect(await trackedBookings.listStatusEvents(booking.id)).toHaveLength(2);
+
+    const refunds = new PostgresRefundRepo(db, { transitionTrackingEnabled: true });
+    await refunds.confirm({
+      bookingId: booking.id, refundId: pending.id, gatewayRef: `OK-${pending.id}`,
+      confirmedBy: 'founder@test', correlation: { requestId: refundRequestId },
+    });
+    expect((await trackedBookings.listStatusEvents(booking.id))[2]).toMatchObject({
+      fromStatus: 'paid', toStatus: 'refunded', source: 'refund', actorType: 'staff',
+      actorId: 'founder@test', requestId: refundRequestId, relatedEntityType: 'refund', relatedEntityId: pending.id,
+    });
+  });
+
+  it('atomically records one paid transition for a payment webhook retry', async () => {
+    const checkoutRequestId = randomUUID();
+    const webhookRequestId = randomUUID();
+    const booking = await trackedBookings.create(sample);
+    await trackedBookings.setStatus(booking.id, 'payment_pending', undefined, {
+      source: 'website', actorType: 'customer', requestId: checkoutRequestId,
+    });
+    const payment = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: booking.total, currency: booking.currency, idempotencyKey: `tracked-settle-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const, merchantId: '1234567', orderId: booking.reference,
+      providerTxnId: `PAY-${payment.id}`, amountCents: payment.amount, currency: payment.currency,
+      status: 'succeeded' as const, providerStatusCode: '2', receivedAt: new Date(),
+      payloadSha256: 'f'.repeat(64), sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(
+      db, trackedBookings, undefined, { transitionTrackingEnabled: true },
+    );
+
+    expect((await settlement.acceptVerifiedEvent(event, { requestId: webhookRequestId })).kind).toBe('settled');
+    expect((await settlement.acceptVerifiedEvent(event, { requestId: webhookRequestId })).kind).toBe('duplicate');
+    expect(await trackedBookings.listStatusEvents(booking.id)).toEqual([
+      expect.objectContaining({ fromStatus: 'draft', toStatus: 'payment_pending' }),
+      expect.objectContaining({
+        fromStatus: 'payment_pending', toStatus: 'paid', source: 'payment_webhook',
+        actorType: 'provider', actorId: 'payhere', requestId: webhookRequestId,
+        relatedEntityType: 'payment', relatedEntityId: payment.id,
+      }),
+    ]);
   });
 
   it.each([
