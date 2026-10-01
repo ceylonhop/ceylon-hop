@@ -85,13 +85,21 @@
       "text": "An old tea factory in the Hantane hills, turned into four floors of machinery, history and, at the end, tea. Finish in the top-floor tea café, where a telescope looks out to the Knuckles and Hunnasgiriya ranges.",
       "spec": {"from": "3 km · in the Hantane hills", "open": "Tue–Fri 8:30 AM–4 PM · Sat–Sun 8 AM–5 PM · closed Mondays", "give": "1–1.5 hours", "level": "Easy", "ticket": "Rs 1,000 adult · Rs 500 child"},
       "tip": {"kind": "drivers", "text": "Closed on Mondays, but open on Poya days and public holidays — handy when everything else is quiet. Want more tea? Ask us about a walk or a guided ride through the estates in the Hanthana hills, just above it."}
+    },
+    {
+      "id": "ambuluwawa",
+      "name": "Ambuluwawa Tower",
+      "photo": "ambuluwawa",
+      "text": "A white spiral tower on a forested hilltop near Gampola, with a 360° view over the hill country. The last flights of stairs wind round the outside of the spire, narrow and open to the drop — the climb is half the point.",
+      "spec": {"from": "About 20 km · about 1 h by car, near Gampola", "open": "About 8 AM–5:30 PM", "give": "1–1.5 hours, plus the drive", "level": "Moderate · hard if you dislike heights", "ticket": "≈ Rs 2,000–2,750 · sources differ, check at the gate"},
+      "tip": {"kind": "drivers", "text": "Go early, before the heat and the cloud. You can stop at any level — the top stairs are narrow and exposed, so skip the last bit if heights bother you. It’s just off the road to Nuwara Eliya and Ella, so we can take you up on the way out of Kandy — just ask."}
     }
   ],
   "furtherAfield": [
     {
-      "time": "1 h",
-      "name": "Ambuluwawa Tower",
-      "text": "A spiral tower on a hilltop near Gampola, with 360° views over the hills. The last stairs are narrow and exposed — not for anyone who hates heights. Ticket ≈ Rs 2,000–2,750; sources differ, so check at the gate."
+      "time": "≈ 45 min",
+      "name": "The three temples loop",
+      "text": "Embekke, Lankatilaka and Gadaladeniya, three 14th-century temples past the rice fields beyond Peradeniya. Embekke is famous for its carved wooden pillars. An easy half day by car — or walk the 7 km path between them. Small fees at each, cash."
     },
     {
       "time": "≈ 2 h",
@@ -323,6 +331,15 @@
       "credit": "Zoshua Colah",
       "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
       "photoUrl": "https://unsplash.com/photos/a-white-house-sits-beside-a-grassy-path-EwITUDiAXdk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "ambuluwawa": {
+      "alt": "The white spiral spire of Ambuluwawa Tower, its open stairs winding up against a blue sky",
+      "credit": "Ajai S",
+      "creditUrl": "https://unsplash.com/@ajai_1229?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-tall-white-tower-with-a-sky-background-i1YyqIOqmvU?utm_source=ceylon_hop&utm_medium=referral",
       "focal": "50% 50%",
       "w": 1800,
       "h": 1125
