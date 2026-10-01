@@ -1,0 +1,406 @@
+{
+  "slug": "arugam-bay",
+  "name": "Arugam Bay",
+  "region": "East coast",
+  "placeId": "arugam-bay",
+  "title": "Arugam Bay guide — surf points, Kumana, where to stay | Ceylon Hop",
+  "description": "Arugam Bay’s surf points for every level, the lagoon, Kumana, when the season runs, where to eat and stay — and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A surf village on the east coast, just south of Pottuvil, whose right-hand points come alive just as the south coast’s season ends. Between sessions there are crocodiles in the lagoon, elephants by the road and a jungle hermitage on a rock."
+  },
+  "facts": [
+    {"label": "Stay", "value": "2–3 nights"},
+    {"label": "Surf season", "value": "Apr–Sep"},
+    {"label": "Daytime", "value": "30–35", "unit": "°C"},
+    {"label": "Between", "value": "Ella & Kumana"}
+  ],
+  "lede": "Most people give it two or three nights, or a week if they surf, usually on the way down from Ella —",
+  "ledeEm": "dawn on the water, the hot hours in the shade, and sunset from a rock at the end of the bay.",
+  "gettingHere": {
+    "heading": "We’ll drive you to the bay",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "ella", "title": "From Ella", "from": "135 km · about 3 h · the way most people come", "sell": "Down from the hills to Wellawaya, across Monaragala’s paddy and rubber country, then past the tanks at Lahugala, where wild elephants graze near the road. We can stop at the Buduruwagala carvings on the way if you’d like."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 420 km · about 6 h 30 · right across the island", "sell": "Your driver meets you at arrivals and takes you coast to coast in one go. It’s a long day — many people break it with a couple of nights in Ella, and we can plan that with you."},
+      {"id": "yala", "title": "From Yala", "from": "190 km · about 4 h 30 · after a morning safari", "sell": "The road goes inland, round the parks rather than through them: north via Wellawaya and Monaragala, then east through Lahugala. Leave after your morning game drive and you’re at the beach by late afternoon, before the elephants come out onto the road."}
+    ],
+    "train": "There’s no railway anywhere near Arugam Bay. The nearest stations are <b>Ella, about 130 km away</b>, and Batticaloa, about 115 km up the coast — so you’d still need a long drive at the end. We drive it door to door. If you want a train ride for the scenery, the Nanu Oya → Ella stretch is running again: ride that, spend a night or two in Ella, and we’ll bring you on from there."
+  },
+  "places": [
+    {
+      "id": "main-point",
+      "name": "Main Point & Baby Point",
+      "photo": "main-point",
+      "text": "The reason people come: a long right-hand point break right in town, with rides of 50–150 m and 400 m or more on the best days, at its best on a south-easterly swell. Baby Point is its inside section — soft, slow waves where the surf schools take first-timers. Not surfing? Watch from the sand at dawn.",
+      "spec": {"from": "In town", "open": "Apr–Sep · best at dawn", "give": "2 hours a session", "level": "Baby: beginner · Main: intermediate–advanced", "ticket": "Free · lessons ≈ USD 20–40"},
+      "tip": {"kind": "drivers", "text": "First time? Stay on Baby Point and leave Main to the confident surfers — it breaks over a reef shelf and it’s crowded, especially June to August. Paddle out at dawn, before the wind gets up."}
+    },
+    {
+      "id": "whiskey-point",
+      "name": "Whiskey Point",
+      "photo": "whiskey",
+      "text": "A right-hander 10–15 minutes north of town towards Pottuvil, and the most consistent wave in the area: punchy but forgiving, with rides of 100–200 m. The step up once you can catch a wave and turn — and a quieter stretch of beach to stay on.",
+      "spec": {"from": "10–15 min north by tuk-tuk", "open": "Apr–Sep · mornings", "give": "A morning", "level": "Intermediate", "ticket": "Free"},
+      "tip": {"kind": "warn", "text": "Rocks and boulders on the inside — reef booties help. Friday night is party night at Sababa here, so it’s less quiet at the end of the week."}
+    },
+    {
+      "id": "elephant-rock",
+      "name": "Elephant Rock & Peanut Farm",
+      "photo": "elephant-rock",
+      "text": "South of town off the Panama road, two gentler waves: Peanut Farm, about 20 minutes away at the end of a long beach (stick to the inside peak — the outside is steep and rocky), and Elephant Rock, a fat, soft wave that loves longboards. Elephant Rock is also the bay’s sunset spot, a short walk from the road.",
+      "spec": {"from": "15–20 min south by tuk-tuk, then a short walk", "open": "Mornings to surf · back for sunset", "give": "A morning, or an hour at sunset", "level": "Beginner–lower intermediate", "ticket": "Free"},
+      "tip": {"kind": "warn", "text": "Crocodiles live in the lagoon behind Elephant Rock, and someone was killed there in 2017. Surf and swim on the sea side only, and keep away from the lagoon edge. Wild elephants are reported around Peanut Farm too."}
+    },
+    {
+      "id": "lagoon",
+      "name": "Pottuvil Lagoon mangrove safari",
+      "photo": "lagoon",
+      "text": "A slow trip by boat or canoe through the mangrove channels of the lagoon at Pottuvil, looking for crocodiles, water birds and, sometimes, elephants at the water’s edge. The calmest two hours you’ll spend here.",
+      "spec": {"from": "Pottuvil · about 10 min", "open": "Dawn or late afternoon", "give": "2–3 hours", "level": "Easy", "ticket": "≈ USD 23–35 per adult, by operator"},
+      "tip": {"kind": "drivers", "text": "Go early or late — the wildlife is most active then, and the middle of the day is too hot. Any of the tour desks on the main road can book it the day before."}
+    },
+    {
+      "id": "kumana",
+      "name": "Kumana National Park",
+      "photo": "kumana",
+      "text": "The eastern side of Yala, entered at Okanda down the Panama road: lagoons, scrub jungle and the Kumana Villu wetland. You may see elephants, crocodiles and, sometimes, a leopard, but it’s the birds people come for — the migrants peak from April to July.",
+      "spec": {"from": "Okanda gate · 1 h+ down the Panama road", "open": "6 AM–6 PM · by jeep", "give": "Half a day", "level": "Easy · by jeep", "ticket": "about USD 25–27 plus charges and VAT (2026) — check at the gate"},
+      "tip": {"kind": "warn", "text": "Bring cash — there’s no online entry ticket, and cards at the gate aren’t certain. Hire a jeep in the bay (about Rs 7,000–10,000 for a half day) or book a tour that bundles jeep and tickets. The park can close after heavy rain, as it did in late 2025."}
+    },
+    {
+      "id": "kudumbigala",
+      "name": "Kudumbigala Forest Hermitage",
+      "photo": "kudumbigala",
+      "text": "A forest hermitage in the jungle south of Panama: cave temples scattered among the boulders, said to date back to 246 BC, and a climb up bare rock at the top for a view over the treetops. A quiet, unhurried place.",
+      "spec": {"from": "About 30 km · 45–60 min south", "give": "About 2 hours", "level": "Moderate · a rock climb at the top"},
+      "tip": {"kind": "drivers", "text": "Pair it with Kumana on one run south — they’re down the same road. Cover shoulders and knees, take your shoes off at the shrines, and wear shoes with grip for the rock."},
+      "offer": {"title": "Kudumbigala with Ceylon Hop", "sub": "Your driver waits while you climb, then brings you back", "wa": "Hi Ceylon Hop — I’m reading your Arugam Bay guide. Could you give me a price for a trip to Kudumbigala from my hotel, with the wait and the drive back?"}
+    },
+    {
+      "id": "muhudu",
+      "name": "Muhudu Maha Viharaya",
+      "photo": "muhudu",
+      "text": "An ancient temple on the dunes of Pottuvil beach, over 2,000 years old and tied to the legend of the princess Viharamaha Devi, who is said to have washed ashore here. Half an hour, with the sea right behind the ruins.",
+      "spec": {"from": "Pottuvil · about 10 min", "open": "Early morning or late afternoon", "give": "30 min", "level": "Easy"},
+      "tip": {"kind": "warn", "text": "It’s a working temple: cover shoulders and knees, take off shoes and hats, and never pose for a photo with your back to a Buddha statue."}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "1 h+",
+      "name": "Okanda",
+      "text": "Three right-hand points at the edge of Kumana, the emptiest surf on this coast, and they hold bigger swell than the bay. Surf at dawn before the wind, and watch the rips by the headland. Intermediate and up."
+    },
+    {
+      "time": "45 min",
+      "name": "Lighthouse, near Komari",
+      "text": "Two right-hand waves to the north, one for beginners and one steep, with hardly anyone on them. Best as a night or two away rather than a day trip."
+    },
+    {
+      "time": "5 h 30",
+      "name": "Trincomalee, up the coast",
+      "text": "The east coast’s other in-season beach, via Batticaloa and Pasikudah. Better as your next stop than a day trip — tell us your dates and we’ll plan the drive."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: the waves are best before the wind, the lagoon comes alive early and late, and the road west is best driven in daylight.",
+    "days": [
+      {"title": "Day 1 · Surf, lagoon, sunset", "sub": "Early water, slow middle, golden end", "steps": [{"time": "6:00", "title": "A surf lesson", "text": "Baby Point or Elephant Rock if you’re new; Main or Whiskey if you’re not."}, {"time": "9:00", "title": "Breakfast on the strip", "text": "A smoothie bowl or a roti — see where to eat below."}, {"time": "11:00", "title": "Shade, a swim, a nap", "text": "The hottest hours. Swim where a surf school or lifeguard says it’s safe."}, {"time": "15:30", "title": "Pottuvil Lagoon safari", "text": "2–2.5 h by boat, for crocodiles, birds and maybe elephants."}, {"time": "17:45", "title": "Elephant Rock for sunset", "text": "A tuk-tuk ride south, then a short walk."}, {"time": "19:30", "title": "Grilled catch of the day", "text": "On the beach, with your feet in the sand."}]},
+      {"title": "Day 2 · One more surf, then onward", "sub": "On the water early, on the road by mid-morning", "steps": [{"time": "6:00", "title": "One more session", "text": "Baby Point, or Main if you’re ready, before the wind picks up."}, {"time": "8:30", "title": "Breakfast and check out"}, {"time": "9:30", "title": "Onward to Ella with us", "text": "About 3 h through Lahugala and Monaragala, in daylight — we can stop at the Buduruwagala carvings on the way.", "us": true}], "book": {"stops": ["Arugam Bay", "Ella"], "nights": [0, 0], "preload": "Opens the planner with <b>Arugam Bay → Ella</b> already in — swap in Trincomalee if you’re heading up the coast instead."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "The east coast runs the opposite way to the south: dry with surf from about April to September, then the north-east monsoon brings the rain from November to March, when many places close.",
+    "blocks": [
+      {"label": "Apr – May", "title": "Season opens", "text": "The swell arrives and the rains are over — May averages under 50 mm. Fewer people than mid-year: a good time to learn.", "tag": "Quieter start", "tone": "best"},
+      {"label": "Jun – Aug", "title": "Peak season", "text": "The driest months (under 20 mm of rain a month) and the hottest, up to 35°. Main Point and Peanut Farm are at their busiest and the beach parties run. Book your room early.", "tag": "Best for surf", "tone": "best"},
+      {"label": "Sep – Oct", "title": "Shoulder", "text": "Still surfable, emptier and cheaper. September averages about 52 mm of rain; by the end of October the season is winding down.", "tone": "best"},
+      {"label": "Nov – Mar", "title": "Closed season", "text": "The north-east monsoon: January alone averages about 263 mm. Most breaks don’t work, many cafés, hotels and surf camps close, and the parties stop. Come only for a quiet beach and wildlife.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road from Ella",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in Arugam Bay. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "Near Wellawaya · a short detour", "name": "Buduruwagala rock carvings", "photo": "buduruwagala", "text": "Seven figures carved into a granite cliff over a thousand years ago, led by a standing Buddha about 15 m tall, at the end of a quiet lane. Allow 30–45 minutes for the detour; entry is about USD 3.", "wa": "Hi Ceylon Hop — on my Ella → Arugam Bay transfer, could we stop at Buduruwagala? (From your Arugam Bay guide.)"},
+      {"km": "Lahugala · the last hour in", "name": "Elephants at Lahugala", "photo": "lahugala", "text": "The road runs past the tanks of Lahugala–Kitulana National Park, where herds come to the water. Around dawn and dusk you’re very likely to see elephants from the car. Cars can’t go into the park — you watch from the road.", "wa": "Hi Ceylon Hop — on my transfer to Arugam Bay, could we slow down for the elephants at Lahugala? (From your Arugam Bay guide.)"}
+    ]
+  },
+  "eatSub": "One main road of cafés and beach grills. Bring cash, and expect many places to close from November to March.",
+  "eat": [
+    {
+      "tier": "Cafés",
+      "photo": "cafe",
+      "name": "Kaffi · Nami Café · Salty Swamis",
+      "text": "Post-surf fuel: Kaffi for coffee, chocolate brownies and air-conditioning, Nami Café for vegan brunch and smoothie bowls, Salty Swamis on the beachfront for fish tacos. <em>Squeeze Me has big smoothie bowls and good Wi-Fi; Rolling Pin does fresh croissants.</em>",
+      "band": "$–$$",
+      "flags": ["Breakfast", "Brunch"],
+      "map": "Kaffi Arugam Bay"
+    },
+    {
+      "tier": "Dinner",
+      "pick": true,
+      "photo": "dinner",
+      "name": "Mr Fisherman · Surf’n’Sun · Meori’s",
+      "text": "The catch of the day grilled on the beach at Mr Fisherman and Surf’n’Sun, with the sunset thrown in; Meori’s is a little smarter, for a treat. For families, Pizza Hub has a wood-fired oven and Tandoori Hut does unlimited rice and naan. <em>Ask what came in on the boats that morning.</em>",
+      "band": "$$",
+      "flags": ["Dinner", "Families"],
+      "map": "Mr Fisherman Arugam Bay"
+    },
+    {
+      "tier": "Budget",
+      "photo": "rice-curry",
+      "name": "The Sketch · Mothers Kitchen · Samanthi’s",
+      "text": "Proper local food for very little: at The Sketch a local fisherman grills whatever came in that day, Mothers Kitchen does Sri Lankan home cooking (get the veg curry), and Samanthi’s is no-frills with a legendary roti. <em>In Pottuvil, Family Delight does kottu for about half bay prices.</em>",
+      "band": "$",
+      "flags": ["Lunch", "Dinner"],
+      "warn": ["Cash"],
+      "map": "The Sketch Arugam Bay"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Arugam Bay and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Arugam Bay: "
+  },
+  "staySub": "Stay on the main strip to walk to everything, north towards Whiskey Point for quiet, or south near Elephant Rock for the beginner waves. Many places close from November to March, and June to August books up early.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "beach-bungalows",
+      "name": "Whisky Point Resort · Jetwing Surf · Arugambay Roccos",
+      "text": "Whisky Point Resort’s beachfront bungalows sit right at the break, 20 minutes north of town; Jetwing Surf is the big-name option in the bay; Roccos has an infinity pool and a beach bar. <em>Coming in the off-season? Ask whether they’re open first.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Beachfront"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "garden-villa",
+      "name": "Hideaway · The Spice Trail · Bay Vista",
+      "text": "Hideaway is family-run, with 14 rooms in six acres of garden in the middle of the bay and a well-liked restaurant; The Spice Trail is a boutique place with a pool; Bay Vista has an infinity pool and runs surf-and-yoga weeks. <em>Star Rest, between the lagoon and the beach, runs a long-stay surf camp.</em>",
+      "band": "$$",
+      "flags": ["Couples", "Surf & yoga"]
+    },
+    {
+      "tier": "Solo",
+      "pick": true,
+      "photo": "surf-hostel",
+      "name": "Arne’s Place · Arugam Waves · Little Bay",
+      "text": "Arne’s Place is 50 m from the main beach, with a famously social crowd, board hire and lessons; Arugam Waves is a beachfront hostel whose host organises family dinners; Little Bay is just round the corner from the beach and the main road. <em>All easy places to find a surf buddy.</em>",
+      "band": "$",
+      "flags": ["Solo", "Surfers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, surf camp — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Arugam Bay: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "How many nights should I stay?", "a": "<p>Two or three for the beach, the lagoon and a lesson or two. If you came to surf, give it a week — the surf camps here sell four-day, week-long and longer packages.</p>"},
+        {"q": "When is the season?", "a": "<p>April to September, with June to August the peak — the driest and busiest months. September and October are quieter and cheaper. From November to March it’s the rainy season on this coast: most breaks don’t work and many places close. <a href=\"#when\">See the months ↓</a></p>"},
+        {"q": "Is November to March worth it?", "a": "<p>Only if you want an empty beach and some wildlife. The surf is mostly flat, lots of cafés and guesthouses shut, and the parties stop. Check that your guesthouse is open before you book — and for beaches at that time of year, the south coast is the one in season.</p>"},
+        {"q": "Can I visit as a day trip?", "a": "<p>Not really. Ella is 3 hours each way and the airport more than 6, and the best of the day here is dawn and sunset. Stay at least two nights.</p>"},
+        {"q": "Is Arugam Bay good for families?", "a": "<p>Yes, with care. The waves can be big and the current strong for children, there’s very little shade on the beaches (bring a beach tent), and crocodiles live in the lagoons — keep little ones away from the lagoon edges. The lagoon safari and Kumana are easy days out. Crocodile Rock is a lovely sunset spot, but it drops off quickly: hold hands.</p>"},
+        {"q": "Where do people go after Arugam Bay?", "a": "<p>Most go back west to Ella, three hours away, for the hills. If you’re staying on the beach, Trincomalee is the other in-season coast, about 5 h 30 north via Batticaloa. The south coast is in its own season from about December. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "Surf",
+      "items": [
+        {"q": "Can a total beginner learn here?", "a": "<p>Yes. Baby Point (the inside of Main Point) and Elephant Rock are soft, slow waves where the surf schools teach. A lesson is usually 1.5–2 hours with board and rash vest included, about USD 20–40 at a certified (ISA) school in 2026.</p>"},
+        {"q": "Which surf point is best for me?", "a": "<ul><li><b>First time:</b> Baby Point or Elephant Rock, then the inside of Peanut Farm once you’re standing.</li><li><b>Linking turns:</b> Whiskey Point — the most consistent wave around.</li><li><b>Confident on a reef:</b> Main Point, or Pottuvil Point north of Pottuvil town, a long right over boulders.</li><li><b>Want it empty:</b> Okanda at dawn, or Lighthouse near Komari.</li></ul><p>Every point works roughly April to September; June to August is the busiest. <a href=\"#see\">See the points ↑</a></p>"},
+        {"q": "How much is board hire?", "a": "<p>It varies a lot by shop and board — anything from about Rs 400–800 to USD 5–8 a day. Places like Arne’s Place rent boards to guests and walk-ins.</p>"},
+        {"q": "Is it safe to swim?", "a": "<p>Mostly, with care. Watch for rips, especially by the headland at Okanda. Crocodiles live in the lagoon behind Elephant Rock and around Pottuvil Point (more of them from October to March), and are reported at Peanut Farm — swim on the sea side, never in the lagoons. Swim where a surf school or lifeguard says it’s safe.</p>"},
+        {"q": "Do I need a surf guide?", "a": "<p>Not for the points around the bay. For Okanda or Lighthouse, a guided surf trip with one of the schools takes care of the transport and the local knowledge.</p>"},
+        {"q": "Is there yoga?", "a": "<p>Plenty. Sea-view drop-in classes start at about USD 12.50, and lots of hotels run free classes, some on their rooftops. For a whole week of it, Bay Vista and Paddyway Resort sell surf-and-yoga packages.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "How hot does it get?", "a": "<div class=\"temps\"><div><b>30–35°</b><small>Day</small></div><div><b>22–25°</b><small>Night</small></div><div><b>35°</b><small>June</small></div><div><b>Little</b><small>Shade</small></div></div><p>Hot and humid all year, and June is the hottest month. There’s very little shade on the sand.</p>"},
+        {"q": "What should I pack?", "a": "<ul class=\"pack\"><li>Reef booties</li><li>A rash vest or shorty</li><li>High-SPF reef-safe sunscreen</li><li>A beach shade tent</li></ul>"},
+        {"q": "What should I wear in town?", "a": "<p>Swimwear on the sand; a shirt and shorts or a sarong in town. Pottuvil is a conservative town — cover shoulders and knees there and near mosques. Topless sunbathing isn’t allowed anywhere in Sri Lanka.</p>"},
+        {"q": "What about temples?", "a": "<p>Cover shoulders and knees, take off shoes and hats, and never pose for a photo with your back to a Buddha statue. Visible Buddha tattoos can get you turned away.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Carry cash. There are ATMs in the bay and a Commercial Bank in Pottuvil, but don’t rely on them — the Kumana gate, tuk-tuks and small places want cash.",
+        "Elephants use the Lahugala road at dusk and after dark. Plan to arrive in daylight — we’ll time your transfer around it — and never ride a scooter on that stretch at night.",
+        "Renting a scooter needs a Sri Lankan permit: the temporary licence from the airport counter (motorcycles must already be on your home licence; Rs 15,000 for a month), or an international driving permit plus the AA Ceylon recognition permit.",
+        "Tuk-tuk fares aren’t metered. Agree the price first — about Rs 1,000 return to Peanut Farm.",
+        "The beach parties run in season only: Thursday at Hideaway, Friday at Sababa on Whiskey Point, Saturday at Mambo’s on the sand at Main Point. They get going around 11 PM.",
+        "Poya (full-moon) days are dry: bars and shops stop selling alcohol, so a party on a Poya night may not happen at all. Some big hotels may still serve their own guests.",
+        "Crocodiles live in the lagoons. Watch them from the boat, and keep children back from the water’s edge.",
+        "From November to March many places close. If you’re coming then, check that your guesthouse, surf school and favourite café are open.",
+        "June to August is busy. Book your room early."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Which points are working, whether a place is open in the off-season, what Kumana costs this month — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Arugam Bay: "
+  },
+  "photos": {
+    "hero": {
+      "alt": "Fishing boats pulled up on the beach at Arugam Bay, seen from above",
+      "credit": "Etienne Boulanger",
+      "creditUrl": "https://unsplash.com/@etienneblg?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/aerial-view-of-people-on-shoreline-J7LiHL7jAgU?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1013
+    },
+    "main-point": {
+      "alt": "A longboarder riding a wave in Sri Lanka",
+      "credit": "Croyde Bay",
+      "creditUrl": "https://unsplash.com/@croydebay?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/man-in-black-shorts-surfing-on-sea-waves-during-daytime-gqitVFrtkkY?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "whiskey": {
+      "alt": "A wave peeling along with surfers in the line-up, seen from above",
+      "credit": "oleks film",
+      "creditUrl": "https://unsplash.com/@oleks_film?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/people-in-body-of-water-with-waves-_jxFjHoOyuU?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "elephant-rock": {
+      "alt": "An orange evening sky over the water at Arugam Bay",
+      "credit": "Isuru Ranasinha",
+      "creditUrl": "https://unsplash.com/@isuru18?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-beach-with-a-sunset-aksPgTprHlo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lagoon": {
+      "alt": "Wooden boats moored under trees at the edge of calm water",
+      "credit": "Eshan Malaviarachchi",
+      "creditUrl": "https://unsplash.com/@eshan007?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/brown-wooden-boat-on-river-during-daytime-Mmy9z0LMxVM?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kumana": {
+      "alt": "A safari jeep stopped near a wild elephant on open grassland",
+      "credit": "Tom Paisley",
+      "creditUrl": "https://unsplash.com/@tompaisley?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/people-in-white-suv-near-gray-elephant-in-green-field-under-white-and-blue-skies-during-daytime-v2zEiziFb44?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kudumbigala": {
+      "alt": "Buddhist monks in saffron robes walking in single file through a forest",
+      "credit": "sidath vimukthi",
+      "creditUrl": "https://unsplash.com/@sidathkc?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-monks-walking-through-a-forest-9wiN3h6lBZ4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1125
+    },
+    "muhudu": {
+      "alt": "Palms and an outrigger canoe on a quiet beach on Sri Lanka’s east coast",
+      "credit": "Emily Goodhart",
+      "creditUrl": "https://unsplash.com/@shotbythegypsy?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/boat-on-shore-near-trees-and-ocean-during-daytime-Ffe6eAVn6ko?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "buduruwagala": {
+      "alt": "A standing Buddha carved into a rock face, half hidden by leaves",
+      "credit": "Aravinda Jayathilaka",
+      "creditUrl": "https://unsplash.com/@asjay89?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-face-carved-into-a-tree-noMtJ71nhlc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 30%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lahugala": {
+      "alt": "A wild elephant standing at the edge of a paved road",
+      "credit": "Filiz Elaerts",
+      "creditUrl": "https://unsplash.com/@filizelaerts?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/elephant-walking-on-the-road-during-daytime-jsK7jSt7g1g?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 45%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "Two fruit-topped smoothie bowls and iced coffees on a wooden table",
+      "credit": "Lou Lou B Photo",
+      "creditUrl": "https://unsplash.com/@louloubphoto?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/porridge-with-bananas-ZavNEhIrtxg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "dinner": {
+      "alt": "Fried fish on a banana leaf with bowls of curry and vegetables",
+      "credit": "Suryagayathri C.K",
+      "creditUrl": "https://unsplash.com/@suryagayathri?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/fried-fish-and-curry-meal-59fc71O68_Y?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "Yellow rice with curry, sambol and an egg, served on a leaf",
+      "credit": "Kalindu Waranga",
+      "creditUrl": "https://unsplash.com/@kalindu0waranga?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/yellow-rice-with-meat-and-egg-served-on-leaf-5pgGL7EC6BY?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beach-bungalows": {
+      "alt": "Wooden bungalows and a thatched shelter among palms by the sea",
+      "credit": "Jonathan Borba",
+      "creditUrl": "https://unsplash.com/@jonathanborba?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/tropical-bungalows-and-palm-trees-by-the-ocean-q4uMm_ltRsc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "garden-villa": {
+      "alt": "A garden courtyard and orange tiled roofs seen through a bungalow door",
+      "credit": "Lisa van Vliet",
+      "creditUrl": "https://unsplash.com/@lisaaxv?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/tropical-courtyard-with-orange-tiled-roofs-eUX0uKyYCgk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "surf-hostel": {
+      "alt": "Two surfers carrying their boards into the sea at sunrise",
+      "credit": "Sasha Kaunas",
+      "creditUrl": "https://unsplash.com/@akaunas?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-couple-of-people-that-are-standing-in-the-sand-oJK_m8_GazA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
