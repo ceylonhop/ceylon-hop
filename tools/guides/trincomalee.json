@@ -1,0 +1,387 @@
+{
+  "slug": "trincomalee",
+  "name": "Trincomalee",
+  "region": "East coast",
+  "placeId": "trincomalee",
+  "title": "Trincomalee guide — Pigeon Island, beaches, where to stay | Ceylon Hop",
+  "description": "Pigeon Island, whales, Koneswaram on its cliff, which beach suits you, where to eat and stay in Uppuveli and Nilaveli — and how we drive you there.",
+  "checked": "September 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A harbour town with a Hindu temple on a 120 m cliff, and long pale beaches running north from it. From about May to September it’s the calm-sea beach two hours from Sigiriya — just when the south coast is rough."
+  },
+  "facts": [
+    {"label": "Stay", "value": "2–3 nights"},
+    {"label": "Beach season", "value": "Apr–Sep"},
+    {"label": "Daytime", "value": "28–35", "unit": "°C"},
+    {"label": "Between", "value": "Sigiriya & Arugam Bay"}
+  ],
+  "lede": "Most people give it two or three nights, often straight after the Cultural Triangle —",
+  "ledeEm": "one early boat out to the reef, one evening at the temple on the cliff, and the rest of the time on the sand.",
+  "gettingHere": {
+    "heading": "We’ll drive you to the coast",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {"id": "sigiriya", "title": "From Sigiriya", "from": "98 km · about 1 h 55 · from the rock to the beach", "sell": "Through Habarana and the elephant country between Hurulu and Kaudulla, then past the old Kantale tank to the sea. We can stop at the tank for a photo, or for a safari in the gathering months."},
+      {"id": "kandy", "title": "From Kandy", "from": "178 km · about 4 h · from the hills to the sea", "sell": "A long day’s drive down from the hills to the east coast. We’ll stop for lunch and wherever you want a break — and Sigiriya is almost on the way, if you’d rather split it with a night there."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 240 km · about 4 h 55 · most of a day", "sell": "Your driver meets you at arrivals and you wake up by a calm sea. A long first day — so if you’d like to break it, a night at Sigiriya on the way works well."}
+    ],
+    "train": "<b>One overnight train runs to Trincomalee: the Night Mail from Colombo Fort</b>, leaving about 9:30 PM and arriving about 5:30 AM, according to the official reservation site.</p><p>Seat61 also lists a day train, but the official site doesn’t show one — so <b>check the official site for your date</b> before you plan around it. Reserved seats are sold only on seatreservation.railway.gov.lk and at the station. Trains on the eastern line often run late, so don’t plan anything tight for the morning you arrive. Message us and we’ll check what’s running."
+  },
+  "places": [
+    {
+      "id": "pigeon-island",
+      "name": "Pigeon Island National Park",
+      "photo": "pigeon",
+      "text": "A small island about a kilometre off Nilaveli, and a national park since 2003: clear, shallow water over a reef, with blacktip reef sharks and turtles. It’s busy, and the coral near the landing has suffered — but swim round to the far side and it’s still the snorkel people come to Trinco for.",
+      "spec": {"from": "Boats from Nilaveli beach · about 20 min", "open": "Park 6 AM–6 PM · tickets until 4 PM", "give": "Half a day, door to door", "level": "Easy · life jacket on", "ticket": "About USD 40 for one person, less per head in a group, plus the boat — check at the Nilaveli office"},
+      "tip": {"kind": "drivers", "text": "Take one of the first boats, while the sea is calmest. The patch by the landing is mostly dead coral — swim round to the far side of the island, where the coral and the sharks are. Don’t stand on the coral or chase anything, and leave single-use plastic behind: it isn’t allowed on the island."},
+      "offer": {"title": "Early run to the Nilaveli boats", "sub": "From your hotel to the ticket office, with the wait and the drive back", "wa": "Hi Ceylon Hop — I’m reading your Trincomalee guide. Could you give me a price for an early run to the Pigeon Island boats at Nilaveli, with the wait and the drive back?"}
+    },
+    {
+      "id": "whales",
+      "name": "Whale watching",
+      "photo": "whales",
+      "text": "From about April to September, boats head 30–40 km out from Uppuveli to the deep water where blue whales, sperm whales and spinner dolphins feed. It’s an early start and a long morning at sea, and nothing is guaranteed — but a blue whale surfacing nearby is hard to forget.",
+      "spec": {"from": "Boats leave from Uppuveli", "open": "About 6–11 AM · in season", "give": "About 5 hours", "level": "Easy · can get rough by late morning", "ticket": "≈ USD 30–45 a seat on a shared boat, by operator"},
+      "tip": {"kind": "drivers", "text": "Choose an operator who keeps at least 100 m from the whales, slows right down near them and doesn’t offer swimming with them — that’s the Sri Lanka Tourism rule. Take a seasickness tablet before you go; the swell builds by mid-morning. In April to June, book the day before."}
+    },
+    {
+      "id": "beaches",
+      "name": "Uppuveli & Nilaveli",
+      "photo": "beaches",
+      "text": "Two long, pale beaches north of town. Uppuveli is the social one, with most of the guesthouses and cafés — the place to walk barefoot to dinner. Nilaveli, further up, is quieter: about 4 km of soft sand, shallow water and the boats to Pigeon Island. Not sure which suits you? See the beaches tab below.",
+      "spec": {"from": "Uppuveli 5–6 km north · Nilaveli about 10 km further", "open": "Free · always open", "give": "As long as you like", "level": "Easy"},
+      "tip": {"kind": "warn", "text": "Uppuveli has no lifeguards: swim at the north end and keep away from the rocks at the south end. Nilaveli has lifeguards and shallow water, so it’s the one for children. Jellyfish turn up for a while after the fishermen haul in their nets."}
+    },
+    {
+      "id": "fort-frederick",
+      "name": "Fort Frederick & Lovers’ Leap",
+      "photo": "fort",
+      "text": "The Portuguese built a fort on the headland in the 17th century, and spotted deer now wander under the trees inside it. The road runs on through the fort to Lovers’ Leap — a clifftop over the open sea, with a legend about a Dutch officer’s daughter — and to the temple at the very tip.",
+      "spec": {"from": "The headland at the edge of town", "open": "Daily · come by late afternoon", "give": "45 min", "level": "Easy", "ticket": "A foreigner fee may be charged at the gate — reports vary"},
+      "tip": {"kind": "warn", "text": "The ticket counter faces the Koneswaram car park. Reports of the foreigner fee vary a lot, from nothing upwards, so ask at the counter — or message us and we’ll check before you go."}
+    },
+    {
+      "id": "koneswaram",
+      "name": "Koneswaram Temple & Swami Rock",
+      "photo": "koneswaram",
+      "text": "A Hindu temple to Shiva at the end of the headland, on Swami Rock — a cliff that drops 120 m straight into the sea. The Portuguese destroyed the old temple in 1622; it was restored in 1952 and is a living temple again.",
+      "spec": {"from": "At the tip of the headland, inside Fort Frederick", "open": "Mornings, and from about 4 PM · times vary", "give": "1 hour or more", "level": "Easy · barefoot on hot ground", "ticket": "Free · donations welcome"},
+      "tip": {"kind": "drivers", "text": "Come in the late afternoon, for the evening puja (around 6:30, but times vary) and the light off the cliff. Cover shoulders and knees, leave your shoes at the stand with a small tip, and skip sleeveless tops."}
+    },
+    {
+      "id": "kanniya",
+      "name": "Kanniya hot springs & Velgam Vehera",
+      "photo": "kanniya",
+      "text": "Seven small square wells of warm spring water, about four feet deep — a local bathing spot more than a sight, and a short stop on your way out of town. Nearby, Velgam Vehera is an ancient Buddhist temple that survived the Chola invasion, with Tamil inscriptions, and is still honoured by both Sinhala and Tamil Buddhists.",
+      "spec": {"from": "Inland, on the way out of town", "open": "Kanniya 7 AM–7 PM", "give": "1.5 hours for both", "level": "Easy", "ticket": "A small fee at Kanniya · pay at the main gate"},
+      "tip": {"kind": "warn", "text": "Pay only at the official gate — people have been reported collecting ‘fees’ at the side entrances. Cover up if you bathe; swimwear alone isn’t the done thing here."}
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "40 km",
+      "name": "Seruvila",
+      "text": "Seruvila Mangala Raja Maha Viharaya, south of Trinco: one of the sixteen great Buddhist pilgrimage sites of Sri Lanka, said to date from the 2nd century BC."
+    },
+    {
+      "time": "45–60 min",
+      "name": "Thiriyai",
+      "text": "North past Nilaveli to Girihandu Seya, an almost complete circular relic house (vatadage), claimed as the first stupa in Sri Lanka."
+    },
+    {
+      "time": "2 h 15",
+      "name": "Pasikudah, going south",
+      "text": "The next beach down the east coast, in season at the same time as Trinco. Better as your next stop than a day trip — tell us your days and we’ll plan the drive."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "The order matters here: the sea is calmest first thing, the middle of the day is too hot for anything but the beach, and the temple comes alive in the evening.",
+    "days": [
+      {"title": "Day 1 · Reef and temple", "sub": "Early boat, slow middle, late temple", "steps": [{"time": "7:00", "title": "Pigeon Island", "text": "Nilaveli beach for one of the first boats out. In whale season, swap this for a 6 AM whale trip from Uppuveli."}, {"time": "11:00", "title": "Brunch in Uppuveli", "text": "Café on the 18th, at Fernando’s Beach Market."}, {"time": "12:00", "title": "Beach and shade", "text": "The hottest hours — 34–35° in mid-year."}, {"time": "15:15", "title": "Trincomalee War Cemetery", "text": "A quiet Commonwealth cemetery with 314 Second World War graves, on the Nilaveli road. It closes at 4."}, {"time": "16:00", "title": "Fort Frederick", "text": "Deer under the trees, then Lovers’ Leap."}, {"time": "16:30", "title": "Koneswaram Temple", "text": "The evening puja, and the light off Swami Rock."}, {"time": "19:00", "title": "Dinner", "text": "Rice ’n’ Curry in Uppuveli, or Aachi Suvayotru in town."}]},
+      {"title": "Day 2 · Hot springs, then onward", "sub": "One stop on the way out, then the Cultural Triangle", "steps": [{"time": "7:30", "title": "Check out"}, {"time": "7:45", "title": "Kanniya hot springs & Velgam Vehera", "text": "An hour and a half for both, before the heat."}, {"time": "9:30", "title": "Onward to Sigiriya with us", "text": "About 2 hours on the A6, past Kantale tank and through the elephant country near Habarana — we can stop on the way.", "us": true}], "book": {"stops": ["Trincomalee", "Sigiriya / Dambulla"], "nights": [0, 0], "preload": "Opens the planner with <b>Trincomalee → Sigiriya</b> already in — swap in Kandy or Arugam Bay if that’s your way."}}
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Trinco’s seasons run opposite to the south coast’s: calm and dry in the European summer, with the northeast monsoon bringing the rain from November to February.",
+    "blocks": [
+      {"label": "Mar – Apr", "title": "The season opens", "text": "The sea starts to settle and the first whale boats go out. Highs of 31–32°, and fewer people than mid-year.", "tone": "best"},
+      {"label": "May – Sep", "title": "Dry & calm", "text": "The east coast’s dry season: a calm, clear sea and hot days, 32–35°. Pigeon Island and the whales are at their best — book boats the day before. The elephant gathering near Habarana runs July to October.", "tag": "Best for the beach", "tone": "best"},
+      {"label": "Oct", "title": "Rains building", "text": "A shoulder month: still warm, with more rain as the weeks go on. Boats start to stop when the sea turns.", "tone": "wet"},
+      {"label": "Nov – Feb", "title": "The monsoon", "text": "The wet season here, November and December most of all. The sea is rough and the boats to Pigeon Island often stop. This is when the south coast is the one in season.", "tone": "wet"}
+    ]
+  },
+  "onTheWay": {
+    "eyebrow": "On the road from Sigiriya",
+    "heading": "Worth stopping for",
+    "sub": "These are on the way, not in Trincomalee. Your driver can stop — just ask.",
+    "note": "Stops are free on a Ceylon Hop transfer — the link opens WhatsApp with the stop already typed, and we tell the driver.",
+    "stops": [
+      {"km": "Habarana · on the A6", "name": "Kaudulla or Minneriya safari", "photo": "elephants", "text": "The road from Habarana runs between Hurulu Forest Reserve and Kaudulla National Park, and elephants cross it. From July to October, when the herds gather on the old tank beds, break the drive with an afternoon jeep safari — the park fee is about USD 35 a head all-in, plus the jeep.", "wa": "Hi Ceylon Hop — on my Sigiriya → Trincomalee transfer, could we stop for a Kaudulla or Minneriya safari? (From your Trincomalee guide.)"},
+      {"km": "About 37 km before Trinco", "name": "Kantale tank", "photo": "kantale", "text": "A great reservoir built in the early 7th century, restored by Parakramabahu the Great and still fed by the Mahaweli river. Ten minutes on the bund is enough for the view.", "wa": "Hi Ceylon Hop — on my Sigiriya → Trincomalee transfer, could we stop at Kantale tank? (From your Trincomalee guide.)"}
+    ]
+  },
+  "eatSub": "Most of the eating is along Uppuveli beach; the Tamil kitchens are in town. Places come and go between seasons — tell us if one has closed.",
+  "eat": [
+    {
+      "tier": "Cafés",
+      "photo": "cafe",
+      "name": "Café on the 18th",
+      "text": "Breakfast by the beach in Uppuveli: porridge, overnight oats, pancakes and proper coffee, inside Fernando’s Beach Market. <em>Fernando’s Beach Bar is where Uppuveli goes after dark — campfires, beanbags and music on the sand.</em>",
+      "band": "$–$$",
+      "flags": ["Breakfast", "Coffee"],
+      "map": "Cafe on the 18th Uppuveli"
+    },
+    {
+      "tier": "Family",
+      "photo": "family-food",
+      "name": "Fernando’s Beach Market · Dutch Bank Café",
+      "text": "Easy for mixed tastes: Fernando’s Beach Market is a food court on the sand, with seafood, Sri Lankan, pizza and more, so everyone gets what they want. In town, Dutch Bank Café does big plates of kottu with a view over the harbour. <em>Dutch Bank Café is on Inner Harbour Road.</em>",
+      "band": "$–$$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "Fernando's Beach Market Uppuveli"
+    },
+    {
+      "tier": "Budget",
+      "pick": true,
+      "photo": "rice-curry",
+      "name": "Rice ’n’ Curry · Aachi Suvayotru",
+      "text": "Rice ’n’ Curry in Uppuveli is the best-loved kitchen on the beach: crab curry, fish curry and kottu, big portions for not much. In town, Aachi Suvayotru cooks Tamil home-style, with biryani baked in a clay pot. <b>Order the crab.</b> <em>Check the service charge on the bill at Aachi.</em>",
+      "band": "$",
+      "flags": ["Lunch", "Dinner"],
+      "map": "Rice n Curry Uppuveli"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Trincomalee, Uppuveli or Nilaveli and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Trincomalee: "
+  },
+  "staySub": "Stay in Uppuveli if you want to walk to dinner, Nilaveli for quiet and the Pigeon Island boats. Town is for a local feel, not the beach.",
+  "stay": [
+    {
+      "tier": "Luxury",
+      "photo": "resort",
+      "name": "Jungle Beach by Uga · Trinco Blu · Amaranthé Bay",
+      "text": "Jungle Beach is the escape: 49 villas on a secluded 4 km beach at Kuchchaveli, with a spa in the jungle. Trinco Blu by Cinnamon sits on Uppuveli beach with a pool, spa and its own PADI dive centre; Amaranthé Bay has a spa and yoga. <em>Book early for July and August.</em>",
+      "band": "$$$",
+      "flags": ["Couples", "Beachfront"]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "mid-hotel",
+      "name": "Hotel Coral Bay · Nilaveli Beach Resort",
+      "text": "Two easy family picks on quiet Nilaveli, close to the Pigeon Island boats. If you’d like Ayurveda, Nilaveli Ayurveda Resort has ten bungalows and plans treatments around you. <em>Ask for a room facing the sea.</em>",
+      "band": "$$",
+      "flags": ["Families", "Nilaveli"]
+    },
+    {
+      "tier": "Solo",
+      "photo": "hostel",
+      "name": "Wanderers · CU Hostel · Laughing Leopard",
+      "text": "Three Uppuveli hostels a short walk from the beach: Wanderers is the one women travelling alone rate highest, CU Hostel is steps from the sand, and Laughing Leopard is two minutes away. <em>Akki’s is the party hostel, if that’s what you’re after.</em>",
+      "band": "$",
+      "flags": ["Solo", "Backpackers"]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Trincomalee: "
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {"q": "How many nights should I stay?", "a": "<p>Two or three. That gives you one early morning on the water — Pigeon Island or the whales — an evening at Koneswaram and a proper beach day. Stay a week if the beach is the point.</p>"},
+        {"q": "When is the best time to come?", "a": "<p>From about April to September, when the east coast is dry and the sea is calm. November to January is the wrong time: it’s the wet season here, the sea is rough and the boats often don’t run.</p>"},
+        {"q": "Is it worth the drive from Sigiriya?", "a": "<p>In season, yes. It’s about two hours from Sigiriya, and from May to September it’s the beach closest to the Cultural Triangle with a calm sea — when the south coast is rough. Out of season, go south instead.</p>"},
+        {"q": "Pigeon Island or the whales?", "a": "<p>If you only have one morning: snorkelling at Pigeon Island is easy, close and good for families. Whale watching is a long morning far out at sea, with no guarantees — but nothing else on this coast compares when it works. Both are best from about April to September.</p>"},
+        {"q": "Where do people go after Trincomalee?", "a": "<p>Most go back inland to Sigiriya, about two hours, or Kandy, about four. If you’re staying on the coast, Arugam Bay is the other east-coast beach in season at the same time — about 5 h 30 south. <a href=\"#next\">See the routes ↓</a></p>"}
+      ]
+    },
+    {
+      "tab": "The beaches",
+      "items": [
+        {"q": "Which beach is best for me?", "a": "<p>To eat out and meet people, Uppuveli. For children and Pigeon Island, Nilaveli. For somewhere quiet with an ID check at the gate, Marble Beach. For a resort escape, Kuchchaveli.</p>"},
+        {"q": "What’s Uppuveli like?", "a": "<p>The busiest beach, 5–6 km north of town, with most of the guesthouses, cafés and bars. Currents are usually manageable in the dry season, but there are no lifeguards: swim at the north end and stay away from the rocks at the south end.</p>"},
+        {"q": "And Nilaveli?", "a": "<p>Quieter and about 10 km further north: some 4 km of soft sand, shallow water that’s good for children, and lifeguards. The Pigeon Island boats and ticket office are on the beach. There’s not much to eat outside the hotels.</p>"},
+        {"q": "Is Marble Beach worth it?", "a": "<p>About 15 km south of town near China Bay, and run by the Sri Lanka Air Force — bring your passport for the checkpoint. The water is calm and clear and it’s the most secluded beach here, but much of it is kept for guests of the Air Force resort. There’s a small entry fee; reports vary, so take some rupees.</p>"},
+        {"q": "What about Kuchchaveli?", "a": "<p>Undeveloped, a few kilometres beyond Nilaveli: calm in the dry season and rough in the monsoon. Jungle Beach by Uga has its own private beach here, for its guests.</p>"},
+        {"q": "Is it safe to swim?", "a": "<p>From about May to September the sea is mostly calm. Nilaveli has lifeguards; Uppuveli doesn’t, and Dutch Bay in town has currents. In the monsoon months stay out of the water when it’s rough.</p>"}
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {"q": "How hot does it get?", "a": "<div class=\"temps\"><div><b>32–35°</b><small>May–Sep</small></div><div><b>28–29°</b><small>Nov–Feb</small></div><div><b>24–26°</b><small>Night</small></div><div><b>Hot</b><small>Midday sand</small></div></div><p>It’s hottest in June and July. Do the boats and the temple early or late, and spend the middle of the day in the shade.</p>"},
+        {"q": "What should I wear?", "a": "<ul class=\"pack\"><li>Light, breathable clothes</li><li>Shoulders and knees covered for Koneswaram</li><li>A sarong or wrap for Kanniya</li><li>A hat and sunglasses</li></ul>"},
+        {"q": "What should I bring for Pigeon Island?", "a": "<p>Sunscreen, a hat, water in a refillable bottle — single-use plastic isn’t allowed on the island — and cash for the park fee and the boat. Wear the life jacket they give you.</p>"},
+        {"q": "Anything for the whale trip?", "a": "<p>A seasickness tablet before you leave, a light layer for the early start, sunscreen and water. The swell builds through the morning.</p>"}
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Carry cash. The ATMs are in town; at the beaches there are few or none, so take out rupees before you head up to Nilaveli.",
+        "Tuk-tuk fares aren’t metered. Agree the price first. PickMe works in Trinco, but there aren’t many drivers.",
+        "Uppuveli has no lifeguards; Nilaveli does. Dutch Bay, in town, has currents.",
+        "Jellyfish turn up for a while after the fishermen haul in their nets. Wait a bit before you swim.",
+        "On a whale trip, choose a boat that keeps at least 100 m from the whales and doesn’t offer swimming with them. In April to June, book the day before.",
+        "At Pigeon Island, don’t touch or stand on the coral and don’t chase the sharks or turtles. Single-use plastic isn’t allowed.",
+        "At Kanniya, pay only at the main gate. ‘Collectors’ at the side entrances aren’t official.",
+        "Elephants cross the road between Habarana and Trinco. Plan to arrive in daylight if you can.",
+        "From November to February the boats often stop and the sea is rough. Check before you plan a trip around Pigeon Island.",
+        "Poya (full-moon) days are dry: bars and shops stop selling alcohol. Some big hotels may still serve their own guests."
+      ]
+    }
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Pigeon Island fees, whether the boats are running this week, which beach suits you — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Trincomalee: "
+  },
+  "photos": {
+    "hero": {
+      "alt": "The open sea from the clifftop at Koneswaram, a boat crossing far below",
+      "credit": "Ivani De Silva",
+      "creditUrl": "https://unsplash.com/@ivani_desilva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-boat-is-in-the-middle-of-the-ocean-R74pSecvfDs?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1013
+    },
+    "pigeon": {
+      "alt": "Waves breaking on granite rocks in clear turquoise water on the Trincomalee coast",
+      "credit": "Tharukshaan Kumaravel",
+      "creditUrl": "https://unsplash.com/@tharu_ksh14?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-person-standing-on-a-rock-near-the-ocean-_dU0DzRT4_Q?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "whales": {
+      "alt": "A boat heading out to sea, seen from the cliffs at Koneswaram",
+      "credit": "Ivani De Silva",
+      "creditUrl": "https://unsplash.com/@ivani_desilva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-boat-is-in-the-middle-of-a-body-of-water-W6NrWWD7Uqs?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beaches": {
+      "alt": "A boat pulled up on the sand on a Trincomalee beach, the far shore beyond",
+      "credit": "Vedanth Ravi",
+      "creditUrl": "https://unsplash.com/@vedanthravi?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-teal-boat-rests-on-a-sandy-beach-near-the-ocean-0-GiQoDJ3o0?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "fort": {
+      "alt": "A spotted deer resting in the undergrowth",
+      "credit": "Thisuka Weerasinghe",
+      "creditUrl": "https://unsplash.com/@tdphotography2008?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-small-deer-standing-in-a-lush-green-forest-lRiezf12wsQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "koneswaram": {
+      "alt": "A giant painted statue of Shiva in Trincomalee",
+      "credit": "Nadun Ranasinghe",
+      "creditUrl": "https://unsplash.com/@editorsl?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/buddha-statue-near-white-concrete-building-Crx7Ktg5LgY?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 30%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kanniya": {
+      "alt": "An ancient white stupa in the Trincomalee district against a blue sky",
+      "credit": "Aravinda Jayathilaka",
+      "creditUrl": "https://unsplash.com/@asjay89?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/the-top-of-a-building-with-a-blue-sky-in-the-background-IL7lkKjHfuc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "elephants": {
+      "alt": "Wild elephants walking across grassland by a reservoir",
+      "credit": "Annya Rana",
+      "creditUrl": "https://unsplash.com/@amnya09?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-herd-of-elephants-walking-across-a-lush-green-field-DHA7O7oMcYo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kantale": {
+      "alt": "The sun setting over still water near Trincomalee",
+      "credit": "Sajeevan Balachandran",
+      "creditUrl": "https://unsplash.com/@sajeee?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/the-sun-is-setting-over-a-body-of-water-vBTt26rcTOk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "Wooden tables on the sand at a beach café, swimmers beyond",
+      "credit": "Anthony Lim",
+      "creditUrl": "https://unsplash.com/@neonboiiz?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-people-standing-on-top-of-a-sandy-beach-LS2Fu69ZYuw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "family-food": {
+      "alt": "A wood-fired pizza oven glowing in an open-air restaurant at night",
+      "credit": "Anthony Lim",
+      "creditUrl": "https://unsplash.com/@neonboiiz?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-man-standing-outside-of-a-restaurant-at-night-i7ufsWF5cNE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "A plate of rice and curry with sambol and poppadoms",
+      "credit": "Rakitha Perera",
+      "creditUrl": "https://unsplash.com/@rakithaperera?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-plate-topped-with-rice-meat-and-veggies-tP8dXmCHqBc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "resort": {
+      "alt": "Palm trees silhouetted against the evening sky",
+      "credit": "Anthony Lim",
+      "creditUrl": "https://unsplash.com/@neonboiiz?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-silhouette-of-palm-trees-against-a-blue-sky-c3xUAk88YNw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "mid-hotel": {
+      "alt": "Sunset over calm water, the far shore low on the horizon",
+      "credit": "Sajeevan Balachandran",
+      "creditUrl": "https://unsplash.com/@sajeee?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-body-of-water-with-a-sunset-in-the-background-c6XYKa2XnbU?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "hostel": {
+      "alt": "Wooden bunk beds in a sunny hostel dorm",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-room-filled-with-lots-of-bunk-beds-next-to-a-window-TzMGehZmocI?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
