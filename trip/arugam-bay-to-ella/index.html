@@ -207,7 +207,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-head{margin-bottom:34px}
   .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
   .trip-head .eyebrow{margin:0 0 .7rem}
-  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
   .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
   .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
@@ -296,7 +296,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .veh-ic svg{width:38px;height:25px}
     .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
     .drive-photo img{aspect-ratio:4/3}
-    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    .included{grid-template-columns:1fr;gap:22px}
     /* The quote runs to five lines in a phone column, and a vertically centred avatar then
        floats in the middle of it with white space above and below. Align it to the first line. */
     .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
@@ -430,7 +430,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <section class="section trip-included">
     <div class="wrap">
       <div class="trip-head"><span class="eyebrow">Every private transfer</span><h2>What&rsquo;s included</h2></div>
-      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg><h3>Stops when you want</h3><p>Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
+      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
       <figure class="proof">
         <img src="../../img/team-roshen.jpg" alt="Roshen, co-founder of Ceylon Hop" width="848" height="933" loading="lazy" decoding="async">
         <blockquote>&ldquo;We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we&rsquo;d trust with our own family.&rdquo;<cite>Roshen &mdash; Co-founder, Ceylon&nbsp;Hop</cite></blockquote>
