@@ -50,9 +50,10 @@ const routeEstimate = q => formatRouteEstimate({
    docs/superpowers/plans/2026-08-16-unified-route-page.md
    docs/superpowers/specs/2026-09-21-trip-pages-redesign-design.md
 
-   Two options, never three. A shared seat is a DATE WITH NAMES ON IT, so there is
-   no "scheduled" product beside a "pooled" one, and no unavailable state — any
-   date can run once enough travellers commit.
+   Two products, kept apart (owner, 2026-09-30). The SHARED TAXI runs on its set days
+   (Wed & Sat) at set times and is paid at booking. On any other day the traveller starts
+   their own ride on the RIDE BOARD, which runs once enough travellers commit and only
+   charges once it's confirmed. Neither borrows the other's promise.
 
    What changed in the redesign is WEIGHT, not the offer. The private fares are a
    card inside the photo hero, so the price and the Book button are on the first
@@ -113,32 +114,44 @@ function faresCard(T, from, to, q, shared, p) {
         </fieldset>
         <a class="btn btn-cta opt-cta" href="${esc(bookHref)}">Choose date &amp; book</a>
         <p class="fares-fine">Free cancellation up to 24h before · no change fees</p>${shared ? `
-        <a class="share-strip" href="#share"><span>Or share the ride<br><b>$${price(shared.seat)}</b> a seat</span><span>See who's going ↓</span></a>` : ''}
+        <a class="share-strip" href="#share"><span>Shared taxi · ${esc(shared.freqText)}<br><b>$${price(shared.seat)}</b> a seat</span><span>See times ↓</span></a>` : ''}
       </article>`;
 }
 
-/* The shared ride, where we sell one. The article keeps the class, the copy and the hooks
-   today's card has — route-page.js inserts its live date rows immediately before
-   [data-shared-cta], so that block must stay inside the card it belongs to. */
+/* The shared taxi, where we run one: its days, its boarding times and a seat booked straight
+   into checkout (search.js's shared bookUrl contract). Under it, the ride board for every other
+   day — route-page.js inserts its live board rows just before the board link inside
+   .share-board, and route-page-select.js watches [data-shared-cta] a.opt-cta (the seat button)
+   to keep the sticky bar off it, so both hooks must stay where they are. */
 function sharedSection(T, from, to, shared, p) {
   if (!shared) return '';
   const stops = shared.pickups
     .map(s => `<li><b>${esc(fmtTime(s.time))}</b> ${esc(s.point || T.byId[from].name)}</li>`)
     .join('');
+  const days = daysLong(shared.days);
+  const seatHref = `${p}booking.html?${new URLSearchParams({
+    from, to, mode: 'shared', price: String(shared.seat),
+    times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId,
+  })}`;
   return `
   <section class="section trip-share" id="share">
     <div class="wrap share-grid">
       <div class="share-copy">
         <span class="share-tag">Best value · share &amp; save</span>
         <h2>One vehicle, shared between you</h2>
-        <p class="share-lede">Same driver, same air-conditioned vehicle, same door-to-door care as a private transfer — for a fraction of the fare. Your card is saved when you add your name, and is only charged once the vehicle is confirmed.</p>
+        <p class="share-lede">Same driver, same air-conditioned vehicle, same door-to-door care as a private transfer — for a fraction of the fare. The shared taxi runs every ${esc(days.join(' and '))} at set pick-up times.</p>
       </div>
       <article class="opt opt-shared">
         <div class="seat-price"><b>$${price(shared.seat)}</b> <span>/ seat</span></div>
-        <p class="runs-line">Runs once <b>${MIN_SEATS} travellers</b> are going · nothing charged until it's confirmed</p>
+        <p class="runs-line">Runs every <b>${esc(days.join(' & '))}</b> · guaranteed departure · paid when you book</p>
         <ul class="pickups">${stops}</ul>
-        <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}">
-          <a class="btn btn-cta opt-cta" href="${esc(boardHref(T, from, to, p))}">See who's going &amp; add your name</a>
+        <div data-shared-cta data-from="${esc(T.byId[from].name)}" data-to="${esc(T.byId[to].name)}" data-min="${MIN_SEATS}" data-days="${shared.days.join(',')}">
+          <a class="btn btn-cta opt-cta" href="${esc(seatHref)}">Book a seat</a>
+          <div class="share-board">
+            <h3>Not travelling on a ${esc(days.join(' or '))}?</h3>
+            <p>Start your own ride on the ride board. It runs once ${MIN_SEATS} travellers are going, and nobody&rsquo;s charged until it&rsquo;s confirmed.</p>
+            <a class="share-board-link" href="${esc(boardHref(T, from, to, p))}&amp;start=1">Start a ride on the ride board&nbsp;→</a>
+          </div>
         </div>
       </article>
     </div>
@@ -156,6 +169,10 @@ function noShareNote(T, from, to, shared, p) {
   return `
   <div class="wrap"><p class="no-share"><span>No shared vehicle runs ${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}. For three or more, a private car often works out close to a seat price.</span> <a href="${esc(boardHref(T, from, to, p))}">Or start a ride on the board →</a></p></div>`;
 }
+
+/** [3, 6] → ['Wednesday', 'Saturday']: the shared taxi's service weekdays (0 = Sunday). */
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const daysLong = days => days.map(d => DAY_NAMES[d]);
 
 /** 07:30 → 7:30am, matching how the product pages state boarding times. */
 function fmtTime(t) {
@@ -329,10 +346,10 @@ function faqItems(from, to, q, shared) {
       `Plan for ${estimate} by road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
-    // Design A: a shared seat is a date with names on it. No fixed timetable is quoted,
-    // because there is no date we refuse — the van runs when enough travellers commit.
+    // The shared taxi on its days, paid at booking; the ride board for any other day, on the
+    // board's own terms. Two products, never one described with the other's promise.
     shared
-      ? [`How does the ${from} to ${to} shared taxi work?`, `Pick the date you want to travel. When ${MIN_SEATS} travellers are going on that date the vehicle runs, and everyone pays $${price(shared.seat)} a seat. Your card is saved when you add your name and is only charged once the vehicle is confirmed — if it never fills, you pay nothing.`]
+      ? [`How does the ${from} to ${to} shared taxi work?`, `The shared taxi runs every ${daysLong(shared.days).join(' and ')}, leaving ${shared.pickup} at ${fmtTime(shared.times[0])}. A seat is $${price(shared.seat)}, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once ${MIN_SEATS} travellers are going, and you're only charged once it's confirmed.`]
       // Asked in the searcher's own words. The old site's best-known page was a Kandy → Ella
       // "shared taxi" we no longer run; the honest way to stay relevant to that search is to
       // answer it, not to imply a seat in the title.
@@ -572,6 +589,10 @@ ${headAssets}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  .share-board{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e7e3d6)}
+  .share-board h3{margin:0 0 .3rem;font-family:var(--body);font-size:.98rem;font-weight:600}
+  .share-board p{margin:0;font-size:.88rem;line-height:1.55;color:var(--ink-soft,#6c6a6b)}
+  .share-board-link{display:inline-block;margin-top:12px;font-weight:600;font-size:.92rem;color:var(--blue-deep,#24758A)}
   .fares .opt-cta{margin-top:0}
   /* ── sticky book bar — shipped hidden; a later step turns it on while scrolling ── */
   .trip-bookbar{display:none}

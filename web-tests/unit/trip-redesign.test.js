@@ -324,8 +324,24 @@ describe('trip page — shared ride is a section or a sentence, never a grey car
     const s = d.querySelector('section#share');
     expect(s.querySelector('.seat-price b').textContent).toMatch(/^\$\d/);
     expect(s.querySelectorAll('.pickups li').length).toBeGreaterThan(0);
-    expect(s.querySelector('[data-shared-cta] a.opt-cta')).toBeTruthy();
+    expect(s.querySelector('[data-shared-cta] a.opt-cta').getAttribute('href')).toMatch(/booking\.html\?.*mode=shared/);
     expect(d.querySelector('.route-hero a.share-strip[href="#share"]')).toBeTruthy();
+  });
+  // The shared taxi runs on set days and is paid at booking; the ride board is the other-days
+  // option and the only place "charged once it's confirmed" is true (owner, 2026-09-30).
+  it.each(SHARED)('%s: the seat states its days and pay-at-booking; the ride board covers other days', (slug) => {
+    const d = dom(slug);
+    const s = d.querySelector('section#share');
+    const runs = s.querySelector('.runs-line').textContent;
+    expect(runs).toMatch(/^Runs every \w+day & \w+day · guaranteed departure · paid when you book$/);
+    expect(s.querySelector('.share-lede').textContent).not.toMatch(/charged|card is saved/);
+    const board = s.querySelector('[data-shared-cta] .share-board');
+    expect(board.querySelector('h3').textContent).toMatch(/^Not travelling on a \w+day or \w+day\?$/);
+    expect(board.textContent).toMatch(/runs once 3 travellers are going/);
+    expect(board.querySelector('a[href*="board.html?from="][href*="start=1"]')).toBeTruthy();
+    const strip = d.querySelector('.route-hero a.share-strip').textContent;
+    expect(strip).toMatch(/Shared taxi · Wed & Sat/);
+    expect(strip).not.toMatch(/who's going/);
   });
 });
 
