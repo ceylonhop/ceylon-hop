@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { blockLiveApi } from './_stubs.js';
 
 /*
-  The hero photo is an <image-slot>: its image lives as a blob in image-slots.state.json and
-  is dropped in by hand, not referenced from img/. The carousel is built from three such
-  slots so the hero stays editable exactly as it was.
+  The hero photo is an <image-slot> whose src is img/hero-photo.jpg (a plain <img> of the same
+  file sits under it so the photo paints before JS — see hero-photo-lcp.test.js). The carousel
+  is built from three such slots so the hero stays editable exactly as it was.
 
   The rule that makes this safe to ship half-filled: a slot with no image is not a slide. Only
   one photo exists today, so the hero must look and behave precisely as it does now — no dots,
