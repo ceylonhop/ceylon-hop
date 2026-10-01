@@ -126,6 +126,15 @@ const MORE = [
   { slug: 'sigiriya', origins: ['cmb-airport', 'kandy', 'negombo'],
     next: ['sigiriya-to-cmb-airport', 'sigiriya-to-negombo', 'sigiriya-to-kandy', 'cmb-airport-to-sigiriya', 'negombo-to-sigiriya', 'kandy-to-sigiriya'],
     book: 'plan.html?stops=Sigiriya+%2F+Dambulla%7CKandy&amp;nights=0%2C0' },
+  { slug: 'kandy', origins: ['cmb-airport', 'ella', 'sigiriya'],
+    next: ['kandy-to-ella', 'kandy-to-nuwara-eliya', 'kandy-to-sigiriya', 'kandy-to-cmb-airport', 'kandy-to-colombo', 'kandy-to-negombo'],
+    book: 'plan.html?stops=Kandy%7CElla&amp;nights=0%2C0' },
+  { slug: 'colombo', origins: ['cmb-airport', 'kandy', 'galle'],
+    next: ['colombo-to-galle', 'colombo-to-kandy', 'colombo-to-cmb-airport', 'colombo-to-ella'],
+    book: 'plan.html?stops=Colombo+city%7CGalle&amp;nights=0%2C0' },
+  { slug: 'arugam-bay', origins: ['ella', 'cmb-airport', 'yala'],
+    next: ['arugam-bay-to-ella', 'ella-to-arugam-bay'],
+    book: 'plan.html?stops=Arugam+Bay%7CElla&amp;nights=0%2C0' },
 ];
 for (const g of MORE) {
   describe(`guide: ${g.slug}`, () => {
