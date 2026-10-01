@@ -150,13 +150,14 @@ describe('trip page — body', () => {
     expect(Number(img.getAttribute('height'))).toBeGreaterThan(0);
   });
 
-  it.each(slugs)('%s: what’s included states four claims and never a meet-and-greet', (slug) => {
+  it.each(slugs)('%s: what’s included states three claims and never a meet-and-greet or free stops', (slug) => {
     const inc = dom(slug).querySelector('.included');
-    expect(inc.querySelectorAll('h3').length).toBe(4);
-    for (const claim of ['A fixed price', 'Door to door', 'Stops when you want', 'Free cancellation']) {
+    expect(inc.querySelectorAll('h3').length).toBe(3);
+    for (const claim of ['A fixed price', 'Door to door', 'Free cancellation']) {
       expect(inc.textContent).toContain(claim);
     }
     expect(inc.textContent).not.toMatch(/meet[- ]and[- ]greet|name board|sign with your name/i);
+    expect(inc.textContent).not.toMatch(/stops when you want/i);
   });
 
   it.each(slugs)('%s: where-next cards carry photos, list-fare hooks and a Return trip label on the reverse', (slug) => {
