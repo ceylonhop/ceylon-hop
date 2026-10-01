@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { isApiRequest } from './_api-host.js';
-import { futureIsoDate } from '../dates.js';
+import { futureIsoDate, nextIsoWeekday } from '../dates.js';
 
 /*
   Task B4: the "already going" rows on a shared /trip/ page (route-page.js's rowsHtml()).
@@ -103,6 +103,40 @@ function oneLine(locator) {
     return { lines, rectCount: rects.length };
   });
 }
+
+/* The shared taxi runs Wed & Sat and is paid at booking; the board is for every other day and
+   refuses a ride on a shared-taxi day (409 scheduled_day). So the board's live rows belong to the
+   ride-board part of the card, below the seat button, and a Wednesday picked there points back
+   at the seat instead of inviting a board ride that cannot be started (owner, 2026-09-30). */
+test('the board rows sit in the ride-board part, below the seat button', async ({ page }) => {
+  await stubBoard(page, [RUNNING]);
+  await page.goto('/trip/cmb-airport-to-sigiriya/');
+  await expect(page.locator('.share-board .live-dates .ld-row')).toHaveCount(1);
+  const order = await page.evaluate(() => {
+    const seat = document.querySelector('[data-shared-cta] a.opt-cta');
+    const rows = document.querySelector('.live-dates');
+    return seat.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING;
+  });
+  expect(order, 'the live rows must come after the Book a seat button').toBeTruthy();
+});
+
+test('a shared-taxi day picked on the board part points to the seat, not a board ride', async ({ page }) => {
+  await stubBoard(page, [RUNNING]);
+  await page.goto('/trip/cmb-airport-to-sigiriya/');
+  await expect(page.locator('.ld-row')).toHaveCount(1);
+  await pickDate(page, nextIsoWeekday(3));
+  await expect(page.locator('.ld-head')).toHaveText(/^The shared taxi runs Wed /);
+  await expect(page.locator('.live-dates')).toContainText('Book a seat above');
+  await expect(page.locator('.live-dates')).not.toContainText('Put your name down');
+});
+
+test('an off day picked on the board part still invites a board ride', async ({ page }) => {
+  await stubBoard(page, [RUNNING]);
+  await page.goto('/trip/cmb-airport-to-sigiriya/');
+  await expect(page.locator('.ld-row')).toHaveCount(1);
+  await pickDate(page, nextIsoWeekday(4));
+  await expect(page.locator('.ld-head')).toHaveText(/^No one's going Thu /);
+});
 
 test('a running date: the pill says Running, the count says "N going", no "n of min" anywhere', async ({ page }) => {
   await stubBoard(page, [RUNNING]);

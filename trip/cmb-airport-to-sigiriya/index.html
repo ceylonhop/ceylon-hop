@@ -131,6 +131,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
+  .share-board{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e7e3d6)}
+  .share-board h3{margin:0 0 .3rem;font-family:var(--body);font-size:.98rem;font-weight:600}
+  .share-board p{margin:0;font-size:.88rem;line-height:1.55;color:var(--ink-soft,#6c6a6b)}
+  .share-board-link{display:inline-block;margin-top:12px;font-weight:600;font-size:.92rem;color:var(--blue-deep,#24758A)}
   .fares .opt-cta{margin-top:0}
   /* ── sticky book bar — shipped hidden; a later step turns it on while scrolling ── */
   .trip-bookbar{display:none}
@@ -203,7 +207,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-head{margin-bottom:34px}
   .trip-head h2{margin:0;font-size:clamp(1.8rem,3.4vw,2.6rem)}
   .trip-head .eyebrow{margin:0 0 .7rem}
-  .included{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+  .included{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px}
   .included>div{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .included svg{width:40px;height:40px;padding:9px;border-radius:50%;background:#D9EEF3;color:var(--blue-deep,#24758A)}
   .included svg .wp{fill:var(--saffron,#F9A429);stroke:none}
@@ -292,7 +296,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .veh-ic svg{width:38px;height:25px}
     .drive,.faq-grid{grid-template-columns:1fr;gap:30px}
     .drive-photo img{aspect-ratio:4/3}
-    .included{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    .included{grid-template-columns:1fr;gap:22px}
     /* The quote runs to five lines in a phone column, and a vertically centred avatar then
        floats in the middle of it with white space above and below. Align it to the first line. */
     .proof{grid-template-columns:auto minmax(0,1fr);padding:20px;gap:16px;align-items:start}
@@ -361,7 +365,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Colombo Airport (CMB) to Sigiriya / Dambulla","item":"https://ceylonhop.com/trip/cmb-airport-to-sigiriya/"}]}</script>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the drive take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 150 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Colombo Airport (CMB) to Sigiriya / Dambulla?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $67 and an air-conditioned van (up to 6 people) from $89.99, fixed and door to door — the price you see is the price you pay. A shared seat is from $27.49 per person."}},{"@type":"Question","name":"How does the Colombo Airport (CMB) to Sigiriya / Dambulla shared taxi work?","acceptedAnswer":{"@type":"Answer","text":"Pick the date you want to travel. When 3 travellers are going on that date the vehicle runs, and everyone pays $27.49 a seat. Your card is saved when you add your name and is only charged once the vehicle is confirmed — if it never fills, you pay nothing."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the drive take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 150 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Colombo Airport (CMB) to Sigiriya / Dambulla?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $67 and an air-conditioned van (up to 6 people) from $89.99, fixed and door to door — the price you see is the price you pay. A shared seat is from $27.49 per person."}},{"@type":"Question","name":"How does the Colombo Airport (CMB) to Sigiriya / Dambulla shared taxi work?","acceptedAnswer":{"@type":"Answer","text":"The shared taxi runs every Wednesday and Saturday, leaving CMB Airport at 7:00am. A seat is $27.49, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Service","serviceType":"Taxi & private intercity transfer","name":"Colombo Airport (CMB) to Sigiriya / Dambulla taxi — private transfer","areaServed":"Sri Lanka","provider":{"@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","telephone":"+94779669662"},"offers":{"@type":"Offer","priceCurrency":"USD","price":"67","url":"https://ceylonhop.com/trip/cmb-airport-to-sigiriya/"}}</script>
 </head>
 <body>
@@ -405,7 +409,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </fieldset>
         <a class="btn btn-cta opt-cta" href="../../booking.html?from=cmb-airport&amp;to=sigiriya&amp;mode=private&amp;vehicle=car&amp;price=67&amp;rawPrice=67.22">Choose date &amp; book</a>
         <p class="fares-fine">Free cancellation up to 24h before · no change fees</p>
-        <a class="share-strip" href="#share"><span>Or share the ride<br><b>$27.49</b> a seat</span><span>See who's going ↓</span></a>
+        <a class="share-strip" href="#share"><span>Shared taxi · Wed &amp; Sat<br><b>$27.49</b> a seat</span><span>See times ↓</span></a>
       </article>
     </div>
   </section>
@@ -415,14 +419,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="share-copy">
         <span class="share-tag">Best value · share &amp; save</span>
         <h2>One vehicle, shared between you</h2>
-        <p class="share-lede">Same driver, same air-conditioned vehicle, same door-to-door care as a private transfer — for a fraction of the fare. Your card is saved when you add your name, and is only charged once the vehicle is confirmed.</p>
+        <p class="share-lede">Same driver, same air-conditioned vehicle, same door-to-door care as a private transfer — for a fraction of the fare. The shared taxi runs every Wednesday and Saturday at set pick-up times.</p>
       </div>
       <article class="opt opt-shared">
         <div class="seat-price"><b>$27.49</b> <span>/ seat</span></div>
-        <p class="runs-line">Runs once <b>3 travellers</b> are going · nothing charged until it's confirmed</p>
+        <p class="runs-line">Runs every <b>Wednesday &amp; Saturday</b> · guaranteed departure · paid when you book</p>
         <ul class="pickups"><li><b>7:00am</b> CMB Airport</li><li><b>7:30am</b> Zen Cafe, Negombo</li></ul>
-        <div data-shared-cta data-from="Colombo Airport (CMB)" data-to="Sigiriya / Dambulla" data-min="3">
-          <a class="btn btn-cta opt-cta" href="../../board.html?from=Colombo%20Airport%20(CMB)&amp;to=Sigiriya%20%2F%20Dambulla">See who's going &amp; add your name</a>
+        <div data-shared-cta data-from="Colombo Airport (CMB)" data-to="Sigiriya / Dambulla" data-min="3" data-days="3,6">
+          <a class="btn btn-cta opt-cta" href="../../booking.html?from=cmb-airport&amp;to=sigiriya&amp;mode=shared&amp;price=27.49&amp;times=07%3A00&amp;days=3%2C6&amp;corridor=airport-cultural">Book a seat</a>
+          <div class="share-board">
+            <h3>Not travelling on a Wednesday or Saturday?</h3>
+            <p>Start your own ride on the ride board. It runs once 3 travellers are going, and nobody&rsquo;s charged until it&rsquo;s confirmed.</p>
+            <a class="share-board-link" href="../../board.html?from=Colombo%20Airport%20(CMB)&amp;to=Sigiriya%20%2F%20Dambulla&amp;start=1">Start a ride on the ride board&nbsp;→</a>
+          </div>
         </div>
       </article>
     </div>
@@ -443,7 +452,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <section class="section trip-included">
     <div class="wrap">
       <div class="trip-head"><span class="eyebrow">Every private transfer</span><h2>What&rsquo;s included</h2></div>
-      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 13.5c2-5 4-5 4.7-2 .6 2.7 2.2 2.9 4-1.1"/><path d="M4 18.5h13.5" stroke-dasharray="2.7 2.9"/><circle class="wp" cx="20.5" cy="18.5" r="1.5"/></svg><h3>Stops when you want</h3><p>Photos, lunch, a quick sight &mdash; tell your driver and they&rsquo;ll build it in.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
+      <div class="included"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><circle class="wp" cx="12" cy="15.2" r="1.5"/></svg><h3>A fixed price</h3><p>The price you see is the price you pay &mdash; no haggling at the kerb.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18.5" r="2"/><path d="M6.8 16.7C11 12.7 13 9.7 17.2 7.7" stroke-dasharray="2.7 2.7"/><circle class="wp" cx="19" cy="6.5" r="2"/></svg><h3>Door to door</h3><p>Picked up exactly where you are, dropped exactly where you&rsquo;re staying.</p></div><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg><h3>Free cancellation</h3><p>Up to 24 hours before, and no fees to change your date.</p></div></div>
       <figure class="proof">
         <img src="../../img/team-roshen.jpg" alt="Roshen, co-founder of Ceylon Hop" width="848" height="933" loading="lazy" decoding="async">
         <blockquote>&ldquo;We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we&rsquo;d trust with our own family.&rdquo;<cite>Roshen &mdash; Co-founder, Ceylon&nbsp;Hop</cite></blockquote>
@@ -473,7 +482,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="faq-acc">
           <details open><summary>How long does the drive take?</summary><p>Plan for approx. 150 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way.</p></details>
           <details><summary>How much is a taxi from Colombo Airport (CMB) to Sigiriya / Dambulla?</summary><p>A private car is from <span data-fare="car">$67</span> and an air-conditioned van (up to 6 people) from <span data-fare="van">$89.99</span>, fixed and door to door — the price you see is the price you pay. A shared seat is from $27.49 per person.</p></details>
-          <details><summary>How does the Colombo Airport (CMB) to Sigiriya / Dambulla shared taxi work?</summary><p>Pick the date you want to travel. When 3 travellers are going on that date the vehicle runs, and everyone pays $27.49 a seat. Your card is saved when you add your name and is only charged once the vehicle is confirmed — if it never fills, you pay nothing.</p></details>
+          <details><summary>How does the Colombo Airport (CMB) to Sigiriya / Dambulla shared taxi work?</summary><p>The shared taxi runs every Wednesday and Saturday, leaving CMB Airport at 7:00am. A seat is $27.49, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed.</p></details>
           <details><summary>Can we stop along the way?</summary><p>Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.</p></details>
           <details><summary>How do I book?</summary><p>Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.</p></details>
       </div>
@@ -525,6 +534,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>
-<script src="../../route-page.js?v=0115cdae0d"></script>
+<script src="../../route-page.js?v=a8852b9ace"></script>
 </body>
 </html>
