@@ -116,7 +116,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .poi.feature img{height:100%;aspect-ratio:auto;min-height:480px}
     .poi.feature .bd{padding:44px;display:flex;flex-direction:column;justify-content:center}
     .poi.feature h3{font-size:clamp(2rem,3.4vw,2.8rem);font-variation-settings:"opsz" 72}
-    .poi.feature p{font-size:1.08rem}}
+    .poi.feature p{font-size:1.08rem}
+    .poi:not(.feature):last-child:nth-child(even){grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}
+    .poi:not(.feature):last-child:nth-child(even) img{height:100%;aspect-ratio:auto;min-height:360px}}
   .far-head{margin-top:44px}
   .far{display:grid;gap:12px}
   @media(min-width:760px){.far{grid-template-columns:repeat(3,1fr);gap:18px}}
