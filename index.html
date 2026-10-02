@@ -607,8 +607,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <div class="pc-photos" id="pc-photos">
             <img class="pc-base" src="img/hero-photo.jpg" alt="" width="1200" height="600">
             <image-slot id="hero-photo" shape="rect" src="img/hero-photo.jpg" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
-            <image-slot id="hero-photo-2" shape="rect" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
-            <image-slot id="hero-photo-3" shape="rect" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+            <image-slot id="hero-photo-2" shape="rect" data-src="img/hero-photo-2.jpg" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
+            <image-slot id="hero-photo-3" shape="rect" data-src="img/hero-photo-3.jpg" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+            <image-slot id="hero-photo-4" shape="rect" data-src="img/hero-photo-4.jpg" placeholder="Drop a 4th hero photo (optional)"></image-slot>
+            <image-slot id="hero-photo-5" shape="rect" data-src="img/hero-photo-5.jpg" placeholder="Drop a 5th hero photo (optional)"></image-slot>
           </div>
           <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
         </div>
@@ -1110,6 +1112,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
     if(reduce.addEventListener) reduce.addEventListener('change',function(){ start(); });
     build();
+
+    // Slides 2+ carry their file in data-src so the browser doesn't fetch them with the page —
+    // the first photo, headline and booking card get the bandwidth. Once the page has loaded and
+    // gone idle, download them all, then fill them in one go: build() runs once, and a slide that
+    // failed to load is never filled, so it is never a slide. Data saver / 2G: first photo only.
+    // (onload, not img.decode(): decode() never settles while the tab is in the background.)
+    function fillLate(){
+      const late=slots.filter(function(s){ return s.dataset.src && !s.hasAttribute('src'); });
+      const c=navigator.connection;
+      if(!late.length || (c && (c.saveData || /2g/.test(c.effectiveType||'')))) return;
+      Promise.all(late.map(function(s){
+        return new Promise(function(done){
+          const im=new Image();
+          im.onload=function(){ done(s); }; im.onerror=function(){ done(null); };
+          im.src=s.dataset.src;
+        });
+      })).then(function(ok){
+        ok.forEach(function(s){ if(s) s.setAttribute('src', s.dataset.src); });
+      });
+    }
+    function whenIdle(){ if(window.requestIdleCallback) requestIdleCallback(fillLate,{timeout:2000}); else setTimeout(fillLate,200); }
+    if(document.readyState==='complete') whenIdle(); else window.addEventListener('load',whenIdle,{once:true});
   })();
 
   // hero entrance is pure CSS now (auto-playing keyframes with fill:both) — no JS
