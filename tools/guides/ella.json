@@ -5,7 +5,7 @@
   "placeId": "ella",
   "title": "Ella guide — Nine Arch Bridge, Ella Rock, where to stay | Ceylon Hop",
   "description": "What to do in Ella — Nine Arch Bridge, Little Adam’s Peak and Ella Rock, the train right now, where to eat and stay, and how we drive you there.",
-  "checked": "September 2026",
+  "checked": "October 2026",
   "hero": {
     "photo": "hero",
     "intro": "A village in a gap in the mountains, 1,041 m up, with the whole southern plain falling away below it. Tea on every slope, a railway bridge everyone’s seen a photo of, two peaks to climb and a main street full of cafés."
@@ -46,6 +46,14 @@
       "tip": {"kind": "drivers", "text": "Go for sunrise, then carry on to Nine Arch Bridge — they’re on the same side of town, so it’s one easy morning walk."}
     },
     {
+      "id": "zipline",
+      "name": "Flying Ravana Mega Zipline",
+      "photo": "zipline",
+      "text": "Over half a kilometre of wire from the slopes of Little Adam’s Peak, across the tea of Uva Greenlands at up to 80 km/h, with the Ella Gap opening up in front of you. Said to be the longest zipline in Sri Lanka, and over in under a minute. No fitness needed.",
+      "spec": {"from": "Passara road, by Little Adam’s Peak", "open": "Daily · about 9 AM–5 PM", "give": "30–45 min", "level": "Easy", "ticket": "Rs 9,900 foreign adult · Rs 6,000 age 15 and under"},
+      "tip": {"kind": "warn", "text": "You need to be at least 6 and weigh between 30 and 100 kg. Not for anyone pregnant or with a medical condition that a fast ride could aggravate. Do it on the way down from Little Adam’s Peak — it’s the same hill."}
+    },
+    {
       "id": "ella-rock",
       "name": "Ella Rock",
       "photo": "ella-rock",
@@ -60,6 +68,14 @@
       "text": "A 25 m waterfall right beside the road down to the plains, tied to the Ramayana: the demon king Ravana is said to have hidden Sita in the caves behind it. Ravana Cave, up a few hundred steps from the temple nearer town, has been lived in for tens of thousands of years.",
       "spec": {"from": "6 km · 15 min by tuk-tuk, on the Wellawaya road", "open": "Free · daylight", "give": "30–45 min", "level": "Easy"},
       "tip": {"kind": "warn", "text": "The rocks are slippery — admire it from the path. It’s at its best after rain and just a trickle in the driest weeks. Stalls and monkeys at the roadside: keep food in your bag."}
+    },
+    {
+      "id": "secret-waterfall",
+      "name": "Secret Waterfall",
+      "photo": "secret-falls",
+      "text": "A small waterfall with a cold, clear pool you can swim in, hidden in the jungle below the Wellawaya road at Karandagolla — a few minutes past Ravana Falls. The walk in crosses paddy fields, then scrambles down through the trees, with plenty of birds on the way.",
+      "spec": {"from": "About 20 min by car, on the Wellawaya road", "open": "Daylight", "give": "1–2 hours", "level": "Easy–moderate · 20–30 min each way, a scramble at the end", "ticket": "Free · locals may ask a small tip"},
+      "tip": {"kind": "drivers", "text": "Easy to miss the turn, so ask us or take a local guide. Bring a change of clothes if you want to swim. Skip it after heavy rain — the water rises fast and the path gets leeches."}
     },
     {
       "id": "diyaluma-falls",
@@ -85,6 +101,14 @@
       "text": "Ella sits in the middle of the Uva tea country. At Uva Halpewatte, on the hill above town, you watch the leaf withered, rolled, fermented and fired, then taste the result looking over the estate it came from.",
       "spec": {"from": "A short tuk-tuk ride from town", "open": "Tours 8 AM–4:30 PM", "give": "45 min–1 hour", "ticket": "≈ Rs 3,000 factory tour"},
       "tip": {"kind": "drivers", "text": "Go in the morning while the machines are running. If you want it smaller and quieter, the Newburgh green-tea factory is a walk from town."}
+    },
+    {
+      "id": "mahamevnawa",
+      "name": "Mahamevnawa Monastery",
+      "photo": "monastery",
+      "text": "A hilltop Buddhist monastery at Kumbalwela, towards Bandarawela, home to more than thirty monks, with long views over the hills. Quiet and unhurried — a good stop on a day between hikes. Visitors are welcome, and some meditation sessions are open to travellers.",
+      "spec": {"from": "About 10 km · 20–30 min by tuk-tuk", "open": "Daily, morning to evening · chanting around 6 PM", "give": "30–45 min", "level": "Easy", "ticket": "Free"},
+      "tip": {"kind": "warn", "text": "It’s a working monastery, not just a viewpoint: cover shoulders and knees, take your shoes off, keep your voice down, and ask before photographing the monks."}
     }
   ],
   "furtherAfield": [
@@ -139,7 +163,7 @@
       "tier": "Cafés",
       "photo": "cafe",
       "name": "Kiri Kopi · Avocado Café · Wild Café",
-      "text": "Coffee, brunch and smoothie bowls after an early hike: Kiri Kopi for coffee and gluten-free options, Avocado Café for avocado toast and hoppers, Wild Café for its balcony over the main street. <em>The Barn by Starbeans has the view, and is busiest at weekends.</em>",
+      "text": "Coffee, brunch and smoothie bowls after an early hike: Kiri Kopi for coffee and gluten-free options, Avocado Café for avocado toast and hoppers, Wild Café for its balcony over the main street. <em>The Barn by Starbeans has the view, and is busiest at weekends. For something sweet, Isle of Gelato on the Wellawaya road.</em>",
       "band": "$–$$",
       "flags": ["Breakfast", "Brunch"],
       "map": "Kiri Kopi Ella"
@@ -147,8 +171,8 @@
     {
       "tier": "Family",
       "photo": "family-food",
-      "name": "Café UFO · 360 Ella · MozzarElla",
-      "text": "Something for everyone: Café UFO’s big mixed menu under a bamboo roof, 360 Ella’s rooftop for the evening, and MozzarElla — a tiny place doing thin-crust pizza that children love. <em>Bring your own bottle to MozzarElla.</em>",
+      "name": "Café UFO · 360 Ella · MozzarElla · Café Belle",
+      "text": "Something for everyone: Café UFO’s big mixed menu under a bamboo roof, 360 Ella’s rooftop for the evening, MozzarElla — a tiny place doing thin-crust pizza that children love — and Café Belle on the Wellawaya road. <em>Bring your own bottle to MozzarElla.</em>",
       "band": "$–$$",
       "flags": ["Lunch", "Dinner"],
       "map": "Cafe UFO Ella"
@@ -156,8 +180,8 @@
     {
       "tier": "Budget",
       "photo": "rice-curry",
-      "name": "Remo’s · Matey Hut",
-      "text": "Proper Sri Lankan rice and curry for not much: Remo’s for lump rice and lamprais, Matey Hut — a tiny log hut — for a plate of a dozen curries. Both run cooking classes. <em>Matey Hut has a queue; it’s worth it.</em>",
+      "name": "Remo’s · Matey Hut · River Face",
+      "text": "Proper Sri Lankan rice and curry for not much: Remo’s for lump rice and lamprais, Matey Hut — a tiny log hut — for a plate of a dozen curries. Both run cooking classes. River Face, at Kithal Ella station on the way to Ella Rock, is the one for after the hike. <em>Matey Hut has a queue; it’s worth it.</em>",
       "band": "$",
       "flags": ["Lunch", "Dinner"],
       "warn": ["Cash"],
@@ -191,8 +215,8 @@
     {
       "tier": "Solo",
       "photo": "backpackers",
-      "name": "Backpackers Hostel · Wild Bee · Ella Escapade",
-      "text": "Backpackers Hostel has a treehouse feel and rents scooters; Wild Bee is an eco hostel near the station with breakfast included and a women-only dorm; Ella Escapade has private rooms and a kitchen. <em>All easy places to find a hiking partner for Ella Rock.</em>",
+      "name": "Backpackers Hostel · Wild Bee · Beyond Nomad",
+      "text": "Backpackers Hostel has a treehouse feel and rents scooters; Wild Bee is an eco hostel near the station with breakfast included and a women-only dorm; Beyond Nomad is a smarter, adults-only hostel with its own restaurant, and Ella Escapade has private rooms and a kitchen. <em>All easy places to find a hiking partner for Ella Rock.</em>",
       "band": "$",
       "flags": ["Solo", "Backpackers"]
     }
@@ -398,6 +422,33 @@
       "creditUrl": "https://unsplash.com/@secrettravelguide?utm_source=ceylon_hop&utm_medium=referral",
       "photoUrl": "https://unsplash.com/photos/a-garden-with-a-fountain-and-flowers--SEDkuh-T8Y?utm_source=ceylon_hop&utm_medium=referral",
       "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "monastery": {
+      "alt": "A white stupa on a hilltop monastery, green hills and mountains behind",
+      "credit": "රත්න දීපය - Rathna Deepaya",
+      "creditUrl": "https://unsplash.com/@rathna_deepaya?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-view-of-a-temple-on-a-hill-with-mountains-in-the-background-fzh1qL6Sq70?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "40% 60%",
+      "w": 1800,
+      "h": 1125
+    },
+    "zipline": {
+      "alt": "A rider in a red helmet flying along a zip line above the treetops",
+      "credit": "Nadiia Ganzhyi",
+      "creditUrl": "https://unsplash.com/@nadiiag?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-man-riding-a-zip-line-through-a-forest-LGeVDlR8oUk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "60% 45%",
+      "w": 1800,
+      "h": 1125
+    },
+    "secret-falls": {
+      "alt": "A small tiered waterfall falling into a clear rock pool in the forest",
+      "credit": "My Journal",
+      "creditUrl": "https://unsplash.com/@myjournalview?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/tiered-waterfall-in-lush-forest-s9XrGzbGSao?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "65% 60%",
       "w": 1800,
       "h": 1125
     }

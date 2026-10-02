@@ -5,7 +5,7 @@
   "placeId": "sigiriya",
   "title": "Sigiriya & Dambulla guide — climbs, caves, where to stay | Ceylon Hop",
   "description": "Sigiriya Rock at opening time, Pidurangala at sunrise, the Dambulla caves, the elephant gathering, where to eat and stay — and how we drive you there.",
-  "checked": "September 2026",
+  "checked": "October 2026",
   "hero": {
     "photo": "hero",
     "intro": "A 180 m rock fortress rising straight out of the jungle, with a king’s palace on top and frescoes halfway up. Twenty minutes down the road, the painted caves of Dambulla add a second World Heritage Site to the same trip."
@@ -63,26 +63,43 @@
       "tip": {"kind": "drivers", "text": "Go at sunset. Fewer people, the best light on the rock, and it’s the one thing first-timers don’t know to ask for."}
     },
     {
+      "id": "loris",
+      "name": "A loris night walk",
+      "photo": "loris",
+      "text": "After dark, a naturalist walks you through the scrub forest around Sigiriya with a red-light torch, looking for the grey slender loris — a tiny, huge-eyed primate found only in Sri Lanka and southern India. Along the way: civets, owls, chameleons and whatever else is out that night.",
+      "spec": {"from": "Pidurangala & the hotels around Sigiriya", "open": "Evenings, from about 7 PM", "give": "1.5–2 hours", "level": "Easy · slow walking in the dark", "ticket": "≈ USD 30 per person, by operator"},
+      "tip": {"kind": "warn", "text": "Sightings aren’t guaranteed — the loris is genuinely shy — but the guides know the trails. Closed shoes, long trousers and insect repellent. Bring a torch with a red light if you have one: it’s gentler on the animals’ eyes."}
+    },
+    {
       "id": "minneriya",
       "name": "Minneriya & the elephant gathering",
       "photo": "elephants",
-      "text": "From about July to October, as the reservoirs shrink, hundreds of wild elephants come to graze the grass on the old tank beds — one of the biggest gatherings of Asian elephants anywhere. The herds move between Minneriya, Kaudulla and Hurulu as the water changes, and the jeep drivers know where they are that week.",
-      "spec": {"from": "About 45 min to the park gates", "open": "Jeeps go at 6 AM or around 3 PM", "give": "Half a day", "ticket": "Park ≈ USD 35–40 per adult all-in, plus the jeep"},
-      "tip": {"kind": "drivers", "text": "Go in the afternoon — the elephants come out to the grass as it cools. Outside the gathering months you’ll still see elephants most days; ask us which park is best for your dates."}
+      "text": "From about July to October, as the reservoirs shrink, hundreds of wild elephants come to graze the grass on the old tank beds — one of the biggest gatherings of Asian elephants anywhere, at its best in August and September. The herds move between Minneriya, Kaudulla and Hurulu as the water changes, and the jeep drivers know where they are that week. Deer, buffalo and plenty of birds too.",
+      "spec": {"from": "About 45 min to the park gates", "open": "Afternoon jeeps from about 2:30 PM", "give": "Half a day", "ticket": "USD 60 per person with us · jeep & park entry included · min 2"},
+      "tip": {"kind": "drivers", "text": "Go after two in the afternoon — the elephants come down to the reservoir to drink and bathe as it cools, and the light is better for photos. Numbers change from year to year with the water; outside the gathering months you’ll still see elephants most days, so ask us which park is best for your dates."},
+      "offer": {"title": "Minneriya safari with Ceylon Hop", "sub": "USD 60 per person, two or more · jeep and park entry included", "wa": "Hi Ceylon Hop — I’m reading your Sigiriya guide. Could you book me the Minneriya elephant safari (USD 60 per person, jeep and park entry included)? My dates and number of people: "}
     },
     {
       "id": "village",
       "name": "A village day",
       "photo": "village",
-      "text": "Get off the tourist track for a few hours: a catamaran across a village lake, a walk through the paddy and vegetable plots, and a family lunch cooked over firewood — often a dozen curries in clay pots. The slower, more human side of the area, and good for children.",
+      "text": "Get off the tourist track for a few hours: a bullock-cart ride, a catamaran across the village lake, a walk through the paddy and vegetable plots, then a cooking demonstration and a family lunch cooked over firewood — often a dozen curries in clay pots. The slower, more human side of the area, and good for children.",
       "spec": {"from": "Around Sigiriya & Habarana", "open": "Mornings, or late afternoon", "give": "2–3 hours", "ticket": "≈ USD 25–90 per person, by what’s included"}
+    },
+    {
+      "id": "rose-quartz",
+      "name": "Rose Quartz Mountain at Namal Uyana",
+      "photo": "rose-quartz",
+      "text": "A walk through Sri Lanka’s largest ironwood forest — the red-leaved na trees — to a ridge of pink-and-white quartz with the plains spread out below. One of Asia’s biggest rose-quartz ranges, and a quiet, offbeat half-day away from the Sigiriya crowds.",
+      "spec": {"from": "About 45 min by car, north of Dambulla", "open": "Daylight · go in the morning", "give": "2–3 hours with the drive", "level": "Moderate · a short, steep walk up bare rock", "ticket": "≈ USD 6 foreign adult"},
+      "tip": {"kind": "warn", "text": "Wear proper shoes — the quartz is sharp in places and slippery when wet, and there’s no fixed path on the last stretch. Go early, before the rock heats up."}
     },
     {
       "id": "ayurveda",
       "name": "An Ayurvedic treatment",
       "photo": "ayurveda",
-      "text": "Sri Lanka’s traditional medicine: warm herbal oils, a proper massage and, if you want it, a consultation with a doctor. The resorts around Sigiriya and Habarana have Ayurveda centres that take outside guests. The best way to recover the day after the climbs.",
-      "spec": {"from": "Around Sigiriya & Habarana", "open": "Book the day before", "give": "1 hour or more"}
+      "text": "Sri Lanka’s traditional medicine: warm herbal oils, a proper massage and, if you want it, a consultation with a doctor. The resorts around Sigiriya and Habarana have Ayurveda centres that take outside guests, and Athreya, near Habarana, does longer stays. The best way to recover the day after the climbs.",
+      "spec": {"from": "Around Sigiriya & Habarana", "open": "Book the day before", "give": "1 hour or more", "ticket": "≈ Rs 12,750 for an hour’s treatment, by spa"}
     }
   ],
   "furtherAfield": [
@@ -147,8 +164,8 @@
     {
       "tier": "Family",
       "photo": "family-food",
-      "name": "Cappuccino Bistro · Sigiriya Village",
-      "text": "Easy crowd-pleasers for mixed tastes: granola, avocado toast and bowls at Cappuccino Bistro in the daytime, or the restaurant at the Sigiriya Village hotel, with a pool that faces the rock. <em>Barista does a proper coffee if you need one.</em>",
+      "name": "Cappuccino Bistro · Sigiriya Village · Barista",
+      "text": "Easy crowd-pleasers for mixed tastes: granola, avocado toast and bowls at Cappuccino Bistro in the daytime, or the restaurant at the Sigiriya Village hotel, with a pool that faces the rock. <em>Barista, on the main road, does a proper coffee and sandwiches from 7 AM.</em>",
       "band": "$–$$",
       "flags": ["Families", "Daytime"],
       "map": "Cappuccino Bistro Sigiriya"
@@ -175,8 +192,8 @@
     {
       "tier": "Luxury",
       "photo": "kandalama",
-      "name": "Heritance Kandalama · Elephant Corridor",
-      "text": "Geoffrey Bawa’s hotel built into a cliff above Kandalama lake, 20 minutes from both sites, with jungle growing over the walls. <em>Elephant Corridor is the smaller, pricier option: suites with their own plunge pools.</em>",
+      "name": "Heritance Kandalama · Water Garden · Vil Uyana",
+      "text": "Geoffrey Bawa’s hotel built into a cliff above Kandalama lake, 20 minutes from both sites, with jungle growing over the walls. Water Garden Sigiriya has 30 private villas with the rock in view; Jetwing Vil Uyana’s villas sit over paddy fields and marsh, and its naturalists run the loris walks. <em>Elephant Corridor is the smaller, pricier option: suites with their own plunge pools.</em>",
       "band": "$$$",
       "flags": ["Couples", "Out of town"]
     },
@@ -192,8 +209,8 @@
       "tier": "Solo",
       "pick": true,
       "photo": "hostel",
-      "name": "Roy’s Villa · Sigiri Hostel",
-      "text": "Roy’s Villa is the one our solo travellers talk about — friendly, famous for its barbecue nights, a short ride out of the centre. <em>Sigiri Hostel & Café is the walkable option in the village.</em>",
+      "name": "Roy’s Villa · Sigiri Hostel · Nalin & Song",
+      "text": "Roy’s Villa is the one our solo travellers talk about — friendly, with a pool and famous barbecue nights, a short ride out of the centre. <em>Sigiri Hostel & Café and Nalin and Song Hostel are the walkable options in the village.</em>",
       "band": "$",
       "flags": ["Solo", "Backpackers"]
     }
@@ -397,6 +414,24 @@
       "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
       "photoUrl": "https://unsplash.com/photos/a-room-filled-with-lots-of-bunk-beds-next-to-a-window-TzMGehZmocI?utm_source=ceylon_hop&utm_medium=referral",
       "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "loris": {
+      "alt": "A slender loris with large amber eyes holding a piece of fruit at night",
+      "credit": "Roi Dimor",
+      "creditUrl": "https://unsplash.com/@roi_dimor?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/brown-and-black-animal-holding-food-2UWPLT1-t1s?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "48% 45%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rose-quartz": {
+      "alt": "Sunset over forested plains and distant hills, seen from a bare rock summit",
+      "credit": "Egle Sidaraviciute",
+      "creditUrl": "https://unsplash.com/@egle_sidaraviciute?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/sunset-over-the-valley-7AHS4Zpuilg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
       "w": 1800,
       "h": 1125
     }
