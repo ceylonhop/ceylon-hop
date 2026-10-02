@@ -9,6 +9,23 @@ test('clicking Pay opens the payment overlay immediately', async ({ page }) => {
   await expect(page.locator('#ph-spin')).toBeVisible();
 });
 
+// The end-state buttons (Try again, the WhatsApp "tell us what happened" link, Close) are hidden
+// with the `hidden` attribute while the payment is still setting up. `.ph-actions{display:flex}`
+// and `a.ph-btn{display:block}` used to beat that attribute, so every customer saw all three under
+// the spinner — "tell us what happened" before anything had happened. The checkout is held far
+// longer than expect's retry window: once the page leaves for PayHere the buttons are gone, and a
+// missing element passes toBeHidden — a short hold made this test pass against the bug.
+test('while the payment is setting up, the overlay shows no retry, WhatsApp or close buttons', async ({ page }) => {
+  await gotoBooking(page, { checkout: 'payhere', checkoutDelayMs: 20000 });
+  await fillContact(page);
+  await page.click('#pay-btn');
+  await expect(page.locator('#ph-overlay')).toHaveClass(/\bshow\b/);
+  await expect(page.locator('#ph-msg')).toHaveText('Setting up your secure payment…');
+  await expect(page.locator('#ph-amt')).toBeVisible();
+  await expect(page.locator('#ph-actions')).toBeHidden();
+  await expect(page.locator('#ph-wa')).toBeHidden();
+});
+
 test('a booking-API failure shows an error state inside the overlay (not a stray note)', async ({ page }) => {
   await gotoBooking(page, { bookingStatus: 500 });
   await fillContact(page);
