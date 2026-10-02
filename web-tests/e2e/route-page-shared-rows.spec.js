@@ -40,8 +40,11 @@ const BOUNDARY = {
 // Fix 1: the longest real row — an afternoon slot AND the "your date" tag, together — is the
 // combination that exposed the bug (the tag's TEXT was invisible; only its chip border
 // survived, and the slot word ellipsised on nearly every row at 375px).
+// Pinned to a Monday: picking this date must land on the board branch, and a plain
+// futureIsoDate(15) falls on a shared-taxi day (Wed/Sat) whenever today is a Tue or Fri (UTC),
+// where the page rightly shows the seat and no rows (went red Fri 2026-10-02 UTC).
 const MARKED = {
-  code: 'RB-MINE', corridorId: 'airport-cultural', date: futureIsoDate(15), slot: 'afternoon',
+  code: 'RB-MINE', corridorId: 'airport-cultural', date: nextIsoWeekday(1, 15), slot: 'afternoon',
   status: 'gathering', minSeats: 3, committed: 2,
   members: ['Kim', 'Lee'].map(member),
 };
@@ -134,7 +137,10 @@ test('an off day picked on the board part still invites a board ride', async ({ 
   await stubBoard(page, [RUNNING]);
   await page.goto('/trip/cmb-airport-to-sigiriya/');
   await expect(page.locator('.ld-row')).toHaveCount(1);
-  await pickDate(page, nextIsoWeekday(4));
+  // At least 21 days out, past RUNNING's futureIsoDate(20): nextIsoWeekday(4) alone IS
+  // RUNNING's date whenever today is a Friday (UTC), and a date with a list on it rightly
+  // shows that list instead of the "no one's going" invitation.
+  await pickDate(page, nextIsoWeekday(4, 21));
   await expect(page.locator('.ld-head')).toHaveText(/^No one's going Thu /);
 });
 
