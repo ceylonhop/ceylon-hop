@@ -366,3 +366,42 @@ test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', a
   });
   await pollBarHidden(true, '(d) at the top: the fares card is on screen, so the bar should be hidden');
 });
+
+/* The picked date is local midnight (`new Date(value + 'T00:00:00')`), so formatting it with
+   toISOString() gave the PREVIOUS UTC day anywhere east of UTC — Sri Lanka included. A traveller
+   in Colombo who picked a list's own date was told nobody was going, and the list the day before
+   was tagged "your date". The host and CI run west of / at UTC, so only a pinned zone shows it. */
+test.describe('east of UTC (Asia/Colombo)', () => {
+  test.use({ timezoneId: 'Asia/Colombo' });
+
+  test('picking a list\'s own date marks THAT list as yours, not the day before', async ({ page }) => {
+    // A Friday and the Thursday before it: neither is a shared-taxi day (Wed/Sat), so the
+    // picked date always takes the board-rows branch, whatever weekday the suite runs on.
+    const fri = nextIsoWeekday(5);
+    const thu = new Date(fri + 'T00:00:00Z'); thu.setUTCDate(thu.getUTCDate() - 1);
+    const mine = { ...MARKED, date: fri };
+    const dayBefore = { ...NEEDS_ONE, code: 'RB-PREV', date: thu.toISOString().slice(0, 10) };
+    await stubBoard(page, [mine, dayBefore]);
+    await page.goto('/trip/cmb-airport-to-sigiriya/');
+    await expect(page.locator('.ld-row')).toHaveCount(2);
+    await pickDate(page, fri);
+
+    await expect(page.locator('.ld-head')).not.toHaveText(/No one's going/);
+    await expect(page.locator('.ld-row.is-yours')).toHaveCount(1);
+    await expect(page.locator('.ld-row.is-yours')).toHaveAttribute('href', /RB-MINE$/);
+  });
+
+  test('the date field\'s earliest pick is tomorrow in the traveller\'s own zone', async ({ page }) => {
+    await stubBoard(page, [RUNNING]);
+    await page.goto('/trip/cmb-airport-to-sigiriya/');
+    const { min, tomorrow } = await page.evaluate(() => {
+      const t = new Date(); t.setDate(t.getDate() + 1);
+      const p = (n) => String(n).padStart(2, '0');
+      return {
+        min: document.querySelector('.ld-date').min,
+        tomorrow: t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate()),
+      };
+    });
+    expect(min).toBe(tomorrow);
+  });
+});
