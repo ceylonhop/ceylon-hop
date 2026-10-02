@@ -49,7 +49,7 @@ const COPY = {
 };
 
 const TOTALS = { cents: 49885, usd: '$498.85', lkr: 'LKR 164,620' };
-const PREFILL = { firstName: 'Nimal', lastName: 'Perera', email: '', whatsapp: '+94770001111', country: '' };
+const PREFILL = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@example.com', whatsapp: '+94770001111', country: '' };
 
 async function stubView(page, body) {
   await page.route('**/quotes/pay/view*', (r) =>
@@ -91,7 +91,8 @@ test('chauffeur: the four shape facts, never a leg list', async ({ page }) => {
 });
 
 test('the details step uses the wizard widget: country code select + local number', async ({ page }) => {
-  await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
+  // A phone-only (WhatsApp) quote: the server prefills no email, so that box opens empty.
+  await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: { ...PREFILL, email: '' } });
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
   await expect(page.locator('#f-firstName')).toHaveValue('Nimal');
@@ -250,7 +251,7 @@ test('continuing hands off immediately; a failure restores the form with what wa
   });
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
-  await page.locator('#f-email').fill('nimal@@typo');
+  await page.locator('#f-email').fill('nimal@example.c');
   // Billing is required since 2026-08-01 — fill it so this reaches the /start round-trip,
   // which is what this test is actually about.
   await page.locator('#f-addr').fill('Prinsengracht 263');
@@ -267,9 +268,62 @@ test('continuing hands off immediately; a failure restores the form with what wa
   // API must never strand a payer behind a spinner.
   await expect(page.locator('#gobtn')).toBeEnabled();
   await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
-  await expect(page.locator('#f-email')).toHaveValue('nimal@@typo');
+  await expect(page.locator('#f-email')).toHaveValue('nimal@example.c');
   await expect(page.locator('#f-phone')).toHaveValue('770001111'); // the fixture's prefill, kept
   await expect(page.locator('#payerr')).toContainText('email');
+});
+
+// CH-YUE9J (2026-10-01): a WhatsApp quote opens with the email box empty, and the page sent it
+// anyway — the server refused it with "customer.email: Invalid email" and the payer read schema
+// words at the gateway door. The page now stops on every rule the server enforces on these
+// boxes (domain/singleTransfer.ts CustomerInput), in plain words, before any round-trip.
+test('the page stops on what the server would refuse, before asking it', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: { ...PREFILL, email: '' } });
+  let starts = 0;
+  await page.route('**/quotes/pay/start', (r) => { starts += 1;
+    return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop here' }) }); });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('Prinsengracht 263');
+  await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#f-terms').check();
+  const reasons = () => page.evaluate(() =>
+    (window.dataLayer || []).filter((e) => e && e.event === 'pay_form_invalid').map((e) => e.reason));
+
+  // Each case: what the email box holds → the words that must name it.
+  const cases = [
+    { box: '#f-email', value: '', says: 'email address' },
+    { box: '#f-email', value: 'nimal@@typo', says: 'email address' },
+    { box: '#f-email', value: 'nimal@gmail', says: 'email address' },
+  ];
+  for (const c of cases) {
+    await page.locator(c.box).fill(c.value);
+    await page.locator('#gobtn').click();
+    await expect(page.locator('#payerr'), `${c.box}=${JSON.stringify(c.value)}`).toContainText(c.says);
+  }
+  await page.locator('#f-email').fill('nimal@example.com');
+
+  // WhatsApp: + then 6–15 digits, dial code included (+94 + the number typed).
+  for (const value of ['123', '7700011112223334']) {
+    await page.locator('#f-phone').fill(value);
+    await page.locator('#gobtn').click();
+    await expect(page.locator('#payerr'), `phone=${value}`).toContainText('WhatsApp number');
+  }
+  await page.locator('#f-phone').fill('770001111');
+
+  await page.locator('#f-firstName').fill('');
+  await page.locator('#gobtn').click();
+  await expect(page.locator('#payerr')).toContainText('first name');
+
+  // None of those reached the server, and each was counted by a keyword — never the value.
+  expect(starts).toBe(0);
+  expect(await reasons()).toEqual(['email', 'email', 'email', 'phone_length', 'phone_length', 'first_name']);
+
+  // Everything valid now: the page lets it through to the server.
+  await page.locator('#f-firstName').fill('Nimal');
+  await page.locator('#gobtn').click();
+  await expect.poll(() => starts).toBe(1);
 });
 
 test('hands off to PayHere with a top-level form POST carrying the server’s fields', async ({ page }) => {
