@@ -941,10 +941,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // fixes, and until now both were simply absent from every report. The reason is a fixed
     // keyword, never the value they typed.
     function blocked(reason){ track('pay_form_invalid', withMoney({ reason: reason })); }
+    // The server's CustomerInput rules (api/src/domain/singleTransfer.ts), checked here first so a
+    // payer reads plain words instead of "customer.email: Invalid email" from a round-trip.
+    // CH-YUE9J (2026-10-01): a WhatsApp quote opens with the email box empty, and that went to
+    // the server as-is. The email test is deliberately LOOSER than the server's — it must never
+    // turn away an address the server would take; the server stays the authority.
+    if (!typed.firstName) { blocked('first_name'); fail('Please enter your first name.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed.email)) {
+      blocked('email');
+      fail(typed.email ? 'Please check your email address — it doesn’t look complete.' : 'Please enter your email address — your confirmation goes there.');
+      return;
+    }
     // The country is asked, never assumed — and the server requires it (customer.country is
     // min(1)), so a blank one would 400 at the gateway door instead of here.
     if (parts.noCountry) { blocked('country'); fail('Please choose your country code.'); return; }
     if (parts.empty) { blocked('phone'); fail('Please enter your WhatsApp number.'); return; }
+    // The server's rule: + then 6–15 digits, dial code included (domain/phone.ts).
+    if (!/^\+\d{6,15}$/.test(parts.whatsapp.replace(/[\s\-().]/g, ''))) {
+      blocked('phone_length');
+      fail('Please check your WhatsApp number — with the country code it should be 6 to 15 digits.');
+      return;
+    }
     // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
     // placeholder. Name each empty box rather than a generic "check the form".
     if (!typed.address) { blocked('address'); fail('Please enter your billing address.'); return; }
@@ -1010,7 +1027,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         track('payment_start_failed', withMoney({ reason: String(x.error || ('http_' + r.status)) }));
         if (x.error === 'quote_revised') { renderRevised(); throw { handled: true }; }
         if (x.error === 'already_paid') { load(); throw { handled: true }; }
-        report('pay/start refused', new Error(String(x.error || r.status)));
+        // The server's message names the box and the rule ("customer.email: Invalid email") —
+        // fixed wording, never what was typed — so the team alert says which field failed.
+        report('pay/start refused', new Error(String(x.error || r.status) + (x.message ? ' — ' + x.message : '')));
         throw new Error(x.message || 'We couldn’t start your payment just now — no charge was made.');
       });
     }).then(function(st){
