@@ -136,6 +136,13 @@ const Env = z.object({
   ALERT_EMAIL: z.string().optional(),
   // SENTRY_DSN: error tracking activates when the owner creates the Sentry project (O2).
   SENTRY_DSN: z.string().optional(),
+  // Server-side GA4 (spec 2026-10-03). Dormant until GA4_API_SECRET is set (GA4 → Admin → Data
+  // streams → Ceylon Hop Web → Measurement Protocol API secrets). GA4_SERVER_EVENT_NAME stays
+  // `purchase_server` (shadow mode) until the owner switches over — the default can never
+  // double-count against the browser's `purchase`.
+  GA4_MEASUREMENT_ID: z.string().default('G-XEW62ZD7B3'),
+  GA4_API_SECRET: z.string().optional(),
+  GA4_SERVER_EVENT_NAME: z.enum(['purchase_server', 'purchase']).default('purchase_server'),
   // RESEND_WEBHOOK_SECRET: enables signed POST /webhooks/resend delivery evidence and
   // bounce/complaint/failure alerts.
   RESEND_WEBHOOK_SECRET: z.string().optional(),

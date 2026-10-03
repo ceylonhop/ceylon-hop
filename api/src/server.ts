@@ -11,6 +11,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PostgresRideBoardEventRepo } from './db/postgresRideBoardEventRepo';
 import { PostgresBookingCheckoutEventRepo } from './db/postgresBookingCheckoutEventRepo';
+import { PostgresGa4EventLogRepo, PostgresGaIdentityRepo } from './db/postgresGa4Repo';
 import { PostgresPaymentEventRepo } from './db/postgresPaymentEventRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
@@ -38,6 +39,7 @@ import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
+import { MeasurementProtocolAdapter } from './adapters/ga4';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -92,6 +94,11 @@ const email = config.RESEND_API_KEY
     })
   : new FakeEmailAdapter();
 
+// Server-side GA4 — dormant without the secret: ids are still captured, nothing is sent.
+const ga4Adapter = config.GA4_API_SECRET
+  ? new MeasurementProtocolAdapter(config.GA4_MEASUREMENT_ID, config.GA4_API_SECRET)
+  : undefined;
+
 const { db, sql } = createDb(config.DATABASE_URL);
 
 // Distance cache (spec 2026-08-12): only wrap the REAL adapter. Keyless dev keeps the bare
@@ -145,6 +152,10 @@ const app = createApp({
   rideLists: new PostgresRideListRepo(sql),
   rideBoardEvents: new PostgresRideBoardEventRepo(db),
   checkoutEvents: new PostgresBookingCheckoutEventRepo(db),
+  gaIdentities: new PostgresGaIdentityRepo(db),
+  ga4Log: new PostgresGa4EventLogRepo(db),
+  ...(ga4Adapter ? { ga4Adapter } : {}),
+  ga4EventName: config.GA4_SERVER_EVENT_NAME,
   // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
   paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),

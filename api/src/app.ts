@@ -11,6 +11,9 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './ada
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
+import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
+import type { Ga4Adapter } from './adapters/ga4';
+import { createGa4Reporter } from './services/analytics/ga4Reporter';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
@@ -161,6 +164,12 @@ export interface AppDeps {
   // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
   // Reaches the ops queue rows (isTest) and the daily digest's status counts.
   teamEmails?: ReadonlySet<string>;
+  // Server-side GA4 (spec 2026-10-03). Consumed from Task 8 (reporter wiring); optional so
+  // tests and older callers are unaffected.
+  gaIdentities?: GaIdentityRepo;
+  ga4Log?: Ga4EventLogRepo;
+  ga4Adapter?: Ga4Adapter;
+  ga4EventName?: 'purchase' | 'purchase_server';
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
@@ -237,6 +246,13 @@ export function createApp(deps: AppDeps = {}) {
   const promoCodes = deps.promoCodes ?? new InMemoryPromoCodeRepo();
   const promoCodesEnabled = deps.promoCodesEnabled ?? config.PROMO_CODES_ENABLED;
   const alerts = deps.alerts ?? new LogAlertAdapter();
+  const ga4 = deps.ga4Log && deps.gaIdentities
+    ? createGa4Reporter({
+        adapter: deps.ga4Adapter, log: deps.ga4Log, identities: deps.gaIdentities, bookings, payments, alerts,
+        teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+        eventName: deps.ga4EventName ?? config.GA4_SERVER_EVENT_NAME,
+      })
+    : undefined;
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
@@ -477,6 +493,7 @@ export function createApp(deps: AppDeps = {}) {
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      ...(ga4 ? { ga4 } : {}),
     }),
   );
   app.route(
@@ -550,6 +567,7 @@ export function createApp(deps: AppDeps = {}) {
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
       duplicates: { bookings, departures, payments },
+      ...(ga4 ? { ga4 } : {}),
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({
@@ -667,6 +685,7 @@ export function createApp(deps: AppDeps = {}) {
       // note on the ride-ops row.
       payments,
       rideOps,
+      ...(ga4 ? { ga4 } : {}),
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.
