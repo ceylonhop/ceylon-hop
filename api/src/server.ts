@@ -11,6 +11,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PostgresRideBoardEventRepo } from './db/postgresRideBoardEventRepo';
 import { PostgresBookingCheckoutEventRepo } from './db/postgresBookingCheckoutEventRepo';
+import { PostgresGa4EventLogRepo, PostgresGaIdentityRepo } from './db/postgresGa4Repo';
 import { PostgresPaymentEventRepo } from './db/postgresPaymentEventRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
@@ -145,6 +146,8 @@ const app = createApp({
   rideLists: new PostgresRideListRepo(sql),
   rideBoardEvents: new PostgresRideBoardEventRepo(db),
   checkoutEvents: new PostgresBookingCheckoutEventRepo(db),
+  gaIdentities: new PostgresGaIdentityRepo(db),
+  ga4Log: new PostgresGa4EventLogRepo(db),
   // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
   paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),

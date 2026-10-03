@@ -11,6 +11,7 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './ada
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
+import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
@@ -161,6 +162,10 @@ export interface AppDeps {
   // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
   // Reaches the ops queue rows (isTest) and the daily digest's status counts.
   teamEmails?: ReadonlySet<string>;
+  // Server-side GA4 (spec 2026-10-03). Consumed from Task 8 (reporter wiring); optional so
+  // tests and older callers are unaffected.
+  gaIdentities?: GaIdentityRepo;
+  ga4Log?: Ga4EventLogRepo;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
