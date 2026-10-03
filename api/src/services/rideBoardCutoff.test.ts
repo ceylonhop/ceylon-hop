@@ -26,22 +26,28 @@ async function fill(repo: InMemoryRideListRepo, listId: string, n: number, prefs
 }
 
 describe('runRideBoardCutoff', () => {
-  it('reports each successfully charged seat to GA4 — never an indeterminate charge', async () => {
+  it('reports each successfully charged seat to GA4 — never an indeterminate charge or one carried over', async () => {
     const repo = new InMemoryRideListRepo();
     const paygw = new FakeTokenizedPaymentAdapter();
     const email = new FakeEmailAdapter();
     const list = await repo.createList(listArgs());
-    await fill(repo, list.id, 4);
+    await fill(repo, list.id, 5);
+    // u1: left 'charged' by an earlier run that never finished — its own outcome is lost.
+    await repo.setMemberStatus(list.id, 'u1', 'charged');
+    // u2: this run's charge comes back unknown (reply lost), so the card may not have been debited.
+    paygw.markRefWillBeUnknown('pa_u2');
     const reported: string[] = [];
     const ga4 = {
       rememberVisitor: async () => {}, reportPayment: async () => {}, reportRefund: async () => {},
       reportBoardCharge: async (_l: unknown, m: { sub: string }) => { reported.push(m.sub); },
       sweep: async () => ({ retried: 0, sent: 0, failed: 0 }),
     };
-    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, ga4 });
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, ga4 });
     await new Promise((r) => setTimeout(r, 10));
-    expect(reported.sort()).toEqual(['u0', 'u1', 'u2', 'u3']);
+    expect(res).toMatchObject({ confirmed: 1, charged: 3, chargeUnknown: 1 });
+    expect(reported.sort()).toEqual(['u0', 'u3', 'u4']);
   });
+
   it('confirms a full list: locks the popular time, charges every seat, emails everyone', async () => {
     const repo = new InMemoryRideListRepo();
     const paygw = new FakeTokenizedPaymentAdapter();

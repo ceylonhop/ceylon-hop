@@ -128,6 +128,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
 
     const chargedOk: RideMember[] = [];
     const failed: RideMember[] = [];
+    // Seats whose charge came back `succeeded` in THIS run, and only those (GA4 reporting below).
+    const chargedNow: RideMember[] = [];
     // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
     // can be told; for every decision below these count as charged (see the alert further down).
     const indeterminate: { member: RideMember; orderId: string; reason?: string }[] = [];
@@ -170,6 +172,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // Already `charged` by the claim above: no second write for this to fail on.
         res.charged++;
         chargedOk.push(m);
+        chargedNow.push(m);
       } else if (charge.status === 'unknown') {
         // Optimistic, deliberately. Being wrong this way carries one possibly-unpaid seat on a
         // van that runs — bounded, alerted, chaseable. Being wrong the other way cancels a
@@ -227,13 +230,12 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
           });
         } catch { /* the travellers' emails already went; this is the team's copy */ }
       }
-      // Only charges whose outcome we KNOW — an `unknown` charge may be refunded by hand, and a
-      // called-off van (the other branch) refunds everyone, so neither is revenue to report.
-      // The amount is what was charged above: seatPrice * seats, minor units, in `currency`.
+      // Only charges that succeeded in THIS run — an unknown charge, a member carried over as
+      // 'charged' from an interrupted run (its outcome is lost), and a called-off van (the other
+      // branch) are never revenue we know we hold. The amount is what was charged above:
+      // seatPrice * seats, minor units, in `currency`.
       if (deps.ga4) {
-        const unsure = new Set(indeterminate.map((i) => i.member.sub));
-        for (const m of chargedOk) {
-          if (unsure.has(m.sub)) continue;
+        for (const m of chargedNow) {
           void deps.ga4.reportBoardCharge(list, m, list.seatPrice * m.seats, currency, now).catch((err) => {
             console.error(`ga4 board report failed for ${list.code}:`, err instanceof Error ? err.message : String(err));
           });
