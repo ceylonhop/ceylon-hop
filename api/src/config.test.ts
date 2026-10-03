@@ -215,3 +215,19 @@ describe('config — TEAM_EMAILS parses once into a normalized set', () => {
     );
   });
 });
+
+// Shadow mode: the server's event defaults to `purchase_server`, so it can never double-count
+// against the browser's `purchase`. Only the owner's explicit switch turns it into `purchase`.
+describe('config — GA4_SERVER_EVENT_NAME stays purchase_server by default', () => {
+  it('unset → purchase_server', () => {
+    expect(buildConfig({}).GA4_SERVER_EVENT_NAME).toBe('purchase_server');
+  });
+
+  it('accepts only purchase_server and purchase', () => {
+    expect(buildConfig({ GA4_SERVER_EVENT_NAME: 'purchase' }).GA4_SERVER_EVENT_NAME).toBe('purchase');
+    expect(buildConfig({ GA4_SERVER_EVENT_NAME: 'purchase_server' }).GA4_SERVER_EVENT_NAME).toBe('purchase_server');
+    for (const bad of ['', 'Purchase', 'refund', 'purchase ', 'begin_checkout']) {
+      expect(() => buildConfig({ GA4_SERVER_EVENT_NAME: bad }), bad).toThrow();
+    }
+  });
+});

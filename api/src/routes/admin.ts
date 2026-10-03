@@ -13,6 +13,7 @@ import {
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
+import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import type { RideListRepo } from '../db/rideListRepo';
@@ -59,6 +60,8 @@ export function adminRoutes(deps: {
   teamEmails?: ReadonlySet<string>;
   // Checkout attempt log (migration 0055) — the digest's payments line; omitted without it.
   checkoutEvents?: BookingCheckoutEventRepo;
+  // Server-side GA4: refunds, mark-paid settlements, and the sweep that retries failed sends.
+  ga4?: Ga4Reporter;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
   linkSecret: string;
@@ -294,6 +297,11 @@ export function adminRoutes(deps: {
       });
     } catch (error) {
       console.error(`refund team email failed for ${after.reference}:`, error);
+    }
+    if (deps.ga4) {
+      void deps.ga4.reportRefund(after, outcome.refund).catch((err) => {
+        console.error(`ga4 refund report failed for ${after.reference}:`, err instanceof Error ? err.message : String(err));
+      });
     }
   };
 
@@ -545,6 +553,21 @@ export function adminRoutes(deps: {
     // an ops agent recording a bank transfer after sending a link is the same money.
     await claimWonQuote(booking.id, deps);
 
+    // Server-side GA4: cash and bank transfers are revenue too. transitionPaymentId is the manual
+    // payment this request recorded (or the earlier succeeded one a repair retry found); the
+    // ledger's claim keeps a repeat from sending twice. Even the payment lookup is inside the
+    // un-awaited chain: analytics must not be able to fail a request whose money is recorded.
+    if (deps.ga4 && transitionPaymentId) {
+      const ga4 = deps.ga4;
+      const paymentId = transitionPaymentId;
+      void (async () => {
+        const settled = (await deps.payments.findByBookingId(booking.id)).find((p) => p.id === paymentId);
+        if (settled && settled.status === 'succeeded') await ga4.reportPayment(paid, settled, new Date());
+      })().catch((err) => {
+        console.error(`ga4 purchase report failed for ${paid.reference}:`, err instanceof Error ? err.message : String(err));
+      });
+    }
+
     // Audit trail: who took the money, how, and against what reference. It goes in the ops
     // notes because that is what the booking sheet's activity list renders (one note per line);
     // best-effort like the emails above — a note failure must not undo money already recorded.
@@ -595,7 +618,7 @@ export function adminRoutes(deps: {
     let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
     if (deps.rideLists && deps.ridePaygw) {
       try {
-        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts, opsBaseUrl: deps.opsBaseUrl });
+        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget, alerts, opsBaseUrl: deps.opsBaseUrl, ga4: deps.ga4 });
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);
@@ -659,8 +682,17 @@ export function adminRoutes(deps: {
     // the budget — same reasoning as the watchdog's alerts.
     const burst = budget && burstAlert(budget, 'notifications');
     if (burst) await alerts.send(burst);
+    // GA4 retries ride the same tick, best-effort.
+    let ga4 = { retried: 0, sent: 0, failed: 0 };
+    if (deps.ga4) {
+      try {
+        ga4 = await deps.ga4.sweep();
+      } catch (err) {
+        console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
+      }
+    }
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
