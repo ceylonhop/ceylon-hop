@@ -141,7 +141,8 @@ It calls the same `report*` functions. Re-entry is safe, because the ledger clai
 - `consent` (both fields the same value) mirrors the site's ad-consent logic (`booking.html:25-29`):
   - stored choice `granted` → `GRANTED`;
   - stored choice `denied` → `DENIED`;
-  - no stored choice → `GRANTED` only if the booking's billing/customer country is known **and** outside the EEA, UK and Switzerland, otherwise `DENIED`.
+  - no stored choice → `GRANTED` only if the booking's billing/customer country is known **and** outside the EEA, UK and Switzerland, otherwise `DENIED`. `Other` (the booking form's last option) counts as unknown.
+  - Board members store a 2-letter code (`rideBoard.ts`, `XX` when unknown). It is turned into its English region name first; an invalid code or `XX` is unknown (`DENIED`, no `customer_country`).
 - Board charges have no stored visitor:
   - `client_id` = `srv.` + the first 16 hex characters of SHA-256(`event_key`). It is deterministic, so retries reuse it, and it never contains the member's Google `sub`.
 - In shadow mode the event name is `purchase_server`.
@@ -155,7 +156,7 @@ Hard limit is 25 per event; strings must be ≤100 characters.
 | 1 | `transaction_id` | `booking.reference`. A second succeeded payment on the same booking: `reference-<first 6 of paymentId>`. Board: `<list.code>-<first 8 hex of SHA-256(member.sub)>` (never the raw `sub`) |
 | 2 | `value` | `payment.amount / 100` (D2) |
 | 3 | `currency` | `payment.currency` |
-| 4 | `payment_type` | `deposit` if `amount < booking.total`, else `full` |
+| 4 | `payment_type` | `balance` for a booking's second succeeded payment; otherwise `deposit` if `amount < booking.total`, else `full` (owner, 2026-10-03) |
 | 5 | `session_id` | `ga_session_id` (omitted when unknown) |
 | 6 | `engagement_time_msec` | `1` |
 | 7 | `items` | one item: `item_id` = `route`, `item_name` = `route`, `item_category` = `service_type`, `price` = `value`, `quantity` = 1. This makes Ecommerce purchases → Item name work |
@@ -183,7 +184,7 @@ Hard limit is 25 per event; strings must be ≤100 characters.
 
 **Refund hit:**
 - `name: 'refund'`
-- `transaction_id`: the original purchase's id
+- `transaction_id`: the original purchase's id, copied from that purchase's ledger payload (`purchase:<refund.paymentId>`); the bare reference when there is none (purchases sent by the browser before go-live)
 - `value`: `refund.amountCents / 100`
 - `currency`
 - same `client_id` / `session_id` (if known)
@@ -283,4 +284,5 @@ For every booking paid in the window, pair the browser `purchase` with the serve
 - **WhatsApp sales** are attributed to the pay-link session, not the discovering visit (stories 8-9 are out of scope).
 - **Country** is the booking's country *name* as entered (phone country or billing), not nationality.
 - **`customer_type`** counts only bookings since this system went live.
+- **Board revenue is reported only for seats charged successfully in that cutoff run.** A charge whose outcome is unknown, or a member carried over as `charged` from an interrupted run, is never reported, so board revenue can under-count after a crash (the safe direction).
 - **Ride-board refunds are not sent.** Board charges have no `payments` row, so the refund tool doesn't cover them and they're refunded by hand. Board revenue in GA4 is gross of those refunds.
