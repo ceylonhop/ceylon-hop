@@ -55,6 +55,28 @@ describe('purchaseHit', () => {
   });
 });
 
+describe('the fullest purchase hit', () => {
+  // Every optional param present at once: promo, session, returning buyer, billing country, every
+  // fact. This is the biggest hit we can send; GA4 drops events over 25 params. The exact count
+  // is pinned so adding a param is a deliberate change to this test, not an accident.
+  const full = {
+    ...booking, promoCode: 'SUMMER-15', discountTotal: 670,
+    billing: { country: 'Germany' },
+  } as unknown as Booking;
+  const hit = purchaseHit({ booking: full, payment, settledAt: SETTLED, identity, returning: true, secondPayment: false, eventName: 'purchase_server' });
+  const p = hit.events[0].params;
+
+  it('has every optional param, and its count is pinned under the 25 limit', () => {
+    expect(p).toMatchObject({ session_id: '1761724800', coupon: 'SUMMER-15', discount: 6.7, customer_type: 'returning', pax: 2, travel_month: '2026-11', days_to_travel: 10 });
+    expect(Object.keys(p).length).toBeLessThanOrEqual(MAX_PARAMS);
+    expect(Object.keys(p)).toHaveLength(24);
+  });
+  it('billing country wins over the customer country', () => {
+    expect(p.customer_country).toBe('Germany');
+    expect(hit.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });
+  });
+});
+
 describe('consentFor', () => {
   it('the stored choice wins; otherwise only a known non-EEA/UK/CH country is granted', () => {
     expect(consentFor({ clientId: null, sessionId: null, adConsent: 'granted' }, 'Germany')).toBe('GRANTED');
