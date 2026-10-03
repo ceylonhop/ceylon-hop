@@ -1,0 +1,82 @@
+import { describe, it, expect } from 'vitest';
+import type { Booking } from '../../db/bookingRepo';
+import type { Payment } from '../../db/paymentRepo';
+import type { Refund } from '../../db/refundRepo';
+import type { RideList, RideMember } from '../../domain/rideList';
+import { MAX_PARAMS, boardHit, consentFor, purchaseHit, refundHit } from './ga4Hits';
+
+const customer = { firstName: 'Emma', lastName: 'L', email: 'emma@example.test', phoneCountryCode: '+44', phoneNumber: '7700900000', country: 'United Kingdom' };
+const booking = {
+  id: 'b-1', reference: 'CH-TEST1', status: 'paid', mode: 'single', channel: 'website', currency: 'USD',
+  total: 22900, amountDueNow: 22900, createdAt: '2026-10-28T10:00:00.000Z',
+  input: { customer, from: 'Colombo Airport (CMB)', to: 'Galle', date: '2026-11-08', time: '09:00', adults: 2, children: 0, bags: 2, vehicleType: 'car' },
+} as unknown as Booking;
+const payment = { id: 'pay-abcdef12', bookingId: 'b-1', provider: 'payhere', orderId: 'CH-TEST1', amount: 22900, currency: 'USD', idempotencyKey: 'checkout:b-1', status: 'succeeded', attemptCount: 1, lastAttemptAt: null } as Payment;
+const SETTLED = new Date('2026-10-29T08:00:00Z');
+const identity = { clientId: '123.456', sessionId: '1761724800', adConsent: 'unknown' as const };
+
+describe('purchaseHit', () => {
+  const hit = purchaseHit({ booking, payment, settledAt: SETTLED, identity, returning: false, secondPayment: false, eventName: 'purchase_server' });
+  const p = hit.events[0].params;
+
+  it('joins the checkout visit and is stamped at settlement', () => {
+    expect(hit.client_id).toBe('123.456');
+    expect(hit.timestamp_micros).toBe(SETTLED.getTime() * 1000);
+    expect(hit.events[0].name).toBe('purchase_server');
+    expect(p.session_id).toBe('1761724800');
+  });
+  it('carries the money as received and the sale facts', () => {
+    expect(p).toMatchObject({
+      transaction_id: 'CH-TEST1', value: 229, currency: 'USD', payment_type: 'full', booking_total: 229,
+      service_type: 'transfer', route: 'Colombo Airport (CMB) → Galle', region_route: 'Airport & Negombo → South coast',
+      pickup: 'Colombo Airport (CMB)', dropoff: 'Galle', pax: 2, vehicle_type: 'car',
+      travel_month: '2026-11', days_to_travel: 10, customer_country: 'United Kingdom', customer_type: 'new', channel: 'website',
+    });
+    expect(p.items).toEqual([{ item_id: 'Colombo Airport (CMB) → Galle', item_name: 'Colombo Airport (CMB) → Galle', item_category: 'transfer', price: 229, quantity: 1 }]);
+  });
+  it('never carries personal data', () => {
+    const raw = JSON.stringify(hit);
+    for (const pii of ['emma@example.test', 'Emma', '7700900000', 'b-1']) expect(raw).not.toContain(pii);
+  });
+  it('a deposit is a deposit; a second payment gets its own transaction id', () => {
+    const dep = purchaseHit({ booking, payment: { ...payment, amount: 5000 }, settledAt: SETTLED, identity: null, returning: true, secondPayment: true, eventName: 'purchase' });
+    expect(dep.events[0].params).toMatchObject({ value: 50, payment_type: 'deposit', booking_total: 229, customer_type: 'returning', transaction_id: 'CH-TEST1-pay-ab' });
+    expect(dep.client_id).toMatch(/^srv\.[0-9a-f]{16}$/);
+  });
+  it('stays within the Measurement Protocol limits', () => {
+    expect(Object.keys(p).length).toBeLessThanOrEqual(MAX_PARAMS);
+    for (const v of Object.values(p)) if (typeof v === 'string') expect(v.length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('consentFor', () => {
+  it('the stored choice wins; otherwise only a known non-EEA/UK/CH country is granted', () => {
+    expect(consentFor({ clientId: null, sessionId: null, adConsent: 'granted' }, 'Germany')).toBe('GRANTED');
+    expect(consentFor({ clientId: null, sessionId: null, adConsent: 'denied' }, 'Australia')).toBe('DENIED');
+    expect(consentFor(null, 'Australia')).toBe('GRANTED');
+    expect(consentFor(null, 'United Kingdom')).toBe('DENIED');
+    expect(consentFor(null, '')).toBe('DENIED');
+  });
+});
+
+describe('refundHit', () => {
+  it('mirrors the purchase it reverses, and drops a reason that looks like contact details', () => {
+    const refund = { id: 'rf-1', bookingId: 'b-1', paymentId: 'pay-abcdef12', provider: 'payhere', amountCents: 22900, currency: 'USD', status: 'manual_confirmed', reason: 'call me on +94 77 123 4567', gatewayRef: 'R1', requestedBy: 'f@x.com', confirmedBy: 'f@x.com', confirmedAt: SETTLED } as unknown as Refund;
+    const hit = refundHit({ booking, refund, identity, at: SETTLED });
+    expect(hit.events[0].name).toBe('refund');
+    expect(hit.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', value: 229, currency: 'USD' });
+    expect(hit.events[0].params).not.toHaveProperty('refund_reason');
+  });
+});
+
+describe('boardHit', () => {
+  it('a charged seat: shared seat between known towns, no member id anywhere', () => {
+    const list = { id: 'list-1', code: 'EM-4821', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList;
+    const member = { sub: 'google-sub-123', email: 'm@x.com', firstName: 'M', country: 'Australia', seats: 2 } as RideMember;
+    const hit = boardHit({ list, member, amountCents: 4800, currency: 'USD', at: SETTLED, eventName: 'purchase_server' });
+    expect(hit.events[0].params).toMatchObject({ service_type: 'shared_seat', route: 'Ella → Mirissa', pax: 2, value: 48, channel: 'ride_board', vehicle_type: 'shared' });
+    expect(String(hit.events[0].params.transaction_id)).toMatch(/^EM-4821-[0-9a-f]{8}$/);
+    expect(JSON.stringify(hit)).not.toContain('google-sub-123');
+    expect(hit.consent.ad_user_data).toBe('GRANTED');
+  });
+});
