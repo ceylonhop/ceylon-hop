@@ -64,6 +64,17 @@ describe.skipIf(!TEST_URL)('Postgres GA4 repos (integration)', () => {
     expect(await log.claim(k, 'refund', {}, new Date(t0.getTime() + STALE_CLAIM_MS * 10))).toBeNull();
   });
 
+  it('markFailed after markSent leaves it sent — never claimable or retryable', async () => {
+    const k = key('sent-then-failed');
+    const t0 = new Date();
+    await log.claim(k, 'purchase', {}, t0);
+    await log.markSent(k, t0);
+    await log.markFailed(k, 'late_error_from_a_stale_process');
+    const farLater = new Date(t0.getTime() + STALE_CLAIM_MS * 10);
+    expect(await log.claim(k, 'purchase', {}, farLater)).toBeNull();
+    expect((await log.listRetryable(new Date(t0.getTime() - 60_000), farLater)).map((r) => r.eventKey)).not.toContain(k);
+  });
+
   it('a failed event is re-claimable, keeps its FIRST payload, and counts attempts', async () => {
     const k = key('failed');
     const t0 = new Date();

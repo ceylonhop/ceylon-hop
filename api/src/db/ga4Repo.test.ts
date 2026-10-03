@@ -26,6 +26,15 @@ describe('GA4 event ledger', () => {
     await log.markSent('k', T0);
     expect(await log.claim('k', 'refund', {}, later(STALE_CLAIM_MS * 10))).toBeNull();
   });
+  it('markFailed after markSent leaves it sent — never claimable or retryable', async () => {
+    const log = new InMemoryGa4EventLogRepo();
+    await log.claim('k', 'purchase', {}, T0);
+    await log.markSent('k', T0);
+    await log.markFailed('k', 'late_error_from_a_stale_process');
+    const farLater = later(STALE_CLAIM_MS * 10);
+    expect(await log.claim('k', 'purchase', {}, farLater)).toBeNull();
+    expect(await log.listRetryable(new Date(0), farLater)).toEqual([]);
+  });
   it('a failed event is re-claimable, keeps its FIRST payload, and counts attempts', async () => {
     const log = new InMemoryGa4EventLogRepo();
     await log.claim('k', 'purchase', { first: true }, T0);

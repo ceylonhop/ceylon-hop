@@ -70,7 +70,7 @@ export class InMemoryGa4EventLogRepo implements Ga4EventLogRepo {
   }
   async markFailed(eventKey: string, error: string): Promise<void> {
     const row = this.rows.get(eventKey);
-    if (row) { row.status = 'failed'; row.lastError = error.slice(0, 500); }
+    if (row && row.status !== 'sent') { row.status = 'failed'; row.lastError = error.slice(0, 500); }
   }
   async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
     return [...this.rows.values()]

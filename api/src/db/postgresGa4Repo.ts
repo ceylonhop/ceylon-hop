@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, or, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { bookingGaIdentity, ga4EventLog } from './schema';
 import {
@@ -57,7 +57,9 @@ export class PostgresGa4EventLogRepo implements Ga4EventLogRepo {
   }
 
   async markFailed(eventKey: string, error: string): Promise<void> {
-    await this.db.update(ga4EventLog).set({ status: 'failed', lastError: error.slice(0, 500) }).where(eq(ga4EventLog.eventKey, eventKey));
+    await this.db.update(ga4EventLog).set({ status: 'failed', lastError: error.slice(0, 500) })
+      // Never downgrade a sent row: a slow, stale process erroring after a takeover must not re-open it.
+      .where(and(eq(ga4EventLog.eventKey, eventKey), ne(ga4EventLog.status, 'sent')));
   }
 
   async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
