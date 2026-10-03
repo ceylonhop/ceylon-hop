@@ -39,8 +39,8 @@ export function consentFor(identity: GaIdentity | null, country: string | null |
   return c && c !== 'other' && !EEA_UK_CH.has(c) ? 'GRANTED' : 'DENIED';
 }
 
-// RideMember.country is a 2-letter code ('XX' when unknown), not a name. Name it so consentFor and
-// customer_country work from names like the booking path; null when unknown or not a real code.
+// RideMember.country is a 2-letter code ('XX' when unknown), not a name. Name it so customer_country
+// reads like the booking path; null when unknown or not a real code.
 function boardCountryName(code: string | null | undefined): string | null {
   const c = (code ?? '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(c) || c === 'XX') return null;
@@ -173,11 +173,11 @@ export function boardHit(i: BoardHitInput): Ga4Hit {
   const facts = purchaseFacts({ service: 'shared_seat', stops: [i.list.fromPlace, i.list.toPlace], pax: i.member.seats, vehicle: null, date: i.list.date });
   const value = usd(i.amountCents);
   const country = boardCountryName(i.member.country);
-  const consent = consentFor(null, country);
   return {
     client_id: clientIdFor(null, `board:${i.list.id}:${i.member.sub}`),
     timestamp_micros: micros(i.at),
-    consent: { ad_user_data: consent, ad_personalization: consent },
+    // A synthetic visitor with no session gains nothing from granted ad consent: always denied.
+    consent: { ad_user_data: 'DENIED', ad_personalization: 'DENIED' },
     events: [checked({
       name: i.eventName,
       params: {

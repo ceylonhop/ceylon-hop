@@ -90,20 +90,23 @@ describe('boardHit', () => {
     expect(hit.events[0].params).toMatchObject({ service_type: 'shared_seat', route: 'Ella → Mirissa', pax: 2, value: 48, channel: 'ride_board', vehicle_type: 'shared' });
     expect(String(hit.events[0].params.transaction_id)).toMatch(/^EM-4821-[0-9a-f]{8}$/);
     expect(JSON.stringify(hit)).not.toContain('google-sub-123');
-    expect(hit.consent.ad_user_data).toBe('GRANTED');
+    expect(hit.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });
   });
 
-  // RideMember.country is a 2-letter code (rideBoard.ts), 'XX' when unknown. Consent and
-  // customer_country must work from the country NAME, so every code must land in the name set.
+  // RideMember.country is a 2-letter code (rideBoard.ts), 'XX' when unknown. A board hit has no
+  // session, so it never grants ad consent; the code only names customer_country.
   const boardFor = (country: string) => boardHit({
     list: { id: 'list-1', code: 'EM-4821', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList,
     member: { sub: 's', email: 'm@x.com', firstName: 'M', country, seats: 1 } as RideMember,
     amountCents: 4800, currency: 'USD', at: SETTLED, eventName: 'purchase_server',
   });
-  it('a known non-EEA code is named and granted', () => {
+  it('a known non-EEA code is named in customer_country but never granted', () => {
     const hit = boardFor('AU');
-    expect(hit.consent.ad_user_data).toBe('GRANTED');
+    expect(hit.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });
     expect(hit.events[0].params.customer_country).toBe('Australia');
+  });
+  it('EU and ZZ (not countries) are denied too', () => {
+    for (const c of ['EU', 'ZZ']) expect([c, boardFor(c).consent]).toEqual([c, { ad_user_data: 'DENIED', ad_personalization: 'DENIED' }]);
   });
   it('an unknown code is denied and sends no country', () => {
     for (const c of ['XX', '', 'zz9']) {
