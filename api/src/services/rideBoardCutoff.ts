@@ -7,6 +7,7 @@ import type { AlertAdapter } from '../adapters/alerts';
 import { teamRideLockedEmail } from './opsNotifications';
 import { logEvent } from '../observability/events';
 import type { SendBudget } from './sendBudget';
+import type { Ga4Reporter } from './analytics/ga4Reporter';
 
 // ============================================================================
 // Ride Board cutoff sweep — the pooled equivalent of sweepStaleSharedHolds.
@@ -34,6 +35,8 @@ export interface RideBoardCutoffDeps {
   // sweep declines to start a list it cannot finish. The list stays gathering, so it is
   // still due next run and gets processed whole.
   budget?: SendBudget;
+  // Server-side GA4: each successfully charged seat is a purchase. Unset → nothing reported.
+  ga4?: Ga4Reporter;
 }
 
 export interface RideBoardCutoffResult {
@@ -223,6 +226,18 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
             dedupeKey: list.code,
           });
         } catch { /* the travellers' emails already went; this is the team's copy */ }
+      }
+      // Only charges whose outcome we KNOW — an `unknown` charge may be refunded by hand, and a
+      // called-off van (the other branch) refunds everyone, so neither is revenue to report.
+      // The amount is what was charged above: seatPrice * seats, minor units, in `currency`.
+      if (deps.ga4) {
+        const unsure = new Set(indeterminate.map((i) => i.member.sub));
+        for (const m of chargedOk) {
+          if (unsure.has(m.sub)) continue;
+          void deps.ga4.reportBoardCharge(list, m, list.seatPrice * m.seats, currency, now).catch((err) => {
+            console.error(`ga4 board report failed for ${list.code}:`, err instanceof Error ? err.message : String(err));
+          });
+        }
       }
       // A seeded list that a real traveller is now confirmed on is a van we have promised to
       // run — and the board's head-count for it is mostly placeholders. Nothing else tells

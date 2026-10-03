@@ -65,6 +65,7 @@ import {
 } from '../db/bookingCheckoutEventRepo';
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
 import { SeenOnce } from '../lib/seenOnce';
+import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -289,6 +290,8 @@ export function bookingRoutes(deps: {
   promoNow?: () => Date;
   // Checkout attempt log (db/bookingCheckoutEventRepo.ts). Unset → nothing is recorded.
   checkoutEvents?: BookingCheckoutEventRepo;
+  // Server-side GA4: remembers the checkout's GA visitor. Unset → nothing captured.
+  ga4?: Ga4Reporter;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -1040,7 +1043,14 @@ function invalidRequest(error: ZodError) {
     // customer wherever the request body says is a phishing primitive, and the request that
     // reaches here has already crossed the network. So the origin comes from our own config and
     // the token is minted here, over the booking this checkout is actually for.
-    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown } | null;
+    // The GA visitor this checkout comes from (analytics.js chWithGa), so the server's purchase
+    // joins that visit. Best-effort and not awaited: analytics never delays or fails a checkout.
+    if (deps.ga4 && body?.ga !== undefined) {
+      void deps.ga4.rememberVisitor(booking.id, body.ga).catch((err) => {
+        console.error('ga4 visitor capture failed:', err instanceof Error ? err.message : String(err));
+      });
+    }
     const returnUrls =
       body?.returnTo === 'pay-link' && deps.payBaseUrl
         ? (() => {
