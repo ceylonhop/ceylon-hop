@@ -4,9 +4,9 @@ import { blockLiveApi } from './_stubs.js';
 /*
   The hero photo is an <image-slot> whose src is img/hero-photo.jpg (a plain <img> of the same
   file sits under it so the photo paints before JS — see hero-photo-lcp.test.js). The carousel
-  is built from five such slots so the hero stays editable exactly as it was.
+  is built from four such slots so the hero stays editable exactly as it was.
 
-  Slides 2–5 ship with their file in data-src, not src: the carousel script copies it across
+  Slides 2–4 ship with their file in data-src, not src: the carousel script copies it across
   only after the window load event, once the photo has downloaded, so they never compete with the
   first photo for bandwidth (hero-carousel-photos.test.js holds the markup to that).
 
@@ -41,21 +41,21 @@ const activeIndex = (page) =>
     ),
   );
 
-test.describe('the five shipped photos', () => {
+test.describe('the four shipped photos', () => {
   test.beforeEach(async ({ page }) => {
     await blockLiveApi(page);
   });
 
   test('become a carousel once the page has loaded', async ({ page }) => {
     await page.goto('/index.html');
-    await expect(dots(page)).toHaveCount(5);
+    await expect(dots(page)).toHaveCount(4);
     await expect(page.locator('#pc-photos')).toHaveClass(/hs-live/);
     expect(await activeIndex(page)).toBe(0);
   });
 
   test('are not fetched until the page has finished loading', async ({ page }) => {
     await page.goto('/index.html');
-    await expect(dots(page)).toHaveCount(5);
+    await expect(dots(page)).toHaveCount(4);
     const t = await page.evaluate(() => {
       const nav = performance.getEntriesByType('navigation')[0];
       const late = performance.getEntriesByType('resource')
@@ -68,7 +68,7 @@ test.describe('the five shipped photos', () => {
     });
     // Each file appears twice here: the preload, then the slot's own <img>. This test
     // server sends no cache headers; the live site sends max-age, so the second is a cache hit.
-    expect(t.files).toEqual(['hero-photo-2.jpg', 'hero-photo-3.jpg', 'hero-photo-4.jpg', 'hero-photo-5.jpg']);
+    expect(t.files).toEqual(['hero-photo-2.jpg', 'hero-photo-3.jpg', 'hero-photo-4.jpg']);
     for (const start of t.starts) expect(start).toBeGreaterThanOrEqual(t.loadEnd);
   });
 
@@ -86,7 +86,7 @@ test.describe('the five shipped photos', () => {
   });
 });
 
-// Below, the four later photos fail to load — the hero falls back to the one-photo state and
+// Below, the three later photos fail to load — the hero falls back to the one-photo state and
 // the carousel's own rules are exercised with stand-in images.
 test.describe('when the later photos fail to load', () => {
   test.beforeEach(async ({ page }) => {
@@ -110,7 +110,7 @@ test.describe('when the later photos fail to load', () => {
   test('an unfilled slot is never shown to a visitor', async ({ page }) => {
     // Empty slots draw an authoring placeholder. A visitor has no editing runtime, so they must
     // not be rendered at all — otherwise the hero photo sits under an empty dashed box.
-    for (const n of [1, 2, 3, 4]) await expect(slides(page).nth(n)).toBeHidden();
+    for (const n of [1, 2, 3]) await expect(slides(page).nth(n)).toBeHidden();
   });
 
   test('dropping a second photo turns the hero into a carousel', async ({ page }) => {
@@ -129,6 +129,20 @@ test.describe('when the later photos fail to load', () => {
 
     await expect.poll(() => activeIndex(page), { timeout: 9000, message: 'should advance to slide 2' })
       .toBe(1);
+  });
+
+  test('each photo stays up for 5 seconds', async ({ page }) => {
+    // a fake clock, so the interval is measured exactly rather than raced against a real one
+    await page.clock.install();
+    await page.goto('/index.html');
+    await fill(page, ['hero-photo-2', 'hero-photo-3']);
+    await expect(dots(page)).toHaveCount(3);
+    expect(await activeIndex(page)).toBe(0);
+
+    await page.clock.runFor(4900);
+    expect(await activeIndex(page)).toBe(0);
+    await page.clock.runFor(200);
+    expect(await activeIndex(page)).toBe(1);
   });
 
   test('a dot jumps straight to its photo', async ({ page }) => {
