@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { KNOWN_PLACES } from '../../adapters/maps';
 import { ALIASES, REGION_OF, knownPlace } from './knownPlace';
 
@@ -44,5 +46,17 @@ describe('knownPlace', () => {
       expect(alias).toBe(alias.toLowerCase().trim());
       expect(KNOWN_PLACES).toContain(town);
     }
+  });
+});
+
+describe('docs/analytics/route-report.sql', () => {
+  const sql = readFileSync(join(import.meta.dirname, '../../../../docs/analytics/route-report.sql'), 'utf8');
+  const un = (s: string) => s.replace(/''/g, "'");
+  const rows = [...sql.matchAll(/\('((?:[^']|'')*)', '((?:[^']|'')*)', '((?:[^']|'')*)'\)/g)]
+    .map((m) => [un(m[1]), un(m[2]), un(m[3])]);
+
+  it('carries exactly the ALIASES table, with REGION_OF regions', () => {
+    const want = ALIASES.map(([alias, town]) => [alias, town, REGION_OF[town]]);
+    expect(rows).toEqual(want);
   });
 });

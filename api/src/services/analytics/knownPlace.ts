@@ -7,8 +7,6 @@
 // because a Google label ends in its town. Anything unmatched is "Other" — never the raw
 // string: a typed home address is personal data.
 
-import { KNOWN_PLACES } from '../../adapters/maps';
-
 export interface KnownPlace {
   town: string;
   region: string;
