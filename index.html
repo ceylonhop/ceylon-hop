@@ -604,7 +604,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <image-slot id="hero-photo-2" shape="rect" data-src="img/hero-photo-2.jpg" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
             <image-slot id="hero-photo-3" shape="rect" data-src="img/hero-photo-3.jpg" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
             <image-slot id="hero-photo-4" shape="rect" data-src="img/hero-photo-4.jpg" placeholder="Drop a 4th hero photo (optional)"></image-slot>
-            <image-slot id="hero-photo-5" shape="rect" data-src="img/hero-photo-5.jpg" placeholder="Drop a 5th hero photo (optional)"></image-slot>
           </div>
           <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
         </div>
@@ -1059,7 +1058,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if(!wrap || !dotsEl) return;
     const slots=[...wrap.querySelectorAll('image-slot')];
     const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
-    const INTERVAL=6000;
+    const INTERVAL=5000;
     let slides=[], at=0, timer=null, paused=false;
 
     function stop(){ if(timer){ clearInterval(timer); timer=null; } }
