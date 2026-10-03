@@ -12,6 +12,7 @@ import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
+import type { Ga4Adapter } from './adapters/ga4';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
@@ -166,6 +167,8 @@ export interface AppDeps {
   // tests and older callers are unaffected.
   gaIdentities?: GaIdentityRepo;
   ga4Log?: Ga4EventLogRepo;
+  ga4Adapter?: Ga4Adapter;
+  ga4EventName?: 'purchase' | 'purchase_server';
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
