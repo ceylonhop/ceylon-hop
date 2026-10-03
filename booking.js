@@ -2750,7 +2750,7 @@ async function continueToCheckout(booking){
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify({returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'})}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
