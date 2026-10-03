@@ -134,7 +134,11 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
   };
 }
 
-export interface RefundHitInput { booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean }
+export interface RefundHitInput {
+  booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean;
+  /** The client_id the purchase was sent with; used when no identity is stored (spec §5.4: same client_id). */
+  clientId?: string;
+}
 
 export function refundHit(i: RefundHitInput): Ga4Hit {
   const b = i.booking;
@@ -142,7 +146,7 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
   const value = usd(i.refund.amountCents);
   const consent = consentFor(i.identity, countryOf(b));
   return {
-    client_id: clientIdFor(i.identity, `refund:${i.refund.id}`),
+    client_id: i.identity?.clientId ?? i.clientId ?? clientIdFor(null, `refund:${i.refund.id}`),
     timestamp_micros: micros(i.at),
     consent: { ad_user_data: consent, ad_personalization: consent },
     events: [checked({

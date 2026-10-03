@@ -107,6 +107,21 @@ describe('Ga4Reporter refunds reverse the purchase they were sent with', () => {
     expect(refund.events[0].name).toBe('refund');
     expect(txnOf(refund)).toBe(txnOf(secondPurchase));
   });
+  it("a refund reuses its purchase's client_id when there is no stored identity", async () => {
+    const { reporter, adapter } = setup();
+    await reporter.reportPayment(booking(), payment, NOW);
+    await reporter.reportRefund(booking(), refundOf(payment.id));
+    const [purchase, refund] = adapter!.sent;
+    expect(purchase.client_id).toMatch(/^srv\.[0-9a-f]{16}$/);
+    expect(refund.client_id).toBe(purchase.client_id);
+  });
+  it('a stored identity still wins over the purchase client_id', async () => {
+    const { reporter, adapter, identities } = setup();
+    await reporter.reportPayment(booking(), payment, NOW); // sent with a synthetic id
+    await identities.set('b-1', { clientId: '123.456', sessionId: null, adConsent: 'unknown' });
+    await reporter.reportRefund(booking(), refundOf(payment.id));
+    expect(adapter!.sent[1].client_id).toBe('123.456');
+  });
   it('a refund with no purchase row uses the bare reference', async () => {
     const { reporter, adapter } = setup();
     await reporter.reportRefund(booking(), refundOf('pay-9'));

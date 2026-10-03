@@ -112,16 +112,20 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
     return paid.some((p) => p.status === 'succeeded');
   }
 
-  /** The transaction_id a purchase went out with, from its stored hit; null if unknown or unreadable. */
-  async function sentTransactionId(eventKey: string): Promise<string | null> {
+  /** The transaction_id and client_id a purchase went out with, from its stored hit; nulls if unknown or unreadable. */
+  async function sentPurchase(eventKey: string): Promise<{ txn: string | null; clientId: string | null }> {
     let payload: unknown;
     try {
       payload = await deps.log.payloadOf(eventKey);
     } catch {
-      return null;
+      return { txn: null, clientId: null };
     }
-    const txn = (payload as Ga4Hit | null)?.events?.[0]?.params?.transaction_id;
-    return typeof txn === 'string' ? txn : null;
+    const hit = payload as Ga4Hit | null;
+    const txn = hit?.events?.[0]?.params?.transaction_id;
+    return {
+      txn: typeof txn === 'string' ? txn : null,
+      clientId: typeof hit?.client_id === 'string' ? hit.client_id : null,
+    };
   }
 
   return {
@@ -149,10 +153,11 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
       // A refund must carry the transaction_id its purchase was actually SENT with. A Payment has no
       // creation time to recompute "which came first", so read it back from the ledger's stored hit.
       // No row, or an unreadable payload, means the browser sent the bare reference (pre-launch).
-      const sentTxn = await sentTransactionId(`purchase:${refund.paymentId}`);
+      const sent = await sentPurchase(`purchase:${refund.paymentId}`);
       const hit = refundHit({
         booking, refund, identity: await deps.identities.get(booking.id), at: now(),
-        secondPayment: sentTxn !== null && sentTxn !== booking.reference,
+        secondPayment: sent.txn !== null && sent.txn !== booking.reference,
+        ...(sent.clientId ? { clientId: sent.clientId } : {}),
       });
       await attempt(`refund:${refund.id}`, 'refund', hit);
     }, { key: `refund:${refund.id}`, ref: booking.reference }),

@@ -81,6 +81,12 @@ describe('refundHit', () => {
     expect(hit.events[0].params).not.toHaveProperty('refund_reason');
     expect(JSON.stringify(hit)).not.toContain('Larsson');
   });
+  it('uses the purchase\'s client_id when given and no identity is stored; an identity wins', () => {
+    const refund = { id: 'rf-4', bookingId: 'b-1', paymentId: 'pay-abcdef12', amountCents: 22900, currency: 'USD', reason: '' } as unknown as Refund;
+    expect(refundHit({ booking, refund, identity: null, at: SETTLED, secondPayment: false, clientId: 'srv.0123456789abcdef' }).client_id).toBe('srv.0123456789abcdef');
+    expect(refundHit({ booking, refund, identity, at: SETTLED, secondPayment: false, clientId: 'srv.0123456789abcdef' }).client_id).toBe('123.456');
+    expect(refundHit({ booking, refund, identity: null, at: SETTLED, secondPayment: false }).client_id).toMatch(/^srv\.[0-9a-f]{16}$/);
+  });
   it('a refund of a second payment carries that payment\'s transaction id', () => {
     const refund = { id: 'rf-2', bookingId: 'b-1', paymentId: 'abcdef123456', amountCents: 5000, currency: 'USD', reason: '' } as unknown as Refund;
     expect(refundHit({ booking, refund, identity, at: SETTLED, secondPayment: true }).events[0].params.transaction_id).toBe('CH-TEST1-abcdef');
