@@ -135,6 +135,9 @@ test.describe('when the later photos fail to load', () => {
     // a fake clock, so the interval is measured exactly rather than raced against a real one
     await page.clock.install();
     await page.goto('/index.html');
+    // install() alone leaves the fake clock ticking in real time, so the round trips below ate
+    // into the 100 ms margin and the slide had already advanced. Freeze it; only runFor moves it.
+    await page.clock.pauseAt(Date.now() + 60_000);
     await fill(page, ['hero-photo-2', 'hero-photo-3']);
     await expect(dots(page)).toHaveCount(3);
     expect(await activeIndex(page)).toBe(0);
