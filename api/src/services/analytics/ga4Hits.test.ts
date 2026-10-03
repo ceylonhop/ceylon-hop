@@ -38,10 +38,16 @@ describe('purchaseHit', () => {
     const raw = JSON.stringify(hit);
     for (const pii of ['emma@example.test', 'Emma', '7700900000', 'b-1']) expect(raw).not.toContain(pii);
   });
-  it('a deposit is a deposit; a second payment gets its own transaction id', () => {
-    const dep = purchaseHit({ booking, payment: { ...payment, amount: 5000 }, settledAt: SETTLED, identity: null, returning: true, secondPayment: true, eventName: 'purchase' });
-    expect(dep.events[0].params).toMatchObject({ value: 50, payment_type: 'deposit', booking_total: 229, customer_type: 'returning', transaction_id: 'CH-TEST1-pay-ab' });
+  it('a first partial payment is a deposit', () => {
+    const dep = purchaseHit({ booking, payment: { ...payment, amount: 5000 }, settledAt: SETTLED, identity: null, returning: true, secondPayment: false, eventName: 'purchase' });
+    expect(dep.events[0].params).toMatchObject({ value: 50, payment_type: 'deposit', booking_total: 229, customer_type: 'returning', transaction_id: 'CH-TEST1' });
     expect(dep.client_id).toMatch(/^srv\.[0-9a-f]{16}$/);
+  });
+  it('a second payment is a balance with its own transaction id, even below the total', () => {
+    const bal = purchaseHit({ booking, payment: { ...payment, amount: 5000 }, settledAt: SETTLED, identity: null, returning: true, secondPayment: true, eventName: 'purchase' });
+    expect(bal.events[0].params).toMatchObject({ value: 50, payment_type: 'balance', booking_total: 229, transaction_id: 'CH-TEST1-pay-ab' });
+    const full = purchaseHit({ booking, payment, settledAt: SETTLED, identity: null, returning: true, secondPayment: true, eventName: 'purchase' });
+    expect(full.events[0].params).toMatchObject({ payment_type: 'balance' });
   });
   it('stays within the Measurement Protocol limits', () => {
     expect(Object.keys(p).length).toBeLessThanOrEqual(MAX_PARAMS);
@@ -64,10 +70,15 @@ describe('consentFor', () => {
 describe('refundHit', () => {
   it('mirrors the purchase it reverses, and drops a reason that looks like contact details', () => {
     const refund = { id: 'rf-1', bookingId: 'b-1', paymentId: 'pay-abcdef12', provider: 'payhere', amountCents: 22900, currency: 'USD', status: 'manual_confirmed', reason: 'call me on +94 77 123 4567', gatewayRef: 'R1', requestedBy: 'f@x.com', confirmedBy: 'f@x.com', confirmedAt: SETTLED } as unknown as Refund;
-    const hit = refundHit({ booking, refund, identity, at: SETTLED });
+    const hit = refundHit({ booking, refund, identity, at: SETTLED, secondPayment: false });
     expect(hit.events[0].name).toBe('refund');
     expect(hit.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', value: 229, currency: 'USD' });
     expect(hit.events[0].params).not.toHaveProperty('refund_reason');
+  });
+  it('a refund of a second payment carries that payment\'s transaction id', () => {
+    const refund = { id: 'rf-2', bookingId: 'b-1', paymentId: 'abcdef123456', amountCents: 5000, currency: 'USD', reason: '' } as unknown as Refund;
+    expect(refundHit({ booking, refund, identity, at: SETTLED, secondPayment: true }).events[0].params.transaction_id).toBe('CH-TEST1-abcdef');
+    expect(refundHit({ booking, refund, identity, at: SETTLED, secondPayment: false }).events[0].params.transaction_id).toBe('CH-TEST1');
   });
 });
 

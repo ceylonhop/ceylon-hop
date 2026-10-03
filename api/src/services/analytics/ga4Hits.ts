@@ -115,7 +115,7 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
     transaction_id: i.secondPayment ? `${b.reference}-${i.payment.id.slice(0, 6)}` : b.reference,
     value,
     currency: i.payment.currency,
-    payment_type: i.payment.amount < b.total ? 'deposit' : 'full',
+    payment_type: i.secondPayment ? 'balance' : i.payment.amount < b.total ? 'deposit' : 'full',
     ...(i.identity?.sessionId ? { session_id: i.identity.sessionId } : {}),
     engagement_time_msec: 1,
     items: [itemFor(facts, value)],
@@ -134,7 +134,7 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
   };
 }
 
-export interface RefundHitInput { booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date }
+export interface RefundHitInput { booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean }
 
 // A reason is free text typed by ops; drop it rather than risk an email or phone number in GA4.
 const CONTACT_LIKE = /@|\d[\d\s-]{6,}\d/;
@@ -152,7 +152,8 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
     events: [checked({
       name: 'refund',
       params: {
-        transaction_id: b.reference,
+        // Same formula as purchaseHit, so the refund lands on the purchase it reverses.
+        transaction_id: i.secondPayment ? `${b.reference}-${i.refund.paymentId.slice(0, 6)}` : b.reference,
         value,
         currency: i.refund.currency,
         ...(i.identity?.sessionId ? { session_id: i.identity.sessionId } : {}),
