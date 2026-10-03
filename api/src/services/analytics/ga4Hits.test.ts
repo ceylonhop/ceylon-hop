@@ -68,12 +68,18 @@ describe('consentFor', () => {
 });
 
 describe('refundHit', () => {
-  it('mirrors the purchase it reverses, and drops a reason that looks like contact details', () => {
+  it('mirrors the purchase it reverses', () => {
     const refund = { id: 'rf-1', bookingId: 'b-1', paymentId: 'pay-abcdef12', provider: 'payhere', amountCents: 22900, currency: 'USD', status: 'manual_confirmed', reason: 'call me on +94 77 123 4567', gatewayRef: 'R1', requestedBy: 'f@x.com', confirmedBy: 'f@x.com', confirmedAt: SETTLED } as unknown as Refund;
     const hit = refundHit({ booking, refund, identity, at: SETTLED, secondPayment: false });
     expect(hit.events[0].name).toBe('refund');
     expect(hit.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', value: 229, currency: 'USD' });
     expect(hit.events[0].params).not.toHaveProperty('refund_reason');
+  });
+  it('carries no ops free text, even a reason holding a name', () => {
+    const refund = { id: 'rf-3', bookingId: 'b-1', paymentId: 'pay-abcdef12', amountCents: 22900, currency: 'USD', reason: 'Emma Larsson asked to cancel' } as unknown as Refund;
+    const hit = refundHit({ booking, refund, identity, at: SETTLED, secondPayment: false });
+    expect(hit.events[0].params).not.toHaveProperty('refund_reason');
+    expect(JSON.stringify(hit)).not.toContain('Larsson');
   });
   it('a refund of a second payment carries that payment\'s transaction id', () => {
     const refund = { id: 'rf-2', bookingId: 'b-1', paymentId: 'abcdef123456', amountCents: 5000, currency: 'USD', reason: '' } as unknown as Refund;

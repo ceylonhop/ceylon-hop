@@ -136,15 +136,11 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
 
 export interface RefundHitInput { booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean }
 
-// A reason is free text typed by ops; drop it rather than risk an email or phone number in GA4.
-const CONTACT_LIKE = /@|\d[\d\s-]{6,}\d/;
-
 export function refundHit(i: RefundHitInput): Ga4Hit {
   const b = i.booking;
   const facts = bookingFacts(b);
   const value = usd(i.refund.amountCents);
   const consent = consentFor(i.identity, countryOf(b));
-  const reason = i.refund.reason && !CONTACT_LIKE.test(i.refund.reason) ? cut(i.refund.reason) : null;
   return {
     client_id: clientIdFor(i.identity, `refund:${i.refund.id}`),
     timestamp_micros: micros(i.at),
@@ -159,7 +155,6 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
         ...(i.identity?.sessionId ? { session_id: i.identity.sessionId } : {}),
         engagement_time_msec: 1,
         items: [itemFor(facts, value)],
-        ...(reason ? { refund_reason: reason } : {}),
       },
     })],
   };
