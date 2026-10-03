@@ -56,6 +56,8 @@ describe('consentFor', () => {
     expect(consentFor(null, 'Australia')).toBe('GRANTED');
     expect(consentFor(null, 'United Kingdom')).toBe('DENIED');
     expect(consentFor(null, '')).toBe('DENIED');
+    expect(consentFor(null, 'Other')).toBe('DENIED');
+    expect(consentFor(null, ' other ')).toBe('DENIED');
   });
 });
 
@@ -72,11 +74,37 @@ describe('refundHit', () => {
 describe('boardHit', () => {
   it('a charged seat: shared seat between known towns, no member id anywhere', () => {
     const list = { id: 'list-1', code: 'EM-4821', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList;
-    const member = { sub: 'google-sub-123', email: 'm@x.com', firstName: 'M', country: 'Australia', seats: 2 } as RideMember;
+    const member = { sub: 'google-sub-123', email: 'm@x.com', firstName: 'M', country: 'AU', seats: 2 } as RideMember;
     const hit = boardHit({ list, member, amountCents: 4800, currency: 'USD', at: SETTLED, eventName: 'purchase_server' });
     expect(hit.events[0].params).toMatchObject({ service_type: 'shared_seat', route: 'Ella → Mirissa', pax: 2, value: 48, channel: 'ride_board', vehicle_type: 'shared' });
     expect(String(hit.events[0].params.transaction_id)).toMatch(/^EM-4821-[0-9a-f]{8}$/);
     expect(JSON.stringify(hit)).not.toContain('google-sub-123');
     expect(hit.consent.ad_user_data).toBe('GRANTED');
+  });
+
+  // RideMember.country is a 2-letter code (rideBoard.ts), 'XX' when unknown. Consent and
+  // customer_country must work from the country NAME, so every code must land in the name set.
+  const boardFor = (country: string) => boardHit({
+    list: { id: 'list-1', code: 'EM-4821', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList,
+    member: { sub: 's', email: 'm@x.com', firstName: 'M', country, seats: 1 } as RideMember,
+    amountCents: 4800, currency: 'USD', at: SETTLED, eventName: 'purchase_server',
+  });
+  it('a known non-EEA code is named and granted', () => {
+    const hit = boardFor('AU');
+    expect(hit.consent.ad_user_data).toBe('GRANTED');
+    expect(hit.events[0].params.customer_country).toBe('Australia');
+  });
+  it('an unknown code is denied and sends no country', () => {
+    for (const c of ['XX', '', 'zz9']) {
+      const hit = boardFor(c);
+      expect(hit.consent.ad_user_data).toBe('DENIED');
+      expect(hit.consent.ad_personalization).toBe('DENIED');
+      expect(hit.events[0].params).not.toHaveProperty('customer_country');
+    }
+  });
+  it('every EEA/UK/CH code is denied', () => {
+    const codes = 'AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE IS LI NO GB CH'.split(' ');
+    expect(codes).toHaveLength(32);
+    for (const c of codes) expect([c, boardFor(c).consent.ad_user_data]).toEqual([c, 'DENIED']);
   });
 });
