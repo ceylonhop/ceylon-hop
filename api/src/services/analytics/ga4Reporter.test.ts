@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { FakeGa4Adapter } from '../../adapters/ga4';
 import { FakeAlertAdapter } from '../../adapters/alerts';
 import { InMemoryGa4EventLogRepo, InMemoryGaIdentityRepo } from '../../db/ga4Repo';
@@ -136,6 +136,46 @@ describe('Ga4Reporter never breaks a money path', () => {
     expect(alerts.sent.length).toBeGreaterThan(0);
     expect(JSON.stringify(alerts.sent)).not.toContain('API-SECRET-XYZ');
     expect(JSON.stringify(alerts.sent)).toContain('db_down');
+  });
+  it('names the lost event: two bookings failing before the claim give two distinct alerts', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { reporter, log, alerts } = setup();
+      log.claim = async () => { throw Object.assign(new Error('db_down'), { cause: { secret: 'API-SECRET-XYZ' } }); };
+      await reporter.reportPayment(booking('a@example.test', { id: 'b-1', reference: 'CH-AAAA1' }), { ...payment, id: 'pay-a' }, NOW);
+      await reporter.reportPayment(booking('b@example.test', { id: 'b-2', reference: 'CH-BBBB2' }), { ...payment, id: 'pay-b', bookingId: 'b-2' }, NOW);
+      const errs = alerts.sent.filter((a) => a.kind === 'ga4_report_error');
+      expect(errs).toHaveLength(2);
+      expect(errs[0].dedupeKey).not.toBe(errs[1].dedupeKey);
+      expect(errs[0].dedupeKey).toContain('CH-AAAA1');
+      expect(errs[1].dedupeKey).toContain('CH-BBBB2');
+      expect(errs[0].dedupeKey).toContain('purchase:pay-a');
+      expect(errs[0].title + errs[0].body).toContain('CH-AAAA1');
+      // The console fallback carries the message string, the key and the reference: no error object.
+      expect(spy).toHaveBeenCalledTimes(2);
+      for (const call of spy.mock.calls) {
+        expect(call).toHaveLength(1);
+        expect(typeof call[0]).toBe('string');
+        expect(call[0]).toContain('db_down');
+        expect(call[0]).not.toContain('API-SECRET-XYZ');
+      }
+      expect(spy.mock.calls[0][0]).toContain('CH-AAAA1');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('names a lost board charge by its list code, never the member id', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { reporter, log, alerts } = setup();
+      log.claim = async () => { throw new Error('db_down'); };
+      const list = { id: 'l1', code: 'EM-1', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList;
+      await reporter.reportBoardCharge(list, { sub: 'google-sub-777', email: 'a@x.com', country: 'AU', seats: 1 } as RideMember, 2400, 'USD', NOW);
+      expect(alerts.sent[0].dedupeKey).toContain('EM-1');
+      expect(JSON.stringify([alerts.sent, spy.mock.calls])).not.toContain('google-sub-777');
+    } finally {
+      spy.mockRestore();
+    }
   });
   it('swallows a failing identity store and a failing alert channel', async () => {
     const { reporter, identities, alerts } = setup();

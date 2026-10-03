@@ -56,18 +56,24 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
   // secret, so an error object (or its cause) must never reach the ledger, an alert or a log.
   const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+  /** Which event was lost: its ledger key and the booking reference or board list code (no PII). */
+  interface Lost { key: string; ref: string }
+
   /** Analytics must never break a money path: record the failure, then swallow it. */
-  async function swallow<T>(what: string, fallback: T, fn: () => Promise<T>): Promise<T> {
+  async function swallow<T>(what: string, fallback: T, fn: () => Promise<T>, lost?: Lost): Promise<T> {
     try {
       return await fn();
     } catch (err) {
       const msg = messageOf(err);
+      const who = lost ? ` (${lost.ref}, ${lost.key})` : '';
+      // Message string only, never the error object: the Measurement Protocol URL carries the secret.
+      console.error(`GA4 reporter failed in ${what}${who}: ${msg}`);
       await deps.alerts.send({
         severity: 'warning',
         kind: 'ga4_report_error',
-        title: `GA4 reporter failed in ${what}`,
+        title: `GA4 reporter failed in ${what}${who}`,
         body: `Error: ${msg}. The payment or refund itself was not affected.`,
-        dedupeKey: `ga4:error:${what}`,
+        dedupeKey: lost ? `ga4:error:${what}:${lost.ref}:${lost.key}` : `ga4:error:${what}`,
       }).catch(() => {});
       return fallback;
     }
@@ -122,7 +128,7 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
     rememberVisitor: (bookingId, raw) => swallow('rememberVisitor', undefined, async () => {
       const id = parseGaIdentity(raw);
       if (id) await deps.identities.set(bookingId, id);
-    }),
+    }, { key: 'ga_identity', ref: bookingId }),
 
     reportPayment: (booking, payment, settledAt) => swallow('reportPayment', undefined, async () => {
       if (!deps.adapter || isTeamEmail(booking.input.customer.email, deps.teamEmails)) return;
@@ -136,7 +142,7 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
         eventName: deps.eventName,
       });
       await attempt(`purchase:${payment.id}`, 'purchase', hit);
-    }),
+    }, { key: `purchase:${payment.id}`, ref: booking.reference }),
 
     reportRefund: (booking, refund) => swallow('reportRefund', undefined, async () => {
       if (!deps.adapter || isTeamEmail(booking.input.customer.email, deps.teamEmails)) return;
@@ -149,13 +155,13 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
         secondPayment: sentTxn !== null && sentTxn !== booking.reference,
       });
       await attempt(`refund:${refund.id}`, 'refund', hit);
-    }),
+    }, { key: `refund:${refund.id}`, ref: booking.reference }),
 
     reportBoardCharge: (list, member, amountCents, currency, at) => swallow('reportBoardCharge', undefined, async () => {
       if (!deps.adapter || isTeamEmail(member.email, deps.teamEmails)) return;
       const hit = boardHit({ list, member, amountCents, currency, at, eventName: deps.eventName });
       await attempt(`board:${list.id}:${member.sub}`, 'board_purchase', hit);
-    }),
+    }, { key: `board:${list.id}`, ref: list.code }),
 
     sweep: () => swallow('sweep', { retried: 0, sent: 0, failed: 0 }, async () => {
       const at = now();
@@ -164,7 +170,11 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
       let failed = 0;
       for (const row of rows) {
         // One bad row must not strand the rest of the queue.
-        const outcome = await swallow('sweep-row', 'failed' as const, () => attempt(row.eventKey, row.kind, row.payload));
+        // Name the row by kind and the hit's transaction_id (a reference or list code): a board
+        // eventKey embeds the member's Google id, which must not reach an alert or a log.
+        const txn = (row.payload as Ga4Hit | null)?.events?.[0]?.params?.transaction_id;
+        const outcome = await swallow('sweep-row', 'failed' as const, () => attempt(row.eventKey, row.kind, row.payload),
+          { key: row.kind, ref: typeof txn === 'string' ? txn : 'unknown' });
         if (outcome === 'sent') sent++;
         if (outcome === 'failed') failed++;
       }
