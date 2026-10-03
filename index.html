@@ -114,9 +114,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero .hero-sub{color:rgba(255,255,255,.93);max-width:46ch;font-size:1.12rem;line-height:1.6;font-weight:500;
      text-shadow:0 1px 16px rgba(0,0,0,.4);margin:0}
   .hero .hero-sub b{color:#fff;font-weight:700}
-  .hero .hero-note{display:flex;align-items:center;gap:.5rem;margin:4px 0 0;white-space:nowrap;
-     font-size:.75rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-     color:rgba(255,255,255,.82);text-shadow:0 1px 10px rgba(0,0,0,.45)}
   .hero .hero-card{grid-area:card;position:relative;z-index:2;width:100%;justify-self:end;
      background:linear-gradient(180deg, rgba(255,255,255,.99), rgba(255,253,248,.96));color:var(--ink);
      border:1px solid rgba(255,255,255,.75);border-radius:26px;padding:18px;
@@ -134,7 +131,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .hero .hero-copy{gap:14px}
     .hero .hero-title{font-size:clamp(2.05rem,9vw,2.6rem)}
     .hero .hero-sub{font-size:.98rem;line-height:1.55}
-    .hero .hero-note{font-size:.65rem;letter-spacing:.12em;white-space:normal;line-height:1.6}
     .hero .hero-card{max-width:100%;padding:14px;border-radius:22px}
   }
 
@@ -222,7 +218,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html.js .hero .hero-badge{animation:heroUp .6s .1s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-title{animation:heroUp .65s .18s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-sub{animation:heroUp .65s .26s cubic-bezier(.2,.7,.2,1) both}
-    html.js .hero .hero-note{animation:heroUp .6s .34s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-card{animation:heroCard .7s .3s cubic-bezier(.2,.7,.2,1) both}
   }
   @keyframes heroUp{from{transform:translateY(18px)}to{transform:none}}
@@ -564,7 +559,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <a class="hero-badge" data-ta-count-label href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 31 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· <span data-ta-count>31</span> reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
-      <p class="hero-note">Fixed prices · Free cancellation from 24h before on transfers · No change fees</p>
       <!-- Carousel controls live in the copy column, not on the photo: the photo layer sits in
            the postcard figure at z-index 0, underneath the hero scrim, so anything placed there
            is unclickable no matter its own z-index. Here they are always reachable, and they
