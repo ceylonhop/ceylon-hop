@@ -258,6 +258,13 @@ visit (`booking_ga_identity`). Event `purchase_server` while `GA4_SERVER_EVENT_N
 dropoff_region, vehicle_type, travel_month, customer_country, customer_type, channel`; metrics `pax`
 (Standard), `booking_total` (Currency), `discount` (Currency), `days_to_travel` (Standard).
 
+- The API secret: GA4 → Admin → Data streams → Ceylon Hop Web → Measurement Protocol API secrets → Create.
+  Set `GA4_API_SECRET` on the **prod** Render service (`ceylon-hop-api`) only — never on staging, or
+  sandbox payments land in the live property (`GA4_MEASUREMENT_ID` defaults to the prod stream).
+- Do **not** mark `purchase_server` as a key event; it is a shadow copy.
+- Switch-over (same hour, after ~2 weeks of matching shadow data, spec §7–8): set
+  `GA4_SERVER_EVENT_NAME=purchase` on prod, then pause GTM's "GA4 - purchase" tag and publish.
+
 ### 6.2 GA4 — cross-domain
 Admin → Data Streams → the web stream → Configure tag settings → Configure your domains.
 Add all of: `ceylonhop.com`, `prod.ceylonhop.com`, `pay.ceylonhop.com`,

@@ -1,6 +1,6 @@
 # Server-side GA4 purchase & refund tracking: design
 
-**Status:** draft for owner review (2026-10-03). **Code base read:** `origin/main` @ b43cd9ae.
+**Status:** approved 2026-10-03; implemented on `feat/ga4-measurement` (see the plan's deviations and §10). **Code base read:** `origin/main` @ b43cd9ae.
 **Related:** `docs/superpowers/plans/2026-10-03-ga4-measurement-upgrade.md` (rev 2). This spec **replaces** that plan's Phase 5 (browser-side purchase details) and reuses its Phase 2 `knownPlace()` module.
 
 ## 1. Problem
@@ -142,7 +142,7 @@ It calls the same `report*` functions. Re-entry is safe, because the ledger clai
   - stored choice `granted` → `GRANTED`;
   - stored choice `denied` → `DENIED`;
   - no stored choice → `GRANTED` only if the booking's billing/customer country is known **and** outside the EEA, UK and Switzerland, otherwise `DENIED`. `Other` (the booking form's last option) counts as unknown.
-  - Board members store a 2-letter code (`rideBoard.ts`, `XX` when unknown). It is turned into its English region name first; an invalid code or `XX` is unknown (`DENIED`, no `customer_country`).
+  - Board hits are always `DENIED` (owner, 2026-10-03): a synthetic visitor with no session gains nothing from `GRANTED`. Board members store a 2-letter code (`rideBoard.ts`, `XX` when unknown); it becomes its English region name for `customer_country` only, and an invalid code or `XX` sends no country.
 - Board charges have no stored visitor:
   - `client_id` = `srv.` + the first 16 hex characters of SHA-256(`event_key`). It is deterministic, so retries reuse it, and it never contains the member's Google `sub`.
 - In shadow mode the event name is `purchase_server`.
@@ -187,9 +187,9 @@ Hard limit is 25 per event; strings must be ≤100 characters.
 - `transaction_id`: the original purchase's id, copied from that purchase's ledger payload (`purchase:<refund.paymentId>`); the bare reference when there is none (purchases sent by the browser before go-live)
 - `value`: `refund.amountCents / 100`
 - `currency`
-- same `client_id` / `session_id` (if known)
+- same `client_id` / `session_id` (if known). With no stored visitor, the `client_id` is copied from the purchase's ledger payload, so the refund lands on the same synthetic user
 - `items`: the same single item, so item revenue nets out
-- `refund_reason`: `refund.reason`, cut to 100 characters, and only if it contains no email or phone pattern. Otherwise it is omitted.
+- no `refund_reason` (owner, 2026-10-03): it is free text typed by ops and could carry a name. The reason stays in ops.
 
 ### 5.5 Privacy
 
@@ -286,3 +286,14 @@ For every booking paid in the window, pair the browser `purchase` with the serve
 - **`customer_type`** counts only bookings since this system went live.
 - **Board revenue is reported only for seats charged successfully in that cutoff run.** A charge whose outcome is unknown, or a member carried over as `charged` from an interrupted run, is never reported, so board revenue can under-count after a crash (the safe direction).
 - **Ride-board refunds are not sent.** Board charges have no `payments` row, so the refund tool doesn't cover them and they're refunded by hand. Board revenue in GA4 is gross of those refunds.
+- **A failure before the ledger claim loses that event.** The reads before `claim()` (payments, identity, returning-buyer lookup) can throw; the alert then names the event key and booking reference, but the sweep cannot retry what was never claimed.
+- **A double capture labels both payments `balance`** with suffixed ids (each sees a succeeded sibling). Refunds still match, because they copy the id from the ledger.
+- **Refunds are not shadowed.** In shadow mode, server refunds go out as the real `refund` event while purchases still come from the browser, so refunds of sales the browser never saw (mark-paid, closed tab) understate net revenue until switch-over.
+
+## 10. Implementation notes (2026-10-03)
+
+- The plan's 4 approved deviations: separate `booking_ga_identity` table; `ga4_event_log` is an outbox (status `claimed`/`sent`/`failed`); the webhook reports only `settled`.
+- `Ga4EventLogRepo.payloadOf(eventKey)` added so refunds copy the purchase's `transaction_id` and `client_id` (payments expose no creation time, so order cannot be recomputed).
+- Migration 0063 enables RLS **and** revokes PUBLIC/anon/authenticated, like 0058.
+- Board reports only seats charged successfully in that cutoff run.
+
