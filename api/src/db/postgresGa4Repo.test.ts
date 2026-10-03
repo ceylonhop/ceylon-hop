@@ -47,6 +47,13 @@ describe.skipIf(!TEST_URL)('Postgres GA4 repos (integration)', () => {
     expect(await log.claim(k, 'purchase', { a: 2 }, new Date())).toBeNull();
   });
 
+  it('payloadOf returns the stored payload, or null when there is no row', async () => {
+    const k = key('payload-of');
+    expect(await log.payloadOf(k)).toBeNull();
+    await log.claim(k, 'purchase', { a: 1, nested: { b: 'x' } }, new Date());
+    expect(await log.payloadOf(k)).toEqual({ a: 1, nested: { b: 'x' } });
+  });
+
   it('two concurrent claims on a new key: exactly one wins', async () => {
     const k = key('race');
     const results = await Promise.all([

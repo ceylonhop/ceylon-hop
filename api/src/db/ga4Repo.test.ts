@@ -20,6 +20,12 @@ describe('GA4 event ledger', () => {
     expect(await log.claim('purchase:p1', 'purchase', { a: 1 }, T0)).toEqual({ eventKey: 'purchase:p1', kind: 'purchase', payload: { a: 1 }, attempts: 1 });
     expect(await log.claim('purchase:p1', 'purchase', { a: 2 }, T0)).toBeNull();
   });
+  it('payloadOf returns the stored payload, or null when there is no row', async () => {
+    const log = new InMemoryGa4EventLogRepo();
+    expect(await log.payloadOf('purchase:none')).toBeNull();
+    await log.claim('purchase:p1', 'purchase', { a: 1 }, T0);
+    expect(await log.payloadOf('purchase:p1')).toEqual({ a: 1 });
+  });
   it('a sent event can never be claimed again', async () => {
     const log = new InMemoryGa4EventLogRepo();
     await log.claim('k', 'refund', {}, T0);

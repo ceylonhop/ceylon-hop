@@ -22,6 +22,8 @@ export interface Ga4EventLogRepo {
   markFailed(eventKey: string, error: string): Promise<void>;
   /** Failed rows, and claims older than STALE_CLAIM_MS, created at or after `since`. */
   listRetryable(since: Date, now: Date): Promise<Ga4Claim[]>;
+  /** The payload stored at the first claim of this key, or null when there is no row. */
+  payloadOf(eventKey: string): Promise<unknown | null>;
 }
 
 /** A claim this old belongs to a process that died between claim and send. */
@@ -71,6 +73,9 @@ export class InMemoryGa4EventLogRepo implements Ga4EventLogRepo {
   async markFailed(eventKey: string, error: string): Promise<void> {
     const row = this.rows.get(eventKey);
     if (row && row.status !== 'sent') { row.status = 'failed'; row.lastError = error.slice(0, 500); }
+  }
+  async payloadOf(eventKey: string): Promise<unknown | null> {
+    return this.rows.get(eventKey)?.payload ?? null;
   }
   async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
     return [...this.rows.values()]

@@ -62,6 +62,11 @@ export class PostgresGa4EventLogRepo implements Ga4EventLogRepo {
       .where(and(eq(ga4EventLog.eventKey, eventKey), ne(ga4EventLog.status, 'sent')));
   }
 
+  async payloadOf(eventKey: string): Promise<unknown | null> {
+    const [row] = await this.db.select({ payload: ga4EventLog.payload }).from(ga4EventLog).where(eq(ga4EventLog.eventKey, eventKey));
+    return row?.payload ?? null;
+  }
+
   async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
     const stale = new Date(now.getTime() - STALE_CLAIM_MS);
     const rows = await this.db
