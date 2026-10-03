@@ -147,7 +147,11 @@ for (const g of MORE) {
       expect(generateAll().get('sitemap.xml')).toContain(`<loc>https://ceylonhop.com/guides/${g.slug}/</loc>`);
       const blog = readFileSync(path.join(ROOT, 'blog.html'), 'utf8').replace(/<script[\s\S]*?<\/script>/g, '');
       expect(blog).toContain(`href="guides/${g.slug}/"`);
-      expect(blog).toContain(`src="img/guides/${g.slug}/hero-900.jpg"`);
+      // The card shows one of this guide's own photos — the hero by default, but any is allowed
+      // so the three cards can be told apart (Ella uses nine-arch).
+      const card = blog.match(new RegExp(`src="(img/guides/${g.slug}/[a-z-]+-900\\.jpg)"`));
+      expect(card, 'blog card photo').toBeTruthy();
+      expect(existsSync(path.join(ROOT, card[1])), card[1]).toBe(true);
       expect(h).toContain(`<meta property="og:image" content="https://ceylonhop.com/img/guides/${g.slug}/og.jpg">`);
     });
     it('Getting here sells the car only, from the right places', () => {
