@@ -20,6 +20,20 @@ CREATE TABLE IF NOT EXISTS "booking_ga_identity" (
 --> statement-breakpoint
 ALTER TABLE "booking_ga_identity" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
+-- Migration 0048 protected every table that existed then; later tables protect themselves (see
+-- 0058). The API connects as postgres and bypasses RLS; PostgREST's public roles get no grant.
+REVOKE ALL ON TABLE "booking_ga_identity" FROM PUBLIC;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE booking_ga_identity FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE booking_ga_identity FROM authenticated';
+  END IF;
+END $$;
+--> statement-breakpoint
 -- ga4_event_log: the exactly-once ledger AND the outbox. `payload` is the exact Measurement
 -- Protocol hit built at first claim; retries re-send it unchanged.
 CREATE TABLE IF NOT EXISTS "ga4_event_log" (
@@ -40,3 +54,17 @@ CREATE TABLE IF NOT EXISTS "ga4_event_log" (
 CREATE INDEX IF NOT EXISTS "ga4_event_log_status_idx" ON "ga4_event_log" ("status");
 --> statement-breakpoint
 ALTER TABLE "ga4_event_log" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+-- Migration 0048 protected every table that existed then; later tables protect themselves (see
+-- 0058). The API connects as postgres and bypasses RLS; PostgREST's public roles get no grant.
+REVOKE ALL ON TABLE "ga4_event_log" FROM PUBLIC;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE ga4_event_log FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE ga4_event_log FROM authenticated';
+  END IF;
+END $$;

@@ -14,6 +14,15 @@ describe('0063_ga4_server_events', () => {
     expect(sql).toMatch(/alter table "booking_ga_identity" enable row level security/i);
     expect(sql).toMatch(/alter table "ga4_event_log" enable row level security/i);
   });
+  it('revokes public, anon and authenticated from both tables, like 0058', () => {
+    for (const t of ['booking_ga_identity', 'ga4_event_log']) {
+      expect(sql).toContain(`REVOKE ALL ON TABLE "${t}" FROM PUBLIC;`);
+      expect(sql).toContain(`EXECUTE 'REVOKE ALL ON TABLE ${t} FROM anon';`);
+      expect(sql).toContain(`EXECUTE 'REVOKE ALL ON TABLE ${t} FROM authenticated';`);
+    }
+    expect(sql.match(/FROM pg_roles WHERE rolname = 'anon'/g)).toHaveLength(2);
+    expect(sql.match(/FROM pg_roles WHERE rolname = 'authenticated'/g)).toHaveLength(2);
+  });
   it('pins the shapes: GA ids, consent, ledger kind and status', () => {
     expect(sql).toMatch(/"booking_ga_identity_client_id_shape"/);
     expect(sql).toMatch(/"booking_ga_identity_session_id_shape"/);
