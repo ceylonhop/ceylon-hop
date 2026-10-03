@@ -3,8 +3,12 @@ import { isApiRequest } from './_api-host.js';
 
 // Share links used to be built as https://ceylonhop.com/board/<code> — the old WordPress
 // apex, which 404s, on a path nothing serves. Every link a starter sent was dead, and the
-// chat preview fell back to printing a bare domain. They now resolve against the API,
-// which serves /r/<code> with that ride's own open-graph tags.
+// chat preview fell back to printing a bare domain. They now resolve against the ride
+// domain (ride.ceylonhop.com, a second custom domain on the API service), which serves a
+// bare <code> at its root with that ride's own open-graph tags — falling back to the API's
+// own /r/<code> path anywhere CEYLON_HOP_SHARE_ORIGIN is left empty, which is how local dev
+// and staging run. Nothing here covers that fallback: board.html sets the default
+// unconditionally, so the only way in is to set the origin first, which is the case below.
 
 const LIST = {
   code: 'EA-7797', corridorId: 'airport-cultural', from: 'Colombo Airport (CMB)', to: 'Dambulla',
@@ -40,26 +44,7 @@ async function stubApi(page) {
   });
 }
 
-test('the share link points at the API unfurl path, not the dead apex', async ({ page }) => {
-  await stubApi(page);
-  await page.goto('/board.html');
-
-  await page.locator('.rw').first().waitFor({ timeout: 15000 });
-  await page.locator('.rw [data-view]').first().click();
-  await expect(page.locator('body')).toHaveClass(/detail-open/);
-
-  const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
-  expect(copyTarget).toContain('/r/EA-7797');
-  expect(copyTarget).not.toContain('/board/EA-7797');
-  expect(copyTarget).not.toMatch(/^https:\/\/ceylonhop\.com/);
-
-  // ...and the WhatsApp hand-off carries the same URL, not the old one.
-  const wa = await page.locator('.d-share a.btn-wa').first().getAttribute('href');
-  expect(decodeURIComponent(wa)).toContain('/r/EA-7797');
-});
-
-test('the ride domain, once configured, shortens links to a bare code', async ({ page }) => {
-  await page.addInitScript(() => { window.CEYLON_HOP_SHARE_ORIGIN = 'https://ride.ceylonhop.com'; });
+test('the share link uses the ride domain, not the dead apex', async ({ page }) => {
   await stubApi(page);
   await page.goto('/board.html');
 
@@ -69,4 +54,23 @@ test('the ride domain, once configured, shortens links to a bare code', async ({
 
   const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
   expect(copyTarget).toBe('https://ride.ceylonhop.com/EA-7797');
+  expect(copyTarget).not.toContain('/board/EA-7797');
+  expect(copyTarget).not.toMatch(/^https:\/\/ceylonhop\.com/);
+
+  // ...and the WhatsApp hand-off carries the same URL, not the old one.
+  const wa = await page.locator('.d-share a.btn-wa').first().getAttribute('href');
+  expect(decodeURIComponent(wa)).toContain('https://ride.ceylonhop.com/EA-7797');
+});
+
+test('an explicit share origin still overrides the built-in default', async ({ page }) => {
+  await page.addInitScript(() => { window.CEYLON_HOP_SHARE_ORIGIN = 'https://ride.example.test'; });
+  await stubApi(page);
+  await page.goto('/board.html');
+
+  await page.locator('.rw').first().waitFor({ timeout: 15000 });
+  await page.locator('.rw [data-view]').first().click();
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+
+  const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
+  expect(copyTarget).toBe('https://ride.example.test/EA-7797');
 });

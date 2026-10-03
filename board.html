@@ -10,6 +10,13 @@
      so the cookie is third-party there and browsers blocking third-party cookies drop it,
      leaving sign-in looking fine but every write 401ing. Same registrable domain = same site. -->
 <script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ops.ceylonhop.com');})();</script>
+<!-- Origin the Ride Board's share links are built from. ride.ceylonhop.com is a second
+     custom domain on the API service, so a code resolves at its bare root and a traveller
+     pastes ride.ceylonhop.com/EA-8707 rather than the ops hostname. Set it beforehand to
+     override; board.js shareUrlFor falls back to the API's own /r/ path when it is empty.
+     Needs SHARE_BASE_URL set on the API to match, or og:url on the unfurl still names the
+     host the crawler happened to reach. -->
+<script>window.CEYLON_HOP_SHARE_ORIGIN=window.CEYLON_HOP_SHARE_ORIGIN||'https://ride.ceylonhop.com';</script>
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      Set 2026-07-25 to open self-serve joining — same OAuth client as ops sign-in, with
      https://prod.ceylonhop.com added to its Authorized JavaScript origins. PayHere card
