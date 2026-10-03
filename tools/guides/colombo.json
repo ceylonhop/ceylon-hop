@@ -259,11 +259,11 @@
   "next": ["galle", "kandy", "cmb-airport", "ella"],
   "photos": {
     "hero": {
-      "alt": "The Colombo skyline across the water, the Lotus Tower standing among the high-rises",
-      "credit": "Ajai S",
-      "creditUrl": "https://unsplash.com/@ajai_1229?utm_source=ceylon_hop&utm_medium=referral",
-      "photoUrl": "https://unsplash.com/photos/a-large-body-of-water-with-a-city-in-the-background-3fmmUdRE2Fk?utm_source=ceylon_hop&utm_medium=referral",
-      "focal": "50% 55%",
+      "alt": "The Lotus Tower lit up at night above the lights of Colombo and Beira Lake",
+      "credit": "Manorie Kodithuwakku",
+      "creditUrl": "https://unsplash.com/@manoriekodi?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-tall-illuminated-tower-stands-over-a-city-at-night-yZCvXdx0Obw?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "39% 50%",
       "w": 1800,
       "h": 1013
     },
