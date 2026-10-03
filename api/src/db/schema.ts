@@ -527,6 +527,33 @@ export const bookingCheckoutEvents = pgTable(
   ],
 );
 
+// Server-side GA4 (0063). The GA visitor + session a booking checked out from, latest wins.
+export const bookingGaIdentity = pgTable('booking_ga_identity', {
+  bookingId: uuid('booking_id').primaryKey(),
+  clientId: text('client_id'),
+  sessionId: text('session_id'),
+  adConsent: text('ad_consent'), // granted | denied | unknown
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Server-side GA4 (0063). Exactly-once ledger + outbox: `payload` is the stored MP hit.
+export const ga4EventLog = pgTable(
+  'ga4_event_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventKey: text('event_key').notNull().unique(),
+    kind: text('kind').notNull(), // purchase | refund | board_purchase
+    status: text('status').notNull(), // claimed | sent | failed
+    attempts: integer('attempts').default(1).notNull(),
+    payload: jsonb('payload').notNull(),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('ga4_event_log_status_idx').on(t.status)],
+);
+
 // M23.3 — append-only facts for booking status changes. The booking row and event are written
 // in one transaction by BookingRepo.setStatus; no synthetic baseline is created for legacy rows.
 export const bookingStatusEvents = pgTable(

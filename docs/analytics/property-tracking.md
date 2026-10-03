@@ -249,6 +249,22 @@ Add a Custom Event trigger + GA4 event tag for each of: `pay_link_opened`,
 Register `ch_property`, `ch_env`, `state`, `reason` and `leg` as event-scoped custom
 dimensions. Mark `purchase` a key event on the new properties too.
 
+### 6.1b Server-side purchase (2026-10-03, spec docs/superpowers/specs/2026-10-03-server-side-ga4-purchase-design.md)
+The API reports every settled payment (PayHere webhook, ops mark-paid, ride-board charge) and every
+confirmed refund via the Measurement Protocol, exactly once (`ga4_event_log`), joined to the checkout
+visit (`booking_ga_identity`). Event `purchase_server` while `GA4_SERVER_EVENT_NAME=purchase_server`
+(shadow mode); `purchase` after switch-over, when GTM's "GA4 - purchase" tag is paused. Register
+(event scope) dimensions `service_type, route, region_route, pickup, dropoff, pickup_region,
+dropoff_region, vehicle_type, travel_month, customer_country, customer_type, channel`; metrics `pax`
+(Standard), `booking_total` (Currency), `discount` (Currency), `days_to_travel` (Standard).
+
+- The API secret: GA4 → Admin → Data streams → Ceylon Hop Web → Measurement Protocol API secrets → Create.
+  Set `GA4_API_SECRET` on the **prod** Render service (`ceylon-hop-api`) only — never on staging, or
+  sandbox payments land in the live property (`GA4_MEASUREMENT_ID` defaults to the prod stream).
+- Do **not** mark `purchase_server` as a key event; it is a shadow copy.
+- Switch-over (same hour, after ~2 weeks of matching shadow data, spec §7–8): set
+  `GA4_SERVER_EVENT_NAME=purchase` on prod, then pause GTM's "GA4 - purchase" tag and publish.
+
 ### 6.2 GA4 — cross-domain
 Admin → Data Streams → the web stream → Configure tag settings → Configure your domains.
 Add all of: `ceylonhop.com`, `prod.ceylonhop.com`, `pay.ceylonhop.com`,

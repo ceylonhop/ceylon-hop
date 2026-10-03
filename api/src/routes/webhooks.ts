@@ -14,6 +14,7 @@ import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepo
 import { money as fmtMoney } from '../services/opsEmail';
 import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
+import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
 import {
   recordCheckoutEvent,
@@ -174,6 +175,8 @@ export function webhookRoutes(deps: {
   // Closes the same customer's older unpaid bookings for the same trip once one settles
   // (services/duplicateBookings.ts). Unset → nothing is closed, as before.
   duplicates?: Omit<DuplicateCloseDeps, 'alerts'>;
+  // Server-side GA4 purchase on a settled payment. Unset → nothing reported.
+  ga4?: Ga4Reporter;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -437,6 +440,13 @@ export function webhookRoutes(deps: {
         });
       } catch (err) {
         console.error(`team paid-notification failed for ${paid.reference}:`, err);
+      }
+      // Server-side GA4 purchase (spec 2026-10-03). After everything the paid booking needs and
+      // not awaited — PayHere must get its 200 regardless. A replay never gets here (duplicate).
+      if (deps.ga4) {
+        void deps.ga4.reportPayment(paid, outcome.payment, event.receivedAt).catch((err) => {
+          console.error(`ga4 purchase report failed for ${paid.reference}:`, err instanceof Error ? err.message : String(err));
+        });
       }
       // The customer's earlier failed attempts at this same trip are leftovers now (Lea:
       // CH-Y5RXW declined at 3-D Secure, CH-L72HX paid 20 min later) — close them quietly.
