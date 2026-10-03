@@ -170,6 +170,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      the opaque slot it has always been. */
   .pc-photos.hs-live image-slot{opacity:0;transition:opacity .9s ease}
   .pc-photos.hs-live image-slot.hs-on{opacity:1}
+  /* A later photo fills a moment before the carousel arms. It sits on top of the first, so it
+     must already be invisible then — left opaque, it faded OUT over the .9s above and the hero
+     flashed through every photo on each page load. */
+  .pc-photos:not(.hs-live) image-slot[data-filled] ~ image-slot[data-filled]{opacity:0}
   @media(prefers-reduced-motion:reduce){.pc-photos.hs-live image-slot{transition:none}}
   .hero-dots{display:flex;gap:9px;align-items:center}
   .hero-dots[hidden]{display:none}

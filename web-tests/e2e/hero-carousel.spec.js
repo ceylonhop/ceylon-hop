@@ -53,6 +53,28 @@ test.describe('the four shipped photos', () => {
     expect(await activeIndex(page)).toBe(0);
   });
 
+  test('arrive without flashing over the first photo', async ({ page }) => {
+    // The later photos are stacked on top of the first. When they filled they were briefly
+    // opaque, then faded out over the .9s cross-fade as the carousel armed — on every page
+    // load the hero ran through all its photos in under a second. Watch every frame from the
+    // start: until the carousel advances by itself, no photo after the first may be seen.
+    await page.addInitScript(() => {
+      window.__lateSeen = 0;
+      (function tick() {
+        [...document.querySelectorAll('#pc-photos image-slot')].slice(1).forEach((s) => {
+          const cs = getComputedStyle(s);
+          if (cs.display !== 'none') window.__lateSeen = Math.max(window.__lateSeen, Number(cs.opacity));
+        });
+        requestAnimationFrame(tick);
+      })();
+    });
+    await page.goto('/index.html');
+    await expect(dots(page)).toHaveCount(4);
+    await page.waitForTimeout(1200); // longer than the .9s fade the flash rode on
+    expect(await activeIndex(page)).toBe(0);
+    expect(await page.evaluate(() => window.__lateSeen)).toBe(0);
+  });
+
   test('are not fetched until the page has finished loading', async ({ page }) => {
     await page.goto('/index.html');
     await expect(dots(page)).toHaveCount(4);
