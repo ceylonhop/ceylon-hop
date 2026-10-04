@@ -79,7 +79,7 @@ describe.skipIf(!TEST_URL)('Postgres GA4 repos (integration)', () => {
     await log.markFailed(k, 'late_error_from_a_stale_process');
     const farLater = new Date(t0.getTime() + STALE_CLAIM_MS * 10);
     expect(await log.claim(k, 'purchase', {}, farLater)).toBeNull();
-    expect((await log.listRetryable(new Date(t0.getTime() - 60_000), farLater)).map((r) => r.eventKey)).not.toContain(k);
+    expect((await log.listRetryable(new Date(t0.getTime() - 60_000), farLater, 10_000)).map((r) => r.eventKey)).not.toContain(k);
   });
 
   it('a failed event is re-claimable, keeps its FIRST payload, and counts attempts', async () => {
@@ -96,7 +96,7 @@ describe.skipIf(!TEST_URL)('Postgres GA4 repos (integration)', () => {
     const t0 = new Date();
     const since = new Date(t0.getTime() - 60_000);
     await log.claim(k, 'purchase', {}, t0);
-    const keys = async (now: Date) => (await log.listRetryable(since, now)).map((r) => r.eventKey);
+    const keys = async (now: Date) => (await log.listRetryable(since, now, 10_000)).map((r) => r.eventKey);
     expect(await keys(new Date(t0.getTime() + STALE_CLAIM_MS - 1))).not.toContain(k);
     expect(await keys(new Date(t0.getTime() + STALE_CLAIM_MS + 1))).toContain(k);
     // …and a take-over after the stale window succeeds, a take-over inside it does not.
@@ -109,7 +109,21 @@ describe.skipIf(!TEST_URL)('Postgres GA4 repos (integration)', () => {
     await log.claim(k, 'purchase', {}, new Date());
     await log.markFailed(k, 'x');
     const future = new Date(Date.now() + 3_600_000);
-    expect((await log.listRetryable(future, future)).map((r) => r.eventKey)).not.toContain(k);
-    expect((await log.listRetryable(new Date(Date.now() - 3_600_000), future)).map((r) => r.eventKey)).toContain(k);
+    expect((await log.listRetryable(future, future, 10_000)).map((r) => r.eventKey)).not.toContain(k);
+    expect((await log.listRetryable(new Date(Date.now() - 3_600_000), future, 10_000)).map((r) => r.eventKey)).toContain(k);
+  });
+
+  it('listRetryable caps the batch at `limit`, as a prefix of the oldest-first list', async () => {
+    const ks = [key('cap1'), key('cap2'), key('cap3')];
+    for (const k of ks) {
+      await log.claim(k, 'purchase', {}, new Date());
+      await log.markFailed(k, 'x');
+    }
+    const since = new Date(Date.now() - 3_600_000);
+    const future = new Date(Date.now() + 3_600_000);
+    const keys = async (limit: number) => (await log.listRetryable(since, future, limit)).map((r) => r.eventKey);
+    const all = await keys(10_000);
+    expect(all.length).toBeGreaterThanOrEqual(3);
+    expect(await keys(2)).toEqual(all.slice(0, 2));
   });
 });
