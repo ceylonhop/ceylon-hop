@@ -77,13 +77,14 @@ customer release.
       Cloudflare-proxied, so the WordPress origin address is visible only inside the Cloudflare
       dashboard. Without a saved copy, rollback (§9) means hunting for a hosting login under
       time pressure. Export the whole zone file.
-- [ ] **Confirm whether `ceylon-hop-staging` has its own Supabase project.** Check
-      `DATABASE_URL` on that Render service. *(2026-10-04: the owner reports a separate staging
-      database exists. Still unticked because the two project refs have not been compared.)* If it points at the prod database, then
+- [x] **Confirm whether `ceylon-hop-staging` has its own Supabase project.** Check
+      `DATABASE_URL` on that Render service. If it points at the prod database, then
       `staging.ceylonhop.com` is *not* a safe sandbox and Phase 4's data-isolation claim is
       false — fix that before relying on it for test bookings.
-      ([staging-environment-plan.md](./staging-environment-plan.md) §3 planned a separate
-      project; whether it was created has not been verified from the repo.)
+      **Confirmed 2026-10-04:** the owner compared `DATABASE_URL` on `ceylon-hop-staging` and
+      `ceylon-hop-api`. They name different Supabase project refs, in different regions
+      (`ap-southeast-1` and `ap-south-1`), so staging has its own database. Re-check this if
+      either service's `DATABASE_URL` is ever changed.
 
 ## 3. Phase 0 — additive prep (safe, nothing user-visible)
 
