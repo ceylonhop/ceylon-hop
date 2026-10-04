@@ -159,6 +159,7 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
       const hit = refundHit({
         booking, refund, identity: await deps.identities.get(booking.id), at: now(),
         secondPayment: sent.txn !== null && sent.txn !== booking.reference,
+        eventName: deps.eventName,
         ...(sent.clientId ? { clientId: sent.clientId } : {}),
       });
       await attempt(`refund:${refund.id}`, 'refund', hit);

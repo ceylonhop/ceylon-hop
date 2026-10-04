@@ -6,6 +6,7 @@ import { InMemoryBookingRepo, type Booking } from '../../db/bookingRepo';
 import { InMemoryPaymentRepo, type Payment } from '../../db/paymentRepo';
 import type { Refund } from '../../db/refundRepo';
 import type { RideList, RideMember } from '../../domain/rideList';
+import type { Ga4PurchaseName } from './ga4Hits';
 import { SWEEP_BATCH, createGa4Reporter, parseGaIdentity } from './ga4Reporter';
 
 const NOW = new Date('2026-10-29T08:00:00Z');
@@ -20,7 +21,7 @@ const payment = { id: 'pay-1', bookingId: 'b-1', provider: 'payhere', orderId: '
 const refundOf = (paymentId: string, id = 'r-1') => ({ id, bookingId: 'b-1', paymentId, provider: 'payhere', amountCents: 5000, currency: 'USD', status: 'succeeded', reason: 'changed plans' }) as unknown as Refund;
 const txnOf = (hit: { events: { params: Record<string, unknown> }[] } | undefined) => hit?.events[0]?.params.transaction_id;
 
-function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[] } = {}) {
+function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[]; eventName?: Ga4PurchaseName } = {}) {
   const adapter = opts.adapter === null ? undefined : (opts.adapter ?? new FakeGa4Adapter());
   const log = new InMemoryGa4EventLogRepo();
   const identities = new InMemoryGaIdentityRepo();
@@ -28,7 +29,7 @@ function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[] } = {}) 
   const payments = new InMemoryPaymentRepo();
   const reporter = createGa4Reporter({
     adapter, log, identities, bookings: new InMemoryBookingRepo(), payments, alerts,
-    teamEmails: new Set(opts.team ?? ['roshenw@gmail.com']), eventName: 'purchase_server', now: () => NOW,
+    teamEmails: new Set(opts.team ?? ['roshenw@gmail.com']), eventName: opts.eventName ?? 'purchase_server', now: () => NOW,
   });
   return { reporter, adapter, log, identities, alerts, payments };
 }
@@ -118,8 +119,14 @@ describe('Ga4Reporter refunds reverse the purchase they were sent with', () => {
     await reporter.reportRefund(booking(), refundOf(second.id));
     const [, secondPurchase, refund] = adapter!.sent;
     expect(txnOf(secondPurchase)).toBe(`CH-TEST1-${second.id.slice(0, 6)}`);
-    expect(refund.events[0].name).toBe('refund');
+    expect(refund.events[0].name).toBe('refund_server'); // shadow mode: the purchase went out as purchase_server
     expect(txnOf(refund)).toBe(txnOf(secondPurchase));
+  });
+  it('after the switch-over (event name purchase) a refund goes out as the real refund', async () => {
+    const { reporter, adapter } = setup({ eventName: 'purchase' });
+    await reporter.reportPayment(booking(), payment, NOW);
+    await reporter.reportRefund(booking(), refundOf(payment.id));
+    expect(adapter!.sent.map((h) => h.events[0].name)).toEqual(['purchase', 'refund']);
   });
   it("a refund reuses its purchase's client_id when there is no stored identity", async () => {
     const { reporter, adapter } = setup();
