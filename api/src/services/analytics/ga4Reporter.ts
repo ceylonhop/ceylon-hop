@@ -15,6 +15,8 @@ import { boardHit, purchaseHit, refundHit, type Ga4PurchaseName } from './ga4Hit
 /** Measurement Protocol accepts timestamps at most 72 h old; older events can never be sent. */
 export const MP_BACKDATE_MS = 72 * 60 * 60 * 1000;
 const ALERT_AT_ATTEMPT = 5;
+/** Most events one sweep retries, oldest first; the rest wait for the next sweep. */
+export const SWEEP_BATCH = 100;
 
 export interface Ga4Reporter {
   rememberVisitor(bookingId: string, raw: unknown): Promise<void>;
@@ -170,7 +172,7 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
 
     sweep: () => swallow('sweep', { retried: 0, sent: 0, failed: 0 }, async () => {
       const at = now();
-      const rows = await deps.log.listRetryable(new Date(at.getTime() - MP_BACKDATE_MS), at);
+      const rows = await deps.log.listRetryable(new Date(at.getTime() - MP_BACKDATE_MS), at, SWEEP_BATCH);
       let sent = 0;
       let failed = 0;
       for (const row of rows) {
