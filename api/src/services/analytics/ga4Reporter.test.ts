@@ -6,7 +6,7 @@ import { InMemoryBookingRepo, type Booking } from '../../db/bookingRepo';
 import { InMemoryPaymentRepo, type Payment } from '../../db/paymentRepo';
 import type { Refund } from '../../db/refundRepo';
 import type { RideList, RideMember } from '../../domain/rideList';
-import { createGa4Reporter, parseGaIdentity } from './ga4Reporter';
+import { SWEEP_BATCH, createGa4Reporter, parseGaIdentity } from './ga4Reporter';
 
 const NOW = new Date('2026-10-29T08:00:00Z');
 const customer = (email: string) => ({ firstName: 'E', lastName: 'L', email, phoneCountryCode: '+44', phoneNumber: '7700900000', country: 'United Kingdom' });
@@ -62,7 +62,7 @@ describe('Ga4Reporter', () => {
     await reporter.rememberVisitor('b-1', { clientId: '1.2' });
     await reporter.reportPayment(booking(), payment, NOW);
     expect(await identities.get('b-1')).not.toBeNull();
-    expect(await log.listRetryable(new Date(0), new Date(NOW.getTime() + 3_600_000))).toEqual([]);
+    expect(await log.listRetryable(new Date(0), new Date(NOW.getTime() + 3_600_000), 100)).toEqual([]);
   });
   it('a failed send is retried by the sweep with the SAME hit, and alerts once at 5 attempts', async () => {
     const adapter = new FakeGa4Adapter();
@@ -74,6 +74,20 @@ describe('Ga4Reporter', () => {
     const res = await reporter.sweep(); // attempt 6 succeeds
     expect(res).toEqual({ retried: 1, sent: 1, failed: 0 });
     expect(adapter.sent).toHaveLength(1);
+  });
+  it('one sweep retries at most SWEEP_BATCH events; the rest wait for the next sweep', async () => {
+    const adapter = new FakeGa4Adapter();
+    const total = SWEEP_BATCH + 3;
+    adapter.failNext = total;
+    const { reporter } = setup({ adapter });
+    const list = { id: 'l1', code: 'EM-1', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList;
+    for (let i = 0; i < total; i++) {
+      await reporter.reportBoardCharge(list, { sub: `s${i}`, email: `a${i}@x.com`, country: 'Australia', seats: 1 } as RideMember, 2400, 'USD', NOW);
+    }
+    expect(adapter.sent).toHaveLength(0); // every first attempt failed
+    expect(await reporter.sweep()).toEqual({ retried: SWEEP_BATCH, sent: SWEEP_BATCH, failed: 0 });
+    expect(await reporter.sweep()).toEqual({ retried: 3, sent: 3, failed: 0 });
+    expect(adapter.sent).toHaveLength(total);
   });
   it('reports a ride-board charge, skipping a team member', async () => {
     const { reporter, adapter } = setup();
