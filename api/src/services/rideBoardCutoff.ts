@@ -7,6 +7,7 @@ import type { AlertAdapter } from '../adapters/alerts';
 import { teamRideLockedEmail } from './opsNotifications';
 import { logEvent } from '../observability/events';
 import type { SendBudget } from './sendBudget';
+import type { Ga4Reporter } from './analytics/ga4Reporter';
 
 // ============================================================================
 // Ride Board cutoff sweep — the pooled equivalent of sweepStaleSharedHolds.
@@ -34,6 +35,8 @@ export interface RideBoardCutoffDeps {
   // sweep declines to start a list it cannot finish. The list stays gathering, so it is
   // still due next run and gets processed whole.
   budget?: SendBudget;
+  // Server-side GA4: each successfully charged seat is a purchase. Unset → nothing reported.
+  ga4?: Ga4Reporter;
 }
 
 export interface RideBoardCutoffResult {
@@ -125,6 +128,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
 
     const chargedOk: RideMember[] = [];
     const failed: RideMember[] = [];
+    // Seats whose charge came back `succeeded` in THIS run, and only those (GA4 reporting below).
+    const chargedNow: RideMember[] = [];
     // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
     // can be told; for every decision below these count as charged (see the alert further down).
     const indeterminate: { member: RideMember; orderId: string; reason?: string }[] = [];
@@ -167,6 +172,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // Already `charged` by the claim above: no second write for this to fail on.
         res.charged++;
         chargedOk.push(m);
+        chargedNow.push(m);
       } else if (charge.status === 'unknown') {
         // Optimistic, deliberately. Being wrong this way carries one possibly-unpaid seat on a
         // van that runs — bounded, alerted, chaseable. Being wrong the other way cancels a
@@ -223,6 +229,17 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
             dedupeKey: list.code,
           });
         } catch { /* the travellers' emails already went; this is the team's copy */ }
+      }
+      // Only charges that succeeded in THIS run — an unknown charge, a member carried over as
+      // 'charged' from an interrupted run (its outcome is lost), and a called-off van (the other
+      // branch) are never revenue we know we hold. The amount is what was charged above:
+      // seatPrice * seats, minor units, in `currency`.
+      if (deps.ga4) {
+        for (const m of chargedNow) {
+          void deps.ga4.reportBoardCharge(list, m, list.seatPrice * m.seats, currency, now).catch((err) => {
+            console.error(`ga4 board report failed for ${list.code}:`, err instanceof Error ? err.message : String(err));
+          });
+        }
       }
       // A seeded list that a real traveller is now confirmed on is a van we have promised to
       // run — and the board's head-count for it is mostly placeholders. Nothing else tells
