@@ -136,6 +136,8 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
 
 export interface RefundHitInput {
   booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean;
+  /** The purchase event name in force: in shadow mode (`purchase_server`) the refund shadows too. */
+  eventName: Ga4PurchaseName;
   /** The client_id the purchase was sent with; used when no identity is stored (spec §5.4: same client_id). */
   clientId?: string;
 }
@@ -150,7 +152,7 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
     timestamp_micros: micros(i.at),
     consent: { ad_user_data: consent, ad_personalization: consent },
     events: [checked({
-      name: 'refund',
+      name: i.eventName === 'purchase' ? 'refund' : 'refund_server',
       params: {
         // Same formula as purchaseHit, so the refund lands on the purchase it reverses.
         transaction_id: i.secondPayment ? `${b.reference}-${i.refund.paymentId.slice(0, 6)}` : b.reference,
