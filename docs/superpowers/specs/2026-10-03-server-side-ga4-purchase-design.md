@@ -145,7 +145,7 @@ It calls the same `report*` functions. Re-entry is safe, because the ledger clai
   - Board hits are always `DENIED` (owner, 2026-10-03): a synthetic visitor with no session gains nothing from `GRANTED`. Board members store a 2-letter code (`rideBoard.ts`, `XX` when unknown); it becomes its English region name for `customer_country` only, and an invalid code or `XX` sends no country.
 - Board charges have no stored visitor:
   - `client_id` = `srv.` + the first 16 hex characters of SHA-256(`event_key`). It is deterministic, so retries reuse it, and it never contains the member's Google `sub`.
-- In shadow mode the event name is `purchase_server`.
+- In shadow mode the event name is `purchase_server`, and a refund goes out as `refund_server`. After the switch-over they are `purchase` and `refund`. A refund takes its name from the same `GA4_SERVER_EVENT_NAME` setting, so the two always move together.
 
 ### 5.4 Event parameters
 
@@ -288,7 +288,7 @@ For every booking paid in the window, pair the browser `purchase` with the serve
 - **Ride-board refunds are not sent.** Board charges have no `payments` row, so the refund tool doesn't cover them and they're refunded by hand. Board revenue in GA4 is gross of those refunds.
 - **A failure before the ledger claim loses that event.** The reads before `claim()` (payments, identity, returning-buyer lookup) can throw; the alert then names the event key and booking reference, but the sweep cannot retry what was never claimed.
 - **A double capture labels both payments `balance`** with suffixed ids (each sees a succeeded sibling). Refunds still match, because they copy the id from the ledger.
-- **Refunds are not shadowed.** In shadow mode, server refunds go out as the real `refund` event while purchases still come from the browser, so refunds of sales the browser never saw (mark-paid, closed tab) understate net revenue until switch-over.
+- **Refunds are shadowed too (2026-10-04).** In shadow mode a server refund goes out as `refund_server`, so it never touches GA4's real revenue. The cost: real revenue is gross of every refund during the trial, and the browser sends no refund events at all, so there is nothing to compare `refund_server` against. Check it by reading `purchase_server` minus `refund_server` as the server-side net. A refund first sent in shadow mode keeps the shadow name if the sweep retries it after the switch-over (the stored payload is re-sent unchanged).
 
 ## 10. Implementation notes (2026-10-03)
 
