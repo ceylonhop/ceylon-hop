@@ -3,9 +3,8 @@
 Date: 2026-09-20
 Status: **DONE 2026-09-20.** Phases 0–3 executed the same day; `ceylonhop.com` now serves
 the new site over HTTPS and `prod.ceylonhop.com` returns 404. **Phase 4 (staging.ceylonhop.com)
-is NOT built** — `tools/build-staging.mjs` exists and is tested, but no Cloudflare Pages project
-or Access policy has been created, so there is currently **no staging copy of the customer
-site**. Phase 5 is outstanding. See §12 for what actually happened vs what this planned.
+was built 2026-10-04** — a Cloudflare Pages project behind Cloudflare Access; see §7 for what
+exists and what is still open. Phase 5 is outstanding. See §12 for what actually happened vs what this planned.
 
 This is the **one-time** switch that makes the new stack the live customer site, retires
 `prod.ceylonhop.com`, and stands up a login-gated `staging.ceylonhop.com` in its place. It
@@ -79,7 +78,8 @@ customer release.
       dashboard. Without a saved copy, rollback (§9) means hunting for a hosting login under
       time pressure. Export the whole zone file.
 - [ ] **Confirm whether `ceylon-hop-staging` has its own Supabase project.** Check
-      `DATABASE_URL` on that Render service. If it points at the prod database, then
+      `DATABASE_URL` on that Render service. *(2026-10-04: the owner reports a separate staging
+      database exists. Still unticked because the two project refs have not been compared.)* If it points at the prod database, then
       `staging.ceylonhop.com` is *not* a safe sandbox and Phase 4's data-isolation claim is
       false — fix that before relying on it for test bookings.
       ([staging-environment-plan.md](./staging-environment-plan.md) §3 planned a separate
@@ -225,12 +225,40 @@ GitHub Pages allows **one custom domain per repository** and offers no authentic
 kind, so staging cannot be a second Pages site on this repo. It goes on Cloudflare Pages, which
 is already where the DNS lives and which can sit behind Cloudflare Access.
 
-- [ ] Create a **Cloudflare Pages** project connected to this repo, production branch = `main`.
-- [ ] Build command `node tools/build-staging.mjs`, output directory `.dist-staging/`.
-- [ ] Custom domain `staging.ceylonhop.com`.
-- [ ] **Cloudflare Access** policy on that hostname: the three staff Google accounts (free tier
-      covers up to 50 users). Without this, staging is a public duplicate of the site — which
-      is an SEO problem as well as a privacy one.
+- [x] Create a **Cloudflare Pages** project connected to this repo, production branch = `main`.
+      **Done 2026-10-04:** project `ceylon-hop-staging`, also reachable at
+      `ceylon-hop-staging.pages.dev`. It rebuilds on every push to `main`.
+- [x] Build command `node tools/build-staging.mjs`, output directory `.dist-staging`.
+- [x] Custom domain `staging.ceylonhop.com` (a proxied CNAME `staging` →
+      `ceylon-hop-staging.pages.dev`, created by Cloudflare).
+- [x] **Cloudflare Access** policy on that hostname (free tier covers up to 50 users). Without
+      this, staging is a public duplicate of the site — which is an SEO problem as well as a
+      privacy one. **Done 2026-10-04:** Zero Trust Free plan (it needs a card on file, at
+      $0/month); application "Ceylon Hop staging" covers `staging.ceylonhop.com` **and**
+      `ceylon-hop-staging.pages.dev`; policy "Staging staff" allows one address so far, by
+      emailed one-time code. Both hosts answer 302 to the Access login when signed out.
+- [x] **Render `ceylon-hop-staging` → `ALLOWED_ORIGINS`** must carry
+      `https://staging.ceylonhop.com`, or the staged pages load but cannot price or book. The
+      variable was unset, so the service ran on the `config.ts` default list; setting it
+      *replaces* that default, so the value is the default list plus the staging origin.
+      **Done 2026-10-04**, verified from outside: the staging origin is answered with its own
+      `Access-Control-Allow-Origin`, an unrelated origin is not.
+
+Still open after the 2026-10-04 build:
+
+- [ ] **Preview deployments are not gated.** Cloudflare Pages publishes each non-`main` branch
+      build at `<hash>.ceylon-hop-staging.pages.dev`, which the Access application does not
+      cover. Add a `*` subdomain row for `ceylon-hop-staging.pages.dev` to the application, or
+      turn preview deployments off in the Pages project.
+- [ ] **Add the remaining staff** to the "Staging staff" policy.
+- [ ] **Run one test booking end to end** (staged site → staging `/ops`, absent from prod
+      `/ops`), after confirming `PAYHERE_MODE=sandbox` on `ceylon-hop-staging`.
+- [ ] **Check analytics on the staging host.** The GTM loader in each page runs on any
+      `*.ceylonhop.com` hostname, so it loads on `staging.ceylonhop.com`. Whether GA4 or Clarity
+      pageviews fire from there has not been traced (see "Analytics needs no work" below, which
+      covers revenue events only).
+- [ ] Optional: rename the Zero Trust team from the auto-assigned `withered-snowflake-cf00`,
+      which staff see in the login address.
 
 `tools/build-staging.mjs` copies the site into `.dist-staging/` (dot-prefixed so a local
 build stays invisible to the unit tests that walk the repo root for pages) and injects into
