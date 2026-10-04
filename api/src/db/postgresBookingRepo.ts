@@ -698,6 +698,19 @@ export class PostgresBookingRepo implements BookingRepo {
     return rows.map(buildStatusEvent);
   }
 
+  async listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]> {
+    if (!bookingIds.length) return [];
+    const rows = await this.db
+      .select()
+      .from(bookingStatusEvents)
+      .where(inArray(bookingStatusEvents.bookingId, bookingIds))
+      .orderBy(
+        asc(bookingStatusEvents.occurredAt),
+        asc(bookingStatusEvents.id),
+      );
+    return rows.map(buildStatusEvent);
+  }
+
   async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
     const latest = this.db
       .selectDistinctOn([bookingStatusEvents.bookingId], {

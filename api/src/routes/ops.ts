@@ -9,6 +9,7 @@ import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
 import type { RefundRepo } from '../db/refundRepo';
+import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -24,6 +25,7 @@ import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, manageUrl } from '../services/notifications';
 import { loadPaymentCase } from '../services/paymentCase';
+import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -56,6 +58,8 @@ export interface OpsDeps {
   // Optional so every existing ops test keeps working; absent = that source is "unavailable".
   paymentEvents?: PaymentEventRepo;
   refunds?: RefundRepo;
+  // Phase A's append-only booking-email evidence. Optional deployments name it as unavailable.
+  customerCommunications?: CustomerCommunicationRepo;
 }
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
@@ -272,6 +276,21 @@ export function opsRoutes(deps: OpsDeps) {
   // db/paymentRepo.ts's Payment interface — amount/status/provider/orderId only). There is
   // nothing to strip here. If cost tracking is ever added to this response, gate it behind
   // can(identity.role, 'margin:view') and add a test on both sides before shipping it.
+  r.get('/bookings/:id/tracking', requireCap('bookings:read'), async (c) => {
+    const query = z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      cursor: z.string().min(1).refine(isValidBookingTrackingCursor).optional(),
+    }).safeParse(c.req.query());
+    if (!query.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(c.req.param('id'));
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    return c.json(await loadBookingTracking(
+      { bookings: deps.bookings, communications: deps.customerCommunications },
+      booking,
+      query.data,
+    ));
+  });
+
   r.get('/bookings/:id', requireCap('bookings:read'), async (c) => {
     const b = await deps.bookings.get(c.req.param('id'));
     if (!b) return c.json({ error: 'not_found' }, 404);
