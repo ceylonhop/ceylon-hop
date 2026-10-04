@@ -171,6 +171,8 @@ export const payments = pgTable(
       'payments_succeeded_settlement_source_required',
       sql`${t.status} <> 'succeeded' or ${t.settlementSource} is not null`,
     ),
+    // 0064 — every payments read but the gateway's is by booking.
+    index('payments_booking_id_idx').on(t.bookingId),
   ],
 );
 
