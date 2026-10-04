@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, lt, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { bookingGaIdentity, ga4EventLog } from './schema';
 import {
@@ -67,7 +67,7 @@ export class PostgresGa4EventLogRepo implements Ga4EventLogRepo {
     return row?.payload ?? null;
   }
 
-  async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
+  async listRetryable(since: Date, now: Date, limit: number): Promise<Ga4Claim[]> {
     const stale = new Date(now.getTime() - STALE_CLAIM_MS);
     const rows = await this.db
       .select(claimView)
@@ -75,7 +75,9 @@ export class PostgresGa4EventLogRepo implements Ga4EventLogRepo {
       .where(and(
         gte(ga4EventLog.createdAt, since),
         or(eq(ga4EventLog.status, 'failed'), and(eq(ga4EventLog.status, 'claimed'), lt(ga4EventLog.claimedAt, stale))),
-      ));
+      ))
+      .orderBy(asc(ga4EventLog.createdAt))
+      .limit(limit);
     return rows.map((r) => ({ eventKey: r.eventKey, kind: r.kind as Ga4EventKind, payload: r.payload, attempts: r.attempts }));
   }
 }
