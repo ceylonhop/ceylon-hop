@@ -45,6 +45,18 @@ describe('stampHtml', () => {
     const out = stampHtml('<html><head lang="en"><script>0</script></head></html>');
     expect(out.indexOf(STAGING_API)).toBeLessThan(out.indexOf('<script>0</script>'));
   });
+
+  // The GTM loader runs on any *.ceylonhop.com host, staging.ceylonhop.com included, and the
+  // container has no staging condition — so a staff test booking would land in prod GA4,
+  // Clarity and the ad pixels. The staged copy drops the loader; chTrack stays a harmless push.
+  it('drops the GTM loader and leaves the scripts around it alone', () => {
+    const gtm = "<script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'))return;"
+      + "j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;})(window,document,'script','dataLayer','GTM-TEST');</script>";
+    const out = stampHtml(`<html><head><script>var before=1</script>${gtm}<script src="analytics.js"></script></head></html>`);
+    expect(out).not.toContain('googletagmanager.com');
+    expect(out).toContain('<script>var before=1</script>');
+    expect(out).toContain('<script src="analytics.js"></script>');
+  });
 });
 
 describe('buildStaging', () => {
@@ -76,6 +88,11 @@ describe('buildStaging', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('loads no tag manager on any built page, so staging never reports into prod analytics', () => {
+    const offenders = htmlFiles.filter((file) => readFileSync(file, 'utf8').includes('googletagmanager.com'));
+    expect(offenders.map((file) => path.relative(dest, file))).toEqual([]);
   });
 
   it('tells crawlers to stay out, belt and braces with Cloudflare Access', () => {

@@ -16,6 +16,11 @@
 // build that appended the assignment would grep as correct and point staging at production,
 // where a test booking is a real booking on a real card.
 //
+// The GTM loader is dropped from every page. It runs on any *.ceylonhop.com host, which
+// staging.ceylonhop.com is, and the container has no staging condition — so staff testing a
+// booking would report into prod GA4, Clarity and the ad pixels. analytics.js is no-op safe
+// without it: chTrack still pushes to a dataLayer nobody reads.
+//
 // robots.txt is overwritten with a blanket Disallow. Cloudflare Access already keeps
 // crawlers out; this is the second lock, for the day someone loosens the first.
 import { readdirSync, statSync, existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -32,11 +37,13 @@ const SKIP_DIRS = new Set(['api', 'docs', 'tools', 'web-tests', 'node_modules', 
 const SKIP_FILES = new Set(['CNAME', 'package.json', 'package-lock.json', 'serve-booking.js']);
 
 const HEAD_OPEN = /<head\b[^>]*>/i;
+const INLINE_SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+const TAG_MANAGER = 'googletagmanager.com';
 
 /**
  * Inject the staging API base + a noindex, immediately after <head> so both land ahead of
- * whatever the page does next. Idempotent, and loud rather than silent on a page it cannot
- * stamp — an unstamped page is one that talks to production.
+ * whatever the page does next, and drop the GTM loader. Idempotent, and loud rather than
+ * silent on a page it cannot stamp — an unstamped page is one that talks to production.
  */
 export function stampHtml(html) {
   if (html.includes(MARKER)) return html;
@@ -44,7 +51,8 @@ export function stampHtml(html) {
   if (!head) throw new Error('build-staging: page has no <head> to stamp — refusing to publish it pointed at production');
   const at = head.index + head[0].length;
   const inject = `${MARKER}<meta name="robots" content="noindex"><script>window.CEYLON_HOP_API=${JSON.stringify(STAGING_API)}</script>`;
-  return html.slice(0, at) + inject + html.slice(at);
+  const rest = html.slice(at).replace(INLINE_SCRIPT, (tag) => (tag.includes(TAG_MANAGER) ? '' : tag));
+  return html.slice(0, at) + inject + rest;
 }
 
 /** A nested checkout (a sibling worktree left in the tree) is never part of the site. */
