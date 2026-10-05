@@ -189,10 +189,14 @@ const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String
    place identity must never change shape on the way to the API (see ch-shortplace.js). */
 const dispFrom = (window.CH && CH.shortPlace) ? CH.shortPlace(fromP.name) : fromP.name;
 const dispTo = (window.CH && CH.shortPlace) ? CH.shortPlace(toP.name) : toP.name;
+/* The names come straight from ?from= / ?to=, so anything written into innerHTML goes through
+   these. dispFrom/dispTo stay raw for document.title and other text sinks. */
+const escHtml = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const dispFromH = escHtml(dispFrom), dispToH = escHtml(dispTo);
 document.title = `${dispFrom} → ${dispTo} — Ceylon Hop`;
 
 document.getElementById('route-title').innerHTML =
-  `${dispFrom} <span class="arr">${ICONS.route}</span> ${dispTo}`;
+  `${dispFromH} <span class="arr">${ICONS.route}</span> ${dispToH}`;
 const dateText = date ? new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Flexible date';
 // 'measuring' only while an estimate is genuinely in flight — once it has failed there is
 // nothing being measured, and leaving the line up reads as a page still working on it.
@@ -320,7 +324,7 @@ function privateCardHtml(pending) {
       <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
-    <p class="o-desc">Leave exactly when you want, and add stops along the way — tell us at booking. A vetted driver takes just your group, ${dispFrom} straight to ${dispTo}.</p>
+    <p class="o-desc">Leave exactly when you want, and add stops along the way — tell us at booking. A vetted driver takes just your group, ${dispFromH} straight to ${dispToH}.</p>
     ${!pending && roads ? roadSwitchHtml() : ''}<div class="veh">${row('car', ICONS.car, 'AC car', 'Seats 3 · 2 bags', pending ? null : quote.car, pending ? null : quote.rawCar)}${row('van', ICONS.van, 'AC van', 'Seats 6 · 6 bags', pending ? null : quote.van, pending ? null : quote.rawVan)}
     </div>
     <div class="incl">
@@ -366,7 +370,7 @@ function unpricedHtml() { return `
       <div class="o-ico">${ICONS.d2d}</div>
       <div><h2>Private transfer</h2><div class="o-sub">Door-to-door · your own vehicle</div></div>
     </div>
-    <p class="o-desc">We couldn't work out a live price for ${dispFrom} → ${dispTo} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
+    <p class="o-desc">We couldn't work out a live price for ${dispFromH} → ${dispToH} just now. Send us the route and we'll price it by hand — usually within minutes during Sri&nbsp;Lanka hours.</p>
     <a class="btn btn-wa o-cta" target="_blank" rel="noopener" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! Could I get a price for ' + fromP.name + ' → ' + toP.name + '?')}">${ICON.wa} Get a price on WhatsApp</a>
   </article>`; }
 
@@ -522,7 +526,7 @@ if (shared) {
     <div class="ns-ico">${ICONS.share}</div>
     <div>
       <b>No shared seats on this route — yet</b>
-      <p>We don't run a scheduled shared service between ${dispFrom} and ${dispTo} right now. Want to split the fare anyway? Start a ride on the board — once 3 travellers are in, the van runs.</p>
+      <p>We don't run a scheduled shared service between ${dispFromH} and ${dispToH} right now. Want to split the fare anyway? Start a ride on the board — once 3 travellers are in, the van runs.</p>
       ${boardLink(fromP && fromP.name, toP && toP.name)}
     </div>
   </div>`;
