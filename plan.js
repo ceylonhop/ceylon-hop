@@ -1161,7 +1161,7 @@ function updateSummary(opts={}){
   setStat('st-drive', summaryRoute?routeEstimateText(summaryRoute):'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
-    seq.map(s=>`<span>${shortPlaceLabel(s.place)||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
+    seq.map(s=>`<span>${escAttr(shortPlaceLabel(s.place))||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
   routeEl.hidden = !seq.length; // an empty route rendered as a bare grey bar
 
   if(refreshMap) renderMap();

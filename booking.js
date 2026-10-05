@@ -725,17 +725,19 @@ if(isTrip){
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
   const fmtLeg=(iso)=>{ if(!iso) return ''; return shortDate(new Date(iso+'T00:00:00')); };
+  // leg.from/leg.to are the ?stops= names from the URL: text, never markup.
+  const escHtml=(x)=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
     if(leg.gap){
-      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
     const dt=fmtLeg(tripDates[i]);
     html+=`<div class="tr-leg" data-wire="${i}">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
@@ -2477,7 +2479,7 @@ function render(){
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
     // The road being paid for, under the route — the summary's words, gone when the road is.
     const dueRoad = roadChoiceText();
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':acEsc(dueLabel))}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
