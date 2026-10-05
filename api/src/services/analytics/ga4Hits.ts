@@ -69,8 +69,13 @@ export function bookingFacts(b: Booking): PurchaseFacts {
   });
 }
 
+// GA4's item reports group by these built-in categories: private vs shared first, then where the
+// ride starts and ends, then the exact service.
 const itemFor = (f: PurchaseFacts, value: number): Ga4Item => ({
-  item_id: cut(f.route), item_name: cut(f.route), item_category: f.service_type, price: value, quantity: 1,
+  item_id: cut(f.route), item_name: cut(f.route),
+  item_category: f.service_type === 'shared_seat' ? 'shared' : 'private',
+  item_category2: f.pickup_region, item_category3: f.dropoff_region, item_category4: f.service_type,
+  price: value, quantity: 1,
 });
 
 function factParams(f: PurchaseFacts, at: Date): Record<string, string | number> {
