@@ -3394,7 +3394,54 @@ function lookupOtherBookingsHtml(list){
   return head+(rows||'<p class="muted" style="padding:0">No other bookings with this email.</p>')
     +(list.truncated?'<p class="lk-line muted">Showing the newest 50.</p>':'')+'</div>';
 }
-function lookupCaseHtml(d){
+function trackingKindLabel(kind){
+  return ({confirmation:'booking confirmation',details_needed:'details needed',booking_confirmed:'booking confirmed',cancellation:'cancellation',refund:'refund',
+    no_show_notice:'no-show notice',trip_reminder:'trip reminder',review_request:'review request',payment_recovery:'payment reminder',
+    payment_failed:'payment failed',deposit_received:'deposit received'})[kind]||String(kind||'email').replaceAll('_',' ');
+}
+function trackingEventLabel(row){
+  if(row.source==='booking_transition')return 'Booking: '+String(row.fromStatus).replaceAll('_',' ')+' → '+String(row.toStatus).replaceAll('_',' ');
+  const what=trackingKindLabel(row.communicationKind);
+  const label=({planned:'Email planned',suppressed:'Email suppressed',send_attempted:'Email send attempted',send_failed:'Email send failed',provider_accepted:'Provider accepted email',
+    provider_sent:'Provider sent email',delivered:'Email delivered',delayed:'Email delayed',provider_failed:'Provider failed email',
+    bounced:'Email bounced',complained:'Spam complaint'})[row.eventType]||('Email '+String(row.eventType||'event').replaceAll('_',' '));
+  return label+' · '+what;
+}
+function trackingEventDetail(row){
+  if(row.source==='booking_transition')return [row.transitionSource,row.actorType].filter(Boolean).join(' · ');
+  return [row.recipient,row.communicationSource].filter(Boolean).join(' · ');
+}
+function trackingEventTone(row){
+  if(row.source==='booking_transition')return 'var(--go)';
+  if(['delivered','provider_accepted','provider_sent'].includes(row.eventType))return 'var(--ok)';
+  if(['suppressed','delayed'].includes(row.eventType))return 'var(--wait)';
+  if(['send_failed','provider_failed','bounced','complained'].includes(row.eventType))return 'var(--alert)';
+  return 'var(--idle)';
+}
+function lookupTrackingRows(items){
+  return (items||[]).map(row=>`<div class="pa-row" title="${esc(row.at)}"><span class="pa-dot" style="--c:${trackingEventTone(row)}"></span>`
+    +`<span class="pa-when">${esc(lookupTime(row.at))}</span><span class="pa-what"><span class="lk-label">${esc(trackingEventLabel(row))}</span>`
+    +`<span class="lk-sub">${esc(trackingEventDetail(row))}</span></span></div>`).join('');
+}
+function lookupTrackingHtml(tracking,bookingId,failed){
+  const head='<div class="block" data-testid="lookup-tracking"><h4>Booking & customer emails</h4>';
+  if(failed)return head+'<p class="lk-warn">Tracking history couldn’t be loaded. Payment evidence below is still available.</p></div>';
+  if(!tracking)return '';
+  const unavailable=tracking.unavailableSources||[];
+  const names={booking_status_events:'booking transitions',customer_communications:'customer emails',customer_communication_events:'email events',payments:'payments'};
+  const rows=lookupTrackingRows(tracking.items)||'<p class="muted" style="padding:0">No tracked changes or customer emails.</p>';
+  const since=tracking.historyAvailableSince||{};
+  const dates=[since.bookingTransitions,since.customerCommunications].filter(Boolean).sort();
+  const firstDate=dates[0]&&new Date(dates[0]);
+  const available=dates.length?`Tracking is available from ${lookupTime(dates[0]).slice(0,6)} ${firstDate.getFullYear()}. Earlier activity was not backfilled.`:'Earlier history may be incomplete.';
+  return head+`<p class="lk-line">${esc(available)}</p>`
+    +(tracking.partialHistory?'<p class="lk-warn">This booking has partial history.</p>':'')
+    +(unavailable.length?`<p class="lk-warn">Couldn’t load: ${esc(unavailable.map(x=>names[x]||x).join(', '))}.</p>`:'')
+    +`<div data-tracking-rows>${rows}</div>`
+    +(tracking.nextCursor?`<div class="lk-act"><button class="btn" data-lktrack="${esc(bookingId)}" data-cursor="${esc(tracking.nextCursor)}">Load earlier history</button></div>`:'')
+    +'</div>';
+}
+function lookupCaseHtml(d,tracking,trackingFailed){
   if(!d.booking){
     const q=d.quote||{};
     return `<div class="lk-case" data-testid="lookup-case"><div class="block" data-testid="lookup-header"><h4>Quote</h4>
@@ -3423,17 +3470,17 @@ function lookupCaseHtml(d){
   }).join('')||'<p class="muted" style="padding:0">Nothing recorded.</p>';
   const gaps=(d.gaps||[]).length?`<div class="block" data-testid="lookup-gaps"><h4>Gaps in the record</h4>${d.gaps.map(g=>`<p class="lk-line">${esc(lookupGapText(g))}</p>`).join('')}</div>`:'';
   return `<div class="lk-case" data-testid="lookup-case">${lookupHeaderHtml(d)}
+    ${lookupTrackingHtml(tracking,d.booking.id,trackingFailed)}
     <div class="block" data-testid="lookup-verdict"><h4>Payment</h4>${verdict}</div>
     ${d.otherBookings===undefined?'':lookupOtherBookingsHtml(d.otherBookings)}
-    <div class="block" data-testid="lookup-timeline"><h4>Timeline</h4>${rows}</div>${gaps}
-    <p class="muted">Only some customer emails are recorded (not cancellation, refund or details-needed emails), and team emails aren’t stored per booking.</p></div>`;
+    <div class="block" data-testid="lookup-timeline"><h4>Payment timeline</h4>${rows}</div>${gaps}</div>`;
 }
 function viewLookup(){
   $('#topbar').innerHTML='';
   const ref=state.routeCaseRef||'';
   const view=$('#view');
   view.innerHTML=`<div class="qhead pagehead"><h1>Lookup</h1></div>
-    <p class="pagesub">Payment history for one booking — paste a booking ref (CH-…) or a quote ref (Q-…)</p>
+    <p class="pagesub">Booking, payment and customer-email history — paste a booking ref (CH-…) or a quote ref (Q-…)</p>
     <form class="lk-form" id="lookup-form" role="search" autocomplete="off">
       <div class="search">${NAV_ICONS.lookup}<input id="lookup-q" value="${esc(ref)}" placeholder="CH-… or Q-…" aria-label="Booking or quote reference" spellcheck="false"></div>
       <button class="btn btn-go" type="submit">Look up</button>
@@ -3443,9 +3490,15 @@ function viewLookup(){
       :'<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">Look up a booking</div><div class="qempty-sub">You’ll see the customer, what happened to the payment, and every recorded step in order.</div></div>'}</div>`;
   if(!ref)return;
   /* Only the result area is replaced when the answer lands, so a ref typed meanwhile survives. */
-  api.get('/cases/'+encodeURIComponent(ref)).then(d=>{
+  api.get('/cases/'+encodeURIComponent(ref)).then(async d=>{
     if(state.route!=='lookup'||state.routeCaseRef!==ref)return; /* stale response — view moved on */
-    const out=$('#lookup-out');if(out)out.innerHTML=lookupCaseHtml(d);
+    let tracking=null,trackingFailed=false;
+    if(d.booking){
+      try{tracking=await api.get('/bookings/'+encodeURIComponent(d.booking.id)+'/tracking?limit=50');}
+      catch(err){trackingFailed=true;if(err.message!=='api 404'&&err.message!=='auth')window.opsReportError&&window.opsReportError('lookup-tracking',err);}
+    }
+    if(state.route!=='lookup'||state.routeCaseRef!==ref)return;
+    const out=$('#lookup-out');if(out)out.innerHTML=lookupCaseHtml(d,tracking,trackingFailed);
   }).catch(err=>{
     if(state.route!=='lookup'||state.routeCaseRef!==ref)return;
     const known=err.message==='api 404'||err.message==='api 400'||err.message==='auth';
@@ -3480,6 +3533,18 @@ document.addEventListener('submit',e=>{
 });
 document.addEventListener('click',async e=>{
   if(state.route!=='lookup')return;
+  const more=e.target.closest('#view [data-lktrack]');
+  if(more){
+    const id=more.dataset.lktrack,cursor=more.dataset.cursor;
+    more.disabled=true;
+    try{
+      const page=await api.get('/bookings/'+encodeURIComponent(id)+'/tracking?limit=50&cursor='+encodeURIComponent(cursor));
+      const rows=more.closest('[data-testid="lookup-tracking"]').querySelector('[data-tracking-rows]');
+      if(rows)rows.insertAdjacentHTML('beforeend',lookupTrackingRows(page.items));
+      if(page.nextCursor){more.dataset.cursor=page.nextCursor;more.disabled=false;}else more.remove();
+    }catch(err){more.disabled=false;toast('Couldn’t load earlier history',true);}
+    return;
+  }
   const other=e.target.closest('#view [data-lkcase]');
   if(other){setShellRoute('lookup',{caseRef:other.dataset.lkcase});return;}
   const open=e.target.closest('#view [data-lkbooking]');

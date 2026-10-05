@@ -96,6 +96,8 @@ export interface AppDeps {
   customerCommunications?: CustomerCommunicationRepo;
   /** Independent, default-off M23.5 customer email observation switch. */
   communicationTrackingEnabled?: boolean;
+  /** M23.3 booking transition observation switch, also gates Phase A reconciliation. */
+  transitionTrackingEnabled?: boolean;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
@@ -214,6 +216,8 @@ export function createApp(deps: AppDeps = {}) {
   );
   const communicationTrackingEnabled =
     deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED;
+  const transitionTrackingEnabled =
+    deps.transitionTrackingEnabled ?? config.BOOKING_TRANSITION_TRACKING_ENABLED;
   const customerCommunications =
     deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo();
   const email = communicationTrackingEnabled
@@ -590,6 +594,7 @@ export function createApp(deps: AppDeps = {}) {
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
     ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+    ...(communicationTrackingEnabled ? { customerCommunications } : {}),
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
@@ -671,6 +676,7 @@ export function createApp(deps: AppDeps = {}) {
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      ...(transitionTrackingEnabled && communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
