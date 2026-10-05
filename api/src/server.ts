@@ -185,6 +185,7 @@ const app = createApp({
   email,
   customerCommunications: new PostgresCustomerCommunicationRepo(db),
   communicationTrackingEnabled: config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED,
+  transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
   alerts,
   alertLog,
   pingDb: async () => {

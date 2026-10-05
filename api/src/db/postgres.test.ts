@@ -29,6 +29,7 @@ import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
+import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -61,6 +62,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let quotes: PostgresQuoteRepo;
   let db: Db;
   let sql: Sql;
+  let communications: PostgresCustomerCommunicationRepo;
 
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
@@ -77,6 +79,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     rideOps = new PostgresRideOpsRepo(conn.db);
     notifLog = new PostgresNotificationLogRepo(conn.db);
     quotes = new PostgresQuoteRepo(conn.db);
+    communications = new PostgresCustomerCommunicationRepo(conn.db);
   });
 
   it('notification log records sent kinds per booking, idempotently', async () => {
@@ -238,6 +241,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
 
     const firstRead = await trackedBookings.listStatusEvents(b.id);
+    expect(await trackedBookings.listStatusEventsForBookingIds([b.id])).toEqual(firstRead);
     expect((await trackedBookings.listStatusEvents(b.id))).toEqual(firstRead);
     expect(firstRead.map((event) => [event.fromStatus, event.toStatus])).toEqual([
       ['draft', 'payment_pending'],
@@ -301,6 +305,39 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       currentStatus: 'cancelled',
       eventStatus: 'payment_pending',
     });
+  });
+
+  it('queries unresolved, orphan and explicit communication failures without treating missing delivery as failure', async () => {
+    const b = await bookings.create(sample);
+    const planned = await communications.plan({
+      bookingId: b.id, kind: 'confirmation', channel: 'email',
+      templateKey: 'booking-confirmation', templateVersion: '1', recipient: 'maya@example.com',
+      source: 'payment_webhook', actorType: 'provider', actorId: null, requestId: null, runId: null,
+      trackingKey: `${b.id}:confirmation:${randomUUID()}`, payloadSha256: 'a'.repeat(64),
+    });
+    const attemptedAt = new Date(Date.now() - 5 * 60_000);
+    await communications.recordEvent({
+      communicationId: planned.id, eventType: 'send_attempted', providerEventId: null,
+      providerMessageId: null, reasonCode: null, detailJson: null, occurredAt: attemptedAt,
+    });
+    await communications.recordProviderEvent({
+      communicationId: null, eventType: 'bounced', providerEventId: randomUUID(),
+      providerMessageId: `unknown-${randomUUID()}`, reasonCode: 'hard_bounce', detailJson: null,
+      occurredAt: new Date(),
+    });
+    await communications.recordProviderEvent({
+      communicationId: planned.id, eventType: 'complained', providerEventId: randomUUID(),
+      providerMessageId: `email-${randomUUID()}`, reasonCode: 'spam', detailJson: null,
+      occurredAt: new Date(),
+    });
+
+    const findings = await communications.listReconciliationFindings(new Date());
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'communication_attempt_unresolved', communicationId: planned.id }),
+      expect.objectContaining({ kind: 'orphan_provider_event' }),
+      expect.objectContaining({ kind: 'provider_communication_failure', eventType: 'complained' }),
+    ]));
+    expect(findings).not.toContainEqual(expect.objectContaining({ kind: 'delivery_missing' }));
   });
 
   it('persists and reads back a multi-stop trip', async () => {

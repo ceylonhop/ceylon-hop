@@ -6,7 +6,8 @@ import { InMemoryBookingRepo, type Booking } from '../../db/bookingRepo';
 import { InMemoryPaymentRepo, type Payment } from '../../db/paymentRepo';
 import type { Refund } from '../../db/refundRepo';
 import type { RideList, RideMember } from '../../domain/rideList';
-import { createGa4Reporter, parseGaIdentity } from './ga4Reporter';
+import type { Ga4PurchaseName } from './ga4Hits';
+import { SWEEP_BATCH, createGa4Reporter, parseGaIdentity } from './ga4Reporter';
 
 const NOW = new Date('2026-10-29T08:00:00Z');
 const customer = (email: string) => ({ firstName: 'E', lastName: 'L', email, phoneCountryCode: '+44', phoneNumber: '7700900000', country: 'United Kingdom' });
@@ -20,7 +21,7 @@ const payment = { id: 'pay-1', bookingId: 'b-1', provider: 'payhere', orderId: '
 const refundOf = (paymentId: string, id = 'r-1') => ({ id, bookingId: 'b-1', paymentId, provider: 'payhere', amountCents: 5000, currency: 'USD', status: 'succeeded', reason: 'changed plans' }) as unknown as Refund;
 const txnOf = (hit: { events: { params: Record<string, unknown> }[] } | undefined) => hit?.events[0]?.params.transaction_id;
 
-function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[] } = {}) {
+function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[]; eventName?: Ga4PurchaseName } = {}) {
   const adapter = opts.adapter === null ? undefined : (opts.adapter ?? new FakeGa4Adapter());
   const log = new InMemoryGa4EventLogRepo();
   const identities = new InMemoryGaIdentityRepo();
@@ -28,7 +29,7 @@ function setup(opts: { adapter?: FakeGa4Adapter | null; team?: string[] } = {}) 
   const payments = new InMemoryPaymentRepo();
   const reporter = createGa4Reporter({
     adapter, log, identities, bookings: new InMemoryBookingRepo(), payments, alerts,
-    teamEmails: new Set(opts.team ?? ['roshenw@gmail.com']), eventName: 'purchase_server', now: () => NOW,
+    teamEmails: new Set(opts.team ?? ['roshenw@gmail.com']), eventName: opts.eventName ?? 'purchase_server', now: () => NOW,
   });
   return { reporter, adapter, log, identities, alerts, payments };
 }
@@ -62,7 +63,7 @@ describe('Ga4Reporter', () => {
     await reporter.rememberVisitor('b-1', { clientId: '1.2' });
     await reporter.reportPayment(booking(), payment, NOW);
     expect(await identities.get('b-1')).not.toBeNull();
-    expect(await log.listRetryable(new Date(0), new Date(NOW.getTime() + 3_600_000))).toEqual([]);
+    expect(await log.listRetryable(new Date(0), new Date(NOW.getTime() + 3_600_000), 100)).toEqual([]);
   });
   it('a failed send is retried by the sweep with the SAME hit, and alerts once at 5 attempts', async () => {
     const adapter = new FakeGa4Adapter();
@@ -74,6 +75,20 @@ describe('Ga4Reporter', () => {
     const res = await reporter.sweep(); // attempt 6 succeeds
     expect(res).toEqual({ retried: 1, sent: 1, failed: 0 });
     expect(adapter.sent).toHaveLength(1);
+  });
+  it('one sweep retries at most SWEEP_BATCH events; the rest wait for the next sweep', async () => {
+    const adapter = new FakeGa4Adapter();
+    const total = SWEEP_BATCH + 3;
+    adapter.failNext = total;
+    const { reporter } = setup({ adapter });
+    const list = { id: 'l1', code: 'EM-1', fromPlace: 'Ella', toPlace: 'Mirissa', date: '2026-11-08' } as RideList;
+    for (let i = 0; i < total; i++) {
+      await reporter.reportBoardCharge(list, { sub: `s${i}`, email: `a${i}@x.com`, country: 'Australia', seats: 1 } as RideMember, 2400, 'USD', NOW);
+    }
+    expect(adapter.sent).toHaveLength(0); // every first attempt failed
+    expect(await reporter.sweep()).toEqual({ retried: SWEEP_BATCH, sent: SWEEP_BATCH, failed: 0 });
+    expect(await reporter.sweep()).toEqual({ retried: 3, sent: 3, failed: 0 });
+    expect(adapter.sent).toHaveLength(total);
   });
   it('reports a ride-board charge, skipping a team member', async () => {
     const { reporter, adapter } = setup();
@@ -104,8 +119,14 @@ describe('Ga4Reporter refunds reverse the purchase they were sent with', () => {
     await reporter.reportRefund(booking(), refundOf(second.id));
     const [, secondPurchase, refund] = adapter!.sent;
     expect(txnOf(secondPurchase)).toBe(`CH-TEST1-${second.id.slice(0, 6)}`);
-    expect(refund.events[0].name).toBe('refund');
+    expect(refund.events[0].name).toBe('refund_server'); // shadow mode: the purchase went out as purchase_server
     expect(txnOf(refund)).toBe(txnOf(secondPurchase));
+  });
+  it('after the switch-over (event name purchase) a refund goes out as the real refund', async () => {
+    const { reporter, adapter } = setup({ eventName: 'purchase' });
+    await reporter.reportPayment(booking(), payment, NOW);
+    await reporter.reportRefund(booking(), refundOf(payment.id));
+    expect(adapter!.sent.map((h) => h.events[0].name)).toEqual(['purchase', 'refund']);
   });
   it("a refund reuses its purchase's client_id when there is no stored identity", async () => {
     const { reporter, adapter } = setup();

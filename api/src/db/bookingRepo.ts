@@ -274,6 +274,8 @@ export interface BookingRepo {
   ): Promise<Booking>;
   /** Applied transition facts, oldest first. Empty means no recorded history, not no activity. */
   listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]>;
+  /** Applied facts for a set of bookings, in one read for reconciliation. */
+  listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]>;
   /** Rows whose current status disagrees with their latest recorded applied transition. */
   listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
@@ -504,6 +506,11 @@ export class InMemoryBookingRepo implements BookingRepo {
   async listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]> {
     // Array order is application order; return copies so a reader cannot mutate the ledger.
     return this.statusEvents.filter((event) => event.bookingId === bookingId).map((event) => ({ ...event }));
+  }
+
+  async listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]> {
+    const wanted = new Set(bookingIds);
+    return this.statusEvents.filter((event) => wanted.has(event.bookingId)).map((event) => ({ ...event }));
   }
 
   async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {

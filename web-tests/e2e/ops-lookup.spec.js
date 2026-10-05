@@ -57,9 +57,20 @@ const CASE = {
   gaps: ['declines_may_be_missing'], unavailable: [],
 };
 
+const TRACKING = {
+  items: [
+    { id: 'te2', at: '2026-09-25T08:04:00.000Z', source: 'communication', communicationId: 'c1', communicationKind: 'payment_failed', eventType: 'delivered', recipient: 'p***@e2e.test', templateKey: 'payment-failed', communicationSource: 'payment_webhook', actorType: 'provider', provider: 'resend', providerMessageId: 'email-1', reasonCode: null, requestId: null, runId: null },
+    { id: 'te1', at: '2026-09-25T08:00:30.000Z', source: 'booking_transition', fromStatus: 'draft', toStatus: 'payment_pending', transitionSource: 'website', actorType: 'customer', requestId: null, runId: null, relatedEntityType: 'payment', relatedEntityId: 'p1' },
+  ],
+  nextCursor: null,
+  historyAvailableSince: { bookingTransitions: '2026-09-26T00:00:00.000Z', customerCommunications: '2026-09-26T00:00:00.000Z' },
+  partialHistory: true,
+  unavailableSources: [],
+};
+
 // Boots the shell with `caps`. `cases` maps the requested ref (as the page sent it) to a stub
 // response; every requested case path is recorded so a test can assert what the page asked for.
-async function boot(page, caps, cases = {}) {
+async function boot(page, caps, cases = {}, tracking = TRACKING) {
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
   });
@@ -68,6 +79,7 @@ async function boot(page, caps, cases = {}) {
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'x@e2e.test', role: 'x', caps })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([ROW])));
   await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json(DETAIL)));
+  await page.route('**/admin/ops/bookings/b1/tracking**', (r) => r.fulfill(json(tracking)));
   // payments:act also loads the refund ledger with the drawer; the catch-all's {} is not a list.
   await page.route('**/admin/bookings/b1/refunds', (r) => r.fulfill(json([])));
   await page.route('**/admin/ops/cases/**', (r) => {
@@ -110,7 +122,7 @@ test('searching a ref asks the API for exactly that ref and draws header, verdic
   await ready(page);
   await page.locator('[data-testid="lookup-nav"]').click();
   await expect(page.locator('#view h1')).toHaveText('Lookup');
-  await expect(page.locator('#view .pagesub')).toHaveText('Payment history for one booking — paste a booking ref (CH-…) or a quote ref (Q-…)');
+  await expect(page.locator('#view .pagesub')).toHaveText('Booking, payment and customer-email history — paste a booking ref (CH-…) or a quote ref (Q-…)');
   await expect(caseView(page)).toHaveCount(0); // no ref → empty state only
 
   await page.fill('#lookup-q', '  ch-0001 ');
@@ -157,7 +169,15 @@ test('searching a ref asks the API for exactly that ref and draws header, verdic
   await expect(rows.nth(0).locator('.pa-when')).toHaveText(/^\d{2} [A-Z][a-z]{2} \d{2}:\d{2}:\d{2}$/);
   await expect(rows.nth(5)).toContainText('delivery not tracked');
   await expect(page.locator('[data-testid="lookup-gaps"]')).toContainText('PayHere declines before 26 Sep 2026 may be missing.');
-  await expect(caseView(page)).toContainText('Only some customer emails are recorded');
+  const tracking = page.locator('[data-testid="lookup-tracking"]');
+  await expect(tracking).toContainText('Booking & customer emails');
+  await expect(tracking).toContainText('This booking has partial history.');
+  await expect(tracking.locator('.lk-label')).toHaveText([
+    'Email delivered · payment failed',
+    'Booking: draft → payment pending',
+  ]);
+  await expect(tracking).toContainText('p***@e2e.test');
+  await expect(tracking).not.toContainText('pay@e2e.test');
 
   // "Open in queue" opens the booking's drawer over the page.
   await head.getByRole('button', { name: 'Open in queue' }).click();
@@ -197,6 +217,52 @@ test('a source that failed to load makes the verdict "Incomplete", never silentl
   await ready(page);
   await expect(page.locator('[data-testid="lookup-verdict"]')).toContainText('Incomplete — couldn’t load: refunds');
   await expect(page.locator('[data-testid="lookup-timeline"] .pa-row')).toHaveCount(TIMELINE.length);
+});
+
+test('tracking names unavailable sources and loads the next page without repeating rows', async ({ page }) => {
+  const first = { ...TRACKING, items: [TRACKING.items[0]], nextCursor: 'next-1', unavailableSources: ['booking_status_events'] };
+  const requested = [];
+  await boot(page, FOUNDER, { 'CH-0001': { body: CASE } }, first);
+  await page.route('**/admin/ops/bookings/b1/tracking?limit=50&cursor=next-1', (r) => {
+    requested.push(r.request().url());
+    return r.fulfill(json({ ...TRACKING, items: [TRACKING.items[1]], nextCursor: null }));
+  });
+  await page.goto(OPS_FILE + '?case=CH-0001#lookup');
+  await ready(page);
+  const tracking = page.locator('[data-testid="lookup-tracking"]');
+  await expect(tracking).toContainText('Couldn’t load: booking transitions.');
+  await expect(tracking.locator('.pa-row')).toHaveCount(1);
+  await tracking.getByRole('button', { name: 'Load earlier history' }).click();
+  await expect(tracking.locator('.pa-row')).toHaveCount(2);
+  await expect(tracking.getByRole('button', { name: 'Load earlier history' })).toHaveCount(0);
+  expect(requested).toHaveLength(1);
+});
+
+test('tracking makes every Phase A customer-email outcome and reversal diagnosable', async ({ page }) => {
+  const events = [
+    { id: 's1', at: '2026-09-26T10:06:00.000Z', source: 'communication', communicationKind: 'refund', eventType: 'delivered', recipient: 'p***@e2e.test', communicationSource: 'ops' },
+    { id: 's2', at: '2026-09-26T10:05:00.000Z', source: 'booking_transition', fromStatus: 'cancelled', toStatus: 'refunded', transitionSource: 'refund', actorType: 'ops_user', relatedEntityType: 'refund', relatedEntityId: 'refund-1' },
+    { id: 's3', at: '2026-09-26T10:04:00.000Z', source: 'communication', communicationKind: 'cancellation', eventType: 'bounced', recipient: 'p***@e2e.test', communicationSource: 'ops', reasonCode: 'hard_bounce' },
+    { id: 's4', at: '2026-09-26T10:03:00.000Z', source: 'booking_transition', fromStatus: 'paid', toStatus: 'cancelled', transitionSource: 'ops', actorType: 'ops_user' },
+    { id: 's5', at: '2026-09-26T10:02:00.000Z', source: 'communication', communicationKind: 'payment_failed', eventType: 'send_failed', recipient: 'p***@e2e.test', communicationSource: 'payment_webhook', reasonCode: 'adapter_error' },
+    { id: 's6', at: '2026-09-26T10:01:00.000Z', source: 'communication', communicationKind: 'details_needed', eventType: 'suppressed', recipient: 'p***@e2e.test', communicationSource: 'ops', reasonCode: 'kill_switch' },
+    { id: 's7', at: '2026-09-26T10:00:00.000Z', source: 'communication', communicationKind: 'confirmation', eventType: 'provider_accepted', recipient: 'p***@e2e.test', communicationSource: 'payment_webhook', providerMessageId: 'email-1' },
+  ];
+  await boot(page, FOUNDER, { 'CH-0001': { body: CASE } }, { ...TRACKING, items: events, partialHistory: false });
+  await page.goto(OPS_FILE + '?case=CH-0001#lookup');
+  await ready(page);
+  const tracking = page.locator('[data-testid="lookup-tracking"]');
+  await expect(tracking.locator('.lk-label')).toHaveText([
+    'Email delivered · refund',
+    'Booking: cancelled → refunded',
+    'Email bounced · cancellation',
+    'Booking: paid → cancelled',
+    'Email send failed · payment failed',
+    'Email suppressed · details needed',
+    'Provider accepted email · booking confirmation',
+  ]);
+  await expect(tracking).not.toContainText('hard_bounce');
+  await expect(tracking).not.toContainText('email-1');
 });
 
 test('the drawer’s "Payment history →" opens the lookup for that booking (payments:act only)', async ({ page }) => {

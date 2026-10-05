@@ -17,6 +17,8 @@ import { isTeamEmail } from './testBookings';
 import { personKey, sameTrip } from './duplicateBookings';
 import type { RideListRepo } from '../db/rideListRepo';
 import { cutoffAt, isSeedMember, type Slot } from '../domain/rideList';
+import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
+import { reconcileBookingTracking, type BookingTrackingFinding } from './bookingTracking';
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -143,6 +145,8 @@ export async function runWatchdog(
     teamEmails?: ReadonlySet<string>;
     // Ride Board lists. Optional like the rest; without it overdue lists are not swept.
     rideLists?: RideListRepo;
+    // Present only after both Phase A tracking ledgers are enabled.
+    customerCommunications?: Pick<CustomerCommunicationRepo, 'listReconciliationFindings'>;
     // Phase A correlation seam. The HTTP job route supplies one request id + one run id; later
     // communication tracking persists them without changing this service boundary again.
     correlation?: TrackingCorrelation;
@@ -153,6 +157,7 @@ export async function runWatchdog(
   recoveryEmails: number;
   stuckRefunds: number;
   overdueRideLists: number;
+  trackingFindings?: number;
 }> {
   const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget, alertLog, opsBaseUrl } = deps;
   const teamEmails = deps.teamEmails ?? new Set<string>();
@@ -306,13 +311,76 @@ export async function runWatchdog(
     }
   }
 
+  let trackingFindings: number | undefined;
+  if (deps.customerCommunications && payments) {
+    const reconciliation = await reconcileBookingTracking(now, {
+      bookings,
+      payments,
+      communications: deps.customerCommunications,
+    });
+    trackingFindings = reconciliation.findings.length;
+    for (const finding of reconciliation.findings) {
+      await alerts.send(trackingFindingAlert(finding));
+    }
+    for (const source of reconciliation.unavailableSources) {
+      await alerts.send({
+        severity: 'warning',
+        kind: 'tracking_reconciliation_unavailable',
+        title: `Booking tracking reconciliation could not read ${source}`,
+        body: `The watchdog could not reconcile ${source}. Other booking and communication checks continued.`,
+        dedupeKey: source,
+      });
+    }
+  }
+
   // Footprint. Last, so a sweep that threw halfway leaves no heartbeat — a crashing cron is
   // not a live one, and the liveness alert's wording covers both readings.
   const overdueRideLists = deps.rideLists ? await sweepOverdueRideLists(now, deps.rideLists, alerts) : 0;
 
   await alertLog?.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, now);
 
-  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds, overdueRideLists };
+  return {
+    stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds, overdueRideLists,
+    ...(trackingFindings == null ? {} : { trackingFindings }),
+  };
+}
+
+function trackingFindingAlert(finding: BookingTrackingFinding) {
+  if (finding.kind === 'booking_status_mismatch') return {
+    severity: 'critical' as const,
+    kind: 'tracking_booking_status_mismatch',
+    title: `Booking state disagrees with its transition history`,
+    body: `Booking ${finding.bookingId} is ${finding.currentStatus}, but its latest recorded transition ends at ${finding.eventStatus}.`,
+    dedupeKey: finding.bookingId,
+  };
+  if (finding.kind === 'captured_payment_missing_transition') return {
+    severity: 'critical' as const,
+    kind: 'tracking_payment_transition_missing',
+    title: 'Captured payment has no matching paid transition',
+    body: `Payment ${finding.paymentId} captured money for booking ${finding.bookingId}, but no matching paid transition was recorded.`,
+    dedupeKey: finding.paymentId,
+  };
+  if (finding.kind === 'communication_attempt_unresolved') return {
+    severity: 'warning' as const,
+    kind: 'tracking_email_attempt_unresolved',
+    title: `Email attempt has no provider answer`,
+    body: `Communication ${finding.communicationId} (${finding.communicationKind}) for booking ${finding.bookingId} has no provider acceptance or send failure.`,
+    dedupeKey: finding.communicationId,
+  };
+  if (finding.kind === 'orphan_provider_event') return {
+    severity: 'warning' as const,
+    kind: 'tracking_provider_event_orphan',
+    title: 'Resend event has no matching communication',
+    body: `Provider event ${finding.eventType} for message ${finding.providerMessageId} could not be linked to a booking communication.`,
+    dedupeKey: `${finding.providerMessageId}:${finding.eventType}`,
+  };
+  return {
+    severity: 'critical' as const,
+    kind: 'tracking_provider_failure',
+    title: `Customer email ${finding.eventType}`,
+    body: `Communication ${finding.communicationId} (${finding.communicationKind}) for booking ${finding.bookingId} recorded ${finding.eventType}.`,
+    dedupeKey: `${finding.communicationId}:${finding.eventType}`,
+  };
 }
 
 // Lists past their cutoff that the cutoff sweep has not processed, departing soon, with at least

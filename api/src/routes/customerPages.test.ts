@@ -127,6 +127,36 @@ describe('customer pay pages are served by the API host', () => {
   });
 });
 
+// Staff test pay, quote and manage links on staging. The GTM container has no staging
+// condition, so a page view there landed in prod GA4, Clarity and the ad pixels — a fake
+// begin_checkout per test. Staging hosts get the page without the loader; prod is untouched.
+describe('staging hosts serve the customer pages without the tag manager', () => {
+  const ALL = ['/pay.html', '/p', '/quote.html', '/q', '/manage.html'];
+
+  it('drops the GTM loader on a staging host and keeps the rest of the page', async () => {
+    for (const path of ALL) {
+      const html = await (await app.request(`https://ops.staging.ceylonhop.com${path}`)).text();
+      expect(html, `${path} on staging`).not.toContain('googletagmanager.com');
+      expect(html, `${path} on staging`).toContain('window.CEYLON_HOP_API=location.origin');
+      expect(html, `${path} on staging`).toMatch(/src="analytics\.js(\?v=\w+)?"/);
+    }
+  });
+
+  it('keeps the GTM loader on the prod hosts', async () => {
+    for (const host of ['pay.ceylonhop.com', 'quote.ceylonhop.com', 'ops.ceylonhop.com', 'ceylon-hop-api.onrender.com']) {
+      for (const path of ALL) {
+        const html = await (await app.request(`https://${host}${path}`)).text();
+        expect(html, `${path} on ${host}`).toContain('googletagmanager.com/gtm.js');
+      }
+    }
+  });
+
+  it('still unfurls a staging pay link — only the loader goes', async () => {
+    const html = await (await app.request('https://ops.staging.ceylonhop.com/pay.html?t=x')).text();
+    expect(html).toContain('property="og:image"');
+  });
+});
+
 // ── WhatsApp share card (spec 2026-08-02) ────────────────────────────────────────────────
 // Ops sends pay links over WhatsApp. With no og: tags the message unfurled as a bare
 // 200-character token URL immediately before asking for money — the visual grammar of a

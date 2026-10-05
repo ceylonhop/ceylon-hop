@@ -54,6 +54,35 @@ export type RecordProviderCommunicationEvent = RecordCustomerCommunicationEvent 
   providerMessageId: string;
 };
 
+export type CustomerCommunicationReconciliationFinding =
+  | {
+      kind: 'communication_attempt_unresolved';
+      communicationId: string;
+      bookingId: string;
+      communicationKind: CustomerCommunicationKind;
+      occurredAt: Date;
+      providerMessageId: null;
+      eventType: 'send_attempted';
+    }
+  | {
+      kind: 'orphan_provider_event';
+      communicationId: null;
+      bookingId: null;
+      communicationKind: null;
+      occurredAt: Date;
+      providerMessageId: string;
+      eventType: CustomerCommunicationEventType;
+    }
+  | {
+      kind: 'provider_communication_failure';
+      communicationId: string;
+      bookingId: string;
+      communicationKind: CustomerCommunicationKind;
+      occurredAt: Date;
+      providerMessageId: string | null;
+      eventType: 'provider_failed' | 'bounced' | 'complained';
+    };
+
 export interface CustomerCommunicationRepo {
   plan(input: PlanCustomerCommunication): Promise<CustomerCommunication>;
   recordEvent(input: RecordCustomerCommunicationEvent): Promise<CustomerCommunicationEvent>;
@@ -65,6 +94,8 @@ export interface CustomerCommunicationRepo {
   findByProviderMessageId(providerMessageId: string): Promise<CustomerCommunication | null>;
   listByBookingId(bookingId: string): Promise<CustomerCommunication[]>;
   listEvents(communicationId?: string): Promise<CustomerCommunicationEvent[]>;
+  /** Explicit failures and invariants only. Missing delivery by itself is never a finding. */
+  listReconciliationFindings(staleBefore: Date): Promise<CustomerCommunicationReconciliationFinding[]>;
 }
 
 export class InMemoryCustomerCommunicationRepo implements CustomerCommunicationRepo {
@@ -120,5 +151,50 @@ export class InMemoryCustomerCommunicationRepo implements CustomerCommunicationR
   async listEvents(communicationId?: string): Promise<CustomerCommunicationEvent[]> {
     return this.events.filter((row) => !communicationId || row.communicationId === communicationId)
       .map((row) => structuredClone(row));
+  }
+
+  async listReconciliationFindings(staleBefore: Date): Promise<CustomerCommunicationReconciliationFinding[]> {
+    const terminal = new Set(
+      this.events
+        .filter((row) => row.communicationId && (row.eventType === 'provider_accepted' || row.eventType === 'send_failed'))
+        .map((row) => row.communicationId as string),
+    );
+    const findings: CustomerCommunicationReconciliationFinding[] = [];
+    const unresolvedReported = new Set<string>();
+    for (const row of [...this.events].sort((a, b) =>
+      a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id))) {
+      if (!row.communicationId && row.providerMessageId) {
+        findings.push({
+          kind: 'orphan_provider_event', communicationId: null, bookingId: null,
+          communicationKind: null, occurredAt: new Date(row.occurredAt),
+          providerMessageId: row.providerMessageId, eventType: row.eventType,
+        });
+        continue;
+      }
+      if (!row.communicationId) continue;
+      const communication = this.communications.get(row.communicationId);
+      if (!communication) continue;
+      if (
+        row.eventType === 'send_attempted' &&
+        row.occurredAt <= staleBefore &&
+        !terminal.has(row.communicationId) &&
+        !unresolvedReported.has(row.communicationId)
+      ) {
+        unresolvedReported.add(row.communicationId);
+        findings.push({
+          kind: 'communication_attempt_unresolved', communicationId: row.communicationId,
+          bookingId: communication.bookingId, communicationKind: communication.kind,
+          occurredAt: new Date(row.occurredAt), providerMessageId: null, eventType: 'send_attempted',
+        });
+      } else if (row.eventType === 'provider_failed' || row.eventType === 'bounced' || row.eventType === 'complained') {
+        findings.push({
+          kind: 'provider_communication_failure', communicationId: row.communicationId,
+          bookingId: communication.bookingId, communicationKind: communication.kind,
+          occurredAt: new Date(row.occurredAt), providerMessageId: row.providerMessageId,
+          eventType: row.eventType,
+        });
+      }
+    }
+    return findings.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   }
 }
