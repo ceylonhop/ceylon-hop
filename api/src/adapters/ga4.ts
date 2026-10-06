@@ -4,7 +4,11 @@
 // ledger can record it and the cron sweep can retry. Note: /mp/collect answers 2xx even for a
 // malformed hit — correctness is pinned by ga4Hits' own tests, not by this status.
 
-export interface Ga4Item { item_id: string; item_name: string; item_category: string; price: number; quantity: number }
+export interface Ga4Item {
+  item_id: string; item_name: string;
+  item_category: string; item_category2: string; item_category3: string; item_category4: string;
+  price: number; quantity: number;
+}
 export interface Ga4Event { name: string; params: Record<string, string | number | Ga4Item[]> }
 export type Ga4Consent = 'GRANTED' | 'DENIED';
 export interface Ga4Hit {
