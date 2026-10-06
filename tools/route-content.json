@@ -27,6 +27,9 @@
     "nuwara-eliya": {
       "short": "a misty tea-country town nicknamed 'Little England', perched at nearly 1,900 metres"
     },
+    "hiriketiya": {
+      "short": "a small horseshoe bay near Dickwella with a gentle surf break, palm-shaded cafés and a slow pace"
+    },
     "yala": {
       "short": "Sri Lanka's best-known safari park, famed for one of the world's densest leopard populations"
     },
@@ -266,6 +269,36 @@
         "Ella Gap hairpins with views back over the plains"
       ],
       "back": "It's a long descent to the coast: out through the Ella Gap, across the plains to the expressway, and into Galle with the ramparts waiting at the end."
+    },
+    "cmb-airport|hiriketiya": {
+      "intro": "Land, and you're on expressway almost the whole way: round Colombo, down past Galle and Matara, then country lanes for the last stretch to Hiriketiya's horseshoe bay. Private transfers only on this run — your driver, your schedule, a stop wherever you fancy.",
+      "highlights": [
+        "The Southern Expressway, skirting Colombo's traffic",
+        "Optional break at Galle Fort, a short hop off the expressway",
+        "Coconut and paddy country on the lanes down to Dickwella",
+        "Hiriketiya's horseshoe bay and its beginner-friendly surf break"
+      ],
+      "back": "The flight-day run: a few minutes of country lanes to the expressway, then fast and straight past Matara, Galle and Colombo to Katunayake. Book an early pickup and doze in the back."
+    },
+    "ella|hiriketiya": {
+      "intro": "Ella to Hiriketiya swaps the tea hills for a palm-ringed bay: down the hairpins of the Ella Gap to Wellawaya, south across the dry-zone plains past Mattala, then the expressway to Dickwella and the surf. Go private to stop at Ravana Falls or the rock Buddhas on the way.",
+      "highlights": [
+        "Ravana Falls, roadside on the Ella hill road",
+        "Buduruwagala's rock-cut Buddhas near Wellawaya",
+        "Curd and treacle stalls on the dry-zone plains",
+        "Hiriketiya's horseshoe bay and its beginner-friendly surf break"
+      ],
+      "back": "Heading back up, the expressway hands you to the dry-zone plains at Mattala, then the road climbs from Wellawaya through the Ella Gap — boardshorts to jumper in an afternoon."
+    },
+    "yala|hiriketiya": {
+      "intro": "Out of safari country and onto the coast: from the lodges around Tissamaharama the road runs west to Mattala, then the expressway carries you to Dickwella and Hiriketiya's little bay. Go private to break the drive at Tissa's lake or a roadside curd stall.",
+      "highlights": [
+        "Tissamaharama's lake and white dagoba",
+        "Curd and treacle stalls on the road to Mattala",
+        "The Southern Expressway's quiet run west to Dickwella",
+        "Hiriketiya's horseshoe bay and its beginner-friendly surf break"
+      ],
+      "back": "Eastbound, the expressway runs to Mattala before country roads drop you at Tissamaharama, ready for a dawn game drive in Yala."
     }
   }
 }
