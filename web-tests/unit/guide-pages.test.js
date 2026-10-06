@@ -107,6 +107,28 @@ describe('generateGuides', () => {
     expect(next).toContain('href="../../trip/nuwara-eliya-to-ella/"');
     expect(() => renderGuide({ ...g, next: ['trincomalee'] }, T, photos)).toThrow(/trincomalee/);
   });
+  it('optional Nightlife: its own section and jump chip after Eat & stay, same card row as Eat; absent, nothing renders', () => {
+    const ne = loadGuides().find(g => g.slug === 'nuwara-eliya');
+    const T = loadTransfers(), photos = loadPlacePhotos();
+    expect(renderGuide(ne, T, photos)).not.toContain('id="night"');
+    const g = structuredClone(ne);
+    g.nightlife = {
+      sub: 'Night sub here.',
+      items: g.eat.map((e, i) => ({ ...e, name: `Bar ${i}`, map: `Bar ${i} Nuwara Eliya` })),
+      collector: { title: 'Where did you go out?', text: 'Tell us.', wa: 'Hi Ceylon Hop — a bar I liked: ' },
+    };
+    const h = renderGuide(g, T, photos);
+    const night = section(h, 'night');
+    expect(night).toContain('<h2>Nightlife</h2>');
+    expect(night).toContain('<p>Night sub here.</p>');
+    expect(night.match(/<article class="pl reveal">/g)).toHaveLength(g.eat.length);
+    expect(night).toContain('See on map ↗');
+    expect(night).toContain(`text=${encodeURIComponent('Hi Ceylon Hop — a bar I liked: ')}`);
+    expect(h.indexOf('id="night"')).toBeGreaterThan(h.indexOf('id="eat"'));
+    expect(h.indexOf('id="night"')).toBeLessThan(h.indexOf('id="qa"'));
+    const chips = [...h.match(/<div class="jump" id="jump">[\s\S]*?<\/div><\/div>/)[0].matchAll(/href="#([a-z]+)"/g)].map(m => m[1]);
+    expect(chips.slice(chips.indexOf('eat'), chips.indexOf('eat') + 3)).toEqual(['eat', 'night', 'qa']);
+  });
   it("shared links unfurl with the guide's own hero image, not the site-wide cover", () => {
     const img = 'https://ceylonhop.com/img/guides/nuwara-eliya/og.jpg';
     expect(html).toContain(`<meta property="og:image" content="${img}">`);
