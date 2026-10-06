@@ -178,6 +178,17 @@ function eatStay(g, p) {
   </div></section>`;
 }
 
+/** Optional: guides for places that go out at night. Same card row as Eat, its own section.
+    Starts with its own newline so a guide without one renders byte-for-byte as before. */
+function nightlife(g, p) {
+  const n = g.nightlife; if (!n) return '';
+  return `
+  <section class="section" id="night"><div class="wrap">
+    ${sh('After dark', 'Nightlife', esc(n.sub))}
+    ${placeRow(g, n.items, n.collector, p, true)}
+  </div></section>`;
+}
+
 function faq(g) {
   const tabs = g.faq.map((t, i) => `<button type="button"${i === 0 ? ' class="on"' : ''} data-g="${i}">${esc(t.tab)}</button>`).join('');
   const groups = g.faq.map((t, i) => {
@@ -264,7 +275,9 @@ export function renderGuide(g, T, placePhotos) {
   if (g.itinerary) nav.push(['plan', 'Itinerary']);
   if (g.months) nav.push(['when', 'When to come']);
   if (g.onTheWay && g.onTheWay.stops.length) nav.push(['way', 'On the way']);
-  nav.push(['eat', 'Eat & stay'], ['qa', 'Your questions'], ['next', 'Where next']);
+  nav.push(['eat', 'Eat & stay']);
+  if (g.nightlife) nav.push(['night', 'Nightlife']);
+  nav.push(['qa', 'Your questions'], ['next', 'Where next']);
 
   // Runs before anything below it paints: the API origin ("?api=off" / "?api=ORIGIN", the same
   // contract as the trip pages) and the Where-next fare hold that route-list-fares.js releases.
@@ -287,7 +300,7 @@ ${jsonLd(g, url)}
   ${itinerary(g, p)}
   ${months(g)}
   ${onTheWay(g, p)}
-  ${eatStay(g, p)}
+  ${eatStay(g, p)}${nightlife(g, p)}
   ${faq(g)}
   ${whereNext(g, T, placePhotos, p)}
   ${askBand(g)}
