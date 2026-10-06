@@ -1,0 +1,623 @@
+{
+  "slug": "hiriketiya",
+  "name": "Hiriketiya",
+  "region": "South coast",
+  "placeId": "hiriketiya",
+  "title": "Hiriketiya guide — surfing, Blue Beach, where to stay | Ceylon Hop",
+  "description": "Hiriketiya’s horseshoe bay: where to surf, Blue Beach Island, Raa and the cafés, when to come, where to stay — and how we drive you there.",
+  "checked": "October 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A small horseshoe bay just outside Dickwella on the south coast, ringed by coconut palms, with a gentle beach break on one side and a reef wave on the other. Brunch cafés, yoga in the jungle behind the beach, and a much slower pace than Mirissa."
+  },
+  "facts": [
+    {
+      "label": "Stay",
+      "value": "2–4 nights"
+    },
+    {
+      "label": "Surf season",
+      "value": "Dec–Mar"
+    },
+    {
+      "label": "Daytime",
+      "value": "29–31",
+      "unit": "°C"
+    },
+    {
+      "label": "Between",
+      "value": "Mirissa & Yala"
+    }
+  ],
+  "lede": "Most people plan two or three nights and end up staying longer —",
+  "ledeEm": "a surf before breakfast, the hot hours in the shade, and a drink on the sand as the light goes.",
+  "gettingHere": {
+    "heading": "We’ll drive you to the bay",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {
+        "id": "cmb-airport",
+        "title": "Straight from the airport",
+        "from": "CMB · 199 km · about 3 h · expressway most of the way",
+        "sell": "Your driver meets you at arrivals and takes the expressway down the coast past Galle and Matara, then country lanes for the last few kilometres to the bay."
+      },
+      {
+        "id": "ella",
+        "title": "From Ella",
+        "from": "149 km · about 2 h 45 · down from the hills",
+        "sell": "Down the Ella Gap past Ravana Falls to Wellawaya, south across the dry-zone plains to Mattala, then the expressway to Dickwella. We can stop at the falls or the Buduruwagala carvings on the way if you’d like."
+      },
+      {
+        "id": "yala",
+        "title": "From Yala",
+        "from": "132 km · about 3 h · after a morning safari",
+        "sell": "From the lodges around Tissamaharama west to Mattala, then the expressway to Dickwella. Leave after your morning game drive and you’re in the bay by mid-afternoon."
+      }
+    ],
+    "train": "<b>There’s no station in Hiriketiya.</b> The nearest is Wewurukannala, on the line that runs on past Matara to Beliatta, about 10 minutes away; a few direct trains a day come from Colombo Fort, taking 3 h 40 to nearly 5 hours. Matara, about 20 km away, has many more. The coastal line was disrupted by a derailment in April 2026, so check before you rely on it. We drive it door to door, and the expressway is quicker."
+  },
+  "places": [
+    {
+      "id": "surf",
+      "name": "Surfing the bay",
+      "photo": "surf",
+      "text": "One of the best places in Sri Lanka to learn. Facing the sea, the soft beach break on your right is where the schools take beginners; the fast left over the reef at the other end is for experienced surfers only. Board hire and lessons are all along the sand.",
+      "spec": {
+        "from": "In the bay",
+        "open": "Dec–Mar best · mornings",
+        "give": "2 hours a session",
+        "level": "Beach break: beginner · reef: advanced",
+        "ticket": "Board ≈ LKR 1,000–2,000/hr · lesson ≈ LKR 4,000–6,000"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "The reef end is sharp and full of sea urchins — wear reef booties, and stay on the beach break until you can turn. The line-up gets crowded from December to March, so paddle out at dawn."
+      }
+    },
+    {
+      "id": "bay",
+      "name": "The beach",
+      "photo": "sunset",
+      "text": "A horseshoe of sand wrapped in coconut palms, small enough to walk end to end in ten minutes. Between surfs it’s for lying under a palm, a swim in the calmer corner, and a drink at the beach bars as the light goes.",
+      "spec": {
+        "from": "In the bay",
+        "give": "As long as you like",
+        "level": "Easy",
+        "ticket": "Free"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "It’s a surf beach, not a lagoon. Swim in the calmer inside corner, away from the boards and the reef, and ask a surf school how the sea is that day."
+      }
+    },
+    {
+      "id": "dickwella",
+      "name": "Dickwella Beach",
+      "photo": "long-beach",
+      "text": "Hiriketiya’s bigger neighbour: a long, wide beach a few minutes away, with far fewer people — and, unlike the bay, where the jungle hides it, a clear view of the sunset. Good for a long walk when the bay feels busy.",
+      "spec": {
+        "from": "12 min walk · 5 min by tuk-tuk",
+        "open": "The last hour of light",
+        "give": "1–2 hours",
+        "ticket": "Free"
+      },
+      "tip": {
+        "kind": "drivers",
+        "text": "Go for the sunset, then back to the bay for dinner — a tuk-tuk is about LKR 500. Agree the price first."
+      }
+    },
+    {
+      "id": "blue-beach",
+      "name": "Blue Beach Island",
+      "photo": "camping",
+      "text": "A small island off Nilwella beach, 10–15 minutes east, that you reach across a sandbar at low tide — the walk out is half the fun. It’s free to visit by day. A local host has run overnight camping on the island, with a fire on the beach and dinner grilled for you.",
+      "spec": {
+        "from": "Nilwella · 10–15 min",
+        "open": "Low tide only",
+        "give": "Half a day",
+        "level": "Easy · a short rock scramble",
+        "ticket": "Free by day"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "Check the tide times before you go, and wear shoes: the rocks are sharp and there are sea urchins. Camping is by arrangement and we couldn’t confirm this season’s details — ask us and we’ll check it’s running before you plan on it."
+      }
+    },
+    {
+      "id": "dondra",
+      "name": "Dondra Head lighthouse",
+      "photo": "lighthouse",
+      "text": "Sri Lanka’s tallest lighthouse — a 49 m white tower finished in 1890 — stands at Dondra Head, the island’s southernmost point. Walk round the base and out onto the rocks, with nothing but ocean to the south.",
+      "spec": {
+        "from": "About 20 km · 25–35 min",
+        "give": "45 min",
+        "ticket": "Free to see from outside"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "There’s no ticket office. Climbing the tower is up to the keepers and often not allowed — plan to enjoy it from the ground."
+      },
+      "offer": {
+        "title": "Dondra & the blowhole with Ceylon Hop",
+        "sub": "A half-day loop — your driver waits at each stop",
+        "wa": "Hi Ceylon Hop — I’m reading your Hiriketiya guide. Could you give me a price for a half-day trip to Dondra lighthouse and the Hummanaya blowhole from my hotel?"
+      }
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "15 min",
+      "name": "Hummanaya blowhole, Kudawella",
+      "text": "A blowhole in the rocks east of Dickwella that throws sea spray high into the air when the swell is up — best on a rough morning between May and September. Foreigners pay a small entry fee, about LKR 500."
+    },
+    {
+      "time": "About 1 h",
+      "name": "Mirissa",
+      "text": "Whale boats from November to April, Coconut Tree Hill and a bigger beach scene, about an hour west. Easy as a day out, or as your next stop."
+    },
+    {
+      "time": "About 3 h",
+      "name": "Yala",
+      "text": "The leopard park is about three hours east — better as your next stop than a day trip. Leave after breakfast and you’re there for an early start in the park the next morning."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "Surf and swim in the morning, keep out of the midday sun, and save the end of the day for the light. Blue Beach depends on the tide, so check it the night before.",
+    "days": [
+      {
+        "title": "Day 1 · Surf, lighthouse, sunset",
+        "sub": "On the water early, on the rocks at Dondra by late afternoon",
+        "steps": [
+          {
+            "time": "6:30",
+            "title": "A surf lesson",
+            "text": "On the beach break; the schools are on the sand."
+          },
+          {
+            "time": "9:00",
+            "title": "Breakfast",
+            "text": "Salt House’s roti fish tacos, or hoppers at Duni’s."
+          },
+          {
+            "time": "11:00",
+            "title": "Swim and shade",
+            "text": "The hottest hours. Swim in the calmer corner, away from the boards."
+          },
+          {
+            "time": "15:30",
+            "title": "Dondra Head lighthouse",
+            "text": "The southernmost point of Sri Lanka, 25–35 minutes away."
+          },
+          {
+            "time": "17:30",
+            "title": "Sunset on Dickwella Beach",
+            "text": "The bay hides the sunset; Dickwella doesn’t."
+          },
+          {
+            "time": "19:30",
+            "title": "Dinner and drinks",
+            "text": "Raa for cocktails, Dots Bay House if there’s live music."
+          }
+        ]
+      },
+      {
+        "title": "Day 2 · Blue Beach, then onward",
+        "sub": "Out to the island at low tide, on the road after lunch",
+        "steps": [
+          {
+            "time": "7:00",
+            "title": "Blue Beach Island",
+            "text": "Time it for low tide — 10–15 minutes east."
+          },
+          {
+            "time": "10:30",
+            "title": "Back to the bay",
+            "text": "One more swim, lunch and check out."
+          },
+          {
+            "time": "13:00",
+            "title": "Onward to Yala with us",
+            "text": "About 3 h, there in time for a rest before an early game drive.",
+            "us": true
+          }
+        ],
+        "book": {
+          "stops": [
+            "Hiriketiya",
+            "Yala"
+          ],
+          "nights": [
+            0,
+            0
+          ],
+          "preload": "Opens the planner with <b>Hiriketiya → Yala</b> already in — swap in Ella or the airport if you’re heading that way."
+        }
+      }
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Warm all year, 29–31° by day. The bay is sheltered and often has a wave out of season — what changes is the rain, the sea and the crowds.",
+    "blocks": [
+      {
+        "label": "Dec – Mar",
+        "title": "Peak season",
+        "text": "The driest, calmest months, with about 85–105 mm of rain, the best surf for beginners and the busiest bay. Rooms are limited — book early.",
+        "tag": "Best for surf",
+        "tone": "best"
+      },
+      {
+        "label": "Apr",
+        "title": "Season’s end",
+        "text": "Still warm and surfable, with showers building through the month and fewer people in the water."
+      },
+      {
+        "label": "May – Sep",
+        "title": "South-west monsoon",
+        "text": "Windier, rougher seas and showers, heaviest in May. The bay still often holds a wave, and it’s quieter and cheaper.",
+        "tone": "wet"
+      },
+      {
+        "label": "Oct – Nov",
+        "title": "The wettest months",
+        "text": "About 260–280 mm of rain a month. Many places are quiet until the season picks up again in December.",
+        "tone": "wet"
+      }
+    ]
+  },
+  "eatSub": "Everything is a few minutes’ walk from the sand. Bring some cash — not every café takes cards.",
+  "eat": [
+    {
+      "tier": "Cafés",
+      "pick": true,
+      "photo": "cafe",
+      "name": "Salt House · Duni’s Hoppers · MOND",
+      "text": "Salt House is the brunch everyone comes for — get the roti fish tacos; Duni’s does hoppers (try the avocado one) and smoothie bowls; MOND has the sea view, a good flat white and Wi-Fi that works. <em>Salt House serves until about 2:30 PM.</em>",
+      "band": "$–$$",
+      "flags": [
+        "Brunch",
+        "Coffee"
+      ],
+      "map": "Salt House Hiriketiya"
+    },
+    {
+      "tier": "Dinner",
+      "photo": "beach-club",
+      "name": "La Playa Beach Club · Dots Bay House",
+      "text": "La Playa is right on the sand, with a pool, wood-fired sourdough pizza, grilled prawns and a proper wine list — the place for a long lunch after a surf. Dots Bay House has a relaxed all-day kitchen with pizza and Sri Lankan dishes, and is the bay’s meeting point in the evening.",
+      "band": "$$",
+      "flags": [
+        "Lunch",
+        "Dinner"
+      ],
+      "map": "La Playa Beach Club Hiriketiya"
+    },
+    {
+      "tier": "Budget",
+      "photo": "rice-curry",
+      "name": "Lemon Grass Cafe · Garlic Cafe · Roti Hut",
+      "text": "Proper local food for very little: Lemon Grass is a family kitchen doing rice and curry for a few dollars, Garlic Cafe does vegetarian curries and a buffet lunch, and Roti Hut does rotis and samosas for pocket change.",
+      "band": "$",
+      "flags": [
+        "Lunch",
+        "Dinner"
+      ],
+      "map": "Lemon Grass Cafe Hiriketiya"
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Hiriketiya and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Hiriketiya: "
+  },
+  "staySub": "Rooms in the bay are limited, and December to April books up early. Everything is a short walk from the beach.",
+  "stay": [
+    {
+      "tier": "Boutique",
+      "photo": "pool-villa",
+      "name": "Salt House · La Playa · Jasper House",
+      "text": "Salt House is a small boutique guesthouse about 60 m from the beach, with a plunge pool, a garden café and daily yoga; La Playa has three sea-facing rooms above the beach club; Jasper House is a surf and yoga retreat with a pool and a rooftop restaurant. <em>Salt House and La Playa are tiny — book well ahead.</em>",
+      "band": "$$$",
+      "flags": [
+        "Couples",
+        "Pool"
+      ]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "village",
+      "name": "Casa Vana",
+      "text": "Five individually designed rooms in a jungle garden, a short walk from the bay — quiet, good value and close to everything. <em>Mid-range rooms are scarce here; ask us and we’ll suggest what’s free for your dates.</em>",
+      "band": "$$",
+      "flags": [
+        "Couples",
+        "Quiet"
+      ]
+    },
+    {
+      "tier": "Solo",
+      "pick": true,
+      "photo": "surf-hostel",
+      "name": "Dots Bay House · Wake N Flow",
+      "text": "Dots Bay House is the social hub of the bay: dorms and private rooms, a pool, yoga, surf lessons, and live music and DJ nights. Wake N Flow is a simpler hostel near the beach, with cheap dorms. <em>Dots gets loud on music nights.</em>",
+      "band": "$",
+      "flags": [
+        "Solo",
+        "Surfers"
+      ]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, villa, surf camp — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Hiriketiya: "
+  },
+  "nightlife": {
+    "sub": "Low-key next to Mirissa: cocktails and live music rather than big parties.",
+    "items": [
+      {
+        "tier": "Cocktails",
+        "pick": true,
+        "photo": "cocktails",
+        "name": "Raa",
+        "text": "An open-air bar on the bay from the team behind Smoke & Bitters, built around Sri Lankan toddy — ‘raa’ in Sinhala — and arrack, with toddy tapped from its own palms. It made No. 71 on Asia’s 50 Best Bars’ extended 51–100 list in 2026. <em>Their original bar, Smoke & Bitters, is on Pehembiya beach next door.</em>",
+        "band": "$$–$$$",
+        "flags": [
+          "Cocktails"
+        ],
+        "map": "Raa Hiriketiya"
+      },
+      {
+        "tier": "Live music",
+        "photo": "string-lights",
+        "name": "Dots Bay House",
+        "text": "The bay’s social hub after dark: a busy bar, live music nights and DJ sets. If you want to dance or meet other travellers, this is where it happens.",
+        "band": "$–$$",
+        "flags": [
+          "Live music"
+        ],
+        "map": "Dots Bay House Hiriketiya"
+      },
+      {
+        "tier": "On the sand",
+        "photo": "beach-bar",
+        "name": "Muthu Bar",
+        "text": "Right on the shoreline, with Sri Lankan, Asian and Italian food and drinks until midnight — the easy choice for a beer with your feet in the sand.",
+        "band": "$–$$",
+        "flags": [
+          "Beach",
+          "Food"
+        ],
+        "map": "Muthu Bar Hiriketiya"
+      }
+    ],
+    "collector": {
+      "title": "Where did you go out?",
+      "text": "Tell us your favourite bar in Hiriketiya and we’ll check it out for the next traveller.",
+      "wa": "Hi Ceylon Hop — a bar I liked in Hiriketiya: "
+    }
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {
+          "q": "How many nights should I stay?",
+          "a": "<p>Two to four. Many people plan two and stay longer once they’ve settled in — it’s that kind of place.</p>"
+        },
+        {
+          "q": "Is it good for learning to surf?",
+          "a": "<p>Yes — one of the best places in Sri Lanka to start. Facing the sea, the beach break on the right-hand side of the bay is soft and sandy; leave the reef wave at the other end to experienced surfers. A lesson costs about LKR 4,000–6,000, and board hire about LKR 1,000–2,000 an hour. <a href=\"#see\">See the bay ↑</a></p>"
+        },
+        {
+          "q": "Is Hiriketiya good for families?",
+          "a": "<p>It suits couples, solo travellers and surfers best: the bay is small and social, and it’s a surf beach with a reef at one end. Children can swim in the calmer corner with you close by — ask a surf school how the sea is that day.</p>"
+        },
+        {
+          "q": "What else is there to do?",
+          "a": "<p>Yoga at Arise, a jungle studio about five minutes’ walk from the beach (about LKR 3,000 a class; book ahead out of season); skateboard lessons at the little skate park at Locos (about LKR 3,000); and a rice-and-curry cooking class at Rosie’s Kitchen.</p>"
+        },
+        {
+          "q": "Where do people go next?",
+          "a": "<p>East to Yala for a safari (about 3 h), back to the airport (about 3 h) or up to Ella (about 2 h 45). <a href=\"#next\">See the routes ↓</a></p>"
+        }
+      ]
+    },
+    {
+      "tab": "Getting here",
+      "items": [
+        {
+          "q": "What’s the easiest way to get to Hiriketiya?",
+          "a": "<p>By car, door to door: about 3 hours from the airport, mostly on the expressway, or about 2 h 45 from Ella. We’ll stop wherever you like on the way.</p>"
+        },
+        {
+          "q": "Can I take the train?",
+          "a": "<p>There’s no station in the bay. The nearest is Wewurukannala, on the Matara–Beliatta line, about 10 minutes by tuk-tuk; a few direct trains a day run from Colombo Fort, taking 3 h 40 to nearly 5 hours. Matara, about 20 km away, has many more trains.</p>"
+        },
+        {
+          "q": "What about the bus?",
+          "a": "<p>Express buses run from Colombo to Matara; from there a local bus or a tuk-tuk takes you on to Dickwella and the bay. From Ella you’ll usually change at Wellawaya. It’s slow, and crowded in peak season.</p>"
+        }
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {
+          "q": "How hot does it get?",
+          "a": "<div class=\"temps\"><div><b>29–31°</b><small>Day</small></div><div><b>22–25°</b><small>Night</small></div><div><b>27–29°</b><small>Sea</small></div><div><b>Oct–Nov</b><small>Wettest</small></div></div><p>Warm and humid all year. There’s shade under the palms, but very little on the sand at midday.</p>"
+        },
+        {
+          "q": "What should I pack?",
+          "a": "<ul class=\"pack\"><li>Reef booties</li><li>A rash vest</li><li>Reef-safe sunscreen</li><li>Mosquito repellent</li></ul>"
+        },
+        {
+          "q": "What should I wear in town?",
+          "a": "<p>Swimwear on the beach; a shirt and shorts or a sarong when you walk up to the road or into Dickwella. Topless sunbathing isn’t allowed anywhere in Sri Lanka.</p>"
+        }
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Bring some cash. There are ATMs on Hiriketiya Road, a short walk up from the beach, and in Dickwella town, 5 minutes by tuk-tuk — and not every café takes cards.",
+        "The bay is small and walkable. You only need a tuk-tuk or scooter for trips out to Dickwella, Dondra or Blue Beach.",
+        "Swim in the calmer corner, away from the surfers and the reef. Sea urchins live on the rocks.",
+        "Tuk-tuks aren’t metered. Agree the price first — about LKR 500 to Dickwella.",
+        "Poya (full-moon) days are dry: bars and shops stop selling alcohol.",
+        "December to April is busy with surfers and remote workers, and rooms in the bay are limited. Book ahead."
+      ]
+    }
+  ],
+  "next": [
+    "yala",
+    "ella",
+    "cmb-airport"
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Whether the waves are working, which places are open this month, whether the Blue Beach camp is running — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Hiriketiya: "
+  },
+  "photos": {
+    "hero": {
+      "alt": "A surfer riding a wave across Hiriketiya’s bay, palms and beach bars behind",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-surfer-rides-a-wave-near-a-tropical-beach-moElKxO0wuM?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1012
+    },
+    "surf": {
+      "alt": "Two surfers riding a breaking wave in a palm-backed bay",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/surfers-ride-waves-near-a-lush-tropical-coastline-PaY3gtush9Y?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "sunset": {
+      "alt": "A stormy orange sunset over Hiriketiya’s beach and palms",
+      "credit": "Sören Funk",
+      "creditUrl": "https://unsplash.com/@soerenfunk?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/the-sun-is-setting-over-a-tropical-beach-67aWaECYb_A?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "long-beach": {
+      "alt": "A long sandy beach lined with palms, waves rolling in",
+      "credit": "Mariam G",
+      "creditUrl": "https://unsplash.com/@mgarchagudashvili?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-sandy-beach-with-palm-trees-and-waves-ndyLhQ4gjkM?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "camping": {
+      "alt": "Sparks rising from a campfire on the sand at night",
+      "credit": "Romain Gal",
+      "creditUrl": "https://unsplash.com/@wamstudio?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/campfire-with-bright-sparks-and-a-person-sitting-in-darkness-_7j3jJ06vd4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "lighthouse": {
+      "alt": "A white lighthouse tower rising above palm trees",
+      "credit": "Prazanthy Ramesh",
+      "creditUrl": "https://unsplash.com/@prazanthy?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-light-house-surrounded-by-palm-trees-7FQob6J0kCs?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 30%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cocktails": {
+      "alt": "Three tropical cocktails on a bar by the sea",
+      "credit": "Kike Salazar N",
+      "creditUrl": "https://unsplash.com/@kikesalazarn?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-group-of-drinks-on-a-table-MKzpKmF8XUA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "string-lights": {
+      "alt": "String lights on a beach bar at sunset, a headland behind",
+      "credit": "Kwesi Morton",
+      "creditUrl": "https://unsplash.com/@kwestioning?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/beachside-cafe-with-string-lights-at-sunset-TavzZNjx0pQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beach-club": {
+      "alt": "People eating under palms and shade sails on a beach in the low sun",
+      "credit": "Juan Bacab",
+      "creditUrl": "https://unsplash.com/@juanbaramm?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/beach-dining-under-palm-trees-4od5JcHrB1I?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "pool-villa": {
+      "alt": "A pool and a white garden villa among palms",
+      "credit": "Dinuka Lankaloka",
+      "creditUrl": "https://unsplash.com/@bawva?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/white-and-brown-house-near-swimming-pool-during-daytime-HKr5cn6S0q0?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beach-bar": {
+      "alt": "Bottles lined up on a beach bar counter, the sea behind",
+      "credit": "Norbert Braun",
+      "creditUrl": "https://unsplash.com/@medion4you?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-bar-with-bottles-of-alcohol-on-the-beach-KHK607p3TVA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "Two fruit-topped smoothie bowls and iced coffees on a wooden table",
+      "credit": "Lou Lou B Photo",
+      "creditUrl": "https://unsplash.com/@louloubphoto?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/porridge-with-bananas-ZavNEhIrtxg?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "rice-curry": {
+      "alt": "Bowls of Sri Lankan curries — dhal, a vegetable curry and a dark devilled dish",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-variety-of-delicious-appetizing-curry-dishes-i0Dd1oxMz6c?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "village": {
+      "alt": "A white bungalow with wooden windows, a tiled roof and potted plants",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-white-house-has-wooden-windows-and-a-red-roof-i1OZyG83-eo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "surf-hostel": {
+      "alt": "Two surfers carrying their boards into the sea at sunrise",
+      "credit": "Sasha Kaunas",
+      "creditUrl": "https://unsplash.com/@akaunas?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-couple-of-people-that-are-standing-in-the-sand-oJK_m8_GazA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
