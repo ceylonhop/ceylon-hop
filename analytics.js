@@ -14,6 +14,12 @@
   // first-party cookies: `_ga` = GA1.1.<client id>; `_ga_XEW62ZD7B3` = GS1.1.<session id>.…
   // or GS2.1.s<session id>$…. Plus the stored ad-consent choice. Every field may be null —
   // blocked or not-yet-set cookies must never stop a checkout.
+  //
+  // With no stored answer, a European clock sends 'denied': the head snippet denies ads by
+  // region there until the strip is answered, and the server must not read that silence as a
+  // grant (it fell back to the TYPED country, so a London visitor who wrote "Sri Lanka" went
+  // out GRANTED). Elsewhere silence stays 'unknown' and the server judges by country.
+  var EUROPE_CLOCK = /^(?:Europe\/|Atlantic\/(?:Canary|Madeira|Azores|Reykjavik|Faroe)$)/;
   window.chGaIds = function () {
     var out = { clientId: null, sessionId: null, adConsent: 'unknown' };
     try {
@@ -24,6 +30,9 @@
       if (gs) out.sessionId = gs[1];
       var choice = window.localStorage && window.localStorage.getItem('ceylonhop_cookie_choice');
       if (choice === 'granted' || choice === 'denied') out.adConsent = choice;
+      else if (EUROPE_CLOCK.test((window.Intl || Intl).DateTimeFormat().resolvedOptions().timeZone || '')) {
+        out.adConsent = 'denied';
+      }
     } catch (e) { /* cookies or storage blocked — send what we have */ }
     return out;
   };
@@ -119,7 +128,7 @@
   var CONSENT_KEY = 'ceylonhop_cookie_choice';
   var consentSrc = (document.currentScript && document.currentScript.src) || '';
   window.chConsentAsk = function (tz, path) {
-    return /^(?:Europe\/|Atlantic\/(?:Canary|Madeira|Azores|Reykjavik|Faroe)$)/.test(tz || '') &&
+    return EUROPE_CLOCK.test(tz || '') &&
       !/^\/(?:(?:booking|manage|pay|quote)\.html|p|q|ops(?:\/.*)?)$/.test(path || '/');
   };
   window.chConsentOpen = function () {
