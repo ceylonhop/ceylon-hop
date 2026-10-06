@@ -1326,6 +1326,8 @@ export const SITEMAP_EXTRA = [
   'guides/kandy/',
   'guides/colombo/',
   'guides/arugam-bay/',
+  'guides/mirissa/',
+  'guides/hiriketiya/',
 ];
 
 // CLI: write every generated file to disk.

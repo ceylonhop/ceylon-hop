@@ -157,6 +157,12 @@ const MORE = [
   { slug: 'arugam-bay', origins: ['ella', 'cmb-airport', 'yala'],
     next: ['arugam-bay-to-ella', 'ella-to-arugam-bay'],
     book: 'plan.html?stops=Arugam+Bay%7CElla&amp;nights=0%2C0' },
+  { slug: 'mirissa', origins: ['ella', 'cmb-airport', 'yala'],
+    next: ['mirissa-to-cmb-airport', 'mirissa-to-ella', 'mirissa-to-yala', 'mirissa-to-galle'],
+    book: 'plan.html?stops=Mirissa%7CColombo+Airport+%28CMB%29&amp;nights=0%2C0' },
+  { slug: 'hiriketiya', origins: ['cmb-airport', 'ella', 'yala'],
+    next: ['hiriketiya-to-yala', 'hiriketiya-to-ella', 'hiriketiya-to-cmb-airport'],
+    book: 'plan.html?stops=Hiriketiya%7CYala&amp;nights=0%2C0' },
 ];
 for (const g of MORE) {
   describe(`guide: ${g.slug}`, () => {
