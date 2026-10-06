@@ -27,9 +27,10 @@ const RATE_CARD = {
 // legacy DirectionsService/DirectionsRenderer are deliberately absent so any lingering
 // use of them throws and fails the no-pageerror assertion. Each computeRoutes request is
 // recorded on window.__computeRoutesReqs so tests can assert the known-places-by-coords rule.
-async function stub(page, { key } = {}) {
-  await page.addInitScript((k) => {
+async function stub(page, { key, google = true } = {}) {
+  await page.addInitScript(({ k, g }) => {
     if (k) window.OPS_MAPS_KEY = k;
+    if (!g) return; // no stub: the page's own loader decides whether real Google is fetched
     function Map(el) { this.__el = el; if (el) el.setAttribute('data-map', 'ready'); }
     Map.prototype.fitBounds = function () {};
     function Marker() {}
@@ -57,7 +58,7 @@ async function stub(page, { key } = {}) {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
       maps: { importLibrary: async (name) => libs[name] || {}, event: { trigger() {} } },
     };
-  }, key || '');
+  }, { k: key || '', g: google });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json(RATE_CARD)));
   await page.route('**/admin/quote/estimate', (r) => r.fulfill(json({ product: 'private', total: { cents: 12100, lkr: 'x' }, lineItems: [], breakdown: { km: {} }, services: { pointToPoint: { total: { cents: 12100 } }, chauffeur: { error: 'x' } }, warnings: [] })));
@@ -274,4 +275,17 @@ test('without a maps key the itinerary shows no route map toggle', async ({ page
   await expect(page.locator('.ch-leg').first()).toBeVisible();
   await expect(page.locator('.ch-map-toggle')).toHaveCount(0);
   await expect(page.locator('#itin-map-slot')).toHaveCount(0);
+});
+
+// Google Maps is OFF on test sites unless the tab opts in (see maps-off-on-test-hosts.spec.js).
+// With a real key and NO google stub, the ops map must not fetch Google at all, and must say why
+// rather than "could not load" — otherwise it reads as a broken key.
+test('on a test site the ops map stays off and never fetches Google', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  const hits = [];
+  await page.route((url) => /^(maps|routes|places)\.googleapis\.com$|^maps\.gstatic\.com$/.test(url.hostname), (r) => { hits.push(r.request().url()); return r.abort(); });
+  await stub(page, { key: 'test-browser-key', google: false });
+  await buildRoute(page);
+  await expect(page.locator('.ch-itin-map-note')).toContainText(/off on test sites/i, { timeout: 10000 });
+  expect(hits).toEqual([]);
 });
