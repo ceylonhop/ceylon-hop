@@ -159,7 +159,7 @@ Hard limit is 25 per event; strings must be ≤100 characters.
 | 4 | `payment_type` | `balance` for a booking's second succeeded payment; otherwise `deposit` if `amount < booking.total`, else `full` (owner, 2026-10-03) |
 | 5 | `session_id` | `ga_session_id` (omitted when unknown) |
 | 6 | `engagement_time_msec` | `1` |
-| 7 | `items` | one item: `item_id` = `route`, `item_name` = `route`, `item_category` = `service_type`, `price` = `value`, `quantity` = 1. This makes Ecommerce purchases → Item name work |
+| 7 | `items` | one item: `item_id` = `route`, `item_name` = `route`, `item_category` = `private` or `shared` (`shared_seat`), `item_category2` = `pickup_region`, `item_category3` = `dropoff_region`, `item_category4` = `service_type`, `price` = `value`, `quantity` = 1. This makes Ecommerce purchases → Item name / Item category work |
 | 8 | `service_type` | purchaseFacts |
 | 9 | `route` | purchaseFacts (`Known town → Known town`, or `Other`) |
 | 10 | `region_route` | purchaseFacts |
