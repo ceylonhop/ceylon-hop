@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, or } from 'drizzle-orm';
 import type { Db } from './client';
 import { customerCommunicationEvents, customerCommunications } from './schema';
 import type {
@@ -87,12 +87,15 @@ export class PostgresCustomerCommunicationRepo implements CustomerCommunicationR
   }
 
   async listReconciliationFindings(staleBefore: Date): Promise<CustomerCommunicationReconciliationFinding[]> {
+    // Provider events with no communication are NOT findings. Most are our own untracked mail —
+    // ops alerts, the digest, board mail — so alerting on them fed itself: each alert email's
+    // sent/delivered events became two more alerts on the next sweep. The ones that matter
+    // (bounced, complained, failed) are already alerted once by the Resend webhook on arrival.
     const relevant = await this.db.select().from(customerCommunicationEvents).where(or(
       and(
         eq(customerCommunicationEvents.eventType, 'send_attempted'),
         lte(customerCommunicationEvents.occurredAt, staleBefore),
       ),
-      isNull(customerCommunicationEvents.communicationId),
       inArray(customerCommunicationEvents.eventType, ['provider_failed', 'bounced', 'complained']),
     )).orderBy(asc(customerCommunicationEvents.occurredAt), asc(customerCommunicationEvents.id));
     const communicationIds = [...new Set(
@@ -123,15 +126,6 @@ export class PostgresCustomerCommunicationRepo implements CustomerCommunicationR
     const findings: CustomerCommunicationReconciliationFinding[] = [];
     const unresolvedReported = new Set<string>();
     for (const row of relevant) {
-      if (!row.communicationId && row.providerMessageId) {
-        findings.push({
-          kind: 'orphan_provider_event', communicationId: null, bookingId: null,
-          communicationKind: null, occurredAt: row.occurredAt,
-          providerMessageId: row.providerMessageId,
-          eventType: row.eventType as CustomerCommunicationEvent['eventType'],
-        });
-        continue;
-      }
       if (!row.communicationId) continue;
       const parent = byId.get(row.communicationId);
       if (!parent) continue;

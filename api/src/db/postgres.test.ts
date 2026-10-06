@@ -307,7 +307,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
   });
 
-  it('queries unresolved, orphan and explicit communication failures without treating missing delivery as failure', async () => {
+  it('queries unresolved and explicit communication failures, not unlinked provider events or missing delivery', async () => {
     const b = await bookings.create(sample);
     const planned = await communications.plan({
       bookingId: b.id, kind: 'confirmation', channel: 'email',
@@ -334,10 +334,11 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const findings = await communications.listReconciliationFindings(new Date());
     expect(findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'communication_attempt_unresolved', communicationId: planned.id }),
-      expect.objectContaining({ kind: 'orphan_provider_event' }),
       expect.objectContaining({ kind: 'provider_communication_failure', eventType: 'complained' }),
     ]));
     expect(findings).not.toContainEqual(expect.objectContaining({ kind: 'delivery_missing' }));
+    // Unlinked events (untracked ops mail, mostly) are the webhook's to alert, never a finding.
+    expect(findings.every((finding) => finding.communicationId !== null)).toBe(true);
   });
 
   it('persists and reads back a multi-stop trip', async () => {
