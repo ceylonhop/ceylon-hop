@@ -3,9 +3,9 @@ import { generateAll } from '../../tools/generate-route-pages.mjs';
 
 describe('generateAll', () => {
   const out = generateAll();
-  it('emits 44 route pages + index + sitemap', () => {
+  it('emits 50 route pages + index + sitemap', () => {
     const routes = [...out.keys()].filter(k => /^trip\/[a-z-]+-to-[a-z-]+\/index\.html$/.test(k));
-    expect(routes.length).toBe(44);
+    expect(routes.length).toBe(50);
     expect(out.has('trip/index.html')).toBe(true);
     expect(out.has('sitemap.xml')).toBe(true);
   });
