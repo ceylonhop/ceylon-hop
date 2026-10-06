@@ -18,15 +18,15 @@
       price:520,
       tag:'Bestseller',
       mapBg:'ph-teal',
-      pace:'Balanced',
+      pace:'Active',
       best:'Year-round',
       photo:'PHOTO — Sigiriya Lion Rock rising over the jungle at dawn',
-      blurb:'The whole island in one unhurried week — ancient rock fortress, the temple city of Kandy, misty tea country, the famous hill-country train, and a leopard safari to finish.',
+      blurb:'The island’s greatest hits in one action-packed week — ancient rock fortress, the temple city of Kandy, misty tea country, the famous hill-country train, and a leopard safari to finish.',
       regions:['Cultural Triangle','Kandy','Hill Country','Ella','Safari'],
       stops:['Negombo','Sigiriya','Kandy','Nuwara Eliya','Ella','Yala','Colombo'],
       highlights:[
         'Dawn climb up Sigiriya Lion Rock',
-        'Kandy → Ella scenic hill-country train',
+        'Nanu Oya → Ella scenic hill-country train',
         'Jeep safari for leopards in Yala'
       ],
       includes:[
@@ -41,7 +41,7 @@
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Tips'],
       itinerary:[
         {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Your driver meets you at your Colombo Airport pick-up point. A short hop to laid-back Negombo to shake off the flight — lagoon breezes, a fresh seafood dinner and an early night.'},
-        {place:'Sigiriya', t:'Into the Cultural Triangle', body:'Drive north to the heart of the island. Stop at the golden Dambulla Cave Temple, then arrive in Sigiriya for an evening 4×4 safari in Minneriya — home to the famous “elephant gathering”.'},
+        {place:'Sigiriya', t:'Into the Cultural Triangle', body:'Drive north to the heart of the island. Stop at the golden Dambulla Cave Temple, then arrive in Sigiriya for an evening 4×4 safari among wild elephants in Minneriya or Kaudulla — in August and September, the famous “elephant gathering”.'},
         {place:'Kandy', t:'Lion Rock & the sacred city', body:'Beat the heat with a sunrise climb of Sigiriya rock fortress. After breakfast, drive to Kandy via a spice garden, arriving for the evening rituals at the Temple of the Sacred Tooth Relic.'},
         {place:'Nuwara Eliya', t:'Up into tea country', body:'Visit the Peradeniya Royal Botanical Gardens, then climb into the cool highlands past Ramboda Falls. Tour a working tea factory and sip a fresh Ceylon brew in “Little England”.'},
         {place:'Ella', t:'The world’s prettiest train ride', body:'Board the hill-country train from Nanu Oya — rolling tea fields, waterfalls and misty ridges all the way to Ella. Afternoon stroll to the iconic Nine Arch Bridge.'},
@@ -60,7 +60,7 @@
       pace:'Balanced',
       best:'Dec–Mar',
       photo:'PHOTO — Galle Fort lighthouse and ramparts at golden hour',
-      blurb:'Our flagship grand tour. Everything in the Classic Hop, plus the ancient capital of Anuradhapura, a second safari at Udawalawe, and four unwinding days on the southern coast around Galle and Mirissa.',
+      blurb:'Our flagship grand tour. The cultural heart and hill country of the Classic Hop, plus the ancient capital of Anuradhapura, an elephant safari at Udawalawe, and three unwinding nights on the southern coast around Mirissa and Galle.',
       regions:['Cultural Triangle','Kandy','Hill Country','Safari','South Coast'],
       stops:['Negombo','Anuradhapura','Sigiriya','Kandy','Ella','Udawalawe','Mirissa','Galle','Colombo'],
       highlights:[
@@ -81,9 +81,9 @@
       itinerary:[
         {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Airport welcome and a short transfer to Negombo for a restful first night by the lagoon.'},
         {place:'Anuradhapura', t:'The first ancient capital', body:'Drive to Anuradhapura, a sacred UNESCO city of giant white stupas and the world’s oldest documented tree. An unhurried afternoon among pilgrims and ruins.'},
-        {place:'Sigiriya', t:'Caves, kings & elephants', body:'Explore Polonnaruwa’s royal ruins and the Dambulla Cave Temple en route to Sigiriya. Evening 4×4 safari in Minneriya for the elephant gathering.'},
+        {place:'Sigiriya', t:'Caves, kings & elephants', body:'Explore Polonnaruwa’s royal ruins and the Dambulla Cave Temple en route to Sigiriya. Evening 4×4 safari among wild elephants in Minneriya or Kaudulla.'},
         {place:'Kandy', t:'Lion Rock & the sacred city', body:'Sunrise climb of Sigiriya, then drive to Kandy for the Temple of the Sacred Tooth and a traditional Kandyan dance show.'},
-        {place:'Ella', t:'Tea country & the famous train', body:'Botanical gardens and a tea-factory tour, then the unforgettable hill-country train down to Ella and the Nine Arch Bridge.'},
+        {place:'Ella', t:'Tea country & the famous train', body:'Botanical gardens and a tea-factory tour on the drive up to Nanu Oya, then the unforgettable hill-country train down to Ella and the Nine Arch Bridge.'},
         {place:'Udawalawe', t:'Hike & a gentle safari', body:'Morning at Little Adam’s Peak, then transfer to Udawalawe — the surest place in Sri Lanka to watch big herds of wild elephants up close.'},
         {place:'Mirissa', t:'Down to the south coast', body:'Drive to the palm-lined beaches of Mirissa. The rest of the day is yours — hammocks, surf and a seafood sunset.'},
         {place:'Mirissa', t:'Whales & warm water', body:'Optional dawn whale-watching boat in search of blue whales, then a slow beach day. Snorkel, swim, or simply do nothing at all.'},
@@ -232,7 +232,7 @@
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks — except your candlelit beach dinner','Site entrance tickets','Safari jeep & park fees','Whale-watching boat','Tips'],
       itinerary:[
         {place:'Kandy', t:'Arrive & ease into the hills', body:'Airport welcome and a scenic drive to Kandy. A gentle evening at the Temple of the Sacred Tooth and a lakeside stroll.'},
-        {place:'Ella', t:'Tea hills & the famous train', body:'A tea-estate visit, then the celebrated hill-country train to Ella. Settle into a view over the valley.'},
+        {place:'Ella', t:'Tea hills & the famous train', body:'A tea-estate visit on the drive up to Nanu Oya, then the celebrated hill-country train to Ella. Settle into a view over the valley.'},
         {place:'Ella', t:'Slow morning in Ella', body:'Sunrise at Little Adam’s Peak and the Nine Arch Bridge, with a lazy afternoon among the cafés and tea fields.'},
         {place:'Yala', t:'A private safari', body:'Transfer to Yala for a private sunset jeep safari in search of leopard — just the two of you and your tracker.'},
         {place:'Tangalle', t:'First taste of the coast', body:'Drive to secluded Tangalle, the quietest of the southern beaches. Nothing on the agenda but warm sand and a candlelit dinner.'},
@@ -250,7 +250,7 @@
       price:430,
       tag:'Surf & sand',
       mapBg:'ph-saffron',
-      pace:'Relaxed',
+      pace:'Balanced',
       best:'Nov–Apr (south) · Apr–Oct (Arugam)',
       photo:'PHOTO — surfers at a golden point break, Arugam Bay at sunrise',
       blurb:'Golden beaches, easy surf and slow sunsets down the south coast and round to the point breaks of Arugam Bay — the island’s sunniest, most laid-back stretch.',
@@ -274,7 +274,8 @@
         {place:'Weligama', t:'Learn to surf', body:'The gentle beach break at Weligama is the island’s best spot for a first lesson. An afternoon of sand, surf and coconut roti.'},
         {place:'Mirissa', t:'Whales & golden bays', body:'Optional dawn whale-watching, then a slow day on Mirissa’s crescent beach and coconut tree hill.'},
         {place:'Hiriketiya', t:'The horseshoe bay', body:'Drive to the tucked-away horseshoe bay of Hiriketiya — surf, swim, and a laid-back beach-cafe evening.'},
-        {place:'Arugam Bay', t:'The point break', body:'Cross to the east coast and Sri Lanka’s most famous surf town. Sunrise sessions at the point and a final few easy days by the sea.'}
+        {place:'Arugam Bay', t:'The point break', body:'Cross to the east coast and Sri Lanka’s most famous surf town. Sunrise sessions at the point and a last easy evening by the sea.'},
+        {place:'Colombo', t:'Across the island & home', body:'A full day’s drive back across the island to Colombo or the airport — around seven hours, with stops wherever takes your fancy.'}
       ]
     }
   ];
