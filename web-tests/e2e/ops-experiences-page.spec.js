@@ -452,6 +452,31 @@ test('the payment Save button sends only the changed payment fields; the note sa
   expect(calls.leadPatch).toHaveLength(2);
 });
 
+// A note written while another save on the same lead is still in flight used to be dropped
+// silently (the busy guard returned early). Hold the first PATCH open to make that window certain.
+test('a note blurred while a payment save is still in flight is saved after it, not dropped', async ({ page }) => {
+  let n = 0;
+  let release;
+  const held = new Promise((res) => { release = res; });
+  const calls = await openLeads(page, OPS, {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      return r.fulfill(json({ lead: { ...LEADS[1], ...body } }));
+    },
+  });
+  const row = leadRows(page).nth(1);
+  await row.locator('[data-lead-field="paymentRef"]').fill('PH-88');
+  await row.locator('[data-action="expLeadSavePay"]').click();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur(); // the payment PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ opsNote: 'Sent on WhatsApp' });
+});
+
 test('a failed save puts the status back and says so', async ({ page }) => {
   const calls = await openLeads(page, OPS, { patchLead: (r) => r.fulfill(json({ error: 'boom' }, 500)) });
   const sel = leadRows(page).nth(0).locator('[data-action="expLeadStatus"]');

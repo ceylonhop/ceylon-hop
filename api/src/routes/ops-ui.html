@@ -8720,6 +8720,9 @@ var expTab = 'catalogue';  // 'catalogue' | 'leads'
 var expLeads = null;       // Lead[] from GET /admin/experiences/leads; null until loaded
 var expLeadsFailed = false;
 var expLeadBusy = {};
+// The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
+var expLeadPending = {};
+async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
 var expLeadPayOpen = {};
 var _expLeadsSeq = 0;
 var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent', 'Link sent'], ['paid', 'Paid'], ['declined', 'Declined']];
@@ -8920,6 +8923,8 @@ function expLeadPayFields(l, rowEl) {
 async function expLeadPatch(l, body) {
   var seq = _expSeq;
   expLeadBusy[l.id] = true;
+  var settle, pending = new Promise(function (res) { settle = res; });
+  expLeadPending[l.id] = pending;
   try {
     var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (seq !== _expSeq) return false;
@@ -8936,6 +8941,8 @@ async function expLeadPatch(l, body) {
     return false;
   } finally {
     if (seq === _expSeq) delete expLeadBusy[l.id];
+    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
+    settle();
   }
 }
 
@@ -8966,8 +8973,11 @@ async function expLeadSavePay(btn) {
 }
 
 async function expLeadNoteChange(input) {
-  var l = expLeadById(input.getAttribute('data-id'));
-  if (!l || expLeadBusy[l.id]) return;
+  var id = input.getAttribute('data-id');
+  // A note blurred while another save on this lead is in flight waits for it — it used to be dropped.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
   var v = input.value.trim() || null;
   if (v === (l.opsNote || null)) return;
   if (!(await expLeadPatch(l, { opsNote: v }))) input.value = l.opsNote || '';
@@ -9182,7 +9192,7 @@ function showExperiences(el) {
   if (arriving) {
     _expSeq++;
     expData = null; expLoadFailed = false; expForm = null; expBusy = false;
-    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPayOpen = {};
+    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPending = {}; expLeadPayOpen = {};
     el.innerHTML = '<div class="qv qv-page" data-testid="experiences-page"><div class="ch-rates-card">'
       + '<div class="ch-tabs ch-exp-tabs" role="tablist">'
       + '<button class="ch-tab active" role="tab" aria-selected="true" data-action="expTab" data-tab="catalogue">Catalogue</button>'
