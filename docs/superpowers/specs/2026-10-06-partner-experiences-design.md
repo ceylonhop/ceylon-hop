@@ -220,7 +220,7 @@ Experience money goes customer → PayHere portal link → our PayHere account. 
   will **not** include experience money. Reconciliation is PayHere portal + the `payment_ref`/amount
   fields on each interest.
 - Refunds for experiences are done by hand in the PayHere portal. **The site's terms cover transfers,
-  not experiences** — a refund rule is needed before the first link goes out (open item 3).
+  not experiences** — the owner's rule (§7.3): free cancellation up to 24 hours before the experience date.
 - **Unverified — webhook noise:** if PayHere notifies our notify URL for portal-link payments, our
   webhook answers `unknown_order` (404) without an alert (`api/src/routes/webhooks.ts:253`) but logs a
   refused checkout event — noise in "no payments?" triage. Check: pay one small test link, then look for
@@ -231,7 +231,7 @@ Experience money goes customer → PayHere portal link → our PayHere account. 
   `ops-ui.html:2298`, `setNav` `:2449-2468`, dispatcher `:4237-4245`). Tabs: **Catalogue** and **Leads**.
 - New capability `experiences:manage` for founder **and ops** (matrix `api/src/lib/opsAuth.ts:30-35`,
   "adding a capability is one row"). **Why not `rates:manage`/`quote:approve`:** those are founder-only
-  money powers; the price here is display-only and the owner wants ops to maintain it (open item 1).
+  money powers; the price here is display-only and the owner wants ops to maintain it (decided, §7.1).
 - Location: ops pastes `lat, lng` or a Google Maps URL; the form parses it and shows an "Open in Google
   Maps" check link. **Why not a map picker:** the ops Maps loader serves only the itinerary map
   (`ops-ui.html:11582-11588`); a paste needs no new Maps work.
@@ -261,7 +261,7 @@ Experience money goes customer → PayHere portal link → our PayHere account. 
 - Booking summary: "You're interested in — not charged" + names.
 - Confirmation email row: "Interested in: Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out."
 - **"never more" is a standing promise:** it stays true only if ops keeps each price equal to the
-  partner's direct price (open item 4).
+  partner's direct price — the team owns this (decided, §7.4).
 
 ### D17 — Never in the way
 The booking page hides the section if `/experiences/near` fails or takes longer than 3 s; the quote view
@@ -305,15 +305,16 @@ photo upload · showing on search/trip/guide/manage pages · the phase-2 email.
   shows/toggles/sends and **the total never changes**; nothing shows when the endpoint fails; quote page
   shows/taps/reverts on failure; ops catalogue CRUD; leads tab status flow.
 
-## 7. Open items for the owner
-1. Ops role gets `experiences:manage` (assumed yes) — or founder only?
-2. Scope: full phase 1 (quote page included, behind its coverage gate) — or the leaner cut: booking page
-   + ops only, quote page later?
-3. A refund/cancellation rule for experiences, to state in the payment message (e.g. "free cancellation
-   up to 24 h before").
-4. Who checks partner prices stay equal to their direct price, and how often ("never more").
-5. Test one PayHere portal link, and allow the one prod read that checks for webhook noise (D13).
-6. The first real experiences: pin, reach, times, photos (needed before launch, not before building).
+## 7. Owner decisions (2026-10-06)
+1. **Ops edits experiences** — `experiences:manage` goes to founder **and** ops (D14).
+2. **Full phase 1** — the quote page is in scope. Its coverage gate (plan, PR 6) still runs first, but a
+   poor result now means "store coordinates on quotes first", not "drop the quote page".
+3. **Refund rule for experiences: free cancellation up to 24 hours before the experience date.** Ops states
+   it in the PayHere payment message. Refunds are made by hand in the PayHere portal (D13).
+4. **The team keeps partner prices equal to their direct prices**, which keeps "never more" true (D16).
+5. **Deferred:** the PayHere portal-link test and the one prod read that checks for webhook noise (D13).
+   Do it before the first real payment link goes out (launch checklist L2).
+6. Still needed before launch, not before building: the first real experiences — pin, reach, times, photos.
 
 ## 8. Phase 2 notes (for its own spec)
 - Audience: paid bookings with no interest, N days before the first travel date (`booking_legs.travel_date`).

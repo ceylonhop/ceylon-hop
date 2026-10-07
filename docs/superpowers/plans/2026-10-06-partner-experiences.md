@@ -617,7 +617,7 @@ Branch: `feat/experiences-api`
 
 ### Task 2.1: Capability `experiences:manage`
 **Files:** `api/src/lib/opsAuth.ts` (add to `OpsAction` at `:4-7`; add to the **founder** and **ops** sets in `CAPABILITIES` at `:30-35`; one comment line above the matrix: display-only price, owner wants ops to maintain it — spec D14); extend the existing opsAuth test.
-- [ ] Failing test (`can('ops','experiences:manage')` true; finance false; system false; `ALL_OPS_ACTIONS` includes it) → implement → PASS → commit. **If the owner answers open item 1 "founder only", drop the ops entry here.**
+- [ ] Failing test (`can('ops','experiences:manage')` true; finance false; system false; `ALL_OPS_ACTIONS` includes it) → implement → PASS → commit. (Owner decided 2026-10-06: ops holds it.)
 
 ### Task 2.2: `/admin/experiences` routes
 **Files:** Create `api/src/routes/opsExperiences.ts`; Modify `api/src/app.ts` (mount beside `/admin/rates`, `:642`); Test `api/src/routes/opsExperiences.test.ts` (pattern: `api/src/routes/hotZonesRoutes.test.ts` — `signSession` cookies, `sec-fetch-site` on writes).
@@ -847,7 +847,7 @@ SELECT canon_key FROM place_resolutions;
 ```
 Then, locally, run each stop through `knownCoords` (`api/src/adapters/maps.ts:179`) and check `canonPlace(stop)` (`maps.ts:146`) against the `place_resolutions` keys. Report the **frequency-weighted share that resolves**.
 - **≥ 60 %** (the owner may move the bar): build PR 6.
-- **Lower:** stop and propose its own small spec — store coordinates on each quote leg when ops picks a place (the ops tool already gets lat/lng candidates from `GET /admin/quote/place-candidates`, `api/src/routes/internalQuote.ts:750`) — then build PR 6 after it.
+- **Lower:** the owner chose the full version (spec §7.2), so don't drop the quote page — first write and build its own small spec — store coordinates on each quote leg when ops picks a place (the ops tool already gets lat/lng candidates from `GET /admin/quote/place-candidates`, `api/src/routes/internalQuote.ts:750`) — then build PR 6 after it.
 
 ### Task 6.1: Stops for a quote + experiences in `/quote-view`
 `api/src/experiences/quoteStops.ts` → `quoteStopPoints(request: unknown, placeResolutions: PlaceResolutionRepo): Promise<StopPoint[]>`: each driving leg's `to` in order (legs via `requestLegs()`, `api/src/db/quoteRouteText.ts:14-27`; stay legs skipped like `drives` in `customerQuoteView.ts:177`), de-duplicated by `canonPlace`; point = `knownCoords(name)` else `placeResolutions.get(canonPlace(name))`; unresolved skipped; labels cut at " / ".
@@ -871,8 +871,8 @@ After the Day-by-day ticket (`quote.html:410-413`), before `pp-note`: same cards
 
 ## Launch checklist (owner + ops)
 
-- [ ] **L1** Owner answers spec open items 1–5.
-- [ ] **L2** Test one PayHere portal link (small amount) and approve the read that checks `booking_checkout_event` for an `unknown_order` row (spec D13).
+- [ ] **L1** ~~Owner answers open items~~ — done 2026-10-06 (spec §7). Ops payment message template states: "Free cancellation up to 24 hours before the experience date."
+- [ ] **L2** (deferred by the owner; do before the first real link) Test one PayHere portal link (small amount) and approve the read that checks `booking_checkout_event` for an `unknown_order` row (spec D13).
 - [ ] **L3** Photos first: resize to `-1800`/`-900` (`sips -Z 900 x-1800.jpg --out x-900.jpg`), commit under `img/experiences/<slug>/`, credit photos that aren't our own in `credits.html`, **promote to `production`** — before ops enters the experience, or the previews show "not live yet".
 - [ ] **L4** Owner approves the promote that carries migration 0065.
 - [ ] **L5** Ops enters each experience **inactive**, checks the pin with "Open in Google Maps", then activates.
