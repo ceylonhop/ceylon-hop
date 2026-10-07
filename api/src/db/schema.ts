@@ -147,6 +147,8 @@ export const payments = pgTable(
     // retry reuses the row (idempotent per booking), so until then the count was invisible.
     attemptCount: integer('attempt_count').default(0).notNull(),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // 0066 — deposits (spec 2026-10-07): which part of the sale this payment is.
+    purpose: text('purpose').default('full').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -163,6 +165,7 @@ export const payments = pgTable(
       sql`${t.provider} in ('payhere', 'fake', 'cash', 'bank_transfer', 'manual_other')`,
     ),
     check('payments_status_valid', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
+    check('payments_purpose_valid', sql`${t.purpose} in ('full', 'deposit', 'balance')`),
     check(
       'payments_succeeded_settled_at_required',
       sql`${t.status} <> 'succeeded' or ${t.settledAt} is not null`,
@@ -630,7 +633,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
@@ -749,6 +752,8 @@ export const quotes = pgTable('quotes', {
   // monotonic per quote and never reset, so a retired link's seq is never reused.
   payLinkSelection: jsonb('pay_link_selection'),
   soldCents: integer('sold_cents'),
+  // 0066 — the deposit a deposit pay link charges, frozen at mint (null = not a deposit link).
+  payLinkDepositCents: integer('pay_link_deposit_cents'),
   payLinkSeq: integer('pay_link_seq').notNull().default(0),
   // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
   // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
@@ -805,6 +810,7 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
+  check('quotes_pay_link_deposit_cents_positive', sql`${t.payLinkDepositCents} is null or ${t.payLinkDepositCents} > 0`),
 ]);
 
 // Branded customer-link aliases (spec 2026-08-24). code_digest is SHA-256(code): the bearer
