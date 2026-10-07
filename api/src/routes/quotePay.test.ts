@@ -485,6 +485,23 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
     expect((await quotes.get(q.id))?.convertedBookingId).toBeFalsy();
   });
 
+  // GA4 item reports (spec 2026-10-03 D1-alt): the browser `purchase` must carry the same item
+  // the server's purchase hit does, so pay.html is handed it here — the booking is born at /start.
+  it('hands back the GA4 item for the browser purchase, on a fresh start and on a resume', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const item = {
+      item_id: 'Colombo Airport (CMB) → Galle', item_name: 'Colombo Airport (CMB) → Galle',
+      item_category: 'private', item_category2: 'Airport & Negombo', item_category3: 'South coast',
+      item_category4: 'transfer',
+    };
+    expect((await (await start(app, t)).json()).ga4Item).toEqual(item);
+    expect((await (await start(app, t)).json()).ga4Item).toEqual(item);
+  });
+
   it('is idempotent — a double tap returns the same booking with 200', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
