@@ -383,3 +383,209 @@ test('a lapsed quote shows the expiry row and still renders the itinerary', asyn
   // Never reads as "your trip is gone" — the sailed-off dead-end art must not appear here.
   await expect(page.locator('.de-wrap')).toHaveCount(0);
 });
+
+// ── Partner experiences on the quote page (spec 2026-10-06 D12/D16/D17) ────────────────────────
+// The ONE write this page makes: an "I’m interested" tap POSTs {t, experienceId, interested} to
+// /quote-view/interest. It records a lead for ops and never touches the price or the quote.
+const xpItem = (o) => ({
+  id: '11111111-1111-4111-8111-111111111111', slug: 'placeholder-ayurvedic-massage', name: 'Ayurvedic massage',
+  partnerName: 'Atherya Spa', areaLabel: 'Sigiriya', summary: 'A 90-minute Ayurvedic massage with herbal oils.',
+  details: 'Some details.', priceCents: 3500, currency: 'USD', priceUnit: 'per_person', durationText: '90 min',
+  openWeekdays: [0, 1, 2, 3, 4, 5, 6], startTimes: ['09:00'], photos: [], aboutKm: 4, interested: false, ...o,
+});
+const XP_MASSAGE = xpItem({});
+const XP_COOKING = xpItem({
+  id: '22222222-2222-4222-8222-222222222222', slug: 'placeholder-village-cooking-lesson', name: 'Village cooking lesson',
+  partnerName: 'Suwee', summary: 'Cook a Sri Lankan village meal.', priceCents: 2500, interested: true,
+});
+const XP_STOPS = [{ place: 'Sigiriya', items: [XP_MASSAGE, XP_COOKING] }];
+const liveBody = (extra = {}, state = 'live') => ({
+  state, view: view({ options: [PRIVATE_OPT] }),
+  validUntil: new Date(Date.now() + (state === 'lapsed' ? -3 : 7) * 864e5).toISOString(), ...extra,
+});
+
+// Records every POST body and answers with `status` (200 echoes the requested state).
+async function stubInterest(page, status = 200) {
+  const posts = [];
+  await page.route('**/quote-view/interest', async (r) => {
+    const req = r.request();
+    const sent = JSON.parse(req.postData() || '{}');
+    posts.push({ method: req.method(), body: sent });
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interested: sent.interested }) });
+  });
+  return posts;
+}
+
+test.describe('partner experiences on the quote page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('https://ceylonhop.com/img/**', (r) => r.abort());
+  });
+
+  test('renders after "Day by day" and before the change-request note, with the owner-approved copy', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+
+    const block = page.locator('#experiences-block');
+    await expect(block).toBeVisible();
+    await expect(block.locator('h3')).toHaveText('While you’re in Sigiriya');
+    await expect(block.locator('.xp-card')).toHaveCount(2);
+    await expect(block.locator('.xp-note')).toHaveText(
+      'Nothing to pay now. Tap “I’m interested” and our Ceylon Hop Pro team will reach out to help you schedule it. You pay the same price as booking direct — never more.',
+    );
+    const card = block.locator('.xp-card').first();
+    await expect(card).toContainText('Ayurvedic massage');
+    await expect(card).toContainText('Atherya Spa');
+    await expect(card).toContainText('about 4 km away');
+    await expect(card).toContainText('$35 pp');
+    await expect(card).toContainText('Same as booking direct');
+
+    // DOM order: Day by day ticket, then the experiences, then the pp-note.
+    const order = await page.evaluate(() => {
+      const pos = (el) => el && Array.from(document.querySelectorAll('#app *')).indexOf(el);
+      const day = Array.from(document.querySelectorAll('.t-ref')).find((e) => e.textContent === 'Day by day');
+      return { day: pos(day), xp: pos(document.getElementById('experiences-block')), note: pos(document.querySelector('.pp-note')) };
+    });
+    expect(order.day).toBeGreaterThan(-1);
+    expect(order.xp).toBeGreaterThan(order.day);
+    expect(order.note).toBeGreaterThan(order.xp);
+  });
+
+  test('initial state comes from item.interested', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+    const cards = page.locator('#experiences-block .xp-card');
+    await expect(cards.nth(0).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'false');
+    await expect(cards.nth(0).locator('.xp-btn')).toHaveText('I’m interested');
+    await expect(cards.nth(1).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(cards.nth(1).locator('.xp-btn')).toHaveText('✓ Interested');
+    await expect(cards.nth(1).locator('.xp-after')).toBeVisible();
+    await expect(cards.nth(0).locator('.xp-after')).toBeHidden();
+  });
+
+  test('a tap POSTs {t, experienceId, interested:true} and flips the card; a second tap withdraws', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const posts = await stubInterest(page);
+    await page.goto(PAGE);
+
+    const card = page.locator('#experiences-block .xp-card').first();
+    const btn = card.locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    await expect(btn).toHaveText('✓ Interested');
+    await expect(card.locator('.xp-after')).toContainText('Noted — you won’t be charged for this.');
+    expect(posts).toEqual([{ method: 'POST', body: { t: 'test-token', experienceId: XP_MASSAGE.id, interested: true } }]);
+
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'false');
+    await expect(card.locator('.xp-after')).toBeHidden();
+    expect(posts[1].body).toEqual({ t: 'test-token', experienceId: XP_MASSAGE.id, interested: false });
+  });
+
+  test('the price on the page never moves when a card is tapped', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await page.goto(PAGE);
+    const total = page.locator('.opts .ticket').first().locator('.tot .v');
+    const before = await total.textContent();
+    await page.locator('#experiences-block .xp-btn').first().click();
+    await expect(page.locator('#experiences-block .xp-btn').first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(total).toHaveText(before);
+  });
+
+  test('a failed save reverts the card and says so; the next tap retries', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const posts = await stubInterest(page, 500);
+    await page.goto(PAGE);
+
+    const card = page.locator('#experiences-block .xp-card').first();
+    const btn = card.locator('.xp-btn');
+    await btn.click();
+    await expect(card.locator('.xp-err')).toHaveText('Couldn’t save — try again');
+    await expect(btn).toHaveAttribute('aria-pressed', 'false');
+    await expect(card.locator('.xp-after')).toBeHidden();
+    expect(posts).toHaveLength(1);
+
+    // The next tap retries, and a success clears the line.
+    await page.unroute('**/quote-view/interest');
+    await stubInterest(page);
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    await expect(card.locator('.xp-err')).toBeHidden();
+  });
+
+  test('a failed withdraw restores the interested state', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page, 500);
+    await page.goto(PAGE);
+    const card = page.locator('#experiences-block .xp-card').nth(1);
+    await card.locator('.xp-btn').click();
+    await expect(card.locator('.xp-err')).toBeVisible();
+    await expect(card.locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('the server’s answer wins: a withdraw that comes back {interested:true} stays ticked', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.route('**/quote-view/interest', (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: '{"interested":true}' }));
+    await page.goto(PAGE);
+    const btn = page.locator('#experiences-block .xp-card').nth(1).locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('experiences: [] renders nothing, and so does a missing key', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: [] }));
+    await page.goto(PAGE);
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await expect(page.locator('#experiences-block')).toHaveCount(0);
+
+    await page.unroute('**/quote-view*');
+    await stubQuoteView(page, liveBody());
+    await page.reload();
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await expect(page.locator('#experiences-block')).toHaveCount(0);
+  });
+
+  test('a lapsed quote still shows the section and still accepts a tap', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }, 'lapsed'));
+    const posts = await stubInterest(page);
+    await page.goto(PAGE);
+    await expect(page.locator('.held.warn')).toContainText('expired on');
+    const btn = page.locator('#experiences-block .xp-card').first().locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    expect(posts).toHaveLength(1);
+  });
+
+  test('"Details & photos" opens an inline panel', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+    const card = page.locator('#experiences-block .xp-card').first();
+    await expect(card.locator('.xp-panel')).toBeHidden();
+    await card.locator('.xp-more').click();
+    await expect(card.locator('.xp-panel')).toBeVisible();
+    await expect(card.locator('.xp-panel')).toContainText('Some details.');
+    await expect(card.locator('.xp-more')).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('a hostile name is rendered as text, not markup', async ({ page }) => {
+    const evil = xpItem({ name: `<img src=x onerror="window.__pwned=1">'"&`, partnerName: `Bob's <b>spa</b>` });
+    await stubQuoteView(page, liveBody({ experiences: [{ place: 'Sigiriya', items: [evil] }] }));
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-name')).toHaveText(evil.name);
+    await expect(page.locator('#experiences-block .xp-partner')).toHaveText(evil.partnerName);
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  });
+
+  test('a tap is reported to analytics as source quote_page', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await page.goto(PAGE);
+    await page.locator('#experiences-block .xp-btn').first().click();
+    // Tracked on the server's confirmation, a beat after the optimistic flip.
+    await page.waitForFunction(() => window.dataLayer.some((e) => e.event === 'experience_interest'));
+    const hit = await page.evaluate(() => window.dataLayer.find((e) => e.event === 'experience_interest'));
+    expect(hit).toMatchObject({ experience_slug: 'placeholder-ayurvedic-massage', place: 'Sigiriya', source: 'quote_page', interested: true });
+  });
+});
