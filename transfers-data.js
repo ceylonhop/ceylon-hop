@@ -126,7 +126,9 @@
     "arugam-bay|trincomalee":[248,332],
     // Tour-stop legs for Horton Plains / Ahangama / Hiriketiya — road estimates (refine with Google Directions).
     "nuwara-eliya|horton-plains":[32,78],"horton-plains|ella":[55,115],
-    "galle|ahangama":[18,30],"ahangama|weligama":[9,15],"mirissa|hiriketiya":[30,45],"hiriketiya|arugam-bay":[228,270]
+    "galle|ahangama":[18,30],"ahangama|weligama":[9,15],"mirissa|hiriketiya":[30,45],"hiriketiya|arugam-bay":[228,270],
+    // Hiriketiya trip-page corridors — Google Routes, 2026-10-06.
+    "cmb-airport|hiriketiya":[199,175],"ella|hiriketiya":[149,165],"yala|hiriketiya":[132,176]
   };
   // baked real [km, min] for a known id pair (either direction), else null
   function realLeg(aId, bId) {

@@ -22,6 +22,7 @@ export const BASE_PAIRS = [
   ['negombo', 'kandy'], ['colombo', 'kandy'], ['colombo', 'galle'], ['colombo', 'ella'], ['sigiriya', 'kandy'],
   ['kandy', 'ella'], ['kandy', 'nuwara-eliya'], ['nuwara-eliya', 'ella'], ['ella', 'yala'], ['ella', 'arugam-bay'],
   ['ella', 'mirissa'], ['yala', 'mirissa'], ['mirissa', 'galle'], ['galle', 'ella'],
+  ['cmb-airport', 'hiriketiya'], ['ella', 'hiriketiya'], ['yala', 'hiriketiya'],
 ];
 
 // The /trip/ index groups routes by ORIGIN, one section per place, in this fixed order —
@@ -30,7 +31,7 @@ export const BASE_PAIRS = [
 // index instead of failing the build.
 const ORIGIN_ORDER = [
   'cmb-airport', 'colombo', 'negombo', 'kandy', 'sigiriya',
-  'nuwara-eliya', 'ella', 'galle', 'mirissa', 'yala', 'arugam-bay',
+  'nuwara-eliya', 'ella', 'galle', 'mirissa', 'hiriketiya', 'yala', 'arugam-bay',
 ];
 
 // The index's "Most booked" shortlist — a fixed editorial pick (brief C1 step 3), not derived.
@@ -1325,6 +1326,8 @@ export const SITEMAP_EXTRA = [
   'guides/kandy/',
   'guides/colombo/',
   'guides/arugam-bay/',
+  'guides/mirissa/',
+  'guides/hiriketiya/',
 ];
 
 // CLI: write every generated file to disk.

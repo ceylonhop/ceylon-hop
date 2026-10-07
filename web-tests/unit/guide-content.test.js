@@ -34,6 +34,7 @@ const photoKeys = g => [
   ...(g.onTheWay?.stops || []).map(s => s.photo),
   ...g.eat.map(e => e.photo),
   ...g.stay.map(s => s.photo),
+  ...(g.nightlife?.items || []).map(n => n.photo),
 ].filter(Boolean);
 
 describe('destination guide content', () => {
