@@ -26,9 +26,11 @@ describe('balanceDueCents', () => {
   it("before any payment it is the planned split (today's meaning)", () => {
     expect(balanceDueCents(booking('payment_pending', 20000, 5000), [])).toBe(15000);
     expect(balanceDueCents(booking('draft', 20000), [])).toBe(0);
+    expect(balanceDueCents({ status: 'payment_pending', total: 20000, amountDueNow: null }, [])).toBe(0);
   });
   it('a secured booking with no recorded payment falls back to the planned split, never the whole total', () => {
     expect(balanceDueCents(booking('paid', 20000), [])).toBe(0);
+    expect(balanceDueCents(booking('paid', 20000, 5000), [])).toBe(15000);
   });
   it('closed bookings owe nothing', () => {
     for (const s of ['cancelled', 'refunded', 'no_show', 'completed']) {

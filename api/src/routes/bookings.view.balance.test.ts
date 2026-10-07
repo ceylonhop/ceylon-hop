@@ -7,14 +7,14 @@ import { signBookingToken } from '../lib/bookingToken';
 // Deposits (spec 2026-10-07 §5.3): the customer view reads what is owed from the payment ledger.
 const SECRET = 'dev-booking-link-secret-change-me';
 
-async function depositBooking() {
+async function depositBooking(split: { amountDueNow: number } = { amountDueNow: 5000 }) {
   const bookings = new InMemoryBookingRepo();
   const payments = new InMemoryPaymentRepo();
   const app = createApp({ bookings, payments });
   const b = await bookings.create({
     mode: 'single',
     total: 20000,
-    amountDueNow: 5000,
+    amountDueNow: split.amountDueNow,
     currency: 'USD',
     input: {
       from: 'Colombo Airport (CMB)',
@@ -28,10 +28,10 @@ async function depositBooking() {
   });
   await bookings.setStatus(b.id, 'payment_pending');
   await bookings.setStatus(b.id, 'paid');
-  const pay = async (purpose: PaymentPurpose, amount: number) => {
+  const pay = async (purpose: PaymentPurpose | undefined, amount: number) => {
     const p = await payments.create({
-      bookingId: b.id, provider: 'fake', orderId: `ord-${purpose}`, amount, currency: 'USD',
-      idempotencyKey: `${b.id}:${purpose}`, purpose,
+      bookingId: b.id, provider: 'fake', orderId: `ord-${purpose ?? 'none'}`, amount, currency: 'USD',
+      idempotencyKey: `${b.id}:${purpose ?? 'none'}`, purpose,
     });
     await payments.markSucceeded(p.id);
   };
@@ -53,5 +53,11 @@ describe('GET /bookings/view reads the balance from the ledger', () => {
     await pay('deposit', 5000);
     await pay('balance', 15000);
     expect(await view()).toMatchObject({ paidCents: 20000, balanceDueCents: 0, balancePayable: false });
+  });
+
+  it('a full-payment booking (no purpose recorded) owes nothing', async () => {
+    const { pay, view } = await depositBooking({ amountDueNow: 20000 });
+    await pay(undefined, 20000);
+    expect(await view()).toMatchObject({ balanceDueCents: 0, paidCents: 20000, balancePayable: false });
   });
 });

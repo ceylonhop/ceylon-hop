@@ -27,10 +27,11 @@ describe(TAG, () => {
     expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+table)\b/i);
     expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
   });
-  it('is journalled last, with the latest when', () => {
-    const position = journal.entries.findIndex((e) => e.tag === TAG);
-    expect(position).toBe(journal.entries.length - 1);
-    expect(journal.entries[position]!.when).toBeGreaterThan(Math.max(...journal.entries.slice(0, position).map((e) => e.when)));
+  it('is journalled, and the journal `when` strictly increases in array order', () => {
+    expect(journal.entries.some((e) => e.tag === TAG)).toBe(true);
+    journal.entries.forEach((e, i) => {
+      if (i > 0) expect(e.when, `${e.tag} must be newer than ${journal.entries[i - 1]!.tag}`).toBeGreaterThan(journal.entries[i - 1]!.when);
+    });
   });
 });
 
@@ -48,5 +49,18 @@ describe.skipIf(!TEST_URL)(`${TAG} on a migrated database`, () => {
       WHERE table_name = 'payments' AND column_name = 'purpose'`;
     expect(rows[0]).toMatchObject({ is_nullable: 'NO' });
     expect(rows[0]!.column_default).toMatch(/'full'/);
+  });
+  it('the three constraints exist on the migrated database', async () => {
+    const rows = await db<{ conname: string; def: string }[]>`
+      SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+      WHERE conname IN ('payments_purpose_valid', 'quotes_pay_link_deposit_cents_positive', 'customer_communications_kind_valid')`;
+    const def = (name: string) => rows.find((r) => r.conname === name)?.def ?? '';
+    expect(rows.map((r) => r.conname).sort()).toEqual([
+      'customer_communications_kind_valid', 'payments_purpose_valid', 'quotes_pay_link_deposit_cents_positive',
+    ]);
+    for (const v of ['full', 'deposit', 'balance']) expect(def('payments_purpose_valid')).toContain(`'${v}'`);
+    expect(def('quotes_pay_link_deposit_cents_positive')).toContain('> 0');
+    expect(def('customer_communications_kind_valid')).toContain("'deposit_received'");
+    expect(def('customer_communications_kind_valid')).toContain("'balance_received'");
   });
 });
