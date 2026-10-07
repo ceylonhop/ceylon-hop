@@ -17,8 +17,15 @@ describe('0065_experiences', () => {
     expect(sql).toMatch(/create table "experience_interests"/i);
   });
   it('touches no existing table and moves no data', () => {
-    expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+|alter\s+table)\b/i);
+    expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+)/i);
     expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
+    // The only ALTERs allowed are RLS on the two new tables (below); nothing existing is altered.
+    expect(sql).not.toMatch(/alter\s+table\s+"(?!experiences"|experience_interests")/i);
+  });
+  it('keeps both tables private from PostgREST, like every table since 0048 (rlsEnabled.test.ts)', () => {
+    expect(sql).toMatch(/alter table "experiences" enable row level security/i);
+    expect(sql).toMatch(/alter table "experience_interests" enable row level security/i);
+    expect(sql).toMatch(/revoke all on table "experiences", "experience_interests" from public/i);
   });
   it('keeps money as cents + a supported currency', () => {
     expect(sql).toMatch(/"price_cents" integer NOT NULL/);

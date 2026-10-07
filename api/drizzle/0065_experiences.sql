@@ -62,3 +62,22 @@ CREATE UNIQUE INDEX "experience_interests_booking_uq" ON "experience_interests" 
 CREATE UNIQUE INDEX "experience_interests_quote_uq" ON "experience_interests" ("experience_id", "quote_id") WHERE "quote_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE INDEX "experience_interests_status_idx" ON "experience_interests" ("status");
+--> statement-breakpoint
+-- Migration 0048 protected every table that existed then; later tables protect themselves (see
+-- 0058, 0060). The API connects as postgres and bypasses RLS; PostgREST's public roles get no grant.
+-- experiences.partner_contact is a partner's phone/email: it must never be readable through PostgREST.
+ALTER TABLE "experiences" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE "experience_interests" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+REVOKE ALL ON TABLE "experiences", "experience_interests" FROM PUBLIC;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE experiences, experience_interests FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE experiences, experience_interests FROM authenticated';
+  END IF;
+END $$;
