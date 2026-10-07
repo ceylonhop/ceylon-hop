@@ -1,269 +1,331 @@
 # Partner experiences near the drop-off — design
 
-Date: 2026-10-06 · Owner: Roshen · Status: draft for owner review
-Facts below were read from `origin/main` (925e3887 / 06caf849) on 2026-10-06; file:line cites are to that tree.
+Date: 2026-10-06 · Status: draft for owner review (revision 2)
+Grounding: every file:line below was checked against `origin/main` @ 06caf849 on 2026-10-06.
+**Verified** = read in the code. **Unverified** = an assumption, with the check that settles it.
 
 ## 1. What this is
 
-A new line of business. Ceylon Hop has negotiated deals with local businesses near the places we
-drop customers off (Atherya — Ayurvedic massage, Suwee — village cooking lesson, a Minneriya jeep
-safari, all near Sigiriya). When a customer is going somewhere we have partners, we show those
-**experiences** and let them tap **"I'm interested"**. Nothing is charged. The Ceylon Hop Pro
-team then reaches out and arranges it by hand, at the same price as booking direct.
+A new line of business. Ceylon Hop has negotiated deals with local businesses near where we drop
+customers off (e.g. Atherya — Ayurvedic massage, Suwee — village cooking lesson, a Minneriya jeep
+safari, all near Sigiriya). When a customer is going near a partner, we show the partner's
+**experience** and let them tap **"I'm interested"**. Nothing is charged on the site.
 
-It is **lead capture, not a booking engine** (owner, 2026-10-06). The website records interest; ops
-turns it into a booking off-platform.
+**The end-to-end flow (owner, 2026-10-06):**
+1. Customer taps "I'm interested" on the booking page or on their quote page.
+2. The Ceylon Hop Pro team contacts them and confirms a time with the partner.
+3. Ops sends a **separate PayHere payment link** (made in the PayHere portal) for the price the customer was shown.
+4. Customer pays the link; ops records it as paid with the PayHere reference.
+
+The website is **lead capture**; the money moves outside our system in phase 1.
 
 ### Phases
 
-| Phase | What | This spec |
+| Phase | What | Status |
 |---|---|---|
-| 1 | Catalogue in the DB, ops page to maintain it, shown on the booking page **and** the customer quote page, "I'm interested" recorded and worked by ops | **Designed here, built by the plan** |
-| 2 | Pre-travel email: closer to the travel date, customers who did **not** pick any experience get one email with the top experiences + guides for their stops | Own spec, after phase 1 has live data |
-| 3 | Paid experiences: price becomes a charged line, slot choice, partner payout | Not built; §9 records what phase 1 does now so phase 3 is additive |
+| 1 | Catalogue in the DB + ops page; shown on the booking page and the quote page; interests worked by ops through to a PayHere link and "paid" | **This spec** |
+| 2 | Pre-travel email to customers who picked nothing: top experiences + guides for their stops | Own spec, after phase 1 has live data (§8) |
+| 3 | Ops generates the experience payment link **from the ops tool** instead of the PayHere portal, so the money lands in our records | Not built; §9 lists what phase 1 does for it |
 
-**Why phase it this way:** phase 2 needs phase 1's data ("who did *not* pick one" is a query on
-phase 1's table), and phase 3 needs evidence that people want these before we take money for
-them. Building 1 first keeps each step shippable on its own.
+**Why this order:** phase 2's audience is "who did *not* pick one" — a query on phase 1's table.
+Phase 3 automates a step ops will by then have done by hand enough times to know its shape.
 
-## 2. User stories (phase 1)
+## 2. User stories
 
 **Traveller**
-- T1. Booking a transfer to Sigiriya, I see what I can do near my drop-off, so I can plan without searching elsewhere.
-- T2. I see the price, duration, open days/times, details and photos, so I can judge it.
-- T3. I tap "I'm interested" without paying or committing; it is unmistakable that nothing is charged.
-- T4. I'm told I won't pay more than booking direct and that the Pro team will reach out.
-- T5. On a quote link sent by ops, I see the same experiences for the places in my quote and can tap "I'm interested" there too.
-- T6. My confirmation email reminds me what I said I'm interested in.
+- T1. Booking a transfer to Sigiriya, I see experiences near my drop-off.
+- T2. I see price, duration, open days and times, details and photos.
+- T3. I tap "I'm interested"; it is unmistakable that nothing is charged now.
+- T4. I'm told the price is the same as booking direct, the Pro team will reach out, and if I go ahead I'll get a secure payment link.
+- T5. On a quote link from ops, I see the same experiences for the places in my quote and can tap there too.
+- T6. My booking confirmation email lists what I said I'm interested in.
 
 **Ops**
-- O1. I add/edit an experience (name, partner, price, days, times, details, photos, location, reach) without a developer.
-- O2. I switch an experience off without deleting it (partner closed for the season).
-- O3. I see every open interest in one queue (customer, booking/quote ref, travel date, place) and on the booking/quote itself.
-- O4. I move each interest through new → contacted → booked / declined, with a note.
+- O1. Add and edit experiences without a developer (name, partner, area, price, days, times, details, photos, pin, reach).
+- O2. Switch an experience off without deleting it.
+- O3. One queue of open leads — only **real** ones: paid bookings and live quotes, never abandoned checkouts.
+- O4. Move each lead new → contacted → link sent → paid / declined; record the PayHere reference and amount when paid; add a note.
+- O5. See a booking's interests on its booking sheet.
 
 **Owner**
-- W1. I can see which experiences draw interest and which convert (statuses + counts on the ops page).
+- W1. Per experience: how many interested, how many paid, and how much was paid.
 
 ## 3. Decisions (each with its reason)
 
-### D1 — Lead capture only; the total never changes
-The tap records interest; there is no slot choice and no payment.
-**Why:** owner call (2026-10-06): "lightweight… we manage via ops everything else". It also keeps
-checkout, pricing and PayHere completely untouched, which is where this codebase carries its risk.
+### D1 — The site never charges for experiences; the transfer total never changes
+**Why:** owner call — "lightweight", ops sends a separate PayHere link. It also keeps checkout,
+pricing and the PayHere webhook untouched, which is where this codebase carries its money risk.
 
 ### D2 — Called "experiences" in code and in the ops tool
-**Why:** "add-ons"/"extras" already mean the sightseeing/waiting fees — `EXTRA_CODES`
-(`api/src/quote/rateCard.ts:4`), `state.addons` and `toggleAddon` (`booking.js:288`, `:1339`).
-A second meaning of the same word guarantees a mix-up in code review and in ops conversations.
+**Why:** "add-ons"/"extras" already mean the sightseeing/waiting fees: `EXTRA_CODES`
+(`api/src/quote/rateCard.ts:4`), `state.addons` (`booking.js:288`), `toggleAddon` (`booking.js:1339`).
 Customers never see the word; they see "While you're in Sigiriya".
 
 ### D3 — Two new tables, not a reuse of an existing record
-`experiences` (the catalogue) and `experience_interests` (one row per customer × experience).
-**Why not reuse:**
-- `bookings.customer_notes` (`schema.ts:82`) is free text; ops can't track a status per experience, and phase 2 can't query it.
-- `concierge_tasks` (`schema.ts:269`) has no link to an experience or a quote, and nothing in the ops tool lists it today.
-- A JSON column on `bookings` can't hold interests made on a **quote** before any booking exists (T5).
-A table per concept is also exactly how phase 3 grows (an interest becomes a paid line).
+`experiences` (catalogue) and `experience_interests` (one row per customer × experience).
+**Why not reuse:** `bookings.customer_notes` (`api/src/db/schema.ts:82`) is free text — no status
+per experience, nothing phase 2 can query. `concierge_tasks` (`schema.ts:269-279`) has no link to
+an experience or a quote, and nothing in the ops tool lists it. A JSON column on `bookings` can't
+hold a quote-page interest, which exists before any booking (T5).
 
 ### D4 — What an experience stores
-| Field | Type | Why |
+| Field | Type / rule | Why |
 |---|---|---|
-| `slug` | text, unique, `^[a-z0-9-]{3,60}$` | stable id for photos and links |
-| `name`, `partner_name` | text ≤ 80 | shown on the card |
-| `summary` | text ≤ 160 | the one-liner on the card |
-| `details` | text ≤ 2000, plain | "package details" in the Details panel |
-| `price_cents` + `currency` (`'USD'` check) | integer + text | project money rule: integer minor units + ISO currency (CLAUDE.md "Stack") — and phase 3 can charge it without a data migration |
-| `price_unit` | `'per_person' \| 'per_group'` | "$35 pp" vs "$45 per jeep" |
-| `duration_text` | text ≤ 40 | "90 min", "3–4 hrs" — display only, no maths needs it |
-| `open_weekdays` | `integer[]`, values 0–6 (0 = Sunday, JS `getDay()`) | **structured**, not prose, so phase 3 can offer only open days; "Closed Sundays" is derived |
-| `start_times` | `text[]`, each `HH:MM` | the negotiated booking times; structured for the same reason |
-| `lat`, `lng` | double, required | the matching pin (D6) |
-| `radius_km` | double, 1–60, default 5 | per-experience reach (D6) |
-| `photos` | `text[]`, 1–6 stems `slug/name` | D8 |
-| `partner_contact` | text ≤ 200, nullable | ops needs it to schedule; **never** returned by a public endpoint |
-| `active` | boolean, default true | O2 — switch off, never delete |
-| `priority` | integer −100…100, default 0 | higher shows first; ties go to the nearest. Lets ops promote a partner without faking its distance |
-| `created_by/updated_by/created_at/updated_at` | | same audit columns as `pricing_zones` (`schema.ts:909-921`) |
+| `slug` | unique, `^[a-z0-9-]{3,60}$` | stable id; names the photo folder |
+| `name`, `partner_name` | ≤ 80 | the card's title and byline |
+| `area_label` | ≤ 40, e.g. "Sigiriya" | the place ops and the customer associate it with; **set by ops**, so nothing a browser sends ends up as a label in the ops tool (D11) |
+| `summary` | ≤ 160 | the card's one-liner |
+| `details` | ≤ 2000, plain text | "package details" in the Details panel |
+| `price_cents` + `currency` (`'USD'`) | integer + text | project money rule (CLAUDE.md "Stack"); the price ops puts on the PayHere link |
+| `price_unit` | `per_person` \| `per_group` | "$35 pp" vs "$45 per jeep" |
+| `duration_text` | ≤ 40, optional | "90 min", "3–4 hrs" — display only |
+| `open_weekdays` | `integer[]`, 0–6 (0 = Sunday, JS `getDay()`) | structured so phase 3 can offer only open days; "Closed Sun" is derived |
+| `start_times` | `text[]` of `HH:MM` | the negotiated booking times, structured for the same reason |
+| `lat`, `lng` | required, inside Sri Lanka (lat 5.8–10.0, lng 79.4–82.0) | the matching pin (D6); the box catches a swapped "lng, lat" paste |
+| `radius_km` | 0 < r ≤ 60, default 5 | per-experience reach (D6) |
+| `photos` | `text[]`, ≤ 6 stems `folder/name` | D8 |
+| `partner_contact` | ≤ 200, optional | ops needs it to schedule; **never** sent to a customer page |
+| `active` | default true | O2 — switch off, never delete |
+| audit | `created_by`, `updated_by`, `created_at`, `updated_at` | same as `pricing_zones` (`schema.ts:909-921`) |
 
-**Not stored (YAGNI until phase 3):** commission/net price, capacity per slot, cancellation policy.
+**Cut (YAGNI):** a `priority`/sort field — with a handful of partners per area, nearest-first is
+enough; add it when an area has more experiences than fit. Commission, capacity and cancellation
+fields — phase 3.
 
-### D5 — An interest stores what the customer saw
-`experience_interests`: `id`, `experience_id` → experiences, `booking_id` → bookings (nullable),
-`quote_id` → quotes (nullable, check: at least one set), `place_label` ("Sigiriya"), `source`
-(`'booking_page' | 'quote_page'`), **snapshots** `name_snapshot`, `price_cents_snapshot`,
-`price_unit_snapshot`, `status` (`'new' | 'contacted' | 'booked' | 'declined'`, default `new`),
-`ops_note` (≤ 1000), audit columns. Unique `(experience_id, booking_id)` and
-`(experience_id, quote_id)`.
-**Why snapshots:** ops edits prices; the record must show what we told *this* customer.
-**Why unique pairs:** a double tap or a retried request must not create two leads.
-**Why this status set:** it is the smallest set that answers W1 ("which convert"); phase 3 adds `paid`.
+### D5 — What an interest stores
+`id`, `experience_id`, `booking_id` (nullable), `quote_id` (nullable; check: at least one set),
+`source` (`booking_page` | `quote_page`), snapshots `name_snapshot`, `price_cents_snapshot`,
+`price_unit_snapshot`, `status` (`new` | `contacted` | `link_sent` | `paid` | `declined`, default `new`),
+`payment_ref` (≤ 100), `amount_paid_cents` (≥ 0), `amount_paid_currency` (`USD` | `LKR`),
+`ops_note` (≤ 1000), audit columns. Unique `(experience_id, booking_id)` and `(experience_id, quote_id)`.
+- **Snapshots:** ops edits prices; the link must be for the price *this* customer was shown — that is
+  what keeps "same price as booking direct" true per customer.
+- **`link_sent` and `paid`:** ops sends PayHere links (owner, 2026-10-06), so "has a link but hasn't
+  paid" is the follow-up list ops needs; `paid` + amount is what W1 counts.
+- **Payment fields:** these payments never touch our system (D13), so the reference and amount are
+  the only record we will have. `LKR` is allowed because local partners may price in rupees and a
+  PayHere link can be in LKR (PayHere's supported currencies — general knowledge, not checked in code);
+  the experience's display price stays USD like every other price on the site.
+- **`paid` requires `payment_ref`:** a "paid" with no reference can't be reconciled against PayHere.
+- **Unique pairs:** a double tap or a retried request must not create two leads.
 
-### D6 — Matching is by map distance, per experience reach
+### D6 — Matching is by map distance, each experience with its own reach
 An experience shows for a stop when the straight-line distance from the stop's point to the
-experience's pin is **≤ its `radius_km`**. Results are sorted by `priority` (high first), then distance;
-at most 6 per stop; an experience matched by an earlier stop is not repeated under a later one.
-**Why distance, not place names:** the owner's examples — Dambulla, nearby towns, a safari park
-~25 km away — don't share a name with the drop-off. **Why a per-experience radius, not one global
-5 km:** a massage 3 km away and a safari 25 km away both belong to "Sigiriya"; one number can't
-serve both. Default 5 km is the owner's figure.
-**Prior art:** `pricing_zones` already stores a pin + `radius_km` and `hotZones.ts:73-84` has a
-radius matcher — but pricing never runs it (`winningZoneForStops` passes no coords,
-`hotZones.ts:110`), so this is the radius check's first live use. Distance uses the exported
-`haversineKm` (`api/src/adapters/maps.ts:165`).
+experience's pin is ≤ its `radius_km`. Nearest first; at most 6 per stop; an experience shown
+under an earlier stop is not repeated under a later one.
+**Why distance, not names:** the owner's examples — Dambulla, nearby towns, a safari park — don't
+share a name with the drop-off. **Why a reach per experience:** a spa 3 km away and a safari ~25 km
+away (rough estimate) both belong to "Sigiriya"; one global 5 km would drop the safari. Default 5 km
+is the owner's figure. Distance: `haversineKm` (`api/src/adapters/maps.ts:165`, exported).
+**Prior art, honestly:** `pricing_zones` stores a pin + `radius_km`, and `hotZones.ts` has a radius
+check (`api/src/quote/hotZones.ts:73-84`), but pricing never runs it — `winningZoneForStops` passes
+no coordinates (`hotZones.ts:110`). This is the first live use of radius matching.
 
 ### D7 — One matcher, on the server
-`GET /experiences/near?at=<label>@<lat>,<lng>` (repeatable) returns matches grouped per stop. The
-booking page calls it; the quote-view builder calls the same function in-process.
-**Why server-side, not ship the catalogue to the browser:** `booking.js` is a classic script and
-can't import TypeScript, so a browser matcher would be a second copy that drifts from the quote
-page's. One tested function serves both pages. Cost: one GET per step-3 render; the browser rounds
-coordinates to 3 decimals (~100 m) before sending, and the response is `public, max-age=300`
-like `GET /quote/pricing` (`api/src/routes/quote.ts:233-236`).
+`GET /experiences/near?at=<label>@<lat>,<lng>` (repeatable) returns matches grouped per stop; the
+booking page calls it, the quote view calls the same function in-process.
+**Why:** `booking.js` is a classic script and can't import TypeScript; a browser copy of the matcher
+would drift from the quote page's. Cost: one GET when step 3 renders with a new stop set. The browser
+rounds coordinates to 3 decimals (~100 m) before sending. Response cached `public, max-age=300` (the
+same header pattern as `GET /quote/pricing`, `api/src/routes/quote.ts:233-236`, which uses 60 s) — **so an experience ops switches off can
+keep showing for up to 5 minutes.** Accepted.
 
-### D8 — Photos are files in the repo, not DB uploads
-Photos live at `img/experiences/<slug>/<name>-900.jpg` + `-1800.jpg` (the guides convention,
-resized with `sips -Z 900`, `docs/superpowers/plans/2026-09-28-destination-guides.md:130-157`).
-The experience stores stems (`atherya-spa/massage`). Pages loads them from
-`https://ceylonhop.com/img/experiences/…`.
-**Why:** prod Supabase is on the **free plan** (owner, 2026-10-06): 500 MB database, and the
-earlier backup review notes free projects have no backups. Photos would be the only large data
-we store. Repo files cost nothing and load from GitHub Pages like the site's 300+ other images.
-**Trade-off accepted:** a new photo is a small PR + `production` promote (Pages serves
-`production`); ops can't upload. Revisit if prod moves to Supabase Pro.
-**Absolute URLs everywhere:** the API host serves only an allow-list of root assets
-(`api/src/routes/customerPages.ts:66-78`) — `img/experiences/…` would 404 on the quote and ops
-hosts — and there is no CSP blocking cross-origin images (`api/src/app.ts:319-326`).
-**Missing photo:** the card hides a broken `<img>` (onerror) rather than showing a broken icon.
+### D8 — Photos are files in the repo, not uploads
+`img/experiences/<slug>/<name>-900.jpg` + `-1800.jpg`, the guides convention (resize with
+`sips -Z 900`, `docs/superpowers/plans/2026-09-28-destination-guides.md:130-157`). Experiences store
+stems (`atherya-massage/treatment`); pages load `https://ceylonhop.com/img/experiences/…`.
+**Why:** prod Supabase is on the **free plan** (owner, 2026-10-06) — a 500 MB database (Supabase's
+published limit; not checked against the account) — and photos would be the only bulky data we'd store.
+**Absolute URLs:** the API host serves only an allow-list of root assets
+(`api/src/routes/customerPages.ts:66-78`), so `img/experiences/…` would 404 on the quote host and in
+the ops tool; and there is no CSP blocking cross-origin images (`api/src/app.ts:319-326`, "No CSP here").
+**Cost accepted:** a new photo is a small PR **and a `production` promote** — Pages serves
+`production`, not `main` — so a photo can't be seen anywhere (staging and the ops preview included)
+until it's promoted. Photos therefore ship in their own PR **before** ops enters the experience.
+A missing photo hides itself (`onerror`) instead of showing a broken image.
 
-### D9 — Where the stop points come from
-| Page | Point used | Source |
+### D9 — Where each page's stop points come from
+| Page / mode | Point | Source |
 |---|---|---|
-| Booking, private single | exact drop-off picked in step 2 | `state.locToGeo` (`booking.js:292`, set by `setGeo` `:373`) — step 2 comes before step 3 |
-| … else | the catalogue drop-off | `T.place(routeToId)` (`booking.js:207-209`, coords in `transfers-data.js:24-43`) |
-| … else | a known name | `T.resolvePlace(name)` (`transfers-data.js:316`) |
-| Booking, shared | catalogue drop-off | as above (no step-2 picker in shared, `booking.js:883`) |
-| Booking, trip | each overnight stop by name | `T.resolvePlace` per `tripStops` (`booking.js:184`) |
-| Quote page | each journey's destination + each stay | server: `knownCoords(name)` (`maps.ts:179`) then `place_resolutions` (`placeResolutionRepo.ts:27-34`) |
-**Accepted limitation:** a trip stop that is a Google-picked place outside the catalogue gets no
-point (plan.js passes names only, `plan.js:1638`), so no experiences for that stop. Fixing it
-means carrying coordinates through plan → booking links — a separate change, not needed to launch.
+| Booking, private single | the exact drop-off picked in step 2 | `state.locToGeo` `{name,address,lat,lng}` (`booking.js:292-293`), set by `setGeo` (`booking.js:373`); step 2 comes before step 3 |
+| … not picked | the catalogue drop-off | `T.place(routeToId)` (`booking.js:207-209`; coords in `transfers-data.js:24-43`) |
+| … not in catalogue | a known name | `T.resolvePlace(name)` (`transfers-data.js:316`) |
+| Booking, shared | catalogue drop-off | as above (no step-2 picker in shared mode) |
+| Booking, trip | each overnight stop, by name | `T.resolvePlace` over `tripStops` (`booking.js:184`) |
+| Quote page | each driving leg's `to` (stay legs and the first origin skipped); legs read with `requestLegs()` (`api/src/db/quoteRouteText.ts:14-27`), which falls back to the top-level `legs` older rows use | server: `knownCoords(name)` (`maps.ts:179`), else `place_resolutions` by canonical key (`api/src/db/placeResolutionRepo.ts:27-34`) |
 
-### D10 — Booking page: the section and the write
-- Step 3, after `#extras-block` (`booking.html:948-951`), in its own container — `#extras-block`
-  is hidden for trips and shared rides (`booking.js:2371-2372`) and experiences must show for both.
-- Heading "While you're in {place}" per matched stop; card per experience; Details & photos panel.
-- Selected ids go in the booking payload as `experienceIds`, with `experiencePlaces` (id → the stop label it was shown under, so ops sees "Sigiriya") (all three modes), read off the raw body
-  by a helper like `customerNotesFrom` (`api/src/routes/bookings.ts:470-484`).
-  **Why the raw-body helper, not the Zod domain inputs:** `customerNotes` set this precedent, and it
-  leaves `SingleTransferInput`/`TripInput` (stable interfaces, Hard rule 5) untouched.
-- Unknown or inactive ids are dropped; max 10. Interests are written **after** the booking row,
-  and a failure is logged, never thrown — the same shape as the concierge-task write
-  (`bookings.ts:409-411`). **Why:** an interest must never cost us a booking.
-- The idempotency key is built from the payload (`booking.js:3220-3226`), so a changed selection
-  is a new key — correct, it is a different request.
+**Accepted limitation:** a trip stop picked from Google outside the catalogue has no point (plan.js
+passes stop names only, `plan.js:1638`), so that stop shows no experiences.
+**Unverified — quote coverage:** quote stops are free text and often hotel names, which neither
+lookup may know. Before building the quote page (PR 6), measure coverage on recent quotes (plan, PR 6 gate).
+If coverage is poor, the fix is to store coordinates on the quote when ops picks a place — not
+to pay for Google lookups on every quote view (September's Maps bill was mostly our own CI).
 
-### D11 — Quote page: the section and the write
-- `GET /quote-view` adds `experiences: [{ place, items: [...] }]` to the view; `quote.html` renders
-  it after the Day-by-day ticket (`quote.html:410-413`), before the closing note.
-  **Why after the itinerary:** the quote's job is the price; experiences are the "while you're there".
-- `POST /quote-view/interest` `{ t, experienceId, interested }`, token checked with
-  `verifyQuoteViewToken` (`api/src/lib/bookingToken.ts:208`); only while the quote is live or
-  lapsed; the experience must be one the view actually offered for that quote; rate-limited with
-  the existing limiter (`api/src/app.ts:270`, `:388-399`).
-- **This deliberately changes a past decision:** the quote page was built as a read-only proposal
-  with "no POST" (`api/src/routes/quoteView.ts:12-13`; quote-page spec D6), because a forwarded
-  link must be harmless. An interest moves no money and books nothing; the worst a forwarded
-  link can do is create a lead ops then calls about. **Why not a WhatsApp link instead:** it leaves
-  no record, so ops can't track it (O3/O4) and phase 2 can't exclude these customers.
-- Un-tapping removes the interest only while it is still `new`; once ops has acted, it stays.
-- **Quote → booking:** when a quote becomes a booking, its interests get `booking_id` set. There are
-  three conversion paths and all three must call it: `POST /bookings/from-quote-v2`
-  (`postgresQuoteConversionRepo.ts:42-91`), `POST /quotes/pay/start` (`quotePay.ts:327-345`) and
-  ops "Mark booked" (`internalQuote.ts:1135-1159`). One repo method, `linkQuoteToBooking`, failure
-  logged not thrown.
+**Headings:** "While you're in {stop}", using the part before " / " ("Sigiriya / Dambulla" → "Sigiriya").
+**Distance on the card:** road-adjusted, "about X km away" = straight-line × 1.35, the same factor the
+codebase's own fallback distance uses (`maps.ts:210`). Straight-line understates road distance.
 
-### D12 — Ops page "Experiences"
-- New top-level page `#experiences`, routed and gated like `#rates` (`ops-ui.html:2298`, `:2449-2468`,
-  `:4237-4245`), with two tabs: **Catalogue** (list + edit form) and **Interests** (the queue, O3).
-- New capability `experiences:manage`, granted to **founder and ops** (`api/src/lib/opsAuth.ts:30-35`,
-  "adding a capability is one row").
-  **Why not reuse `rates:manage`/`quote:approve`:** those are founder-only money powers; the owner
-  wants the ops team to maintain this, and the price here is display-only.
-  **Why not finance:** not their job; they keep read access via the booking sheet.
-- Location: ops pastes `lat, lng` or a Google Maps URL; the form parses both and shows an
-  "Open in Google Maps" check link. **Why not a map picker:** the ops Maps loader exists only for
-  the itinerary map (`ops-ui.html:11582-11588`); a paste is zero new Maps work and Google Maps'
-  "copy coordinates" is one click for ops.
-- No delete. **Why:** interests reference experiences; switching off (O2) keeps history and W1 counts.
-- Interest status changes: `PATCH /admin/experience-interests/:id` under `bookings:operate`
-  (founder + ops already hold it).
+### D10 — Booking page
+- Step 3, in a new `#experiences-block` after `#extras-block` (`booking.html:948-951`). Its own block
+  because `#extras-block` shows only for single private transfers (`booking.js:2371-2372`) and
+  experiences must show for trips and shared rides too.
+- Selected ids go in the booking payload as `experienceIds` (all three modes), read off the raw body
+  like `customerNotes` (`customerNotesFrom`, `api/src/routes/bookings.ts:470-484`). **Why not Zod domain
+  inputs:** `customerNotes` set this precedent, and it leaves `SingleTransferInput`/`TripInput`
+  (stable interfaces, Hard rule 5) untouched. Only ids — no labels — come from the browser (D11).
+- A malformed list is ignored, never a 400 (a stale cached page must not lose a booking). Unknown
+  or inactive ids are dropped; at most 10.
+- Interests are written right after the booking row, best-effort, the same shape as the concierge
+  write (`flagForOps`, `bookings.ts:402-411`): a failure is logged, never returned.
+- **Bookings are created as `draft`, before payment** (`api/src/db/postgresBookingRepo.ts:461`), so an
+  interest exists for every checkout that is abandoned. That is fine to store and wrong to work: the
+  ops queue shows a booking's interests only once the booking is `paid`, `confirmed`, `in_progress` or
+  `completed` (the post-payment states, `api/src/domain/status.ts:2-29`), and drops them if it's
+  `cancelled`, `refunded` or `no_show`.
 
-### D13 — Where ops sees interests
-1. **Interests tab** (the queue): status new/contacted first, newest first, with customer name,
-   booking/quote ref, travel date, place, experience, status dropdown, note.
-2. **Booking detail sheet** (`renderSheet`, `ops-ui.html:3951`): an "Interested in" block.
-3. **Team paid email** (`teamPaidEmail`, `opsNotifications.ts:342`): an "Interested in" row.
-**Why no new "interest" email:** owner asked to "manage via ops"; a queue is checkable, an email
-per tap is noise. The paid email already lands in ops's inbox for every real booking.
+### D11 — Nothing a browser sends becomes ops-tool text
+The interest's place comes from the experience's `area_label` (ops-set), and the name/price from the
+server's snapshot. The only browser input is a list of uuids. **Why:** `ops-ui.html` builds pages
+from HTML strings; a customer-controlled label stored and shown there is a script-injection path
+into an internal tool. Ops-ui still escapes what it renders, as defence in depth — but note it has **two**
+helpers: the dashboard script's `esc` (`ops-ui.html:2208`, escapes `& < > "` but **not** `'`, so attributes
+must be double-quoted; the booking sheet lives here) and the QuoteView module's `esc` (`ops-ui.html:4806`,
+where the Rates page — and so the Experiences page — renders).
 
-### D14 — Customer copy (owner-approved wording, 2026-10-06)
-- Box above the cards: **"Nothing to pay now.** Tap "I'm interested" and our Ceylon Hop Pro team
-  will reach out to help you schedule it. You pay the same price as booking direct — never more."
-- Button: **"I'm interested"** → **"✓ Interested"**. (Owner rejected "Free · no charge" on the
-  button as misleading.)
-- After tapping, under the card: **"Noted — you won't be charged for this.** Our Ceylon Hop Pro team
-  will message you with details and available times. You decide then."
+### D12 — Quote page
+- `GET /quote-view` adds `experiences: [{ place, items }]` (each item flagged `interested`);
+  `quote.html` renders it after the Day-by-day ticket (`quote.html:410-413`), before the closing note.
+  **Why after the itinerary:** the quote's job is the trip and its price.
+- `POST /quote-view/interest` `{ t, experienceId, interested }`: token checked by
+  `verifyQuoteViewToken` (`api/src/lib/bookingToken.ts:208`); the quote must be `ready` or `sent`
+  (the liveness `quoteView.ts:169-191` already computes); the experience must be one the view offers
+  for that quote; rate-limited with the existing limiter (`app.ts:270`, mounted per path at `:388-399`).
+- A **lapsed** quote (status still `ready`/`sent`, `offerValidUntil` passed, `quoteView.ts:191-193`) still
+  shows experiences and accepts taps, and its leads stay in the queue. **Why:** ops refreshes lapsed
+  quotes on request, and the customer's interest is just as real. Deleted quotes (`deleted_at`,
+  `schema.ts:792`) never appear.
+- **This reverses a past decision on purpose.** The quote page was built read-only — "no POST"
+  (`api/src/routes/quoteView.ts:12-13`) — so a forwarded link is harmless. An interest moves no money;
+  the worst a forwarded link can do is create a lead ops then contacts. **Why not a WhatsApp link
+  instead:** no record, so no queue (O3/O4), no W1 counts, and phase 2 couldn't exclude these customers.
+- Un-tapping removes the interest only while it's `new`; once ops has acted, it stays.
+- **Quote → booking:** the quote's interests get `booking_id` set at all three conversion points:
+  `POST /bookings/from-quote-v2` (`api/src/routes/quoteConversion.ts:33`), `POST /quotes/pay/start`
+  (`api/src/routes/quotePay.ts:327-345`) and ops "Mark booked" (`api/src/routes/internalQuote.ts:1135-1159`).
+  One repo method; a failure is logged, never fails the conversion.
+
+### D13 — Payments happen outside our system (phase 1)
+Experience money goes customer → PayHere portal link → our PayHere account. Consequences:
+- Our ops payment lookup, ops analytics totals, server-side GA4 `purchase`, and the "Paid:" team email
+  will **not** include experience money. Reconciliation is PayHere portal + the `payment_ref`/amount
+  fields on each interest.
+- Refunds for experiences are done by hand in the PayHere portal. **The site's terms cover transfers,
+  not experiences** — a refund rule is needed before the first link goes out (open item 3).
+- **Unverified — webhook noise:** if PayHere notifies our notify URL for portal-link payments, our
+  webhook answers `unknown_order` (404) without an alert (`api/src/routes/webhooks.ts:253`) but logs a
+  refused checkout event — noise in "no payments?" triage. Check: pay one small test link, then look for
+  an `unknown_order` row in `booking_checkout_event` (a prod read; needs the owner's OK).
+
+### D14 — Ops page "Experiences"
+- New top-level page `#experiences`, routed and gated like `#rates` (`routeStateFromUrl`
+  `ops-ui.html:2298`, `setNav` `:2449-2468`, dispatcher `:4237-4245`). Tabs: **Catalogue** and **Leads**.
+- New capability `experiences:manage` for founder **and ops** (matrix `api/src/lib/opsAuth.ts:30-35`,
+  "adding a capability is one row"). **Why not `rates:manage`/`quote:approve`:** those are founder-only
+  money powers; the price here is display-only and the owner wants ops to maintain it (open item 1).
+- Location: ops pastes `lat, lng` or a Google Maps URL; the form parses it and shows an "Open in Google
+  Maps" check link. **Why not a map picker:** the ops Maps loader serves only the itinerary map
+  (`ops-ui.html:11582-11588`); a paste needs no new Maps work.
+- No delete — interests reference experiences, and W1 needs the history.
+- Lead status changes under `bookings:operate` (founder + ops already hold it, `opsAuth.ts:30-35`).
+
+### D15 — Where ops sees leads
+1. **Leads tab** — one joined query: open leads (new / contacted / link sent), filtered per D10, newest
+   first, with customer name, contact, booking/quote ref, travel date, area, experience, quoted price,
+   status, payment ref/amount, note. **Why one query:** the ops bookings list was N+1 until #703; a
+   per-row lookup here would repeat it on a free-plan database.
+2. **Booking sheet** (`renderSheet`, `ops-ui.html:3951`, fed by `GET /admin/ops/bookings/:id` — `ops.ts:294`,
+   router mounted at `app.ts:590`): an "Interested in" block. Its guard is `bookings:read`, which finance also
+   holds, so the status control shows only when the viewer has `bookings:operate`.
+3. **Team paid email** (`teamPaidEmail`, `api/src/services/opsNotifications.ts:342`): an "Interested in" row,
+   added in that email's own facts — **not** in the shared `factRows` (`notifications.ts:214-261`), which about
+   a dozen customer and ops templates reuse.
+**Why no email per tap:** the owner asked to "manage via ops"; the paid email already reaches ops for every real booking.
+
+### D16 — Customer copy (owner-approved 2026-10-06; button wording revised by the owner)
+- Box above the cards: **"Nothing to pay now.** Tap "I'm interested" and our Ceylon Hop Pro team will
+  reach out to help you schedule it. You pay the same price as booking direct — never more."
+- Button: **"I'm interested"** → **"✓ Interested"**. (The owner rejected "Free · no charge" on the button.)
+- Under the card after a tap: **"Noted — you won't be charged for this.** Our Ceylon Hop Pro team will
+  message you with details and available times. If you go ahead, we'll send you a secure payment link."
+- Price line: "$35 pp · Same as booking direct". Distance: "about 4 km away".
 - Booking summary: "You're interested in — not charged" + names.
-- Confirmation email row: "Interested in: Ayurvedic massage (Atherya Spa) — not charged; our Pro
-  team will reach out."
-- Price line: "$35 pp · Same as booking direct".
+- Confirmation email row: "Interested in: Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out."
+- **"never more" is a standing promise:** it stays true only if ops keeps each price equal to the
+  partner's direct price (open item 4).
 
-### D15 — Never in the way
-The booking page hides the section if `/experiences/near` fails or takes > 3 s; the quote view
-returns `experiences: []` if matching throws; interest writes never fail a booking or a page.
-**Why:** this is an upsell on the money path; it must not be able to break the money path.
+### D17 — Never in the way
+The booking page hides the section if `/experiences/near` fails or takes longer than 3 s; the quote view
+returns `experiences: []` if matching throws; interest writes never fail a booking, a quote page or a
+conversion. **Why:** this is an upsell sitting on the money path.
 
-### D16 — No feature flag
-The section renders only when active experiences match. With zero active rows nothing shows, so
-"turn it off" is "switch the experiences off" on the ops page.
-**Why:** a flag is a config change (maintenance rule 3: stop-and-ask, plus a Render env edit on two
-services); the data already gives us the switch.
+### D18 — No feature flag
+Nothing shows unless an active experience matches, so "off" = switch the experiences off in ops.
+**Why:** a flag is a config change (maintenance rule 3) on two Render services; the data is already a switch.
 
-### D17 — One analytics event
-`experience_interest` (`{ experience_slug, place, source, interested }`) through each page's existing
-`track()` helper. **Why:** the DB answers "who", GA4 answers "how many saw vs tapped" — W1 needs both.
+### D19 — Measuring it
+- **Primary, from our own data:** website bookings created vs paid, 14 days before vs 14 days after the
+  first experience goes live; interests per paid booking; leads reaching `paid`. Honest caveat: at a few
+  bookings a day this is a sanity check, not a statistically firm test.
+- **Stop rule:** if paid conversion clearly drops after launch, collapse the section to one line
+  ("Things to do near Sigiriya (3)") that expands on tap.
+- **Secondary, GA4:** `experience_interest` via `window.chTrack` (`booking.js:442` shows the call pattern;
+  `quote.html:103-105` wraps it). **Unverified:** whether a new custom event reaches GA4 depends on a GTM
+  tag forwarding it; the funnel events once never reached GA4 for this reason. Check in GTM before relying on it.
 
 ## 4. Release & risk
-- **Migration `0065`** (two new tables, no change to existing ones) auto-applies on staging at merge
-  and on prod at the `main → production` promote (CLAUDE.md rule 7). Needs the owner's OK on the promote.
-- Photos and booking/quote page changes go live on GitHub Pages only at the promote too
-  (Pages serves `production`).
-- Re-check the migration number at build time: parallel migration PRs must release in `when` order.
-- No pricing, rate card, `config.ts` or generated-file changes.
+- **Migration 0065** (two new tables; nothing existing altered) auto-applies on staging at merge and on
+  prod at the `main → production` promote (CLAUDE.md rule 7) — needs the owner's OK on that promote.
+  Re-check the number at build time: the latest on `main` @ 06caf849 is 0064, and parallel migration PRs
+  must release in `when` order.
+- Booking/quote page changes and photos go live on Pages only at the promote.
+- No change to pricing, `rateCard.ts`, `departureRepo.ts`, `config.ts`, env, or generated files.
 
 ## 5. Out of scope (phase 1)
-Payment for experiences · slot choice · live availability · partner logins/notifications · commission ·
-photo upload · showing on search/trip/guide/manage pages · the pre-travel email (phase 2).
+Charging on the site · slot choice · live availability · partner logins/notifications · commission ·
+photo upload · showing on search/trip/guide/manage pages · the phase-2 email.
 
 ## 6. Testing
-- API unit: matcher (inside/outside radius, sort, cap, dedupe across stops), repos (in-memory + Postgres
-  behind `DATABASE_URL_TEST`), routes (RBAC, CSRF, validation, public endpoint hides `partner_contact`),
-  booking write (interests created, bad ids dropped, failure doesn't fail the booking), quote interest
-  (token, liveness, offered-only, idempotent), conversion linking (all three paths), email rows.
-- Migration test in the existing style (`paymentsBookingIdIndexMigration.test.ts`).
-- e2e (offline, stubbed): booking step 3 shows/toggles/sends; quote page shows/taps; ops page CRUD;
-  nothing shows when the endpoint fails.
+- API: matcher; input schema; repos (in-memory + Postgres behind `DATABASE_URL_TEST`); ops routes (RBAC,
+  CSRF, validation, `paid` needs a ref); public endpoint never returns `partner_contact` or the pin; booking
+  write (ids only, bad ids dropped, failure doesn't fail the booking, replay doesn't duplicate); the queue
+  hides drafts and cancellations; quote interest (token, liveness, offered-only, idempotent, withdraw
+  rules); linking at all three conversion points; email rows.
+- Migration test in the existing style (`api/src/db/paymentsBookingIdIndexMigration.test.ts`).
+- e2e (offline, stubbed — the ops pattern is `web-tests/e2e/ops-rates-page.spec.js:54-59`): booking step 3
+  shows/toggles/sends and **the total never changes**; nothing shows when the endpoint fails; quote page
+  shows/taps/reverts on failure; ops catalogue CRUD; leads tab status flow.
 
 ## 7. Open items for the owner
-1. Ops role gets `experiences:manage` (add/edit catalogue) — confirm, or founder-only?
-2. Confirm the first real experiences + their pins, radius, times and photos (needed before launch, not before build).
+1. Ops role gets `experiences:manage` (assumed yes) — or founder only?
+2. Scope: full phase 1 (quote page included, behind its coverage gate) — or the leaner cut: booking page
+   + ops only, quote page later?
+3. A refund/cancellation rule for experiences, to state in the payment message (e.g. "free cancellation
+   up to 24 h before").
+4. Who checks partner prices stay equal to their direct price, and how often ("never more").
+5. Test one PayHere portal link, and allow the one prod read that checks for webhook noise (D13).
+6. The first real experiences: pin, reach, times, photos (needed before launch, not before building).
 
-## 8. Phase 3 (paid) — what phase 1 already does for it
-- Money is integer cents + currency on the experience **and** snapshotted on each interest.
+## 8. Phase 2 notes (for its own spec)
+- Audience: paid bookings with no interest, N days before the first travel date (`booking_legs.travel_date`).
+- **It is a marketing email.** `customers.marketing_opt_in` already exists (customers table in
+  `api/src/db/schema.ts`) — phase 2 must respect it and carry an unsubscribe link; UK/EU visitors are
+  already treated differently by the site's consent code.
+- Quote-only customers have a free-text contact only (`quotes.customer_contact`), so phase 2 targets bookings.
+
+## 9. Phase 3 notes (paid via our own link)
+- Money is already cents + currency on the experience and snapshotted on each interest.
 - Open days and start times are structured, so a slot picker reads them as-is.
-- An interest is already its own row with a status; "paid" is one more status plus a payment link.
-- Experiences live outside `rateCard.ts` and the engine, so charging for one becomes **its own line**
-  on the booking (like a discount line in `pricing_snapshot_json`) without touching transfer prices.
-- Still to design then: partner payout/commission fields, capacity per slot, cancellation/refund rules,
-  whether it's paid at checkout or by a separate pay link.
+- `link_sent`/`paid` + `payment_ref`/amount already model the lifecycle; phase 3 fills them automatically.
+- The codebase already has its own pay-link system (`pay.html`, the `/p` short path, `customerPages.ts:224`);
+  generating the experience link there would put the money in our records, analytics and emails.
+- Still to design then: partner payout/commission, capacity per slot, cancellation rules.
