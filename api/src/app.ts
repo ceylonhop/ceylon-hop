@@ -45,6 +45,7 @@ import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
 import { InMemoryExperienceRepo, type ExperienceRepo } from './db/experienceRepo';
 import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from './db/experienceInterestRepo';
 import { opsExperiencesRoutes } from './routes/opsExperiences';
+import { publicExperiencesRoutes } from './routes/publicExperiences';
 import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
@@ -404,6 +405,9 @@ export function createApp(deps: AppDeps = {}) {
   // HEAD too: Hono dispatches it to the GET handler, so it resolves a code and costs a DB read
   // exactly like a GET. Listing only GET let a scanner spend an unlimited budget by switching method.
   app.use('/s/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
+  // Partner experiences near a drop-off (spec 2026-10-06 D7): a public, cacheable READ, so — like /s/* —
+  // it must opt in to GET+HEAD; the default limiter counts POST only (lib/rateLimit.ts).
+  app.use('/experiences/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -613,6 +617,7 @@ export function createApp(deps: AppDeps = {}) {
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
   // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
   // READS ONLY — no route in it can start a payment (spec D6).
+  app.route('/experiences', publicExperiencesRoutes({ experiences }));
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
   }));
