@@ -456,6 +456,13 @@
       "when": 1791072000000,
       "tag": "0064_payments_booking_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1791158400000,
+      "tag": "0065_experiences",
+      "breakpoints": true
     }
   ]
 }
