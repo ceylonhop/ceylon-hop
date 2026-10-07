@@ -117,16 +117,23 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
   }
 
   async stats(): Promise<ExperienceStats[]> {
-    const rows = await this.db.select({
-      experienceId: experienceInterests.experienceId,
-      interested: sql<number>`count(*)::int`,
-      paid: sql<number>`(count(*) filter (where ${experienceInterests.status} = 'paid'))::int`,
-      paidUsd: sql<number>`coalesce(sum(${experienceInterests.amountPaidCents}) filter (where ${experienceInterests.status} = 'paid' and ${experienceInterests.amountPaidCurrency} = 'USD'), 0)::int`,
-      paidLkr: sql<number>`coalesce(sum(${experienceInterests.amountPaidCents}) filter (where ${experienceInterests.status} = 'paid' and ${experienceInterests.amountPaidCurrency} = 'LKR'), 0)::bigint`,
-    }).from(experienceInterests).groupBy(experienceInterests.experienceId);
+    // The listLeads owner filter without the status filter: an abandoned draft checkout or a deleted
+    // quote is not a lead, so it must not count towards what the owner reads per experience.
+    const rows = await this.db.execute<{ experience_id: string; interested: number; paid: number; paid_usd: string; paid_lkr: string }>(sql`
+      SELECT i.experience_id,
+             count(*)::int AS interested,
+             (count(*) FILTER (WHERE i.status = 'paid'))::int AS paid,
+             coalesce(sum(i.amount_paid_cents) FILTER (WHERE i.status = 'paid' AND i.amount_paid_currency = 'USD'), 0) AS paid_usd,
+             coalesce(sum(i.amount_paid_cents) FILTER (WHERE i.status = 'paid' AND i.amount_paid_currency = 'LKR'), 0) AS paid_lkr
+      FROM experience_interests i
+      LEFT JOIN bookings b ON b.id = i.booking_id
+      LEFT JOIN quotes q ON q.id = i.quote_id
+      WHERE (i.booking_id IS NOT NULL AND b.status IN (${sql.join(PAID_BOOKING_STATUSES.map((s) => sql`${s}`), sql`, `)}))
+         OR (i.booking_id IS NULL AND q.id IS NOT NULL AND q.deleted_at IS NULL)
+      GROUP BY i.experience_id`);
     return rows.map((r) => ({
-      experienceId: r.experienceId, interested: r.interested, paid: r.paid,
-      paidCents: { USD: Number(r.paidUsd), LKR: Number(r.paidLkr) },
+      experienceId: r.experience_id, interested: Number(r.interested), paid: Number(r.paid),
+      paidCents: { USD: Number(r.paid_usd), LKR: Number(r.paid_lkr) },
     }));
   }
 

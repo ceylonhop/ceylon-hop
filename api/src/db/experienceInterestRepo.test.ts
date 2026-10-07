@@ -238,6 +238,24 @@ function contract(name: string, make: () => Promise<Env>) {
       });
     });
 
+    // Same owner filter as listLeads (spec D10/D15), but across ALL statuses: an abandoned draft
+    // checkout or a deleted quote must not inflate the owner's per-experience numbers.
+    it('stats counts only real leads: not draft or cancelled bookings, not deleted quotes', async () => {
+      const e = await experience();
+      const real = await record(e, { bookingId: (await booking('paid')).id });
+      const done = await record(e, { bookingId: (await booking('completed')).id });
+      await record(e, { bookingId: (await booking('draft')).id });
+      await record(e, { bookingId: (await booking('cancelled')).id });
+      await record(e, { quoteId: (await quote('lost')).id }); // a lost quote is still a real lead
+      const gone = await quote('sent');
+      await record(e, { quoteId: gone.id });
+      await env.quotes.softDelete(gone.id, 'f@x.com');
+      await env.interests.patch(real.id, { status: 'paid', paymentRef: 'A', amountPaidCents: 3500, amountPaidCurrency: 'USD', updatedBy: 'o' });
+      await env.interests.patch(done.id, { status: 'declined', updatedBy: 'o' });
+      const s = (await env.interests.stats()).find((x) => x.experienceId === e.id)!;
+      expect(s).toEqual({ experienceId: e.id, interested: 3, paid: 1, paidCents: { USD: 3500, LKR: 0 } });
+    });
+
     it('stats counts interested and paid and sums paid cents per currency', async () => {
       const e = await experience();
       const mk = async () => record(e, { bookingId: (await booking('paid')).id });
