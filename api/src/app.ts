@@ -42,8 +42,9 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
-import type { ExperienceRepo } from './db/experienceRepo';
-import type { ExperienceInterestRepo } from './db/experienceInterestRepo';
+import { InMemoryExperienceRepo, type ExperienceRepo } from './db/experienceRepo';
+import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from './db/experienceInterestRepo';
+import { opsExperiencesRoutes } from './routes/opsExperiences';
 import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
@@ -245,6 +246,10 @@ export function createApp(deps: AppDeps = {}) {
   // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
   if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Partner experiences (spec 2026-10-06). The in-memory interest repo reads the booking, quote and
+  // experience repos so its leads queue and stats apply the same owner filter the SQL does.
+  const experiences = deps.experiences ?? new InMemoryExperienceRepo();
+  const experienceInterests = deps.experienceInterests ?? new InMemoryExperienceInterestRepo({ bookings, quotes, experiences });
   // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
   // save is seen by all of them at once. Empty ⇒ the code card.
   const rateRevisions = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
@@ -646,6 +651,8 @@ export function createApp(deps: AppDeps = {}) {
   }));
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
+  // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
+  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, rateRevisions, bookings, placeResolutions,
     auth: opsAuthCfg,
