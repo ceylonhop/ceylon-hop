@@ -51,7 +51,8 @@ describe('GA4 tags for the core funnel', () => {
   });
 
   it('list and select events carry the GA4 items array', () => {
-    for (const n of ['view_item_list', 'select_item']) {
+    // purchase since 2026-10-07: the item reports (route, private/shared, regions) read it.
+    for (const n of ['view_item_list', 'select_item', 'purchase']) {
       const rows = sent(tag(`GA4 - ${n}`));
       expect(rows.find((r) => r.parameter === 'items'), `${n} items`).toEqual({ parameter: 'items', parameterValue: '{{DLV - items}}' });
     }
