@@ -411,6 +411,9 @@ export function createApp(deps: AppDeps = {}) {
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
+  // The quote page's "interested" tick (spec 2026-10-06 D12): the only write under /quote-view. The
+  // default POST-only limiter is what we want — the page's GET read must never be throttled.
+  app.use('/quote-view/*', rateLimit(rl));
   // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
   // POST /board/payhere/notify is excluded for the same reason /webhooks/payments is: it is a
   // gateway callback, not user traffic. Every notify arrives from a handful of PayHere egress
@@ -523,6 +526,7 @@ export function createApp(deps: AppDeps = {}) {
       enabled: quoteV2Enabled,
       linkSecret: bookingLinkSecret,
       checkoutNow: deps.checkoutNow,
+      experienceInterests,
     }),
   );
   // Ride Board — public reads + customer-authenticated writes (card side via the fake).
@@ -596,6 +600,7 @@ export function createApp(deps: AppDeps = {}) {
     linkSecret: bookingLinkSecret,
     checkoutNow: deps.checkoutNow,
     opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
+    experienceInterests,
   }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
@@ -624,6 +629,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/experiences', publicExperiencesRoutes({ experiences }));
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+    experiences, experienceInterests, placeResolutions,
   }));
   app.route('/s', customerShortLinkRoutes({
     shortLinks,
@@ -663,7 +669,7 @@ export function createApp(deps: AppDeps = {}) {
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
   app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, placeResolutions, experienceInterests,
     auth: opsAuthCfg,
     allowedOrigins,
     email,

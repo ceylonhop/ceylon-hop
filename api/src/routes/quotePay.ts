@@ -4,6 +4,8 @@ import type { QuoteRepo, SavedQuote } from '../db/quoteRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { payLines } from '../quote/paySelection';
@@ -126,6 +128,7 @@ export function quotePayRoutes(deps: {
   // The staff address list, so a submission cannot record an operator as the customer
   // (spec 2026-08-08 §4.4, as revised). Optional: absent = the guard is simply off.
   opsUsers?: string;
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   // Four live bookings were recorded under the owner's name because a pay link was opened in a
   // staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
@@ -343,6 +346,7 @@ export function quotePayRoutes(deps: {
     // Link the quote to its booking — STATUS DELIBERATELY UNTOUCHED. Awaiting payment is
     // not business won; settlement (webhook/mark-paid → claimWonQuote) does the flip.
     await deps.quotes.patch(quote.id, { convertedBookingId: booking.id });
+    await linkQuoteInterests(deps.experienceInterests, quote.id, booking.id);
 
     return c.json(
       { bookingId: booking.id, checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()) },
