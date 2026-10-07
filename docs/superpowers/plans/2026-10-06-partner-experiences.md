@@ -19,7 +19,8 @@
 - The browser sends **only experience uuids**; every label shown in the ops tool comes from the server (spec D11).
 - Interests must never fail a booking, a quote page, or a conversion: write after, catch, `console.error` (spec D17).
 - `partner_contact`, `lat`, `lng` never leave an `/admin/*` route.
-- Photos: `https://ceylonhop.com/img/experiences/<stem>-900.jpg` / `-1800.jpg`; stem `^[a-z0-9-]+/[a-z0-9-]+$`.
+- Photos: a path under `img/` without the size suffix, matching `^[a-z0-9-]+(/[a-z0-9-]+){1,3}$`; served as `https://ceylonhop.com/img/<path>-900.jpg` / `-1800.jpg` (spec D8).
+- Staging test data = the three Sigiriya placeholders only, seeded into the **staging** DB by SQL paste; never a migration, never prod (spec D20).
 - Pins inside Sri Lanka: lat 5.8–10.0, lng 79.4–82.0.
 - No changes to `rateCard.ts`, `departureRepo.ts`, `config.ts`, env, or any `@generated:` block (maintenance rule 3).
 - Gate before every commit: `cd api && npm run check` and `npm --prefix <abs>/web-tests run test:all`, both read from the runner's own summary line and exit code (maintenance rule 4).
@@ -381,7 +382,7 @@ const valid = {
   slug: 'atherya-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
   summary: 'Full-body herbal oil massage and steam bath.', details: '', priceCents: 3500,
   priceUnit: 'per_person', durationText: '90 min', openWeekdays: [6, 1, 1, 0], startTimes: ['14:30', '09:00'],
-  lat: 7.977, lng: 80.76, radiusKm: 5, photos: ['atherya-massage/treatment'], partnerContact: '+94 77 000 0000',
+  lat: 7.977, lng: 80.76, radiusKm: 5, photos: ['experiences/atherya-massage/treatment'], partnerContact: '+94 77 000 0000',
   active: true,
 };
 
@@ -397,6 +398,7 @@ describe('ExperienceInputSchema', () => {
   it('refuses a bad time, a bad photo stem, a negative price and unknown fields', () => {
     expect(ExperienceInputSchema.safeParse({ ...valid, startTimes: ['9am'] }).success).toBe(false);
     expect(ExperienceInputSchema.safeParse({ ...valid, photos: ['../x'] }).success).toBe(false);
+    expect(ExperienceInputSchema.safeParse({ ...valid, photos: ['treatment'] }).success).toBe(false);
     expect(ExperienceInputSchema.safeParse({ ...valid, priceCents: -1 }).success).toBe(false);
     expect(ExperienceInputSchema.safeParse({ ...valid, priority: 1 }).success).toBe(false);
   });
@@ -444,7 +446,9 @@ export const PHOTO_ORIGIN = 'https://ceylonhop.com';
 export const ROAD_FACTOR = 1.35;
 
 const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'use HH:MM');
-const PHOTO_STEM = z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+$/, 'use folder/name');
+// A path under img/ without the -900/-1800 suffix: experiences/<slug>/<name>, or an existing live photo
+// such as guides/sigiriya/ayurveda (spec D8, D20).
+const PHOTO_STEM = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/, 'use a path under img/, e.g. experiences/slug/name');
 
 export const ExperienceInputSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]{3,60}$/, 'lowercase letters, digits and dashes'),
@@ -486,7 +490,7 @@ export interface PublicExperience {
 }
 
 export function photoUrls(stem: string): { small: string; large: string } {
-  const base = `${PHOTO_ORIGIN}/img/experiences/${stem}`;
+  const base = `${PHOTO_ORIGIN}/img/${stem}`;
   return { small: `${base}-900.jpg`, large: `${base}-1800.jpg` };
 }
 
@@ -737,7 +741,27 @@ export function opsExperiencesRoutes(deps: {
 - [ ] **Step 1: Failing tests:** grouping and order; repeated GETs past the limit get a 429; `aboutKm` equals `aboutKm(distance)`; the raw response text contains no `partnerContact` value, no `"lat"`, no `createdBy`; 9 `at` → 400; malformed → 400; inactive excluded; cache header set; `Origin: https://ceylonhop.com` gets `access-control-allow-origin` (global CORS, `app.ts:373-387`).
 - [ ] **Step 2: FAIL → Step 3: implement** (parse each `at` with `/^(.{1,60})@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/`; `matchExperiences(stops, await repo.listActive())`; items through `toPublicExperience` plus `aboutKm`) **→ Step 4: PASS → commit** `feat(api): public experiences-near endpoint`.
 
+### Task 2.4: Sigiriya placeholders for staging (spec D20)
+
+**Files:** Create `api/src/experiences/placeholders.ts` (`PLACEHOLDERS: ExperienceInput[]` + `placeholderSql(): string`), `api/scripts/experience-placeholders.sql` (generated, committed), Test `api/src/experiences/placeholders.test.ts`.
+
+- [ ] **Failing test** — reads every catalogue place from `transfers-data.js` (`{ id: '…', name: '…', … lat: N, lng: N }` entries; ≥ 19 places; `sigiriya` = 7.95, 80.76) and asserts: exactly 3 placeholders, all valid `ExperienceInputSchema`, slugs `placeholder-*`, reach ≤ 10 km; all 3 match a Sigiriya drop-off; **none** matches any other catalogue place; the committed SQL equals `placeholderSql()`; the SQL contains `STAGING ONLY` and `ON CONFLICT ("slug") DO NOTHING` and no `delete|update|drop|alter|truncate`.
+- [ ] **Implement** — the three mockup experiences: Ayurvedic massage (Atherya Spa, $35 pp, 90 min, daily, 09:00/11:00/14:00/16:00, pin 7.977, 80.76, reach 5, photo `guides/sigiriya/ayurveda`); Village cooking lesson (Suwee, $25 pp, 3 hrs, Mon–Sat, 10:00/16:00, pin 7.95, 80.796, reach 5, photos `guides/sigiriya/family-food`, `guides/sigiriya/village`); Elephant jeep safari (Sample jeep partner, $45 per group, 3–4 hrs, daily, 14:00, pin 7.92, 80.81, reach 10, photo `guides/sigiriya/elephants`). Details text starts "PLACEHOLDER for staging tests." `placeholderSql()` emits one header comment (STAGING ONLY, never prod, generated — don't hand-edit) and one `INSERT INTO "experiences" (…) VALUES … ON CONFLICT ("slug") DO NOTHING;` with `created_by = 'placeholder-seed'`. Generate the file with `npx tsx` and commit it.
+
 **PR 2 gate** as PR 1. No migration; nothing customer-visible.
+
+## Staging test plan
+
+Staging (`staging.ceylonhop.com`, `ops.staging.ceylonhop.com`) deploys from `main` — every merged PR is testable there with no promote.
+
+| After PR | On staging | Expect |
+|---|---|---|
+| 1 | — | Migration 0065 applied on boot |
+| 2 | Seed: paste `api/scripts/experience-placeholders.sql` into the **staging** Supabase SQL Editor (or create the three through the ops page after PR 3) | 3 rows; re-run adds 0 |
+| 3 | Ops → Experiences | The three placeholders; edit one; switch one off/on |
+| 4 | Ops → Experiences → Leads | Empty until leads exist |
+| 5 | Book CMB → Sigiriya, tap one, pay with a test card; then try CMB → Kandy and CMB → Ella | Sigiriya: 3 cards, lead in Leads + booking sheet. Kandy/Ella: **no** section |
+| 6 | A staging quote to Sigiriya; tap one | Section on the quote; lead in Leads |
 
 ---
 

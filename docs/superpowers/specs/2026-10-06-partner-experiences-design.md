@@ -83,7 +83,7 @@ hold a quote-page interest, which exists before any booking (T5).
 | `start_times` | `text[]` of `HH:MM` | the negotiated booking times, structured for the same reason |
 | `lat`, `lng` | required, inside Sri Lanka (lat 5.8–10.0, lng 79.4–82.0) | the matching pin (D6); the box catches a swapped "lng, lat" paste |
 | `radius_km` | 0 < r ≤ 60, default 5 | per-experience reach (D6) |
-| `photos` | `text[]`, ≤ 6 stems `folder/name` | D8 |
+| `photos` | `text[]`, ≤ 6 paths under `img/` without the size suffix (`experiences/atherya-massage/treatment`, or an existing live photo such as `guides/sigiriya/ayurveda`) | D8 |
 | `partner_contact` | ≤ 200, optional | ops needs it to schedule; **never** sent to a customer page |
 | `active` | default true | O2 — switch off, never delete |
 | audit | `created_by`, `updated_by`, `created_at`, `updated_at` | same as `pricing_zones` (`schema.ts:909-921`) |
@@ -133,7 +133,10 @@ keep showing for up to 5 minutes.** Accepted.
 ### D8 — Photos are files in the repo, not uploads
 `img/experiences/<slug>/<name>-900.jpg` + `-1800.jpg`, the guides convention (resize with
 `sips -Z 900`, `docs/superpowers/plans/2026-09-28-destination-guides.md:130-157`). Experiences store
-stems (`atherya-massage/treatment`); pages load `https://ceylonhop.com/img/experiences/…`.
+paths under `img/` without the size suffix (`experiences/atherya-massage/treatment`); pages load
+`https://ceylonhop.com/img/<path>-900.jpg`. **Why a path under `img/`, not just a name:** placeholders and
+tests can point at photos that are already live (the Sigiriya guide's own photos), so testing needs no
+photo PR or promote; real partner photos still go in `img/experiences/`.
 **Why:** prod Supabase is on the **free plan** (owner, 2026-10-06) — a 500 MB database (Supabase's
 published limit; not checked against the account) — and photos would be the only bulky data we'd store.
 **Absolute URLs:** the API host serves only an allow-list of root assets
@@ -281,6 +284,27 @@ Nothing shows unless an active experience matches, so "off" = switch the experie
 - **Secondary, GA4:** `experience_interest` via `window.chTrack` (`booking.js:442` shows the call pattern;
   `quote.html:103-105` wraps it). **Unverified:** whether a new custom event reaches GA4 depends on a GTM
   tag forwarding it; the funnel events once never reached GA4 for this reason. Check in GTM before relying on it.
+
+### D20 — Staging test data: Sigiriya placeholders only (owner, 2026-10-06)
+The owner will test on staging (site + ops) with **placeholder Sigiriya experiences only**, and they
+must not show for any other location.
+- Three placeholders, modelled on the approved mockup: Ayurvedic massage (Atherya Spa), village cooking
+  lesson (Suwee), elephant jeep safari. Slugs start `placeholder-` so they're easy to find and switch off.
+  Photos reuse the Sigiriya guide's live photos (`guides/sigiriya/ayurveda`, `…/family-food`,
+  `…/village`, `…/elephants` — all present in `img/guides/sigiriya/`), so no photo PR is needed to test.
+- **Why they can't show elsewhere:** every pin is within ~8 km of the catalogue Sigiriya point
+  (7.95, 80.76; `transfers-data.js:36`) with a reach of at most 10 km, so nothing beyond ~18 km of Sigiriya can
+  match. The nearest other catalogue place is Anuradhapura at ~56 km (computed from `transfers-data.js`
+  PLACES on 2026-10-06). A test enforces this against every catalogue place (plan Task 2.4). A hotel picked
+  from Google within ~10 km of a pin (e.g. in Sigiriya village) will see them — that is the Sigiriya area.
+- **Where they go:** the **staging** database only — staging's DB is a separate Supabase project from prod
+  (confirmed 2026-10-04). Seeded by pasting `api/scripts/experience-placeholders.sql` into the staging
+  project's Supabase SQL Editor, the same way `api/scripts/clear-test-data.sql` is run. Idempotent (re-runnable).
+- **Why SQL, not a migration:** migrations run on prod too; placeholder data must never reach prod.
+- Staging builds from `main` (Cloudflare Pages `ceylon-hop-staging`, branch `main`) and the staging API
+  auto-deploys from `main`, so each PR is testable on staging as soon as it merges, before any promote.
+- Before real launch: switch the placeholders off on staging (or leave them — staging only); prod gets real
+  experiences entered by ops (launch checklist).
 
 ## 4. Release & risk
 - **Migration 0065** (two new tables; nothing existing altered) auto-applies on staging at merge and on
