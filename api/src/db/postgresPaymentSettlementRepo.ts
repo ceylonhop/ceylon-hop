@@ -11,7 +11,7 @@ import {
   type PaymentSettlementRepo,
   type SettlementFailureHook,
 } from './paymentSettlementRepo';
-import type { Payment, PaymentStatus } from './paymentRepo';
+import type { Payment, PaymentPurpose, PaymentStatus } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 
 type PaymentRow = typeof payments.$inferSelect;
@@ -26,6 +26,7 @@ function toPayment(row: PaymentRow): Payment {
     currency: row.currency,
     status: row.status as PaymentStatus,
     idempotencyKey: row.idempotencyKey,
+    purpose: row.purpose as PaymentPurpose,
     attemptCount: row.attemptCount,
     lastAttemptAt: row.lastAttemptAt,
   };
