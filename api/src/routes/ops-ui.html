@@ -8741,7 +8741,7 @@ function renderExpList() {
   else if (!expData) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading experiences…</div>';
   else if (!expData.experiences.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No experiences yet.</div>';
   else body = expData.experiences.map(function (e) { return renderExpRow(e, expData.stats); }).join('');
-  return '<div class="ch-exp-top"><div class="ch-lock-note" style="margin:0">Partner activities offered to travellers near their route. The price is shown only; the partner is paid outside this system.</div>'
+  return '<div class="ch-exp-top"><div class="ch-lock-note" style="margin:0">Partner activities shown to travellers near their drop-off. Nothing is charged on the site — when a customer goes ahead, the team sends them a PayHere link for the price shown here.</div>'
     + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-testid="exp-new" data-action="expNew">New experience</button></div>' + body;
 }
 
@@ -8776,7 +8776,7 @@ function renderExpForm(e) {
   }
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
-    + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. The price is display-only — the partner is paid through a PayHere link, not here.</div>'
+    + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
     + '<div class="ch-exp-grid">'
     + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
     + expInput('name', 'Name', d.name)
