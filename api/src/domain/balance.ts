@@ -3,7 +3,7 @@
 // the succeeded payments, so a balance can never disagree with the money actually held.
 
 type PaymentLike = { status: string; amount: number; purpose: string };
-type BookingLike = { status: string; total: number; amountDueNow: number | null };
+type BookingLike = { status: string; total: number; amountDueNow?: number | null };
 
 // A trip that is going ahead. A deposit moves a booking to `paid` exactly like a full payment, and
 // the balance can land after ops has confirmed the driver or the trip has started.
