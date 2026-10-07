@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor, approverOpsUsers,
-  type OpsRole, type OpsAction,
+  ALL_OPS_ACTIONS, type OpsRole, type OpsAction,
 } from './opsAuth';
 
 describe('can() capability matrix', () => {
@@ -26,6 +26,16 @@ describe('can() capability matrix', () => {
   it('analytics:view is founder-only (spec 2026-07-23 founder analytics)', () => {
     expect(can('founder', 'analytics:view')).toBe(true);
     for (const r of ['finance', 'ops', 'system'] as const) expect(can(r, 'analytics:view')).toBe(false);
+  });
+
+  // experiences:manage — the partner-experience catalogue (spec 2026-10-06 D14). The price is
+  // display-only, so ops holds it alongside the founder; finance and the cron identity do not.
+  it('experiences:manage is held by founder and ops only', () => {
+    expect(can('founder', 'experiences:manage')).toBe(true);
+    expect(can('ops', 'experiences:manage')).toBe(true);
+    expect(can('finance', 'experiences:manage')).toBe(false);
+    expect(can('system', 'experiences:manage')).toBe(false);
+    expect(ALL_OPS_ACTIONS).toContain('experiences:manage');
   });
 
   it('rates:manage is founder-only (spec 2026-09-26 Rates page)', () => {
