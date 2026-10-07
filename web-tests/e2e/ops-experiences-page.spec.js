@@ -241,6 +241,12 @@ test('a Google Maps URL fills lat/lng and the check link', async ({ page }) => {
   await page.locator('#exp-loc').fill('https://maps.google.com/?q=7.977,80.76');
   await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('7.977');
   await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('80.76');
+
+  // A place link's `/@lat,lng` is where the MAP is centred; the place's own pin is `!3d<lat>!4d<lng>`.
+  // Ops pastes place links, so the pin must win or the experience lands wherever the map was panned.
+  await page.locator('#exp-loc').fill('https://www.google.com/maps/place/Atherya/@7.9,80.5,12z/data=!4m6!3m5!1s0x0:0x0!8m2!3d7.9571!4d80.7598');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('7.9571');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('80.7598');
 });
 
 test('photo previews: a missing image says it is not live yet', async ({ page }) => {

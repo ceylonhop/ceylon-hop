@@ -8737,7 +8737,10 @@ var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'pric
 function parseLatLng(text) {
   var s = String(text == null ? '' : text).trim();
   var N = '(-?\\d+(?:\\.\\d+)?)';
+  // A place link carries the place's own pin as !3d<lat>!4d<lng>; its /@lat,lng is only where the
+  // map view is centred, so the pin is read first.
   var m = new RegExp('^' + N + '\\s*[,\\s]\\s*' + N + '$').exec(s)
+    || new RegExp('!3d' + N + '!4d' + N).exec(s)
     || new RegExp('/@' + N + ',' + N).exec(s)
     || new RegExp('[?&](?:q|ll|query)=' + N + '(?:,|%2C)\\s*' + N, 'i').exec(s);
   if (!m) return null;
