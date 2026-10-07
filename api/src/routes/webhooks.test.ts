@@ -421,6 +421,47 @@ describe('payment webhook ops alerts (M17)', () => {
     });
   });
 
+  // Partner experiences (spec 2026-10-06 D16): the customer's confirmation carries the same row.
+  describe('customer confirmation "Interested in" row', () => {
+    const EXP = {
+      slug: 'ayurveda-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
+      summary: 'A massage', details: '', priceCents: 3500, priceUnit: 'per_person' as const, durationText: null,
+      openWeekdays: [], startTimes: [], lat: 7.977, lng: 80.76, radiusKm: 5, photos: [], partnerContact: null, active: true,
+      createdBy: 'seed',
+    };
+    async function confirmationWith(opts: { interests?: ExperienceInterestRepo; seed?: boolean }) {
+      const adapter = new FakePaymentAdapter();
+      const email = new FakeEmailAdapter();
+      const experiences = new InMemoryExperienceRepo();
+      const interests = opts.interests ?? new InMemoryExperienceInterestRepo();
+      const app = createApp({ adapter, email, experiences, experienceInterests: interests });
+      const b = await bookAndCheckout(app);
+      if (opts.seed) {
+        const e = await experiences.create(EXP as never);
+        await interests.record({ experience: e, source: 'booking_page', bookingId: b.id });
+      }
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return email.sent.find((m) => m.subject.includes('confirmed'))!;
+    }
+
+    it('names the experience and partner, "not charged", in the HTML and text', async () => {
+      const m = await confirmationWith({ seed: true });
+      expect(m.html).toContain('Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out');
+      expect(m.text).toContain('Interested in: Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out');
+    });
+
+    it('is absent when the booking has no interests', async () => {
+      const m = await confirmationWith({});
+      expect(m.html).not.toContain('Interested in');
+    });
+
+    it('a failing interest lookup still sends the confirmation, without the row', async () => {
+      const m = await confirmationWith({ interests: { listForBooking: async () => { throw new Error('db down'); } } as unknown as ExperienceInterestRepo });
+      expect(m.subject).toContain('confirmed');
+      expect(m.html).not.toContain('Interested in');
+    });
+  });
+
   it('the team notification never costs the customer their confirmation', async () => {
     // The customer's email comes first and the team's is best-effort behind it: a failure in
     // ours must not cost them theirs, and must not fail the webhook (PayHere would retry).

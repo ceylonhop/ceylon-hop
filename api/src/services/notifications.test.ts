@@ -821,3 +821,47 @@ describe('promo code row', () => {
     }
   });
 });
+
+// Partner experiences (spec 2026-10-06 D16): the confirmation names what the customer tapped
+// "I'm interested" on, in ITS OWN rows — never the shared factRows, which cancellation, refund and
+// reminder emails reuse.
+describe('sendBookingConfirmation — experience interests', () => {
+  const ROW = 'Ayurvedic massage (Atherya Spa), Village cooking lesson (Suwee) — not charged; our Pro team will reach out';
+  const interests = [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa' }, { name: 'Village cooking lesson', partnerName: 'Suwee' }];
+
+  it('adds an "Interested in" row to the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(email.sent[0].html).toContain('Interested in');
+    expect(email.sent[0].html).toContain(ROW);
+    expect(email.sent[0].text).toContain(`Interested in: ${ROW}`);
+  });
+
+  it('has no such row when there are no interests', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [] });
+    await sendBookingConfirmation(single, email);
+    for (const m of email.sent) {
+      expect(m.html).not.toContain('Interested in');
+      expect(m.text).not.toContain('Interested in');
+    }
+  });
+
+  it('escapes the names', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [{ name: '<b>x</b>', partnerName: 'A&B' }] });
+    expect(email.sent[0].html).not.toContain('<b>x</b>');
+    expect(email.sent[0].html).toContain('&lt;b&gt;x&lt;/b&gt; (A&amp;B)');
+  });
+
+  it('never leaks into the shared fact rows, so a cancellation email does not show it', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(factRows(single).flat().join(' ')).not.toContain('Interested');
+    await sendCancellationConfirmation(single, email);
+    const cancelled = email.sent[1];
+    expect(cancelled.subject).toContain('cancelled');
+    expect(cancelled.html).not.toContain('Interested in');
+    expect(cancelled.text).not.toContain('Interested in');
+  });
+});

@@ -62,6 +62,9 @@ const LINKS = {
   book: 'https://ceylonhop.com/quote.html?q=preview',
 };
 
+// One partner experience the customer tapped "I'm interested" on, so the confirmation's row is previewable.
+const SAMPLE_INTEREST = { name: 'Ayurvedic massage', partnerName: 'Atherya Spa' };
+
 interface EmailDef {
   name: string;
   label: string;
@@ -71,9 +74,9 @@ interface EmailDef {
 }
 
 const EMAILS: EmailDef[] = [
-  { name: 'confirmation', label: 'Booking confirmation', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage }) },
+  { name: 'confirmation', label: 'Booking confirmation', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, interests: [SAMPLE_INTEREST] }) },
   // Partial pay link variant (spec 2026-08-04): the coverage sentence above the itinerary.
-  { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 } }) },
+  { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 }, interests: [SAMPLE_INTEREST] }) },
   { name: 'details-needed', label: 'Awaiting details', run: (b, e) => sendDetailsNeeded(b, e, { manage: LINKS.manage }) },
   { name: 'booking-confirmed', label: 'Booking confirmed', run: (b, e) => sendBookingConfirmed(b, e, { manage: LINKS.manage }) },
   { name: 'cancellation', label: 'Cancellation', run: (b, e) => sendCancellationConfirmation(b, e) },

@@ -396,8 +396,13 @@ export function webhookRoutes(deps: {
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
           const sel = srcQuote?.payLinkSelection;
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          // Partner experiences the customer tapped (spec 2026-10-06 D16); a failed lookup is just no row.
+          const interests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({
+            name: e?.name ?? i.nameSnapshot, partnerName: e?.partnerName,
+          }));
           const outcome = await sendBookingConfirmation(paid, email, {
             manage: manageUrl(paid, baseUrl, linkSecret),
+            interests,
             ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
           });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
