@@ -89,7 +89,7 @@ const EMAILS: EmailDef[] = [
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
   // The team's "Paid:" mail rides the alert channel, so it is rendered here and handed to the
   // fake directly — same bytes EmailAlertAdapter sends.
-  { name: 'team-paid-ops', label: 'Team (ops): booking paid', run: (b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamPaidEmail(b, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
+  { name: 'team-paid-ops', label: 'Team (ops): booking paid', run: (b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamPaidEmail(b, 'https://ops.ceylonhop.com', [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa', status: 'new' }]), audience: 'ops' }) },
   { name: 'team-ride-locked-ops', label: 'Team (ops): ride locked in, paid', run: (_b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamRideLockedEmail({ list: SAMPLE_RIDE, time: '08:00', charged: [{ ...SAMPLE_MEMBER, status: 'charged' }, { ...SAMPLE_MEMBER, id: 'm2', sub: 'sub-2', firstName: 'Luca', country: 'IT', email: 'luca@example.com', seats: 2, status: 'charged' }], declined: [], unknown: [], seedSeats: 0, currency: 'USD' }, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
   { name: 'ride-seat-held-ops', label: 'Ride Board (ops): seat held', run: (_b, e) => sendRideSeatHeld({ to: 'ops@ceylonhop.com', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, member: SAMPLE_MEMBER, committed: 2, kind: 'joined' }, e, 'https://ops.ceylonhop.com') },
   { name: 'ride-joined', label: 'Ride Board: you\'re on the list', run: (_b, e) => sendRideJoined(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, seats: 2, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' }) },

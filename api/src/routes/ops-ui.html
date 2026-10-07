@@ -951,6 +951,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-exp-prev .ch-exp-img { width: 72px; height: 48px; border-radius: 4px; margin-top: 6px; }
 .qv .ch-exp-note, .qv .ch-exp-err { font-size: 11.5px; color: var(--red); line-height: 1.35; }
 .qv .ch-exp-err:empty { display: none; }
+.qv .ch-lead-row .ch-input-wrap { width: 150px; }
+.qv .ch-lead-row .ch-lead-amt { width: 90px; }
+.qv .ch-lead-row .ch-lead-note { flex: 1 1 100%; width: auto; }
+.qv .ch-lead-row .ch-lead-ref { background: none; border: none; padding: 0; color: var(--teal-deep, var(--teal)); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qv .ch-lead-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qv .ch-exp-tabs { max-width: 280px; }
 @media (max-width: 580px) { .qv .ch-exp-grid { grid-template-columns: 1fr; } }
 .qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
 .qv .ch-rt-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted-2); padding: 4px 6px; border-bottom: 1px solid var(--line); }
@@ -2289,6 +2295,7 @@ let closeSel=new Set();
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',view:'date',type:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
+const INTEREST_STATUS={new:'New',contacted:'Contacted',link_sent:'Link sent',paid:'Paid',declined:'Declined'};
 let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
 /* The one "we're fetching a list" idiom, shared by the Bookings and Quotes queues. Rows rather
    than a spinner or a word: it holds the layout so nothing jumps when the data lands, and it
@@ -4042,6 +4049,22 @@ function renderSheet(){
      public, so it is escaped like every other value here; pre-line keeps their line breaks. */
   const custNote=d?.booking?.customerNotes;
   const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
+  /* Partner experiences the customer tapped on the booking page (spec 2026-10-06 D15). Only
+     bookings:operate may move a lead (the PATCH is gated on it; finance holds bookings:read and
+     would get a 403), so everyone else reads the status as text. Double-quoted attributes only —
+     this script's esc() leaves ' alone. */
+  const ints=Array.isArray(d?.experienceInterests)?d.experienceInterests:[];
+  const canMoveLead=!!(state.caps&&state.caps.includes('bookings:operate'));
+  const intRows=ints.map(i=>{
+    const price='$'+(i.priceCentsSnapshot%100===0?String(i.priceCentsSnapshot/100):(i.priceCentsSnapshot/100).toFixed(2))+(i.priceUnitSnapshot==='per_group'?' per group':' pp');
+    const status=canMoveLead
+      ?`<select class="sel" data-act="intstatus" data-id="${esc(i.id)}" aria-label="Status of ${esc(i.experienceName)}">${Object.keys(INTEREST_STATUS).map(k=>`<option value="${k}"${i.status===k?' selected':''}>${INTEREST_STATUS[k]}</option>`).join('')}</select>`
+      :esc(INTEREST_STATUS[i.status]||i.status);
+    const paid=i.paymentRef?`<div class="kv"><span class="k">PayHere ref</span><span class="v">${esc(i.paymentRef)}${i.amountPaidCents!=null?' · '+esc(i.amountPaidCurrency||'')+' '+(i.amountPaidCents/100).toFixed(2):''}</span></div>`:'';
+    const note=i.opsNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(i.opsNote)}</span></div>`:'';
+    return `<div class="kv"><span class="k">${esc(i.experienceName)}</span><span class="v">${esc(i.areaLabel)} · ${esc(price)} · ${status}</span></div>${paid}${note}`;
+  }).join('');
+  const interestBlock=ints.length?`<div class="block" data-testid="sheet-interests"><h4>Interested in</h4>${intRows}</div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -4062,6 +4085,7 @@ function renderSheet(){
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
+      ${interestBlock}
       <div class="block"><h4>Payment</h4>
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
@@ -4442,6 +4466,26 @@ document.addEventListener('click',e=>{
 });
 $('#scrim').addEventListener('click',()=>closeDetail('push'));
 document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
+/* The booking sheet's experience-interest status <select>. PATCHes the lead (the same route the
+   Experiences page uses); "paid" needs the PayHere reference that page records, so it is refused
+   here when none is stored. The detail is re-read after, so the sheet shows what the server holds. */
+document.addEventListener('change',async e=>{
+  const sel=e.target.closest&&e.target.closest('select[data-act="intstatus"]');if(!sel)return;
+  const bookingId=state.detail,iid=sel.dataset.id;
+  const it=((state.detailData&&state.detailData.experienceInterests)||[]).find(x=>x.id===iid);
+  if(!it||sel.value===it.status)return;
+  const want=sel.value;
+  if(want==='paid'&&!it.paymentRef){toast('Add the PayHere reference first — on the Experiences page, Leads tab','error');sel.value=it.status;return;}
+  sel.disabled=true;
+  try{
+    const r=await fetch('/admin/experiences/leads/'+encodeURIComponent(iid),{method:'PATCH',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({status:want})});
+    if(r.status===401){showLogin();return;}
+    if(!r.ok)throw new Error('api '+r.status);
+    await refreshDetail(bookingId);
+    toast('Updated');
+  }catch(err){window.opsReportError&&window.opsReportError('interest status',err);toast('Could not update','error');sel.value=it.status;}
+  finally{sel.disabled=false;if(state.detail===bookingId)renderSheet();}
+});
 document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}if(e.target.id==='typesel'){state.type=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
@@ -4701,6 +4745,17 @@ function bootApp(identity){
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
+  /* The Experiences page (QuoteView) opens a lead's booking or quote through these. The queue only
+     holds open bookings, so a booking it does not carry is fetched once; if it is still absent
+     the sheet cannot open, and the operator is told rather than left on an empty queue. */
+  window.opsOpenQuote=openOpsQuote;
+  window.opsOpenBooking=async(id)=>{
+    if(!id)return;
+    setShellRoute('tickets',{});
+    if(!tickets.some(x=>x.id===id))await loadQueue().catch(()=>{});
+    if(!tickets.some(x=>x.id===id)){toast('That booking is no longer in the queue','error');return;}
+    openDetail(id);
+  };
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
@@ -8659,6 +8714,15 @@ var expForm = null;        // the open form: { id } (id null = a new experience)
 var expBusy = false;       // a save is in flight
 var _expSeq = 0;
 var _expListSeq = 0;
+// The Leads tab (spec D15). `_expLeadsSeq` makes the latest read win; `expLeadBusy` keeps one write
+// per lead in flight; `expLeadPayOpen` keeps a lead's payment inputs showing after "paid" was refused.
+var expTab = 'catalogue';  // 'catalogue' | 'leads'
+var expLeads = null;       // Lead[] from GET /admin/experiences/leads; null until loaded
+var expLeadsFailed = false;
+var expLeadBusy = {};
+var expLeadPayOpen = {};
+var _expLeadsSeq = 0;
+var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent', 'Link sent'], ['paid', 'Paid'], ['declined', 'Declined']];
 
 var EXP_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = the API's weekday number
 var EXP_PHOTO_STEM = /^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/;           // mirrors PHOTO_STEM in experience.ts
@@ -8749,10 +8813,170 @@ function renderExperiencesPage() {
   if (!expEl || !expEl.isConnected) return;
   var host = expEl.querySelector('#exp-list-host');
   if (!host) return;
-  morphdom(host, '<div>' + renderExpList() + '</div>', {
-    childrenOnly: true,
-    onBeforeElUpdated: function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); },
+  var leads = expTab === 'leads';
+  Array.prototype.forEach.call(expEl.querySelectorAll('[data-action="expTab"]'), function (b) {
+    var on = b.getAttribute('data-tab') === expTab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+  host.hidden = leads;
+  expEl.querySelector('#exp-form-host').hidden = leads;
+  var lh = expEl.querySelector('#exp-leads-host');
+  lh.hidden = !leads;
+  var skip = function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); };
+  if (leads) morphdom(lh, '<div>' + renderLeadsTab() + '</div>', { childrenOnly: true, onBeforeElUpdated: skip });
+  else morphdom(host, '<div>' + renderExpList() + '</div>', { childrenOnly: true, onBeforeElUpdated: skip });
+}
+
+// ── Leads tab ────────────────────────────────────────────────────────────────
+function expDay(iso, tz) {
+  var d = new Date(iso);
+  if (!iso || isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz || 'UTC' });
+}
+function expLeadById(id) {
+  for (var i = 0; expLeads && i < expLeads.length; i++) if (expLeads[i].id === id) return expLeads[i];
+  return null;
+}
+
+async function loadExpLeads() {
+  var seq = _expSeq, ls = ++_expLeadsSeq;
+  try {
+    var r = await api('/admin/experiences/leads');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (seq !== _expSeq || ls !== _expLeadsSeq) return;
+    if (d && Array.isArray(d.leads)) { expLeads = d.leads; expLeadsFailed = false; } else expLeadsFailed = true;
+  } catch (e) {
+    if (seq !== _expSeq || ls !== _expLeadsSeq) return;
+    window.opsReportError && window.opsReportError('experience leads load', e);
+    expLeadsFailed = true;
+  }
+  renderExperiencesPage();
+}
+
+function renderLeadRow(l) {
+  var showPay = l.status === 'link_sent' || l.status === 'paid' || !!expLeadPayOpen[l.id];
+  var opts = EXP_LEAD_STATUSES.map(function (o) {
+    return '<option value="' + o[0] + '"' + (l.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+  }).join('');
+  var pay = '';
+  if (showPay) {
+    pay = '<div class="ch-lead-pay">'
+      + '<div class="ch-input-wrap"><input class="ch-input" data-lead-field="paymentRef" autocomplete="off" placeholder="PayHere reference" aria-label="PayHere reference" value="' + esc(l.paymentRef || '') + '"></div>'
+      + '<div class="ch-input-wrap ch-lead-amt"><input class="ch-input" data-lead-field="amount" inputmode="decimal" autocomplete="off" placeholder="Amount" aria-label="Amount paid" value="' + esc(l.amountPaidCents == null ? '' : (l.amountPaidCents / 100).toFixed(2)) + '"></div>'
+      + '<select class="ch-input" data-lead-field="currency" aria-label="Currency" style="width:auto"><option value=""' + (l.amountPaidCurrency ? '' : ' selected') + '>—</option>'
+      + ['USD', 'LKR'].map(function (c) { return '<option value="' + c + '"' + (l.amountPaidCurrency === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>'
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadSavePay" data-id="' + esc(l.id) + '">Save payment</button>'
+      + '</div>';
+  }
+  var who = [l.customerName || 'Unnamed', l.contact].filter(Boolean).map(esc).join(' · ');
+  var meta = [expDay(l.createdAt, 'Asia/Colombo'), l.travelDate ? 'travels ' + expDay(l.travelDate) : '', l.areaLabel, l.experienceName,
+    expPrice({ priceCents: l.priceCentsSnapshot, priceUnit: l.priceUnitSnapshot })].filter(Boolean).map(esc).join(' · ');
+  return '<div class="ch-exp-row ch-lead-row" data-testid="lead-row" data-id="' + esc(l.id) + '">'
+    + '<div class="ch-exp-main"><div><b>' + who + '</b> · <button class="ch-lead-ref" data-action="expLeadOpen" data-id="' + esc(l.id) + '" title="Open ' + (l.ownerKind === 'quote' ? 'quote' : 'booking') + '">' + esc(l.reference) + '</button></div>'
+    + '<div class="ch-exp-meta">' + meta + '</div></div>'
+    + '<select class="ch-input" data-action="expLeadStatus" data-id="' + esc(l.id) + '" aria-label="Status" style="width:auto">' + opts + '</select>'
+    + pay
+    + '<div class="ch-input-wrap ch-lead-note"><input class="ch-input" data-lead-field="opsNote" data-id="' + esc(l.id) + '" autocomplete="off" maxlength="1000" placeholder="Note" aria-label="Note" value="' + esc(l.opsNote || '') + '"></div>'
+    + '</div>';
+}
+
+function renderLeadsTab() {
+  var body;
+  if (expLeadsFailed) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0" data-testid="leads-load-failed">Couldn’t load the leads. <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadsRetry">Retry</button></div>';
+  else if (!expLeads) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading leads…</div>';
+  else if (!expLeads.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No open leads yet.</div>';
+  else body = expLeads.map(renderLeadRow).join('');
+  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is paid or declined.</div>' + body;
+}
+
+// The payment inputs' fields that differ from what the lead holds → { fields } or { error }.
+function expLeadPayFields(l, rowEl) {
+  var ref = rowEl.querySelector('[data-lead-field="paymentRef"]');
+  var f = {};
+  if (!ref) return { fields: f };
+  var refV = ref.value.trim() || null;
+  if (refV !== (l.paymentRef || null)) {
+    if (refV && refV.length < 3) return { error: 'That PayHere reference is too short.' };
+    f.paymentRef = refV;
+  }
+  var amtTxt = rowEl.querySelector('[data-lead-field="amount"]').value.trim();
+  var cents = null;
+  if (amtTxt) {
+    if (!/^\d+(\.\d{1,2})?$/.test(amtTxt)) return { error: 'Amount should look like 35.50.' };
+    cents = Math.round(parseFloat(amtTxt) * 100);
+  }
+  if (cents !== (l.amountPaidCents == null ? null : l.amountPaidCents)) f.amountPaidCents = cents;
+  var cur = rowEl.querySelector('[data-lead-field="currency"]').value || null;
+  if (cur !== (l.amountPaidCurrency || null)) f.amountPaidCurrency = cur;
+  return { fields: f };
+}
+
+// One PATCH for a lead. true = saved (the lead is updated in place); false = refused or failed, with
+// the operator already told why. The caller repaints, which puts a refused <select> back.
+async function expLeadPatch(l, body) {
+  var seq = _expSeq;
+  expLeadBusy[l.id] = true;
+  try {
+    var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (seq !== _expSeq) return false;
+    var d = await jsonOrNull(r);
+    if (seq !== _expSeq) return false;
+    if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); return true; }
+    if (d && d.error === 'paid_requires_ref') { expLeadPayOpen[l.id] = true; ratesToast('Add the PayHere reference first', 'error'); }
+    else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t save — try again.', 'error');
+    return false;
+  } catch (e) {
+    if (seq !== _expSeq) return false;
+    window.opsReportError && window.opsReportError('experience lead save', e);
+    ratesToast('Couldn’t save — try again.', 'error');
+    return false;
+  } finally {
+    if (seq === _expSeq) delete expLeadBusy[l.id];
+  }
+}
+
+async function expLeadStatusChange(sel) {
+  var l = expLeadById(sel.getAttribute('data-id'));
+  if (!l) return;
+  var want = sel.value;
+  var back = function () { sel.value = l.status; renderExperiencesPage(); };
+  if (want === l.status || expLeadBusy[l.id]) return back();
+  var pay = expLeadPayFields(l, sel.closest('.ch-lead-row'));
+  if (pay.error) { ratesToast(pay.error, 'error'); return back(); }
+  var body = Object.assign({ status: want }, pay.fields);
+  var ref = 'paymentRef' in body ? body.paymentRef : l.paymentRef;
+  // Settled here first: the server refuses the same thing, but a round trip to be told is a slow no.
+  if (want === 'paid' && !ref) { expLeadPayOpen[l.id] = true; ratesToast('Add the PayHere reference first', 'error'); return back(); }
+  if (!(await expLeadPatch(l, body))) return back();
+  renderExperiencesPage();
+}
+
+async function expLeadSavePay(btn) {
+  var l = expLeadById(btn.getAttribute('data-id'));
+  if (!l || expLeadBusy[l.id]) return;
+  var pay = expLeadPayFields(l, btn.closest('.ch-lead-row'));
+  if (pay.error) { ratesToast(pay.error, 'error'); return; }
+  if (!Object.keys(pay.fields).length) return;
+  if (await expLeadPatch(l, pay.fields)) ratesToast('Saved');
+  renderExperiencesPage();
+}
+
+async function expLeadNoteChange(input) {
+  var l = expLeadById(input.getAttribute('data-id'));
+  if (!l || expLeadBusy[l.id]) return;
+  var v = input.value.trim() || null;
+  if (v === (l.opsNote || null)) return;
+  if (!(await expLeadPatch(l, { opsNote: v }))) input.value = l.opsNote || '';
+  renderExperiencesPage();
+}
+
+// The reference opens the thing it belongs to, through the shell: it owns the routes and the queue.
+function expLeadOpen(id) {
+  var l = expLeadById(id);
+  if (!l) return;
+  if (l.ownerKind === 'quote' && l.quoteId) window.opsOpenQuote && window.opsOpenQuote(l.quoteId);
+  else if (l.bookingId) window.opsOpenBooking && window.opsOpenBooking(l.bookingId);
 }
 
 function expField(key, label, control, cls) {
@@ -8955,8 +9179,12 @@ function showExperiences(el) {
   if (arriving) {
     _expSeq++;
     expData = null; expLoadFailed = false; expForm = null; expBusy = false;
+    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPayOpen = {};
     el.innerHTML = '<div class="qv qv-page" data-testid="experiences-page"><div class="ch-rates-card">'
-      + '<div id="exp-form-host"></div><div id="exp-list-host"></div></div></div>';
+      + '<div class="ch-tabs ch-exp-tabs" role="tablist">'
+      + '<button class="ch-tab active" role="tab" aria-selected="true" data-action="expTab" data-tab="catalogue">Catalogue</button>'
+      + '<button class="ch-tab" role="tab" aria-selected="false" data-action="expTab" data-tab="leads">Leads</button></div>'
+      + '<div id="exp-form-host"></div><div id="exp-list-host"></div><div id="exp-leads-host" hidden></div></div></div>';
     loadExperiences();
   }
   renderExperiencesPage();
@@ -8981,6 +9209,22 @@ document.addEventListener('click', function (e) {
   else if (action === 'expSave') expSave();
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
+  else if (action === 'expTab') {
+    expTab = el.getAttribute('data-tab') === 'leads' ? 'leads' : 'catalogue';
+    renderExperiencesPage();
+    if (expTab === 'leads') loadExpLeads(); // fresh on every visit: leads arrive while the page is open
+  }
+  else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
+  else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
+  else if (action === 'expLeadSavePay') expLeadSavePay(el);
+});
+
+// A lead's status <select> and note <input> save on change (the note: on blur, when it differs).
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!expEl || !t || !expEl.contains(t)) return;
+  if (t.getAttribute('data-action') === 'expLeadStatus') expLeadStatusChange(t);
+  else if (t.getAttribute('data-lead-field') === 'opsNote') expLeadNoteChange(t);
 });
 
 // Typing in the location box or a photo box refreshes its check line / preview, and clears any

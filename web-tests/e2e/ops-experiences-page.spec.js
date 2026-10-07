@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { futureIsoDate } from '../dates.js';
 
 // Experiences page, Catalogue tab (spec 2026-10-06 D14): ops maintains the partner-experience
 // catalogue here. Offline: whoami, the queue and /admin/experiences are stubbed (the API's own
@@ -29,9 +30,10 @@ const STATS = [{ experienceId: EXPERIENCES[0].id, interested: 3, paid: 1, paidCe
 const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 // Boots the shell with `caps` and a mutable stub catalogue. `calls` records every write.
-async function boot(page, caps, { list, post, patch } = {}) {
+async function boot(page, caps, { list, post, patch, leads, patchLead } = {}) {
   const db = EXPERIENCES.map((e) => ({ ...e }));
-  const calls = { get: 0, post: [], patch: [] };
+  const leadDb = (leads || []).map((l) => ({ ...l }));
+  const calls = { get: 0, post: [], patch: [], leadsGet: 0, leadPatch: [] };
   await page.addInitScript(() => {
     window.google = {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
@@ -71,6 +73,17 @@ async function boot(page, caps, { list, post, patch } = {}) {
     const e = db.find((x) => x.id === id);
     Object.assign(e, body);
     return r.fulfill(json({ experience: e }));
+  });
+  // Registered AFTER the single-segment route above: Playwright gives precedence to the last match.
+  await page.route('**/admin/experiences/leads', (r) => { calls.leadsGet++; return r.fulfill(json({ leads: leadDb })); });
+  await page.route('**/admin/experiences/leads/*', async (r) => {
+    const id = r.request().url().split('/').pop();
+    const body = r.request().postDataJSON();
+    calls.leadPatch.push({ id, body });
+    if (patchLead) return patchLead(r, body);
+    const l = leadDb.find((x) => x.id === id);
+    Object.assign(l, body);
+    return r.fulfill(json({ lead: l }));
   });
   return calls;
 }
@@ -308,4 +321,155 @@ test('a list that lands after leaving the page paints nothing', async ({ page })
   await page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
   await expect(expPage(page)).toHaveCount(0);
   await expect(page.locator('#view h1')).toHaveText('Bookings');
+});
+
+// ── Leads tab (spec D13, D15) ────────────────────────────────────────────────
+const lead = (over) => ({
+  id: 'aaaaaaaa-0000-4000-8000-000000000001', experienceId: EXPERIENCES[0].id, bookingId: 'b1', quoteId: null, source: 'booking_page',
+  nameSnapshot: 'Ayurvedic massage', priceCentsSnapshot: 3500, priceUnitSnapshot: 'per_person', status: 'new', paymentRef: null,
+  amountPaidCents: null, amountPaidCurrency: null, opsNote: null, updatedBy: null,
+  createdAt: '2026-10-05T08:00:00.000Z', updatedAt: '2026-10-05T08:00:00.000Z',
+  areaLabel: 'Sigiriya', experienceName: 'Ayurvedic massage', ownerKind: 'booking', reference: 'CH-0001',
+  customerName: 'Maya Silva', contact: '+34 600 000 000', travelDate: futureIsoDate(30), ...over,
+});
+const LEADS = [
+  lead({}),
+  lead({ id: 'aaaaaaaa-0000-4000-8000-000000000002', experienceId: EXPERIENCES[2].id, bookingId: null, quoteId: 'q1', ownerKind: 'quote',
+    nameSnapshot: 'Elephant jeep safari', experienceName: 'Elephant jeep safari', priceCentsSnapshot: 4500, priceUnitSnapshot: 'per_group',
+    status: 'link_sent', paymentRef: 'PH-77', reference: 'Q-0007', customerName: 'Luca Rossi', contact: 'luca@example.com', travelDate: null }),
+];
+const leadRows = (page) => expPage(page).locator('[data-testid="lead-row"]');
+async function openLeads(page, caps, opts) {
+  const calls = await boot(page, caps, { leads: LEADS, ...opts });
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await expPage(page).locator('[data-action="expTab"][data-tab="leads"]').click();
+  return calls;
+}
+
+test('Leads tab lists each lead with who, what, when and the quoted price', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  await expect(leadRows(page)).toHaveCount(2);
+  expect(calls.leadsGet).toBe(1);
+  const a = leadRows(page).nth(0);
+  await expect(a).toContainText('Maya Silva');
+  await expect(a).toContainText('+34 600 000 000');
+  await expect(a).toContainText('CH-0001');
+  await expect(a).toContainText('Sigiriya');
+  await expect(a).toContainText('Ayurvedic massage');
+  await expect(a).toContainText('$35 pp');
+  await expect(a).toContainText(/travels \d{1,2} \w+ \d{4}/);
+  await expect(a).toContainText('5 Oct 2026');
+  await expect(a.locator('[data-action="expLeadStatus"]')).toHaveValue('new');
+  await expect(a.locator('[data-lead-field="paymentRef"]')).toHaveCount(0); // payment inputs only for link sent / paid
+  const b = leadRows(page).nth(1);
+  await expect(b).toContainText('$45 per group');
+  await expect(b).toContainText('Q-0007');
+  await expect(b.locator('[data-action="expLeadStatus"]')).toHaveValue('link_sent');
+  await expect(b.locator('[data-lead-field="paymentRef"]')).toHaveValue('PH-77');
+  await expect(expPage(page).locator('[data-action="expTab"][data-tab="leads"]')).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Leads tab: empty state, and values are escaped', async ({ page }) => {
+  await boot(page, OPS, { leads: [] });
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await expPage(page).locator('[data-action="expTab"][data-tab="leads"]').click();
+  await expect(expPage(page)).toContainText('No open leads yet.');
+
+  const p2 = await page.context().newPage();
+  await boot(p2, OPS, { leads: [lead({ customerName: '<img src=x onerror=window.__pwned=1>', opsNote: 'a "quoted" <b>note</b>' })] });
+  await p2.goto(OPS_FILE + '#experiences');
+  await ready(p2);
+  await expPage(p2).locator('[data-action="expTab"][data-tab="leads"]').click();
+  await expect(leadRows(p2).first()).toContainText('<img src=x onerror=window.__pwned=1>');
+  await expect(leadRows(p2).first().locator('[data-lead-field="opsNote"]')).toHaveValue('a "quoted" <b>note</b>');
+  expect(await p2.evaluate(() => window.__pwned)).toBeUndefined();
+});
+
+test('changing the status sends only {status}', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  await leadRows(page).nth(0).locator('[data-action="expLeadStatus"]').selectOption('contacted');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  expect(calls.leadPatch[0]).toEqual({ id: LEADS[0].id, body: { status: 'contacted' } });
+  await expect(leadRows(page).nth(0).locator('[data-action="expLeadStatus"]')).toHaveValue('contacted');
+});
+
+test('paid without a PayHere reference says so and sends nothing', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  const sel = leadRows(page).nth(0).locator('[data-action="expLeadStatus"]');
+  await sel.selectOption('paid');
+  await expect(page.locator('#toast')).toContainText('Add the PayHere reference first');
+  await expect(sel).toHaveValue('new'); // put back: the row shows what the server holds
+  // The payment inputs appear so the reference can be typed (still nothing sent).
+  await expect(leadRows(page).nth(0).locator('[data-lead-field="paymentRef"]')).toBeVisible();
+  expect(calls.leadPatch).toEqual([]);
+});
+
+test('paid with a reference sends {status, paymentRef} and the amount in cents', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-action="expLeadStatus"]').selectOption('paid'); // shows the inputs, sends nothing
+  expect(calls.leadPatch).toEqual([]);
+  await row.locator('[data-lead-field="paymentRef"]').fill('PH-123');
+  await row.locator('[data-lead-field="amount"]').fill('35.50');
+  await row.locator('[data-lead-field="currency"]').selectOption('USD');
+  await row.locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  expect(calls.leadPatch[0]).toEqual({ id: LEADS[0].id, body: { status: 'paid', paymentRef: 'PH-123', amountPaidCents: 3550, amountPaidCurrency: 'USD' } });
+  await expect(row.locator('[data-action="expLeadStatus"]')).toHaveValue('paid');
+});
+
+test('paid on a lead that already holds a reference sends status only', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  await leadRows(page).nth(1).locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  expect(calls.leadPatch[0]).toEqual({ id: LEADS[1].id, body: { status: 'paid' } });
+});
+
+test('the payment Save button sends only the changed payment fields; the note saves on blur', async ({ page }) => {
+  const calls = await openLeads(page, OPS);
+  const row = leadRows(page).nth(1);
+  await row.locator('[data-lead-field="paymentRef"]').fill('PH-88');
+  await row.locator('[data-action="expLeadSavePay"]').click();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  expect(calls.leadPatch[0].body).toEqual({ paymentRef: 'PH-88' });
+
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ opsNote: 'Sent on WhatsApp' });
+  await note.focus();
+  await note.blur(); // unchanged: nothing more is sent
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
+  expect(calls.leadPatch).toHaveLength(2);
+});
+
+test('a failed save puts the status back and says so', async ({ page }) => {
+  const calls = await openLeads(page, OPS, { patchLead: (r) => r.fulfill(json({ error: 'boom' }, 500)) });
+  const sel = leadRows(page).nth(0).locator('[data-action="expLeadStatus"]');
+  await sel.selectOption('contacted');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await expect(page.locator('#toast')).toContainText('Couldn’t save');
+  await expect(sel).toHaveValue('new');
+});
+
+test('the reference opens the booking sheet; a quote reference opens the quote', async ({ page }) => {
+  await openLeads(page, OPS);
+  await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([{
+    id: 'b1', reference: 'CH-0001', channel: 'website', customerName: 'Maya Silva', customerFirstName: 'Maya', mode: 'single',
+    route: 'Colombo → Sigiriya', travelDate: futureIsoDate(30), travelTime: '09:00', pax: 2, amount: 3900, currency: 'USD', stage: 'paid',
+    paymentStatus: 'succeeded', vehiclePhotoReceived: false, customerUpdated: false, opsNotes: '', source: 'booking', board: null,
+  }])));
+  await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json({
+    payLink: null, experienceInterests: [],
+    booking: { id: 'b1', reference: 'CH-0001', currency: 'USD', status: 'paid', mode: 'single', createdAt: '2026-09-01T00:00:00Z',
+      input: { customer: { whatsapp: '+34 600', email: 'm@example.com', country: 'Spain' } } },
+    ops: {}, payments: [{ id: 'p1', status: 'succeeded', amount: 3900, currency: 'USD' }], refunds: [],
+  })));
+  await leadRows(page).nth(0).locator('[data-action="expLeadOpen"]').click();
+  await page.waitForSelector('.sheet-b:not(.skel)', { timeout: 10000 });
+  await expect(page.locator('.sheet-b')).toContainText('m@example.com');
+  expect(new URL(page.url()).searchParams.get('booking')).toBe('b1');
 });
