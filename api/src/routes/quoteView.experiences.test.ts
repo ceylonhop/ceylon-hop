@@ -129,6 +129,18 @@ describe('POST /quote-view/interest', () => {
     expect(await t.experienceInterests.listForQuote(t.quote.id)).toHaveLength(1);
   });
 
+  // /quotes/pay/start creates the booking but leaves the quote `sent` until the payment settles.
+  // A tick made in that window must follow the quote into the booking too — otherwise it stays
+  // quote-only, the quote flips to `won`, and the lead silently drops out of the ops queue.
+  it('a tap after the quote already has a booking is linked to that booking', async () => {
+    const bookingId = '0b0f6a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+    await t.quotes.patch(t.quote.id, { convertedBookingId: bookingId });
+    const res = await t.post({ t: t.token, experienceId: t.massage.id, interested: true });
+    expect(res.status).toBe(200);
+    const rows = await t.experienceInterests.listForBooking(bookingId);
+    expect(rows.map((r) => r.experienceId)).toEqual([t.massage.id]);
+  });
+
   it('accepts a tap on a lapsed quote (spec D12)', async () => {
     await t.quotes.patch(t.quote.id, { offerValidUntil: new Date('2026-08-01T00:00:00Z') });
     const res = await t.post({ t: t.token, experienceId: t.massage.id, interested: true });

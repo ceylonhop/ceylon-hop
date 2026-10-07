@@ -6,6 +6,7 @@ import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { aboutKm, toPublicExperience, type Experience } from '../experiences/experience';
 import { matchExperiences, type StopMatch } from '../experiences/match';
 import { quoteStopPoints } from '../experiences/quoteStops';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 import type { QuoteRepo, SavedQuote } from '../db/quoteRepo';
 import type { BookingRepo } from '../db/bookingRepo';
 import { verifyQuoteViewToken, signBookingToken } from '../lib/bookingToken';
@@ -259,6 +260,10 @@ export function quoteViewRoutes(deps: {
 
     if (body.data.interested) {
       await deps.experienceInterests.record({ experience: offered.experience, source: 'quote_page', quoteId: quote.id });
+      // /quotes/pay/start books the quote but leaves it `sent` until payment settles. A tick in that
+      // window must follow the quote into its booking, or it stays quote-only and drops out of the
+      // ops queue once the quote is won. Courtesy link: logged, never fails the tap.
+      if (quote.convertedBookingId) await linkQuoteInterests(deps.experienceInterests, quote.id, quote.convertedBookingId);
       return c.json({ interested: true });
     }
     // Withdraw only while ops has not touched it; otherwise report what is really stored.
