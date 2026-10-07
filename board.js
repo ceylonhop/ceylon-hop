@@ -448,6 +448,13 @@
     return wanted.some(function (c) { return !marked[c]; });
   }
 
+  /* Order for every place dropdown on the board (the filter and Start a list): the airport first,
+     since most trips start or end there, then A–Z. */
+  function placeOrder(a, b) {
+    var ax = resolvePlaceId(a) === 'cmb-airport', bx = resolvePlaceId(b) === 'cmb-airport';
+    return ax !== bx ? (ax ? -1 : 1) : String(a).localeCompare(String(b));
+  }
+
   /* Both filter selects, derived from the (from,to) pairs the board has actually returned.
      They used to be two independent sets — every origin ever seen in one, every destination in
      the other — with nothing relating them. Ella is an origin on Ella→Mirissa and a destination
@@ -476,8 +483,7 @@
     });
     if (f !== 'all' && !seenF[f]) from.push(f);
     if (t !== 'all' && !seenT[t]) to.push(t);
-    var abc = function (x, y) { return x.localeCompare(y); };
-    return { from: from.sort(abc), to: to.sort(abc) };
+    return { from: from.sort(placeOrder), to: to.sort(placeOrder) };
   }
 
   // The earliest date a ride can still be STARTED. A list closes CUTOFF_H hours before its
@@ -543,6 +549,7 @@
     fmtDate: fmtDate,
     resolvePlaceId: resolvePlaceId,
     filterOptions: filterOptions,
+    placeOrder: placeOrder,
     earliestStartDate: earliestStartDate,
     isInternationalNumber: isInternationalNumber,
     closesAt: closesAtMs,
@@ -1423,6 +1430,8 @@
     ALL_STOPS = Object.keys(seen);
   })();
   function placeName(id) { return (T.byId && T.byId[id] && T.byId[id].name) || PLACE_NAMES[id] || id; }
+  function byPlaceName(a, b) { return placeOrder(placeName(a), placeName(b)); }
+  ALL_STOPS.sort(byPlaceName);
   cFrom.innerHTML = '<option value="">Choose…</option>'
     + ALL_STOPS.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
 
@@ -1494,7 +1503,7 @@
     var seen = {};
     (T.CORRIDORS || []).filter(function (c) { return c.stops.indexOf(from) !== -1; })
       .forEach(function (c) { c.stops.forEach(function (id) { if (id !== from) seen[id] = true; }); });
-    var dests = Object.keys(seen);
+    var dests = Object.keys(seen).sort(byPlaceName);
     var prev = cTo.value;
     cTo.innerHTML = '<option value="">Choose…</option>'
       + dests.map(function (id) { return '<option value="' + id + '">' + esc(placeName(id)) + '</option>'; }).join('');
