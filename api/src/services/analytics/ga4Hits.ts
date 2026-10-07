@@ -71,12 +71,17 @@ export function bookingFacts(b: Booking): PurchaseFacts {
 
 // GA4's item reports group by these built-in categories: private vs shared first, then where the
 // ride starts and ends, then the exact service.
-const itemFor = (f: PurchaseFacts, value: number): Ga4Item => ({
+export type Ga4ItemCategories = Omit<Ga4Item, 'price' | 'quantity'>;
+const itemCategories = (f: PurchaseFacts): Ga4ItemCategories => ({
   item_id: cut(f.route), item_name: cut(f.route),
   item_category: f.service_type === 'shared_seat' ? 'shared' : 'private',
   item_category2: f.pickup_region, item_category3: f.dropoff_region, item_category4: f.service_type,
-  price: value, quantity: 1,
 });
+const itemFor = (f: PurchaseFacts, value: number): Ga4Item => ({ ...itemCategories(f), price: value, quantity: 1 });
+
+// The same item for the BROWSER `purchase` (spec D1-alt), handed to pay.html / manage.html so
+// both sides report one item; the page adds price = the value it sends.
+export const browserItem = (b: Booking): Ga4ItemCategories => itemCategories(bookingFacts(b));
 
 function factParams(f: PurchaseFacts, at: Date): Record<string, string | number> {
   const p: Record<string, string | number> = {
