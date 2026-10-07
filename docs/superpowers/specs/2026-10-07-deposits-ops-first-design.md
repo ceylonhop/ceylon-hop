@@ -92,8 +92,11 @@ deposits come later, on the same rails.
 - **Derived, never stored:**
   - `paidCents` = Σ `amount` of succeeded payments on the booking;
   - `balanceDueCents` = `max(0, total − paidCents)` while the booking is `paid | confirmed |
-    in_progress`; otherwise `max(0, total − amountDueNow)` before any payment (today's meaning),
-    and `0` for cancelled/refunded/no_show/completed.
+    in_progress` **and** at least one payment has succeeded; otherwise `max(0, total −
+    amountDueNow)` (today's meaning — before any payment, or a secured booking with no recorded
+    payment, so a legacy row never claims the whole total is owed); and `0` for
+    cancelled/refunded/no_show/completed. `paidCents` is gross (refunds not netted) — never display
+    it unchanged on a refunded or double-captured booking.
   One pure function owns this (`domain/balance.ts`), used by the customer projection, ops view and
   the balance checkout.
 - **Order IDs:** first payment keeps `orderId = REF` (full or deposit); balance is `REF-B`.
