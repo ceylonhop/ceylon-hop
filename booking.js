@@ -1884,7 +1884,7 @@ function calcTotal(){
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
-// Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
+// Deposit %/minimum come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
 const DEPOSIT_MIN = window.TRANSFERS.DEPOSIT_MIN; // USD floor

@@ -22,6 +22,7 @@ describe('depositFor (spec 2026-10-07 §2)', () => {
     ['private', 15_000, 5_000], // $150 → $50 floor
     ['private', 50_000, 5_000], // 10% = $50
     ['private', 60_000, 6_000], // 10% above the floor
+    ['chauffeur', 14_999, 0], // under $150: no deposit for chauffeur either
     ['chauffeur', 123_456, 12_346], // rounds to the cent
     ['shared', 90_000, 0], // shared always pays in full
   ] as const)('%s %i → %i', (product, total, expected) => {

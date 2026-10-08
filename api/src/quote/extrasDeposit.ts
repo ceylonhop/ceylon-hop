@@ -40,12 +40,10 @@ export function priceExtras(
 // The deposit an eligible booking may pay instead of the full total (spec 2026-10-07 §2, owner
 // 2026-10-07): max(10%, $50), never more than the total, and only for private / chauffeur trips of
 // $150 or more. 0 means "not eligible — pay in full". Shared rides always pay in full.
-export function depositFor(
-  product: 'shared' | 'private' | 'chauffeur',
-  totalCents: number,
-  rateCard: RateCard = RATE_CARD,
-): number {
-  const d = rateCard.deposit;
+// The rule is fixed in code (owner 2026-10-07): it always reads RATE_CARD.deposit and deliberately
+// ignores a quote's locked rate card, because older locked cards carry a different deposit shape.
+export function depositFor(product: 'shared' | 'private' | 'chauffeur', totalCents: number): number {
+  const d = RATE_CARD.deposit;
   if (product === 'shared' || totalCents < d.eligibleMinTotalCents) return 0;
   return Math.min(totalCents, Math.max(Math.round((totalCents * d.pct) / 100), d.minCents));
 }

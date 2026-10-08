@@ -46,6 +46,18 @@ describe('quote()', () => {
     expect(r.totalCents).not.toBe(current.totalCents);
   });
 
+  it('a quote locked on an older rate card (old deposit shape) still gets the fixed deposit rule, never NaN', () => {
+    const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 800 }] };
+    const current = quote(req);
+    expect(current.totalCents).toBeGreaterThanOrEqual(15_000); // eligible for a deposit
+    expect(current.depositCents).toBeGreaterThan(0);
+    // Older locked cards carry { pct, capCents } — the rule is fixed in code, so it must not read this.
+    const oldDeposit = { pct: 10, capCents: 5000 } as unknown as RateCard['deposit'];
+    const r = quote(req, { ...RATE_CARD, version: 'locked-old-deposit', deposit: oldDeposit });
+    expect(Number.isInteger(r.depositCents)).toBe(true);
+    expect(r.depositCents).toBe(current.depositCents);
+  });
+
   it('does not retrofit final-price finishing onto a historical locked rate card', () => {
     const historicalCard: RateCard = { ...RATE_CARD };
     delete historicalCard.priceFinishing;

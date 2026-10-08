@@ -167,7 +167,7 @@ export function quote(
   }
 
   const totalCents = finished.finalCents - discountCents;
-  const deposit = depositFor(req.product, totalCents, rateCard);
+  const deposit = depositFor(req.product, totalCents);
   // amountDueNow stays the FULL total here: the engine prices, it does not sell. A deposit is
   // chosen at the point of sale (ops deposit link, spec 2026-10-07 §5.2) and written onto the
   // booking as amount_due_now. `deposit` is what that sale would charge — 0 when not eligible.
