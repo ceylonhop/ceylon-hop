@@ -6,7 +6,7 @@ import { loadTransfers } from './_load.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // A ride closes CUTOFF_HOURS_BEFORE its departure window opens (api/src/domain/rideList.ts —
-// 24 h since 2026-09-22). The create form used to offer tomorrow, so a traveller could
+// 48 h since 2026-10-07; it was 24 h from 2026-09-22). The create form used to offer tomorrow, so a traveller could
 // start a ride that was ALREADY past its own cutoff: nobody could join it (the join
 // route 409s a closed list) and the next cutoff sweep called it off. It happened on
 // production — EA-8707, Ella to Arugam Bay, started 2026-09-22. (date-bomb-ok: a past incident)
@@ -52,18 +52,18 @@ describe('RideBoard.earliestStartDate(now)', () => {
     expect(typeof RB.earliestStartDate).toBe('function');
   });
 
-  it('skips a date whose 48h cutoff has already passed', () => {
+  it('skips a date whose cutoff has already passed', () => {
     // date-bomb-ok: earliestStartDate is pure over the `now` it is handed, so this pair cannot
-    // rot — 23:30 in Colombo on the 22nd, where a ride on the 23rd closed at 01:30Z that morning.
+    // rot — 23:30 in Colombo on the 22nd, where a ride on the 24th closed at 01:30Z that morning.
     const now = Date.parse('2026-09-22T18:00:00Z'); // date-bomb-ok: fixed clock, pure fn
-    expect(RB.earliestStartDate(now)).toBe('2026-09-24'); // date-bomb-ok: fixed clock, see above
+    expect(RB.earliestStartDate(now)).toBe('2026-09-25'); // date-bomb-ok: fixed clock, see above
   });
 
   it('still allows the nearest date while its cutoff is ahead', () => {
-    // date-bomb-ok: same fixed clock — 05:30 in Colombo on the 22nd, where the 23rd closes at
+    // date-bomb-ok: same fixed clock — 05:30 in Colombo on the 22nd, where the 24th closes at
     // 01:30Z, 90 minutes from now. The boundary is the point of the test.
     const now = Date.parse('2026-09-22T00:00:00Z'); // date-bomb-ok: fixed clock, pure fn
-    expect(RB.earliestStartDate(now)).toBe('2026-09-23'); // date-bomb-ok: fixed clock, see above
+    expect(RB.earliestStartDate(now)).toBe('2026-09-24'); // date-bomb-ok: fixed clock, see above
   });
 
   it('never returns a date that is already closed, across a full day of clock positions', () => {
@@ -100,7 +100,7 @@ describe('board.js and the backend agree on when a ride closes', () => {
   });
 
   it('is actually reading the backend, not a copy — the rule it finds is the one in force', () => {
-    expect(backendRule().hours).toBe(24);
+    expect(backendRule().hours).toBe(48);
   });
 });
 
@@ -124,7 +124,7 @@ describe('the create form uses that floor', () => {
     const at = src.indexOf("'cutoff_passed'");
     const block = src.slice(at, at + 420);
     expect(block).toContain('earliestStartDate');
-    expect(block).toMatch(/24 hours/);
+    expect(block).toMatch(/48 hours/);
   });
 
   it('clamps the default date up to that floor instead of below it', () => {
