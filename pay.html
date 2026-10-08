@@ -258,6 +258,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // /view has not been re-fetched yet, so fall back to the figure stashed at hand-off —
   // otherwise a real payment reports a value of zero.
   var stashedCents = 0;
+  // The GA4 item /start handed back (route, private/shared, regions — the server purchase's own
+  // item), stashed across the gateway round trip the same way.
+  var stashedItem = null;
   function money(){
     var c = data && data.totals ? Number(data.totals.cents || 0) : stashedCents;
     return { value: Math.round(c) / 100, currency: 'USD' };
@@ -288,7 +291,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (sessionStorage.getItem(seen) === String(reference || '1')) return;
       sessionStorage.setItem(seen, String(reference || '1'));
     } catch (e) { /* private mode — better a possible double than a missing purchase */ }
-    track('purchase', withMoney({ transaction_id: reference || '' }));
+    var p = withMoney({ transaction_id: reference || '' });
+    if (stashedItem) p.items = [Object.assign({}, stashedItem, { price: p.value, quantity: 1 })];
+    track('purchase', p);
   }
 
   // A press that is WORKING, not a control that is unavailable. Spinner + text, so the wait for
@@ -324,6 +329,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     try {
       sessionStorage.setItem(STORE, JSON.stringify({
         t: t, typed: typed, cents: (data && data.totals ? Number(data.totals.cents || 0) : 0),
+        item: (booking && booking.ga4Item) || null,
       }));
     }
     catch (e) { /* private mode, quota, storage disabled — the flow must still work without it */ }
@@ -1243,6 +1249,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (saved.typed) typed = saved.typed;
       // What the trip cost, for the `purchase` value — /view has not run on this leg yet.
       if (saved.cents) stashedCents = Number(saved.cents) || 0;
+      if (saved.item && typeof saved.item === 'object') stashedItem = saved.item;
     }
     renderReturn();
   } else if (!t) {

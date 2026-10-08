@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- M7: backend. Override with ?api=<url> (e.g. localhost for dev) or ?api=off.
+<!-- M7: backend. Override with ?api=<url> (e.g. localhost for dev) or ?api=off — local hosts only, as booking.html.
      NOTE: unlike the other pages this defaults to the ceylonhop.com-subdomain host, NOT
      ceylon-hop-api.onrender.com. The board is the only page that relies on a session cookie
      (ch_cust, SameSite=None), and onrender.com is a different site from prod.ceylonhop.com —
      so the cookie is third-party there and browsers blocking third-party cookies drop it,
      leaving sign-in looking fine but every write 401ing. Same registrable domain = same site. -->
-<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ops.ceylonhop.com');})();</script>
+<script>(function(){var p=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ops.ceylonhop.com');})();</script>
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      Set 2026-07-25 to open self-serve joining — same OAuth client as ops sign-in, with
      https://prod.ceylonhop.com added to its Authorized JavaScript origins. PayHere card
@@ -806,7 +806,7 @@ body.detail-open .detail{display:block}
         </details>
         <details>
           <summary>What if the list doesn't fill?</summary>
-          <p>If not enough travellers join by the cutoff (24h before departure), the ride is <b>called off</b> and <b>no ride fare is charged</b>. PayHere may show and reverse a small verification charge when you first approve the card.</p>
+          <p>If not enough travellers join by the cutoff (48h before departure), the ride is <b>called off</b> and <b>no ride fare is charged</b>. PayHere may show and reverse a small verification charge when you first approve the card.</p>
         </details>
         <details>
           <summary>Who's driving?</summary>
@@ -873,7 +873,7 @@ body.detail-open .detail{display:block}
           <input id="c-note" placeholder="surfboards, tea-factory stop, travelling with a baby…" maxlength="70"></div>
         <div id="dupe-nudge" class="dupe" hidden></div>
         <div id="sched-stop" class="sched-stop" hidden></div>
-        <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 seats are up<br>list closes 24h before</span></div>
+        <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 seats are up<br>list closes 48h before</span></div>
         <button class="btn btn-primary btn-block" id="c-continue" style="height:52px">Put it on the board</button>
         <p class="whisper">it goes up instantly — you're name #1 on the list</p>
       </div>
@@ -920,12 +920,12 @@ body.detail-open .detail{display:block}
                paragraphs of prose, and the one fact that matters ($0 now) sat mid-sentence.
                Now the $0 is the headline figure, the two outcomes read as a two-line scan,
                and the PayHere verification-hold note folds away until someone worries. -->
-          <div class="deal-zero"><span class="dz-amt">$0.00</span><span class="dz-cap">to pay today — we only save your card</span></div>
+          <div class="deal-zero"><span class="dz-amt">$0.00</span><span class="dz-cap" id="dz-cap">to pay today — we only save your card</span></div>
           <div class="deal-arms">
-            <p><b><span id="m-min">3</span> seats by the cutoff</b> → we charge <b id="m-cost">$24.00</b><span id="m-cost-break"></span></p>
+            <p><b><span id="m-min">3</span> seats by the cutoff</b> → <span id="m-charge-verb">we charge</span> <b id="m-cost">$24.00</b><span id="m-cost-break"></span></p>
             <p><b>Fewer</b> → you pay nothing</p>
           </div>
-          <details class="deal-fine">
+          <details class="deal-fine" id="deal-fine">
             <summary>Seeing a small charge from PayHere?</summary>
             <p>That's their card check — a temporary hold, reversed automatically. It is not your ride fare.</p>
           </details>
@@ -938,7 +938,7 @@ body.detail-open .detail{display:block}
         </div>
         <!-- City pairs with address rather than with the phone: .frow is a 2-up grid, and the
              dial code took the phone's old partner, which left city alone beside a gap. -->
-        <div class="frow" style="margin-bottom:12px">
+        <div class="frow" id="pay-billing" style="margin-bottom:12px">
           <div class="fld"><label for="pay-city">Billing city</label>
             <input id="pay-city" autocomplete="address-level2" placeholder="e.g. Amsterdam"></div>
           <div class="fld"><label for="pay-address">Billing address</label>
@@ -949,7 +949,7 @@ body.detail-open .detail{display:block}
           <div class="pref-opts" id="pref-opts"></div>
           <span class="pref-note">The group's most popular time wins — we lock it when the taxi fills.</span>
         </div>
-        <div class="paynote"><span class="pl" style="color:#1a1f71">VISA</span><span class="pl" style="color:#eb001b">MC</span> approved securely by PayHere · we never see the number</div>
+        <div class="paynote" id="m-paynote"><span class="pl" style="color:#1a1f71">VISA</span><span class="pl" style="color:#eb001b">MC</span> approved securely by PayHere · we never see the number</div>
         <button class="btn btn-primary btn-block" id="sign-btn" style="margin-top:16px;height:54px;font-size:1rem">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
           <span id="sign-btn-label">Continue to PayHere</span>
@@ -1034,6 +1034,6 @@ body.detail-open .detail{display:block}
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
-<script src="board.js?v=9d7aa371aa" defer></script>
+<script src="board.js?v=74036e1b59" defer></script>
 </body>
 </html>
