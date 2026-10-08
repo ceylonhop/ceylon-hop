@@ -577,9 +577,9 @@
   // tags). It used to be a hardcoded 'https://ceylonhop.com' — the old WordPress apex,
   // which 404s, so every shared link was dead.
   //
-  // The ride domain (ride.ceylonhop.com) is a second custom domain on the API service and
-  // serves codes at its root, so links are as short as they get. Until it is configured we
-  // fall back to the API's own /r/ path, which keeps local dev and staging self-consistent.
+  // On ceylonhop.com, board.html sets CEYLON_HOP_SHARE_ORIGIN to https://ceylonhop.com/r — a
+  // Cloudflare Worker passes /r/* to the API. Elsewhere we fall back to the API's own /r/ path,
+  // which keeps local dev and staging self-consistent.
   var SHARE_ORIGIN = String(window.CEYLON_HOP_SHARE_ORIGIN || '').replace(/\/$/, '');
   function shareUrlFor(code) {
     return SHARE_ORIGIN ? SHARE_ORIGIN + '/' + code : API_BASE + '/r/' + code;
@@ -1306,7 +1306,7 @@
   function showDetailShell(L) {
     renderDetail(L);
     document.body.classList.add('detail-open');
-    if (location.hash !== '#/' + L.code) location.hash = '/' + L.code;
+    if (new URLSearchParams(location.search).get('r') !== L.code) history.pushState(null, '', rideHref(L.code));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function showDetailNotFound() {
@@ -1321,7 +1321,7 @@
   function closeDetail() {
     state.detailId = null;
     document.body.classList.remove('detail-open');
-    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    if (location.hash || new URLSearchParams(location.search).has('r')) history.replaceState(null, '', rideHref(null));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
@@ -2090,9 +2090,23 @@
     } catch (x) {}
   }
 
-  /* deep link: landing on a shared list URL (#/CODE) opens its page directly */
-  function openFromHash() {
-    var code = location.hash.replace(/^#\//, '');
+  /* The address bar names the open ride as ?r=CODE. It used to be #/CODE, but people paste the
+     address bar into Facebook and a fragment never reaches a server, so it could only ever
+     unfurl as the generic board; ?r= does (on ceylonhop.com a Cloudflare Worker hands it to
+     the API's per-ride preview). Pathname + query only — a /r/CODE path would re-root every
+     relative link on the page. */
+  function rideHref(code) {
+    var q = new URLSearchParams(location.search);
+    if (code) q.set('r', code); else q.delete('r');
+    var rest = q.toString();
+    return location.pathname + (rest ? '?' + rest : '');
+  }
+
+  /* deep link: landing on a shared list URL (?r=CODE, or the old #/CODE) opens its page directly */
+  function openFromUrl() {
+    var old = /^#\/(.+)$/.exec(location.hash);
+    if (old) history.replaceState(null, '', rideHref(old[1]));
+    var code = new URLSearchParams(location.search).get('r') || '';
     if (code && state.detailId !== code) openDetail(code);
     else if (!code && document.body.classList.contains('detail-open')) closeDetail();
   }
@@ -2236,9 +2250,10 @@
     Promise.all([me, board, mine]).then(function () {
       return resumePaymentFromReturn();
     }).then(function () {
-      openFromHash();
+      openFromUrl();
       openFromStartLink();
-      window.addEventListener('hashchange', openFromHash);
+      window.addEventListener('hashchange', openFromUrl);
+      window.addEventListener('popstate', openFromUrl);
       startTicker();
     });
   }
