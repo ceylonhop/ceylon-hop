@@ -2764,14 +2764,18 @@ async function continueToCheckout(booking){
     return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway: the customer leaves for PayHere's own page and comes back to their
-  // booking's manage page, which asks our server what happened.
-  if(/payhere\.lk/.test(checkout.checkoutUrl)){
+  // booking's manage page, which asks our server what happened. Only PayHere's own two origins
+  // (api/src/adapters/payhere.ts) — a URL that merely CONTAINS "payhere.lk" is not the gateway.
+  if(/^https:\/\/(www|sandbox)\.payhere\.lk\//.test(checkout.checkoutUrl)){
     if(!checkout.fields) return phShowEnd(...checkoutRefusal(null));
     document.getElementById('ph-msg').textContent='Opening secure payment…';
     return redirectToPayHere(checkout, booking);
   }
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
-  // (no real money gateway). Simulated interstitial with the real reference.
+  // (no real money gateway). Simulated interstitial with the real reference — but never on the
+  // production site, whose API cannot boot on the fake gateway: there it is an anomaly, and a
+  // simulated "Payment approved" would confirm (and report a purchase for) an unpaid booking.
+  if(/^(www\.)?ceylonhop\.com$/.test(location.hostname)) return phShowEnd(...checkoutRefusal(null));
   return simulatePayThenConfirm(booking);
 }
 
