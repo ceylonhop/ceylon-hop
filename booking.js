@@ -2929,8 +2929,9 @@ async function continueToCheckout(booking){
     return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway: the customer leaves for PayHere's own page and comes back to their
-  // booking's manage page, which asks our server what happened.
-  if(/payhere\.lk/.test(checkout.checkoutUrl)){
+  // booking's manage page, which asks our server what happened. Only PayHere's own two origins
+  // (api/src/adapters/payhere.ts) — a URL that merely CONTAINS "payhere.lk" is not the gateway.
+  if(/^https:\/\/(www|sandbox)\.payhere\.lk\//.test(checkout.checkoutUrl)){
     if(!checkout.fields) return phShowEnd(...checkoutRefusal(null));
     document.getElementById('ph-msg').textContent='Opening secure payment…';
     return redirectToPayHere(checkout, booking);
