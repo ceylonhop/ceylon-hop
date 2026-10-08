@@ -997,6 +997,8 @@ export const experiences = pgTable('experiences', {
   radiusKm: doublePrecision('radius_km').notNull().default(5),
   photos: text('photos').array().notNull().default(sql`'{}'::text[]`),
   partnerContact: text('partner_contact'),
+  // Tripadvisor listing id (D22) - the only Tripadvisor datum we may store; ratings are fetched live.
+  tripadvisorLocationId: text('tripadvisor_location_id'),
   active: boolean('active').notNull().default(true),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),

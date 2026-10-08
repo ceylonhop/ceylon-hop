@@ -8739,7 +8739,7 @@ var EXP_PHOTO_ORIGIN = 'https://ceylonhop.com';
 var EXP_NOT_LIVE = 'Not live yet — photos appear after the site promote';
 // Server field → the form's data-err key (the rest map to themselves).
 var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
-  openWeekdays: 'days', startTimes: 'times', lat: 'loc', lng: 'loc', radiusKm: 'radius', partnerContact: 'contact' };
+  openWeekdays: 'days', startTimes: 'times', lat: 'loc', lng: 'loc', radiusKm: 'radius', partnerContact: 'contact', tripadvisorLocationId: 'ta' };
 
 // "7.977, 80.76" or a Google Maps link (/@lat,lng,… or ?q=lat,lng) → { lat, lng }, else null. Only
 // checks that the pair is a real coordinate; being inside Sri Lanka is expInSriLanka's rule.
@@ -8756,6 +8756,16 @@ function parseLatLng(text) {
   var lat = Number(m[1]), lng = Number(m[2]);
   if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat: lat, lng: lng };
+}
+// A pasted Tripadvisor listing address (…-g304141-d6789012-Reviews-…) or a bare number → the digits that
+// are the listing's location id, else null. Mirrors the server's /^[0-9]{1,15}$/; only an address that is
+// on tripadvisor.* is read, so a Google link with a stray "-d123" is refused rather than guessed at.
+function parseTripadvisorId(text) {
+  var s = String(text == null ? '' : text).trim();
+  if (/^[0-9]{1,15}$/.test(s)) return s;
+  if (!/^https?:\/\/([a-z0-9-]+\.)*tripadvisor\.[a-z]{2,3}(\.[a-z]{2})?(\/|$)/i.test(s)) return null;
+  var m = /-d([0-9]{1,15})(?=-|\.|\/|\?|#|$)/.exec(s);
+  return m ? m[1] : null;
 }
 // Sri Lanka's bounding box, as in experience.ts: a "lng, lat" paste lands in the ocean.
 function expInSriLanka(p) { return p.lat >= 5.8 && p.lat <= 10 && p.lng >= 79.4 && p.lng <= 82; }
@@ -9086,7 +9096,7 @@ function expInput(key, label, value, extra) {
 
 function renderExpForm(e) {
   var d = e || { slug: '', name: '', partnerName: '', areaLabel: '', summary: '', details: '', priceCents: null, priceUnit: 'per_person',
-    durationText: null, openWeekdays: [0, 1, 2, 3, 4, 5, 6], startTimes: [], lat: null, lng: null, radiusKm: 5, photos: [], partnerContact: null, active: true };
+    durationText: null, openWeekdays: [0, 1, 2, 3, 4, 5, 6], startTimes: [], lat: null, lng: null, radiusKm: 5, photos: [], partnerContact: null, tripadvisorLocationId: null, active: true };
   var days = EXP_DAYS.map(function (n, i) {
     return '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-day-' + i + '"' + (d.openWeekdays.indexOf(i) >= 0 ? ' checked' : '') + '> ' + n + '</label>';
   }).join('');
@@ -9115,6 +9125,8 @@ function renderExpForm(e) {
       + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
     + expInput('contact', 'Partner contact (ops only)', d.partnerContact || '')
+    + expField('ta', 'Tripadvisor listing (paste its web address, or just the number)', '<div class="ch-input-wrap"><input id="exp-ta" class="ch-input" autocomplete="off" placeholder="https://www.tripadvisor.com/…-d6789012-Reviews-…" value="' + esc(d.tripadvisorLocationId || '') + '"></div>'
+      + '<div id="exp-ta-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
     + '<div class="ch-field ch-exp-wide"><label class="ch-hz-toggle"><input type="checkbox" id="exp-active"' + (d.active ? ' checked' : '') + '> Active (offered to travellers)</label></div>'
     + '</div>'
     + '<div class="ch-hz-actions" style="margin-top:14px">'
@@ -9143,6 +9155,25 @@ function expLocUpdate() {
   return p;
 }
 
+// The check line under the Tripadvisor box: the id that will be saved and a link to look at the listing,
+// or why the box isn't usable. Returns { id } (id null = empty box, fine) or null when unreadable.
+function expTaUpdate() {
+  var box = document.getElementById('exp-ta'), out = document.getElementById('exp-ta-out');
+  if (!box || !out) return null;
+  var text = box.value.trim();
+  if (!text) { out.innerHTML = ''; return { id: null }; }
+  var id = parseTripadvisorId(text);
+  if (!id) {
+    out.innerHTML = '<div class="ch-exp-err" data-testid="exp-ta-error">Couldn’t find a Tripadvisor listing number — paste the listing’s web address (it contains “-d” then digits, like -d6789012) or just the number.</div>';
+    return null;
+  }
+  // A pasted address is opened as pasted; a bare number goes through Tripadvisor’s own redirect.
+  var href = /^https?:/i.test(text) ? text : 'https://www.tripadvisor.com/Attraction_Review-d' + id;
+  out.innerHTML = '<span data-testid="exp-ta-parsed">Listing number ' + esc(id) + '</span> · '
+    + '<a data-testid="exp-ta-check" href="' + esc(href) + '" target="_blank" rel="noopener">Open listing</a>';
+  return { id: id };
+}
+
 // A live preview of one photo path; the capture-phase error listener below shows the note when the
 // image isn't on the site yet (photos ship with the next promote, spec D8).
 function expPhotoPreview(i) {
@@ -9162,6 +9193,7 @@ function expOpenForm(id) {
   expForm = { id: id || null };
   host.innerHTML = renderExpForm(e || null);
   expLocUpdate();
+  expTaUpdate();
   for (var i = 0; i < 6; i++) expPhotoPreview(i);
   var first = document.getElementById('exp-slug');
   if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
@@ -9191,9 +9223,10 @@ function expReadForm() {
   if (!isFinite(price) || price < 0) errors.price = 'Enter the price in dollars, for example 35 or 35.50.';
   var radiusText = v('radius'), radius = radiusText === '' ? 5 : Number(radiusText);
   if (!isFinite(radius) || radius <= 0) errors.radius = 'Enter the reach in km, for example 5.';
+  var ta = expTaUpdate(); // an unreadable box already shows its own message
   var p = expLocUpdate();
   if (!p && !v('loc')) errors.loc = 'Paste the pin: “lat, lng” or a Google Maps link.'; // a bad pin already shows its own message
-  if (!p || Object.keys(errors).length) return { errors: errors };
+  if (!ta || !p || Object.keys(errors).length) return { errors: errors };
   var days = [], photos = [];
   for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
   for (var j = 0; j < 6; j++) { var ph = document.getElementById('exp-photo-' + j).value.trim(); if (ph) photos.push(ph); }
@@ -9202,7 +9235,7 @@ function expReadForm() {
     slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
     details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
     durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
-    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null,
+    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id,
     active: document.getElementById('exp-active').checked,
   } };
 }
@@ -9334,6 +9367,7 @@ document.addEventListener('input', function (e) {
   var fld = t.closest('.ch-field'), err = fld && fld.querySelector('[data-err]');
   if (err) err.textContent = '';
   if (t.id === 'exp-loc') expLocUpdate();
+  else if (t.id === 'exp-ta') expTaUpdate();
   else if (t.hasAttribute('data-photo')) expPhotoPreview(Number(t.getAttribute('data-photo')));
 });
 

@@ -33,6 +33,8 @@ export const ExperienceInputSchema = z.object({
   radiusKm: z.number().gt(0).max(60).default(5),
   photos: z.array(PHOTO_STEM).max(6).default([]),
   partnerContact: z.string().trim().max(200).nullable().default(null),
+  // The Tripadvisor listing id (spec D22): digits only, because it is spliced into an API path. Ops-only; never public.
+  tripadvisorLocationId: z.string().regex(/^[0-9]{1,15}$/, 'digits only, e.g. 6789012').nullable().default(null),
   active: z.boolean().default(true),
 }).strict();
 

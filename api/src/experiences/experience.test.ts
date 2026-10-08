@@ -25,6 +25,14 @@ describe('ExperienceInputSchema', () => {
     expect(ExperienceInputSchema.safeParse({ ...valid, priceCents: -1 }).success).toBe(false);
     expect(ExperienceInputSchema.safeParse({ ...valid, priority: 1 }).success).toBe(false);
   });
+  it('tripadvisorLocationId: digits only (max 15), null by default and when cleared (D22)', () => {
+    expect(ExperienceInputSchema.parse(valid).tripadvisorLocationId).toBeNull();
+    expect(ExperienceInputSchema.parse({ ...valid, tripadvisorLocationId: '6789012' }).tripadvisorLocationId).toBe('6789012');
+    expect(ExperienceInputSchema.parse({ ...valid, tripadvisorLocationId: null }).tripadvisorLocationId).toBeNull();
+    for (const bad of ['', 'abc', '12a', ' 123', '1234567890123456', 'https://www.tripadvisor.com/x-d1-Reviews', 123]) {
+      expect(ExperienceInputSchema.safeParse({ ...valid, tripadvisorLocationId: bad }).success, String(bad)).toBe(false);
+    }
+  });
   it('a partial (PATCH) leaves omitted fields undefined — defaults do not fire', () => {
     expect(ExperienceInputSchema.partial().strict().parse({ active: false })).toEqual({ active: false });
   });
@@ -32,12 +40,13 @@ describe('ExperienceInputSchema', () => {
 
 describe('toPublicExperience', () => {
   it('never exposes partner contact, the pin or audit fields, and builds absolute photo URLs', () => {
-    const e: Experience = { ...ExperienceInputSchema.parse(valid), id: 'x', currency: 'USD',
+    const e: Experience = { ...ExperienceInputSchema.parse({ ...valid, tripadvisorLocationId: '6789012' }), id: 'x', currency: 'USD',
       createdBy: 'a@b', updatedBy: null, createdAt: new Date(), updatedAt: new Date() };
     const json = JSON.stringify(toPublicExperience(e));
     expect(json).not.toContain('+94');
     expect(json).not.toContain('"lat"');
     expect(json).not.toContain('createdBy');
+    expect(json).not.toContain('ripadvisor');
     expect(toPublicExperience(e).photos).toEqual([{
       small: 'https://ceylonhop.com/img/experiences/atherya-massage/treatment-900.jpg',
       large: 'https://ceylonhop.com/img/experiences/atherya-massage/treatment-1800.jpg',

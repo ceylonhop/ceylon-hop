@@ -194,7 +194,7 @@ test('create: the POST carries cents, weekdays, times and photos, and the row ap
     slug: 'test-sunrise-hike', name: 'Sunrise hike', partnerName: 'Hill Guides', areaLabel: 'Ella',
     summary: 'Walk up for the sunrise.', details: '', priceCents: 3550, priceUnit: 'per_group', durationText: '2 hrs',
     openWeekdays: [1, 2, 3], startTimes: ['06:00', '14:30'], lat: 7.977, lng: 80.76, radiusKm: 8,
-    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, active: true,
+    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, active: true,
   }]);
   await expect(page.locator('#exp-form')).toHaveCount(0);
 });
@@ -256,6 +256,85 @@ test('a Google Maps URL fills lat/lng and the check link', async ({ page }) => {
   await page.locator('#exp-loc').fill('https://www.google.com/maps/place/Atherya/@7.9,80.5,12z/data=!4m6!3m5!1s0x0:0x0!8m2!3d7.9571!4d80.7598');
   await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('7.9571');
   await expect(page.locator('[data-testid="exp-loc-parsed"]')).toContainText('80.7598');
+});
+
+// Live Tripadvisor ratings (spec D22): ops pastes the listing's web address (or just its number) and the
+// form keeps only the digits - the one Tripadvisor datum we may store.
+const TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g304141-d6789012-Reviews-Atherya_Spa-Sigiriya_Central_Province.html?m=63959#photos';
+
+test('Tripadvisor listing: a pasted address keeps only the digits after -d, with a check link', async ({ page }) => {
+  const calls = await boot(page, FOUNDER);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await fillValid(page);
+  await expect(page.locator('[data-testid="exp-ta-parsed"]')).toHaveCount(0);
+  await page.locator('#exp-ta').fill(TA_URL);
+  await expect(page.locator('[data-testid="exp-ta-parsed"]')).toContainText('6789012');
+  await expect(page.locator('[data-testid="exp-ta-check"]')).toHaveText('Open listing');
+  await expect(page.locator('[data-testid="exp-ta-check"]')).toHaveAttribute('target', '_blank');
+  await expect(page.locator('[data-testid="exp-ta-check"]')).toHaveAttribute('rel', /noopener/);
+  await expect(page.locator('[data-testid="exp-ta-check"]')).toHaveAttribute('href', /tripadvisor\.com.*d6789012/);
+  await page.locator('[data-action="expSave"]').click();
+  await expect(rows(page)).toHaveCount(4);
+  expect(calls.post).toHaveLength(1);
+  expect(calls.post[0].tripadvisorLocationId).toBe('6789012');
+});
+
+test('Tripadvisor listing: a bare id is accepted as is', async ({ page }) => {
+  const calls = await boot(page, FOUNDER);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await fillValid(page);
+  await page.locator('#exp-ta').fill('  6789012 ');
+  await expect(page.locator('[data-testid="exp-ta-parsed"]')).toContainText('6789012');
+  await page.locator('[data-action="expSave"]').click();
+  await expect(rows(page)).toHaveCount(4);
+  expect(calls.post[0].tripadvisorLocationId).toBe('6789012');
+});
+
+test('Tripadvisor listing: something unreadable shows an error under the field and sends nothing', async ({ page }) => {
+  const calls = await boot(page, FOUNDER);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await fillValid(page);
+  for (const bad of ['not a listing', 'https://www.tripadvisor.com/Tourism-g304141-Sigiriya.html', 'https://example.com/x-d6789012-Reviews-x', '12a', '1234567890123456']) {
+    await page.locator('#exp-ta').fill(bad);
+    await expect(page.locator('[data-testid="exp-ta-error"]'), bad).toContainText('Tripadvisor');
+    await expect(page.locator('[data-testid="exp-ta-check"]')).toHaveCount(0);
+    await page.locator('[data-action="expSave"]').click();
+    await expect(page.locator('[data-testid="exp-ta-error"]')).toBeVisible();
+    expect(calls.post, bad).toHaveLength(0);
+  }
+  await page.locator('#exp-ta').fill('6789012');
+  await expect(page.locator('[data-testid="exp-ta-error"]')).toHaveCount(0);
+});
+
+test('Tripadvisor listing: editing shows the saved id; clearing the box sends null', async ({ page }) => {
+  const calls = await boot(page, FOUNDER, { list: (r, db) => { db[0].tripadvisorLocationId = '6789012'; return r.fulfill(json({ experiences: db, stats: STATS })); } });
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('#exp-ta')).toHaveValue('6789012');
+  await expect(page.locator('[data-testid="exp-ta-parsed"]')).toContainText('6789012');
+  await page.locator('#exp-ta').fill('');
+  await expect(page.locator('[data-testid="exp-ta-error"]')).toHaveCount(0);
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body.tripadvisorLocationId).toBeNull();
+});
+
+test('Tripadvisor listing: a server refusal is shown on the field', async ({ page }) => {
+  await boot(page, FOUNDER, { post: (r) => r.fulfill(json({ error: 'bad_request', issues: [{ path: ['tripadvisorLocationId'], message: 'digits only, e.g. 6789012' }] }, 400)) });
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await fillValid(page);
+  await page.locator('#exp-ta').fill('6789012');
+  await page.locator('[data-action="expSave"]').click();
+  await expect(page.locator('#exp-form [data-err="ta"]')).toHaveText('digits only, e.g. 6789012');
 });
 
 test('photo previews: a missing image says it is not live yet', async ({ page }) => {

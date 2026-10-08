@@ -4,6 +4,7 @@ import { InMemoryExperienceRepo } from '../db/experienceRepo';
 import { ExperienceInputSchema } from '../experiences/experience';
 import { aboutKm } from '../experiences/experience';
 import { haversineKm } from '../adapters/maps';
+import { FakeTripadvisorAdapter, NullTripadvisorAdapter, type TripadvisorDetails } from '../adapters/tripadvisor';
 
 const base = {
   partnerName: 'Atherya Spa', summary: 'A massage', priceCents: 3500, priceUnit: 'per_person' as const,
@@ -93,5 +94,127 @@ describe('GET /experiences/near', () => {
     const hit = () => a.request(q('Sigiriya@7.95,80.76'), { headers: { 'x-forwarded-for': '203.0.113.9' } });
     for (let i = 0; i < 3; i++) expect((await hit()).status).toBe(200);
     expect((await hit()).status).toBe(429);
+  });
+});
+
+// D22: live Tripadvisor ratings. Fetched per request, never stored or cached (Tripadvisor's terms).
+const DETAILS: TripadvisorDetails = {
+  rating: 4.5, numReviews: 312,
+  ratingImageUrl: 'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/4.5-12345-5.svg',
+  webUrl: 'https://www.tripadvisor.com/Attraction_Review-g1-d6789012-Reviews-Spa.html',
+};
+async function ratingsSetup(deps: AppDeps = {}) {
+  const experiences = new InMemoryExperienceRepo();
+  const mk = (o: Record<string, unknown>) => experiences.create(ExperienceInputSchema.parse({ ...base, areaLabel: 'Sigiriya', lat: 7.95, lng: 80.76, ...o }));
+  const rated = await mk({ slug: 'rated-spa', name: 'Rated spa', tripadvisorLocationId: '6789012' });
+  const rated2 = await mk({ slug: 'rated-cook', name: 'Rated cooking', tripadvisorLocationId: '555' });
+  const unlisted = await mk({ slug: 'unlisted', name: 'No listing' });
+  const off = await mk({ slug: 'off-rated', name: 'Off', tripadvisorLocationId: '777', active: false });
+  const tripadvisor = new FakeTripadvisorAdapter({ '6789012': DETAILS, '555': { ...DETAILS, rating: 5, numReviews: 9 }, '777': DETAILS });
+  const a = realCreateApp({ adminApiKey: 'k', experiences, tripadvisor, allowedOrigins: ['https://ceylonhop.com'], ...deps });
+  return { a, experiences, tripadvisor, rated, rated2, unlisted, off };
+}
+const rq = (...ids: string[]) => `/experiences/ratings?ids=${ids.join(',')}`;
+
+describe('GET /experiences/ratings', () => {
+  it('answers a rating per active, listed experience, in request order, with the fields the page needs', async () => {
+    const { a, rated, rated2, tripadvisor } = await ratingsSetup();
+    const res = await a.request(rq(rated2.id, rated.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ratings: [
+      { id: rated2.id, rating: 5, numReviews: 9, ratingImageUrl: DETAILS.ratingImageUrl, webUrl: DETAILS.webUrl },
+      { id: rated.id, rating: 4.5, numReviews: 312, ratingImageUrl: DETAILS.ratingImageUrl, webUrl: DETAILS.webUrl },
+    ] });
+    expect(tripadvisor.calls.sort()).toEqual(['555', '6789012']);
+  });
+
+  it('is never cached: cache-control no-store, and every request goes to Tripadvisor again', async () => {
+    const { a, rated, tripadvisor } = await ratingsSetup();
+    const first = await a.request(rq(rated.id));
+    expect(first.headers.get('cache-control')).toBe('no-store');
+    await a.request(rq(rated.id));
+    expect(tripadvisor.calls).toEqual(['6789012', '6789012']);
+  });
+
+  it('leaves out inactive experiences, ones with no listing and unknown ids — and never asks Tripadvisor about them', async () => {
+    const { a, rated, unlisted, off, tripadvisor } = await ratingsSetup();
+    const { ratings } = await (await a.request(rq(rated.id, unlisted.id, off.id, '99999999-9999-4999-8999-999999999999'))).json();
+    expect(ratings.map((r: { id: string }) => r.id)).toEqual([rated.id]);
+    expect(tripadvisor.calls).toEqual(['6789012']);
+  });
+
+  it('leaves out an experience whose lookup failed (null), keeping the others', async () => {
+    const { a, rated, rated2, tripadvisor } = await ratingsSetup();
+    delete tripadvisor.byId['555'];
+    const { ratings } = await (await a.request(rq(rated.id, rated2.id))).json();
+    expect(ratings.map((r: { id: string }) => r.id)).toEqual([rated.id]);
+  });
+
+  it('looks the experiences up in parallel, not one after another', async () => {
+    const { a, rated, rated2, tripadvisor } = await ratingsSetup();
+    tripadvisor.delayMs = 120;
+    const t0 = Date.now();
+    const { ratings } = await (await a.request(rq(rated.id, rated2.id))).json();
+    expect(ratings).toHaveLength(2);
+    expect(Date.now() - t0).toBeLessThan(220);
+  });
+
+  it('a repeated id is asked about once', async () => {
+    const { a, rated, tripadvisor } = await ratingsSetup();
+    const { ratings } = await (await a.request(rq(rated.id, rated.id))).json();
+    expect(ratings).toHaveLength(1);
+    expect(tripadvisor.calls).toEqual(['6789012']);
+  });
+
+  it('400 for no ids, a non-uuid, an empty entry, or more than 6', async () => {
+    const { a, rated, tripadvisor } = await ratingsSetup();
+    const uuid = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+    const bad = [
+      '/experiences/ratings', '/experiences/ratings?ids=', rq('nope'), rq(rated.id, 'x'), `/experiences/ratings?ids=${rated.id},`,
+      rq(...[1, 2, 3, 4, 5, 6, 7].map(uuid)), `/experiences/ratings?ids=${encodeURIComponent("' or 1=1 --")}`,
+    ];
+    for (const url of bad) {
+      const res = await a.request(url);
+      expect(res.status, url).toBe(400);
+      expect((await res.json()).error).toBe('bad_request');
+    }
+    expect(tripadvisor.calls).toEqual([]);
+    expect((await a.request(rq(...[1, 2, 3, 4, 5, 6].map(uuid)))).status).toBe(200);
+  });
+
+  it('with the Null adapter (no key) answers { ratings: [] } without touching the database', async () => {
+    const { experiences, rated } = await ratingsSetup();
+    const spy = { ...experiences, getMany: async () => { throw new Error('db touched'); }, listActive: async () => { throw new Error('db touched'); }, get: async () => { throw new Error('db touched'); } };
+    const a = realCreateApp({ adminApiKey: 'k', experiences: spy as unknown as InMemoryExperienceRepo, tripadvisor: new NullTripadvisorAdapter() });
+    const res = await a.request(rq(rated.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ratings: [] });
+    // ...and that is also what an app built with no adapter at all does.
+    const d = realCreateApp({ adminApiKey: 'k', experiences: spy as unknown as InMemoryExperienceRepo });
+    expect(await (await d.request(rq(rated.id))).json()).toEqual({ ratings: [] });
+  });
+
+  it('never returns the location id, and /experiences/near still does not either', async () => {
+    const { a, rated } = await ratingsSetup();
+    expect(await (await a.request(rq(rated.id))).text()).not.toMatch(/"6789012"|locationId/i);
+    const near = await (await a.request(q('Sigiriya@7.95,80.76'))).text();
+    expect(near).toContain(rated.id);
+    expect(near).not.toMatch(/6789012|ripadvisor/);
+  });
+
+  it('is CORS-readable from the site origin', async () => {
+    const { a, rated } = await ratingsSetup();
+    const res = await a.request(rq(rated.id), { headers: { origin: 'https://ceylonhop.com' } });
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://ceylonhop.com');
+  });
+
+  it('is rate limited per IP on GET and on HEAD (429 past the budget)', async () => {
+    const { a, rated } = await ratingsSetup({ rateLimit: { max: 3, windowMs: 60_000 } });
+    const hit = (method: string) => a.request(rq(rated.id), { method, headers: { 'x-forwarded-for': '203.0.113.9' } });
+    expect((await hit('GET')).status).toBe(200);
+    expect((await hit('HEAD')).status).toBe(200);
+    expect((await hit('GET')).status).toBe(200);
+    expect((await hit('GET')).status).toBe(429);
+    expect((await hit('HEAD')).status).toBe(429);
   });
 });

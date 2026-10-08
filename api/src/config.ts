@@ -143,6 +143,12 @@ const Env = z.object({
   GA4_MEASUREMENT_ID: z.string().default('G-XEW62ZD7B3'),
   GA4_API_SECRET: z.string().optional(),
   GA4_SERVER_EVENT_NAME: z.enum(['purchase_server', 'purchase']).default('purchase_server'),
+  // Live Tripadvisor ratings on the experience rows (spec 2026-10-06 D22). Dormant until
+  // TRIPADVISOR_API_KEY is set (Tripadvisor Content API; the owner gets it once Tripadvisor approves the
+  // account) - without it no rating is shown anywhere. The key is domain-restricted, so server calls send
+  // TRIPADVISOR_REFERER as their Referer; it must match the domain registered with the key.
+  TRIPADVISOR_API_KEY: z.string().optional(),
+  TRIPADVISOR_REFERER: z.string().default('https://ceylonhop.com'),
   // RESEND_WEBHOOK_SECRET: enables signed POST /webhooks/resend delivery evidence and
   // bounce/complaint/failure alerts.
   RESEND_WEBHOOK_SECRET: z.string().optional(),

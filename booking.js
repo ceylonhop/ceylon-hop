@@ -1362,7 +1362,7 @@ const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',fr
    name on screen came from GET /experiences/near and goes through acEsc (which does not escape ',
    so every attribute below is double-quoted). The block stays hidden on any error, timeout or
    empty answer - an upsell must never get in the way of the booking. */
-const expUi = { key:null, seq:0, ctl:null, meta:new Map() };   // meta: id -> {name, partnerName, slug, place}
+const expUi = { key:null, seq:0, ctl:null, meta:new Map(), rateSeq:0, rateCtl:null };   // meta: id -> {name, partnerName, slug, place}
 const EXP_TIMEOUT_MS = 3000;
 const expLabel = s => String(s||'').split(' / ')[0].trim().slice(0,60);
 const expRound = n => Math.round(n*1000)/1000;
@@ -1450,9 +1450,50 @@ function expCardHtml(it, place, n){
     + (photos.length ? `<div class="xp-photos">${photos.map(p=>`<img src="${acEsc(p.small)}" srcset="${acEsc(p.small)} 900w, ${acEsc(p.large)} 1800w" sizes="(max-width:560px) 45vw, 200px" alt="${acEsc(it.name)}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : '')
     + `</div></article>`;
 }
+// Live Tripadvisor ratings (spec D22). Asked once, AFTER the rows are on screen, for the ids just rendered
+// (the endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is cached here
+// either: each fresh render asks again. Any failure, timeout or odd answer leaves the rows as they are.
+const EXP_RATING_IDS = 6;
+function expRatingHtml(r){
+  const https=u=>typeof u==='string' && /^https:\/\//i.test(u);
+  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl)) return '';
+  const rating=r.rating, n=r.numReviews;
+  if(typeof rating!=='number' || !(rating>=0 && rating<=5) || typeof n!=='number' || !Number.isInteger(n) || n<0) return '';
+  return `<a class="xp-ta" href="${acEsc(r.webUrl)}" target="_blank" rel="noopener noreferrer">`
+    + `<img src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" height="14">`
+    + `<span>${n} ${n===1?'review':'reviews'}</span></a>`;
+}
+function loadExperienceRatings(){
+  try { loadExperienceRatingsNow(); } catch(e) { /* a rating must never break the booking flow */ }
+}
+function loadExperienceRatingsNow(){
+  const seq=++expUi.rateSeq;           // a newer render (or a newer ask) makes an older answer stale
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const block=document.getElementById('experiences-block');
+  const ids=[...expUi.meta.keys()].slice(0,EXP_RATING_IDS);
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!block || !ids.length || !base) return;
+  const ctl=new AbortController(); expUi.rateCtl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/ratings?ids='+ids.map(encodeURIComponent).join(','), { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('ratings_'+res.status); return res.json(); })
+    .then(data=>{
+      if(seq!==expUi.rateSeq || !data || !Array.isArray(data.ratings)) return;
+      data.ratings.forEach(r=>{
+        if(!r || typeof r.id!=='string') return;
+        const row=[...block.querySelectorAll('.xp-row')].find(x=>x.dataset.id===r.id);
+        const html=expRatingHtml(r), meta=row && row.querySelector('.xp-meta');
+        if(html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
+      });
+    })
+    .catch(()=>{})
+    .then(()=>clearTimeout(timer));
+}
 function showExperiences(stops){
   const block=document.getElementById('experiences-block');
   if(!block) return;
+  expUi.rateSeq++;                     // whatever ratings were in flight belong to rows that are about to go
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
   const usable=(stops||[]).map(s=>({ place:expLabel(s && s.place), items:(s && Array.isArray(s.items) ? s.items : []).filter(it=>it && typeof it.id==='string' && typeof it.name==='string') }))
     .filter(s=>s.place && s.items.length);
   expUi.meta.clear();
@@ -1476,6 +1517,7 @@ function showExperiences(stops){
   block.innerHTML=html;
   block.hidden=false;
   renderExperienceSummary();
+  loadExperienceRatings();
 }
 function renderExperienceSummary(){
   const box=document.getElementById('sum-experiences'), count=document.getElementById('sum-experiences-count'), list=document.getElementById('sum-experiences-list');

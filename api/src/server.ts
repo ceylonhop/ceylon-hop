@@ -42,6 +42,7 @@ import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRep
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 import { MeasurementProtocolAdapter } from './adapters/ga4';
+import { HttpTripadvisorAdapter } from './adapters/tripadvisor';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -99,6 +100,11 @@ const email = config.RESEND_API_KEY
 // Server-side GA4 — dormant without the secret: ids are still captured, nothing is sent.
 const ga4Adapter = config.GA4_API_SECRET
   ? new MeasurementProtocolAdapter(config.GA4_MEASUREMENT_ID, config.GA4_API_SECRET)
+  : undefined;
+
+// Live Tripadvisor ratings - dormant without the key: app.ts then uses the null adapter.
+const tripadvisorAdapter = config.TRIPADVISOR_API_KEY
+  ? new HttpTripadvisorAdapter(config.TRIPADVISOR_API_KEY, config.TRIPADVISOR_REFERER)
   : undefined;
 
 const { db, sql } = createDb(config.DATABASE_URL);
@@ -176,6 +182,7 @@ const app = createApp({
   // Partner experiences (spec 2026-10-06). WITHOUT these lines app.ts falls back to empty in-memory
   // repos: every experience ops enters and every customer interest would vanish on restart.
   experiences: new PostgresExperienceRepo(db),
+  ...(tripadvisorAdapter ? { tripadvisor: tripadvisorAdapter } : {}),
   experienceInterests: new PostgresExperienceInterestRepo(db),
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.

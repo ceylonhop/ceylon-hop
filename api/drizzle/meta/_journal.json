@@ -470,6 +470,13 @@
       "when": 1791331200000,
       "tag": "0067_experience_confirmation",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1791417600000,
+      "tag": "0068_experience_tripadvisor",
+      "breakpoints": true
     }
   ]
 }

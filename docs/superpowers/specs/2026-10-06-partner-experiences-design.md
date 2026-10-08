@@ -336,6 +336,36 @@ When ops has taken payment for an experience, the customer gets a confirmation e
 - **Sent only when ops presses the button** — never automatically on status change. **Why:** the date and time
   come from a WhatsApp conversation with the partner; ops is the one who knows they're final.
 
+### D22 — Tripadvisor ratings, live (owner, 2026-10-07)
+Shown on the booking and quote rows when an experience has a Tripadvisor listing.
+- **Migration 0068** adds `experiences.tripadvisor_location_id` (text; CHECK `^[0-9]{1,15}$` or null). Ops pastes
+  the listing's web address (`…-g304141-d6789012-Reviews-…`) or the bare number; the form keeps only the digits
+  after `-d`, shows them with an "Open listing" check link, and refuses what it cannot read. Never returned by
+  `/experiences/near` (the public projection is unchanged). (Numbered 0068, `when` 1791417600000, after #950's
+  0067: release order #930 → #940 → #950 → this PR.)
+- **Tripadvisor rules (Content API docs, 2026-10-07):** only the location id may be stored; rating and review
+  count are fetched live, never cached or stored; the bubble image and logo are served from Tripadvisor's own
+  URLs (`rating_image_url`); each rating links to the listing (`web_url`). 5,000 free calls a month, then
+  pay-as-you-go. The key is domain-restricted; our server sends `Referer: https://ceylonhop.com`.
+- **Adapter + fake** (Hard rule 4): `TripadvisorAdapter.details(locationId)` -> `{ rating, numReviews,
+  ratingImageUrl, webUrl } | null`, 2 s timeout, any failure -> `null`, never throws. The image and listing URLs
+  must be https on `*.tripadvisor.com` / `*.tacdn.com`, else `null`. Real HTTP adapter only when
+  `TRIPADVISOR_API_KEY` is set; otherwise a null adapter and **no rating is shown anywhere** (dormant).
+- **Endpoint:** `GET /experiences/ratings?ids=<uuid>,...` (<= 6; active experiences with a location id only) ->
+  `{ ratings: [{ id, rating, numReviews, ratingImageUrl, webUrl }] }` (a failed lookup is simply omitted),
+  `cache-control: no-store`, GET+HEAD rate limit. One live call per experience, in parallel. With the null
+  adapter it answers `{ ratings: [] }` without reading the database.
+- **Pages:** rows render first; ratings fill in afterwards (one fetch, 3 s timeout, sequence-guarded; never
+  delays or blocks the section). The rating line sits under the meta line: the Tripadvisor bubble image + "312
+  reviews", linked to `web_url` (new tab, `rel="noopener noreferrer"`). No rating -> no line, no reserved space.
+  The page also refuses a non-https link or image, and a rating that is not a number 0-5.
+- **Quota maths:** one call per experience per section render, so ~3 calls per Sigiriya booking view; 5,000/month
+  = ~1,600 views before charges. Revisit if traffic grows. (The pages ask about the first 6 rows only.)
+- **Config change (owner-approved):** `TRIPADVISOR_API_KEY` (and optional `TRIPADVISOR_REFERER`, default
+  `https://ceylonhop.com`) on Render - the owner sets the key after Tripadvisor approves the account.
+- **Touch targets (reviewer note, same PR):** on phones (<= 640px) the Request button is at least 44px tall, and
+  "Details >" has a 32px tap area (padding, offset by negative margins so it looks the same).
+
 ## 4. Release & risk
 - **Migration 0065** (two new tables; nothing existing altered) auto-applies on staging at merge and on
   prod at the `main → production` promote (CLAUDE.md rule 7) — needs the owner's OK on that promote.

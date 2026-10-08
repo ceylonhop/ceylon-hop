@@ -5,7 +5,7 @@ import { futureIsoDate } from '../dates.js';
 // Partner experiences on booking.html step 3 (spec 2026-10-06 D9/D10/D16/D17). The page asks
 // GET /experiences/near for what is close to the drop-off, shows compact rows (owner-approved
 // Option B, 2026-10-07), and a "Request" tap only records an id: it never touches the price, and
-// never blocks the booking. No ratings yet - Tripadvisor is a separate future step.
+// never blocks the booking. Live Tripadvisor ratings (spec D22) fill in under the meta line after the rows render.
 
 const photo = (stem) => ({
   small: `https://ceylonhop.com/img/${stem}-900.jpg`,
@@ -318,6 +318,7 @@ test.describe('phone layout', () => {
         buyTop: r.querySelector('.xp-buy').getBoundingClientRect().top,
         photoW: r.querySelector('.xp-photo').getBoundingClientRect().width,
         btnH: r.querySelector('.xp-btn').getBoundingClientRect().height,
+        moreH: r.querySelector('.xp-more').getBoundingClientRect().height,
         btnRightMax: Math.max(...rows.map((x) => x.querySelector('.xp-btn').getBoundingClientRect().right)),
         rowRightMin: Math.min(...rows.map((x) => x.getBoundingClientRect().right)),
       };
@@ -328,11 +329,147 @@ test.describe('phone layout', () => {
     expect(m.nameWrap).toBe('normal');
     expect(m.buyTop).toBeGreaterThanOrEqual(m.metaBottom - 1);
     expect(m.photoW).toBe(64);
-    expect(m.btnH).toBeGreaterThanOrEqual(36);
+    // Touch targets (reviewer note): the Request button is a full 44px tall on phones, and the
+    // "Details ›" link has a 32px tap area even though it still looks like small text.
+    expect(m.btnH).toBeGreaterThanOrEqual(44);
+    expect(m.moreH).toBeGreaterThanOrEqual(32);
     expect(m.btnRightMax).toBeLessThanOrEqual(m.rowRightMin);
 
     // The tap works here too, and the summary line lives in the mobile sheet (#summary).
     await block(page).locator('.xp-btn').first().click();
     await expect(page.locator('#summary #sum-experiences')).toHaveCount(1);
+  });
+});
+
+// ── Live Tripadvisor ratings (spec D22) ─────────────────────────────────────────────────────────
+// GET /experiences/ratings is asked once, AFTER the rows render, for the rendered ids. A rating is
+// the Tripadvisor bubble image (served from Tripadvisor's own URL) + "N reviews", linked to the
+// listing. It never delays, hides or reflows the rows when it is absent or fails.
+const TA_IMG = 'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/4.5-12345-5.svg';
+const TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g1-d6789012-Reviews-Spa.html';
+const rating = (o) => ({ id: MASSAGE.id, rating: 4.5, numReviews: 312, ratingImageUrl: TA_IMG, webUrl: TA_URL, ...o });
+
+test.describe('Tripadvisor ratings on the rows', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('https://www.tripadvisor.com/img/**', (r) =>
+      r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="75" height="15"/>' }));
+  });
+
+  test('a rating appears under the meta line: the bubble image, "312 reviews", linked to the listing in a new tab', async ({ page }) => {
+    const { ratingRequests } = await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()] } });
+    await goStep3(page);
+    const row = block(page).locator('.xp-row').first();
+    const link = row.locator('a.xp-ta');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('href', TA_URL);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toContainText('312 reviews');
+    const img = link.locator('img');
+    await expect(img).toHaveAttribute('src', TA_IMG);
+    await expect(img).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
+    // Under the meta line, above "Details ›".
+    const order = await row.evaluate((r) => {
+      const y = (sel) => r.querySelector(sel).getBoundingClientRect().top;
+      return [y('.xp-meta'), y('.xp-ta'), y('.xp-more')];
+    });
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+    // One request, for exactly the rendered ids; the unrated rows get nothing.
+    expect(ratingRequests).toHaveLength(1);
+    expect(ratingRequests[0].sort()).toEqual([MASSAGE.id, COOKING.id, SAFARI.id].sort());
+    await expect(block(page).locator('a.xp-ta')).toHaveCount(1);
+  });
+
+  test('a rating does not change what Request does or the Total', async ({ page }) => {
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()] } });
+    await goStep3(page);
+    await expect(block(page).locator('a.xp-ta')).toHaveCount(1);
+    await block(page).locator('.xp-btn').first().click();
+    await expect(block(page).locator('.xp-btn').first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(block(page).locator('a.xp-ta')).toHaveCount(1);
+  });
+
+  test('a failed ratings call leaves the rows exactly as they were', async ({ page }) => {
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { status: 500 } });
+    await goStep3(page);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
+    await page.waitForTimeout(400);
+    await expect(block(page).locator('.xp-ta')).toHaveCount(0);
+    await expect(block(page)).not.toContainText(/tripadvisor|reviews/i);
+  });
+
+  test('no ratings (the dormant default) shows nothing and reserves no space', async ({ page }) => {
+    const { ratingRequests } = await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
+    await goStep3(page);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
+    await expect.poll(() => ratingRequests.length).toBe(1);
+    await expect(block(page).locator('.xp-ta')).toHaveCount(0);
+  });
+
+  test('a ratings answer slower than 3 seconds is dropped; the rows stay', async ({ page }) => {
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()], delayMs: 3600 } });
+    await goStep3(page);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
+    await page.waitForTimeout(4200);
+    await expect(block(page).locator('.xp-ta')).toHaveCount(0);
+  });
+
+  test('malformed or hostile answers are ignored: a javascript: link, a foreign image, a bad rating', async ({ page }) => {
+    const bad = [
+      rating({ webUrl: 'javascript:window.__xss=1' }),
+      rating({ id: COOKING.id, ratingImageUrl: 'data:image/svg+xml,<svg/>' }),
+      rating({ id: SAFARI.id, rating: 'five' }),
+    ];
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: bad } });
+    await goStep3(page);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
+    await page.waitForTimeout(400);
+    await expect(block(page).locator('.xp-ta')).toHaveCount(0);
+    expect(await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => /^javascript:/i.test(a.getAttribute('href') || '')))).toBe(false);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('quotes and angle brackets in the answer stay text (attributes are double-quoted)', async ({ page }) => {
+    const url = 'https://www.tripadvisor.com/x?a="onmouseover="window.__xss=1&b=\'<i>';
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating({ webUrl: url })] } });
+    await goStep3(page);
+    const link = block(page).locator('a.xp-ta');
+    await expect(link).toHaveCount(1);
+    expect(await link.evaluate((a) => a.getAttributeNames().sort())).toEqual(['class', 'href', 'rel', 'target']);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('a singular review count reads "1 review"', async ({ page }) => {
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating({ numReviews: 1 })] } });
+    await goStep3(page);
+    await expect(block(page).locator('a.xp-ta')).toContainText(/^\s*1 review\s*$/);
+  });
+
+  test('more than 6 rows: only the first 6 ids are asked about', async ({ page }) => {
+    const many = Array.from({ length: 8 }, (_, i) => exp({ id: `aaaaaaaa-0000-4000-8000-00000000000${i}`, name: `Exp ${i}`, slug: `e${i}` }));
+    const { ratingRequests } = await gotoBooking(page, { query: PRIVATE, experiences: { stops: [{ place: 'Sigiriya', items: many }] } });
+    await goStep3(page);
+    await expect(block(page).locator('.xp-row')).toHaveCount(8);
+    await expect.poll(() => ratingRequests.length).toBe(1);
+    expect(ratingRequests[0]).toEqual(many.slice(0, 6).map((e) => e.id));
+  });
+
+  test.describe('phone', () => {
+    test.use({ viewport: { width: 375, height: 760 } });
+    test('375px: with a rating nothing overflows and the rating link is not clipped', async ({ page }) => {
+      await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()] } });
+      await goStep3(page);
+      const link = block(page).locator('a.xp-ta');
+      await expect(link).toHaveCount(1);
+      const m = await page.evaluate(() => {
+        const root = document.documentElement, a = document.querySelector('#experiences-block a.xp-ta'), row = a.closest('.xp-row');
+        const r = a.getBoundingClientRect(), rr = row.getBoundingClientRect();
+        return { overflow: root.scrollWidth - root.clientWidth, right: r.right, rowRight: rr.right, h: r.height };
+      });
+      expect(m.overflow).toBeLessThanOrEqual(0);
+      expect(m.right).toBeLessThanOrEqual(m.rowRight);
+      expect(m.h).toBeGreaterThan(0);
+    });
   });
 });

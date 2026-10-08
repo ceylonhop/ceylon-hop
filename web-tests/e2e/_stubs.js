@@ -169,7 +169,11 @@ export async function installEstimateStub(page, opts = {}) {
  *   experiences  - what GET /experiences/near answers: {status = 200, stops = [], delayMs = 0}. Default
  *                  is no experiences, so the booking page's experiences block stays hidden
  *
- * Also returns `nearRequests`: each GET /experiences/near's `at` values, in order.
+ *   ratings      - what GET /experiences/ratings answers (live Tripadvisor ratings, spec D22):
+ *                  {status = 200, ratings = [], delayMs = 0, body}. Default is no ratings, so no row shows one
+ *
+ * Also returns `nearRequests`: each GET /experiences/near's `at` values, in order, and
+ * `ratingRequests`: each GET /experiences/ratings's `ids` (split on commas), in order.
  *
  * Returns handles for the real-gateway round trip (`checkout: 'payhere'`):
  *   gateway      - every request the PayHere stub received: {method, url, postData}
@@ -194,6 +198,7 @@ export async function gotoBooking(page, opts = {}) {
     settlementStatuses = ['paid'],   // webhook-owned state polled on the way back from PayHere
     checkoutDelayMs = 0,
     experiences = {},                // GET /experiences/near: {status, stops, delayMs}
+    ratings = {},                    // GET /experiences/ratings: {status, ratings, delayMs, body}
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -244,6 +249,19 @@ export async function gotoBooking(page, opts = {}) {
     const status = experiences.status ?? 200;
     if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
     return r.fulfill(json({ stops: experiences.stops ?? [] }));
+  });
+
+  // Live Tripadvisor ratings for the rows above (booking.js). Always answered: the offline suite must not
+  // reach the real API, and a rating must stay optional.
+  const ratingRequests = [];
+  await page.route('**/experiences/ratings*', async (r) => {
+    ratingRequests.push((new URL(r.request().url()).searchParams.get('ids') || '').split(','));
+    if (ratings.delayMs) await new Promise((res) => setTimeout(res, ratings.delayMs));
+    const status = ratings.status ?? 200;
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill(ratings.body !== undefined
+      ? { status: 200, contentType: 'application/json', body: ratings.body }
+      : json({ ratings: ratings.ratings ?? [] }));
   });
 
   // booking creation
@@ -325,7 +343,7 @@ export async function gotoBooking(page, opts = {}) {
   }
 
   await page.goto(`${path}?${query}`);
-  return { gateway, sdk, checkoutBodies, fields, viewTokens, nearRequests };
+  return { gateway, sdk, checkoutBodies, fields, viewTokens, nearRequests, ratingRequests };
 }
 
 // What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the

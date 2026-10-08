@@ -78,7 +78,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .xp-main{min-width:0}
     .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:3px 0;margin:2px 0 0;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
+    .xp-ta{position:relative;display:flex;align-items:center;gap:6px;margin:3px 0 0;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
+    .xp-ta img{display:block;height:14px;width:auto;flex:none}
+    .xp-ta:hover span{text-decoration:underline}
+    .xp-ta:focus-visible{outline:2px solid var(--btn-accent);outline-offset:2px;border-radius:3px}
+    /* A 32px tap area (was ~23px) with the same look: the extra padding is taken back out of the margins. */
+    .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:8px 0;margin:-3px 0 -5px;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
     .xp-more:hover{color:var(--btn-accent-hover);text-decoration:underline}
     .xp-more:focus{outline:none}
     .xp-more:focus-visible{outline:2px solid var(--btn-accent);outline-offset:3px;text-decoration:underline}
@@ -105,6 +110,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       .xp-photo{width:64px;height:64px;grid-row:1/3}
       .xp-name{white-space:normal;overflow-wrap:anywhere}
       .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+      /* a full 44px touch target on phones (reviewer note); desktop keeps the compact 36px pill */
+      .xp-btn{min-height:44px}
     }
   </style>
 </head>
@@ -548,6 +555,38 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
   });
 
+  // Live Tripadvisor ratings (spec D22). One ask after the rows are painted, for the ids just rendered (the
+  // endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is stored or cached:
+  // each load asks again. Any failure, timeout or odd answer leaves the rows exactly as they are.
+  var XP_RATING_IDS = 6, XP_RATING_TIMEOUT_MS = 3000, xpRateSeq = 0;
+  function xpRatingHtml(r){
+    function https(u){ return typeof u === 'string' && /^https:\/\//i.test(u); }
+    if (!r || !https(r.webUrl) || !https(r.ratingImageUrl)) return '';
+    var rating = r.rating, n = r.numReviews;
+    if (typeof rating !== 'number' || !(rating >= 0 && rating <= 5) || typeof n !== 'number' || n % 1 !== 0 || n < 0) return '';
+    return '<a class="xp-ta" href="' + esc(r.webUrl) + '" target="_blank" rel="noopener noreferrer">'
+      + '<img src="' + esc(r.ratingImageUrl) + '" alt="Tripadvisor rating ' + esc(String(rating)) + ' of 5" height="14">'
+      + '<span>' + n + (n === 1 ? ' review' : ' reviews') + '</span></a>';
+  }
+  function xpLoadRatings(){
+    var seq = ++xpRateSeq, ids = Object.keys(xpMeta).slice(0, XP_RATING_IDS);
+    if (!ids.length || typeof AbortController === 'undefined') return;
+    var ctl = new AbortController(), timer = setTimeout(function(){ ctl.abort(); }, XP_RATING_TIMEOUT_MS);
+    fetch(API + '/experiences/ratings?ids=' + ids.map(encodeURIComponent).join(','), { credentials: 'omit', signal: ctl.signal })
+      .then(function(r){ if (!r.ok) throw new Error('ratings_' + r.status); return r.json(); })
+      .then(function(data){
+        if (seq !== xpRateSeq || !data || !Array.isArray(data.ratings)) return;
+        data.ratings.forEach(function(r){
+          if (!r || typeof r.id !== 'string') return;
+          var row = Array.prototype.filter.call(app.querySelectorAll('#experiences-block .xp-row'), function(x){ return x.getAttribute('data-id') === r.id; })[0];
+          var html = xpRatingHtml(r), meta = row && row.querySelector('.xp-meta');
+          if (html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
+        });
+      })
+      .catch(function(){ /* a rating is decoration: the row stays as it is */ })
+      .then(function(){ clearTimeout(timer); });
+  }
+
   function renderLive(d, lapsed){
     var v = d.view;
     var html = '<div class="pp-hello"' + (v.greetingName ? MASK : '') + '>' + (v.greetingName ? 'Hi ' + esc(v.greetingName) + ',' : 'Hello,') + '</div>'
@@ -581,6 +620,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-note">Anything you’d like changed — dates, stops, a bigger vehicle —<br>'
       + '<a href="' + waHref(v.waText) + '">just message us</a> and we’ll update this page.</p>';
     paint(html);
+    xpLoadRatings();
     // What we put in front of them, and at what price. `lapsed` rides along because an
     // expired price is a different offer from a live one even when the itinerary is identical.
     var opts = v.options || [];

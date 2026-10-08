@@ -451,8 +451,8 @@ test.describe('partner experiences on the quote page', () => {
     await expect(row.locator('.xp-price')).toHaveText('$35 pp');
     await expect(row.locator('.xp-btn')).toHaveText('Request');
     await expect(row.locator('.xp-more')).toContainText('Details');
-    // No ratings yet (Tripadvisor is a later step).
-    await expect(block).not.toContainText('★ ');
+    // No rating unless /experiences/ratings answers with one (spec D22; see the ratings tests below).
+    await expect(block.locator('.xp-ta')).toHaveCount(0);
     // No button promises "free" / "no charge".
     for (const t of await block.locator('.xp-btn').allTextContents()) expect(t).not.toMatch(/free|no charge/i);
 
@@ -656,5 +656,137 @@ test.describe('partner experiences on the quote page', () => {
     await page.waitForFunction(() => window.dataLayer.some((e) => e.event === 'experience_interest'));
     const hit = await page.evaluate(() => window.dataLayer.find((e) => e.event === 'experience_interest'));
     expect(hit).toMatchObject({ experience_slug: 'placeholder-ayurvedic-massage', place: 'Sigiriya', source: 'quote_page', interested: true });
+  });
+});
+
+// ── Live Tripadvisor ratings on the quote page (spec 2026-10-06 D22) ─────────────────────────────
+// One GET /experiences/ratings after the rows paint; the rating is the Tripadvisor bubble image +
+// "N reviews" linked to the listing. Absent or failed = nothing, and the rows are never held up.
+const TA_IMG = 'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/4.5-12345-5.svg';
+const TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g1-d6789012-Reviews-Spa.html';
+const taRating = (o) => ({ id: XP_MASSAGE.id, rating: 4.5, numReviews: 312, ratingImageUrl: TA_IMG, webUrl: TA_URL, ...o });
+async function stubRatings(page, answer) {
+  const asked = [];
+  await page.route('**/experiences/ratings*', async (r) => {
+    asked.push((new URL(r.request().url()).searchParams.get('ids') || '').split(','));
+    if (answer.delayMs) await new Promise((res) => setTimeout(res, answer.delayMs));
+    if (answer.status && answer.status !== 200) return r.fulfill({ status: answer.status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ratings: answer.ratings || [] }) });
+  });
+  await page.route('https://www.tripadvisor.com/img/**', (r) =>
+    r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="75" height="15"/>' }));
+  return asked;
+}
+
+test.describe('Tripadvisor ratings on the quote page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('https://ceylonhop.com/img/**', (r) => r.abort());
+  });
+
+  test('a rating appears under the meta line: the bubble image, "312 reviews", linked to the listing in a new tab', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const asked = await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    const link = row.locator('a.xp-ta');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('href', TA_URL);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toContainText('312 reviews');
+    await expect(link.locator('img')).toHaveAttribute('src', TA_IMG);
+    await expect(link.locator('img')).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
+    const order = await row.evaluate((r) => {
+      const y = (sel) => r.querySelector(sel).getBoundingClientRect().top;
+      return [y('.xp-meta'), y('.xp-ta'), y('.xp-more')];
+    });
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toEqual([XP_MASSAGE.id, XP_COOKING.id]);
+    await expect(page.locator('#experiences-block a.xp-ta')).toHaveCount(1);
+  });
+
+  test('tapping Request still works with a rating on the row, and the rating stays', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    await expect(row.locator('a.xp-ta')).toHaveCount(1);
+    await row.locator('.xp-btn').click();
+    await expect(row.locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(row.locator('a.xp-ta')).toHaveCount(1);
+  });
+
+  test('a failed ratings call leaves the rows exactly as they were', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { status: 500 });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(400);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+    await expect(page.locator('#experiences-block')).not.toContainText(/tripadvisor|reviews/i);
+  });
+
+  test('a ratings answer slower than 3 seconds is dropped; the rows stay', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()], delayMs: 3600 });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(4200);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+  });
+
+  test('a hostile answer never becomes a link: javascript: link, foreign image, bad numbers', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [
+      taRating({ webUrl: 'javascript:window.__xss=1' }),
+      taRating({ id: XP_COOKING.id, numReviews: 'lots' }),
+    ] });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(400);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+    expect(await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => /^javascript:/i.test(a.getAttribute('href') || '')))).toBe(false);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('quotes and angle brackets in the answer stay text (attributes are double-quoted)', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating({ webUrl: 'https://www.tripadvisor.com/x?a="onmouseover="window.__xss=1&b=\'<i>' })] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    expect(await link.evaluate((a) => a.getAttributeNames().sort())).toEqual(['class', 'href', 'rel', 'target']);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('no experiences, no ratings call', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: [] }));
+    const asked = await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(asked).toHaveLength(0);
+  });
+
+  test('at 375px the Request button is a 44px target and "Details ›" a 32px one', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block a.xp-ta')).toHaveCount(1);
+    const m = await page.evaluate(() => {
+      const r = document.querySelector('#experiences-block .xp-row');
+      return {
+        btnH: r.querySelector('.xp-btn').getBoundingClientRect().height,
+        moreH: r.querySelector('.xp-more').getBoundingClientRect().height,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(m.btnH).toBeGreaterThanOrEqual(44);
+    expect(m.moreH).toBeGreaterThanOrEqual(32);
+    expect(m.overflow).toBeLessThanOrEqual(0);
   });
 });

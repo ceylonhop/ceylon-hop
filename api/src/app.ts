@@ -13,6 +13,7 @@ import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import type { Ga4Adapter } from './adapters/ga4';
+import type { TripadvisorAdapter } from './adapters/tripadvisor';
 import { createGa4Reporter } from './services/analytics/ga4Reporter';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
@@ -114,6 +115,8 @@ export interface AppDeps {
   zones?: ZonesRepo;
   /** Partner experiences (spec 2026-10-06): the catalogue, and one row per customer interest. */
   experiences?: ExperienceRepo;
+  /** Live Tripadvisor ratings (spec D22). Absent = the null adapter: no rating is shown anywhere. */
+  tripadvisor?: TripadvisorAdapter;
   experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
@@ -626,7 +629,7 @@ export function createApp(deps: AppDeps = {}) {
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
   // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
   // READS ONLY — no route in it can start a payment (spec D6).
-  app.route('/experiences', publicExperiencesRoutes({ experiences }));
+  app.route('/experiences', publicExperiencesRoutes({ experiences, ...(deps.tripadvisor ? { tripadvisor: deps.tripadvisor } : {}) }));
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
     experiences, experienceInterests, placeResolutions,

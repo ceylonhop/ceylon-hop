@@ -558,7 +558,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .xp-main{min-width:0}
   .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:3px 0;margin:2px 0 0;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
+  .xp-ta{position:relative;display:flex;align-items:center;gap:6px;margin:3px 0 0;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
+  .xp-ta img{display:block;height:14px;width:auto;flex:none}
+  .xp-ta:hover span{text-decoration:underline}
+  .xp-ta:focus-visible{outline:2px solid var(--btn-accent);outline-offset:2px;border-radius:3px}
+  /* A 32px tap area (was ~23px) with the same look: the extra padding is taken back out of the margins. */
+  .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:8px 0;margin:-3px 0 -5px;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
   .xp-more:hover{color:var(--btn-accent-hover);text-decoration:underline}
   .xp-more:focus{outline:none}
   .xp-more:focus-visible{outline:2px solid var(--btn-accent);outline-offset:3px;text-decoration:underline}
@@ -589,6 +594,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .xp-photo{width:64px;height:64px;grid-row:1/3}
     .xp-name{white-space:normal;overflow-wrap:anywhere}
     .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+    /* a full 44px touch target on phones (reviewer note); desktop keeps the compact 36px pill */
+    .xp-btn{min-height:44px}
   }
 
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -1234,6 +1241,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=815fe3b472"></script>
+<script src="booking.js?v=b5f5ec327c"></script>
 </body>
 </html>
