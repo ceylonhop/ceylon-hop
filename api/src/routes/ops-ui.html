@@ -8250,9 +8250,9 @@ function renderRatesEditor() {
   }).join('');
   var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
     + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
-  // Read-only in both modes (owner, 2026-09-26): no booking charges a deposit today.
-  var deposit = row('Deposit', 'not charged — bookings are paid in full',
-    view(esc(String(d.readOnly.depositPct)) + '%', 'cap ' + rtUsd(d.readOnly.depositCapCents)), null);
+  // Read-only in both modes: the deposit rule is fixed (owner, 2026-10-07).
+  var deposit = row('Deposit', 'optional on private & chauffeur trips from ' + rtUsd(d.readOnly.depositEligibleMinCents),
+    view(esc(String(d.readOnly.depositPct)) + '%', 'min ' + rtUsd(d.readOnly.depositMinCents)), null);
 
   var live = d.live;
   var liveLabel = live.source === 'revision'

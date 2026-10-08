@@ -24,7 +24,7 @@ const defaultsBody = () => ({
   live: { version: '2026-07-14', source: 'defaults', rates: RATES, createdBy: null, createdAt: null },
   defaults: { version: '2026-07-14', rates: RATES },
   history: [],
-  readOnly: { depositPct: 10, depositCapCents: 5000 },
+  readOnly: { depositPct: 10, depositMinCents: 5000, depositEligibleMinCents: 15000 },
 });
 const revision = (seq, day, rates, extra = {}) => ({
   id: 'r' + seq, seq, version: `2026-09-${day}.${seq}`, rates, revertedToVersion: null,
@@ -75,7 +75,7 @@ test('view: exact per-km prices, margins, and a read-only deposit', async ({ pag
   await expect(pageEl).toContainText('$0.552');
   await expect(page.locator('[data-margin-for="car"]')).toHaveText('margin 15%');
   await expect(page.locator('[data-margin-for="day"]')).toHaveText('margin 15%');
-  await expect(pageEl).toContainText('not charged — bookings are paid in full');
+  await expect(pageEl).toContainText('optional on private & chauffeur trips from $150.00');
   await expect(page.locator('[data-action="rtEdit"]')).toBeVisible();
   await expect(page.locator('[data-testid="rates-history-defaults"]')).toContainText('Code defaults');
 });

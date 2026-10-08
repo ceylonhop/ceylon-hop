@@ -48,7 +48,7 @@ export const RATE_CARD = {
     dayRateCostCents: DAY_RATE_COST_CENTS,   // real cost — margin only
     idleMinKm: { car: 50, van: 100, van9: 100, van14: 100, custom: 100 },
   },
-  deposit: { pct: 10, capCents: 5000 },
+  deposit: { pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 },
   vehicle: {
     car:    { maxPax: 3,  maxBags: 3  },
     van:    { maxPax: 6,  maxBags: 6  },
@@ -77,7 +77,7 @@ export type RateCard = {
   costPerKmCents: Record<Vehicle, number>;
   floorCents: Record<Vehicle, number>;
   chauffeur: { dayRateCents: number; dayRateCostCents: number; idleMinKm: Record<Vehicle, number> };
-  deposit: { pct: number; capCents: number };
+  deposit: { pct: number; minCents: number; eligibleMinTotalCents: number };
   vehicle: Record<Vehicle, { maxPax: number; maxBags: number }>;
   bufferPct: number;
   // Optional for backwards compatibility with rate-card JSON snapshots created before this
