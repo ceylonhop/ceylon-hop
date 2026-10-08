@@ -1887,8 +1887,8 @@ function calcTotal(){
 // Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
-const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
-function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
+const DEPOSIT_MIN = window.TRANSFERS.DEPOSIT_MIN; // USD floor
+function depositDue(){ const t = calcTotal(); return Math.min(t, Math.max(Math.round(t*DEPOSIT_PCT), DEPOSIT_MIN)); }
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
 // The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
 // order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds

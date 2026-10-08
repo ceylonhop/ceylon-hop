@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { priceExtras, depositCents } from './extrasDeposit';
+import { priceExtras, depositFor } from './extrasDeposit';
 
 describe('priceExtras', () => {
   it('sums known extras (sightseeing $10 + safari-wait $19 = $29)', () => {
@@ -16,18 +16,19 @@ describe('priceExtras', () => {
   });
 });
 
-describe('depositCents', () => {
-  it('10% under the cap ($400 → $40)', () => {
-    expect(depositCents(40000)).toBe(4000);
+describe('depositFor (spec 2026-10-07 §2)', () => {
+  it.each([
+    ['private', 14_999, 0], // under $150: no deposit
+    ['private', 15_000, 5_000], // $150 → $50 floor
+    ['private', 50_000, 5_000], // 10% = $50
+    ['private', 60_000, 6_000], // 10% above the floor
+    ['chauffeur', 123_456, 12_346], // rounds to the cent
+    ['shared', 90_000, 0], // shared always pays in full
+  ] as const)('%s %i → %i', (product, total, expected) => {
+    expect(depositFor(product, total)).toBe(expected);
   });
-  it('caps at $50 ($867 → $50, not $86.70)', () => {
-    expect(depositCents(86700)).toBe(5000);
-  });
-  it('cap boundary: exactly $500 total (50000¢) → deposit exactly $50 (5000¢)', () => {
-    expect(depositCents(50000)).toBe(5000);
-  });
-  it('cap boundary: 49990¢ total → deposit 4999¢ (just under cap)', () => {
-    expect(depositCents(49990)).toBe(4999);
+  it('never exceeds the total', () => {
+    expect(depositFor('private', 15_000)).toBeLessThanOrEqual(15_000);
   });
 });
 

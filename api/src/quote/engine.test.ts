@@ -397,9 +397,10 @@ describe('invariants', () => {
       expect(r.totalCents).toBeGreaterThanOrEqual(0);
       expect(Number.isInteger(r.totalCents)).toBe(true);
     });
-    it(`${label}: depositCents does not exceed RATE_CARD cap`, () => {
+    it(`${label}: depositCents is 0 or between the floor and the total`, () => {
       const r = quote(req);
-      expect(r.depositCents).toBeLessThanOrEqual(RATE_CARD.deposit.capCents);
+      if (r.depositCents > 0) expect(r.depositCents).toBeGreaterThanOrEqual(Math.min(RATE_CARD.deposit.minCents, r.totalCents));
+      expect(r.depositCents).toBeLessThanOrEqual(r.totalCents);
     });
     it(`${label}: amountDueNowCents does not exceed totalCents`, () => {
       const r = quote(req);

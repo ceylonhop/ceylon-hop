@@ -6,7 +6,7 @@ import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
-import { priceExtras, depositCents } from './extrasDeposit';
+import { priceExtras, depositFor } from './extrasDeposit';
 import { finishPrice } from './priceFinish';
 import { resolveDiscount, type DiscountRequest, type ResolvedDiscount } from './discount';
 
@@ -167,15 +167,10 @@ export function quote(
   }
 
   const totalCents = finished.finalCents - discountCents;
-  const deposit = depositCents(totalCents, rateCard);
-  // amountDueNow is the FULL total for EVERY product, deposit-eligible ones (chauffeur) included.
-  // Deliberate owner decision "Charge full amount for all bookings" (2026-07-07, commit 4d58f5a)
-  // that replaced the earlier `req.product === 'chauffeur' ? deposit : totalCents` split — so this
-  // SUPERSEDES go-live-checklist GL-3 piece 3 (the chauffeur "deposit" charge). `deposit` above
-  // stays a separate display-only figure (shown by the ops quote tool, internalQuote.ts); the
-  // deposit/balance machinery on the booking side (notifications.ts paidRows, bookings.ts
-  // balanceDueCents) is plumbed but dormant — it only lights up if a booking ever stores
-  // amountDueNow < total, which no public flow currently does.
+  const deposit = depositFor(req.product, totalCents, rateCard);
+  // amountDueNow stays the FULL total here: the engine prices, it does not sell. A deposit is
+  // chosen at the point of sale (ops deposit link, spec 2026-10-07 §5.2) and written onto the
+  // booking as amount_due_now. `deposit` is what that sale would charge — 0 when not eligible.
   const amountDueNowCents = totalCents;
   const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
 

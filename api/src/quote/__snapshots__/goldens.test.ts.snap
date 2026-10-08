@@ -4,7 +4,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_ca
 {
   "amountDueNowCents": 16700,
   "currency": "USD",
-  "depositCents": 1670,
+  "depositCents": 5000,
   "lineItems": [
     {
       "amountCents": 6210,
@@ -41,7 +41,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_va
 {
   "amountDueNowCents": 53500,
   "currency": "USD",
-  "depositCents": 5000,
+  "depositCents": 5350,
   "lineItems": [
     {
       "amountCents": 15525,
@@ -80,7 +80,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 9999,
   "currency": "USD",
-  "depositCents": 1000,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 3985,
@@ -139,7 +139,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 2999,
   "currency": "USD",
-  "depositCents": 300,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 3099,
@@ -174,7 +174,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 5500,
   "currency": "USD",
-  "depositCents": 550,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 5555,
@@ -218,7 +218,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 2900,
   "currency": "USD",
-  "depositCents": 290,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 2900,
@@ -247,7 +247,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 8800,
   "currency": "USD",
-  "depositCents": 880,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 8855,
@@ -282,7 +282,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 5999,
   "currency": "USD",
-  "depositCents": 600,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 3180,
@@ -328,7 +328,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 {
   "amountDueNowCents": 2900,
   "currency": "USD",
-  "depositCents": 290,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 2900,
@@ -357,7 +357,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_upgr
 {
   "amountDueNowCents": 4999,
   "currency": "USD",
-  "depositCents": 500,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 4999,
@@ -387,7 +387,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
 {
   "amountDueNowCents": 4999,
   "currency": "USD",
-  "depositCents": 500,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 4999,
@@ -416,7 +416,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
 {
   "amountDueNowCents": 18800,
   "currency": "USD",
-  "depositCents": 1880,
+  "depositCents": 5000,
   "lineItems": [
     {
       "amountCents": 6864,
@@ -480,7 +480,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van1
 {
   "amountDueNowCents": 14900,
   "currency": "USD",
-  "depositCents": 1490,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 15240,
@@ -515,7 +515,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): shared_two_s
 {
   "amountDueNowCents": 5900,
   "currency": "USD",
-  "depositCents": 590,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 5900,
