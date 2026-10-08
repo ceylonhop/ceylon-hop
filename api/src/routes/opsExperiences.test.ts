@@ -256,6 +256,53 @@ describe('lead schedule and confirmation email', () => {
       expect(s.fake.sent[0]!.html).toContain(b.reference);
       expect(s.fake.sent[0]!.html).toContain('PH-123');
       expect((await s.interests.get(i.id))!.confirmationSentAt).not.toBeNull();
+      expect(lead.confirmationChannel).toBe('email');
+      expect((await s.interests.get(i.id))!.confirmationChannel).toBe('email');
+    });
+
+    describe('channel whatsapp (confirmed outside email)', () => {
+      it('stamps the lead, records the channel, and sends nothing — even with no email on file', async () => {
+        const s = await confirmSetup();
+        const { i } = await s.quoteLead('+94770000000');
+        await s.paid(i.id); // no schedule needed
+        const res = await s.send('POST', conf(i.id), { channel: 'whatsapp' });
+        expect(res.status).toBe(200);
+        const { lead } = await res.json();
+        expect(lead).toMatchObject({ confirmationChannel: 'whatsapp' });
+        expect(typeof lead.confirmationSentAt).toBe('string');
+        expect(s.fake.sent).toHaveLength(0);
+        expect((await s.interests.get(i.id))).toMatchObject({ confirmationChannel: 'whatsapp' });
+      });
+      it('409 not_paid on an unpaid lead; nothing stamped', async () => {
+        const s = await confirmSetup();
+        const { i } = await s.quoteLead('+94770000000');
+        const res = await s.send('POST', conf(i.id), { channel: 'whatsapp' });
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: 'not_paid' });
+        expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
+      });
+      it.each([['an unknown channel', { channel: 'sms' }], ['an unknown key', { channel: 'email', extra: 1 }]])('400 on %s', async (_n, body) => {
+        const s = await confirmSetup();
+        const { i } = await s.quoteLead('luca@example.com');
+        await s.paid(i.id, s.SCHEDULE);
+        expect((await s.send('POST', conf(i.id), body)).status).toBe(400);
+        expect(s.fake.sent).toHaveLength(0);
+      });
+      it('channel email is the explicit form of the default', async () => {
+        const s = await confirmSetup();
+        const { i } = await s.quoteLead('luca@example.com');
+        await s.paid(i.id, s.SCHEDULE);
+        expect((await s.send('POST', conf(i.id), { channel: 'email' })).status).toBe(200);
+        expect(s.fake.sent).toHaveLength(1);
+      });
+      it('a resend by email after WhatsApp re-stamps the channel as email', async () => {
+        const s = await confirmSetup();
+        const { i } = await s.quoteLead('luca@example.com');
+        await s.paid(i.id, s.SCHEDULE);
+        await s.send('POST', conf(i.id), { channel: 'whatsapp' });
+        await s.send('POST', conf(i.id), {});
+        expect((await s.interests.get(i.id))!.confirmationChannel).toBe('email');
+      });
     });
 
     it('resend is the same endpoint and sends again', async () => {

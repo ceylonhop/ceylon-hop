@@ -33,6 +33,9 @@ const PatchLead = z.object({
   meetingPoint: z.string().trim().max(200).nullable().optional(),
 }).strict();
 
+// The body of the confirmation POST: omitted / {} = email (the original behaviour).
+const ConfirmBody = z.object({ channel: z.enum(['email', 'whatsapp']).optional() }).strict();
+
 const isUuid = (s: string) => z.string().uuid().safeParse(s).success;
 const serialize = (e: Experience) => ({ ...e, createdAt: e.createdAt.toISOString(), updatedAt: e.updatedAt.toISOString() });
 
@@ -126,9 +129,18 @@ export function opsExperiencesRoutes(deps: {
   // with the partner, and ops is the one who knows they are final. A resend is the same call.
   r.post('/leads/:id/confirmation', csrf, requireCap('bookings:operate'), async (c) => {
     if (!isUuid(c.req.param('id'))) return c.json({ error: 'not_found' }, 404);
+    // An unparseable body is the old empty POST (email); a body naming an unknown channel is refused.
+    const body = ConfirmBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return c.json({ error: 'bad_request', issues: body.error.issues }, 400);
     const lead = await deps.interests.get(c.req.param('id'));
     if (!lead) return c.json({ error: 'not_found' }, 404);
     if (lead.status !== 'paid') return c.json({ error: 'not_paid' }, 409);
+    // Confirmed outside email (a phone-only quote lead, or ops told them already): send nothing, just
+    // record it so the lead can leave the list. Date and time are optional here — ops did the telling.
+    if (body.data.channel === 'whatsapp') {
+      const row = await deps.interests.markConfirmationSent(lead.id, new Date(), 'whatsapp');
+      return row ? c.json({ lead: row }) : c.json({ error: 'not_found' }, 404);
+    }
     if (!lead.scheduledDate || !lead.scheduledTime) return c.json({ error: 'schedule_required' }, 400);
     const who = await recipientFor(lead);
     if (!who) return c.json({ error: 'no_email' }, 422);
@@ -151,7 +163,7 @@ export function opsExperiencesRoutes(deps: {
       console.error(`[experiences] confirmation email failed for interest ${lead.id}:`, err);
       return c.json({ error: 'send_failed' }, 502);
     }
-    const row = await deps.interests.markConfirmationSent(lead.id, new Date());
+    const row = await deps.interests.markConfirmationSent(lead.id, new Date(), 'email');
     return row ? c.json({ lead: row }) : c.json({ error: 'not_found' }, 404);
   });
 

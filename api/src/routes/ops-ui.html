@@ -4067,7 +4067,7 @@ function renderSheet(){
     const note=i.opsNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(i.opsNote)}</span></div>`:'';
     /* D21: read-only here — the schedule is entered, and the confirmation sent, from the Experiences page's Leads tab. */
     const when=i.scheduledDate?`<div class="kv"><span class="k">Scheduled</span><span class="v" data-testid="sheet-interest-scheduled">${esc([i.scheduledDate,i.scheduledTime].filter(Boolean).join(' '))}${i.meetingPoint?' · '+esc(i.meetingPoint):''}</span></div>`:'';
-    const sent=i.confirmationSentAt?`<div class="kv"><span class="k">Confirmation</span><span class="v" data-testid="sheet-interest-confirmed">Confirmation sent ✓</span></div>`:'';
+    const sent=i.confirmationSentAt?`<div class="kv"><span class="k">Confirmation</span><span class="v" data-testid="sheet-interest-confirmed">${i.confirmationChannel==='whatsapp'?'Confirmed on WhatsApp ✓':'Confirmation sent ✓'}</span></div>`:'';
     return `<div class="kv"><span class="k">${esc(i.experienceName)}</span><span class="v">${esc(i.areaLabel)} · ${esc(price)} · ${status}</span></div>${paid}${when}${sent}${note}`;
   }).join('');
   const interestBlock=ints.length?`<div class="block" data-testid="sheet-interests"><h4>Interested in</h4>${intRows}</div>`:'';
@@ -8730,6 +8730,10 @@ var expLeadBusy = {};
 var expLeadPending = {};
 async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
 var expLeadPayOpen = {};
+// A confirmation POST is out for this lead (set before the first await, so a quick double click can't
+// send twice), and leads whose email path answered no_email (so the WhatsApp button shows for them).
+var expLeadConfirming = {};
+var expLeadNoEmail = {};
 var _expLeadsSeq = 0;
 var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent', 'Link sent'], ['paid', 'Paid'], ['declined', 'Declined']];
 
@@ -8895,12 +8899,17 @@ function renderLeadRow(l) {
   var sched = '';
   if (l.status === 'paid') {
     var did = ' data-id="' + esc(l.id) + '"';
+    var viaWhatsApp = l.confirmationChannel === 'whatsapp';
+    // No email to send to: the email path said so, or it is a quote whose contact is not an email address
+    // (a booking's email is not on the lead, so for those only the email path can tell).
+    var noEmail = !!expLeadNoEmail[l.id] || (l.ownerKind === 'quote' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((l.contact || '').trim()));
     sched = '<div class="ch-lead-sched" data-testid="lead-schedule">'
       + '<input type="date" class="ch-input" style="width:auto" data-lead-field="scheduledDate"' + did + ' aria-label="Experience date" value="' + esc(l.scheduledDate || '') + '">'
       + '<input type="time" class="ch-input" style="width:auto" data-lead-field="scheduledTime"' + did + ' aria-label="Experience time" value="' + esc(l.scheduledTime || '') + '">'
       + '<div class="ch-input-wrap ch-meet"><input class="ch-input" data-lead-field="meetingPoint"' + did + ' autocomplete="off" maxlength="200" placeholder="Meeting point" aria-label="Meeting point" value="' + esc(l.meetingPoint || '') + '"></div>'
-      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadConfirm" data-id="' + esc(l.id) + '">' + (l.confirmationSentAt ? 'Resend' : 'Send confirmation') + '</button>'
-      + (l.confirmationSentAt ? '<span class="ch-lead-sent" data-testid="lead-confirmation-sent">Confirmation sent ✓ ' + esc(expStamp(l.confirmationSentAt)) + '</span>' : '')
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadConfirm" data-id="' + esc(l.id) + '"' + (expLeadConfirming[l.id] ? ' disabled' : '') + '>' + (l.confirmationSentAt && !viaWhatsApp ? 'Resend' : 'Send confirmation') + '</button>'
+      + (noEmail && !viaWhatsApp ? '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadConfirmWhatsApp" data-testid="lead-confirm-whatsapp" data-id="' + esc(l.id) + '"' + (expLeadConfirming[l.id] ? ' disabled' : '') + '>Mark confirmed on WhatsApp</button>' : '')
+      + (l.confirmationSentAt ? '<span class="ch-lead-sent" data-testid="lead-confirmation-sent">' + (viaWhatsApp ? 'Confirmed on WhatsApp ✓ ' : 'Confirmation sent ✓ ') + esc(expStamp(l.confirmationSentAt)) + '</span>' : '')
       + '</div>';
   }
   var who = [l.customerName || 'Unnamed', l.contact].filter(Boolean).map(esc).join(' · ');
@@ -8922,7 +8931,7 @@ function renderLeadsTab() {
   else if (!expLeads) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading leads…</div>';
   else if (!expLeads.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No open leads yet.</div>';
   else body = expLeads.map(renderLeadRow).join('');
-  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is declined, or once it is paid and its confirmation email has been sent.</div>' + body;
+  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is declined, or once it is paid and has been confirmed to the customer (by email, or marked confirmed on WhatsApp).</div>' + body;
 }
 
 // The payment inputs' fields that differ from what the lead holds → { fields } or { error }.
@@ -9033,39 +9042,91 @@ async function expLeadScheduleChange(input) {
 // lead holds is saved first, then the email is sent — so the email always says what is on screen.
 async function expLeadConfirm(btn) {
   var id = btn.getAttribute('data-id');
+  if (expLeadConfirming[id]) return;
   var row = btn.closest('.ch-lead-row');
   var read = function (k) { return (row.querySelector('[data-lead-field="' + k + '"]').value || '').trim() || null; };
   var want = { scheduledDate: read('scheduledDate'), scheduledTime: read('scheduledTime'), meetingPoint: read('meetingPoint') };
   if (!want.scheduledDate || !want.scheduledTime) { ratesToast('Add the date and time first', 'error'); return; }
-  await expLeadIdle(id);
-  var l = expLeadById(id);
-  if (!l || expLeadBusy[l.id]) return;
-  var diff = {};
-  Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
-  if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) { renderExperiencesPage(); return; }
+  // run() resolves true when the row should repaint. The lead is claimed before its first await and the
+  // button disabled: a second click while this one waits on an earlier save, or on the POST, does nothing
+  // instead of emailing the customer twice.
+  var run = async function () {
+    await expLeadIdle(id);
+    var l = expLeadById(id);
+    if (!l || expLeadBusy[l.id]) return false;
+    var diff = {};
+    Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
+    if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) return true;
+    var seq = _expSeq;
+    expLeadBusy[l.id] = true;
+    var settle, pending = new Promise(function (res) { settle = res; });
+    expLeadPending[l.id] = pending;
+    try {
+      var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      if (seq !== _expSeq) return false;
+      var d = await jsonOrNull(r);
+      if (seq !== _expSeq) return false;
+      if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); delete expLeadNoEmail[l.id]; ratesToast('Confirmation sent'); }
+      else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
+      else if (d && d.error === 'no_email') { expLeadNoEmail[l.id] = true; ratesToast('No email on file — confirm on WhatsApp', 'error'); }
+      else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
+    } catch (e) {
+      if (seq !== _expSeq) return false;
+      window.opsReportError && window.opsReportError('experience confirmation send', e);
+      ratesToast('Couldn’t send — try again.', 'error');
+    } finally {
+      if (seq === _expSeq) delete expLeadBusy[l.id];
+      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
+      settle();
+    }
+    return true;
+  };
+  await expLeadClaim(id, btn, run);
+}
+
+// Ops already told the customer on WhatsApp (a quote lead often has only a phone number): record it, send
+// nothing. The lead then reads "Confirmed on WhatsApp" and leaves the list on the next load.
+async function expLeadConfirmWhatsApp(btn) {
+  var id = btn.getAttribute('data-id');
+  if (expLeadConfirming[id]) return;
+  var run = async function () {
+    await expLeadIdle(id);
+    var l = expLeadById(id);
+    if (!l || expLeadBusy[l.id]) return false;
+    var seq = _expSeq;
+    expLeadBusy[l.id] = true;
+    var settle, pending = new Promise(function (res) { settle = res; });
+    expLeadPending[l.id] = pending;
+    try {
+      var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'whatsapp' }) });
+      if (seq !== _expSeq) return false;
+      var d = await jsonOrNull(r);
+      if (seq !== _expSeq) return false;
+      if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); ratesToast('Marked confirmed on WhatsApp'); }
+      else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t save — try again.', 'error');
+    } catch (e) {
+      if (seq !== _expSeq) return false;
+      window.opsReportError && window.opsReportError('experience whatsapp confirmation', e);
+      ratesToast('Couldn’t save — try again.', 'error');
+    } finally {
+      if (seq === _expSeq) delete expLeadBusy[l.id];
+      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
+      settle();
+    }
+    return true;
+  };
+  await expLeadClaim(id, btn, run);
+}
+
+// Holds the lead's confirmation claim (and the button disabled) for the whole of run(), then repaints.
+async function expLeadClaim(id, btn, run) {
   var seq = _expSeq;
-  expLeadBusy[l.id] = true;
-  var settle, pending = new Promise(function (res) { settle = res; });
-  expLeadPending[l.id] = pending;
-  try {
-    var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-    if (seq !== _expSeq) return;
-    var d = await jsonOrNull(r);
-    if (seq !== _expSeq) return;
-    if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); ratesToast('Confirmation sent'); }
-    else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
-    else if (d && d.error === 'no_email') ratesToast('No email on file — confirm on WhatsApp', 'error');
-    else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
-  } catch (e) {
-    if (seq !== _expSeq) return;
-    window.opsReportError && window.opsReportError('experience confirmation send', e);
-    ratesToast('Couldn’t send — try again.', 'error');
-  } finally {
-    if (seq === _expSeq) delete expLeadBusy[l.id];
-    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-    settle();
-  }
-  renderExperiencesPage();
+  expLeadConfirming[id] = true;
+  btn.disabled = true;
+  var repaint = false;
+  try { repaint = await run(); }
+  finally { if (seq === _expSeq) delete expLeadConfirming[id]; }
+  if (repaint && seq === _expSeq) renderExperiencesPage();
 }
 
 // The reference opens the thing it belongs to, through the shell: it owns the routes and the queue.
@@ -9276,7 +9337,7 @@ function showExperiences(el) {
   if (arriving) {
     _expSeq++;
     expData = null; expLoadFailed = false; expForm = null; expBusy = false;
-    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPending = {}; expLeadPayOpen = {};
+    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPending = {}; expLeadPayOpen = {}; expLeadConfirming = {}; expLeadNoEmail = {};
     el.innerHTML = '<div class="qv qv-page" data-testid="experiences-page"><div class="ch-rates-card">'
       + '<div class="ch-tabs ch-exp-tabs" role="tablist">'
       + '<button class="ch-tab active" role="tab" aria-selected="true" data-action="expTab" data-tab="catalogue">Catalogue</button>'
@@ -9315,6 +9376,7 @@ document.addEventListener('click', function (e) {
   else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
   else if (action === 'expLeadSavePay') expLeadSavePay(el);
   else if (action === 'expLeadConfirm') expLeadConfirm(el);
+  else if (action === 'expLeadConfirmWhatsApp') expLeadConfirmWhatsApp(el);
 });
 
 // A lead's status <select> and note <input> save on change (the note: on blur, when it differs).
