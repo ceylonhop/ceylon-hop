@@ -2937,7 +2937,10 @@ async function continueToCheckout(booking){
     return redirectToPayHere(checkout, booking);
   }
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
-  // (no real money gateway). Simulated interstitial with the real reference.
+  // (no real money gateway). Simulated interstitial with the real reference — but never on the
+  // production site, whose API cannot boot on the fake gateway: there it is an anomaly, and a
+  // simulated "Payment approved" would confirm (and report a purchase for) an unpaid booking.
+  if(/^(www\.)?ceylonhop\.com$/.test(location.hostname)) return phShowEnd(...checkoutRefusal(null));
   return simulatePayThenConfirm(booking);
 }
 
