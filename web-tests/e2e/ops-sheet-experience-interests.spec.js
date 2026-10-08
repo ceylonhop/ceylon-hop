@@ -116,6 +116,14 @@ test('the sheet shows when and where, and that the confirmation went, read-only'
   await expect(block(page).locator('input')).toHaveCount(0);
 });
 
+test('the sheet says so when the confirmation was done on WhatsApp', async ({ page }) => {
+  await boot(page, ['bookings:operate', 'bookings:read'], [{
+    ...INTEREST, status: 'paid', paymentRef: 'PH-1', confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'whatsapp',
+  }]);
+  await open(page, 'b1');
+  await expect(block(page).locator('[data-testid="sheet-interest-confirmed"]')).toHaveText('Confirmed on WhatsApp ✓');
+});
+
 test('an unscheduled, unconfirmed interest shows neither line', async ({ page }) => {
   await boot(page, ['bookings:operate', 'bookings:read'], [INTEREST]);
   await open(page, 'b1');

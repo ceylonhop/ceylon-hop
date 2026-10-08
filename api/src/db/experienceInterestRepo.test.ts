@@ -159,7 +159,7 @@ function contract(name: string, make: () => Promise<Env>) {
 
     it('a new interest has no schedule and no confirmation sent', async () => {
       const i = await record(await experience(), { bookingId: (await booking('paid')).id });
-      expect(i).toMatchObject({ scheduledDate: null, scheduledTime: null, meetingPoint: null, confirmationSentAt: null });
+      expect(i).toMatchObject({ scheduledDate: null, scheduledTime: null, meetingPoint: null, confirmationSentAt: null, confirmationChannel: null });
     });
 
     it('patch stores the schedule; omitted fields are kept and null clears one (D21)', async () => {
@@ -177,13 +177,14 @@ function contract(name: string, make: () => Promise<Env>) {
       const i = await record(await experience(), { bookingId: (await booking('paid')).id });
       await env.interests.patch(i.id, { scheduledDate: '2026-11-21', scheduledTime: '09:30', updatedBy: 'o@x.com' });
       const at = new Date('2026-10-07T04:15:00.000Z');
-      const done = await env.interests.markConfirmationSent(i.id, at);
+      const done = await env.interests.markConfirmationSent(i.id, at, 'email');
       expect(done!.confirmationSentAt!.toISOString()).toBe(at.toISOString());
+      expect(done!.confirmationChannel).toBe('email');
       expect(done).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', status: 'new' });
       expect((await env.interests.get(i.id))!.confirmationSentAt!.toISOString()).toBe(at.toISOString());
       const again = new Date('2026-10-08T04:15:00.000Z');
-      expect((await env.interests.markConfirmationSent(i.id, again))!.confirmationSentAt!.toISOString()).toBe(again.toISOString());
-      expect(await env.interests.markConfirmationSent('00000000-0000-4000-8000-000000000000', at)).toBeNull();
+      expect((await env.interests.markConfirmationSent(i.id, again, 'email'))!.confirmationSentAt!.toISOString()).toBe(again.toISOString());
+      expect(await env.interests.markConfirmationSent('00000000-0000-4000-8000-000000000000', at, 'email')).toBeNull();
     });
 
     describe('listLeads (spec D15)', () => {
@@ -224,8 +225,38 @@ function contract(name: string, make: () => Promise<Env>) {
         const paidLead = await record(e, { bookingId: (await booking('paid')).id });
         await env.interests.patch(paidLead.id, { status: 'paid', paymentRef: 'PH-1', updatedBy: 'o@x.com' });
         expect((await env.interests.listLeads(500)).map((l) => l.id)).toContain(paidLead.id);
-        await env.interests.markConfirmationSent(paidLead.id, new Date());
+        await env.interests.markConfirmationSent(paidLead.id, new Date(), 'email');
         expect((await env.interests.listLeads(500)).map((l) => l.id)).not.toContain(paidLead.id);
+      });
+
+      // Confirmed by WhatsApp: no email is ever sent, so the stamp is the only way such a lead leaves.
+      it('drops a paid lead confirmed on WhatsApp, and records the channel', async () => {
+        const e = await experience();
+        const i = await record(e, { quoteId: (await quote('sent')).id });
+        await env.interests.patch(i.id, { status: 'paid', paymentRef: 'PH-2', updatedBy: 'o@x.com' });
+        expect((await env.interests.listLeads(500)).map((l) => l.id)).toContain(i.id);
+        const at = new Date('2026-10-07T04:15:00.000Z');
+        const done = await env.interests.markConfirmationSent(i.id, at, 'whatsapp');
+        expect(done).toMatchObject({ confirmationChannel: 'whatsapp' });
+        expect(done!.confirmationSentAt!.toISOString()).toBe(at.toISOString());
+        expect((await env.interests.listLeads(500)).map((l) => l.id)).not.toContain(i.id);
+      });
+
+      // Safety net: an unconfirmed paid lead whose date has passed is no longer actionable.
+      it('drops an unconfirmed paid lead once its scheduled date has passed; a future or undated one stays', async () => {
+        const e = await experience();
+        const mk = async (scheduledDate?: string) => {
+          const i = await record(e, { bookingId: (await booking('paid')).id });
+          await env.interests.patch(i.id, { status: 'paid', paymentRef: 'PH-3', ...(scheduledDate ? { scheduledDate } : {}), updatedBy: 'o@x.com' });
+          return i;
+        };
+        const past = await mk('2020-01-01');
+        const future = await mk(futureIsoDate(30));
+        const undated = await mk();
+        const ids = (await env.interests.listLeads(500)).map((l) => l.id);
+        expect(ids).not.toContain(past.id);
+        expect(ids).toContain(future.id);
+        expect(ids).toContain(undated.id);
       });
 
       it('carries the schedule and the confirmation time on a lead', async () => {

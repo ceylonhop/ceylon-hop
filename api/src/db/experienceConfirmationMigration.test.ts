@@ -4,7 +4,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDb } from './client';
 
 // Experience confirmation email (spec 2026-10-06 D21): when and where, and whether we told the customer.
-// Additive only — four nullable columns on experience_interests, so the auto-apply on Render boot
+// Additive only — five nullable columns on experience_interests, so the auto-apply on Render boot
 // can't touch data.
 const migration = readFileSync(new URL('../../drizzle/0067_experience_confirmation.sql', import.meta.url), 'utf8');
 const journal = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url), 'utf8')) as {
@@ -13,12 +13,16 @@ const journal = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.jso
 const sql = migration.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
 
 describe('0067_experience_confirmation', () => {
-  it('adds the four columns to experience_interests, all nullable with no default', () => {
+  it('adds the schedule and sent-at columns to experience_interests, all nullable with no default', () => {
     expect(sql).toMatch(/alter table "experience_interests" add column "scheduled_date" date(?!\s+not null)/i);
     expect(sql).toMatch(/add column "scheduled_time" text/i);
     expect(sql).toMatch(/add column "meeting_point" text/i);
     expect(sql).toMatch(/add column "confirmation_sent_at" timestamp with time zone/i);
     expect(sql).not.toMatch(/not null|default/i);
+  });
+  it('adds confirmation_channel, nullable, limited to email or whatsapp', () => {
+    expect(sql).toMatch(/add column "confirmation_channel" text(?!\s+not null)/i);
+    expect(sql).toMatch(/"confirmation_channel" is null or "confirmation_channel" in \('email', 'whatsapp'\)/);
   });
   it('checks the time is HH:MM and the meeting point is at most 200 characters', () => {
     expect(sql).toMatch(/"scheduled_time" is null or "scheduled_time" ~ '\^\(\[01\]\[0-9\]\|2\[0-3\]\):\[0-5\]\[0-9\]\$'/);
@@ -67,6 +71,11 @@ describe.skipIf(!TEST_URL)('experience_interests confirmation columns on a migra
     const [r] = await db<{ scheduled_date: string; scheduled_time: string; confirmation_sent_at: Date | null }[]>`
       SELECT scheduled_date::text, scheduled_time, confirmation_sent_at FROM experience_interests WHERE id = ${interestId}`;
     expect(r).toMatchObject({ scheduled_date: '2026-11-21', scheduled_time: '09:30', confirmation_sent_at: null });
+  });
+  it('refuses a confirmation channel other than email or whatsapp', async () => {
+    await db`UPDATE experience_interests SET confirmation_channel = 'whatsapp' WHERE id = ${interestId}`;
+    await expect(db`UPDATE experience_interests SET confirmation_channel = 'sms' WHERE id = ${interestId}`).rejects.toThrow(/experience_interests_confirmation_channel_valid/);
+    await db`UPDATE experience_interests SET confirmation_channel = NULL WHERE id = ${interestId}`;
   });
   it('refuses a malformed time and an over-long meeting point', async () => {
     await expect(db`UPDATE experience_interests SET scheduled_time = '9:30' WHERE id = ${interestId}`).rejects.toThrow(/experience_interests_time_valid/);

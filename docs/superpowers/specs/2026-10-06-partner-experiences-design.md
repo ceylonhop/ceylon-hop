@@ -310,7 +310,8 @@ must not show for any other location.
 When ops has taken payment for an experience, the customer gets a confirmation email from us.
 - **Migration 0067** adds to `experience_interests`: `scheduled_date` (date), `scheduled_time` (text `HH:MM`,
   Sri Lanka local time; CHECK `^([01][0-9]|2[0-3]):[0-5][0-9]$`), `meeting_point` (≤ 200), `confirmation_sent_at`
-  (timestamptz). All nullable, no defaults — nothing existing is rewritten. (Numbered 0067 because 0066 is
+  (timestamptz), `confirmation_channel` (text, CHECK `in ('email','whatsapp')`). All nullable, no defaults — nothing
+  existing is rewritten. (Numbered 0067 because 0066 is
   `deposit_payments`, PR #940, which releases first; this migration's `when` is later than 0066's so drizzle
   never skips it. If this merges before #940, re-stamp 0067's `when` or 0066 is skipped.)
   **Why date + local time, not a timestamptz:** the experience happens in Sri Lanka at a wall-clock time the
@@ -325,6 +326,17 @@ When ops has taken payment for an experience, the customer gets a confirmation e
   lead leave the list once paid, but a paid lead still has a date, a time and an email to do, and ops usually has
   the date from the partner later than the payment. Once the confirmation is sent it leaves on the next load
   (the row stays on screen for the session, so Resend works straight after sending).
+- **Confirmed on WhatsApp (review fix, PR #950):** a quote-only lead often has only a phone number, so the email
+  can never be sent and, with the rule above alone, the lead could never leave the list except by being falsely
+  marked declined. `POST …/confirmation` therefore also accepts `{ "channel": "whatsapp" }` (strict body; omitted =
+  email): it needs `paid` (409 `not_paid`), does **not** need a date or time, **sends nothing**, and stamps
+  `confirmation_sent_at` + `confirmation_channel = 'whatsapp'` (a successful email stamps `'email'`). The ops UI
+  shows **Mark confirmed on WhatsApp** beside Send confirmation when the email path answered `no_email`, or for a
+  quote lead whose contact is not an email address; afterwards the row and the booking sheet read "Confirmed on
+  WhatsApp ✓ {d MMM HH:mm}". Send/Resend is disabled and re-clicks ignored while a confirmation POST is in flight.
+- **Date safety net:** `listLeads` also drops a paid, unconfirmed lead once its `scheduled_date` is before today in
+  Sri Lanka (`(now() AT TIME ZONE 'Asia/Colombo')::date`; the in-memory repo uses the same zone). A paid lead with
+  no date yet stays. **Why:** a lead nobody confirmed must not sit on the list forever once the experience is past.
 - **Recipient:** the booking's customer email. A quote-only lead uses `quotes.customer_contact` only when it is an
   email address; otherwise the button says "No email on file — confirm on WhatsApp" and sends nothing.
 - **Email** (existing email adapter + brand template, `emailBrand.test.ts` rules): subject

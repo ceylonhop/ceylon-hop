@@ -1028,6 +1028,7 @@ export const experienceInterests = pgTable('experience_interests', {
   scheduledTime: text('scheduled_time'),
   meetingPoint: text('meeting_point'),
   confirmationSentAt: timestamp('confirmation_sent_at', { withTimezone: true }),
+  confirmationChannel: text('confirmation_channel'),
   updatedBy: text('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

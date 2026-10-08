@@ -3,7 +3,7 @@ import type { Db } from './client';
 import { experienceInterests } from './schema';
 import {
   firstQuoteTravelDate, LIVE_QUOTE_STATUSES, OPEN_STATUSES, PAID_BOOKING_STATUSES,
-  type ExperienceInterest, type ExperienceInterestRepo, type ExperienceStats, type InterestPatch,
+  type ConfirmationChannel, type ExperienceInterest, type ExperienceInterestRepo, type ExperienceStats, type InterestPatch,
   type InterestSource, type Lead,
 } from './experienceInterestRepo';
 import type { Experience } from '../experiences/experience';
@@ -18,7 +18,7 @@ function toInterest(r: Row): ExperienceInterest {
     status: r.status as ExperienceInterest['status'], paymentRef: r.paymentRef, amountPaidCents: r.amountPaidCents,
     amountPaidCurrency: r.amountPaidCurrency as ExperienceInterest['amountPaidCurrency'], opsNote: r.opsNote,
     scheduledDate: r.scheduledDate, scheduledTime: r.scheduledTime, meetingPoint: r.meetingPoint,
-    confirmationSentAt: r.confirmationSentAt, updatedBy: r.updatedBy, createdAt: r.createdAt, updatedAt: r.updatedAt,
+    confirmationSentAt: r.confirmationSentAt, confirmationChannel: r.confirmationChannel as ConfirmationChannel | null, updatedBy: r.updatedBy, createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }
 
@@ -76,7 +76,7 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
       name_snapshot: string; price_cents_snapshot: number; price_unit_snapshot: string; status: string;
       payment_ref: string | null; amount_paid_cents: number | null; amount_paid_currency: string | null;
       ops_note: string | null; scheduled_date_text: string | null; scheduled_time: string | null; meeting_point: string | null;
-      confirmation_sent_at: string | Date | null; updated_by: string | null; created_at: string | Date; updated_at: string | Date;
+      confirmation_sent_at: string | Date | null; confirmation_channel: string | null; updated_by: string | null; created_at: string | Date; updated_at: string | Date;
       area_label: string; experience_name: string;
       booking_ref: string | null; first_name: string | null; last_name: string | null; whatsapp: string | null;
       booking_travel_date: string | null;
@@ -93,7 +93,8 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
       LEFT JOIN customers c ON c.id = b.customer_id
       LEFT JOIN quotes q ON q.id = i.quote_id
       WHERE (i.status IN (${sql.join(OPEN_STATUSES.map((s) => sql`${s}`), sql`, `)})
-             OR (i.status = 'paid' AND i.confirmation_sent_at IS NULL))
+             OR (i.status = 'paid' AND i.confirmation_sent_at IS NULL
+                 AND (i.scheduled_date IS NULL OR i.scheduled_date >= (now() AT TIME ZONE 'Asia/Colombo')::date)))
         AND ( (i.booking_id IS NOT NULL AND b.status IN (${sql.join(PAID_BOOKING_STATUSES.map((s) => sql`${s}`), sql`, `)}))
            OR (i.booking_id IS NULL AND q.status IN (${sql.join(LIVE_QUOTE_STATUSES.map((s) => sql`${s}`), sql`, `)}) AND q.deleted_at IS NULL) )
       ORDER BY i.created_at DESC
@@ -110,6 +111,7 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
         amountPaidCurrency: r.amount_paid_currency as Lead['amountPaidCurrency'], opsNote: r.ops_note,
         scheduledDate: r.scheduled_date_text, scheduledTime: r.scheduled_time, meetingPoint: r.meeting_point,
         confirmationSentAt: r.confirmation_sent_at ? new Date(r.confirmation_sent_at) : null,
+        confirmationChannel: r.confirmation_channel as ConfirmationChannel | null,
         updatedBy: r.updated_by, createdAt: new Date(r.created_at), updatedAt: new Date(r.updated_at),
         areaLabel: r.area_label, experienceName: r.experience_name,
         ownerKind: isBooking ? 'booking' : 'quote',
@@ -159,8 +161,8 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
   }
 
   // Not a patch: sending the email is not an edit, so it neither bumps updated_at nor changes updated_by.
-  async markConfirmationSent(id: string, at: Date): Promise<ExperienceInterest | null> {
-    const rows = await this.db.update(experienceInterests).set({ confirmationSentAt: at }).where(eq(experienceInterests.id, id)).returning();
+  async markConfirmationSent(id: string, at: Date, channel: ConfirmationChannel): Promise<ExperienceInterest | null> {
+    const rows = await this.db.update(experienceInterests).set({ confirmationSentAt: at, confirmationChannel: channel }).where(eq(experienceInterests.id, id)).returning();
     return rows[0] ? toInterest(rows[0]) : null;
   }
 }

@@ -88,10 +88,12 @@ async function boot(page, caps, { list, post, patch, leads, patchLead, confirmLe
   // D21: the confirmation email. Two segments after /leads/, so the single-star route above never sees it.
   await page.route('**/admin/experiences/leads/*/confirmation', async (r) => {
     const id = r.request().url().split('/').slice(-2)[0];
-    calls.confirm.push({ id });
+    const body = r.request().postDataJSON();
+    calls.confirm.push({ id, body });
     if (confirmLead) return confirmLead(r, id);
     const l = leadDb.find((x) => x.id === id);
     l.confirmationSentAt = '2026-10-07T04:15:00.000Z';
+    l.confirmationChannel = body && body.channel === 'whatsapp' ? 'whatsapp' : 'email';
     return r.fulfill(json({ lead: l }));
   });
   return calls;
@@ -661,6 +663,60 @@ test('a quote lead with no email on file says to confirm on WhatsApp, and stays 
   await expect(page.locator('#toast')).toContainText('No email on file — confirm on WhatsApp');
   await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toHaveCount(0);
   await expect(row.locator('[data-action="expLeadConfirm"]')).toHaveText('Send confirmation');
+});
+
+// A phone-only quote lead can never be emailed, so ops marks it confirmed on WhatsApp (nothing is sent).
+test('a quote lead with a phone contact offers Mark confirmed on WhatsApp; it posts the channel and shows the stamp', async ({ page }) => {
+  const calls = await openPaid(page, [PAID_QUOTE, PAID]);
+  const row = leadRows(page).nth(0);
+  await expect(row.locator('[data-testid="lead-confirm-whatsapp"]')).toHaveText('Mark confirmed on WhatsApp');
+  // an emailable booking lead does not offer it until the email path says there is no email
+  await expect(leadRows(page).nth(1).locator('[data-testid="lead-confirm-whatsapp"]')).toHaveCount(0);
+  await row.locator('[data-testid="lead-confirm-whatsapp"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  expect(calls.confirm[0]).toEqual({ id: PAID_QUOTE.id, body: { channel: 'whatsapp' } });
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Oct');
+  await expect(row.locator('[data-testid="lead-confirm-whatsapp"]')).toHaveCount(0);
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toHaveText('Send confirmation');
+});
+
+test('a booking lead whose email send answers no_email then offers Mark confirmed on WhatsApp', async ({ page }) => {
+  let n = 0;
+  const calls = await openPaid(page, [{ ...PAID, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: (r, id) => {
+      n++;
+      return n === 1 ? r.fulfill(json({ error: 'no_email' }, 422)) : r.fulfill(json({ lead: { ...PAID, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'whatsapp' } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  await expect(row.locator('[data-testid="lead-confirm-whatsapp"]')).toHaveCount(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect(page.locator('#toast')).toContainText('No email on file — confirm on WhatsApp');
+  await row.locator('[data-testid="lead-confirm-whatsapp"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(2);
+  expect(calls.confirm[1].body).toEqual({ channel: 'whatsapp' });
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
+});
+
+// A double click used to reach the POST twice: the claim was only taken after two awaits.
+test('a quick double click on Send confirmation produces exactly one POST', async ({ page }) => {
+  let release;
+  const held = new Promise((res) => { release = res; });
+  const calls = await openPaid(page, [{ ...PAID, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: async (r) => { await held; return r.fulfill(json({ lead: { ...PAID, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'email' } })); },
+  });
+  const btn = leadRows(page).nth(0).locator('[data-action="expLeadConfirm"]');
+  await btn.dblclick();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  await expect(btn).toBeDisabled();
+  await btn.click({ force: true }); // a third press while it is still out
+  await page.waitForTimeout(150);
+  expect(calls.confirm).toHaveLength(1);
+  release();
+  await expect(leadRows(page).nth(0).locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmation sent ✓');
+  await expect(leadRows(page).nth(0).locator('[data-action="expLeadConfirm"]')).toBeEnabled();
+  expect(calls.confirm).toHaveLength(1);
 });
 
 test('a failed send says so and can be tried again', async ({ page }) => {
