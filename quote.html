@@ -59,48 +59,52 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     /* The final figure keeps the full Bodoni treatment, set off by a hairline so the eye lands
        there rather than on the arithmetic above it. */
     .opts .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
-    /* Partner experiences (spec 2026-10-06 D12): same cards as booking.html step 3. An "I’m interested"
-       tap is a lead for ops, not a purchase — nothing here may look like an add-on with a price in
-       the total. Inline, not quote.css: this page is served from the API's asset allow-list. */
+    /* Partner experiences (spec 2026-10-06 D12): owner-approved compact rows (Option B, 2026-10-07),
+       the same look as booking.html step 3. A "Request" tap is a lead for ops, not a purchase —
+       nothing here may look like an add-on with a price in the total. Inline, not quote.css: this
+       page is served from the API's asset allow-list. */
     #experiences-block{margin-top:26px}
-    #experiences-block h3{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink);margin:20px 0 12px}
-    .xp-note{background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);border-radius:12px;padding:12px 15px;font-size:.88rem;line-height:1.45}
-    .xp-card{display:grid;grid-template-columns:116px minmax(0,1fr) auto;gap:6px 16px;align-items:start;border:1.5px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;background:var(--white);transition:border-color .15s,background-color .15s}
-    .xp-card.nophoto{grid-template-columns:minmax(0,1fr) auto}
-    .xp-card.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
-    .xp-photo{width:116px;height:96px;border-radius:10px;object-fit:cover;background:var(--pc-sky);display:block}
+    .xp-kicker{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;color:var(--accent-deep);margin:0}
+    .xp-kicker svg{width:13px;height:13px;flex:none}
+    #experiences-block h3{font-family:var(--display);font-weight:700;font-size:1.2rem;margin:16px 0 8px;color:var(--ink)}
+    .xp-sub{font-size:.84rem;line-height:1.5;color:var(--ink-soft);margin:0 0 14px;max-width:46ch}
+    .xp-stop+.xp-stop{margin-top:14px}
+    .xp-list{background:var(--white);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+    .xp-row{display:grid;grid-template-columns:58px minmax(0,1fr) auto;column-gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);background:var(--white);transition:box-shadow .15s}
+    .xp-row:first-child{border-top:0}
+    .xp-row.nophoto{grid-template-columns:minmax(0,1fr) auto}
+    .xp-row.on{box-shadow:inset 3px 0 0 var(--accent)}
+    .xp-photo{width:58px;height:58px;border-radius:12px;object-fit:cover;background:var(--pc-sky);display:block}
     .xp-main{min-width:0}
-    .xp-name{display:block;font-size:1rem;line-height:1.25;overflow-wrap:anywhere}
-    .xp-partner{display:block;font-size:.82rem;color:var(--ink-soft);margin-top:1px;overflow-wrap:anywhere}
-    .xp-away{display:block;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
-    .xp-sum{font-size:.88rem;line-height:1.45;margin:8px 0 0;color:var(--ink);overflow-wrap:anywhere}
-    .xp-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-    .xp-chip{font-size:.75rem;line-height:1;padding:5px 9px;border-radius:999px;background:var(--pc-sky);color:var(--ink)}
-    .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;padding:8px 0 2px;margin:0;font:inherit;font-size:.82rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left;min-height:32px}
+    .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:3px 0;margin:2px 0 0;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
     .xp-more:hover{color:var(--btn-accent-hover);text-decoration:underline}
-    .xp-buy{display:flex;flex-direction:column;align-items:flex-end;gap:10px;text-align:right;min-width:150px}
-    .xp-price{font-size:.8rem;line-height:1.35;color:var(--ink-soft)}
-    .xp-price b{display:block;font-size:1rem;color:var(--ink)}
-    .xp-btn{appearance:none;-webkit-appearance:none;font:inherit;font-weight:600;font-size:.9rem;min-height:44px;padding:0 18px;border-radius:999px;border:1.5px solid var(--btn-accent);background:var(--white);color:var(--btn-accent);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
+    .xp-more:focus{outline:none}
+    .xp-more:focus-visible{outline:2px solid var(--btn-accent);outline-offset:3px;text-decoration:underline}
+    .xp-chev{display:inline-block;transition:transform .15s}
+    .xp-more[aria-expanded="true"] .xp-chev{transform:rotate(90deg)}
+    .xp-buy{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+    .xp-price{font-size:.88rem;font-weight:700;color:var(--ink);white-space:nowrap}
+    .xp-price small{font-size:.7rem;font-weight:400;color:var(--ink-soft)}
+    .xp-btn{appearance:none;-webkit-appearance:none;font:inherit;font-weight:600;font-size:.8rem;min-height:36px;padding:0 16px;border-radius:999px;border:1.5px solid var(--btn-accent);background:var(--white);color:var(--btn-accent);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
     .xp-btn:hover{background:rgba(var(--accent-rgb),.12)}
     .xp-btn[aria-pressed="true"]{background:var(--btn-accent);color:#fff}
     .xp-btn[aria-pressed="true"]:hover{background:var(--btn-accent-hover)}
-    .xp-after{grid-column:1/-1;margin:2px 0 0;background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);border-radius:10px;padding:10px 13px;font-size:.84rem;line-height:1.45}
-    .xp-err{grid-column:1/-1;margin:2px 0 0;font-size:.84rem;line-height:1.45;color:#a4262c}
-    .xp-after[hidden],.xp-err[hidden],.xp-panel[hidden]{display:none}
-    .xp-panel{grid-column:1/-1;border-top:1px solid var(--line);margin-top:6px;padding-top:12px;font-size:.86rem;line-height:1.5;color:var(--ink)}
+    .xp-err{grid-column:1/-1;margin:6px 0 0;font-size:.84rem;line-height:1.45;color:#a4262c}
+    .xp-err[hidden],.xp-panel[hidden]{display:none}
+    .xp-panel{grid-column:1/-1;border-top:1px solid var(--line);margin-top:10px;padding-top:12px;font-size:.86rem;line-height:1.5;color:var(--ink)}
     .xp-panel p{margin:0 0 8px;overflow-wrap:anywhere}
     .xp-facts{color:var(--ink-soft)}
     .xp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
     .xp-photos img{width:100%;height:112px;object-fit:cover;border-radius:8px;display:block;background:var(--pc-sky)}
-    @media(max-width:560px){
-      .xp-card,.xp-card.nophoto{grid-template-columns:84px minmax(0,1fr);gap:6px 12px}
-      .xp-card.nophoto{grid-template-columns:minmax(0,1fr)}
-      .xp-photo{width:84px;height:72px}
-      .xp-buy{grid-column:1/-1;flex-direction:row;justify-content:space-between;align-items:center;text-align:left;min-width:0;gap:12px;margin-top:4px}
-      .xp-price{flex:1 1 0;min-width:0}
-      .xp-price b{display:inline}
-      .xp-btn{flex:none;padding:0 14px}
+    @media(max-width:640px){
+      /* the price and the button drop under the meta line so the name gets the full width */
+      .xp-row{grid-template-columns:64px minmax(0,1fr);align-items:start}
+      .xp-row.nophoto{grid-template-columns:minmax(0,1fr)}
+      .xp-photo{width:64px;height:64px;grid-row:1/3}
+      .xp-name{white-space:normal;overflow-wrap:anywhere}
+      .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
     }
   </style>
 </head>
@@ -426,7 +430,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // ── states ──────────────────────────────────────────────────────────────────────────
   // ── Partner experiences (spec 2026-10-06 D12/D16/D17) ───────────────────────────────────
-  // The one write this page makes. An "I’m interested" tap POSTs {t, experienceId, interested} and
+  // The one write this page makes. A "Request" tap POSTs {t, experienceId, interested} and
   // records a lead for ops — it never touches the quote, the price or a payment. The card flips at
   // once; if the save fails it flips back and says so. Every string from the API goes through esc().
   var xpMeta = {}, xpBusy = {};
@@ -456,17 +460,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var km = Number(it.aboutKm), days = xpDays(it.openWeekdays), price = xpPrice(it);
     var times = Array.isArray(it.startTimes) ? it.startTimes.filter(function(t){ return typeof t === 'string'; }) : [];
     var details = String(it.details || '').split(/\n+/).map(function(t){ return t.trim(); }).filter(Boolean);
+    var meta = [it.partnerName, km > 0 ? Math.round(km) + ' km' : '', it.durationText, days].filter(Boolean).map(function(t){ return esc(t); }).join(' · ');
+    var cut = price.indexOf(' ');
     var panelId = 'xp-panel-' + n, id = esc(it.id);
-    return '<article class="xp-card' + (photos.length ? '' : ' nophoto') + (on ? ' on' : '') + '" data-id="' + id + '">'
-      + (photos.length ? '<img class="xp-photo" src="' + esc(photos[0].small) + '" alt="" width="116" height="96" loading="lazy" onerror="this.style.display=\'none\'">' : '')
-      + '<div class="xp-main"><b class="xp-name">' + esc(it.name) + '</b><span class="xp-partner">' + esc(it.partnerName) + '</span>'
-      + (km > 0 ? '<span class="xp-away">about ' + Math.round(km) + ' km away</span>' : '')
-      + '<p class="xp-sum">' + esc(it.summary) + '</p>'
-      + ((it.durationText || days) ? '<div class="xp-chips">' + (it.durationText ? '<span class="xp-chip">' + esc(it.durationText) + '</span>' : '') + (days ? '<span class="xp-chip">' + esc(days) + '</span>' : '') + '</div>' : '')
-      + '<button type="button" class="xp-more" aria-expanded="false" aria-controls="' + panelId + '">Details &amp; photos</button></div>'
-      + '<div class="xp-buy"><div class="xp-price">' + (price ? '<b>' + esc(price) + '</b> ' : '') + 'Same as booking direct</div>'
-      + '<button type="button" class="xp-btn" data-id="' + id + '" aria-pressed="' + on + '">' + (on ? '✓ Interested' : 'I’m interested') + '</button></div>'
-      + '<p class="xp-after" role="status"' + (on ? '' : ' hidden') + '><b>Noted — you won’t be charged for this.</b> Our Ceylon Hop Pro team will message you with details and available times. If you go ahead, we’ll send you a secure payment link.</p>'
+    // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
+    return '<article class="xp-row' + (photos.length ? '' : ' nophoto') + (on ? ' on' : '') + '" data-id="' + id + '">'
+      + (photos.length ? '<img class="xp-photo" src="' + esc(photos[0].small) + '" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility=\'hidden\'">' : '')
+      + '<div class="xp-main"><b class="xp-name">' + esc(it.name) + '</b><span class="xp-meta">' + meta + '</span>'
+      + '<button type="button" class="xp-more" aria-expanded="false" aria-controls="' + panelId + '">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>'
+      + '<div class="xp-buy">' + (price ? '<span class="xp-price"><b>' + esc(price.slice(0, cut)) + '</b> <small>' + esc(price.slice(cut + 1)) + '</small></span>' : '')
+      + '<button type="button" class="xp-btn" data-id="' + id + '" aria-pressed="' + on + '">' + (on ? '✓ Requested' : 'Request') + '</button></div>'
       + '<p class="xp-err" role="alert" hidden>Couldn’t save — try again</p>'
       + '<div class="xp-panel" id="' + panelId + '" hidden>' + details.map(function(t){ return '<p>' + esc(t) + '</p>'; }).join('')
       + '<p class="xp-facts">' + (days ? 'Open: ' + esc(days) : '') + (days && times.length ? '<br>' : '') + (times.length ? 'Times: ' + esc(times.join(' · ')) : '') + '</p>'
@@ -476,28 +479,31 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // '' when there is nothing to show — an upsell must never get in the way of the quote (D17).
   function experiencesHtml(stops){
     xpMeta = {};
-    var html = '', n = 0;
+    var html = '', n = 0, first = true;
     (Array.isArray(stops) ? stops : []).forEach(function(s){
       var place = String((s && s.place) || '').split(' / ')[0].trim().slice(0, 60);
       var items = (s && Array.isArray(s.items) ? s.items : []).filter(function(it){ return it && typeof it.id === 'string' && typeof it.name === 'string'; });
       if (!place || !items.length) return;
-      html += '<section class="xp-stop"><h3>While you’re in ' + esc(place) + '</h3>';
+      // The accent line and the one explanation line open the first stop only (owner: don’t repeat yourself).
+      html += '<section class="xp-stop">'
+        + (first ? '<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>' : '')
+        + '<h3>While you’re in ' + esc(place) + '</h3>'
+        + (first ? '<p class="xp-sub">Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.</p>' : '')
+        + '<div class="xp-list">';
+      first = false;
       items.forEach(function(it){
         xpMeta[it.id] = { slug: String(it.slug || ''), place: place };
         html += xpCardHtml(it, n++);
       });
-      html += '</section>';
+      html += '</div></section>';
     });
-    return html
-      ? '<div id="experiences-block"><div class="xp-note"><b>Nothing to pay now.</b> Tap “I’m interested” and our Ceylon Hop Pro team will reach out to help you schedule it. You pay the same price as booking direct — never more.</div>' + html + '</div>'
-      : '';
+    return html ? '<div id="experiences-block">' + html + '</div>' : '';
   }
   function xpPaint(card, on){
-    var btn = card.querySelector('.xp-btn'), after = card.querySelector('.xp-after');
+    var btn = card.querySelector('.xp-btn');
     btn.setAttribute('aria-pressed', String(on));
-    btn.textContent = on ? '✓ Interested' : 'I’m interested';
+    btn.textContent = on ? '✓ Requested' : 'Request';
     card.classList.toggle('on', on);
-    if (after) after.hidden = !on;
   }
   function xpPost(id, interested){
     var ctl = typeof AbortController === 'undefined' ? null : new AbortController();
@@ -513,7 +519,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }, function(e){ if (timer) clearTimeout(timer); throw e; });
   }
   function xpToggle(btn){
-    var id = btn.getAttribute('data-id'), meta = xpMeta[id], card = btn.closest('.xp-card');
+    var id = btn.getAttribute('data-id'), meta = xpMeta[id], card = btn.closest('.xp-row');
     if (!meta || !card || xpBusy[id]) return;
     var want = btn.getAttribute('aria-pressed') !== 'true';
     xpBusy[id] = true;
