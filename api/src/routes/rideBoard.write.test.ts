@@ -313,19 +313,18 @@ describe('Ride Board PayHere card approval', () => {
       .toEqual({ status: 'failed' });
   });
 
-  it('keeps a newly-created list private until its creator approves a card', async () => {
-    const { app, paygw } = makePayHereApp();
+  // Owner 2026-10-07: starting a ride takes no card. Every abandoned start in the attempt log
+  // died on the PayHere page, and the ride it would have made stayed hidden (pending_payment)
+  // where nobody could join it. Joiners still approve a card; the starter pays by a link ops
+  // sends if the van runs.
+  it('puts a new ride on the board straight away — the starter never goes to PayHere', async () => {
+    const { app } = makePayHereApp();
     const cookie = await loginCookie(app);
     const started = await app.request('/board', json(cookie, {
       from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning',
       payment: paymentDetails,
     }));
-    expect(started.status).toBe(202);
-    const body = await started.json();
-    expect((await (await app.request('/board')).json()).lists).toHaveLength(0);
-
-    const notify = paygw.simulatePreapprovalNotify({ orderId: body.payment.orderId, customerToken: 'token' });
-    await app.request('/board/payhere/notify', { method: 'POST', body: notify });
+    expect(started.status).toBe(201);
     const board = await (await app.request('/board')).json();
     expect(board.lists).toHaveLength(1);
     expect(board.lists[0].committed).toBe(1);
@@ -843,6 +842,77 @@ describe('POST /board (create)', () => {
   });
 });
 
+describe('POST /board (create) — no card to start a ride (owner 2026-10-07)', () => {
+  it('approaches no card at all', async () => {
+    const { app, paygw } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+    expect(paygw.preapprovals).toHaveLength(0);
+  });
+
+  it("holds the starter's seat with no card token, on a ride that is gathering", async () => {
+    const { app, rideLists } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 2,
+    }));
+    const found = await rideLists.getByCode((await res.json()).list.code);
+    expect(found?.list.status).toBe('gathering');
+    expect(found?.list.createdBy).toBe('roshen-sub');
+    expect(found?.members).toHaveLength(1);
+    expect(found?.members[0]).toMatchObject({ status: 'held', seats: 2, preapprovalRef: null, phone: '+94771234567' });
+  });
+
+  it('needs only a phone number — the billing address and city were only ever for PayHere', async () => {
+    const { app } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      payment: { phone: '+94771234567' }, from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning',
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('tells the starter — and only the starter — that they pay by link, so the page does not say "card approved"', async () => {
+    const { app, rideLists } = makeApp();
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, {
+      payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning',
+    }));
+    const body = await res.json();
+    expect(body.list.members[0]).toMatchObject({ isYou: true, paysByLink: true });
+    // Nobody else learns it from the public board.
+    const pub = await (await app.request(`/board/${body.list.code}`)).json();
+    expect(JSON.stringify(pub)).not.toContain('paysByLink');
+    // A carded joiner is not told they pay by link.
+    const l = await rideLists.createList(listArgs());
+    const joined = await (await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1, payment: paymentDetails }))).json();
+    expect(joined.list.members.find((m: { isYou: boolean }) => m.isYou).paysByLink).toBeFalsy();
+  });
+
+  it('still asks a joiner for a card', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1, payment: paymentDetails }));
+    expect(paygw.preapprovals).toHaveLength(1);
+  });
+
+  it('tells the starter no card was taken and that a payment link comes if it runs', async () => {
+    const { app, email } = mailApp();
+    const cookie = await loginCookie(app);
+    await app.request('/board', json(cookie, {
+      payment: paymentDetails, from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning',
+    }));
+    const receipt = (email as FakeEmailAdapter).sent[0];
+    expect(receipt.text).toMatch(/payment link/i);
+    expect(receipt.text).not.toMatch(/PayHere|card-verification/);
+    expect(receipt.html).not.toMatch(/PayHere|card-verification/);
+  });
+});
+
 describe('GET /board/mine & /board/dupe', () => {
   it('lists the rides I am on', async () => {
     const { app, rideLists } = makeApp();
@@ -923,16 +993,6 @@ describe('PayHere return_url — back to the board the traveller was on', () => 
     expect((await app.request(`/board/${l.code}/join`, withOrigin(cookie, { seats: 1, payment: paymentDetails }))).status).toBe(200);
     expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
     expect(paygw.preapprovals[0].cancelUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=.*&cancelled=1$`));
-  });
-
-  it('create: returns to the request origin when it is allow-listed', async () => {
-    const { app, paygw } = makeApp();
-    const cookie = await loginCookie(app);
-    const res = await app.request('/board', withOrigin(cookie, {
-      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', payment: paymentDetails,
-    }));
-    expect(res.status).toBe(201);
-    expect(paygw.preapprovals[0].returnUrl).toMatch(new RegExp(`^${ORIGIN}/board\\.html\\?ridePayment=`));
   });
 
   it('falls back to the configured base when the caller sends no Origin', async () => {
