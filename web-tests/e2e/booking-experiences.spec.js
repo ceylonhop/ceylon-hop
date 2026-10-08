@@ -3,8 +3,9 @@ import { gotoBooking, fillContact, pickPlace } from './_stubs.js';
 import { futureIsoDate } from '../dates.js';
 
 // Partner experiences on booking.html step 3 (spec 2026-10-06 D9/D10/D16/D17). The page asks
-// GET /experiences/near for what is close to the drop-off, shows cards, and an "I'm interested" tap
-// only records an id: it never touches the price, and never blocks the booking.
+// GET /experiences/near for what is close to the drop-off, shows compact rows (owner-approved
+// Option B, 2026-10-07), and a "Request" tap only records an id: it never touches the price, and
+// never blocks the booking. No ratings yet - Tripadvisor is a separate future step.
 
 const photo = (stem) => ({
   small: `https://ceylonhop.com/img/${stem}-900.jpg`,
@@ -47,40 +48,50 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('the experiences block on step 3', () => {
-  test('a private transfer to Sigiriya shows "While you’re in Sigiriya" with the three cards', async ({ page }) => {
+  test('a private transfer to Sigiriya shows the concierge header and the three rows', async ({ page }) => {
     const { nearRequests } = await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
 
     await expect(block(page)).toBeVisible();
     await expect(block(page).locator('h3')).toHaveText('While you’re in Sigiriya');
-    await expect(block(page).locator('.xp-card')).toHaveCount(3);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
     expect(nearRequests).toEqual([['Sigiriya@7.95,80.76']]);
 
-    // The owner-approved box (spec D16), once, above the cards.
-    await expect(block(page).locator('.xp-note')).toHaveCount(1);
-    await expect(block(page).locator('.xp-note')).toHaveText(
-      'Nothing to pay now. Tap “I’m interested” and our Ceylon Hop Pro team will reach out to help you schedule it. You pay the same price as booking direct — never more.',
+    // The accent line, then the heading, then ONE explanation line (replaces the green box).
+    await expect(block(page).locator('.xp-kicker')).toHaveText('Hand-picked by the Ceylon Hop concierge');
+    await expect(block(page).locator('.xp-note')).toHaveCount(0);
+    await expect(block(page).locator('.xp-sub')).toHaveCount(1);
+    await expect(block(page).locator('.xp-sub')).toHaveText(
+      'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
     );
+    // The owner: don't repeat yourself - no per-row "won’t be charged" note, and "free" appears once.
+    await expect(block(page).locator('.xp-after')).toHaveCount(0);
+    const all = await block(page).innerText();
+    expect(all).not.toMatch(/won’t be charged/i);
+    expect(all.match(/\bfree\b/gi)).toHaveLength(1);
+    // No ratings yet.
+    expect(all).not.toMatch(/tripadvisor/i);
+    await expect(block(page).locator('.xp-rate')).toHaveCount(0);
 
-    const card = block(page).locator('.xp-card').first();
-    await expect(card).toContainText('Ayurvedic massage');
-    await expect(card).toContainText('Atherya Spa');
-    await expect(card).toContainText('about 4 km away');
-    await expect(card).toContainText('A 90-minute Ayurvedic massage with herbal oils.');
-    await expect(card).toContainText('90 min');
-    await expect(card).toContainText('Daily');
-    await expect(card).toContainText('$35 pp');
-    await expect(card).toContainText('Same as booking direct');
-    await expect(block(page).locator('.xp-card').nth(1)).toContainText('Mon–Sat');
-    await expect(block(page).locator('.xp-card').nth(2)).toContainText('$45 per group');
+    const row = block(page).locator('.xp-row').first();
+    await expect(row.locator('.xp-name')).toHaveText('Ayurvedic massage');
+    await expect(row.locator('.xp-meta')).toHaveText('Atherya Spa · 4 km · 90 min · Daily');
+    await expect(row.locator('.xp-price')).toHaveText('$35 pp');
+    await expect(row.locator('.xp-btn')).toHaveText('Request');
+    await expect(block(page).locator('.xp-row').nth(1).locator('.xp-meta')).toContainText('Mon–Sat');
+    await expect(block(page).locator('.xp-row').nth(2).locator('.xp-price')).toHaveText('$45 per group');
+    await expect(row.locator('.xp-photo')).toHaveCount(1);
   });
 
-  test('"Details & photos" opens an inline panel with the times, the days and every photo', async ({ page }) => {
+  test('"Details ›" is a text link that opens an inline panel with the times, the days and every photo', async ({ page }) => {
     await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
-    const card = block(page).locator('.xp-card').nth(1);
+    const card = block(page).locator('.xp-row').nth(1);
     const more = card.locator('.xp-more');
-    await expect(more).toHaveText('Details & photos');
+    await expect(more).toHaveText('Details ›');
+    await expect(more).toHaveAttribute('aria-controls', /^xp-panel-/);
+    // A plain text link, not a boxed control.
+    expect(await more.evaluate((el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.borderTopWidth]; })).toEqual(['rgba(0, 0, 0, 0)', '0px']);
     await expect(more).toHaveAttribute('aria-expanded', 'false');
     await expect(card.locator('.xp-panel')).toBeHidden();
 
@@ -97,37 +108,54 @@ test.describe('the experiences block on step 3', () => {
     await expect(card.locator('.xp-panel')).toBeHidden();
   });
 
-  test('tapping "I’m interested" flips the button, shows the note and the summary box, and never moves the Total', async ({ page }) => {
+  test('tapping "Request" flips the button, marks the row, fills the summary line, and never moves the Total', async ({ page }) => {
     await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
     const total = page.locator('#sum-total');
     const before = await total.textContent();
     expect(before).toMatch(/\$/);
 
-    const card = block(page).locator('.xp-card').first();
-    const btn = card.locator('.xp-btn');
-    await expect(btn).toHaveText('I’m interested');
+    const row = block(page).locator('.xp-row').first();
+    const btn = row.locator('.xp-btn');
+    await expect(btn).toHaveText('Request');
     await expect(btn).toHaveAttribute('aria-pressed', 'false');
-    await expect(card.locator('.xp-after')).toBeHidden();
     await expect(page.locator('#sum-experiences')).toBeHidden();
 
     await btn.click();
-    await expect(btn).toHaveText('✓ Interested');
+    await expect(btn).toHaveText('✓ Requested');
     await expect(btn).toHaveAttribute('aria-pressed', 'true');
-    await expect(card.locator('.xp-after')).toBeVisible();
-    await expect(card.locator('.xp-after')).toHaveText(
-      'Noted — you won’t be charged for this. Our Ceylon Hop Pro team will message you with details and available times. If you go ahead, we’ll send you a secure payment link.',
-    );
-    await expect(page.locator('#sum-experiences')).toBeVisible();
-    await expect(page.locator('#sum-experiences')).toContainText('You’re interested in — not charged');
-    await expect(page.locator('#sum-experiences')).toContainText('Ayurvedic massage');
+    await expect(row).toHaveClass(/\bon\b/);
+    await expect(block(page).locator('.xp-after')).toHaveCount(0);
+
+    // The selected row stays white (the old tint let the cream page show through) and carries a
+    // 3px accent bar on the left.
+    expect(await row.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+    // (the bar eases in over .15s, so poll rather than sample mid-transition)
+    await expect.poll(() => row.evaluate((el) => getComputedStyle(el).boxShadow)).toMatch(/inset/);
+    await expect.poll(() => row.evaluate((el) => getComputedStyle(el).boxShadow)).toMatch(/\b3px\b/);
+
+    const sum = page.locator('#sum-experiences');
+    await expect(sum).toBeVisible();
+    await expect(sum).toContainText('Experiences');
+    await expect(sum).toContainText('1 requested · no charge');
+    await expect(sum).toContainText('Ayurvedic massage');
+    // A plain summary row, not a coloured callout: no fill of its own (it shows the summary card).
+    expect(await sum.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     await expect(total).toHaveText(before);
 
-    // A second tap takes it back.
+    // A second row: the count and the " · "-separated names follow.
+    await block(page).locator('.xp-row').nth(2).locator('.xp-btn').click();
+    await expect(sum).toContainText('2 requested · no charge');
+    await expect(page.locator('#sum-experiences-list')).toHaveText('Ayurvedic massage · Elephant jeep safari');
+    await expect(total).toHaveText(before);
+
+    // A tap takes it back.
     await btn.click();
-    await expect(btn).toHaveText('I’m interested');
-    await expect(card.locator('.xp-after')).toBeHidden();
-    await expect(page.locator('#sum-experiences')).toBeHidden();
+    await expect(btn).toHaveText('Request');
+    await expect(row).not.toHaveClass(/\bon\b/);
+    await expect(sum).toContainText('1 requested · no charge');
+    await block(page).locator('.xp-row').nth(2).locator('.xp-btn').click();
+    await expect(sum).toBeHidden();
     await expect(total).toHaveText(before);
   });
 
@@ -205,7 +233,7 @@ test.describe('where the points come from', () => {
   test('leaving and re-entering step 3 does not ask again for the same stops', async ({ page }) => {
     const { nearRequests } = await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
-    await expect(block(page).locator('.xp-card')).toHaveCount(3);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
     await page.evaluate(() => { window.goStep(2); window.goStep(3); });
     await page.locator('#ad-n').waitFor();
     expect(nearRequests).toHaveLength(1);
@@ -257,48 +285,53 @@ test.describe('never in the way (D17)', () => {
     const evil = exp({ id: '44444444-4444-4444-8444-444444444444', name: '"><img src=x onerror="window.__xss=1">', partnerName: '<b>P</b>' });
     await gotoBooking(page, { query: PRIVATE, experiences: { stops: [{ place: 'Sigiriya', items: [evil] }] } });
     await goStep3(page);
-    await expect(block(page).locator('.xp-card')).toHaveCount(1);
-    await expect(block(page).locator('.xp-card')).toContainText('"><img src=x onerror="window.__xss=1">');
+    await expect(block(page).locator('.xp-row')).toHaveCount(1);
+    await expect(block(page).locator('.xp-row')).toContainText('"><img src=x onerror="window.__xss=1">');
     await block(page).locator('.xp-btn').click();
     await expect(page.locator('#sum-experiences')).toContainText('<img src=x');
     expect(await page.evaluate(() => window.__xss)).toBeUndefined();
-    await expect(block(page).locator('.xp-partner')).toHaveText('<b>P</b>');
-    await expect(block(page).locator('.xp-partner b')).toHaveCount(0);
+    await expect(block(page).locator('.xp-meta')).toContainText('<b>P</b>');
+    await expect(block(page).locator('.xp-meta b')).toHaveCount(0);
+    await expect(page.locator('#sum-experiences-list b')).toHaveCount(0);
   });
 });
 
 test.describe('phone layout', () => {
   test.use({ viewport: { width: 375, height: 760 } });
 
-  test('375px: nothing overflows sideways, and price and button sit under the description', async ({ page }) => {
+  test('375px: nothing overflows sideways, the name is not truncated, and price and button sit under the meta line', async ({ page }) => {
     await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
-    await expect(block(page).locator('.xp-card')).toHaveCount(3);
+    await expect(block(page).locator('.xp-row')).toHaveCount(3);
     const m = await page.evaluate(() => {
       const root = document.documentElement;
-      const cards = [...document.querySelectorAll('#experiences-block .xp-card')];
-      const c = cards[0];
+      const rows = [...document.querySelectorAll('#experiences-block .xp-row')];
+      const r = rows[0];
+      const name = r.querySelector('.xp-name');
       return {
         pageOverflow: root.scrollWidth - root.clientWidth,
-        cardRightMax: Math.max(...cards.map((x) => x.getBoundingClientRect().right)),
+        rowRightMax: Math.max(...rows.map((x) => x.getBoundingClientRect().right)),
         vw: window.innerWidth,
-        descBottom: c.querySelector('.xp-sum').getBoundingClientRect().bottom,
-        buyTop: c.querySelector('.xp-buy').getBoundingClientRect().top,
-        buyLeft: c.querySelector('.xp-buy').getBoundingClientRect().left,
-        cardLeft: c.getBoundingClientRect().left,
-        btnH: c.querySelector('.xp-btn').getBoundingClientRect().height,
-        btnRight: Math.max(...cards.map((x) => x.querySelector('.xp-btn').getBoundingClientRect().right)),
-        cardInnerRight: Math.min(...cards.map((x) => x.getBoundingClientRect().right)),
+        nameClipped: rows.some((x) => { const n = x.querySelector('.xp-name'); return n.scrollWidth > n.clientWidth; }),
+        nameWrap: getComputedStyle(name).whiteSpace,
+        metaBottom: r.querySelector('.xp-meta').getBoundingClientRect().bottom,
+        buyTop: r.querySelector('.xp-buy').getBoundingClientRect().top,
+        photoW: r.querySelector('.xp-photo').getBoundingClientRect().width,
+        btnH: r.querySelector('.xp-btn').getBoundingClientRect().height,
+        btnRightMax: Math.max(...rows.map((x) => x.querySelector('.xp-btn').getBoundingClientRect().right)),
+        rowRightMin: Math.min(...rows.map((x) => x.getBoundingClientRect().right)),
       };
     });
     expect(m.pageOverflow).toBeLessThanOrEqual(0);
-    expect(m.cardRightMax).toBeLessThanOrEqual(m.vw);
-    expect(m.buyTop).toBeGreaterThanOrEqual(m.descBottom - 1);
-    expect(m.buyLeft - m.cardLeft).toBeLessThan(40);
-    expect(m.btnH).toBeGreaterThanOrEqual(44);
-    expect(m.btnRight).toBeLessThanOrEqual(m.cardInnerRight);
+    expect(m.rowRightMax).toBeLessThanOrEqual(m.vw);
+    expect(m.nameClipped).toBe(false);
+    expect(m.nameWrap).toBe('normal');
+    expect(m.buyTop).toBeGreaterThanOrEqual(m.metaBottom - 1);
+    expect(m.photoW).toBe(64);
+    expect(m.btnH).toBeGreaterThanOrEqual(36);
+    expect(m.btnRightMax).toBeLessThanOrEqual(m.rowRightMin);
 
-    // The tap works here too, and the summary box lives in the mobile sheet (#summary).
+    // The tap works here too, and the summary line lives in the mobile sheet (#summary).
     await block(page).locator('.xp-btn').first().click();
     await expect(page.locator('#summary #sum-experiences')).toHaveCount(1);
   });
