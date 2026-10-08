@@ -348,7 +348,8 @@
         photoUrl: m.photoUrl || null,
         seats: m.seats != null ? m.seats : 1,
         isStarter: !!m.isStarter,
-        isYou: !!m.isYou
+        isYou: !!m.isYou,
+        paysByLink: !!m.paysByLink
       };
     });
     var committed = pl.committed != null ? pl.committed : members.length;
@@ -414,6 +415,12 @@
     if (!L || !L.members) return 0;
     var me = L.members.filter(function (m) { return m.isYou; })[0];
     return me ? (me.seats || 1) : 0;
+  }
+
+  // You started this ride with no card (owner, 2026-10-07): if it runs, we send you a payment
+  // link instead of charging a card. The API marks only your own row.
+  function iPayByLink(L) {
+    return !!(L && L.members && L.members.some(function (m) { return m.isYou && m.paysByLink; }));
   }
 
   // The most seats we may offer: what's free on the van plus the ones you already hold
@@ -570,9 +577,9 @@
   // tags). It used to be a hardcoded 'https://ceylonhop.com' — the old WordPress apex,
   // which 404s, so every shared link was dead.
   //
-  // The ride domain (ride.ceylonhop.com) is a second custom domain on the API service and
-  // serves codes at its root, so links are as short as they get. Until it is configured we
-  // fall back to the API's own /r/ path, which keeps local dev and staging self-consistent.
+  // On ceylonhop.com, board.html sets CEYLON_HOP_SHARE_ORIGIN to https://ceylonhop.com/r — a
+  // Cloudflare Worker passes /r/* to the API. Elsewhere we fall back to the API's own /r/ path,
+  // which keeps local dev and staging self-consistent.
   var SHARE_ORIGIN = String(window.CEYLON_HOP_SHARE_ORIGIN || '').replace(/\/$/, '');
   function shareUrlFor(code) {
     return SHARE_ORIGIN ? SHARE_ORIGIN + '/' + code : API_BASE + '/r/' + code;
@@ -1184,7 +1191,9 @@
       // ---- sticky join card ----
       '<aside class="d-join">' +
       (youIn
-        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The taxi is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.') + '</span></div></div>'
+        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (iPayByLink(L)
+          ? (conf ? 'The taxi is locked — we\'ll send you a payment link.' : 'No card needed. If the ride is confirmed at the cutoff, we\'ll send you a payment link for ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + '.')
+          : (conf ? 'The taxi is locked — see you at pickup.' : 'Your card is approved. We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if the ride is confirmed at the cutoff.')) + '</span></div></div>'
         : shut
           ? '<div class="zero-hero"><b>Closed</b><span>this ride is no longer taking names</span></div>'
           : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the taxi locks in. Never a cent before.</div>') +
@@ -1223,7 +1232,7 @@
       if (detailInner.querySelector('.scratch-ask')) return;
       var ask = document.createElement('div');
       ask.className = 'scratch-ask';
-      ask.innerHTML = '<p><b>Scratch your name off?</b> Your card hold is released and the seat frees up. ' +
+      ask.innerHTML = '<p><b>Scratch your name off?</b> ' + (iPayByLink(L) ? 'Your seat frees up. ' : 'Your card hold is released and the seat frees up. ') +
         'You can hop back on any time while the list is still gathering.</p>' +
         '<div class="row"><button class="btn btn-scratch btn-sm" data-scratch-yes>Yes, scratch me off</button>' +
         '<button class="btn btn-primary btn-sm" data-scratch-keep>Keep my seat</button></div>';
@@ -1297,7 +1306,7 @@
   function showDetailShell(L) {
     renderDetail(L);
     document.body.classList.add('detail-open');
-    if (location.hash !== '#/' + L.code) location.hash = '/' + L.code;
+    if (new URLSearchParams(location.search).get('r') !== L.code) history.pushState(null, '', rideHref(L.code));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function showDetailNotFound() {
@@ -1312,7 +1321,7 @@
   function closeDetail() {
     state.detailId = null;
     document.body.classList.remove('detail-open');
-    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    if (location.hash || new URLSearchParams(location.search).has('r')) history.replaceState(null, '', rideHref(null));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
@@ -1593,8 +1602,18 @@
     populateSeats(current);
     updateCost();
     // A traveller already on the list is changing their seats, not adding their name again.
-    document.getElementById('sign-btn-label').textContent = mySeatsOn(current)
-      ? 'Update my seats' : 'Continue to PayHere';
+    document.getElementById('sign-btn-label').textContent = creating
+      ? 'Put it on the board' : mySeatsOn(current) ? 'Update my seats' : 'Continue to PayHere';
+    // No card to START a ride (owner, 2026-10-07): the starter gives a phone number, and if the
+    // van runs ops sends a payment link. Joining still approves a card, so the billing fields,
+    // the PayHere notes and the "we charge" wording stay for a join. style.display, not `hidden`:
+    // .frow / .paynote's own display rules outrank the [hidden] reset.
+    var noCard = creating;
+    document.getElementById('pay-billing').style.display = noCard ? 'none' : '';
+    document.getElementById('m-paynote').style.display = noCard ? 'none' : '';
+    document.getElementById('deal-fine').style.display = noCard ? 'none' : '';
+    document.getElementById('dz-cap').textContent = noCard ? 'to pay today — no card needed' : 'to pay today — we only save your card';
+    document.getElementById('m-charge-verb').textContent = noCard ? 'we send you a link to pay' : 'we charge';
     // Threshold is per-list (corridors override the default), so never hard-code it here —
     // when creating, the list doesn't exist yet, so fall back to the policy default.
     document.getElementById('m-min').textContent = current ? current.minSeats : MIN_DEFAULT;
@@ -1771,6 +1790,16 @@
     var rawPhone = (document.getElementById('pay-phone').value || '').trim();
     var needsCode = !/^\+/.test(rawPhone) && !(sel && sel.value);
     var phone = joinedPhone();
+    // Starting a ride takes only the number (no card, so no PayHere billing details).
+    if (creating) {
+      if (!phone) {
+        sheetError('Add your phone number', 'We message you on it if the ride runs.');
+        document.getElementById(needsCode ? 'pay-cc' : 'pay-phone').focus();
+        return null;
+      }
+      if (!isInternationalNumber(phone)) { phoneError(); return null; }
+      return { phone: phone };
+    }
     var city = (document.getElementById('pay-city').value || '').trim();
     var address = (document.getElementById('pay-address').value || '').trim();
     if (!phone || !city || !address) {
@@ -1837,8 +1866,9 @@
     var payment = mySeatsOn(current) ? undefined : paymentDetails();
     if (!mySeatsOn(current) && !payment) { delete btn.dataset.busy; return; }
     // Only when a card approval is actually coming: a member already holding seats re-submits
-    // without ever touching PayHere, and showing them a gateway hand-off would be a lie.
-    if (payment) showHandoff();
+    // without ever touching PayHere, and showing them a gateway hand-off would be a lie. Nor
+    // does a starter, who gives no card.
+    if (payment && !creating) showHandoff();
     var req;
     if (creating) {
       var c = pairCorridor(cFrom.value, cTo.value);
@@ -1964,9 +1994,13 @@
     document.getElementById('done-head').textContent = need === 0
       ? 'Enough seats are pledged.'
       : (creating ? 'Your list is live — ' : 'You’re in — ') + need + ' more and the taxi runs.';
-    document.getElementById('done-sub').textContent = need === 0
-      ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
-      : 'Spread the word to fill the taxi and lock in your ≈ ' + money(L.cost) + ' seat.';
+    document.getElementById('done-sub').textContent = iPayByLink(L)
+      ? (need === 0
+        ? 'We confirm the ride at the cutoff, then send you a payment link — nothing to pay before.'
+        : 'Spread the word to fill the taxi. Nothing to pay unless it runs — then we send you a payment link.')
+      : need === 0
+        ? 'We will confirm the ride and charge the approved cards at the cutoff — not before.'
+        : 'Spread the word to fill the taxi and lock in your ≈ ' + money(L.cost) + ' seat.';
     var sl = document.getElementById('see-list');
     sl.hidden = !creating;
     sl.onclick = function () { var id = L.code; closeModal(); openDetail(id); };
@@ -2056,9 +2090,23 @@
     } catch (x) {}
   }
 
-  /* deep link: landing on a shared list URL (#/CODE) opens its page directly */
-  function openFromHash() {
-    var code = location.hash.replace(/^#\//, '');
+  /* The address bar names the open ride as ?r=CODE. It used to be #/CODE, but people paste the
+     address bar into Facebook and a fragment never reaches a server, so it could only ever
+     unfurl as the generic board; ?r= does (on ceylonhop.com a Cloudflare Worker hands it to
+     the API's per-ride preview). Pathname + query only — a /r/CODE path would re-root every
+     relative link on the page. */
+  function rideHref(code) {
+    var q = new URLSearchParams(location.search);
+    if (code) q.set('r', code); else q.delete('r');
+    var rest = q.toString();
+    return location.pathname + (rest ? '?' + rest : '');
+  }
+
+  /* deep link: landing on a shared list URL (?r=CODE, or the old #/CODE) opens its page directly */
+  function openFromUrl() {
+    var old = /^#\/(.+)$/.exec(location.hash);
+    if (old) history.replaceState(null, '', rideHref(old[1]));
+    var code = new URLSearchParams(location.search).get('r') || '';
     if (code && state.detailId !== code) openDetail(code);
     else if (!code && document.body.classList.contains('detail-open')) closeDetail();
   }
@@ -2202,9 +2250,10 @@
     Promise.all([me, board, mine]).then(function () {
       return resumePaymentFromReturn();
     }).then(function () {
-      openFromHash();
+      openFromUrl();
       openFromStartLink();
-      window.addEventListener('hashchange', openFromHash);
+      window.addEventListener('hashchange', openFromUrl);
+      window.addEventListener('popstate', openFromUrl);
       startTicker();
     });
   }

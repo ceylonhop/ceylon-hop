@@ -120,6 +120,14 @@ const PaymentDetailsInput = z.object({
   city: z.string().trim().min(2).max(100),
 });
 
+// Starting a ride takes no card (owner, 2026-10-07), so it needs only the number ops reaches the
+// starter on. Address and city were only ever PayHere's billing fields; an older page that still
+// sends them is accepted and they are ignored.
+const StartDetailsInput = PaymentDetailsInput.extend({
+  address: z.string().trim().max(200).optional(),
+  city: z.string().trim().max(100).optional(),
+});
+
 // Create a list. The website sends place NAMES (from/to) exactly like the booking
 // flow; a corridorId is also accepted. Threshold/capacity/price are derived
 // server-side from the corridor — never trusted from the client.
@@ -133,7 +141,7 @@ export const CreateListInput = z
     note: z.string().max(140).optional(),
     preferredTime: z.string().min(1).optional(),
     seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
-    payment: PaymentDetailsInput.optional(),
+    payment: StartDetailsInput.optional(),
   })
   .refine((d) => Boolean(d.corridorId) || Boolean(d.from && d.to), {
     message: 'from and to (or corridorId) are required',
@@ -209,6 +217,17 @@ export function committedSeats(members: RideMember[]): number {
 export const SEED_MEMBER_SUB_PREFIX = 'seed-rideboard:';
 export function isSeedMember(m: Pick<RideMember, 'sub'>): boolean {
   return m.sub.startsWith(SEED_MEMBER_SUB_PREFIX);
+}
+
+// The traveller who started a ride gives no card (owner, 2026-10-07): their seat counts like any
+// other, but if the van runs ops sends them a payment link by hand. Anyone else without a card
+// token is a data bug the cutoff sweep treats as a failed charge. A starter who left and came
+// back through the join route approved a card on the way, so they are charged like a joiner.
+export function paysByLink(
+  list: Pick<RideList, 'createdBy'>,
+  m: Pick<RideMember, 'sub' | 'preapprovalRef'>,
+): boolean {
+  return list.createdBy != null && list.createdBy === m.sub && !m.preapprovalRef;
 }
 
 // ---- Public code generation ------------------------------------------------
