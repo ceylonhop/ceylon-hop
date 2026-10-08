@@ -281,7 +281,7 @@ export function renderGuide(g, T, placePhotos) {
 
   // Runs before anything below it paints: the API origin ("?api=off" / "?api=ORIGIN", the same
   // contract as the trip pages) and the Where-next fare hold that route-list-fares.js releases.
-  const head = `<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+  const head = `<script>(function(){var q=(/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$|\\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
   document.documentElement.classList.add('js');})();</script>`;
 

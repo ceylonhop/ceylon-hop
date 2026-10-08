@@ -66,6 +66,7 @@ import {
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
 import { SeenOnce } from '../lib/seenOnce';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
+import { browserItem } from '../services/analytics/ga4Hits';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
@@ -952,7 +953,8 @@ function invalidRequest(error: ZodError) {
     if (!id) return c.json({ error: 'invalid_link' }, 401);
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
-    return c.json(projectBooking(booking), 200);
+    // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
+    return c.json({ ...projectBooking(booking), ga4Item: browserItem(booking) }, 200);
   });
 
   r.post('/view/checkout-token', async (c) => {
