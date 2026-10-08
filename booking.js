@@ -1357,7 +1357,7 @@ const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
 
 /* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
-   "I'm interested" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
+   "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
    estimate, so a tap cannot move the Total. Only ids go to the API (payload.experienceIds); every
    name on screen came from GET /experiences/near and goes through acEsc (which does not escape ',
    so every attribute below is double-quoted). The block stays hidden on any error, timeout or
@@ -1435,17 +1435,16 @@ function expCardHtml(it, place, n){
   const days=expDays(it.openWeekdays), price=expPrice(it);
   const times=Array.isArray(it.startTimes) ? it.startTimes.filter(t=>typeof t==='string') : [];
   const details=String(it.details||'').split(/\n+/).map(t=>t.trim()).filter(Boolean);
+  const meta=[it.partnerName, km>0 ? Math.round(km)+' km' : '', it.durationText, days].filter(Boolean).map(t=>acEsc(t)).join(' · ');
+  const cut=price.indexOf(' ');
   const panelId='xp-panel-'+n;
-  return `<article class="xp-card${photos.length?'':' nophoto'}${on?' on':''}" data-id="${id}">`
-    + (photos.length ? `<img class="xp-photo" src="${acEsc(photos[0].small)}" alt="" width="116" height="96" loading="lazy" onerror="this.style.display='none'">` : '')
-    + `<div class="xp-main"><b class="xp-name">${acEsc(it.name)}</b><span class="xp-partner">${acEsc(it.partnerName)}</span>`
-    + (km>0 ? `<span class="xp-away">about ${Math.round(km)} km away</span>` : '')
-    + `<p class="xp-sum">${acEsc(it.summary)}</p>`
-    + ((it.durationText||days) ? `<div class="xp-chips">${it.durationText?`<span class="xp-chip">${acEsc(it.durationText)}</span>`:''}${days?`<span class="xp-chip">${acEsc(days)}</span>`:''}</div>` : '')
-    + `<button type="button" class="xp-more" aria-expanded="false" aria-controls="${panelId}">Details &amp; photos</button></div>`
-    + `<div class="xp-buy"><div class="xp-price">${price?`<b>${acEsc(price)}</b> `:''}Same as booking direct</div>`
-    + `<button type="button" class="xp-btn" data-id="${id}" aria-pressed="${on}">${on?'✓ Interested':'I’m interested'}</button></div>`
-    + `<p class="xp-after" role="status" ${on?'':'hidden'}><b>Noted — you won’t be charged for this.</b> Our Ceylon Hop Pro team will message you with details and available times. If you go ahead, we’ll send you a secure payment link.</p>`
+  // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
+  return `<article class="xp-row${photos.length?'':' nophoto'}${on?' on':''}" data-id="${id}">`
+    + (photos.length ? `<img class="xp-photo" src="${acEsc(photos[0].small)}" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility='hidden'">` : '')
+    + `<div class="xp-main"><b class="xp-name">${acEsc(it.name)}</b><span class="xp-meta">${meta}</span>`
+    + `<button type="button" class="xp-more" aria-expanded="false" aria-controls="${panelId}">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>`
+    + `<div class="xp-buy">${price?`<span class="xp-price"><b>${acEsc(price.slice(0,cut))}</b> <small>${acEsc(price.slice(cut+1))}</small></span>`:''}`
+    + `<button type="button" class="xp-btn" data-id="${id}" aria-pressed="${on}">${on?'✓ Requested':'Request'}</button></div>`
     + `<div class="xp-panel" id="${panelId}" hidden>${details.map(t=>`<p>${acEsc(t)}</p>`).join('')}`
     + `<p class="xp-facts">${days?`Open: ${acEsc(days)}`:''}${days&&times.length?'<br>':''}${times.length?`Times: ${acEsc(times.join(' · '))}`:''}</p>`
     + (photos.length ? `<div class="xp-photos">${photos.map(p=>`<img src="${acEsc(p.small)}" srcset="${acEsc(p.small)} 900w, ${acEsc(p.large)} 1800w" sizes="(max-width:560px) 45vw, 200px" alt="${acEsc(it.name)}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : '')
@@ -1458,33 +1457,33 @@ function showExperiences(stops){
     .filter(s=>s.place && s.items.length);
   expUi.meta.clear();
   let html='', n=0;
-  usable.forEach(s=>{
-    html+=`<section class="xp-stop"><h3>While you’re in ${acEsc(s.place)}</h3>`;
+  usable.forEach((s,i)=>{
+    // The accent line and the one explanation line open the first stop only (owner: don't repeat yourself).
+    html+=`<section class="xp-stop">`
+      + (i===0 ? `<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>` : '')
+      + `<h3>While you’re in ${acEsc(s.place)}</h3>`
+      + (i===0 ? `<p class="xp-sub">Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.</p>` : '')
+      + `<div class="xp-list">`;
     s.items.forEach(it=>{
       if(!expUi.meta.has(it.id)) expUi.meta.set(it.id,{ name:it.name, partnerName:String(it.partnerName||''), slug:String(it.slug||''), place:s.place });
       html+=expCardHtml(it, s.place, n++);
     });
-    html+='</section>';
+    html+='</div></section>';
   });
   // A choice for something no longer offered (the drop-off changed) is not carried to the booking.
   [...state.experiences.keys()].forEach(id=>{ if(!expUi.meta.has(id)) state.experiences.delete(id); });
   if(!usable.length){ block.hidden=true; block.innerHTML=''; renderExperienceSummary(); return; }
-  block.innerHTML=
-    `<div class="xp-note"><b>Nothing to pay now.</b> Tap “I’m interested” and our Ceylon Hop Pro team will reach out to help you schedule it. You pay the same price as booking direct — never more.</div>`
-    + html;
+  block.innerHTML=html;
   block.hidden=false;
   renderExperienceSummary();
 }
 function renderExperienceSummary(){
-  const box=document.getElementById('sum-experiences'), list=document.getElementById('sum-experiences-list');
-  if(!box || !list) return;
-  list.textContent='';
-  state.experiences.forEach(v=>{
-    const li=document.createElement('li');
-    li.textContent=v.name+(v.partnerName?' ('+v.partnerName+')':'');
-    list.appendChild(li);
-  });
-  box.hidden = state.experiences.size===0;
+  const box=document.getElementById('sum-experiences'), count=document.getElementById('sum-experiences-count'), list=document.getElementById('sum-experiences-list');
+  if(!box || !count || !list) return;
+  const names=[...state.experiences.values()].map(v=>v.name);
+  count.textContent=names.length+' requested · no charge';
+  list.textContent=names.join(' · ');
+  box.hidden = names.length===0;
 }
 window.toggleExperience=function(btn){
   const id=btn && btn.dataset.id, meta=id && expUi.meta.get(id);
@@ -1492,10 +1491,10 @@ window.toggleExperience=function(btn){
   const interested=!state.experiences.has(id);
   if(interested) state.experiences.set(id,{ name:meta.name, partnerName:meta.partnerName });
   else state.experiences.delete(id);
-  const card=btn.closest('.xp-card');
+  const card=btn.closest('.xp-row');
   btn.setAttribute('aria-pressed',String(interested));
-  btn.textContent=interested ? '✓ Interested' : 'I’m interested';
-  if(card){ card.classList.toggle('on',interested); const after=card.querySelector('.xp-after'); if(after) after.hidden=!interested; }
+  btn.textContent=interested ? '✓ Requested' : 'Request';
+  if(card) card.classList.toggle('on',interested);
   renderExperienceSummary();
   if(typeof window.chTrack==='function') window.chTrack('experience_interest',{ experience_slug:meta.slug, place:meta.place, source:'booking_page', interested });
 };
@@ -3373,7 +3372,7 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
-  // The partner experiences they tapped "I'm interested" on - ids only (the API looks the names up
+  // The partner experiences they tapped "Request" on - ids only (the API looks the names up
   // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
   if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
