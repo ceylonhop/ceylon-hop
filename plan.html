@@ -22,7 +22,7 @@
      the API; `?api=off` keeps the baked prices, `?api=<origin>` points it elsewhere (the same
      contract as search.html / booking.html). The hold keeps [data-live-price] figures blank until
      that list lands; transfers-data.js lifts it, and the timer is only the backstop. -->
-<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
+<script>(function(){var p=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
