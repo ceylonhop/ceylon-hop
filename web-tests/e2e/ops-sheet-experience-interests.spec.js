@@ -102,3 +102,23 @@ test('values are escaped', async ({ page }) => {
   await expect(block(page).locator('img')).toHaveCount(0);
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
 });
+
+// D21: the schedule and the confirmation are read-only here; they are entered on the Leads tab.
+test('the sheet shows when and where, and that the confirmation went, read-only', async ({ page }) => {
+  const day = futureIsoDate(40);
+  await boot(page, ['bookings:operate', 'bookings:read'], [{
+    ...INTEREST, status: 'paid', paymentRef: 'PH-1', scheduledDate: day, scheduledTime: '09:30',
+    meetingPoint: 'Hotel <b>lobby</b>', confirmationSentAt: '2026-10-07T04:15:00.000Z',
+  }]);
+  await open(page, 'b1');
+  await expect(block(page).locator('[data-testid="sheet-interest-scheduled"]')).toHaveText(`${day} 09:30 · Hotel <b>lobby</b>`);
+  await expect(block(page).locator('[data-testid="sheet-interest-confirmed"]')).toHaveText('Confirmation sent ✓');
+  await expect(block(page).locator('input')).toHaveCount(0);
+});
+
+test('an unscheduled, unconfirmed interest shows neither line', async ({ page }) => {
+  await boot(page, ['bookings:operate', 'bookings:read'], [INTEREST]);
+  await open(page, 'b1');
+  await expect(block(page).locator('[data-testid="sheet-interest-scheduled"]')).toHaveCount(0);
+  await expect(block(page).locator('[data-testid="sheet-interest-confirmed"]')).toHaveCount(0);
+});

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -1021,6 +1021,11 @@ export const experienceInterests = pgTable('experience_interests', {
   amountPaidCents: integer('amount_paid_cents'),
   amountPaidCurrency: text('amount_paid_currency'),
   opsNote: text('ops_note'),
+  // D21: when and where, as the partner gave it (Sri Lanka wall clock, hence date + 'HH:MM', not an instant).
+  scheduledDate: date('scheduled_date', { mode: 'string' }),
+  scheduledTime: text('scheduled_time'),
+  meetingPoint: text('meeting_point'),
+  confirmationSentAt: timestamp('confirmation_sent_at', { withTimezone: true }),
   updatedBy: text('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

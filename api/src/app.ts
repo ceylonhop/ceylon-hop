@@ -667,7 +667,7 @@ export function createApp(deps: AppDeps = {}) {
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
-  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, auth: opsAuthCfg, allowedOrigins }));
+  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, rateRevisions, bookings, placeResolutions, experienceInterests,
     auth: opsAuthCfg,

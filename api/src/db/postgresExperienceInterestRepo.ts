@@ -17,7 +17,8 @@ function toInterest(r: Row): ExperienceInterest {
     priceUnitSnapshot: r.priceUnitSnapshot as ExperienceInterest['priceUnitSnapshot'],
     status: r.status as ExperienceInterest['status'], paymentRef: r.paymentRef, amountPaidCents: r.amountPaidCents,
     amountPaidCurrency: r.amountPaidCurrency as ExperienceInterest['amountPaidCurrency'], opsNote: r.opsNote,
-    updatedBy: r.updatedBy, createdAt: r.createdAt, updatedAt: r.updatedAt,
+    scheduledDate: r.scheduledDate, scheduledTime: r.scheduledTime, meetingPoint: r.meetingPoint,
+    confirmationSentAt: r.confirmationSentAt, updatedBy: r.updatedBy, createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }
 
@@ -74,13 +75,14 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
       id: string; experience_id: string; booking_id: string | null; quote_id: string | null; source: string;
       name_snapshot: string; price_cents_snapshot: number; price_unit_snapshot: string; status: string;
       payment_ref: string | null; amount_paid_cents: number | null; amount_paid_currency: string | null;
-      ops_note: string | null; updated_by: string | null; created_at: string | Date; updated_at: string | Date;
+      ops_note: string | null; scheduled_date_text: string | null; scheduled_time: string | null; meeting_point: string | null;
+      confirmation_sent_at: string | Date | null; updated_by: string | null; created_at: string | Date; updated_at: string | Date;
       area_label: string; experience_name: string;
       booking_ref: string | null; first_name: string | null; last_name: string | null; whatsapp: string | null;
       booking_travel_date: string | null;
       quote_ref: string | null; quote_customer: string | null; quote_contact: string | null; quote_request: unknown;
     }>(sql`
-      SELECT i.*, e.area_label, e.name AS experience_name,
+      SELECT i.*, i.scheduled_date::text AS scheduled_date_text, e.area_label, e.name AS experience_name,
              b.reference AS booking_ref, c.first_name, c.last_name, c.whatsapp,
              (SELECT min(l.travel_date) FROM booking_legs l WHERE l.booking_id = b.id) AS booking_travel_date,
              q.reference AS quote_ref, q.customer_name AS quote_customer, q.customer_contact AS quote_contact,
@@ -90,7 +92,8 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
       LEFT JOIN bookings b ON b.id = i.booking_id
       LEFT JOIN customers c ON c.id = b.customer_id
       LEFT JOIN quotes q ON q.id = i.quote_id
-      WHERE i.status IN (${sql.join(OPEN_STATUSES.map((s) => sql`${s}`), sql`, `)})
+      WHERE (i.status IN (${sql.join(OPEN_STATUSES.map((s) => sql`${s}`), sql`, `)})
+             OR (i.status = 'paid' AND i.confirmation_sent_at IS NULL))
         AND ( (i.booking_id IS NOT NULL AND b.status IN (${sql.join(PAID_BOOKING_STATUSES.map((s) => sql`${s}`), sql`, `)}))
            OR (i.booking_id IS NULL AND q.status IN (${sql.join(LIVE_QUOTE_STATUSES.map((s) => sql`${s}`), sql`, `)}) AND q.deleted_at IS NULL) )
       ORDER BY i.created_at DESC
@@ -105,6 +108,8 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
         priceUnitSnapshot: r.price_unit_snapshot as Lead['priceUnitSnapshot'], status: r.status as Lead['status'],
         paymentRef: r.payment_ref, amountPaidCents: r.amount_paid_cents,
         amountPaidCurrency: r.amount_paid_currency as Lead['amountPaidCurrency'], opsNote: r.ops_note,
+        scheduledDate: r.scheduled_date_text, scheduledTime: r.scheduled_time, meetingPoint: r.meeting_point,
+        confirmationSentAt: r.confirmation_sent_at ? new Date(r.confirmation_sent_at) : null,
         updatedBy: r.updated_by, createdAt: new Date(r.created_at), updatedAt: new Date(r.updated_at),
         areaLabel: r.area_label, experienceName: r.experience_name,
         ownerKind: isBooking ? 'booking' : 'quote',
@@ -146,7 +151,16 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
     if (p.paymentRef !== undefined) set.paymentRef = p.paymentRef;
     if (p.amountPaidCents !== undefined) set.amountPaidCents = p.amountPaidCents;
     if (p.amountPaidCurrency !== undefined) set.amountPaidCurrency = p.amountPaidCurrency;
+    if (p.scheduledDate !== undefined) set.scheduledDate = p.scheduledDate;
+    if (p.scheduledTime !== undefined) set.scheduledTime = p.scheduledTime;
+    if (p.meetingPoint !== undefined) set.meetingPoint = p.meetingPoint;
     const rows = await this.db.update(experienceInterests).set(set).where(eq(experienceInterests.id, id)).returning();
+    return rows[0] ? toInterest(rows[0]) : null;
+  }
+
+  // Not a patch: sending the email is not an edit, so it neither bumps updated_at nor changes updated_by.
+  async markConfirmationSent(id: string, at: Date): Promise<ExperienceInterest | null> {
+    const rows = await this.db.update(experienceInterests).set({ confirmationSentAt: at }).where(eq(experienceInterests.id, id)).returning();
     return rows[0] ? toInterest(rows[0]) : null;
   }
 }

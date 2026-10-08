@@ -340,6 +340,7 @@ export function opsRoutes(deps: OpsDeps) {
       id: i.id, experienceName: e?.name ?? i.nameSnapshot, areaLabel: e?.areaLabel ?? '', nameSnapshot: i.nameSnapshot,
       priceCentsSnapshot: i.priceCentsSnapshot, priceUnitSnapshot: i.priceUnitSnapshot, status: i.status,
       paymentRef: i.paymentRef, amountPaidCents: i.amountPaidCents, amountPaidCurrency: i.amountPaidCurrency, opsNote: i.opsNote,
+      scheduledDate: i.scheduledDate, scheduledTime: i.scheduledTime, meetingPoint: i.meetingPoint, confirmationSentAt: i.confirmationSentAt,
     }));
     return c.json({ booking: b, ops, payments, payLink, coverage, checkoutEvents, experienceInterests });
   });

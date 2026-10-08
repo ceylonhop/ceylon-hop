@@ -30,6 +30,12 @@ export interface ExperienceInterest {
   amountPaidCents: number | null;
   amountPaidCurrency: 'USD' | 'LKR' | null;
   opsNote: string | null;
+  /** D21: when and where, as the partner gave it. YYYY-MM-DD and 'HH:MM', Sri Lanka local time. */
+  scheduledDate: string | null;
+  scheduledTime: string | null;
+  meetingPoint: string | null;
+  /** When ops last sent the customer the confirmation email; null = never. */
+  confirmationSentAt: Date | null;
   updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -52,6 +58,9 @@ export interface InterestPatch {
   paymentRef?: string | null;
   amountPaidCents?: number | null;
   amountPaidCurrency?: 'USD' | 'LKR' | null;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+  meetingPoint?: string | null;
   updatedBy: string;
 }
 
@@ -73,12 +82,15 @@ export interface ExperienceInterestRepo {
   linkQuoteToBooking(quoteId: string, bookingId: string): Promise<number>;
   listForBooking(bookingId: string): Promise<ExperienceInterest[]>;
   listForQuote(quoteId: string): Promise<ExperienceInterest[]>;
-  /** Open leads on real bookings and live quotes, newest first. ONE query (spec D15). */
+  /** Open leads on real bookings and live quotes, newest first. ONE query (spec D15). A paid lead stays
+   *  until its confirmation email has been sent (D21): it still has a date, a time and an email to do. */
   listLeads(limit: number): Promise<Lead[]>;
   /** Per experience, counting only real leads: the owner filter of listLeads, across all statuses. */
   stats(): Promise<ExperienceStats[]>;
   /** null for an unknown id. 'paid' without a payment reference rejects. */
   patch(id: string, p: InterestPatch): Promise<ExperienceInterest | null>;
+  /** Stamps confirmation_sent_at (D21) and nothing else; null for an unknown id. */
+  markConfirmationSent(id: string, at: Date): Promise<ExperienceInterest | null>;
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -113,7 +125,8 @@ export class InMemoryExperienceInterestRepo implements ExperienceInterestRepo {
       id: randomUUID(), experienceId: i.experience.id, bookingId: i.bookingId ?? null, quoteId: i.quoteId ?? null,
       source: i.source, nameSnapshot: i.experience.name, priceCentsSnapshot: i.experience.priceCents,
       priceUnitSnapshot: i.experience.priceUnit, status: 'new', paymentRef: null, amountPaidCents: null,
-      amountPaidCurrency: null, opsNote: null, updatedBy: null, createdAt: now, updatedAt: now,
+      amountPaidCurrency: null, opsNote: null, scheduledDate: null, scheduledTime: null, meetingPoint: null,
+      confirmationSentAt: null, updatedBy: null, createdAt: now, updatedAt: now,
     };
     this.rows.set(row.id, row);
     return { ...row };
@@ -159,7 +172,7 @@ export class InMemoryExperienceInterestRepo implements ExperienceInterestRepo {
     const { bookings, quotes, experiences } = this.deps;
     const out: Lead[] = [];
     // Newest first; reversing insertion order first makes a same-millisecond tie fall newest-first too.
-    const open = [...this.rows.values()].reverse().filter((r) => OPEN_STATUSES.includes(r.status))
+    const open = [...this.rows.values()].reverse().filter((r) => OPEN_STATUSES.includes(r.status) || (r.status === 'paid' && !r.confirmationSentAt))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     for (const r of open) {
       const exp = await experiences?.get(r.experienceId);
@@ -217,11 +230,21 @@ export class InMemoryExperienceInterestRepo implements ExperienceInterestRepo {
     if (p.paymentRef !== undefined) next.paymentRef = p.paymentRef;
     if (p.amountPaidCents !== undefined) next.amountPaidCents = p.amountPaidCents;
     if (p.amountPaidCurrency !== undefined) next.amountPaidCurrency = p.amountPaidCurrency;
+    if (p.scheduledDate !== undefined) next.scheduledDate = p.scheduledDate;
+    if (p.scheduledTime !== undefined) next.scheduledTime = p.scheduledTime;
+    if (p.meetingPoint !== undefined) next.meetingPoint = p.meetingPoint;
     // Mirrors the experience_interests_paid_has_ref CHECK.
     if (next.status === 'paid' && next.paymentRef == null) throw new Error('paid_requires_ref');
     next.updatedBy = p.updatedBy;
     next.updatedAt = new Date(Math.max(Date.now(), r.updatedAt.getTime() + 1));
     this.rows.set(id, next);
     return { ...next };
+  }
+
+  async markConfirmationSent(id: string, at: Date): Promise<ExperienceInterest | null> {
+    const r = this.rows.get(id);
+    if (!r) return null;
+    r.confirmationSentAt = at;
+    return { ...r };
   }
 }

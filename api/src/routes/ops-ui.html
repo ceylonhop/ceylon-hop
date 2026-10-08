@@ -956,6 +956,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-lead-row .ch-lead-note { flex: 1 1 100%; width: auto; }
 .qv .ch-lead-row .ch-lead-ref { background: none; border: none; padding: 0; color: var(--teal-deep, var(--teal)); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .qv .ch-lead-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qv .ch-lead-sched { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 100%; }
+.qv .ch-lead-sched .ch-meet { flex: 1 1 200px; width: auto; }
+.qv .ch-lead-sent { font-size: 12px; color: var(--muted); }
 .qv .ch-exp-tabs { max-width: 280px; }
 @media (max-width: 580px) { .qv .ch-exp-grid { grid-template-columns: 1fr; } }
 .qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
@@ -4062,7 +4065,10 @@ function renderSheet(){
       :esc(INTEREST_STATUS[i.status]||i.status);
     const paid=i.paymentRef?`<div class="kv"><span class="k">PayHere ref</span><span class="v">${esc(i.paymentRef)}${i.amountPaidCents!=null?' · '+esc(i.amountPaidCurrency||'')+' '+(i.amountPaidCents/100).toFixed(2):''}</span></div>`:'';
     const note=i.opsNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(i.opsNote)}</span></div>`:'';
-    return `<div class="kv"><span class="k">${esc(i.experienceName)}</span><span class="v">${esc(i.areaLabel)} · ${esc(price)} · ${status}</span></div>${paid}${note}`;
+    /* D21: read-only here — the schedule is entered, and the confirmation sent, from the Experiences page's Leads tab. */
+    const when=i.scheduledDate?`<div class="kv"><span class="k">Scheduled</span><span class="v" data-testid="sheet-interest-scheduled">${esc([i.scheduledDate,i.scheduledTime].filter(Boolean).join(' '))}${i.meetingPoint?' · '+esc(i.meetingPoint):''}</span></div>`:'';
+    const sent=i.confirmationSentAt?`<div class="kv"><span class="k">Confirmation</span><span class="v" data-testid="sheet-interest-confirmed">Confirmation sent ✓</span></div>`:'';
+    return `<div class="kv"><span class="k">${esc(i.experienceName)}</span><span class="v">${esc(i.areaLabel)} · ${esc(price)} · ${status}</span></div>${paid}${when}${sent}${note}`;
   }).join('');
   const interestBlock=ints.length?`<div class="block" data-testid="sheet-interests"><h4>Interested in</h4>${intRows}</div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
@@ -8860,6 +8866,16 @@ async function loadExpLeads() {
   renderExperiencesPage();
 }
 
+// "7 Oct 09:45", Sri Lanka time (where ops sit): when the confirmation email went.
+function expStamp(iso) {
+  var d = new Date(iso);
+  if (!iso || isNaN(d.getTime())) return '';
+  var p = {};
+  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Colombo' })
+    .formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+  return p.day + ' ' + p.month + ' ' + p.hour + ':' + p.minute;
+}
+
 function renderLeadRow(l) {
   var showPay = l.status === 'link_sent' || l.status === 'paid' || !!expLeadPayOpen[l.id];
   var opts = EXP_LEAD_STATUSES.map(function (o) {
@@ -8875,6 +8891,18 @@ function renderLeadRow(l) {
       + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadSavePay" data-id="' + esc(l.id) + '">Save payment</button>'
       + '</div>';
   }
+  // D21: a paid lead gets the schedule the customer is told about, and the button that tells them.
+  var sched = '';
+  if (l.status === 'paid') {
+    var did = ' data-id="' + esc(l.id) + '"';
+    sched = '<div class="ch-lead-sched" data-testid="lead-schedule">'
+      + '<input type="date" class="ch-input" style="width:auto" data-lead-field="scheduledDate"' + did + ' aria-label="Experience date" value="' + esc(l.scheduledDate || '') + '">'
+      + '<input type="time" class="ch-input" style="width:auto" data-lead-field="scheduledTime"' + did + ' aria-label="Experience time" value="' + esc(l.scheduledTime || '') + '">'
+      + '<div class="ch-input-wrap ch-meet"><input class="ch-input" data-lead-field="meetingPoint"' + did + ' autocomplete="off" maxlength="200" placeholder="Meeting point" aria-label="Meeting point" value="' + esc(l.meetingPoint || '') + '"></div>'
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadConfirm" data-id="' + esc(l.id) + '">' + (l.confirmationSentAt ? 'Resend' : 'Send confirmation') + '</button>'
+      + (l.confirmationSentAt ? '<span class="ch-lead-sent" data-testid="lead-confirmation-sent">Confirmation sent ✓ ' + esc(expStamp(l.confirmationSentAt)) + '</span>' : '')
+      + '</div>';
+  }
   var who = [l.customerName || 'Unnamed', l.contact].filter(Boolean).map(esc).join(' · ');
   var meta = [expDay(l.createdAt, 'Asia/Colombo'), l.travelDate ? 'travels ' + expDay(l.travelDate) : '', l.areaLabel, l.experienceName,
     expPrice({ priceCents: l.priceCentsSnapshot, priceUnit: l.priceUnitSnapshot })].filter(Boolean).map(esc).join(' · ');
@@ -8883,6 +8911,7 @@ function renderLeadRow(l) {
     + '<div class="ch-exp-meta">' + meta + '</div></div>'
     + '<select class="ch-input" data-action="expLeadStatus" data-id="' + esc(l.id) + '" aria-label="Status" style="width:auto">' + opts + '</select>'
     + pay
+    + sched
     + '<div class="ch-input-wrap ch-lead-note"><input class="ch-input" data-lead-field="opsNote" data-id="' + esc(l.id) + '" autocomplete="off" maxlength="1000" placeholder="Note" aria-label="Note" value="' + esc(l.opsNote || '') + '"></div>'
     + '</div>';
 }
@@ -8893,7 +8922,7 @@ function renderLeadsTab() {
   else if (!expLeads) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading leads…</div>';
   else if (!expLeads.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No open leads yet.</div>';
   else body = expLeads.map(renderLeadRow).join('');
-  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is paid or declined.</div>' + body;
+  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is declined, or once it is paid and its confirmation email has been sent.</div>' + body;
 }
 
 // The payment inputs' fields that differ from what the lead holds → { fields } or { error }.
@@ -8981,6 +9010,61 @@ async function expLeadNoteChange(input) {
   var v = input.value.trim() || null;
   if (v === (l.opsNote || null)) return;
   if (!(await expLeadPatch(l, { opsNote: v }))) input.value = l.opsNote || '';
+  renderExperiencesPage();
+}
+
+// A schedule field (date, time, meeting point) saves on change, on its own: a later edit waits for any
+// save already in flight (expLeadIdle) instead of being dropped. No repaint on success — the field already
+// shows what was typed, and a repaint mid-typing would take focus away from the next field.
+async function expLeadScheduleChange(input) {
+  var id = input.getAttribute('data-id');
+  var key = input.getAttribute('data-lead-field');
+  var v = input.value.trim() || null;
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l || v === (l[key] || null)) return;
+  var body = {};
+  body[key] = v;
+  if (!(await expLeadPatch(l, body))) { input.value = l[key] || ''; }
+}
+
+// Send (or resend) the confirmation email. The three fields are read from the row NOW, before any
+// await, because a repaint from an earlier save would replace them. Anything that differs from what the
+// lead holds is saved first, then the email is sent — so the email always says what is on screen.
+async function expLeadConfirm(btn) {
+  var id = btn.getAttribute('data-id');
+  var row = btn.closest('.ch-lead-row');
+  var read = function (k) { return (row.querySelector('[data-lead-field="' + k + '"]').value || '').trim() || null; };
+  var want = { scheduledDate: read('scheduledDate'), scheduledTime: read('scheduledTime'), meetingPoint: read('meetingPoint') };
+  if (!want.scheduledDate || !want.scheduledTime) { ratesToast('Add the date and time first', 'error'); return; }
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l || expLeadBusy[l.id]) return;
+  var diff = {};
+  Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
+  if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) { renderExperiencesPage(); return; }
+  var seq = _expSeq;
+  expLeadBusy[l.id] = true;
+  var settle, pending = new Promise(function (res) { settle = res; });
+  expLeadPending[l.id] = pending;
+  try {
+    var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (seq !== _expSeq) return;
+    var d = await jsonOrNull(r);
+    if (seq !== _expSeq) return;
+    if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); ratesToast('Confirmation sent'); }
+    else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
+    else if (d && d.error === 'no_email') ratesToast('No email on file — confirm on WhatsApp', 'error');
+    else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
+  } catch (e) {
+    if (seq !== _expSeq) return;
+    window.opsReportError && window.opsReportError('experience confirmation send', e);
+    ratesToast('Couldn’t send — try again.', 'error');
+  } finally {
+    if (seq === _expSeq) delete expLeadBusy[l.id];
+    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
+    settle();
+  }
   renderExperiencesPage();
 }
 
@@ -9230,6 +9314,7 @@ document.addEventListener('click', function (e) {
   else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
   else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
   else if (action === 'expLeadSavePay') expLeadSavePay(el);
+  else if (action === 'expLeadConfirm') expLeadConfirm(el);
 });
 
 // A lead's status <select> and note <input> save on change (the note: on blur, when it differs).
@@ -9238,6 +9323,7 @@ document.addEventListener('change', function (e) {
   if (!expEl || !t || !expEl.contains(t)) return;
   if (t.getAttribute('data-action') === 'expLeadStatus') expLeadStatusChange(t);
   else if (t.getAttribute('data-lead-field') === 'opsNote') expLeadNoteChange(t);
+  else if (/^(scheduledDate|scheduledTime|meetingPoint)$/.test(t.getAttribute('data-lead-field') || '')) expLeadScheduleChange(t);
 });
 
 // Typing in the location box or a photo box refreshes its check line / preview, and clears any

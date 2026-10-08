@@ -30,10 +30,10 @@ const STATS = [{ experienceId: EXPERIENCES[0].id, interested: 3, paid: 1, paidCe
 const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 // Boots the shell with `caps` and a mutable stub catalogue. `calls` records every write.
-async function boot(page, caps, { list, post, patch, leads, patchLead } = {}) {
+async function boot(page, caps, { list, post, patch, leads, patchLead, confirmLead } = {}) {
   const db = EXPERIENCES.map((e) => ({ ...e }));
   const leadDb = (leads || []).map((l) => ({ ...l }));
-  const calls = { get: 0, post: [], patch: [], leadsGet: 0, leadPatch: [] };
+  const calls = { get: 0, post: [], patch: [], leadsGet: 0, leadPatch: [], confirm: [] };
   await page.addInitScript(() => {
     window.google = {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
@@ -83,6 +83,15 @@ async function boot(page, caps, { list, post, patch, leads, patchLead } = {}) {
     if (patchLead) return patchLead(r, body);
     const l = leadDb.find((x) => x.id === id);
     Object.assign(l, body);
+    return r.fulfill(json({ lead: l }));
+  });
+  // D21: the confirmation email. Two segments after /leads/, so the single-star route above never sees it.
+  await page.route('**/admin/experiences/leads/*/confirmation', async (r) => {
+    const id = r.request().url().split('/').slice(-2)[0];
+    calls.confirm.push({ id });
+    if (confirmLead) return confirmLead(r, id);
+    const l = leadDb.find((x) => x.id === id);
+    l.confirmationSentAt = '2026-10-07T04:15:00.000Z';
     return r.fulfill(json({ lead: l }));
   });
   return calls;
@@ -503,4 +512,110 @@ test('the reference opens the booking sheet; a quote reference opens the quote',
   await page.waitForSelector('.sheet-b:not(.skel)', { timeout: 10000 });
   await expect(page.locator('.sheet-b')).toContainText('m@example.com');
   expect(new URL(page.url()).searchParams.get('booking')).toBe('b1');
+});
+
+// ── Confirmation email (spec D21) ────────────────────────────────────────────
+const PAID = lead({ status: 'paid', paymentRef: 'PH-1', amountPaidCents: 3500, amountPaidCurrency: 'USD' });
+const PAID_QUOTE = lead({
+  id: 'aaaaaaaa-0000-4000-8000-000000000003', bookingId: null, quoteId: 'q9', ownerKind: 'quote', reference: 'Q-0009', customerName: 'Luca Rossi',
+  contact: '+39 333 000 0000', status: 'paid', paymentRef: 'PH-2',
+});
+async function openPaid(page, leads, opts) {
+  const calls = await openLeads(page, OPS, { leads, ...opts });
+  await expect(leadRows(page)).toHaveCount(leads.length);
+  return calls;
+}
+
+test('a paid lead shows the schedule inputs and Send confirmation; an open lead does not', async ({ page }) => {
+  await openPaid(page, [PAID, lead({ id: 'aaaaaaaa-0000-4000-8000-000000000009', status: 'contacted' })]);
+  const paid = leadRows(page).nth(0);
+  await expect(paid.locator('[data-lead-field="scheduledDate"]')).toHaveAttribute('type', 'date');
+  await expect(paid.locator('[data-lead-field="scheduledTime"]')).toHaveAttribute('type', 'time');
+  await expect(paid.locator('[data-lead-field="meetingPoint"]')).toBeVisible();
+  await expect(paid.locator('[data-action="expLeadConfirm"]')).toHaveText('Send confirmation');
+  await expect(leadRows(page).nth(1).locator('[data-lead-field="scheduledDate"]')).toHaveCount(0);
+  await expect(leadRows(page).nth(1).locator('[data-action="expLeadConfirm"]')).toHaveCount(0);
+});
+
+test('Send confirmation without a date and time says so and sends nothing', async ({ page }) => {
+  const calls = await openPaid(page, [PAID]);
+  await leadRows(page).nth(0).locator('[data-action="expLeadConfirm"]').click();
+  await expect(page.locator('#toast')).toContainText('Add the date and time first');
+  expect(calls.confirm).toEqual([]);
+  expect(calls.leadPatch).toEqual([]);
+  // a date alone is not enough either
+  await leadRows(page).nth(0).locator('[data-lead-field="scheduledDate"]').fill(futureIsoDate(20));
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await leadRows(page).nth(0).locator('[data-action="expLeadConfirm"]').click();
+  expect(calls.confirm).toEqual([]);
+});
+
+test('with a date and time, Send confirmation saves the schedule, sends, then shows Sent and Resend', async ({ page }) => {
+  const day = futureIsoDate(20);
+  const calls = await openPaid(page, [PAID]);
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-lead-field="scheduledDate"]').fill(day);
+  await row.locator('[data-lead-field="scheduledTime"]').fill('09:30');
+  await row.locator('[data-lead-field="meetingPoint"]').fill('Hotel lobby');
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  expect(calls.confirm[0].id).toBe(PAID.id);
+  // every field reached the server before the email went
+  const saved = Object.assign({}, ...calls.leadPatch.map((c) => c.body));
+  expect(saved).toEqual({ scheduledDate: day, scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmation sent ✓');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Oct');
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toHaveText('Resend');
+  await expect(row.locator('[data-lead-field="scheduledTime"]')).toHaveValue('09:30');
+  // Resend is the same call
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(2);
+});
+
+test('a quote lead with no email on file says to confirm on WhatsApp, and stays unsent', async ({ page }) => {
+  const calls = await openPaid(page, [{ ...PAID_QUOTE, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: (r) => r.fulfill(json({ error: 'no_email' }, 422)),
+  });
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  await expect(page.locator('#toast')).toContainText('No email on file — confirm on WhatsApp');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toHaveCount(0);
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toHaveText('Send confirmation');
+});
+
+test('a failed send says so and can be tried again', async ({ page }) => {
+  const calls = await openPaid(page, [{ ...PAID, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: (r) => r.fulfill(json({ error: 'send_failed' }, 502)),
+  });
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect(page.locator('#toast')).toContainText('Couldn’t send — try again.');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toHaveCount(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(2);
+});
+
+// The same in-flight idiom as the note: a schedule typed while the date save is still on the wire is
+// saved after it, not dropped.
+test('a meeting point typed while the date save is in flight is saved after it, not dropped', async ({ page }) => {
+  let n = 0;
+  let release;
+  const held = new Promise((res) => { release = res; });
+  const calls = await openPaid(page, [PAID], {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      return r.fulfill(json({ lead: { ...PAID, ...body } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-lead-field="scheduledDate"]').fill(futureIsoDate(20));
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  const meet = row.locator('[data-lead-field="meetingPoint"]');
+  await meet.fill('Hotel lobby');
+  await meet.blur(); // the date PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ meetingPoint: 'Hotel lobby' });
 });

@@ -157,6 +157,35 @@ function contract(name: string, make: () => Promise<Env>) {
       expect(await env.interests.patch('00000000-0000-4000-8000-000000000000', { status: 'contacted', updatedBy: 'x' })).toBeNull();
     });
 
+    it('a new interest has no schedule and no confirmation sent', async () => {
+      const i = await record(await experience(), { bookingId: (await booking('paid')).id });
+      expect(i).toMatchObject({ scheduledDate: null, scheduledTime: null, meetingPoint: null, confirmationSentAt: null });
+    });
+
+    it('patch stores the schedule; omitted fields are kept and null clears one (D21)', async () => {
+      const i = await record(await experience(), { bookingId: (await booking('paid')).id });
+      const a = await env.interests.patch(i.id, { scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby', updatedBy: 'o@x.com' });
+      expect(a).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+      const b = await env.interests.patch(i.id, { opsNote: 'n', updatedBy: 'o@x.com' });
+      expect(b).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+      const c = await env.interests.patch(i.id, { meetingPoint: null, updatedBy: 'o@x.com' });
+      expect(c).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: null });
+      expect((await env.interests.get(i.id))!.scheduledDate).toBe('2026-11-21');
+    });
+
+    it('markConfirmationSent stamps the time, leaves the rest, and is null for an unknown id (D21)', async () => {
+      const i = await record(await experience(), { bookingId: (await booking('paid')).id });
+      await env.interests.patch(i.id, { scheduledDate: '2026-11-21', scheduledTime: '09:30', updatedBy: 'o@x.com' });
+      const at = new Date('2026-10-07T04:15:00.000Z');
+      const done = await env.interests.markConfirmationSent(i.id, at);
+      expect(done!.confirmationSentAt!.toISOString()).toBe(at.toISOString());
+      expect(done).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', status: 'new' });
+      expect((await env.interests.get(i.id))!.confirmationSentAt!.toISOString()).toBe(at.toISOString());
+      const again = new Date('2026-10-08T04:15:00.000Z');
+      expect((await env.interests.markConfirmationSent(i.id, again))!.confirmationSentAt!.toISOString()).toBe(again.toISOString());
+      expect(await env.interests.markConfirmationSent('00000000-0000-4000-8000-000000000000', at)).toBeNull();
+    });
+
     describe('listLeads (spec D15)', () => {
       it('includes interests on paid / completed bookings and on ready / sent quotes', async () => {
         const e = await experience({ name: 'Jeep safari', areaLabel: 'Sigiriya' });
@@ -178,16 +207,33 @@ function contract(name: string, make: () => Promise<Env>) {
         const deletedQuote = await quote('sent');
         const deleted = await record(e, { quoteId: deletedQuote.id });
         await env.quotes.softDelete(deletedQuote.id, 'f@x.com');
-        const paidLead = await record(e, { bookingId: (await booking('paid')).id });
-        await env.interests.patch(paidLead.id, { status: 'paid', paymentRef: 'PH-1', updatedBy: 'o@x.com' });
         const declinedLead = await record(e, { bookingId: (await booking('paid')).id });
         await env.interests.patch(declinedLead.id, { status: 'declined', updatedBy: 'o@x.com' });
         const open = await record(e, { bookingId: (await booking('paid')).id });
         await env.interests.patch(open.id, { status: 'link_sent', updatedBy: 'o@x.com' });
 
         const ids = (await env.interests.listLeads(500)).map((l) => l.id);
-        for (const i of [draft, cancelled, lost, draftQuote, deleted, paidLead, declinedLead]) expect(ids).not.toContain(i.id);
+        for (const i of [draft, cancelled, lost, draftQuote, deleted, declinedLead]) expect(ids).not.toContain(i.id);
         expect(ids).toContain(open.id);
+      });
+
+      // D21: a paid lead still has work (date, time, the confirmation email), so it stays until the
+      // confirmation has gone; a paid lead that was already confirmed (or is declined) leaves.
+      it('keeps a paid lead until its confirmation email is sent, then drops it', async () => {
+        const e = await experience();
+        const paidLead = await record(e, { bookingId: (await booking('paid')).id });
+        await env.interests.patch(paidLead.id, { status: 'paid', paymentRef: 'PH-1', updatedBy: 'o@x.com' });
+        expect((await env.interests.listLeads(500)).map((l) => l.id)).toContain(paidLead.id);
+        await env.interests.markConfirmationSent(paidLead.id, new Date());
+        expect((await env.interests.listLeads(500)).map((l) => l.id)).not.toContain(paidLead.id);
+      });
+
+      it('carries the schedule and the confirmation time on a lead', async () => {
+        const e = await experience();
+        const i = await record(e, { bookingId: (await booking('paid')).id });
+        await env.interests.patch(i.id, { status: 'paid', paymentRef: 'PH-9', scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby', updatedBy: 'o@x.com' });
+        const lead = (await env.interests.listLeads(500)).find((l) => l.id === i.id)!;
+        expect(lead).toMatchObject({ scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby', confirmationSentAt: null });
       });
 
       it('carries reference, customer, contact, travel date, area and experience name — booking and quote', async () => {

@@ -45,7 +45,19 @@ describe('GET /admin/ops/bookings/:id — experienceInterests', () => {
       id: i.id, experienceName: 'Ayurvedic massage', areaLabel: 'Sigiriya', nameSnapshot: 'Ayurvedic massage',
       priceCentsSnapshot: 3500, priceUnitSnapshot: 'per_person', status: 'new', paymentRef: null,
       amountPaidCents: null, amountPaidCurrency: null, opsNote: null,
+      scheduledDate: null, scheduledTime: null, meetingPoint: null, confirmationSentAt: null,
     }]);
+  });
+
+  it('carries the schedule and when the confirmation went (D21)', async () => {
+    const { b, e, interests, get } = await setup();
+    const i = await interests.record({ experience: e, source: 'booking_page', bookingId: b.id });
+    await interests.patch(i.id, { status: 'paid', paymentRef: 'PH-1', scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby', updatedBy: 'o@x.com' });
+    await interests.markConfirmationSent(i.id, new Date('2026-10-07T04:15:00.000Z'));
+    const { experienceInterests } = await (await get()).json();
+    expect(experienceInterests[0]).toMatchObject({
+      scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby', confirmationSentAt: '2026-10-07T04:15:00.000Z',
+    });
   });
 
   it('never fails the sheet when the lookup throws', async () => {

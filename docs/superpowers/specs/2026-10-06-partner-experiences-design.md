@@ -306,6 +306,36 @@ must not show for any other location.
 - Before real launch: switch the placeholders off on staging (or leave them — staging only); prod gets real
   experiences entered by ops (launch checklist).
 
+### D21 — Experience confirmation email, with when and where (owner, 2026-10-07)
+When ops has taken payment for an experience, the customer gets a confirmation email from us.
+- **Migration 0067** adds to `experience_interests`: `scheduled_date` (date), `scheduled_time` (text `HH:MM`,
+  Sri Lanka local time; CHECK `^([01][0-9]|2[0-3]):[0-5][0-9]$`), `meeting_point` (≤ 200), `confirmation_sent_at`
+  (timestamptz). All nullable, no defaults — nothing existing is rewritten. (Numbered 0067 because 0066 is
+  `deposit_payments`, PR #940, which releases first; this migration's `when` is later than 0066's so drizzle
+  never skips it. If this merges before #940, re-stamp 0067's `when` or 0066 is skipped.)
+  **Why date + local time, not a timestamptz:** the experience happens in Sri Lanka at a wall-clock time the
+  partner gave us; storing it as an instant invites a timezone shift between ops, the email and the customer.
+- **Ops (Leads tab, and the booking sheet's Interested-in block):** when a lead is **Paid**, ops fills date, time
+  and meeting point and presses **Send confirmation**. After sending: "Confirmation sent ✓ {d MMM HH:mm}" and a
+  **Resend** button. `POST /admin/experiences/leads/:id/confirmation` (csrf + `bookings:operate`) refuses unless
+  the lead is `paid` (409 `not_paid`), has a date and time (400 `schedule_required`), and the customer has an
+  email address (422 `no_email`); a send that fails is 502 `send_failed` and leaves `confirmation_sent_at` as it
+  was. The booking sheet shows the schedule and "Confirmation sent ✓" read-only.
+- **A paid lead stays on the Leads tab until its confirmation has been sent** (implementation note): D15 had a
+  lead leave the list once paid, but a paid lead still has a date, a time and an email to do, and ops usually has
+  the date from the partner later than the payment. Once the confirmation is sent it leaves on the next load
+  (the row stays on screen for the session, so Resend works straight after sending).
+- **Recipient:** the booking's customer email. A quote-only lead uses `quotes.customer_contact` only when it is an
+  email address; otherwise the button says "No email on file — confirm on WhatsApp" and sends nothing.
+- **Email** (existing email adapter + brand template, `emailBrand.test.ts` rules): subject
+  "Confirmed: {experience} on {Sat 21 Nov}". Body: experience and partner, date and time, meeting point (if any),
+  amount paid and PayHere reference (if recorded), "Free cancellation up to 24 hours before the experience date.",
+  WhatsApp contact, and the booking/quote reference. Text and HTML versions; a dev preview at
+  `/dev/emails/experience-confirmed`. Not recorded in the customer-communication ledger (it is keyed on a booking
+  and a quote-only lead has none).
+- **Sent only when ops presses the button** — never automatically on status change. **Why:** the date and time
+  come from a WhatsApp conversation with the partner; ops is the one who knows they're final.
+
 ## 4. Release & risk
 - **Migration 0065** (two new tables; nothing existing altered) auto-applies on staging at merge and on
   prod at the `main → production` promote (CLAUDE.md rule 7) — needs the owner's OK on that promote.
