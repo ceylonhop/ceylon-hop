@@ -28,6 +28,7 @@ import {
   policyForCorridor,
   committedSeats,
   isSeedMember,
+  paysByLink,
   type RideList,
   type RideMember,
 } from '../domain/rideList';
@@ -54,6 +55,9 @@ interface PublicMember {
   seats: number;
   isStarter: boolean;
   isYou: boolean;
+  // Only ever on the viewer's own row: they started this ride with no card, so the page says
+  // "we'll send you a payment link" rather than "your card is approved".
+  paysByLink?: true;
 }
 
 interface PublicList {
@@ -104,6 +108,7 @@ export function projectList({ list, members }: RideListWithMembers, viewerSub?: 
         seats: m.seats,
         isStarter: m.position === 1,
         isYou: viewerSub != null && m.sub === viewerSub,
+        ...(viewerSub != null && m.sub === viewerSub && paysByLink(list, m) ? { paysByLink: true as const } : {}),
       })),
   };
 }
@@ -191,6 +196,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
         firstName: member.firstName,
         list,
         seats: member.seats,
+        payLater: paysByLink(list, member),
         // The hash route board.js already uses to open one ride's detail — where the
         // "Scratch my name off" button lives.
         rideUrl: `${deps.boardBaseUrl ?? 'http://localhost:4173'}/board.html#/${list.code}`,
@@ -570,10 +576,13 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       note: input.note ?? null,
       cutoffAt: closesAt,
       createdBy: cust.sub,
-      initialStatus: 'pending_payment',
     });
-    const orderId = `RBPA-${randomUUID()}`;
-    const pending = await deps.rideLists.beginMemberPreapproval(list.id, {
+    // No card to start a ride (owner, 2026-10-07). Every start abandoned in the attempt log died
+    // on the PayHere page, and the ride it would have made stayed hidden where nobody could join
+    // it. The starter holds seat #1 with no card token; if the van runs, the cutoff sweep leaves
+    // their fare to ops, who send a payment link (domain/rideList.ts paysByLink). Joiners still
+    // approve a card.
+    const member = await deps.rideLists.addMember(list.id, {
       sub: cust.sub,
       firstName: firstNameOf(cust.name),
       country: cust.country,
@@ -582,43 +591,21 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       phone: input.payment.phone,
       preferredTime: input.preferredTime ?? null,
       seats: input.seats ?? 1,
-    }, orderId, new Date(Date.now() + PREAPPROVAL_TTL_MS));
-    if (!pending) return c.json({ error: 'full' }, 409);
-    let preapproval;
-    try {
-      preapproval = await deps.paygw.preapprove({
-        customerRef: cust.sub,
-        orderId,
-        items: `Ceylon Hop shared ride ${fromPlace} to ${toPlace}`,
-        currency: deps.currency ?? 'USD',
-        returnUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}`,
-        cancelUrl: `${returnBase(c)}/board.html?ridePayment=${encodeURIComponent(orderId)}&cancelled=1`,
-        customer: {
-          firstName: firstNameOf(cust.name), lastName: lastNameOf(cust.name), email: cust.email,
-          phone: input.payment?.phone, address: input.payment?.address, city: input.payment?.city,
-          country: countryName(cust.country),
-        },
-      });
-    } catch (error) {
-      await deps.rideLists.failMemberPreapproval(orderId);
-      if ((error as Error).message === 'payment_details_required') {
-        return c.json({ error: 'payment_details_required' }, 400);
-      }
-      throw error;
-    }
+    });
+    if (!member) return c.json({ error: 'full' }, 409);
     const startEvent: RideBoardEventInput = {
       action: 'start', outcome: 'succeeded', listCode: list.code, corridorId: list.corridorId,
       fromPlace, toPlace, rideDate: list.date, slot: list.slot, seats: input.seats ?? 1,
-      customerSub: cust.sub, country: cust.country, orderId,
+      customerSub: cust.sub, country: cust.country, orderId: null,
     };
-    if (preapproval.status === 'requires_action') {
-      track({ ...startEvent, outcome: 'payment_started', httpStatus: 202 });
-      return c.json({ status: 'payment_required', payment: preapproval.checkout }, 202);
-    }
-    await deps.rideLists.approveMemberPreapproval(orderId, preapproval.ref);
     track({ ...startEvent, httpStatus: 201 });
     // Starting a list auto-joins you as name #1 — the same commitment, so the same receipt.
-    await sendJoinReceipt(orderId);
+    // Best-effort, like every other receipt: the ride is already up.
+    try {
+      await mailJoinReceipt(list, member, 'started');
+    } catch {
+      // swallowed: see sendJoinReceipt
+    }
     const fresh = await deps.rideLists.getByCode(list.code);
     logEvent('ride_board.list_created', {
       code: list.code, corridorId: list.corridorId, date: list.date, slot: list.slot,
