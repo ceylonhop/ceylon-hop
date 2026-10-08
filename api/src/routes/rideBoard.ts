@@ -495,7 +495,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     if (!input.payment?.phone) return c.json({ error: 'phone_required' }, 400);
     if (isPastIsoDate(input.date, isoToday())) return c.json({ error: 'date_in_past' }, 400);
     // A future DATE is not the same as an open ride. A list closes CUTOFF_HOURS_BEFORE its window
-    // opens, so anything under two days out is born past its own cutoff: the join route 409s
+    // opens, so anything under three days out is born past its own cutoff: the join route 409s
     // it ('closed'), so nobody can ever add a name, and the next sweep calls it off. That is a
     // dead ride sold as a live one — seen on production (EA-8707, started 2026-09-22 for
     // 2026-09-24, closed 01:30Z that morning). Refuse it before any card is approached.
@@ -505,7 +505,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
         {
           error: 'cutoff_passed',
           message:
-            'That date is too soon to gather travellers — a shared ride closes 24 hours before ' +
+            'That date is too soon to gather travellers — a shared ride closes 48 hours before ' +
             'it leaves. Please pick a later date.',
         },
         400,
