@@ -472,7 +472,7 @@ Branch: `feat/deposits-rule`. Title: `feat(pricing): deposit = max(10%, $50), el
 - Test: `api/src/quote/extrasDeposit.test.ts`, `pricingPayload.test.ts:21-22`, `opsRates.test.ts:35`, goldens snapshot
 
 **Interfaces:**
-- Produces: `RATE_CARD.deposit: { pct: number; minCents: number; eligibleMinTotalCents: number }` = `{ pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 }`; `depositFor(product: 'shared'|'private'|'chauffeur', totalCents: number, rateCard?: RateCard): number` (0 = not eligible). `QuoteResult.depositCents` = `depositFor(...)`. Payload `depositMin` (whole USD) replaces `depositCap`; site constant `DEPOSIT_MIN` replaces `DEPOSIT_CAP`.
+- Produces: `RATE_CARD.deposit: { pct: number; minCents: number; eligibleMinTotalCents: number }` = `{ pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 }`; `depositFor(product: 'shared'|'private'|'chauffeur', totalCents: number): number` (0 = not eligible; reads the fixed rule from `RATE_CARD`, never a quote's locked card — as built in #948). `QuoteResult.depositCents` = `depositFor(...)`. Payload `depositMin` (whole USD) replaces `depositCap`; site constant `DEPOSIT_MIN` replaces `DEPOSIT_CAP`.
 
 - [ ] **Step 1: Failing boundary test** (replace the old `depositCents` tests in `extrasDeposit.test.ts`)
 
@@ -521,7 +521,7 @@ export function depositFor(
 }
 ```
 
-`engine.ts:170`: `const deposit = depositFor(req.product, totalCents, rateCard);` (update the import). Replace the comment at `:171-178` with:
+`engine.ts:170`: `const deposit = depositFor(req.product, totalCents);` (update the import). Replace the comment at `:171-178` with:
 
 ```ts
   // amountDueNow stays the FULL total here: the engine prices, it does not sell. A deposit is
