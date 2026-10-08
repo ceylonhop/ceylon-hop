@@ -234,4 +234,22 @@ describe('continueToCheckout hands the browser to PayHere', () => {
     expect(w.__submitted).toHaveLength(0);
     expect(w.document.getElementById('ph-msg').textContent).toMatch(/Redirecting you to PayHere/);
   });
+
+  // 2026-10-07: the gateway test was `/payhere\.lk/` anywhere in the URL, so an answer naming
+  // https://evil.example/payhere.lk/… got the customer's browser form-POSTed to a page that looks
+  // like the next step of our own checkout. Only PayHere's own two origins get the hand-off.
+  it('posts the form only to PayHere’s own origins, never a URL that merely mentions payhere.lk', async () => {
+    for (const lookalike of [
+      'https://evil.example/payhere.lk/pay/checkout',
+      'https://payhere.lk.evil.example/pay/checkout',
+      'https://evil.example/pay/checkout?next=https://www.payhere.lk',
+      'http://www.payhere.lk/pay/checkout',
+    ]) {
+      const w = loadBooking();
+      arm(w, lookalike);
+      w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+      await flush(w);
+      expect(w.__submitted, lookalike).toHaveLength(0);
+    }
+  });
 });

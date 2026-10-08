@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- stamp mode class before first paint so trip flows never flash the wrong panel -->
 <script>if(new URLSearchParams(location.search).get('mode')==='trip'){document.documentElement.classList.add('mode-trip');}</script>
-<!-- M7: backend. Defaults to the live API so the public site persists bookings. Override with ?api=<url> (e.g. localhost for dev) or ?api=off to force the simulated flow. -->
-<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
+<!-- M7: backend. Defaults to the live API so the public site persists bookings. Override with ?api=<url> (e.g. localhost for dev) or ?api=off to force the simulated flow — honoured ONLY when this page is served from localhost, 127.0.0.1, [::1], *.localhost or *.test; on any other host a link cannot point the page at another server (2026-10-07). -->
+<script>(function(){var p=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
 <!-- Maps Embed API key (public, referrer-restricted). Empty = SVG placeholder fallback. -->
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <title>Book your hop — Ceylon Hop</title>
@@ -1175,6 +1175,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=7d2f30d322"></script>
+<script src="booking.js?v=53cbd8e9ea"></script>
 </body>
 </html>
