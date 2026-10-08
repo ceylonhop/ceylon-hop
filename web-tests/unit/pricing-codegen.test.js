@@ -27,7 +27,7 @@ const payload = {
   chauffeurDayFee: 35,
   chauffeurIdleMinKm: { car: 55, van: 110 },
   depositPct: 0.1,
-  depositCap: 50,
+  depositMin: 50,
   extras: { sightseeing: 10, 'safari-wait': 19, luggage: 5, front: 8, flex: 12, waiting: 10 },
   corridorSeat: { 'airport-cultural': 19, 'ella-east': 23 },
 };
@@ -63,7 +63,7 @@ describe('renderPricingBlock', () => {
     expect(block).toContain('let BUFFER_PCT = 10;');
     expect(block).toContain('let CHAUFFEUR_DAY_FEE = 35;');
     expect(block).toContain('const PER_KM = ');
-    expect(block).not.toMatch(/let (PER_KM|FLOORS|EXTRAS|SEAT_PRICING|DEPOSIT_PCT|DEPOSIT_CAP)\b/);
+    expect(block).not.toMatch(/let (PER_KM|FLOORS|EXTRAS|SEAT_PRICING|DEPOSIT_PCT|DEPOSIT_MIN)\b/);
   });
 });
 
@@ -120,7 +120,7 @@ describe('codegen freshness + parity (enforcement)', () => {
     expect(T.CHAUFFEUR_DAY_FEE).toBe(backendPayload.chauffeurDayFee);
     expect(T.CHAUFFEUR_IDLE_MIN_KM).toEqual(backendPayload.chauffeurIdleMinKm);
     expect(T.DEPOSIT_PCT).toBe(backendPayload.depositPct);
-    expect(T.DEPOSIT_CAP).toBe(backendPayload.depositCap);
+    expect(T.DEPOSIT_MIN).toBe(backendPayload.depositMin);
     // completeness: every backend extra is present with the right price (the booking.js
     // copy that once omitted safari-wait/waiting can never recur).
     expect(T.EXTRAS).toEqual(backendPayload.extras);

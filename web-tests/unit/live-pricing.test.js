@@ -7,7 +7,7 @@ import { loadTransfers } from './_load.js';
 const LIVE = {
   perKm: { car: 0.8, van: 1.1 }, floors: { car: 35, van: 60 }, bufferPct: 12,
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 }, chauffeurDayFee: 40,
-  chauffeurIdleMinKm: { car: 50, van: 100 }, depositPct: 0.1, depositCap: 50,
+  chauffeurIdleMinKm: { car: 50, van: 100 }, depositPct: 0.1, depositMin: 50,
   extras: { sightseeing: 11, 'safari-wait': 20, luggage: 6, front: 9, flex: 13, waiting: 12 },
   corridorSeat: {}, seatPricing: { perKmCentsVan: 110, floorCentsVan: 6000, seatsCoveringVan: 3 }, sharedProducts: [],
 };

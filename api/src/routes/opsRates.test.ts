@@ -32,7 +32,7 @@ describe('GET /admin/rates', () => {
     expect(body.live).toEqual({ version: RATE_CARD.version, source: 'defaults', rates: RATES, createdBy: null, createdAt: null });
     expect(body.defaults).toEqual({ version: RATE_CARD.version, rates: RATES });
     expect(body.history).toEqual([]);
-    expect(body.readOnly).toEqual({ depositPct: RATE_CARD.deposit.pct, depositCapCents: RATE_CARD.deposit.capCents });
+    expect(body.readOnly).toEqual({ depositPct: RATE_CARD.deposit.pct, depositMinCents: RATE_CARD.deposit.minCents, depositEligibleMinCents: RATE_CARD.deposit.eligibleMinTotalCents });
   });
 
   it('is founder-only: ops and finance get 403, no session gets 401', async () => {
