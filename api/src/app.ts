@@ -117,6 +117,8 @@ export interface AppDeps {
   experiences?: ExperienceRepo;
   /** Live Tripadvisor ratings (spec D22). Absent = the null adapter: no rating is shown anywhere. */
   tripadvisor?: TripadvisorAdapter;
+  /** Tripadvisor's logo, shown beside every bubble rating (their display rules). No logo = no ratings. */
+  tripadvisorLogoUrl?: string;
   experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
@@ -629,7 +631,7 @@ export function createApp(deps: AppDeps = {}) {
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
   // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
   // READS ONLY — no route in it can start a payment (spec D6).
-  app.route('/experiences', publicExperiencesRoutes({ experiences, ...(deps.tripadvisor ? { tripadvisor: deps.tripadvisor } : {}) }));
+  app.route('/experiences', publicExperiencesRoutes({ experiences, ...(deps.tripadvisor ? { tripadvisor: deps.tripadvisor } : {}), ...(deps.tripadvisorLogoUrl ? { tripadvisorLogoUrl: deps.tripadvisorLogoUrl } : {}) }));
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
     experiences, experienceInterests, placeResolutions,

@@ -1,5 +1,10 @@
 import { futureIsoDate } from '../dates.js';
 
+// Tripadvisor's logo comes from config (TRIPADVISOR_LOGO_URL) via GET /experiences/ratings's `logoUrl`; the
+// pages show a bubble rating only together with it. 30x20 is an Ollie-ish box, so layout checks are real.
+export const TA_LOGO = 'https://static.tacdn.com/img2/brand_refresh/ollie-e2e.svg';
+export const TA_LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20" viewBox="0 0 30 20"><rect width="30" height="20" fill="#34e0a1"/></svg>';
+
 // Shared e2e harness: stubs Google Maps in the page, and the PayHere gateway and the API on the wire,
 // so the booking journeys are deterministic and run fully offline.
 
@@ -170,7 +175,7 @@ export async function installEstimateStub(page, opts = {}) {
  *                  is no experiences, so the booking page's experiences block stays hidden
  *
  *   ratings      - what GET /experiences/ratings answers (live Tripadvisor ratings, spec D22):
- *                  {status = 200, ratings = [], delayMs = 0, body}. Default is no ratings, so no row shows one
+ *                  {status = 200, ratings = [], logoUrl = TA_LOGO, delayMs = 0, body}. Default is no ratings, so no row shows one
  *
  * Also returns `nearRequests`: each GET /experiences/near's `at` values, in order, and
  * `ratingRequests`: each GET /experiences/ratings's `ids` (split on commas), in order.
@@ -261,7 +266,7 @@ export async function gotoBooking(page, opts = {}) {
     if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
     return r.fulfill(ratings.body !== undefined
       ? { status: 200, contentType: 'application/json', body: ratings.body }
-      : json({ ratings: ratings.ratings ?? [] }));
+      : json({ ...((ratings.ratings ?? []).length ? { logoUrl: ratings.logoUrl === undefined ? TA_LOGO : ratings.logoUrl } : {}), ratings: ratings.ratings ?? [] }));
   });
 
   // booking creation

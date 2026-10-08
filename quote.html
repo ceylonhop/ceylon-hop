@@ -78,8 +78,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .xp-main{min-width:0}
     .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .xp-ta{position:relative;display:flex;align-items:center;gap:6px;margin:3px 0 0;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
-    .xp-ta img{display:block;height:14px;width:auto;flex:none}
+    /* Tripadvisor display rules: Ollie logo (>= 20px tall) LEFT of the bubbles (>= 55px wide, on the white row), one link.
+       The padding makes a >= 32px tap area (offset by negative margins, so the row looks as before). */
+    .xp-ta{position:relative;display:flex;align-items:center;flex-wrap:wrap;column-gap:6px;box-sizing:border-box;min-height:32px;padding:6px 0;margin:-3px 0 -6px;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
+    .xp-ta img{display:block;flex:none}
+    .xp-ta .xp-ta-logo{height:20px;width:auto}
+    .xp-ta .xp-ta-bubbles{width:75px;height:15px;object-fit:contain;object-position:left center}
+    .xp-ta span{white-space:nowrap}
     .xp-ta:hover span{text-decoration:underline}
     .xp-ta:focus-visible{outline:2px solid var(--btn-accent);outline-offset:2px;border-radius:3px}
     /* A 32px tap area (was ~23px) with the same look: the extra padding is taken back out of the margins. */
@@ -559,13 +564,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is stored or cached:
   // each load asks again. Any failure, timeout or odd answer leaves the rows exactly as they are.
   var XP_RATING_IDS = 6, XP_RATING_TIMEOUT_MS = 3000, xpRateSeq = 0;
-  function xpRatingHtml(r){
+  function xpRatingHtml(r, logoUrl){
     function https(u){ return typeof u === 'string' && /^https:\/\//i.test(u); }
-    if (!r || !https(r.webUrl) || !https(r.ratingImageUrl)) return '';
+    // Tripadvisor's display rules: a bubble rating is shown only with their logo to its left.
+    if (!r || !https(r.webUrl) || !https(r.ratingImageUrl) || !https(logoUrl)) return '';
     var rating = r.rating, n = r.numReviews;
     if (typeof rating !== 'number' || !(rating >= 0 && rating <= 5) || typeof n !== 'number' || n % 1 !== 0 || n < 0) return '';
     return '<a class="xp-ta" href="' + esc(r.webUrl) + '" target="_blank" rel="noopener noreferrer">'
-      + '<img src="' + esc(r.ratingImageUrl) + '" alt="Tripadvisor rating ' + esc(String(rating)) + ' of 5" height="14">'
+      + '<img class="xp-ta-logo" src="' + esc(logoUrl) + '" alt="Tripadvisor" height="20">'
+      + '<img class="xp-ta-bubbles" src="' + esc(r.ratingImageUrl) + '" alt="Tripadvisor rating ' + esc(String(rating)) + ' of 5" width="75" height="15">'
       + '<span>' + n + (n === 1 ? ' review' : ' reviews') + '</span></a>';
   }
   function xpLoadRatings(){
@@ -579,7 +586,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         data.ratings.forEach(function(r){
           if (!r || typeof r.id !== 'string') return;
           var row = Array.prototype.filter.call(app.querySelectorAll('#experiences-block .xp-row'), function(x){ return x.getAttribute('data-id') === r.id; })[0];
-          var html = xpRatingHtml(r), meta = row && row.querySelector('.xp-meta');
+          var html = xpRatingHtml(r, data.logoUrl), meta = row && row.querySelector('.xp-meta');
           if (html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
         });
       })

@@ -1454,13 +1454,15 @@ function expCardHtml(it, place, n){
 // (the endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is cached here
 // either: each fresh render asks again. Any failure, timeout or odd answer leaves the rows as they are.
 const EXP_RATING_IDS = 6;
-function expRatingHtml(r){
+function expRatingHtml(r, logoUrl){
   const https=u=>typeof u==='string' && /^https:\/\//i.test(u);
-  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl)) return '';
+  // Tripadvisor's display rules: a bubble rating is shown only with their logo to its left (>= 20px tall, bubbles >= 55px wide).
+  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl) || !https(logoUrl)) return '';
   const rating=r.rating, n=r.numReviews;
   if(typeof rating!=='number' || !(rating>=0 && rating<=5) || typeof n!=='number' || !Number.isInteger(n) || n<0) return '';
   return `<a class="xp-ta" href="${acEsc(r.webUrl)}" target="_blank" rel="noopener noreferrer">`
-    + `<img src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" height="14">`
+    + `<img class="xp-ta-logo" src="${acEsc(logoUrl)}" alt="Tripadvisor" height="20">`
+    + `<img class="xp-ta-bubbles" src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" width="75" height="15">`
     + `<span>${n} ${n===1?'review':'reviews'}</span></a>`;
 }
 function loadExperienceRatings(){
@@ -1482,7 +1484,7 @@ function loadExperienceRatingsNow(){
       data.ratings.forEach(r=>{
         if(!r || typeof r.id!=='string') return;
         const row=[...block.querySelectorAll('.xp-row')].find(x=>x.dataset.id===r.id);
-        const html=expRatingHtml(r), meta=row && row.querySelector('.xp-meta');
+        const html=expRatingHtml(r, data.logoUrl), meta=row && row.querySelector('.xp-meta');
         if(html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
       });
     })

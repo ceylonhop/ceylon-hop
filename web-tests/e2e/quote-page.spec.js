@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installStubs } from './_stubs.js';
+import { installStubs, TA_LOGO, TA_LOGO_SVG } from './_stubs.js';
 
 // The customer quote page (quote.html, backed by GET /quote-view) — spec 2026-08-05 D6: a
 // READ-ONLY proposal, not a payment page. There is no pay button and no link to /p anywhere on
@@ -671,8 +671,9 @@ async function stubRatings(page, answer) {
     asked.push((new URL(r.request().url()).searchParams.get('ids') || '').split(','));
     if (answer.delayMs) await new Promise((res) => setTimeout(res, answer.delayMs));
     if (answer.status && answer.status !== 200) return r.fulfill({ status: answer.status, contentType: 'application/json', body: '{"error":"boom"}' });
-    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ratings: answer.ratings || [] }) });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...((answer.ratings || []).length ? { logoUrl: answer.logoUrl === undefined ? TA_LOGO : answer.logoUrl } : {}), ratings: answer.ratings || [] }) });
   });
+  await page.route(TA_LOGO, (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: TA_LOGO_SVG }));
   await page.route('https://www.tripadvisor.com/img/**', (r) =>
     r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="75" height="15"/>' }));
   return asked;
@@ -694,8 +695,8 @@ test.describe('Tripadvisor ratings on the quote page', () => {
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     await expect(link).toContainText('312 reviews');
-    await expect(link.locator('img')).toHaveAttribute('src', TA_IMG);
-    await expect(link.locator('img')).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
+    await expect(link.locator('img.xp-ta-bubbles')).toHaveAttribute('src', TA_IMG);
+    await expect(link.locator('img.xp-ta-bubbles')).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
     const order = await row.evaluate((r) => {
       const y = (sel) => r.querySelector(sel).getBoundingClientRect().top;
       return [y('.xp-meta'), y('.xp-ta'), y('.xp-more')];
@@ -705,6 +706,65 @@ test.describe('Tripadvisor ratings on the quote page', () => {
     expect(asked).toHaveLength(1);
     expect(asked[0]).toEqual([XP_MASSAGE.id, XP_COOKING.id]);
     await expect(page.locator('#experiences-block a.xp-ta')).toHaveCount(1);
+  });
+
+  // Tripadvisor's display rules: the logo (>= 20px tall) sits LEFT of the bubbles (>= 55px wide, on white),
+  // both inside the one link; the logo is served from the URL the API hands us.
+  test('the Tripadvisor logo sits left of the bubbles, at least 20px tall; the bubbles are at least 55px wide; one link', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    const logo = link.locator('img.xp-ta-logo');
+    await expect(logo).toHaveCount(1);
+    await expect(logo).toHaveAttribute('src', TA_LOGO);
+    await expect(logo).toHaveAttribute('alt', 'Tripadvisor');
+    await expect(link.locator('img')).toHaveCount(2);
+    await expect.poll(() => logo.evaluate((i) => i.complete && i.naturalWidth > 0)).toBe(true);
+    const m = await link.evaluate((a) => {
+      const l = a.querySelector('img.xp-ta-logo').getBoundingClientRect();
+      const b = [...a.querySelectorAll('img')].find((i) => !i.classList.contains('xp-ta-logo')).getBoundingClientRect();
+      const span = a.querySelector('span').getBoundingClientRect();
+      return { logo: { left: l.left, right: l.right, top: l.top, bottom: l.bottom, h: l.height }, bubbles: { left: b.left, w: b.width, top: b.top, bottom: b.bottom }, span: { left: span.left } };
+    });
+    expect(m.logo.h).toBeGreaterThanOrEqual(20);
+    expect(m.logo.right).toBeLessThanOrEqual(m.bubbles.left + 0.5);
+    expect(m.bubbles.left).toBeLessThanOrEqual(m.span.left);
+    expect(m.logo.top).toBeLessThan(m.bubbles.bottom);
+    expect(m.bubbles.top).toBeLessThan(m.logo.bottom);
+    expect(m.bubbles.w).toBeGreaterThanOrEqual(55);
+    const bg = await link.evaluate((a) => { for (let e = a; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)') return c; } return 'none'; });
+    expect(bg).toBe('rgb(255, 255, 255)');
+  });
+
+  test('no logo in the answer (or one that is not https) means no rating is shown at all', async ({ page }) => {
+    for (const logoUrl of [null, 'http://static.tacdn.com/x.svg', 'javascript:window.__xss=1']) {
+      await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+      await stubRatings(page, { ratings: [taRating()], logoUrl });
+      await page.goto(PAGE);
+      await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+      await page.waitForTimeout(400);
+      await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+      await page.unroute('**/experiences/ratings*');
+    }
+  });
+
+  test('at 375px the rating link is a 32px tap target and nothing overflows', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    const m = await link.evaluate((a) => {
+      const r = a.getBoundingClientRect(), row = a.closest('.xp-row').getBoundingClientRect();
+      return { h: r.height, right: r.right, rowRight: row.right, overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    expect(m.h).toBeGreaterThanOrEqual(32);
+    expect(m.h, 'logo + bubbles + count stay on one line at 375px').toBeLessThan(40);
+    expect(m.right).toBeLessThanOrEqual(m.rowRight);
+    expect(m.overflow).toBeLessThanOrEqual(0);
   });
 
   test('tapping Request still works with a rating on the row, and the rating stays', async ({ page }) => {

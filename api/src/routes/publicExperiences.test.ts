@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { InMemoryExperienceRepo } from '../db/experienceRepo';
 import { ExperienceInputSchema } from '../experiences/experience';
@@ -103,6 +103,7 @@ const DETAILS: TripadvisorDetails = {
   ratingImageUrl: 'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/4.5-12345-5.svg',
   webUrl: 'https://www.tripadvisor.com/Attraction_Review-g1-d6789012-Reviews-Spa.html',
 };
+const LOGO = 'https://static.tacdn.com/img2/brand_refresh/logo.svg';
 async function ratingsSetup(deps: AppDeps = {}) {
   const experiences = new InMemoryExperienceRepo();
   const mk = (o: Record<string, unknown>) => experiences.create(ExperienceInputSchema.parse({ ...base, areaLabel: 'Sigiriya', lat: 7.95, lng: 80.76, ...o }));
@@ -111,7 +112,7 @@ async function ratingsSetup(deps: AppDeps = {}) {
   const unlisted = await mk({ slug: 'unlisted', name: 'No listing' });
   const off = await mk({ slug: 'off-rated', name: 'Off', tripadvisorLocationId: '777', active: false });
   const tripadvisor = new FakeTripadvisorAdapter({ '6789012': DETAILS, '555': { ...DETAILS, rating: 5, numReviews: 9 }, '777': DETAILS });
-  const a = realCreateApp({ adminApiKey: 'k', experiences, tripadvisor, allowedOrigins: ['https://ceylonhop.com'], ...deps });
+  const a = realCreateApp({ adminApiKey: 'k', experiences, tripadvisor, tripadvisorLogoUrl: LOGO, allowedOrigins: ['https://ceylonhop.com'], ...deps });
   return { a, experiences, tripadvisor, rated, rated2, unlisted, off };
 }
 const rq = (...ids: string[]) => `/experiences/ratings?ids=${ids.join(',')}`;
@@ -121,7 +122,7 @@ describe('GET /experiences/ratings', () => {
     const { a, rated, rated2, tripadvisor } = await ratingsSetup();
     const res = await a.request(rq(rated2.id, rated.id));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ratings: [
+    expect(await res.json()).toEqual({ logoUrl: LOGO, ratings: [
       { id: rated2.id, rating: 5, numReviews: 9, ratingImageUrl: DETAILS.ratingImageUrl, webUrl: DETAILS.webUrl },
       { id: rated.id, rating: 4.5, numReviews: 312, ratingImageUrl: DETAILS.ratingImageUrl, webUrl: DETAILS.webUrl },
     ] });
@@ -152,11 +153,26 @@ describe('GET /experiences/ratings', () => {
 
   it('looks the experiences up in parallel, not one after another', async () => {
     const { a, rated, rated2, tripadvisor } = await ratingsSetup();
-    tripadvisor.delayMs = 120;
-    const t0 = Date.now();
-    const { ratings } = await (await a.request(rq(rated.id, rated2.id))).json();
+    // Hold every lookup open: if the route were sequential only ONE could have started while we wait.
+    let release!: () => void;
+    tripadvisor.gate = new Promise<void>((r) => { release = r; });
+    const pending = a.request(rq(rated.id, rated2.id));
+    await vi.waitFor(() => expect(tripadvisor.calls.sort()).toEqual(['555', '6789012']));
+    release();
+    const { ratings } = await (await pending).json();
     expect(ratings).toHaveLength(2);
-    expect(Date.now() - t0).toBeLessThan(220);
+  });
+
+  it('answers no ratings (and does not ask Tripadvisor) when no logo url is configured', async () => {
+    const { a, rated, tripadvisor } = await ratingsSetup({ tripadvisorLogoUrl: undefined });
+    const res = await a.request(rq(rated.id));
+    expect(await res.json()).toEqual({ ratings: [] });
+    expect(tripadvisor.calls).toEqual([]);
+  });
+
+  it('adds no logoUrl when there are no ratings to show', async () => {
+    const { a, unlisted } = await ratingsSetup();
+    expect(await (await a.request(rq(unlisted.id))).json()).toEqual({ ratings: [] });
   });
 
   it('a repeated id is asked about once', async () => {

@@ -25,7 +25,7 @@ function parseStop(raw: string): StopPoint | null {
 const MAX_RATING_IDS = 6;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function publicExperiencesRoutes(deps: { experiences: ExperienceRepo; tripadvisor?: TripadvisorAdapter }) {
+export function publicExperiencesRoutes(deps: { experiences: ExperienceRepo; tripadvisor?: TripadvisorAdapter; tripadvisorLogoUrl?: string }) {
   const r = new Hono();
   const tripadvisor = deps.tripadvisor ?? new NullTripadvisorAdapter();
 
@@ -50,8 +50,9 @@ export function publicExperiencesRoutes(deps: { experiences: ExperienceRepo; tri
     const ids = (c.req.query('ids') ?? '').split(',').map((s) => s.trim());
     if (ids.length < 1 || ids.length > MAX_RATING_IDS || ids.some((id) => !UUID.test(id))) return c.json({ error: 'bad_request' }, 400);
     c.header('cache-control', 'no-store');
-    // No key, no ratings: answer without a database read (the page asks on every view).
-    if (tripadvisor instanceof NullTripadvisorAdapter) return c.json({ ratings: [] });
+    // No key or no logo, no ratings: answer without a database read (the page asks on every view). Tripadvisor's
+    // display rules need their logo beside every bubble, so a rating is never returned without one.
+    if (tripadvisor instanceof NullTripadvisorAdapter || !deps.tripadvisorLogoUrl) return c.json({ ratings: [] });
     const wanted = [...new Set(ids.map((id) => id.toLowerCase()))];
     const rows = new Map((await deps.experiences.getMany(wanted)).map((e) => [e.id, e]));
     const found = await Promise.all(wanted.map(async (id) => {
@@ -60,7 +61,8 @@ export function publicExperiencesRoutes(deps: { experiences: ExperienceRepo; tri
       const d = await tripadvisor.details(e.tripadvisorLocationId);
       return d ? { id: e.id, rating: d.rating, numReviews: d.numReviews, ratingImageUrl: d.ratingImageUrl, webUrl: d.webUrl } : null;
     }));
-    return c.json({ ratings: found.filter((x) => x !== null) });
+    const ratings = found.filter((x) => x !== null);
+    return c.json(ratings.length ? { logoUrl: deps.tripadvisorLogoUrl, ratings } : { ratings });
   });
 
   return r;

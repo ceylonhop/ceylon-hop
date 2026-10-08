@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FakeTripadvisorAdapter, HttpTripadvisorAdapter, NullTripadvisorAdapter, type TripadvisorAdapter } from './tripadvisor';
+import { FakeTripadvisorAdapter, HttpTripadvisorAdapter, NullTripadvisorAdapter, selectTripadvisor, type TripadvisorAdapter } from './tripadvisor';
 
 // Tripadvisor Content API (spec 2026-10-06 D22). Never called for real: fetch is stubbed.
 const GOOD = {
@@ -106,5 +106,25 @@ describe('NullTripadvisorAdapter and FakeTripadvisorAdapter', () => {
     expect((await fake.details('1'))!.numReviews).toBe(312);
     expect(await fake.details('2')).toBeNull();
     expect(fake.calls).toEqual(['1', '2']);
+  });
+});
+
+// Ratings may only ever be shown with Tripadvisor's logo beside them: the real adapter needs BOTH the key
+// and a (validated) logo URL, otherwise the Null adapter answers and no bubble appears anywhere.
+describe('selectTripadvisor', () => {
+  const LOGO = 'https://static.tacdn.com/img2/brand_refresh/logo.svg';
+  it('key + logo -> the real adapter and the logo url', () => {
+    const s = selectTripadvisor({ apiKey: 'K', logoUrl: LOGO, referer: 'https://ceylonhop.com' });
+    expect(s.adapter).toBeInstanceOf(HttpTripadvisorAdapter);
+    expect(s.logoUrl).toBe(LOGO);
+  });
+  it('key without a logo -> the Null adapter, no logo', () => {
+    const s = selectTripadvisor({ apiKey: 'K', logoUrl: undefined, referer: 'https://ceylonhop.com' });
+    expect(s.adapter).toBeInstanceOf(NullTripadvisorAdapter);
+    expect(s.logoUrl).toBeUndefined();
+  });
+  it('logo without a key -> the Null adapter', () => {
+    expect(selectTripadvisor({ apiKey: undefined, logoUrl: LOGO, referer: 'https://ceylonhop.com' }).adapter).toBeInstanceOf(NullTripadvisorAdapter);
+    expect(selectTripadvisor({ apiKey: '', logoUrl: LOGO, referer: 'https://ceylonhop.com' }).adapter).toBeInstanceOf(NullTripadvisorAdapter);
   });
 });

@@ -357,24 +357,36 @@ Shown on the booking and quote rows when an experience has a Tripadvisor listing
   0067: release order #930 → #940 → #950 → this PR.)
 - **Tripadvisor rules (Content API docs, 2026-10-07):** only the location id may be stored; rating and review
   count are fetched live, never cached or stored; the bubble image and logo are served from Tripadvisor's own
-  URLs (`rating_image_url`); each rating links to the listing (`web_url`). 5,000 free calls a month, then
+  URLs (`rating_image_url`); each rating links to the listing (`web_url`). **Display requirements (their Content API
+  "Display Requirements" page, read 2026-10-07):** an aggregate bubble rating carries the **Ollie logo to the LEFT of
+  the bubbles**, the logo **>= 20px tall**; the bubbles **>= 55px wide** on a **white** background (our rows are
+  white); logo and bubbles are served from Tripadvisor's own URLs. 5,000 free calls a month, then
   pay-as-you-go. The key is domain-restricted; our server sends `Referer: https://ceylonhop.com`.
 - **Adapter + fake** (Hard rule 4): `TripadvisorAdapter.details(locationId)` -> `{ rating, numReviews,
   ratingImageUrl, webUrl } | null`, 2 s timeout, any failure -> `null`, never throws. The image and listing URLs
   must be https on `*.tripadvisor.com` / `*.tacdn.com`, else `null`. Real HTTP adapter only when
-  `TRIPADVISOR_API_KEY` is set; otherwise a null adapter and **no rating is shown anywhere** (dormant).
+  **both `TRIPADVISOR_API_KEY` and a valid `TRIPADVISOR_LOGO_URL` are set** (`selectTripadvisor`); otherwise a null
+  adapter and **no rating is shown anywhere** (dormant) - the site can never show bubbles without the logo.
+  There is no public hotlink for the logo: the owner takes the URL from Tripadvisor's partner resources, and it is
+  never guessed or hard-coded. `TRIPADVISOR_LOGO_URL` is validated at startup with the adapter's host check
+  (https on `*.tripadvisor.com` / `*.tacdn.com`); an invalid value is treated as unset with a startup warning,
+  never a crash.
 - **Endpoint:** `GET /experiences/ratings?ids=<uuid>,...` (<= 6; active experiences with a location id only) ->
-  `{ ratings: [{ id, rating, numReviews, ratingImageUrl, webUrl }] }` (a failed lookup is simply omitted),
+  `{ logoUrl, ratings: [{ id, rating, numReviews, ratingImageUrl, webUrl }] }` (`logoUrl` only when ratings are
+  returned; a failed lookup is simply omitted),
   `cache-control: no-store`, GET+HEAD rate limit. One live call per experience, in parallel. With the null
   adapter it answers `{ ratings: [] }` without reading the database.
 - **Pages:** rows render first; ratings fill in afterwards (one fetch, 3 s timeout, sequence-guarded; never
-  delays or blocks the section). The rating line sits under the meta line: the Tripadvisor bubble image + "312
-  reviews", linked to `web_url` (new tab, `rel="noopener noreferrer"`). No rating -> no line, no reserved space.
+  delays or blocks the section). The rating line sits under the meta line: the Tripadvisor logo
+  (`<img class="xp-ta-logo" height="20">`) LEFT of the bubble image (75x15, so >= 55px wide) + "312 reviews", all
+  one link to `web_url` (new tab, `rel="noopener noreferrer"`), left-aligned, with a >= 32px tap height on phones
+  (padding, offset by negative margins). The pages show no rating at all unless the answer carries an https `logoUrl`. No rating -> no line, no reserved space.
   The page also refuses a non-https link or image, and a rating that is not a number 0-5.
 - **Quota maths:** one call per experience per section render, so ~3 calls per Sigiriya booking view; 5,000/month
   = ~1,600 views before charges. Revisit if traffic grows. (The pages ask about the first 6 rows only.)
-- **Config change (owner-approved):** `TRIPADVISOR_API_KEY` (and optional `TRIPADVISOR_REFERER`, default
-  `https://ceylonhop.com`) on Render - the owner sets the key after Tripadvisor approves the account.
+- **Config change (owner-approved):** `TRIPADVISOR_API_KEY` and `TRIPADVISOR_LOGO_URL` (both required to turn ratings
+  on) and optional `TRIPADVISOR_REFERER` (default `https://ceylonhop.com`) on Render - the owner sets the key after
+  Tripadvisor approves the account, and the logo URL from Tripadvisor's partner resources.
 - **Touch targets (reviewer note, same PR):** on phones (<= 640px) the Request button is at least 44px tall, and
   "Details >" has a 32px tap area (padding, offset by negative margins so it looks the same).
 

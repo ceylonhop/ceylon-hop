@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, fillContact, pickPlace } from './_stubs.js';
+import { gotoBooking, fillContact, pickPlace, TA_LOGO, TA_LOGO_SVG } from './_stubs.js';
 import { futureIsoDate } from '../dates.js';
 
 // Partner experiences on booking.html step 3 (spec 2026-10-06 D9/D10/D16/D17). The page asks
@@ -353,6 +353,46 @@ test.describe('Tripadvisor ratings on the rows', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('https://www.tripadvisor.com/img/**', (r) =>
       r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="75" height="15"/>' }));
+    await page.route(TA_LOGO, (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: TA_LOGO_SVG }));
+  });
+
+  // Tripadvisor's display rules: the logo (>= 20px tall) sits LEFT of the bubbles (>= 55px wide, on white),
+  // both inside the one link; the logo is served from the URL the API hands us.
+  test('the Tripadvisor logo sits left of the bubbles, at least 20px tall; the bubbles are at least 55px wide; one link', async ({ page }) => {
+    await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()] } });
+    await goStep3(page);
+    const link = block(page).locator('a.xp-ta');
+    await expect(link).toHaveCount(1);
+    const logo = link.locator('img.xp-ta-logo');
+    await expect(logo).toHaveCount(1);
+    await expect(logo).toHaveAttribute('src', TA_LOGO);
+    await expect(logo).toHaveAttribute('alt', 'Tripadvisor');
+    await expect(link.locator('img')).toHaveCount(2);
+    await expect.poll(() => logo.evaluate((i) => i.complete && i.naturalWidth > 0)).toBe(true);
+    const m = await link.evaluate((a) => {
+      const l = a.querySelector('img.xp-ta-logo').getBoundingClientRect();
+      const b = [...a.querySelectorAll('img')].find((i) => !i.classList.contains('xp-ta-logo')).getBoundingClientRect();
+      const span = a.querySelector('span').getBoundingClientRect();
+      return { logo: { left: l.left, right: l.right, top: l.top, bottom: l.bottom, h: l.height }, bubbles: { left: b.left, w: b.width, top: b.top, bottom: b.bottom }, span: { left: span.left } };
+    });
+    expect(m.logo.h).toBeGreaterThanOrEqual(20);
+    expect(m.logo.right).toBeLessThanOrEqual(m.bubbles.left + 0.5);   // logo is LEFT of the bubbles
+    expect(m.bubbles.left).toBeLessThanOrEqual(m.span.left);          // ...and the count comes after them
+    expect(m.logo.top).toBeLessThan(m.bubbles.bottom);                 // same line
+    expect(m.bubbles.top).toBeLessThan(m.logo.bottom);
+    expect(m.bubbles.w).toBeGreaterThanOrEqual(55);
+    const bg = await link.evaluate((a) => { for (let e = a; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)') return c; } return 'none'; });
+    expect(bg).toBe('rgb(255, 255, 255)');
+  });
+
+  test('no logo in the answer (or one that is not https) means no rating is shown at all', async ({ page }) => {
+    for (const logoUrl of [null, 'http://static.tacdn.com/x.svg', 'javascript:window.__xss=1']) {
+      await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] }, ratings: { ratings: [rating()], logoUrl } });
+      await goStep3(page);
+      await expect(block(page).locator('.xp-row')).toHaveCount(3);
+      await page.waitForTimeout(400);
+      await expect(block(page).locator('.xp-ta')).toHaveCount(0);
+    }
   });
 
   test('a rating appears under the meta line: the bubble image, "312 reviews", linked to the listing in a new tab', async ({ page }) => {
@@ -365,7 +405,7 @@ test.describe('Tripadvisor ratings on the rows', () => {
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     await expect(link).toContainText('312 reviews');
-    const img = link.locator('img');
+    const img = link.locator('img.xp-ta-bubbles');
     await expect(img).toHaveAttribute('src', TA_IMG);
     await expect(img).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
     // Under the meta line, above "Details ›".
@@ -469,7 +509,8 @@ test.describe('Tripadvisor ratings on the rows', () => {
       });
       expect(m.overflow).toBeLessThanOrEqual(0);
       expect(m.right).toBeLessThanOrEqual(m.rowRight);
-      expect(m.h).toBeGreaterThan(0);
+      expect(m.h).toBeGreaterThanOrEqual(32);   // a tap target, not a 14px sliver
+      expect(m.h, 'logo + bubbles + count stay on one line at 375px').toBeLessThan(40);
     });
   });
 });

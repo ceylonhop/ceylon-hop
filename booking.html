@@ -558,8 +558,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .xp-main{min-width:0}
   .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .xp-ta{position:relative;display:flex;align-items:center;gap:6px;margin:3px 0 0;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
-  .xp-ta img{display:block;height:14px;width:auto;flex:none}
+  /* Tripadvisor display rules: Ollie logo (>= 20px tall) LEFT of the bubbles (>= 55px wide, on the white row), one link.
+     The padding makes a >= 32px tap area (offset by negative margins, so the row looks as before). */
+  .xp-ta{position:relative;display:flex;align-items:center;flex-wrap:wrap;column-gap:6px;box-sizing:border-box;min-height:32px;padding:6px 0;margin:-3px 0 -6px;font-size:.74rem;line-height:1.4;color:var(--ink-soft);text-decoration:none}
+  .xp-ta img{display:block;flex:none}
+  .xp-ta .xp-ta-logo{height:20px;width:auto}
+  .xp-ta .xp-ta-bubbles{width:75px;height:15px;object-fit:contain;object-position:left center}
+  .xp-ta span{white-space:nowrap}
   .xp-ta:hover span{text-decoration:underline}
   .xp-ta:focus-visible{outline:2px solid var(--btn-accent);outline-offset:2px;border-radius:3px}
   /* A 32px tap area (was ~23px) with the same look: the extra padding is taken back out of the margins. */
@@ -1241,6 +1246,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=b5f5ec327c"></script>
+<script src="booking.js?v=86b350eb01"></script>
 </body>
 </html>
