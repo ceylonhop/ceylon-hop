@@ -40,6 +40,8 @@ import {
 import { changedFields } from '../quote/quoteDiff';
 import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
 import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 import {
   customerShortCode,
   customerShortCodeDigest,
@@ -665,6 +667,8 @@ export function internalQuoteRoutes(deps: {
   // return the long URL byte-for-byte as before; only `url` ever changes.
   shortLinks?: CustomerShortLinkRepo;
   shortLinksEnabled?: boolean;
+  // Partner experiences (spec 2026-10-06 D12): a quote's interests move onto its booking.
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const r = new Hono();
 
@@ -1092,6 +1096,7 @@ export function internalQuoteRoutes(deps: {
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
       await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      await linkQuoteInterests(deps.experienceInterests, id, prior.id);
       return c.json(updated, 200);
     }
 
@@ -1163,6 +1168,7 @@ export function internalQuoteRoutes(deps: {
         ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
         : {}),
     });
+    await linkQuoteInterests(deps.experienceInterests, id, booking.id);
     return c.json(booking, 201);
   });
 

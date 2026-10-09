@@ -26,6 +26,8 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresExperienceRepo } from './db/postgresExperienceRepo';
+import { PostgresExperienceInterestRepo } from './db/postgresExperienceInterestRepo';
 import { PostgresRateRevisionRepo } from './db/postgresRateRevisionRepo';
 import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
@@ -171,6 +173,10 @@ const app = createApp({
   quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
+  // Partner experiences (spec 2026-10-06). WITHOUT these lines app.ts falls back to empty in-memory
+  // repos: every experience ops enters and every customer interest would vanish on restart.
+  experiences: new PostgresExperienceRepo(db),
+  experienceInterests: new PostgresExperienceInterestRepo(db),
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),

@@ -24,6 +24,9 @@ import {
   type CheckoutOutcome,
 } from '../db/bookingCheckoutEventRepo';
 import type { ProviderPaymentStatus } from '../adapters/payments';
+import { loadBookingInterests } from '../experiences/bookingInterests';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
 import { closeOlderDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
 import type {
@@ -180,6 +183,9 @@ export function webhookRoutes(deps: {
   duplicates?: Omit<DuplicateCloseDeps, 'alerts'>;
   // Server-side GA4 purchase on a settled payment. Unset → nothing reported.
   ga4?: Ga4Reporter;
+  // Partner experiences (spec 2026-10-06 D15): the team's paid email names what the customer asked about.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -442,8 +448,13 @@ export function webhookRoutes(deps: {
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
           const sel = srcQuote?.payLinkSelection;
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          // Partner experiences the customer tapped (spec 2026-10-06 D16); a failed lookup is just no row.
+          const interests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({
+            name: e?.name ?? i.nameSnapshot, partnerName: e?.partnerName,
+          }));
           const outcome = await sendBookingConfirmation(paid, email, {
             manage: manageUrl(paid, baseUrl, linkSecret),
+            interests,
             ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
           });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
@@ -482,12 +493,15 @@ export function webhookRoutes(deps: {
       // the idempotent return, and skip everything downstream forever). Severity 'info', so it
       // does not read as an incident; dedupeKey is the reference, so a retry cannot re-notify.
       try {
+        const teamInterests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({
+          name: e?.name ?? i.nameSnapshot, partnerName: e?.partnerName, status: i.status,
+        }));
         await alerts.send({
           severity: 'info',
           kind: 'booking_paid',
           title: `Paid: ${paid.reference} — ${fmtMoney(outcome.payment.amount, paid.currency)}`,
           body: teamPaidBody(paid),
-          email: teamPaidEmail(paid, deps.opsBaseUrl ?? ''),
+          email: teamPaidEmail(paid, deps.opsBaseUrl ?? '', teamInterests),
           dedupeKey: paid.reference,
         });
       } catch (err) {

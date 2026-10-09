@@ -540,6 +540,57 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .addon b{display:block;font-size:.95rem}.addon small{color:var(--ink-soft)}
   .addon .pr{margin-left:auto;font-weight:600;white-space:nowrap}
 
+  /* ── Partner experiences (step 3 block + summary line). Owner-approved compact rows (Option B,
+        2026-10-07). A "Request" tap is not a purchase: nothing here may look like an add-on with a
+        price in the total. No ratings yet. ── */
+  #experiences-block{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+  .xp-kicker{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;color:var(--accent-deep);margin:0}
+  .xp-kicker svg{width:13px;height:13px;flex:none}
+  #experiences-block h3{font-family:var(--display);font-weight:700;font-size:1.2rem;margin:16px 0 8px;color:var(--ink)}
+  .xp-sub{font-size:.84rem;line-height:1.5;color:var(--ink-soft);margin:0 0 14px;max-width:46ch}
+  .xp-stop+.xp-stop{margin-top:14px}
+  .xp-list{background:var(--white);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .xp-row{display:grid;grid-template-columns:58px minmax(0,1fr) auto;column-gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--line);background:var(--white);transition:box-shadow .15s}
+  .xp-row:first-child{border-top:0}
+  .xp-row.nophoto{grid-template-columns:minmax(0,1fr) auto}
+  .xp-row.on{box-shadow:inset 3px 0 0 var(--accent)}
+  .xp-photo{width:58px;height:58px;border-radius:12px;object-fit:cover;background:var(--pc-sky);display:block}
+  .xp-main{min-width:0}
+  .xp-name{display:block;font-size:.9rem;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xp-meta{display:block;font-size:.74rem;line-height:1.4;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xp-more{appearance:none;-webkit-appearance:none;background:none;border:0;border-radius:3px;padding:3px 0;margin:2px 0 0;font:inherit;font-size:.74rem;font-weight:600;color:var(--btn-accent);cursor:pointer;text-align:left}
+  .xp-more:hover{color:var(--btn-accent-hover);text-decoration:underline}
+  .xp-more:focus{outline:none}
+  .xp-more:focus-visible{outline:2px solid var(--btn-accent);outline-offset:3px;text-decoration:underline}
+  .xp-chev{display:inline-block;transition:transform .15s}
+  .xp-more[aria-expanded="true"] .xp-chev{transform:rotate(90deg)}
+  .xp-buy{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .xp-price{font-size:.88rem;font-weight:700;color:var(--ink);white-space:nowrap}
+  .xp-price small{font-size:.7rem;font-weight:400;color:var(--ink-soft)}
+  .xp-btn{appearance:none;-webkit-appearance:none;font:inherit;font-weight:600;font-size:.8rem;min-height:36px;padding:0 16px;border-radius:999px;border:1.5px solid var(--btn-accent);background:var(--white);color:var(--btn-accent);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
+  .xp-btn:hover{background:rgba(var(--accent-rgb),.12)}
+  .xp-btn[aria-pressed="true"]{background:var(--btn-accent);color:#fff}
+  .xp-btn[aria-pressed="true"]:hover{background:var(--btn-accent-hover)}
+  .xp-panel[hidden],.s-xp[hidden]{display:none}
+  .xp-panel{grid-column:1/-1;border-top:1px solid var(--line);margin-top:10px;padding-top:12px;font-size:.86rem;line-height:1.5;color:var(--ink)}
+  .xp-panel p{margin:0 0 8px;overflow-wrap:anywhere}
+  .xp-facts{color:var(--ink-soft)}
+  .xp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+  .xp-photos img{width:100%;height:112px;object-fit:cover;border-radius:8px;display:block;background:var(--pc-sky)}
+  /* summary: a plain row like the others - no coloured box */
+  .s-xp{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .s-xp .s-row{padding:0;gap:10px}
+  .s-xp .s-row>span:first-child{color:var(--ink)}
+  .s-xp-names{margin-top:3px;font-size:.76rem;line-height:1.45;color:var(--ink-soft);overflow-wrap:anywhere}
+  @media(max-width:640px){
+    /* the price and the button drop under the meta line so the name gets the full width */
+    .xp-row{grid-template-columns:64px minmax(0,1fr);align-items:start}
+    .xp-row.nophoto{grid-template-columns:minmax(0,1fr)}
+    .xp-photo{width:64px;height:64px;grid-row:1/3}
+    .xp-name{white-space:normal;overflow-wrap:anywhere}
+    .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+  }
+
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:520px){.grid2{grid-template-columns:1fr}}
 
@@ -949,6 +1000,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
         <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></span><span class="pr">+$10</span></button>
       </div>
+      <!-- Partner experiences near the drop-off (spec docs/superpowers/specs/2026-10-06-partner-experiences-design.md).
+           Hidden until booking.js syncExperiences() gets a non-empty answer from GET /experiences/near; an
+           "Request" tap records an id and never touches the price. -->
+      <div id="experiences-block" hidden></div>
       <div class="nav-btns"><button class="back-link" onclick="goStep(2)">← Back</button><button class="btn btn-primary btn-lg" id="n4" onclick="goStep(4)">Continue</button></div>
     </div>
 
@@ -1056,6 +1111,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="s-row s-promo" id="sum-promo" hidden><span id="sum-promo-label"></span><b id="sum-promo-amt"></b></div>
         <div class="s-div"></div>
         <div class="s-total"><span class="muted">Total</span><b id="sum-total"></b></div>
+        <div class="s-xp" id="sum-experiences" hidden>
+          <div class="s-row"><span>Experiences</span><span id="sum-experiences-count"></span></div>
+          <div class="s-xp-names" id="sum-experiences-list"></div>
+        </div>
         <div class="s-perks">
           <div id="perk-cancel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><path d="M15.3 14.6a3.3 3.3 0 1 0 .6 2.4"/><path d="M15.9 12.4v2.4h-2.4"/><circle class="wp" cx="8" cy="2.8" r="1.2"/></svg> Free cancellation up to 24 hours before</div>
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a2 2 0 0 1-2 2H7.5l-4 3.5V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><circle cx="8.5" cy="10" r=".4"/><circle cx="15.5" cy="10" r=".4"/><circle class="wp" cx="12" cy="10" r="1.3"/></svg> Confirmation emailed after payment</div>
@@ -1175,6 +1234,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=a3a67c3501"></script>
+<script src="booking.js?v=24ef913966"></script>
 </body>
 </html>
