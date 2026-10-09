@@ -66,3 +66,15 @@ describe('InMemoryPaymentRepo.touchAttempt', () => {
     await expect(r.touchAttempt('nope')).rejects.toThrow(/payment_not_found/);
   });
 });
+
+describe('payment purpose', () => {
+  it('defaults to full and keeps an explicit purpose', async () => {
+    const repo = new InMemoryPaymentRepo();
+    const base = { bookingId: 'b1', provider: 'payhere', amount: 5000, currency: 'USD' };
+    const full = await repo.create({ ...base, orderId: 'CH-A', idempotencyKey: 'k1' });
+    const bal = await repo.create({ ...base, orderId: 'CH-A-B', idempotencyKey: 'k2', purpose: 'balance' });
+    expect(full.purpose).toBe('full');
+    expect(bal.purpose).toBe('balance');
+    expect((await repo.findByBookingId('b1')).map((p) => p.purpose).sort()).toEqual(['balance', 'full']);
+  });
+});

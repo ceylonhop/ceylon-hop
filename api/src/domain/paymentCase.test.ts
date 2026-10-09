@@ -29,14 +29,14 @@ const evidence = (over: Partial<Omit<CaseEvidence, 'booking'>> & { booking?: Par
 
 const gateway = (over: Partial<CasePayment> = {}): CasePayment => ({
   id: 'p1', bookingId: 'b1', provider: 'payhere', orderId: 'CH-AAAA2', amount: 5000, currency: 'USD',
-  idempotencyKey: 'checkout:b1', status: 'pending', attemptCount: 1, lastAttemptAt: T('09:01:00'),
+  idempotencyKey: 'checkout:b1', status: 'pending', purpose: 'full', attemptCount: 1, lastAttemptAt: T('09:01:00'),
   createdAt: T('09:01:00'), settledAt: null, settlementSource: null, settledBy: null, gatewayPaymentId: null,
   ...over,
 });
 
 const manual = (over: Partial<CasePayment> = {}): CasePayment => ({
   id: 'p2', bookingId: 'b1', provider: 'cash', orderId: 'CH-AAAA2-MANUAL', amount: 5000, currency: 'USD',
-  idempotencyKey: 'manual-paid:b1', status: 'succeeded', attemptCount: 0, lastAttemptAt: null,
+  idempotencyKey: 'manual-paid:b1', status: 'succeeded', purpose: 'full', attemptCount: 0, lastAttemptAt: null,
   createdAt: T('12:00:00'), settledAt: T('12:00:00'), settlementSource: 'manual', settledBy: 'f@x.com', gatewayPaymentId: 'SLIP-7',
   ...over,
 });
