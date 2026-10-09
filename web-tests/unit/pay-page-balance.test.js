@@ -43,7 +43,7 @@ describe('paidOnLabel', () => {
     expect(paidOnLabel('2026-01-31')).toBe('31 Jan 2026');
   });
   it('prints nothing for a missing or odd value', () => {
-    for (const bad of [null, undefined, '', 'yesterday', '2026-13-01', '2026-10-5']) expect(paidOnLabel(bad)).toBe('');
+    for (const bad of [null, undefined, '', 'yesterday', '2026-00-10', '2026-10-5']) expect(paidOnLabel(bad)).toBe('');
   });
 });
 
