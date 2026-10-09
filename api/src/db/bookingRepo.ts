@@ -293,9 +293,14 @@ export interface BookingRepo {
   // `termsAcceptedAt` is optional: an ops "Mark booked" re-book carries no acceptance, because
   // nobody ticked a box — that customer agreed over WhatsApp. Absent leaves the column alone
   // rather than stamping an acceptance that never happened.
+  //
+  // `amountDueNow` is the pay link's deposit-or-full choice on a resumed /start (spec 2026-10-07
+  // §4): a customer who tried the deposit and came back for full (or the reverse) moves the same
+  // booking. Applied ONLY while no payment on the booking has succeeded — the status guard above
+  // is not enough on its own, because settlement and the status move are separate writes.
   refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking>;
 }
 
@@ -528,13 +533,18 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
+    // The choice is frozen the moment any payment on the booking has succeeded (see the interface).
+    const settled = this.payments
+      ? (await this.payments.findByBookingId(id)).some((p) => p.status === 'succeeded')
+      : false;
     const updated: Booking = {
       ...current,
+      ...(details.amountDueNow !== undefined && !settled ? { amountDueNow: details.amountDueNow } : {}),
       input: { ...current.input, customer: { ...details.customer } },
       // Absent billing leaves what was captured before: a payer who filled the address on the
       // first attempt and left it blank on a retry should not lose it.

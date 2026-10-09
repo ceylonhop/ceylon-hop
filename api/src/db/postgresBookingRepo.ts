@@ -616,7 +616,7 @@ export class PostgresBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking> {
     const c = details.customer;
     const b = details.billing;
@@ -641,6 +641,12 @@ export class PostgresBookingRepo implements BookingRepo {
       // rewrites it. An ops re-book sends none — nobody ticked a box on a WhatsApp booking —
       // and must leave the column as it found it.
       if (details.termsAcceptedAt) set.termsAcceptedAt = details.termsAcceptedAt;
+      // The deposit-or-full choice (spec 2026-10-07 §4): rewritten only while no payment on the
+      // booking has succeeded, decided inside this same statement so a settlement landing
+      // concurrently cannot be undone. The status guard in the WHERE below covers the rest.
+      if (details.amountDueNow !== undefined) {
+        set.amountDueNow = sql`case when ${this.succeededPayment()} then ${bookings.amountDueNow} else ${details.amountDueNow}::integer end`;
+      }
       // The UPDATE has to SET something real or it returns no row, and the status guard below
       // is the whole point of doing this as one statement. An ops re-book carries neither
       // billing nor an acceptance, so assign status to itself: here the guard, not the value,

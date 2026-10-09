@@ -78,3 +78,21 @@ describe('ops shell: payment link wiring', () => {
     expect(linkResets.length).toBeGreaterThanOrEqual(bookResets.length - 1);
   });
 });
+
+// Spec 2026-10-07 §5.4: ops mints one ordinary pay link and the CUSTOMER picks deposit or full on
+// it, so the estimate chip says what the customer will be offered rather than "pay in full".
+describe('ops shell: the estimate chip names the deposit option', () => {
+  it('says the customer can pay a deposit or in full, with both figures, when the quote is eligible', () => {
+    expect(body).toContain('Customer can pay a deposit of ');
+    expect(body).toContain(' (balance ');
+    expect(body).toContain(' later) or in full on the pay link');
+    // Driven by the engine's own deposit figure — the same rule /quotes/pay/view applies — never
+    // a second copy of the eligibility rule in the browser.
+    expect(body).toMatch(/est\.deposit && est\.deposit\.cents > 0/);
+  });
+
+  it('keeps the old chip for a quote that is not deposit-eligible', () => {
+    expect(body).toContain('Pay in full to confirm');
+    expect(body).toContain('no balance due after checkout');
+  });
+});
