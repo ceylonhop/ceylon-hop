@@ -1,10 +1,12 @@
-# Deposits — ops first — Implementation Plan
+# Deposits — customer picks on the pay link — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ops can sell an eligible quote for a card deposit, the trip runs as secured, and ops collects the balance on day one with a card link it sends by hand.
+**Goal:** On an eligible quote's pay link the customer chooses **pay a deposit** or **pay in full**; after a deposit the trip runs as secured and the customer pays the balance from the **same pay link, any time** (ops resends it).
 
-**Architecture:** No new booking status. Payment state is derived from the `payments` ledger (`paid so far` = Σ succeeded payments; balance = total − paid), with a new `payments.purpose` (`full | deposit | balance`). The deposit is the booking's `amount_due_now`, frozen at creation; the balance is a second ordinary PayHere checkout with its own order id (`REF-B`). Every guard that today assumes one payment per booking learns that a `deposit` + `balance` pair is one sale.
+> **Revised 2026-10-08 (owner, after testing #948 on staging).** Spec §11 lists what changed. PR 1 (#940) drops `quotes.pay_link_deposit_cents`; PR 3 gains the abandoned-sibling rule (Task 8); **PR 4 and PR 5 are rewritten** (Tasks 10–15 below). Status: PR 1 #940 open, PR 2 #948 merged.
+
+**Architecture:** No new booking status. Payment state is derived from the `payments` ledger (`paid so far` = Σ succeeded payments; balance = total − paid), with a new `payments.purpose` (`full | deposit | balance`). The deposit is the booking's `amount_due_now`, chosen by the customer at `/quotes/pay/start`; deposit attempts use order id `REF-D`, the balance is a second ordinary PayHere checkout on `REF-B`. Every guard that today assumes one payment per booking learns that a `deposit` + `balance` pair is one sale.
 
 **Tech Stack:** Node 20 · TypeScript strict · Hono · Zod · Vitest · Drizzle + Postgres · plain-JS front-end pages · Playwright (`web-tests/`).
 
@@ -15,20 +17,20 @@
 
 - Money is integer USD cents end-to-end. Never floats in storage.
 - Deposit rule (fixed, not editable): `max(round(total × 10 / 100), 5000)`, capped at `total`; only when `product` is `private` or `chauffeur` **and** `total ≥ 15000`; otherwise no deposit (0). Shared rides: never.
-- Order ids: first payment `REF` (unchanged); balance `REF-B`. Balance idempotency key: `checkout:${bookingId}:balance`.
+- Order ids / idempotency keys: full `REF` / `checkout:${bookingId}` (unchanged); deposit `REF-D` / `checkout:${bookingId}:deposit`; balance `REF-B` / `checkout:${bookingId}:balance`.
 - Balance checkout is allowed only when booking status ∈ {`paid`, `confirmed`, `in_progress`}, a succeeded `deposit` payment exists, and balance > 0. The client never sends an amount.
-- No automated reminders, no tokenized charging, no cash deposits/balances, no website checkout change in this plan.
+- No automated reminders, no tokenized charging, no cash deposits/balances, no website checkout change, no manage-page pay button in this plan.
 - Migration: next free number at build time (**0066** if PR #930 `0065_experiences` has merged; it is open as of 2026-10-07). Its journal `when` must be greater than every existing entry. Merging it to `main` applies it to staging; prod only via the `main → production` promote, with the owner's explicit OK.
 - Pricing files (`rateCard.ts`) and `@generated` blocks: owner OK before PR 2 is opened; regenerate with `npm run generate`, never hand-edit generated output.
 - Each PR: `cd api && npm run check` green **and** `npm --prefix <abs path>/web-tests run test:all` green before commit. Stage files by path only. Work in a worktree off `origin/main`, never the shared tree.
 - Logic bugs: failing test first, run it red, then fix. Paste red→green in the PR.
-- Customer copy is plain and short; the balance is "due on day one of your trip".
+- Customer copy is plain and short; the balance can be paid "any time before your trip" with the same link.
 
 ## File map
 
 | File | Responsibility | PR |
 |---|---|---|
-| `api/drizzle/00NN_deposit_payments.sql` (+ journal, schema.ts) | `payments.purpose`, `quotes.pay_link_deposit_cents`, comms kind | 1 |
+| `api/drizzle/00NN_deposit_payments.sql` (+ journal, schema.ts) | `payments.purpose`, comms kind (no quote column — 2026-10-08) | 1 |
 | `api/src/db/paymentRepo.ts`, `postgresPaymentRepo.ts`, `postgresPaymentSettlementRepo.ts` | carry `purpose` | 1 |
 | `api/src/domain/balance.ts` (new) | `paidCents`, `balanceDueCents`, `isBalanceOpen` — the only balance maths | 1 |
 | `api/src/routes/bookings.ts` (`projectBooking`, `/view`) | customer projection uses the ledger | 1 |
@@ -37,9 +39,9 @@
 | `api/src/routes/webhooks.ts`, `services/notifications.ts` (+ kind lists) | balance webhook path, receipt email | 3 |
 | `api/src/domain/paymentCase.ts`, `services/bookingTracking.ts`, `services/watchdog.ts` | stop treating the pair as an incident | 3 |
 | `api/src/db/refundRepo.ts`, `postgresRefundRepo.ts`, `routes/admin.ts` | refund per payment | 3 |
-| `api/src/db/quoteRepo.ts`, `postgresQuoteRepo.ts`, `routes/internalQuote.ts` | deposit pay link | 4 |
-| `api/src/routes/quotePay.ts`, `pay.html` | deposit sale on the pay page | 4 |
-| `api/src/routes/bookings.ts` (checkout, checkout-token, pay-return), `manage.html` | balance payment | 5 |
+| `api/src/db/bookingRepo.ts`, `postgresBookingRepo.ts` | rewrite `amountDueNow` on a resumed start (guarded) | 4 |
+| `api/src/routes/quotePay.ts`, `pay.html`, `bookings.ts` (checkout purpose/orderId) | customer picks deposit or full | 4 |
+| `api/src/routes/quotePay.ts` (`balance` state, `/balance`), `bookings.ts` (balance checkout, pay-return), `pay.html` | balance on the same pay link | 5 |
 | `api/src/services/opsView.ts`, `routes/ops.ts`, `routes/ops-ui.html` | ops sees and sends the balance | 4–5 |
 
 ---
@@ -57,7 +59,8 @@ Branch: `feat/deposits-ledger`. Title: `feat(payments): payment purpose + derive
 - Test: `api/src/db/depositPaymentsMigration.test.ts` (new)
 
 **Interfaces:**
-- Produces: column `payments.purpose` (`'full'|'deposit'|'balance'`, not null, default `'full'`); column `quotes.pay_link_deposit_cents` (int, null, > 0); comms kind `'balance_received'`. Drizzle fields `payments.purpose`, `quotes.payLinkDepositCents`.
+- Produces: column `payments.purpose` (`'full'|'deposit'|'balance'`, not null, default `'full'`); comms kind `'balance_received'`. Drizzle field `payments.purpose`.
+- **2026-10-08:** the `quotes.pay_link_deposit_cents` column, its CHECK, its drizzle field and its test below are **removed** from #940 — customer choice needs no frozen deposit. Ignore those lines in Steps 1 and 3.
 
 - [ ] **Step 1: Write the failing migration test** (pattern copied from `paymentsBookingIdIndexMigration.test.ts`)
 
@@ -730,9 +733,9 @@ it('balance receipt says fully paid with deposit, balance and total', async () =
   expect(sent.text).toContain('Balance paid: $150.00');
   expect(sent.text).toContain('Total paid: $200.00');
 });
-it('deposit email promises the balance link on day one', async () => {
+it('deposit email says the balance can be paid any time with the same link', async () => {
   await sendDepositReceived(depositBooking, email);
-  expect(email.sent.at(-1)!.html).toContain('link to pay the balance on the first day of your trip');
+  expect(email.sent.at(-1)!.html).toContain('any time before your trip, using the same link');
 });
 ```
 
@@ -752,7 +755,7 @@ And for the existing deposit settle: the `booking_paid` title now shows the depo
 
 - [ ] **Step 3: Implement**
 
-`notifications.ts` — deposit copy at `:919`: replace "we’ll share the payment details on WhatsApp closer to the day." with "we’ll send you a link to pay the balance on the first day of your trip." and the comment at `:895-896` with "A deposit was collected; the balance is paid by a link ops sends on day one (spec 2026-10-07)." New function:
+`notifications.ts` — deposit copy at `:919`: replace "we’ll share the payment details on WhatsApp closer to the day." with "pay the balance of $Z any time before your trip, using the same link you paid the deposit with." (Z = `balanceDueCents`, formatted like the other rows) and the comment at `:895-896` with "A deposit was collected; the balance is paid on the same pay link, any time (spec 2026-10-07, revised 2026-10-08)." New function:
 
 ```ts
 // ── Balance received (the second half of a deposit booking — now fully paid) ──
@@ -876,6 +879,8 @@ git commit -m "feat(payments): balance webhook sends a fully-paid receipt and th
   const balance = e.payments.find((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded') ?? null;
 ```
 
+**Abandoned sibling (2026-10-08):** with customer choice a booking can hold a `pending`/`failed` `full` attempt beside a succeeded `deposit` one (or the reverse). Pick the first-payment row as `firsts.find((p) => p.status === 'succeeded') ?? firsts[0] ?? null` where `firsts = e.payments.filter((p) => !isManual(p) && p.purpose !== 'balance')`. Extra failing test: evidence `[full REF pending, deposit REF-D succeeded]` → verdict `paid` (today: judged on the pending row). Two **succeeded** first-payment rows must still read `paid_twice` (test it). Apply the same "prefer the succeeded row" rule anywhere else this PR touches that picks one payment per booking (grep `findByBookingId(` callers that take `[0]` or `.find(`).
+
 Add `balance` to the `Money` interface and the returned object; `refundOf` `capturedCents` becomes `(m.cardPaid && m.gateway ? m.gateway.amount : 0) + (m.balance ? m.balance.amount : 0) + (m.manualPaid && m.manual ? m.manual.amount : 0)`. Add `purpose: string` to the `CaseEvidence['payments']` element type and pass it through in `services/paymentCase.ts`.
 
 `bookingTracking.ts:238`: `payments.filter((payment) => payment.status === 'succeeded' && payment.purpose !== 'balance')` with the comment "A balance never moves the booking — the deposit did (spec 2026-10-07)."
@@ -969,466 +974,191 @@ git commit -m "feat(refunds): a refund names the payment it returns; capped per 
 
 ---
 
-# PR 4 — Ops deposit link
+# PR 4 — The customer picks deposit or full on the pay link
 
-Branch: `feat/deposits-link`.
+Branch: `feat/deposits-choice`. Rewritten 2026-10-08 (spec §5.2). Line numbers below are from `origin/main` @ `98f657c4`; re-find by quoted text if they moved. Depends on PR 1 (`payments.purpose`) only — not on PR 3 (a deposit settles exactly like a full payment today; the webhook already sends `sendDepositReceived` when `amountDueNow < total`, `webhooks.ts:380-386`).
 
-### Task 10: Mint a deposit pay link
+### Task 10: `/quotes/pay/view` offers the deposit; `/start` takes the choice
 
 **Files:**
-- Modify: `api/src/db/quoteRepo.ts` (`SavedQuote` `:102-105`, patch type `:187-191`, in-memory init `:430-432`, patch `:573-575`, content-update clear `:643-644`)
-- Modify: `api/src/db/postgresQuoteRepo.ts` (row map `:60-61`, patch `:399-402`, content-update clear `:511-512`)
-- Modify: `api/src/routes/internalQuote.ts` (`POST /:id/pay-link` `:1183-1294`)
-- Test: `api/src/routes/internalQuote.test.ts` (pay-link section)
+- Modify: `api/src/routes/quotePay.ts` — `StartSchema` `:39-44`, `/view` payable branch `:209-223`, `/start` resume `:269-289` and create `:302-328`
+- Modify: `api/src/db/bookingRepo.ts` + `postgresBookingRepo.ts` — `refreshPayerDetails` (`bookingRepo.ts:296`) gains an optional `amountDueNow`
+- Test: `api/src/routes/quotePay.test.ts`, the repo tests that cover `refreshPayerDetails`
 
 **Interfaces:**
-- Consumes: `depositFor` (Task 5).
-- Produces: `SavedQuote.payLinkDepositCents: number | null`; patch key `payLinkDepositCents`; `POST /admin/quote/:id/pay-link` body `{ mode: 'deposit' }` → `{ url, payhereMode, amountCents /* the deposit */, coverage: null, depositCents, totalCents }`; refusal `409 { error: 'not_linkable', reason: 'deposit_ineligible' }`.
+- Consumes: `depositFor(product, totalCents)` (`api/src/quote/extrasDeposit.ts`, #948); the quote engine's `product`.
+- Produces: `/view` payable body `deposit?: { cents, usd, balanceCents, balanceUsd }`; `/start` body `payment?: 'full' | 'deposit'`; refusal `409 { error: 'deposit_ineligible' }`; `refreshPayerDetails(id, { …, amountDueNow? })`.
 
-- [ ] **Step 1: Failing tests**
-
-```ts
-it('mints a deposit link for an eligible private quote', async () => {
-  const q = await readyQuote(quotes, { totalCents: 21_900 }); // private, ≥ $150
-  const res = await payLink(app, q.id, { mode: 'deposit' });
-  expect(res.status).toBe(200);
-  expect(await res.json()).toMatchObject({ amountCents: 5_000, depositCents: 5_000, totalCents: 21_900, coverage: null });
-  expect((await quotes.get(q.id))!.payLinkDepositCents).toBe(5_000);
-});
-it('refuses a deposit on a quote under $150', async () => {
-  const q = await readyQuote(quotes, { totalCents: 14_999 });
-  expect(await (await payLink(app, q.id, { mode: 'deposit' })).json()).toEqual({ error: 'not_linkable', reason: 'deposit_ineligible' });
-});
-it('refuses a deposit combined with a part-of-trip selection', async () => {
-  const q = await readyQuote(quotes, { totalCents: 21_900 });
-  const res = await payLink(app, q.id, { mode: 'deposit', legIndexes: [0], extraIndexes: [] });
-  expect(await res.json()).toEqual({ error: 'not_linkable', reason: 'deposit_ineligible' });
-});
-it('switching between full and deposit retires the other link', async () => {
-  const q = await readyQuote(quotes, { totalCents: 21_900 });
-  const full = await (await payLink(app, q.id)).json();
-  const dep = await (await payLink(app, q.id, { mode: 'deposit' })).json();
-  expect(dep.url).not.toBe(full.url);
-  expect((await quotes.get(q.id))!.payLinkSeq).toBe(1);
-  const again = await (await payLink(app, q.id)).json();
-  expect((await quotes.get(q.id))!.payLinkDepositCents).toBeNull();
-  expect(again.url).not.toBe(dep.url);
-});
-it('a content edit clears the frozen deposit', async () => { /* update the quote; expect payLinkDepositCents null */ });
-```
-
-(`payLink(app, id, body?)` = the file's existing pay-link request helper; add the optional body if it has none.)
-
-- [ ] **Step 2: Run — expect FAIL.**
-
-- [ ] **Step 3: Implement**
-
-Quote repos: add `payLinkDepositCents` beside `soldCents` in every place listed under Files (type, init `null`, patch passthrough, map from `r.payLinkDepositCents ?? null`, and `= null` wherever `soldCents = null` is cleared on a content update).
-
-Route, after `const raw = …`:
+One helper in `quotePay.ts`, used by both routes so they can never disagree:
 
 ```ts
-    // Deposit link (spec 2026-10-07 §5.2): the whole trip, sold for its deposit now and the rest on
-    // day one. Never a part of the trip — a deposit on a subset is undesigned — and only for an
-    // eligible quote. The amount is the fixed rule's, frozen on the quote like soldCents.
-    if (raw != null && 'mode' in raw && raw.mode !== 'deposit' && raw.mode !== 'full') {
-      return c.json({ error: 'bad_request' }, 400);
-    }
-    const depositMode = raw?.mode === 'deposit';
-    const depositCents = depositMode && !attemptsSelection ? depositFor(engine.product, quote.totalCents) : 0;
-    if (depositMode && depositCents <= 0) {
-      return c.json({ error: 'not_linkable', reason: 'deposit_ineligible' }, 409);
-    }
-```
-
-(`attemptsSelection` must be computed before this block; move its line up if needed.)
-
-`changed` becomes:
-
-```ts
-    const frozenDeposit = depositMode ? depositCents : null;
-    const changed =
-      JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection) ||
-      (quote.payLinkDepositCents ?? null) !== frozenDeposit;
-```
-
-The patch's `changed` branch adds `payLinkDepositCents: frozenDeposit,`. The response:
-
-```ts
-      amountCents: depositMode ? depositCents : amountCents,
-      coverage,
-      ...(depositMode ? { depositCents, totalCents: quote.totalCents } : {}),
-```
-
-- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/src/db/quoteRepo.ts api/src/db/postgresQuoteRepo.ts api/src/routes/internalQuote.ts api/src/routes/internalQuote.test.ts
-git commit -m "feat(quote): ops can mint a deposit pay link on an eligible quote"
-```
-
-### Task 11: The deposit sale — pay page and checkout
-
-**Files:**
-- Modify: `api/src/routes/quotePay.ts` (`/view` `:206-223`, `/start` `:302-325`)
-- Modify: `api/src/routes/bookings.ts` (checkout `payments.create` `:1005-1012`)
-- Modify: `pay.html` (payable view `:560-567`, `totalsHtml` `:638-649`, purchase value `:280-292`)
-- Test: `api/src/routes/quotePay.test.ts`, `api/src/routes/checkout.test.ts`, `web-tests/unit/` (new `pay-page-deposit.test.js`, extracting `totalsHtml` the way `pay-page-discount.test.js` does)
-
-**Interfaces:**
-- Consumes: `quote.payLinkDepositCents` (Task 10).
-- Produces: `/quotes/pay/view` payable body gains `deposit: { cents, usd, balanceCents, balanceUsd } | undefined` (`totals` stays the trip total); the created booking has `amountDueNow = payLinkDepositCents`; the checkout's first payment has `purpose: 'deposit'` when `amountDueNow < total`.
-
-- [ ] **Step 1: Failing tests**
-
-quotePay.test.ts:
-
-```ts
-it('a deposit link sells the whole trip for its deposit', async () => {
-  const q = await readyQuote(quotes, { totalCents: 21_900 });
-  await quotes.patch(q.id, { payLinkDepositCents: 5_000, payLinkSeq: 1 });
-  const t = signQuotePayToken(q.id, q.revision, SECRET, 1);
-  const v = await (await view(app, t)).json();
-  expect(v.totals.cents).toBe(21_900);
-  expect(v.deposit).toEqual({ cents: 5_000, usd: '$50.00', balanceCents: 16_900, balanceUsd: '$169.00' });
-  const started = await (await start(app, t)).json();
-  const b = await bookings.get(started.bookingId);
-  expect(b).toMatchObject({ total: 21_900, amountDueNow: 5_000 });
-});
-```
-
-(Match `usd()`'s actual format — check one existing assertion in the file.)
-
-checkout.test.ts: a booking with `total 21_900, amountDueNow 5_000` → after `POST /bookings/:id/checkout`, `(await payments.findByBookingId(id))[0]` has `amount 5_000, purpose 'deposit', orderId booking.reference`; a full booking's row has `purpose 'full'`.
-
-- [ ] **Step 2: Run — expect FAIL.**
-
-- [ ] **Step 3: Implement**
-
-`/view` payable branch, after `const soldCents = …`:
-
-```ts
-    // A deposit link (spec 2026-10-07 §5.2): the page shows the trip total, what is paid today and
-    // what is left for day one. The charge is the deposit.
-    const dep = quote.payLinkDepositCents;
-    …
-      totals: { cents: soldCents, usd: usd(soldCents) },
-      ...(dep ? { deposit: { cents: dep, usd: usd(dep), balanceCents: soldCents - dep, balanceUsd: usd(soldCents - dep) } } : {}),
-```
-
-`/start`: both `amountDueNow: soldCents` become `amountDueNow: quote.payLinkDepositCents ?? soldCents`.
-
-Checkout `payments.create`: add `purpose: dueNow < booking.total ? 'deposit' : 'full',`.
-
-`pay.html` — `totalsHtml(copy, totals, discount, deposit)` gains, appended after the existing return value (build it into a variable first):
-
-```js
-    + (deposit
-        ? '<div class="tot tot-sub"><span class="l">Deposit today</span><span class="v">' + esc(deposit.usd) + '</span></div>'
-          + '<div class="tot tot-sub"><span class="l">Balance on day one</span><span class="v">' + esc(deposit.balanceUsd) + '</span></div>'
-        : '')
-```
-
-Call it with `data.deposit`; the paysub line reads `(data.deposit ? 'Pay your deposit to secure the trip. ' + esc(data.deposit.usd) : 'Pay securely to confirm. ' + esc(tt.usd)) + ' — no extra fees.'`. `withMoney` / the purchase `value` uses `data.deposit ? data.deposit.cents : totals.cents` (the amount actually charged).
-
-- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`; `test:all`. Eyeball `pay.html` with the dev server on a deposit link (memory: local preview cannot price — use the API test data path).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add api/src/routes/quotePay.ts api/src/routes/quotePay.test.ts api/src/routes/bookings.ts api/src/routes/checkout.test.ts pay.html web-tests/unit/pay-page-deposit.test.js
-git commit -m "feat(pay): a deposit link charges the deposit and shows the day-one balance"
-```
-
-### Task 12: Ops quote builder — Deposit link button and copy
-
-**Files:**
-- Modify: `api/src/routes/ops-ui.html` — button set `:9767-9796`, action dispatch `:11100-11112`, `mintPayLink` `:6656-6674`, estimate chip `:8985-8992`
-- Test: `api/src/routes/opsUi.paylink.test.ts` (this file already scans the action bar; follow its pattern)
-
-- [ ] **Step 1: Failing test** — the action bar for a `ready`/`sent` quote whose estimate has `deposit.cents > 0` contains `mintDepositLink`; one with `deposit.cents === 0` does not; the dispatch maps `mintDepositLink` → `depositLinkPress`.
-
-- [ ] **Step 2: Run — expect FAIL.**
-
-- [ ] **Step 3: Implement**
-
-Next to `var PAYLINK = …` (`:9767`) — read the estimate the chip uses (`est`, `:8985`; it carries `deposit: money(result.depositCents)` from `internalQuote.ts:455`):
-
-```js
-  /* Deposit link (spec 2026-10-07): whole trip, eligible quotes only — the server is the authority
-     and refuses anything else with reason deposit_ineligible. */
-  var DEPLINK = (est && est.deposit && est.deposit.cents > 0)
-    ? B('mintDepositLink', 'Deposit link (' + fmtUsd(est.deposit.cents) + ')', 'ch-btn-outline', false, 'Copies a link to pay the deposit now and the balance on day one')
-    : null;
-```
-
-and on each `ready`/`sent` line, after `PAYLINK`: `if (DEPLINK) out.push(DEPLINK);` — keep each line one line (the bar tests scan line by line).
-
-Dispatch (`:11104` area): `} else if (action === 'mintDepositLink') { runAction(action, depositLinkPress);`.
-
-After `payLinkPress`:
-
-```js
-/* Same press-mint-copy as the full link, with mode=deposit. Minting it retires a full link and
-   vice versa (the server bumps the seq), so _payLink is replaced either way. */
-async function depositLinkPress() {
-  if (!state.savedId) return;
-  try {
-    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'deposit' }),
-    });
-    if (!r.ok) {
-      var err = await jsonOrNull(r);
-      showToast(err && err.reason === 'deposit_ineligible'
-        ? 'This quote can’t take a deposit — it must be private or chauffeur, $150 or more, whole trip'
-        : payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
-      return;
-    }
-    var body = await jsonOrNull(r);
-    if (!body || !body.url) { showToast('Could not create the deposit link', 'error'); return; }
-    _payLink = { url: body.url, mode: body.payhereMode || 'off' };
-    _payPartial = null;
-    copyPayLink();
-  } catch (e) {
-    window.opsReportError && window.opsReportError('mint deposit link', e);
-    showToast('Could not create the deposit link', 'error');
-  }
+// Spec 2026-10-07 §5.2 (revised 2026-10-08): the deposit option exists only for the whole trip
+// (no part-of-trip selection) of an eligible quote, by the fixed rule. 0 = not offered.
+function depositOffer(quote: SavedQuote): number {
+  if (quote.soldCents != null || hasSelection(quote.payLinkSelection)) return 0;
+  return depositFor(productOf(quote), quote.totalCents);
 }
 ```
 
-Estimate chip (`:8985-8992`) — replace "Pay in full to confirm … no balance due after checkout" with: label `Deposit option`, value `fmtUsd(est.deposit.cents)`, note `'balance ' + fmtUsd(est.total.cents - est.deposit.cents) + ' on day one'`, shown when `est.deposit && est.deposit.cents > 0` (any product, not only chauffeur). The WhatsApp copy lines at `:9478-9479` and `:9517-9518` ("Pay in full to confirm") stay — the full link is still the default.
+(`productOf` = however the file / `payPageCopy` already reads private vs chauffeur vs shared from the quote — reuse it, don't re-derive. `hasSelection` = the existing normalisation of `payLinkSelection`; an empty selection means whole trip.)
 
-- [ ] **Step 4: Run — expect PASS**; `test:all`; eyeball the builder in the browser preview (deposit button present on a $219 private quote, absent on a $120 one; toast on press).
+- [ ] **Step 1: Failing tests** (quotePay.test.ts, using its `readyQuote` / `view` / `start` helpers)
+  - eligible $219 private whole-trip quote → `/view` `deposit` = `{ cents: 5000, usd: '$50.00', balanceCents: 16900, balanceUsd: '$169.00' }` (match `usd()`'s real format); `totals.cents` still 21900.
+  - $149.99 quote, a shared quote, and a part-of-trip link (`soldCents` set) → no `deposit` key.
+  - `/start` `{ …, payment: 'deposit' }` on the eligible quote → booking `{ total: 21900, amountDueNow: 5000 }`.
+  - `/start` with no `payment` → `amountDueNow === total` (default lane unchanged).
+  - `/start` `payment: 'deposit'` on an ineligible quote / part-of-trip link → `409 { error: 'deposit_ineligible' }`, no booking created.
+  - Resume: first `/start` `deposit` (booking `payment_pending`), second `/start` `full` → same booking id, `amountDueNow` now 21900; and back again.
+  - Resume after a succeeded payment on the booking → `amountDueNow` NOT rewritten (and `/start` answers `already_paid` as today, `:239`).
+  - `payment: 'cash'` → 400.
 
-- [ ] **Step 5: Commit and open PR 4**
-
-```bash
-git add api/src/routes/ops-ui.html api/src/routes/opsUi.paylink.test.ts
-git commit -m "feat(ops): Deposit link button on eligible quotes"
-```
-
----
-
-# PR 5 — Balance link
-
-Branch: `feat/deposits-balance`.
-
-### Task 13: Balance checkout, checkout token and pay-return
-
-**Files:**
-- Modify: `api/src/routes/bookings.ts` — checkout `:955-1150`, `/view/checkout-token` `:924-940`, `/pay-return` `:885-916`
-- Test: `api/src/routes/checkout.balance.test.ts` (new; copy setup from `checkout.test.ts`), `api/src/routes/payReturn.test.ts`
-
-**Interfaces:**
-- Consumes: `balanceDueCents`, `isBalanceOpen`, `SECURED_STATUSES` (Task 3).
-- Produces: `POST /bookings/:id/checkout` body `{ purpose: 'balance', returnTo?: 'manage' }` → checkout params for `REF-B`; `409 { error: 'no_balance_due' }` otherwise.
-
-- [ ] **Step 1: Failing tests**
-
-```ts
-// deposit booking: total 20000, amountDueNow 5000, status confirmed, deposit 5000 succeeded
-it('charges exactly the balance on REF-B', async () => {
-  const res = await checkout(booking.id, { purpose: 'balance', returnTo: 'manage' });
-  expect(res.status).toBe(200);
-  const rows = await payments.findByBookingId(booking.id);
-  const bal = rows.find((p) => p.purpose === 'balance')!;
-  expect(bal).toMatchObject({ orderId: `${booking.reference}-B`, amount: 15000, idempotencyKey: `checkout:${booking.id}:balance` });
-  expect((await res.json()).amount).toBe(15000); // field name per the adapter's params
-});
-it('is idempotent', async () => { /* two calls → one balance row */ });
-it('refuses when nothing is owed, without a deposit, or on a closed booking', async () => {
-  // full-paid booking → 409 no_balance_due; payment_pending deposit booking → 409; cancelled → 409
-});
-it('the manage page may get a checkout token for an open balance', async () => {
-  expect((await checkoutToken(manageToken)).status).toBe(200);
-});
-```
-
-payReturn.test.ts:
-
-```ts
-it('a balance return is pending until the balance lands, even though the deposit succeeded', async () => {
-  // deposit succeeded, balance row pending
-  expect((await (await payReturn(rt)).json()).status).toBe('pending');
-  // mark the balance succeeded
-  expect((await (await payReturn(rt)).json()).status).toBe('paid');
-});
-```
-
-- [ ] **Step 2: Run — expect FAIL** (`not_chargeable` 409 on a confirmed booking; pay-return answers `paid` immediately).
+- [ ] **Step 2: Run — expect FAIL.**
 
 - [ ] **Step 3: Implement**
-
-Checkout: move `const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown; purpose?: unknown } | null;` to just after the booking is loaded (it is read once). Then replace the status gate with:
-
-```ts
-    // The balance of a deposit booking (spec 2026-10-07 §5.3). A secured booking may be charged
-    // ONLY its balance, and only once a deposit has settled; the amount comes from the ledger,
-    // never the client.
-    const wantsBalance = body?.purpose === 'balance';
-    let balanceCents = 0;
-    if (wantsBalance) {
-      const rows = await payments.findByBookingId(booking.id);
-      if (!isBalanceOpen(booking, rows)) return c.json({ error: 'no_balance_due', status: booking.status }, 409);
-      balanceCents = balanceDueCents(booking, rows);
-    } else if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
-    }
-```
-
-`needsPricing` check unchanged. Then:
-
-```ts
-    const dueNow = wantsBalance ? balanceCents : booking.amountDueNow ?? booking.total;
-    const idempotencyKey = wantsBalance ? `checkout:${booking.id}:balance` : `checkout:${booking.id}`;
-```
-
-Promo re-hold: guard with `if (!wantsBalance && booking.promoCodeId && deps.promoCodes)` (the code was honoured when the deposit sold). `payments.create`: `orderId: wantsBalance ? \`${booking.reference}-B\` : booking.reference,` and `purpose: wantsBalance ? 'balance' : dueNow < booking.total ? 'deposit' : 'full',`. After create/find, `if (payment.amount !== dueNow) return c.json({ error: 'amount_mismatch' }, 409);` (a stale balance row can't charge a different number). The draft → payment_pending move is already conditional on `draft`, so a secured booking skips it. `items: \`Ceylon Hop Travel - ${payment.orderId}\``.
-
-`/view/checkout-token`:
-
-```ts
-    const open = (booking.status === 'draft' || booking.status === 'payment_pending') && !booking.needsPricing;
-    if (!open && !isBalanceOpen(booking, await payments.findByBookingId(booking.id))) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
-    }
-```
-
-`/pay-return`, after `const rows = …`:
-
-```ts
-    // A balance payer must not be told "paid" off the deposit (spec 2026-10-07 §5.3): once a
-    // balance attempt exists, it alone is the answer.
-    const balanceRow = rows.find((p) => p.purpose === 'balance');
-    const judged = balanceRow ? [balanceRow] : rows;
-```
-
-and use `judged` in place of `rows` in the `status` expression.
+  - `StartSchema`: `payment: z.enum(['full', 'deposit']).optional()`.
+  - `/view` payable: `const dep = depositOffer(quote); …, ...(dep > 0 ? { deposit: { cents: dep, usd: usd(dep), balanceCents: soldCents - dep, balanceUsd: usd(soldCents - dep) } } : {})`.
+  - `/start`: after the state checks, `const wantsDeposit = body.data.payment === 'deposit'; const dep = wantsDeposit ? depositOffer(quote) : 0; if (wantsDeposit && dep <= 0) return c.json({ error: 'deposit_ineligible' }, 409); const dueNow = wantsDeposit ? dep : soldCents;` — both `amountDueNow: soldCents` (`:323`, `:325`) become `amountDueNow: dueNow`.
+  - Resume (`:278`): pass `amountDueNow: dueNow` to `refreshPayerDetails`. In both repos, `refreshPayerDetails` applies it **only** when the booking is `draft | payment_pending` and no payment on it has `status = 'succeeded'` (Postgres: in the same UPDATE's WHERE, `NOT EXISTS (select 1 from payments where booking_id = … and status = 'succeeded')`); otherwise leaves it. Keep `0 ≤ amount_due_now ≤ total` (the CHECK already enforces it).
 
 - [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit** — `feat(pay): the pay link offers a deposit on an eligible whole trip; /start takes the choice`
 
-```bash
-git add api/src/routes/bookings.ts api/src/routes/checkout.balance.test.ts api/src/routes/payReturn.test.ts
-git commit -m "feat(checkout): balance checkout on REF-B for a deposit booking"
-```
-
-### Task 14: Manage page — Pay balance
+### Task 11: Checkout tags the attempt — purpose, order id, idempotency key
 
 **Files:**
-- Modify: `manage.html` — `payable` `:257`, `render` pay block `:359-368`, `pay` checkout body `:405-417`, `renderLoading` `:388`, `trackPurchase` `:161-174`
-- Test: `web-tests/e2e/manage-balance.spec.js` (new; stub `/bookings/view` with `balancePayable: true` using the `_stubs.js` patterns; dates via `futureIsoDate`)
-
-- [ ] **Step 1: Failing e2e** — stubbed view `{ status: 'confirmed', totalCents: 20000, amountDueNowCents: 5000, paidCents: 5000, balanceDueCents: 15000, balancePayable: true }` → page shows a button "Pay balance" and the text "Pay your balance. $150.00"; pressing it POSTs `/checkout` with body containing `"purpose":"balance"`. A view with `balancePayable: false` and status `paid` shows no pay button.
-
-- [ ] **Step 2: Run — expect FAIL**: `npm --prefix <abs>/web-tests run test:all -- manage-balance`
-
-- [ ] **Step 3: Implement**
-
-```js
-  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0; }
-  // The balance of a deposit booking (spec 2026-10-07): the server decides, the page only asks.
-  function payingBalance(v){ return !payable(v) && v.balancePayable === true; }
-  function chargeOf(v){ return payingBalance(v) ? Number(v.balanceDueCents || 0) : Number(v.amountDueNowCents || 0); }
-```
-
-`render`: `if (payable(v) || payingBalance(v)) {` with the button label `payingBalance(v) ? 'Pay balance' : 'Pay with PayHere'` and paysub `(payingBalance(v) ? 'Pay your balance. ' : 'Pay securely to confirm. ') + esc(money(chargeOf(v), v.currency)) + ' — no extra fees.'`; `begin_checkout` value and `renderLoading`'s `.amt` use `chargeOf(v)`.
-
-`pay(v)` checkout body: `var intent = payingBalance(v) ? { returnTo: 'manage', purpose: 'balance' } : { returnTo: 'manage' };` passed through `chWithGa` as today. Before leaving for PayHere when paying a balance: `try { sessionStorage.setItem(STORE + ':balance', String(v.reference || '1')); } catch (e) {}`.
-
-`trackPurchase`: first line after the sandbox/prod gates:
-
-```js
-    // A balance is the second payment on a reference the deposit already reported; the server's
-    // purchase covers it with its own transaction id (ga4Hits). Never re-send the reference here.
-    try { if (sessionStorage.getItem(STORE + ':balance') === String(v.reference || '1')) return; } catch (e) {}
-```
-
-- [ ] **Step 4: Run — expect PASS**; full `test:all`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add manage.html web-tests/e2e/manage-balance.spec.js
-git commit -m "feat(manage): Pay balance button for a deposit booking"
-```
-
-### Task 15: Ops sees and sends the balance
-
-**Files:**
-- Modify: `api/src/services/opsView.ts` (`OpsBookingRow` `:33-45`, `toOpsRow` `:105-114`)
-- Modify: `api/src/routes/ops.ts` (list `:237-243`, detail `payLink` `:298-307`)
-- Modify: `api/src/routes/ops-ui.html` (`rowToTicket` `:2226-2234`, `reason` `:2113-2124`, list row `:2499`, drawer payment block `:4027-4034`)
-- Test: `api/src/services/opsView.test.ts`, `api/src/routes/ops.test.ts` (or the file holding `GET /admin/ops/bookings` tests), an ops-ui text test beside `opsUi.paylink.test.ts`
-
-**Interfaces:**
-- Consumes: `paidCents`, `balanceDueCents`, `isBalanceOpen` (Task 3).
-- Produces: `OpsBookingRow.paidCents: number`, `OpsBookingRow.balanceCents: number`; `toOpsRow(b, { …, payments?: Payment[] })`; detail `payLink` set for an open balance.
+- Modify: `api/src/routes/bookings.ts` — checkout `payments.create` and its idempotency key (`checkout:${booking.id}`, `orderId: booking.reference`; search `idempotencyKey` in the `/:id/checkout` handler)
+- Test: `api/src/routes/checkout.test.ts`
 
 - [ ] **Step 1: Failing tests**
-
-opsView: a confirmed deposit booking with a 5000 deposit → row `{ paymentStatus: 'paid', paidCents: 5000, balanceCents: 15000 }`; a full-paid booking → `balanceCents: 0`.
-ops route: `GET /admin/ops/bookings/:id` for that booking returns a non-null `payLink` (the manage URL); after the balance settles, `payLink` is null.
-ops-ui text test: `reason` returns `'Balance due — travels today'` for a ticket `{ stage: 'vehicle_confirmed', balance: 15000, date: TODAY }`.
+  - booking `total 21900, amountDueNow 5000` → checkout → a payment `{ amount: 5000, purpose: 'deposit', orderId: `${ref}-D`, idempotencyKey: `checkout:${id}:deposit` }`.
+  - full booking → `{ purpose: 'full', orderId: ref, idempotencyKey: `checkout:${id}` }` (unchanged).
+  - deposit checkout, then `amountDueNow` rewritten to the total (Task 10 resume), then checkout again → a **second** row `REF` / `checkout:${id}` for 21900; the `REF-D` row untouched. No unique-constraint error.
+  - The PayHere params carry the row's `orderId` (`REF-D` for a deposit).
 
 - [ ] **Step 2: Run — expect FAIL.**
 
 - [ ] **Step 3: Implement**
 
-`opsView.ts` — row fields after `amount`:
-
 ```ts
-  paidCents: number;    // Σ succeeded payments (spec 2026-10-07)
-  balanceCents: number; // still owed — a deposit booking until its balance lands
+    // One row per kind of attempt (spec 2026-10-07 §4, revised 2026-10-08): a customer who tries
+    // the deposit and then switches to full gets a fresh row, never a UNIQUE collision on
+    // order_id / idempotency_key. Full keeps REF so every existing booking reads as before.
+    const purpose = dueNow < booking.total ? 'deposit' : 'full';
+    const idempotencyKey = purpose === 'deposit' ? `checkout:${booking.id}:deposit` : `checkout:${booking.id}`;
+    const orderId = purpose === 'deposit' ? `${booking.reference}-D` : booking.reference;
 ```
 
-`toOpsRow` opts: replace `paid: boolean` with `payments: Payment[]` (derive `paid` as `payments.some((p) => p.status === 'succeeded')` so `paymentStatus` is unchanged), and set `paidCents: paidCents(opts.payments), balanceCents: balanceDueCents(b, opts.payments)`. Update the one caller.
+…used in `payments.create({ …, orderId, purpose })` and the find-existing-by-key path. Then **grep** for every reader that assumes `payment.orderId === booking.reference` or looks a payment up by the booking reference (PayHere return/notify handling, `bookingCheckoutEventRepo`, ops payment lookup `paymentCase`, GA4 `transaction_id`, the "Paid:" email) and make each use the payment's own `orderId` / the booking id. List what you checked in the PR body.
 
-`ops.ts` list: group once — `const paymentsByBooking = Map<string, Payment[]>` from `allPayments` — and pass `payments: paymentsByBooking.get(b.id) ?? []`. Detail:
+- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`.
 
-```ts
-    // The pay-by-card link while the booking can be charged — or, for a deposit booking, while its
-    // balance is open (spec 2026-10-07 §5.4). It is the same manage link; the page offers the balance.
-    const chargeable = ((b.status === 'draft' || b.status === 'payment_pending') && !b.needsPricing) || isBalanceOpen(b, payments);
-```
+- [ ] **Step 5: Commit** — `feat(checkout): a deposit attempt is its own payment row on REF-D`
 
-`ops-ui.html`:
-- `rowToTicket`: add `paidCents:row.paidCents||0, balance:row.balanceCents||0,`.
-- `reason`, right after the `awaiting_payment` line: `if(t.balance>0&&t.date===TODAY)return 'Balance due — travels today';`
-- list row value (`:2499`): `<div class="val">${money(t)}</div>${t.balance>0?`<div class="when">Balance ${money({amount:t.balance,currency:t.currency})}</div>`:''}` — check `money()` reads `amount`/`currency` (it does for tickets: `t.amount`, `t.currency`).
-- drawer payment block — after the Amount row:
+### Task 12: `pay.html` — the choice, and the ops estimate chip
 
-```js
-        ${t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>
-        <div class="kv"><span class="k">Balance due</span><span class="v" style="color:var(--wait);font-weight:700">${money({amount:t.balance,currency:t.currency})} · day one</span></div>
-        ${d&&d.payLink?`<div class="sheet-actions"><button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy balance link</button></div>`:''}`:''}
-```
+**Files:**
+- Modify: `pay.html` — `renderPayable` `:559`, `totalsHtml` `:644`, `startPayment` `:927` (the `/start` body, `:1008`), the hand-off stash / `trackPurchase` value (`:283-330`)
+- Modify: `api/src/routes/ops-ui.html` — estimate chip `:8985-8992`
+- Test: `web-tests/unit/pay-page-deposit.test.js` (new; extract helpers the way `pay-page-discount.test.js` does) and/or an e2e spec beside the existing pay-page specs (stub `/quotes/pay/view` with `deposit`, as those specs stub it); an ops-ui text test beside `opsUi.paylink.test.ts`
 
-and the Status row reads `Deposit paid` (wait colour) when `t.paid && t.balance>0`, else today's Paid / Awaiting payment.
-- Ride-board guard (`:4403`) already lists `'paylink'` — unchanged.
+- [ ] **Step 1: Failing tests**
+  - `/view` stub with `deposit` → the page shows two options, **Pay in full** `$219.00` (checked) and **Pay a deposit** `$50.00` with "balance $169.00 any time before your trip"; pressing pay with the deposit selected POSTs `/quotes/pay/start` with `"payment":"deposit"`; with full selected, `"payment":"full"` (or no key).
+  - `/view` stub without `deposit` → no options, page identical to today (existing pay specs pass unchanged).
+  - After a deposit hand-off, the `purchase` value is the deposit (5000 cents → 50), not the total.
+  - ops chip: an estimate with `deposit.cents > 0` renders "Customer can pay a deposit of $Y (balance $Z later) or in full"; with 0 it renders today's chip.
 
-- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`; `test:all`; eyeball the ops drawer and list in the browser preview with a seeded deposit booking (memory: local preview cannot price — seed via the in-memory API).
+- [ ] **Step 2: Run — expect FAIL.**
 
-- [ ] **Step 5: Commit and open PR 5**
+- [ ] **Step 3: Implement** — a radio pair in the payable view (reuse the page's existing tokens/classes; no new colours), default **Pay in full**. The button label and paysub follow the selection ("Pay $50.00 deposit" / "Pay $219.00"). Stash the charged cents (deposit or total) where the hand-off already stashes `cents`, so `trackPurchase` reports what was charged. Ops chip as in spec §5.4.
 
-```bash
-git add api/src/services/opsView.ts api/src/services/opsView.test.ts api/src/routes/ops.ts api/src/routes/ops.test.ts api/src/routes/ops-ui.html <ops-ui test file>
-git commit -m "feat(ops): show paid-so-far and balance; copy the balance link; flag balances due today"
-```
+- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`; `npm --prefix <abs>/web-tests run test:all`. Eyeball `pay.html` at 375 px and desktop with a stubbed deposit `/view` (memory: local preview cannot price — stub the API).
+
+- [ ] **Step 5: Commit and open PR 4** — `feat(pay): customer chooses deposit or full on the pay link`
+
+---
+
+# PR 5 — The balance, on the same pay link
+
+Branch: `feat/deposits-balance`. Rewritten 2026-10-08 (spec §5.3–§5.4). **Depends on PR 3** (`balance_settled`, receipt email) and PR 4 (`REF-D`).
+
+### Task 13: `/view` balance state, `POST /quotes/pay/balance`, balance checkout, pay-return
+
+**Files:**
+- Modify: `api/src/routes/quotePay.ts` — `stateFor` `:155-179`, `/view` `:181-223`, new `POST /balance`
+- Modify: `api/src/routes/bookings.ts` — checkout status gate + amount; `/pay-return` `:886-916`
+- Test: `api/src/routes/quotePay.test.ts`, `api/src/routes/checkout.balance.test.ts` (new; copy setup from `checkout.test.ts`), `api/src/routes/payReturn.test.ts`
+
+**Interfaces:**
+- Consumes: `balanceDueCents`, `isBalanceOpen`, `SECURED_STATUSES` (`domain/balance.ts`, PR 1).
+- Produces: `PayState` gains `'balance'`; `/view` body `{ state: 'balance', balance: { title, totalUsd, paidUsd, paidOn, balanceCents, balanceUsd } }`; `POST /quotes/pay/balance { t }` → `{ bookingId, checkoutToken }` | `409 { error: 'no_balance_due' }`; checkout body `{ purpose: 'balance', returnTo: 'pay-link' }`.
+
+- [ ] **Step 1: Failing tests**
+  - quotePay: deposit booking (total 21900, deposit 5000 succeeded, status `paid`) → `/view` `state: 'balance'`, `balance.balanceCents 16900`; after the balance row succeeds → `state: 'paid'`. A full-paid booking → `paid` (unchanged). The balance state shows regardless of the token's `revision`/`seq` (checked before them, like `paid`).
+  - `POST /quotes/pay/balance` → 200 with a checkout token for that booking; on a full-paid / cancelled / not-yet-paid booking → 409 `no_balance_due`; bad token → the same soft refusal `/start` gives.
+  - checkout `{ purpose: 'balance', returnTo: 'pay-link' }` → row `{ purpose: 'balance', orderId: `${ref}-B`, amount: 16900, idempotencyKey: `checkout:${id}:balance` }`; twice → one row; on a full-paid / `payment_pending` deposit / cancelled booking → 409 `no_balance_due`; the client cannot send an amount.
+  - pay-return: deposit succeeded + balance row pending → `pending`; balance succeeded → `paid`.
+
+- [ ] **Step 2: Run — expect FAIL.**
+
+- [ ] **Step 3: Implement**
+  - `stateFor`: before the `paid` return, if the converted booking `isBalanceOpen(booking, payments)` (status secured, a succeeded `deposit`, balance > 0) return `{ state: 'balance', paidVia }`.
+  - `/view` `balance` body: `title` from `payPageCopy` (as the paid body does), `paidUsd = usd(paidCents(rows))`, `paidOn` = the deposit's settled date, `balanceUsd`.
+  - `POST /balance`: parse the token as `/start` does; same `stateFor`; only `balance` proceeds; return `{ bookingId, checkoutToken: signCheckoutToken(bookingId, deps.linkSecret, checkoutNow()) }`.
+  - Checkout: the balance branch from the original plan's Task 13 (read `body` once after loading the booking; `wantsBalance = body?.purpose === 'balance'`; gate with `isBalanceOpen`; `dueNow = balanceDueCents`; key `checkout:${id}:balance`; `orderId REF-B`; `purpose 'balance'`; skip the promo re-hold; `amount_mismatch` 409 if an existing balance row's amount ≠ `dueNow`). `returnTo: 'pay-link'` already builds the pay-link return URL (`bookings.ts:1057`) — confirm it works for a booking whose quote is `won`.
+  - `/pay-return`: `const balanceRow = rows.find((p) => p.purpose === 'balance'); const judged = balanceRow ? [balanceRow] : rows;` and use `judged` in the status expression.
+
+- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`.
+
+- [ ] **Step 5: Commit** — `feat(pay): the pay link collects the balance of a deposit booking`
+
+### Task 14: `pay.html` — the balance view
+
+**Files:**
+- Modify: `pay.html` — `load` `:1220` (state dispatch `:1229-1231`), new `renderBalance`, the busy/hand-off flow (`startPayment` `:927`), `trackPurchase` `:283`
+- Test: e2e beside the existing pay-page specs (stub `/quotes/pay/view` → `state: 'balance'`, stub `/quotes/pay/balance` and `/bookings/:id/checkout`)
+
+- [ ] **Step 1: Failing e2e** — balance stub → page shows the trip title, "Paid $50.00", "Balance $169.00" and a **Pay balance** button; pressing it POSTs `/quotes/pay/balance` then `/bookings/<id>/checkout` with `"purpose":"balance"` and `"returnTo":"pay-link"`. On the return leg of a balance payment no browser `purchase` is sent.
+
+- [ ] **Step 2: Run — expect FAIL.**
+
+- [ ] **Step 3: Implement** — `renderBalance(v.balance)` reusing the payable view's layout (ticket, totals rows) with the paid/balance rows and one button; `payBalance()` = the same busy → hand-off code path as `startPayment`, calling `/quotes/pay/balance` instead of `/start` (no contact form, no terms checkbox — accepted at the deposit) and posting `purpose: 'balance'`. Before the hand-off, `sessionStorage.setItem(STORE + ':balance', '1')`; `trackPurchase` returns early when it is set (server-side GA4 reports the balance with its own transaction id, `ga4Hits.ts:120-123`).
+
+- [ ] **Step 4: Run — expect PASS**; full `test:all`; eyeball at 375 px and desktop.
+
+- [ ] **Step 5: Commit** — `feat(pay): Pay balance on the same link`
+
+### Task 15: Ops sees the balance and copies the pay link
+
+**Files:**
+- Modify: `api/src/services/opsView.ts` (`OpsBookingRow` `:33-45`, `toOpsRow` `:105-114`)
+- Modify: `api/src/routes/ops.ts` (list `:237-243`; detail `:298-332`, which already loads `srcQuote` `:311`)
+- Modify: `api/src/routes/ops-ui.html` (`rowToTicket`, `reason`, list row, drawer payment block — see the original Task 15 anchors)
+- Test: `api/src/services/opsView.test.ts`, the ops route tests, an ops-ui text test
+
+- [ ] **Step 1: Failing tests**
+  - opsView: deposit booking (5000 of 21900 paid) → row `{ paymentStatus: 'paid', paidCents: 5000, balanceCents: 16900 }`; full-paid → `balanceCents: 0`.
+  - ops detail: that booking → `balancePayLink` = the source quote's pay URL (the same `signQuotePayToken(quote.id, quote.revision, …, quote.payLinkSeq)` URL the customer holds); after the balance settles → `balancePayLink: null`; a booking with no source quote → null.
+  - ops-ui `reason` → `'Balance due — travels today'` for `{ balance: 16900, date: TODAY }`.
+
+- [ ] **Step 2: Run — expect FAIL.**
+
+- [ ] **Step 3: Implement** — as the original Task 15 (`paidCents`/`balanceCents` on the row from the grouped payments; list pill "Balance $X"; drawer rows Paid so far / Balance due; status "Deposit paid" when paid with balance > 0), except the drawer button is **Copy pay link** and copies `balancePayLink` (not the manage URL), and the copy says "balance — any time before the trip".
+
+- [ ] **Step 4: Run — expect PASS**; `cd api && npm run check`; `test:all`; eyeball the drawer and list.
+
+- [ ] **Step 5: Commit and open PR 5** — `feat(ops): paid-so-far and balance; copy the pay link for the balance`
 
 ---
 
 ## After PR 5 — release checklist (owner)
 
-1. Staging: mint a deposit link on a ≥ $150 private quote → pay with a sandbox card (staging is PayHere sandbox) → booking `paid`, deposit email received, ops shows Balance due → Copy balance link → pay → "You’re fully paid" email, ops balance 0, payment lookup verdict `paid`.
+1. Staging: mint an ordinary pay link on a ≥ $150 private quote → the pay page offers **Pay in full / Pay a deposit** → choose the deposit and pay with a sandbox card (confirm the PayHere page is `sandbox.payhere.lk`) → booking `paid`, deposit email received, ops shows Balance due → reopen the same link → "Paid $Y · Balance $Z" → Pay balance → "You’re fully paid" email, the link shows paid, ops balance 0, payment lookup verdict `paid`. Also: a $120 quote and a part-of-trip link show no deposit option.
 2. Promote `main → production` only with the owner's explicit OK (it carries the migration).
 3. First live deposit: watch the `booking_paid` alerts and the payment lookup for that booking.
 
 ## Known gaps (accepted, out of scope)
 
-- `paidRows` (`notifications.ts:559-570`) keeps showing "Balance due" in later emails (e.g. `booking_confirmed`) even after the balance lands; the balance normally lands on day one, after those emails.
+- `paidRows` (`notifications.ts:559-570`) keeps showing "Balance due" in later emails (e.g. `booking_confirmed`) even after the balance lands. Since 2026-10-08 the balance can land any time, so this is more likely to show; fix it if the owner notices.
 - Analytics "Payment outstanding" (`business.ts:213-218`) does not count open balances.
 - A balance paid in cash cannot be recorded (owner: card only).
