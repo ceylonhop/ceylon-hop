@@ -545,16 +545,34 @@ describe('sendDepositReceived', () => {
 });
 
 describe('sendBalanceReceived', () => {
-  it('says fully paid with deposit, balance and total', async () => {
+  it('says fully paid with the deposit and balance actually collected, and their sum', async () => {
     const email = new FakeEmailAdapter();
     const booking = { ...single, total: 20000, amountDueNow: 5000 };
-    await sendBalanceReceived(booking, 15000, email, { manage: 'https://x/m' });
+    await sendBalanceReceived(booking, { depositCents: 5000, balanceCents: 15000 }, email, { manage: 'https://x/m' });
     const sent = email.sent.at(-1)!;
     expect(sent.subject).toBe(`You’re fully paid — ${booking.reference}`);
     expect(sent.text).toContain('Deposit paid: $50.00');
     expect(sent.text).toContain('Balance paid: $150.00');
     expect(sent.text).toContain('Total paid: $200.00');
     expect(sent.tracking?.kind).toBe('balance_received');
+  });
+
+  it('reads the amounts from the payments, not from the booking total', async () => {
+    const email = new FakeEmailAdapter();
+    // e.g. a promo trimmed the balance: 50 + 140 collected against a 200 total
+    await sendBalanceReceived({ ...single, total: 20000, amountDueNow: 5000 }, { depositCents: 5000, balanceCents: 14000 }, email);
+    const sent = email.sent.at(-1)!;
+    expect(sent.text).toContain('Balance paid: $140.00');
+    expect(sent.text).toContain('Total paid: $190.00');
+  });
+});
+
+describe('deposit and balance emails report whether they left', () => {
+  it('return the adapter outcome so the caller logs only what was delivered', async () => {
+    const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_disabled' as const }) };
+    const b = { ...single, total: 20000, amountDueNow: 5000 };
+    expect(await sendDepositReceived(b, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
+    expect(await sendBalanceReceived(b, { depositCents: 5000, balanceCents: 15000 }, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
   });
 });
 

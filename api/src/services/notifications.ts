@@ -900,7 +900,10 @@ export async function sendDepositReceived(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome, like sendBookingConfirmation: this email IS a deposit
+  // booking's confirmation (the watchdog accepts its log row as one), so the caller records it
+  // only when it actually left.
   const first = esc(booking.input.customer.firstName);
   const balance = money(booking.total - (booking.amountDueNow ?? booking.total), booking.currency);
   const html = page(
@@ -931,7 +934,7 @@ export async function sendDepositReceived(
     `Pay the balance of ${balance} any time before your trip, using the same link you paid the deposit with.`,
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
-  await email.send({
+  return email.send({
     to: booking.input.customer.email,
     subject: `We’ve received your deposit — ${booking.reference}`,
     html,
@@ -943,15 +946,16 @@ export async function sendDepositReceived(
 // ── Balance received (the second half of a deposit booking — now fully paid) ──
 export async function sendBalanceReceived(
   booking: Booking,
-  balanceCents: number,
+  // What was actually collected, read from the succeeded payment rows (not derived from the total).
+  paid: { depositCents: number; balanceCents: number },
   email: EmailAdapter,
   links: { manage?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
   const first = esc(booking.input.customer.firstName);
   const rows: [string, string][] = [
-    ['Deposit paid', money(booking.total - balanceCents, booking.currency)],
-    ['Balance paid', money(balanceCents, booking.currency)],
-    ['Total paid', money(booking.total, booking.currency)],
+    ['Deposit paid', money(paid.depositCents, booking.currency)],
+    ['Balance paid', money(paid.balanceCents, booking.currency)],
+    ['Total paid', money(paid.depositCents + paid.balanceCents, booking.currency)],
   ];
   const html = page(
     brandHeader() +
@@ -966,7 +970,7 @@ export async function sendBalanceReceived(
     ...rows.map(([label, amount]) => `${label}: ${amount}`),
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
-  await email.send({
+  return email.send({
     to: booking.input.customer.email,
     subject: `You’re fully paid — ${booking.reference}`,
     html,

@@ -3311,14 +3311,14 @@ function lookupRowLabel(row){
     case 'payment_settled':return row.settlementSource==='manual'?'Marked paid by hand — '+payMethodLabel(row.method):'Recorded as paid (backfill)';
     case 'notice':{
       const code=String(row.code);
-      let s=code==='2'?(row.note==='paid_again'?'PayHere: paid again — a second payment on this order':'PayHere: paid')
+      let s=code==='2'?(row.note==='paid_again'?'PayHere: paid again — a second payment on this order':row.note==='balance_paid'?'PayHere: balance paid — the other half of a deposit sale':'PayHere: paid')
         :({'-2':'PayHere: declined','-1':'PayHere: cancelled on PayHere’s page','0':'PayHere: pending','-3':'PayHere: charged back'})[code]||'PayHere: code '+code;
       if(row.note==='earlier_attempt')s+=' (earlier attempt)';
       if(row.repeats>1)s+=' — PayHere sent '+row.repeats+' decline notices; repeats share this row';
       return s;
     }
     case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
-      deposit_received:'Email: deposit received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
     case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
       failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
   }
@@ -3406,7 +3406,7 @@ function lookupOtherBookingsHtml(list){
 function trackingKindLabel(kind){
   return ({confirmation:'booking confirmation',details_needed:'details needed',booking_confirmed:'booking confirmed',cancellation:'cancellation',refund:'refund',
     no_show_notice:'no-show notice',trip_reminder:'trip reminder',review_request:'review request',payment_recovery:'payment reminder',
-    payment_failed:'payment failed',deposit_received:'deposit received'})[kind]||String(kind||'email').replaceAll('_',' ');
+    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received'})[kind]||String(kind||'email').replaceAll('_',' ');
 }
 function trackingEventLabel(row){
   if(row.source==='booking_transition')return 'Booking: '+String(row.fromStatus).replaceAll('_',' ')+' → '+String(row.toStatus).replaceAll('_',' ');
@@ -3631,11 +3631,18 @@ function refundSummary(d){
 function refundTargets(d){
   const live=(d?.refunds||[]).filter(r=>REFUND_SETTLED.includes(r.status)||REFUND_IN_FLIGHT.includes(r.status));
   return (d?.payments||[]).filter(p=>p.status==='succeeded').map(p=>({
-    id:p.id,purpose:p.purpose,amount:p.amount,
+    id:p.id,purpose:p.purpose,provider:p.provider,amount:p.amount,
     remaining:Math.max(0,p.amount-live.filter(r=>r.paymentId===p.id).reduce((n,r)=>n+r.amountCents,0)),
   }));
 }
-const REFUND_PAYMENT_NAME={deposit:'deposit',balance:'balance'};
+/* How an operator tells captures apart: a deposit and a balance by kind, anything else by how the
+   money was taken (card through PayHere, or cash / bank transfer recorded by hand). */
+function refundPaymentName(p){
+  if(p.purpose==='deposit')return 'deposit';
+  if(p.purpose==='balance')return 'balance';
+  const hand={cash:'cash',bank_transfer:'bank transfer',manual_other:'manual'}[p.provider];
+  return (hand||'card')+' payment';
+}
 
 /* ── the two irreversible actions ───────────────────────────────────────────────────────────
    Cancel and Refund, side by side at the foot of the sheet (owner, 2026-08-02). Both are
@@ -3734,7 +3741,7 @@ function refundRequestFor(t, d){
   }
   const targets=refundTargets(d);
   if(targets.length>1){
-    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${REFUND_PAYMENT_NAME[p.purpose]||'payment'} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
+    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
     return `<label class="reverse-reason">Reason <span class="req">required</span>
       <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
     </label>

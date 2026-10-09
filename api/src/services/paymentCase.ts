@@ -171,7 +171,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
   const cancelled = b.status === 'cancelled' || !!b.cancelledAt;
   const evidence: CaseEvidence = {
     booking: {
-      id: b.id, reference: b.reference, status: b.status, createdAt: new Date(b.createdAt),
+      id: b.id, reference: b.reference, status: b.status, total: b.total, createdAt: new Date(b.createdAt),
       cancelledAt: b.cancelledAt ? new Date(b.cancelledAt) : null,
       cancelledBy: b.cancelledBy ?? null, cancellationReason: b.cancellationReason ?? null,
     },
