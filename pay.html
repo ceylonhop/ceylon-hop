@@ -282,7 +282,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // item), stashed across the gateway round trip the same way.
   var stashedItem = null;
   function money(){
-    var c = data && data.totals ? Number(data.totals.cents || 0) : stashedCents;
+    var c = data && data.totals ? Number(data.totals.cents || 0)
+      : data && data.balance ? Number(data.balance.balanceCents || 0) : stashedCents;
     return { value: Math.round(c) / 100, currency: 'USD' };
   }
   function withMoney(extra){
@@ -300,9 +301,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function markSandbox(isSandbox){
     try { sessionStorage.setItem(STORE + ':sandbox', isSandbox ? '1' : '0'); } catch (e) {}
   }
+  // The balance of a deposit booking is NOT a new purchase here: the browser reported the deposit,
+  // and the server's GA4 purchase already carries the balance under its own transaction id
+  // (ga4Hits.ts) — re-sending the booking reference would count the same sale twice. Set at the
+  // balance hand-off (the return leg cannot tell), cleared when a fresh payment starts.
+  function balanceReturn(){
+    try { return sessionStorage.getItem(STORE + ':balance') === '1'; } catch (e) { return false; }
+  }
   function trackPurchase(reference){
     if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
     if (sandboxUsed()) return;
+    if (balanceReturn()) return;
     // Once per booking, whatever the customer does with the back button or a refresh. GA4
     // does dedupe on transaction_id in its ecommerce reports, but the raw event count feeds
     // everything else, so the guard lives here rather than being left to the platform.
@@ -617,6 +626,46 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     });
   }
 
+  /* The balance of a deposit booking, on the same link (spec 2026-10-07 §5.3). A pure function of
+     the /view `balance` body so web-tests/unit/pay-page-balance.test.js can extract it: the trip
+     total, what is already paid, and what is left — in the totals rows the payable ticket uses. */
+  function balanceRowsHtml(b) {
+    return '<div class="tot tot-sub"><span class="l">Trip total</span><span class="v">' + esc(b.totalUsd) + '</span></div>'
+      + '<div class="tot tot-sub"><span class="l">Paid</span><span class="v">' + esc(b.paidUsd) + '</span></div>'
+      + '<div class="tot tot-final"><span class="l">Balance</span><span class="v">' + esc(b.balanceUsd) + '</span></div>';
+  }
+  // "2026-10-05" → "5 Oct 2026". Date-only strings are split by hand: new Date('2026-10-05') is UTC
+  // midnight and would print the previous day west of Greenwich. Anything unexpected prints nothing.
+  function paidOnLabel(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return '';
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var mon = months[Number(m[2]) - 1];
+    return mon ? Number(m[3]) + ' ' + mon + ' ' + m[1] : '';
+  }
+
+  function renderBalance(b){
+    var on = paidOnLabel(b.paidOn);
+    app.innerHTML =
+      '<div class="pp-hello">Your deposit is in.</div>'
+      + '<h1 class="pp-title">' + esc(b.title) + '</h1>'
+      + '<p class="pp-sub">Pay the balance any time before your trip.</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + '<div class="included"><b>Deposit received</b>' + (on ? 'Thank you — paid on ' + esc(on) + '. ' : 'Thank you. ')
+      + 'Your trip is booked; this is what is left to pay.</div>'
+      + '</div><div class="perf"></div><div class="t-stub">'
+      + balanceRowsHtml(b)
+      + '<button class="btn btn-cta pp-cta" id="paybtn">Pay balance</button>'
+      + '<div class="paysub" id="paysub">' + esc('Pay securely with PayHere. ' + b.balanceUsd + ' — no extra fees.') + '</div>'
+      + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
+      + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+      + '<p class="pp-err" id="payerr" hidden></p>'
+      + '<div class="pp-help" id="payhelp" hidden></div>'
+      + '</div></div>' + waLine();
+    track('view_item', withMoney({ item_category: 'balance' }));
+    document.getElementById('paybtn').addEventListener('click', payBalance);
+  }
+
   // ── details step: only what the quote couldn't already tell us. Country + phone use
   // the SAME widget as the website checkout (booking.html step 4): a country select
   // carrying the dial code, a LOCAL-number field, and the wizard's normaliser — so
@@ -663,6 +712,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      web-tests/unit/pay-page-deposit.test.js. The client never sends an amount — /start recomputes
      the deposit — these only decide what is shown and what the GA4 `purchase` reports. */
   function chargedCents(view, choice) {
+    if (view && view.balance) return Number(view.balance.balanceCents) || 0;
     if (view && view.deposit && choice === 'deposit') return Number(view.deposit.cents) || 0;
     return view && view.totals ? Number(view.totals.cents || 0) : 0;
   }
@@ -948,7 +998,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // worse than no reassurance at all.
       + '<div class="pp-expect"><b>On the next screen you should see</b>'
       +   '<div class="row"><span class="who">Ceylon Hop (PVT) LTD</span>'
-      +   '<span class="amt2">' + esc(data.totals.usd) + '</span></div></div>'
+      +   '<span class="amt2">' + esc('$' + (chargedCents(data, payChoice) / 100).toFixed(2)) + '</span></div></div>'
       // "come straight back here" already appears in the lead — repeating it here was the same
       // reassurance twice in six lines, which reads as padding rather than emphasis.
       + '<p>Central Bank approved · no extra fees</p>'
@@ -975,7 +1025,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function fail(msg, help, quiet){
     // If the interstitial (or PayHere) is on screen, rebuild the details step first —
     // with the customer's typed values — then surface the error on it.
-    if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
+    if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) {
+      if (data && data.state === 'balance') renderBalance(data.balance); else renderDetails();
+    }
     var e = document.getElementById('payerr');
     if (e) { e.textContent = msg; e.hidden = false; }
     // Only after a real attempt at the gateway. A validation miss ("enter your billing city")
@@ -999,7 +1051,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // double-click it guards against.
     submitting = false;
     var b = document.getElementById('gobtn') || document.getElementById('paybtn');
-    if (b) setBusy(b, false, b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere');
+    if (b) setBusy(b, false, b.id === 'gobtn' ? 'Continue to payment' : data && data.state === 'balance' ? 'Pay balance' : 'Pay with PayHere');
   }
 
   function startPayment(){
@@ -1077,6 +1129,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // the DOM — and two checkouts means two PayHere hand-offs for one booking.
     if (submitting) return;
     submitting = true;
+    // A fresh payment is a purchase again (see balanceReturn).
+    try { sessionStorage.removeItem(STORE + ':balance'); } catch (e) {}
     // Everything the form needed is in hand and we are about to leave for the gateway.
     track('add_payment_info', withMoney());
     // Straight to the hand-off screen. The button latch stays because a double-tap can land two
@@ -1109,52 +1163,92 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // `returnTo` states INTENT, never a URL: the server builds the return address from its own
       // config, because a gateway that redirects wherever the request body says is a phishing
       // primitive. See api/src/routes/bookings.ts.
-      return fetchJson(A + '/bookings/' + st.bookingId + '/checkout', {
-        method: 'POST',
-        headers: { authorization: 'Bearer ' + st.checkoutToken, 'content-type': 'application/json' },
-        body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa({ returnTo: 'pay-link' }) : { returnTo: 'pay-link' }),
-      }).then(function(r){
-        if (!r.ok) {
-          track('payment_start_failed', withMoney({ reason: 'checkout_' + r.status }));
-          report('checkout refused', new Error('checkout ' + r.status));
-          throw new Error('We couldn’t start your payment just now — no charge was made.');
-        }
-        return r.json();
-      });
-    }).then(function(checkout){
-      if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
-      if (!/payhere\.lk/.test(checkout.checkoutUrl)) {
-        // Dev/fake gateway: be honest rather than simulate a payment that never happened.
-        throw new Error('Payments aren’t enabled on this environment yet — nothing was charged.');
+      return postCheckout(st);
+    }).then(handOff).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
+  }
+
+  // The checkout call, shared by the deposit/full flow and the balance flow. `extra` carries intent
+  // only (never an amount): the balance adds purpose:'balance'. The server builds the return URL.
+  function postCheckout(st, extra){
+    var intent = { returnTo: 'pay-link' };
+    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) intent[k] = extra[k];
+    return fetchJson(A + '/bookings/' + st.bookingId + '/checkout', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + st.checkoutToken, 'content-type': 'application/json' },
+      body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa(intent) : intent),
+    }).then(function(r){
+      if (!r.ok) {
+        track('payment_start_failed', withMoney({ reason: 'checkout_' + r.status }));
+        report('checkout refused', new Error('checkout ' + r.status));
+        throw new Error('We couldn’t start your payment just now — no charge was made.');
       }
-      if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
-      // Remember the link before leaving our origin: the return trip lands on a URL that carries
-      // only a settlement-status token, so this is how the page finds its way back to the quote.
-      remember();
-      // Record WHICH gateway we are handing off to, before we lose sight of the URL. The return
-      // leg never sees it, and a sandbox settlement reported as revenue is permanent in GA4.
-      markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
-      // The last thing we know for certain: they left for the gateway. Everything after this
-      // is inferred from what our own server tells us on the way back.
-      track('payment_initiated', withMoney());
-      // A TOP-LEVEL form POST — the whole point of this page's redesign. PayHere's checkout takes
-      // ~16 POST fields, so it cannot be a location assignment. The fields are the server's
-      // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
-      // side, so reordering, renaming or adding anything here would be refused by the gateway.
-      var form = document.createElement('form');
-      form.method = 'POST';
-      form.action = checkout.checkoutUrl;
-      Object.keys(checkout.fields).forEach(function(k){
-        var input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = k;
-        input.value = checkout.fields[k];
-        form.appendChild(input);
+      return r.json();
+    });
+  }
+
+  // The hand-off to PayHere, shared the same way: validate what the server sent, remember where we
+  // are, then a top-level form POST of the server's fields verbatim.
+  function handOff(checkout){
+    if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
+    if (!/payhere\.lk/.test(checkout.checkoutUrl)) {
+      // Dev/fake gateway: be honest rather than simulate a payment that never happened.
+      throw new Error('Payments aren’t enabled on this environment yet — nothing was charged.');
+    }
+    if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
+    // Remember the link before leaving our origin: the return trip lands on a URL that carries
+    // only a settlement-status token, so this is how the page finds its way back to the quote.
+    remember();
+    // Record WHICH gateway we are handing off to, before we lose sight of the URL. The return
+    // leg never sees it, and a sandbox settlement reported as revenue is permanent in GA4.
+    markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
+    // The last thing we know for certain: they left for the gateway. Everything after this
+    // is inferred from what our own server tells us on the way back.
+    track('payment_initiated', withMoney());
+    // A TOP-LEVEL form POST — the whole point of this page's redesign. PayHere's checkout takes
+    // ~16 POST fields, so it cannot be a location assignment. The fields are the server's
+    // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
+    // side, so reordering, renaming or adding anything here would be refused by the gateway.
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = checkout.checkoutUrl;
+    Object.keys(checkout.fields).forEach(function(k){
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = k;
+      input.value = checkout.fields[k];
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    // (The hand-off screen is already up — painted the instant they pressed, above.)
+    form.submit();
+  }
+
+  // Pay the balance of a deposit booking: no contact form and no terms box (accepted at the
+  // deposit). Same busy → hand-off path as startPayment, but through /quotes/pay/balance, and the
+  // checkout names purpose:'balance' — the amount is the server's, never ours.
+  function payBalance(){
+    if (submitting) return;
+    submitting = true;
+    try { sessionStorage.setItem(STORE + ':balance', '1'); } catch (e) {}
+    track('begin_checkout', withMoney());
+    setBusy(document.getElementById('paybtn'), true, 'Opening secure payment…');
+    renderLoading();
+    fetchJson(A + '/quotes/pay/balance', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t: t }),
+    }).then(function(r){
+      if (r.ok) return r.json();
+      return r.json().catch(function(){ return {}; }).then(function(x){
+        track('payment_start_failed', withMoney({ reason: String(x.error || ('http_' + r.status)) }));
+        // Settled in another tab since this page loaded: show what the link says now.
+        if (x.error === 'no_balance_due') { submitting = false; load(); throw { handled: true }; }
+        report('pay/balance refused', new Error(String(x.error || r.status)));
+        throw new Error('We couldn’t start your payment just now — no charge was made.');
       });
-      document.body.appendChild(form);
-      // (The hand-off screen is already up — painted the instant they pressed, above.)
-      form.submit();
-    }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
+    }).then(function(st){
+      booking = st;
+      return postCheckout(st, { purpose: 'balance' });
+    }).then(handOff).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
   }
 
   // (The old awaitSettle() lived here. It existed to poll after PayHere's SDK fired onCompleted
@@ -1291,6 +1385,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       payChoice = (stashedCents && v.deposit && stashedCents === Number(v.deposit.cents)) ? 'deposit' : 'full';
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
       if (v.state === 'revised') return renderRevised();
+      // A balance payer who is sent back lands on the balance, not on a contact form.
+      if (v.state === 'balance') { renderBalance(v.balance); return fail(message, help, quiet); }
       if (v.state !== 'payable') return renderUnavailable();
       renderDetails();
       fail(message, help, quiet);
@@ -1316,6 +1412,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       track('pay_link_opened', withMoney({ state: String(v.state || 'unknown') }));
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
       if (v.state === 'revised') return renderRevised();
+      if (v.state === 'balance') return renderBalance(v.balance);
       if (v.state === 'payable') return renderPayable();
       return renderUnavailable();
     }).catch(function(e){
