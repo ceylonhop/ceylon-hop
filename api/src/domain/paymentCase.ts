@@ -2,6 +2,7 @@ import type { BookingCheckoutEvent } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEvent } from '../db/paymentEventRepo';
 import type { Payment, PaymentProvenance } from '../db/paymentRepo';
 import type { Refund } from '../db/refundRepo';
+import { isBalanceAfterDeposit } from '../db/paymentSettlementRepo';
 
 // ============================================================================
 // The ops payment lookup's judgement (spec docs/superpowers/specs/2026-09-26-ops-payment-lookup-
@@ -64,7 +65,7 @@ export type CaseRow =
     }
   | {
       at: string; source: 'payment_events'; kind: 'notice'; code: string; message: string | null; method: string | null;
-      paymentId: string; amount: number; currency: string; note: 'paid_again' | 'earlier_attempt' | null; repeats: number | null;
+      paymentId: string; amount: number; currency: string; note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | null; repeats: number | null;
     }
   | { at: string; source: 'notification_log'; kind: 'email'; emailKind: string; deliveryTracked: boolean }
   | {
@@ -76,7 +77,7 @@ export type CasePayment = Payment & PaymentProvenance;
 
 export interface CaseEvidence {
   booking: {
-    id: string; reference: string; status: string; createdAt: Date;
+    id: string; reference: string; status: string; total: number; createdAt: Date;
     cancelledAt: Date | null; cancelledBy: string | null; cancellationReason: string | null;
   };
   payments: CasePayment[];
@@ -110,7 +111,8 @@ const isManual = (p: CasePayment) => p.settlementSource === 'manual';
 
 interface Money {
   gateway: CasePayment | null;
-  balance: CasePayment | null; // a succeeded card `balance` payment: the other half of a deposit sale
+  balance: CasePayment | null; // the succeeded card `balance` payment that IS the other half of a deposit sale
+  strayBalances: CasePayment[]; // succeeded `balance` rows that are NOT (a second capture, judged `paid_twice`)
   manual: CasePayment | null;
   gwNotices: PaymentEvent[]; // oldest first
   successes: PaymentEvent[];
@@ -133,9 +135,21 @@ function moneyOf(e: CaseEvidence): Money {
   const paidFirsts = firsts.filter((p) => p.status === 'succeeded');
   const gateway = paidFirsts[0] ?? firsts[0] ?? null;
   const caseIds = new Set((paidFirsts.length ? paidFirsts : gateway ? [gateway] : []).map((p) => p.id));
-  const balance = e.payments.find((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded') ?? null;
+  // A balance is the other half of the sale only by the rule settlement uses (isBalanceAfterDeposit:
+  // beside exactly one succeeded deposit, within the total). Any other succeeded balance is a
+  // second capture: its notices join the case so it reads `paid_twice`.
+  const balances = e.payments.filter((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded');
+  const pairs = (p: CasePayment) =>
+    isBalanceAfterDeposit(p, e.payments.filter((o) => o.id !== p.id && o.status === 'succeeded'), e.booking.total);
+  const balance = balances.length === 1 && pairs(balances[0]) ? balances[0] : null;
+  const strayBalances = balances.filter((p) => p !== balance);
+  for (const p of strayBalances) caseIds.add(p.id);
   const manual = e.payments.find(isManual) ?? null;
   const gwNotices = e.notices.filter((n) => caseIds.has(n.paymentId)).sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt));
+  // A chargeback on the balance payment is a chargeback on this sale.
+  const chargeback = [...gwNotices, ...e.notices.filter((n) => balance && n.paymentId === balance.id)]
+    .sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt))
+    .find((n) => codeOf(n) === '-3') ?? null;
   const successes = gwNotices.filter((n) => codeOf(n) === '2');
   // Settled before notices were stored: the row itself is the only evidence there is.
   const legacy = !!gateway && gateway.status === 'succeeded' && gateway.settlementSource === 'legacy_backfill';
@@ -143,6 +157,7 @@ function moneyOf(e: CaseEvidence): Money {
   return {
     gateway,
     balance,
+    strayBalances,
     manual,
     gwNotices,
     successes,
@@ -151,7 +166,7 @@ function moneyOf(e: CaseEvidence): Money {
     cardPaidAt: successes[0]?.receivedAt ?? (legacy ? gateway.settledAt : null),
     manualPaid,
     manualPaidAt: manualPaid ? manual.settledAt : null,
-    chargeback: gwNotices.find((n) => codeOf(n) === '-3') ?? null,
+    chargeback,
   };
 }
 
@@ -185,6 +200,7 @@ function refundOf(e: CaseEvidence, m: Money): Verdict['refund'] {
     capturedCents:
       (m.cardPaid && m.gateway ? m.gateway.amount : 0) +
       (m.balance ? m.balance.amount : 0) +
+      m.strayBalances.reduce((sum, p) => sum + p.amount, 0) +
       (m.manualPaid && m.manual ? m.manual.amount : 0),
   };
 }
@@ -227,11 +243,14 @@ export function paymentVerdict(e: CaseEvidence): Verdict | null {
     warnings: warningsOf(e, m),
   };
 
-  if (m.successIds.length >= 2 || (m.cardPaid && m.manualPaid)) {
+  if (m.successIds.length >= 2 || (m.cardPaid && m.manualPaid) || m.strayBalances.length) {
     const captures: NonNullable<Verdict['captures']> = m.successIds.map((id) => ({
       via: 'payhere' as const, id, method: m.successes.find((n) => n.providerTxnId === id)?.sanitizedPayload.method ?? null,
     }));
     if (m.cardPaid && !m.successIds.length) captures.push({ via: 'payhere', id: m.gateway?.gatewayPaymentId ?? null, method: null });
+    for (const p of m.strayBalances) {
+      if (!m.successes.some((n) => n.paymentId === p.id)) captures.push({ via: 'payhere', id: p.gatewayPaymentId ?? null, method: null });
+    }
     if (m.manualPaid) captures.push({ via: 'manual', id: m.manual?.gatewayPaymentId ?? null, method: m.manual?.provider ?? null });
     const times = [m.cardPaidAt, m.manualPaidAt].filter((d): d is Date => d !== null);
     return { ...base, kind: 'paid_twice', at: times.length ? iso(new Date(Math.min(...times.map(ms)))) : null, captures };
@@ -361,8 +380,11 @@ export function caseTimeline(e: CaseEvidence): CaseRow[] {
   const storedDeclines = e.notices.filter((n) => codeOf(n) === '-2').length;
   for (const n of [...e.notices].sort((a, x) => ms(a.receivedAt) - ms(x.receivedAt))) {
     const code = codeOf(n);
-    let note: 'paid_again' | 'earlier_attempt' | null = null;
-    if (firstSuccess && n.providerTxnId !== firstSuccess.providerTxnId) {
+    let note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | null = null;
+    if (m.balance && n.paymentId === m.balance.id) {
+      // The other half of a deposit sale, not a second capture.
+      if (code === '2') note = 'balance_paid';
+    } else if (firstSuccess && n.providerTxnId !== firstSuccess.providerTxnId) {
       if (code === '2') note = 'paid_again';
       else if (code !== '-3' && ms(n.receivedAt) > ms(firstSuccess.receivedAt)) note = 'earlier_attempt';
     }
@@ -375,10 +397,11 @@ export function caseTimeline(e: CaseEvidence): CaseRow[] {
   }
 
   for (const em of e.emails) {
-    // These two rows are written whether or not the send worked (webhooks.ts).
+    // payment_failed's row is written whether or not the send worked (webhooks.ts). The deposit and
+    // balance receipts are logged only when they left, like the confirmation.
     push(em.sentAt, {
       at: em.sentAt.toISOString(), source: 'notification_log', kind: 'email', emailKind: em.kind,
-      deliveryTracked: em.kind !== 'payment_failed' && em.kind !== 'deposit_received',
+      deliveryTracked: em.kind !== 'payment_failed',
     });
   }
 

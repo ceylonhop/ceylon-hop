@@ -421,3 +421,14 @@ test('a deposit + balance booking shows one refund button per payment and posts 
   await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-b"]')).toHaveCount(0);
   await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-d"]')).toContainText('$20 remaining');
 });
+
+test('several captures that are not a deposit pair are labelled by how they were taken', async ({ page }) => {
+  const store = { refunds: [] };
+  const mixed = [
+    { id: 'payment-c', bookingId: row.id, provider: 'payhere', orderId: row.reference, amount: 6000, currency: 'USD', status: 'succeeded', purpose: 'full' },
+    { id: 'payment-h', bookingId: row.id, provider: 'cash', orderId: `${row.reference}-MANUAL`, amount: 4000, currency: 'USD', status: 'succeeded', purpose: 'full' },
+  ];
+  await boot(page, { role: 'founder', store, payments: mixed });
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-c"]')).toContainText('Refund card payment — $60 remaining');
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-h"]')).toContainText('Refund cash payment — $40 remaining');
+});
