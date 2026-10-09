@@ -2,10 +2,19 @@ import type { DemandQuoteRow } from '../../db/quoteRepo';
 import type { AnalyticsRange, CurrencyMap } from './funnel';
 import { colomboWeekKey, nextBucketKey } from './time';
 import { extractTrip } from './extractLegs';
+import { knownPlace } from './knownPlace';
 
 // Demand & geography aggregation (founder analytics spec 2026-07-23, §C). Pure function; all
 // metrics are over quotes CREATED in range (demand = what was asked for, regardless of outcome),
 // except won-value attribution which sums won-quote totals onto each touched place.
+//
+// Grouping (owner, 2026-10-08): stored places are free text, so keying on the raw string split
+// one town into a bar per hotel address (and put customers' addresses on screen). Origins and
+// destinations group by TOWN; corridors and movers — too sparse town-by-town at our volume — by
+// REGION. knownPlace is the one place→town rule shared with the route report and GA4; anything
+// it can't name reads "Other".
+const town = (place: string) => knownPlace(place).town;
+const region = (place: string) => knownPlace(place).region;
 
 export interface DemandReport {
   range: { from: string; to: string };
@@ -16,13 +25,13 @@ export interface DemandReport {
     kmBuckets: { bucket: '<50' | '50-100' | '100-200' | '200+'; count: number }[];
     avgPax: number | null;
   };
-  topOrigins: { place: string; count: number }[];
-  topDestinations: { place: string; count: number; touches: number; wonValueCents: CurrencyMap }[];
+  topOrigins: { place: string; count: number }[];                 // place = town
+  topDestinations: { place: string; count: number; touches: number; wonValueCents: CurrencyMap }[]; // town
   topCorridors: {
-    from: string; to: string; count: number; wins: number; winRatePct: number;
+    from: string; to: string; count: number; wins: number; winRatePct: number; // from/to = regions
     bookedValueCents: CurrencyMap; avgKm: number | null;
   }[];
-  movers: { place: string; recent: number; prior: number; changePct: number }[];
+  movers: { place: string; recent: number; prior: number; changePct: number }[]; // place = region
   serviceTrend: { bucketStart: string; private: number; chauffeur: number; both: number }[];
   coverage: { parsed: number; total: number };
 }
@@ -88,22 +97,23 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
     }
     if (trip.pax !== null) paxes.push(trip.pax);
 
-    for (const place of trip.origins) origins.set(place, (origins.get(place) ?? 0) + 1);
-    for (const place of trip.destinations) {
+    for (const place of new Set(trip.origins.map(town))) origins.set(place, (origins.get(place) ?? 0) + 1);
+    for (const place of new Set(trip.destinations.map(town))) {
       const d = dest.get(place) ?? { place, count: 0, touches: 0, wonValueCents: {} };
       d.count += 1;
       d.touches = d.count; // compatibility for API consumers of the original field
       if (r.status === 'won') d.wonValueCents[r.currency] = (d.wonValueCents[r.currency] ?? 0) + r.totalCents;
       dest.set(place, d);
     }
-    for (const place of trip.places) {
+    for (const place of new Set(trip.places.map(region))) {
       const h = halves.get(place) ?? { recent: 0, prior: 0 };
       if (r.createdAt > mid) h.recent += 1; else h.prior += 1;
       halves.set(place, h);
     }
     for (const c of trip.corridors) {
-      const key = `${c.from}→${c.to}`;
-      const entry = corr.get(key) ?? { from: c.from, to: c.to, count: 0, wins: 0, bookedValueCents: {}, kms: [] };
+      const fromRegion = region(c.from), toRegion = region(c.to);
+      const key = `${fromRegion}→${toRegion}`;
+      const entry = corr.get(key) ?? { from: fromRegion, to: toRegion, count: 0, wins: 0, bookedValueCents: {}, kms: [] };
       entry.count += 1;
       if (r.status === 'won') {
         entry.wins += 1;
