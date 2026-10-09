@@ -9504,6 +9504,17 @@ function productBlurb(veh) {
   return 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.';
 }
 
+/* The payment line of the quote message (WhatsApp and email). An eligible quote's pay link offers a
+   deposit or full payment (spec 2026-10-07 rev. 2026-10-08), so the message says both — driven by the
+   engine's own deposit figure, the same one /quotes/pay/view offers. Owner wording, 2026-10-09. */
+const payLineText = (est, totalCents, M) => {
+  var due = est.amountDueNow && est.amountDueNow.cents != null ? est.amountDueNow.cents : 0;
+  var dep = est.deposit && est.deposit.cents > 0 ? est.deposit.cents : 0;
+  return dep > 0
+    ? 'Pay a deposit of ' + M(dep) + ' to confirm (balance ' + M(totalCents - dep) + ' any time before your trip), or pay in full: ' + M(totalCents) + '.'
+    : 'Pay in full to confirm: ' + M(due) + '.';
+};
+
 function generatedWhatsappMessage() {
   if (!lastEstimate) return null;
   var name = customerName() || 'there';
@@ -9528,8 +9539,7 @@ function generatedWhatsappMessage() {
     });
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     // PRIVATE: per driving leg (date — route — price), then extras, then total.
     privateLegRows().forEach(function(r) {
@@ -9567,8 +9577,7 @@ function generatedEmailMessage() {
       lines.push('  ' + (it.displayLabel || it.label) + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     privateLegRows().forEach(function(r) {
       lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));
