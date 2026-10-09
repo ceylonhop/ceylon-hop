@@ -165,6 +165,12 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         };
       }
 
+      // The first payment that settles IS what secured the booking (customer choice, spec
+      // 2026-10-08): a customer who switched deposit -> full mid-checkout must not be told the
+      // other amount. The booking row is locked FOR UPDATE above; the CHECK keeps it <= total.
+      if (payment.purpose !== 'balance' && payment.amount <= booking.total) {
+        await tx.update(bookings).set({ amountDueNow: payment.amount }).where(eq(bookings.id, booking.id));
+      }
       await applyBookingStatusTransition(tx, {
         id: booking.id,
         to: 'paid',

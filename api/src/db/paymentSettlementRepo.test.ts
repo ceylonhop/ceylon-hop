@@ -302,6 +302,43 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event)).kind).toBe('balance_settled');
   });
 
+  // With customer choice a booking's amountDueNow can disagree with the attempt that actually
+  // got paid (deposit started, customer switched to full, the deposit notify lands). The first
+  // payment that settles IS what secured the booking, so it rewrites amountDueNow.
+  async function pendingFirstPayment(purpose: 'deposit' | 'full', amount: number, bookingDueNow: number) {
+    const f = await fixture();
+    f.bookings.setAmountDueNowForSettlement(f.booking.id, bookingDueNow);
+    const payment = await f.payments.create({
+      bookingId: f.booking.id, provider: 'payhere',
+      orderId: purpose === 'deposit' ? `${f.booking.reference}-D` : `${f.booking.reference}-F`,
+      amount, currency: 'USD', idempotencyKey: `first-${purpose}-${f.booking.id}`, purpose,
+    });
+    const event = { ...f.event, orderId: payment.orderId, providerTxnId: `PAY-${purpose}`, amountCents: amount };
+    return { f, event };
+  }
+
+  it('a deposit that settles makes the deposit the booking amountDueNow (customer had switched to full)', async () => {
+    const { f, event } = await pendingFirstPayment('deposit', 1_000, 4_000);
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.amountDueNow).toBe(1_000);
+    expect((await f.bookings.get(f.booking.id))?.amountDueNow).toBe(1_000);
+  });
+
+  it('a full payment that settles makes the total the booking amountDueNow (customer had switched to deposit)', async () => {
+    const { f, event } = await pendingFirstPayment('full', 4_000, 1_000);
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.amountDueNow).toBe(4_000);
+  });
+
+  it('a balance settle never touches amountDueNow', async () => {
+    const { f, event } = await depositThenBalance();
+    f.bookings.setAmountDueNowForSettlement(f.booking.id, 1_000);
+    await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+    expect((await f.bookings.get(f.booking.id))?.amountDueNow).toBe(1_000);
+  });
+
   it('flags a balance with no succeeded deposit behind it', async () => {
     const f = await fixture();
     await f.payments.markSucceeded(f.payment.id); // a FULL capture, not a deposit

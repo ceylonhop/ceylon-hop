@@ -563,6 +563,46 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
   });
 
+  // Customer choice: start a deposit, switch to full (amountDueNow rewritten to the total while the
+  // deposit attempt is still pending), then the DEPOSIT notify lands - and the reverse. What was
+  // charged decides the email, not what amountDueNow said when the customer last tapped.
+  it('a deposit that lands after the customer switched to full still gets the deposit email', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    bookings.setAmountDueNowForSettlement(booking.id, 20_000); // the switch to "full"
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('deposit_received');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('confirmation');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(5_000);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  it('a full payment that lands after the customer switched to a deposit gets the confirmation', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, bookings, payments });
+    const { booking } = await depositBooking(bookings, payments); // amountDueNow 5_000
+    const full = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 20_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}`,
+    });
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: full.orderId, amount: 20_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('confirmation');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('deposit_received');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(20_000);
+  });
+
   it('a balance after its deposit sends the fully-paid receipt and the team money line, and pages nothing', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();

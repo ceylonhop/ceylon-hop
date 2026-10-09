@@ -223,6 +223,11 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
+    // The first payment that settles IS what secured the booking (customer choice, spec 2026-10-08):
+    // a customer who switched deposit -> full mid-checkout must not be told the other amount.
+    if (paymentRecord.purpose !== 'balance' && paymentRecord.amount <= booking.total) {
+      this.deps.bookings.setAmountDueNowForSettlement(booking.id, paymentRecord.amount);
+    }
     const paid = await this.deps.bookings.setStatus(booking.id, 'paid', undefined, {
       source: 'payment_webhook',
       actorType: 'provider',

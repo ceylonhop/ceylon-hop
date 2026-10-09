@@ -1178,6 +1178,28 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  // The first payment that settles IS what secured the booking: it rewrites amount_due_now, so a
+  // customer who switched deposit -> full (or back) mid-checkout is told the truth afterwards.
+  it.each([
+    ['deposit', 1_000, 4_000],
+    ['full', 4_000, 1_000],
+  ] as const)('a settled %s payment of %i makes it the booking amount_due_now (was %i)', async (purpose, amount, wasDueNow) => {
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: wasDueNow });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-${purpose}`, amount,
+      currency: booking.currency, idempotencyKey: `due-now-${purpose}-${booking.id}`, purpose,
+    });
+    const outcome = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent({
+      provider: 'payhere', merchantId: '1234567', orderId: payment.orderId, providerTxnId: `PAY-DUE-${payment.id}`,
+      amountCents: amount, currency: payment.currency, status: 'succeeded', providerStatusCode: '2',
+      receivedAt: new Date(), payloadSha256: '8'.repeat(64), sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+    });
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.amountDueNow).toBe(amount);
+    expect((await bookings.get(booking.id))?.amountDueNow).toBe(amount);
+  });
+
   it('does not call a balance on a cancelled booking a settled sale', async () => {
     const { booking, settlement, depositEvent } = await depositBooking('bal-cancelled');
     await bookings.setStatus(booking.id, 'cancelled');
