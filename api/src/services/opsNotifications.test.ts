@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
 import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -238,6 +238,23 @@ describe('teamPaidEmail', () => {
     expect(m.subject).toContain('LKR 1850.00');
     expect(m.text).toContain('Balance due');
     expect(m.text).toContain('LKR 16650.00');
+  });
+
+  // The balance is money landing too: the owner's Gmail forward filters on the "Paid: " prefix.
+  it('a balance: "Paid: " prefix, says it is the balance and what just landed, with the split in the body', () => {
+    const b = { ...sampleBooking('single'), amountDueNow: 185_000 };
+    const m = teamBalancePaidEmail(b, { depositCents: 185_000, balanceCents: 166_500 }, 'https://ops.example');
+    expect(m.subject.startsWith('Paid: ')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('balance LKR 1665.00');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Total');
+      expect(part).toContain('Deposit paid');
+      expect(part).toContain('Balance paid');
+      expect(part).toContain('LKR 1850.00');
+      expect(part).toContain('LKR 1665.00');
+      expect(part).toContain('CH-7QK2P');
+    }
   });
 
   it('links straight to the booking sheet, or says where to look without a base URL', () => {

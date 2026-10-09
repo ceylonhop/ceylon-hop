@@ -22,6 +22,7 @@ import {
   sendReviewRequest,
   sendPaymentIncomplete,
   sendPaymentFailed,
+  sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
 } from '../services/notifications';
@@ -87,6 +88,7 @@ const EMAILS: EmailDef[] = [
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
   { name: 'payment-failed', label: 'Payment failed (immediate)', run: (b, e) => sendPaymentFailed(b, e, { resume: LINKS.resume }) },
   { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
+  { name: 'balance-received', label: 'Balance received (fully paid)', run: (_b, e) => sendBalanceReceived(sampleVariants.singleBalancePaid, { depositCents: 185_000, balanceCents: sampleVariants.singleBalancePaid.total - 185_000 }, e, { manage: LINKS.manage }) },
   { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
   // Ride Board (self-contained templates in rideBoardEmails.ts). Previously not previewable —
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).

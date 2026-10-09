@@ -81,7 +81,7 @@ function makeRefund(store, amountCents, reason) {
   };
 }
 
-async function boot(page, { role = 'finance', store, mobile = false, travelDate, paidBy } = {}) {
+async function boot(page, { role = 'finance', store, mobile = false, travelDate, paidBy, payments } = {}) {
   if (mobile) await page.setViewportSize({ width: 390, height: 844 });
   // payments:act reads the ledger (founder + finance); payments:reverse starts/confirms a
   // refund and is FOUNDER ONLY since 2026-08-02.
@@ -113,7 +113,7 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate,
   // how the drawer can tell a gateway booking from one settled by hand.
   const detail = paidBy
     ? { ...bookingDetail, payments: [{ ...bookingDetail.payments[0], provider: paidBy }] }
-    : bookingDetail;
+    : payments ? { ...bookingDetail, payments } : bookingDetail;
   await page.route('**/admin/ops/bookings/booking-1', (route) =>
     route.fulfill(json(detail)));
   await page.route('**/admin/bookings/booking-1/refunds', async (route) => {
@@ -124,6 +124,8 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate,
     store.requestPosts++;
     const body = route.request().postDataJSON();
     const refund = makeRefund(store, body.amountCents, body.reason);
+    if (body.paymentId) refund.paymentId = body.paymentId;
+    store.bodies = [...(store.bodies || []), body];
     store.refunds.push(refund);
     return route.fulfill(json(refund, 201));
   });
@@ -393,4 +395,40 @@ test('a PayHere booking keeps the gateway route and its wording', async ({ page 
   await pendingRefund(page, {}); // provider stays 'payhere'
   await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(1);
   await expect(page.locator('.refund-row .refund-confirm label').last()).toContainText(/PayHere refund reference/i);
+});
+
+// Deposits (spec 2026-10-07 §5.1): a deposit booking holds two captures, and a refund belongs to
+// one of them — so the drawer offers one refund button per payment, each capped at its own payment.
+test('a deposit + balance booking shows one refund button per payment and posts the payment id', async ({ page }) => {
+  const store = { refunds: [], executeOutcome: 'unavailable' };
+  page.on('dialog', (dialog) => dialog.accept());
+  const pair = [
+    { id: 'payment-d', bookingId: row.id, provider: 'payhere', orderId: `${row.reference}-D`, amount: 2000, currency: 'USD', status: 'succeeded', purpose: 'deposit' },
+    { id: 'payment-b', bookingId: row.id, provider: 'payhere', orderId: `${row.reference}-B`, amount: 8000, currency: 'USD', status: 'succeeded', purpose: 'balance' },
+  ];
+  await boot(page, { role: 'founder', store, payments: pair });
+
+  const deposit = page.locator('[data-act="refundrequest"][data-payment-id="payment-d"]');
+  const balance = page.locator('[data-act="refundrequest"][data-payment-id="payment-b"]');
+  await expect(deposit).toContainText('Refund deposit — $20 remaining');
+  await expect(balance).toContainText('Refund balance — $80 remaining');
+
+  await page.locator('#refundreason').fill('Customer cancelled');
+  await balance.dispatchEvent('click');
+  await expect(page.locator('.refund-status-manual_pending')).toContainText('$80');
+  expect(store.bodies).toEqual([{ amountCents: 8000, currency: 'USD', reason: 'Customer cancelled', paymentId: 'payment-b' }]);
+  // The balance payment is spoken for; the deposit button is still there, with its own ceiling.
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-b"]')).toHaveCount(0);
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-d"]')).toContainText('$20 remaining');
+});
+
+test('several captures that are not a deposit pair are labelled by how they were taken', async ({ page }) => {
+  const store = { refunds: [] };
+  const mixed = [
+    { id: 'payment-c', bookingId: row.id, provider: 'payhere', orderId: row.reference, amount: 6000, currency: 'USD', status: 'succeeded', purpose: 'full' },
+    { id: 'payment-h', bookingId: row.id, provider: 'cash', orderId: `${row.reference}-MANUAL`, amount: 4000, currency: 'USD', status: 'succeeded', purpose: 'full' },
+  ];
+  await boot(page, { role: 'founder', store, payments: mixed });
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-c"]')).toContainText('Refund card payment — $60 remaining');
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-h"]')).toContainText('Refund cash payment — $40 remaining');
 });

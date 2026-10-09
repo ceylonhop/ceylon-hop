@@ -534,3 +534,67 @@ describe('refund team email', () => {
     expect(sent[0].dedupeKey).toBe(refund.id);
   });
 });
+
+// Deposits (spec 2026-10-07 §5.1): a deposit booking holds TWO captures. A refund belongs to one
+// of them — it is that payment's gateway id PayHere refunds — so with several, ops names which.
+describe('refunding one payment of a deposit + balance pair', () => {
+  async function pairFixture() {
+    const f = await fixture();
+    // Replace the fixture's single full capture with a deposit (5000) and a balance (15000).
+    const { app, bookings, payments, booking } = f;
+    await payments.markFailed(f.payment.id);
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5_000,
+      currency: booking.currency, idempotencyKey: `checkout:${booking.id}:deposit`, purpose: 'deposit',
+    });
+    await payments.markSucceeded(deposit.id);
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 15_000,
+      currency: booking.currency, idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    await payments.markSucceeded(balance.id);
+    return { app, bookings, payments, booking, deposit, balance };
+  }
+  const post = async (app: ReturnType<typeof createApp>, bookingId: string, body: Record<string, unknown>) =>
+    app.request(`/admin/bookings/${bookingId}/refunds`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
+      body: JSON.stringify({ currency: 'USD', reason: 'Customer request', ...body }),
+    });
+
+  it('refunds a named payment and caps it at that payment', async () => {
+    const { app, booking, deposit } = await pairFixture();
+    const over = await post(app, booking.id, { amountCents: 5_001, paymentId: deposit.id });
+    expect(over.status).toBe(409);
+    expect(await over.json()).toEqual({ error: 'refund_exceeds_payment' });
+    const ok = await post(app, booking.id, { amountCents: 5_000, paymentId: deposit.id });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).paymentId).toBe(deposit.id);
+    // The deposit is now fully spoken for — the ceiling is per payment, not just per booking.
+    const again = await post(app, booking.id, { amountCents: 1, paymentId: deposit.id });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: 'refund_exceeds_payment' });
+  });
+
+  it('asks which payment when there are several and none is named', async () => {
+    const { app, booking } = await pairFixture();
+    const res = await post(app, booking.id, { amountCents: 100 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'payment_ambiguous' });
+  });
+
+  it('refuses a paymentId that is not a captured payment of this booking', async () => {
+    const { app, booking } = await pairFixture();
+    const res = await post(app, booking.id, { amountCents: 100, paymentId: '00000000-0000-4000-8000-000000000000' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'payment_not_captured' });
+  });
+
+  it('a one-payment booking needs no paymentId (unchanged), and may still name it', async () => {
+    const { app, booking, payment } = await fixture();
+    expect((await post(app, booking.id, { amountCents: 100 })).status).toBe(201);
+    const named = await post(app, booking.id, { amountCents: 100, paymentId: payment.id });
+    expect(named.status).toBe(201);
+    expect((await named.json()).paymentId).toBe(payment.id);
+  });
+});
