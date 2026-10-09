@@ -569,6 +569,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       alerts,
       notificationLog,
+      payments,
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
       ...(communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
