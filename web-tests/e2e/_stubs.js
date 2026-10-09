@@ -166,6 +166,10 @@ export async function installEstimateStub(page, opts = {}) {
  *   settlementStatuses - server payment states GET /bookings/pay-return answers with, in order
  *                  (the last repeats), on the way back from the gateway
  *   checkoutDelayMs - hold POST /bookings/:id/checkout this long before answering
+ *   experiences  - what GET /experiences/near answers: {status = 200, stops = [], delayMs = 0}. Default
+ *                  is no experiences, so the booking page's experiences block stays hidden
+ *
+ * Also returns `nearRequests`: each GET /experiences/near's `at` values, in order.
  *
  * Returns handles for the real-gateway round trip (`checkout: 'payhere'`):
  *   gateway      - every request the PayHere stub received: {method, url, postData}
@@ -189,6 +193,7 @@ export async function gotoBooking(page, opts = {}) {
     estimate = null,                 // installEstimateStub opts: switches this spec into the engine-priced world
     settlementStatuses = ['paid'],   // webhook-owned state polled on the way back from PayHere
     checkoutDelayMs = 0,
+    experiences = {},                // GET /experiences/near: {status, stops, delayMs}
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -229,6 +234,17 @@ export async function gotoBooking(page, opts = {}) {
   await page.route('**/www.googletagmanager.com/**', (r) => r.abort());
   await page.route('**/*.clarity.ms/**', (r) => r.abort());
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
+
+  // Partner experiences near the drop-off (booking.js syncExperiences). Always answered here — the
+  // page asks on step 3 for every booking, and the offline suite must not reach the real API.
+  const nearRequests = [];
+  await page.route('**/experiences/near*', async (r) => {
+    nearRequests.push(new URL(r.request().url()).searchParams.getAll('at'));
+    if (experiences.delayMs) await new Promise((res) => setTimeout(res, experiences.delayMs));
+    const status = experiences.status ?? 200;
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill(json({ stops: experiences.stops ?? [] }));
+  });
 
   // booking creation
   await page.route('**/bookings/single', (r) => {
@@ -309,7 +325,7 @@ export async function gotoBooking(page, opts = {}) {
   }
 
   await page.goto(`${path}?${query}`);
-  return { gateway, sdk, checkoutBodies, fields, viewTokens };
+  return { gateway, sdk, checkoutBodies, fields, viewTokens, nearRequests };
 }
 
 // What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the
