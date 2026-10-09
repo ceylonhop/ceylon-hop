@@ -19,7 +19,7 @@ const evidence = (over: Partial<Omit<CaseEvidence, 'booking'>> & { booking?: Par
   const { booking, ...rest } = over;
   return {
     booking: {
-      id: 'b1', reference: 'CH-AAAA2', status: 'payment_pending', createdAt: T('09:00:00'),
+      id: 'b1', reference: 'CH-AAAA2', status: 'payment_pending', total: 5000, createdAt: T('09:00:00'),
       cancelledAt: null, cancelledBy: null, cancellationReason: null, ...booking,
     },
     payments: [], notices: [], log: [], refunds: [], emails: [], unavailable: [],
@@ -77,6 +77,19 @@ const paidByCard = () => evidence({
     log('webhook', 'settled', T('09:20:00'), { httpStatus: 200 }),
   ],
   notices: [notice('-2', T('09:05:00'), { message: 'Insufficient funds' }), notice('2', T('09:20:00'), { message: 'Successfully completed' })],
+});
+
+// A deposit (5000) and its balance (15000), both captured on a 20000 booking.
+const depositAndBalance = () => evidence({
+  booking: { status: 'paid', total: 20000 },
+  payments: [
+    gateway({ id: 'p1', orderId: 'CH-AAAA2-D', purpose: 'deposit', amount: 5000, idempotencyKey: 'checkout:b1:deposit', status: 'succeeded', settledAt: T('09:20:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-D' }),
+    gateway({ id: 'p3', orderId: 'CH-AAAA2-B', purpose: 'balance', amount: 15000, idempotencyKey: 'checkout:b1:balance', status: 'succeeded', settledAt: T('11:00:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-B' }),
+  ],
+  notices: [
+    notice('2', T('09:20:00'), { paymentId: 'p1', providerTxnId: 'PAY-D', amount: 5000 }),
+    notice('2', T('11:00:00'), { paymentId: 'p3', providerTxnId: 'PAY-B', amount: 15000 }),
+  ],
 });
 
 describe('the duplicate-close actor', () => {
@@ -249,6 +262,70 @@ describe('paymentVerdict — the nine situations', () => {
     ] });
   });
 
+  // Deposits (spec 2026-10-07 §5.1): a deposit and its balance are ONE sale in two card payments.
+  it('8 a deposit + its balance is one sale: paid, not paid twice', () => {
+    expect(paymentVerdict(depositAndBalance())).toMatchObject({
+      kind: 'paid', at: T('09:20:00').toISOString(), amount: 5000, payhere: { paymentId: 'PAY-D' },
+    });
+  });
+
+  // The pair rule is the SAME one settlement uses (isBalanceAfterDeposit): a balance beside anything
+  // but exactly one deposit is a second capture, not the other half of a sale.
+  it('a FULL payment + a balance (both captured) is paid twice, not one sale', () => {
+    const e = depositAndBalance();
+    e.payments[0] = gateway({ id: 'p1', amount: 5000, status: 'succeeded', settledAt: T('09:20:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-F' });
+    e.notices[0] = notice('2', T('09:20:00'), { paymentId: 'p1', providerTxnId: 'PAY-F', amount: 5000 });
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'paid_twice' });
+  });
+
+  it('a balance that would take the sale past the total is paid twice', () => {
+    const e = depositAndBalance();
+    e.booking.total = 19999;
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'paid_twice' });
+  });
+
+  it('sees a chargeback on the balance payment', () => {
+    const e = depositAndBalance();
+    e.notices.push(notice('-3', T('15:00:00'), { paymentId: 'p3', providerTxnId: 'PAY-B', amount: 15000 }));
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'money_back', chargebackAt: T('15:00:00').toISOString() });
+  });
+
+  it('9 a refund on a deposit + balance sale is judged against both captures (5000 + 15000)', () => {
+    const e = depositAndBalance();
+    e.refunds.push(refund({ status: 'manual_confirmed', amountCents: 2000, gatewayRef: 'RF-1', confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }));
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'money_back', refund: { state: 'confirmed', refundedCents: 2000, capturedCents: 20000 } });
+  });
+
+  // An abandoned attempt of the other kind (the customer opened the full lane, then chose the
+  // deposit) is history, not an incident — and it must not be what the case is judged on.
+  it('an abandoned pending sibling beside a succeeded payment is judged on the succeeded one', () => {
+    const e = evidence({
+      booking: { status: 'paid' },
+      payments: [
+        gateway({ id: 'p1', status: 'pending' }), // full REF, never paid
+        gateway({ id: 'p4', orderId: 'CH-AAAA2-D', purpose: 'deposit', amount: 5000, idempotencyKey: 'checkout:b1:deposit', status: 'succeeded', settledAt: T('09:20:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-D' }),
+      ],
+      notices: [notice('2', T('09:20:00'), { paymentId: 'p4', providerTxnId: 'PAY-D' })],
+      log: [log('checkout', 'succeeded', T('09:01:00'), { attempt: 1 }), log('checkout', 'succeeded', T('09:15:00'), { attempt: 2 })],
+    });
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'paid', payhere: { paymentId: 'PAY-D' } });
+  });
+
+  it('two SUCCEEDED first payments (deposit and full) still read paid twice', () => {
+    const e = evidence({
+      booking: { status: 'paid' },
+      payments: [
+        gateway({ id: 'p1', status: 'succeeded', settledAt: T('09:20:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-F' }),
+        gateway({ id: 'p4', orderId: 'CH-AAAA2-D', purpose: 'deposit', amount: 5000, idempotencyKey: 'checkout:b1:deposit', status: 'succeeded', settledAt: T('09:25:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-D' }),
+      ],
+      notices: [
+        notice('2', T('09:20:00'), { paymentId: 'p1', providerTxnId: 'PAY-F' }),
+        notice('2', T('09:25:00'), { paymentId: 'p4', providerTxnId: 'PAY-D' }),
+      ],
+    });
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'paid_twice' });
+  });
+
   it('9 money went back: a refund, with what was refunded of what was captured', () => {
     const e = paidByCard();
     e.refunds.push(refund({ status: 'manual_confirmed', amountCents: 2000, gatewayRef: 'RF-1', confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }));
@@ -387,6 +464,26 @@ describe('caseTimeline', () => {
     e.notices.push(notice('2', T('09:25:00'), { providerTxnId: '320048289999' }), notice('-2', T('09:30:00'), { providerTxnId: '0' }));
     const notes = caseTimeline(e).filter((r) => r.kind === 'notice').map((r) => r.kind === 'notice' && r.note);
     expect(notes).toEqual([null, null, 'paid_again', 'earlier_attempt']);
+  });
+
+  it('labels a legitimate balance "balance paid", not "paid again"', () => {
+    const notes = caseTimeline(depositAndBalance()).filter((r) => r.kind === 'notice').map((r) => r.kind === 'notice' && r.note);
+    expect(notes).toEqual([null, 'balance_paid']);
+  });
+
+  it('still calls a balance beside a full payment a second capture ("paid again")', () => {
+    const e = depositAndBalance();
+    e.payments[0] = gateway({ id: 'p1', amount: 5000, status: 'succeeded', settledAt: T('09:20:00'), settlementSource: 'webhook', gatewayPaymentId: 'PAY-F' });
+    const notes = caseTimeline(e).filter((r) => r.kind === 'notice').map((r) => r.kind === 'notice' && r.note);
+    expect(notes).toEqual([null, 'paid_again']);
+  });
+
+  it('the deposit and balance receipts are delivery-tracked like the confirmation (logged only when sent)', () => {
+    const e = depositAndBalance();
+    e.emails = [{ kind: 'deposit_received', sentAt: T('09:21:00') }, { kind: 'balance_received', sentAt: T('11:01:00') }];
+    const rows = caseTimeline(e).filter((r) => r.kind === 'email');
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r).toMatchObject({ deliveryTracked: true });
   });
 
   it('puts the log’s decline count on the one stored decline row', () => {

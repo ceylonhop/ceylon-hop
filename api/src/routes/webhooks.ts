@@ -10,9 +10,10 @@ import {
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
 import { wasDelivered } from '../adapters/email';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
+import type { PaymentRepo } from '../db/paymentRepo';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, sendBalanceReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
-import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
+import { teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -162,6 +163,8 @@ export function webhookRoutes(deps: {
   // M17 — optional so existing callers/tests keep working; alerts default to no-op.
   alerts?: AlertAdapter;
   notificationLog?: NotificationLogRepo;
+  // Reads the succeeded deposit/balance amounts for the balance receipt. Unset → derived from the booking.
+  payments?: PaymentRepo;
   // Enables POST /webhooks/resend (delivery evidence + bounce/complaint/failure alerts).
   // Unset → endpoint 404s.
   resendWebhookSecret?: string;
@@ -361,6 +364,53 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, doubleCapture: true }, 200);
     }
 
+    // The balance of a deposit booking (spec 2026-10-07 §5.1). The booking was secured by the
+    // deposit and has already had its confirmation, concierge task and quote claim — none of that
+    // runs again. The customer gets a receipt; the team gets the money line; GA4 gets the payment
+    // (ga4Hits labels a second payment 'balance'). All best-effort, like the paid branch below.
+    if (outcome.kind === 'balance_settled') {
+      const b = outcome.booking;
+      const balanceCents = outcome.payment.amount;
+      // What was actually collected comes from the succeeded payment rows, not from the total.
+      const depositCents = deps.payments
+        ? (await deps.payments.findByBookingId(b.id))
+            .filter((p) => p.status === 'succeeded' && p.purpose === 'deposit')
+            .reduce((sum, p) => sum + p.amount, 0)
+        : (b.amountDueNow ?? b.total - balanceCents);
+      try {
+        const sent = await sendBalanceReceived(b, { depositCents, balanceCents }, email, { manage: manageUrl(b, baseUrl, linkSecret) });
+        if (wasDelivered(sent)) await notificationLog?.markSent(b.id, 'balance_received');
+      } catch (err) {
+        console.error(`balance receipt failed for ${b.reference}:`, err);
+        void alerts.send({
+          severity: 'critical',
+          kind: 'confirmation_email_failed',
+          title: `Balance receipt failed for ${b.reference}`,
+          body: `Booking ${b.reference}'s balance is PAID but the customer got no receipt. Error: ${err instanceof Error ? err.message : String(err)}`,
+          dedupeKey: `${b.reference}:balance`,
+        });
+      }
+      try {
+        await alerts.send({
+          severity: 'info',
+          kind: 'booking_paid',
+          title: `Balance paid: ${b.reference} — ${fmtMoney(balanceCents, b.currency)}`,
+          body: `Balance of ${fmtMoney(balanceCents, b.currency)} received. ${b.reference} is now fully paid (${fmtMoney(b.total, b.currency)}).`,
+          // "Paid: " subject prefix: the owner forwards money-landed mail on it.
+          email: teamBalancePaidEmail(b, { depositCents, balanceCents }, deps.opsBaseUrl ?? ''),
+          dedupeKey: `${b.reference}:balance`,
+        });
+      } catch (err) {
+        console.error(`team balance notification failed for ${b.reference}:`, err);
+      }
+      if (deps.ga4) {
+        void deps.ga4.reportPayment(b, outcome.payment, event.receivedAt).catch((err) => {
+          console.error(`ga4 balance report failed for ${b.reference}:`, err instanceof Error ? err.message : String(err));
+        });
+      }
+      return c.json({ ok: true }, 200);
+    }
+
     if (outcome.kind === 'settled') {
       const paid = outcome.booking;
       // Money landed — claim the quote behind this booking (pay-link flow). Best-effort
@@ -387,8 +437,10 @@ export function webhookRoutes(deps: {
         // the full confirmation. Dormant today — the engine charges the full amount for every
         // public booking — but wired so reintroducing deposits needs no webhook change.
         if (paid.amountDueNow != null && paid.amountDueNow < paid.total) {
-          await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
-          await notificationLog?.markSent(paid.id, 'deposit_received');
+          // Logged only when it actually left (like the confirmation below): the watchdog
+          // accepts this row as the booking's confirmation.
+          const sent = await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          if (wasDelivered(sent)) await notificationLog?.markSent(paid.id, 'deposit_received');
         } else {
           // Partial pay link (spec 2026-08-04): if this booking was sold as part of a quote,
           // say so in the email — the itinerary alone can't (its flat stop list renders a gap
@@ -442,7 +494,7 @@ export function webhookRoutes(deps: {
         await alerts.send({
           severity: 'info',
           kind: 'booking_paid',
-          title: `Paid: ${paid.reference} — ${fmtMoney(paid.total, paid.currency)}`,
+          title: `Paid: ${paid.reference} — ${fmtMoney(outcome.payment.amount, paid.currency)}`,
           body: teamPaidBody(paid),
           email: teamPaidEmail(paid, deps.opsBaseUrl ?? '', teamInterests),
           dedupeKey: paid.reference,

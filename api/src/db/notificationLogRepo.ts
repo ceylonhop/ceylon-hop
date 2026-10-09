@@ -9,6 +9,7 @@ export type NotificationKind =
   | 'payment_failed'
   | 'payment_recovery'
   | 'deposit_received'
+  | 'balance_received'
   | 'booking_confirmed'
   | 'no_show_notice';
 

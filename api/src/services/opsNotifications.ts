@@ -367,6 +367,28 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string, interests: TeamInt
   };
 }
 
+// The balance of a deposit booking landing is money landing too, so it keeps the "Paid: " subject
+// prefix the owner's Gmail forward filters on (every money-landed mail MUST start "Paid: ").
+// The subject says it is the balance and the amount just paid; the body shows the whole split.
+export function teamBalancePaidEmail(
+  b: Booking,
+  paid: { depositCents: number; balanceCents: number },
+  opsBaseUrl: string,
+): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const subject = `Paid: ${f.subjectRoute}, ${f.when} — balance ${money(paid.balanceCents, b.currency)}`;
+  const moneyRows: [string, string][] = [
+    ['Total', money(b.total, b.currency)],
+    ['Deposit paid', money(paid.depositCents, b.currency)],
+    ['Balance paid', money(paid.balanceCents, b.currency)],
+    ['Channel', channelLabel(b)],
+  ];
+  return {
+    subject,
+    ...teamBookingBody(b, f, { pill: ['BALANCE PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Balance paid'] }, opsBaseUrl),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Rescue (owner, 2026-09-26). PayHere declined the customer's card. A pay-link customer is
 // already talking to the owner on WhatsApp; a website customer was on their own. This hands the

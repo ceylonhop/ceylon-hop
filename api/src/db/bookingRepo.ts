@@ -597,6 +597,15 @@ export class InMemoryBookingRepo implements BookingRepo {
     });
   }
 
+  // Settlement only (paymentSettlementRepo): the first payment that settles IS what secured the
+  // booking, so amountDueNow becomes that payment's amount. Unguarded on purpose — the caller
+  // checks 0 <= amount <= total, as the DB CHECK does.
+  setAmountDueNowForSettlement(id: string, cents: number): void {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    this.byId.set(id, { ...current, amountDueNow: cents });
+  }
+
   snapshotForSettlement(): { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] } {
     return {
       bookings: new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)])),
