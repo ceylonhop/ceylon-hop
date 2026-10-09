@@ -89,10 +89,13 @@ export interface CaseEvidence {
 
 const CASE_REF = /^(CH|Q)-[A-Z0-9]{3,12}$/;
 
-// A pasted ref, as the lookup box receives it. Manual payments use `<ref>-MANUAL` as their order id.
+// A pasted ref, as the lookup box receives it. Manual payments use `<ref>-MANUAL` as their order id;
+// a deposit and its balance use `<ref>-D` / `<ref>-B` (spec 2026-10-07 §4) — what PayHere's dashboard
+// shows. Only a booking reference carries those two; a quote has no payment of its own.
 export function normaliseCaseRef(raw: string): { kind: 'booking' | 'quote'; ref: string } | null {
   let ref = String(raw ?? '').trim().toUpperCase();
   if (ref.endsWith('-MANUAL')) ref = ref.slice(0, -'-MANUAL'.length);
+  else if (/^CH-[A-Z0-9]{3,12}-[DB]$/.test(ref)) ref = ref.slice(0, -2);
   if (!CASE_REF.test(ref)) return null;
   return { kind: ref.startsWith('Q-') ? 'quote' : 'booking', ref };
 }

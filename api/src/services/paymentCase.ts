@@ -138,12 +138,18 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
       }));
     }, null as CasePayment[] | null),
     load('booking_checkout_event', checkoutEvents ? async () => {
-      const [byBooking, byOrder] = await Promise.all([
+      // A PayHere notify carries only its order id, and a booking has up to three: REF, and REF-D /
+      // REF-B for a deposit and its balance (spec 2026-10-07 §4). Gather all of them.
+      const [byBooking, ...byOrder] = await Promise.all([
         checkoutEvents.listByBookingId(b.id),
-        checkoutEvents.listByOrderId ? checkoutEvents.listByOrderId(b.reference) : Promise.resolve([] as BookingCheckoutEvent[]),
+        ...[b.reference, `${b.reference}-D`, `${b.reference}-B`].map((orderId) =>
+          checkoutEvents.listByOrderId ? checkoutEvents.listByOrderId(orderId) : Promise.resolve([] as BookingCheckoutEvent[]),
+        ),
       ]);
       const seen = new Set(byBooking.map((r) => r.id));
-      return [...byBooking, ...byOrder.filter((r) => !seen.has(r.id))];
+      const extra: BookingCheckoutEvent[] = [];
+      for (const r of byOrder.flat()) if (!seen.has(r.id)) { seen.add(r.id); extra.push(r); }
+      return [...byBooking, ...extra];
     } : null, [] as BookingCheckoutEvent[]),
     load('refunds', refunds ? () => refunds.list(b.id) : null, [] as Refund[]),
     load('notification_log', notificationLog ? () => notificationLog.listByBookingId(b.id) : null, [] as Array<{ kind: string; sentAt: Date }>),
