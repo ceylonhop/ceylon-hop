@@ -230,6 +230,70 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
   });
 
+  // Deposits (spec 2026-10-07 §5.1): a deposit and its balance are ONE sale in two payments.
+  async function depositThenBalance(balanceAmount = 3_000) {
+    const f = await fixture(); // booking total 4_000; the fixture's own 4_000 'full' row stays pending (an abandoned sibling)
+    const deposit = await f.payments.create({
+      bookingId: f.booking.id,
+      provider: 'payhere',
+      orderId: `${f.booking.reference}-D`,
+      amount: 1_000,
+      currency: 'USD',
+      idempotencyKey: `dep-${f.booking.id}`,
+      purpose: 'deposit',
+    });
+    await f.payments.markSucceeded(deposit.id);
+    await f.bookings.setStatus(f.booking.id, 'paid');
+    const balance = await f.payments.create({
+      bookingId: f.booking.id,
+      provider: 'payhere',
+      orderId: `${f.booking.reference}-B`,
+      amount: balanceAmount,
+      currency: 'USD',
+      idempotencyKey: `checkout:${f.booking.id}:balance`,
+      purpose: 'balance',
+    });
+    const event = { ...f.event, orderId: balance.orderId, providerTxnId: 'PAY-BAL', amountCents: balanceAmount };
+    return { f, deposit, balance, event };
+  }
+
+  it('settles a balance after its deposit as one sale, leaving the booking where it is', async () => {
+    const { f, event } = await depositThenBalance();
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+    expect(outcome.kind).toBe('balance_settled');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
+  });
+
+  it('still flags a balance that would take more than the total', async () => {
+    const { f, event } = await depositThenBalance(3_001);
+    expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event)).kind).toBe('double_capture');
+  });
+
+  it('flags a balance with no succeeded deposit behind it', async () => {
+    const f = await fixture();
+    await f.payments.markSucceeded(f.payment.id); // a FULL capture, not a deposit
+    await f.bookings.setStatus(f.booking.id, 'paid');
+    const balance = await f.payments.create({
+      bookingId: f.booking.id,
+      provider: 'payhere',
+      orderId: `${f.booking.reference}-B`,
+      amount: 1_000,
+      currency: 'USD',
+      idempotencyKey: `checkout:${f.booking.id}:balance`,
+      purpose: 'balance',
+    });
+    const event = { ...f.event, orderId: balance.orderId, providerTxnId: 'PAY-BAL', amountCents: 1_000 };
+    expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event)).kind).toBe('double_capture');
+  });
+
+  it('still flags a deposit AND a full payment both succeeding (two tabs)', async () => {
+    const { f } = await depositThenBalance();
+    // The customer also paid the abandoned full attempt (the fixture's 4_000 row).
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(f.event);
+    expect(outcome.kind).toBe('double_capture');
+  });
+
   it('repairs a legacy succeeded-payment/pending-booking split on the next verified success', async () => {
     const f = await fixture();
     await f.payments.markSucceeded(f.payment.id);

@@ -27,6 +27,10 @@ export type PaymentSettlementOutcome =
   // enforce order_id uniqueness): the payment row keeps that first capture's id — the one our
   // refund tool reaches — and the second exists only as a payment_events row.
   | { kind: 'double_capture'; payment: Payment; booking: Booking; firstCaptureTxnId?: string }
+  // The balance of a deposit booking (spec 2026-10-07 §5.1): a second capture that is the other
+  // half of ONE sale, not a second sale. The payment is settled; the booking is left exactly where
+  // it is (already paid / confirmed / in progress) — the deposit is what secured it.
+  | { kind: 'balance_settled'; payment: Payment; booking: Booking }
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
@@ -51,6 +55,23 @@ export function recordedCaptureId(p: {
 }): string | null {
   if (p.status !== 'succeeded' || p.settlementSource !== 'webhook') return null;
   return p.gatewayPaymentId ?? null;
+}
+
+/** A balance arriving after its deposit is the second half of one sale. True only for a
+ *  `balance` payment whose single sibling capture is the booking's `deposit`, and only while the
+ *  two together stay within the total. Anything else is still a double capture. Shared by both
+ *  repos so the in-memory fake and Postgres cannot disagree. */
+export function isBalanceAfterDeposit(
+  payment: { purpose: string; amount: number },
+  others: Array<{ purpose: string; amount: number }>,
+  bookingTotal: number,
+): boolean {
+  return (
+    payment.purpose === 'balance' &&
+    others.length === 1 &&
+    others[0]!.purpose === 'deposit' &&
+    others[0]!.amount + payment.amount <= bookingTotal
+  );
 }
 
 export class PaymentSettlementError extends Error {
@@ -157,7 +178,7 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     }
 
     // Read before our own write, so this asks only about OTHER payments on the booking.
-    const alreadyCaptured = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).some(
+    const otherCaptures = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
       (p) => p.id !== paymentRecord.id && p.status === 'succeeded',
     );
 
@@ -171,9 +192,9 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     });
     await this.failureHook?.('after_payment_update');
 
-    if (alreadyCaptured) {
+    if (otherCaptures.length) {
       return {
-        kind: 'double_capture',
+        kind: isBalanceAfterDeposit(paymentRecord, otherCaptures, booking.total) ? 'balance_settled' : 'double_capture',
         payment: this.requirePayment(event.orderId),
         booking,
       };

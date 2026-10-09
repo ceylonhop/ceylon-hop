@@ -1118,6 +1118,54 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
   });
 
+  // Deposits (spec 2026-10-07 §5.1): the balance of a deposit booking is the second half of one
+  // sale — settled, booking left alone — while a balance past the total is still a double capture.
+  async function depositBooking(tag: string) {
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 1_000 });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 1_000,
+      currency: booking.currency, idempotencyKey: `${tag}-dep-${booking.id}`, purpose: 'deposit',
+    });
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    const depositEvent = {
+      provider: 'payhere' as const, merchantId: '1234567', orderId: deposit.orderId,
+      providerTxnId: `PAY-DEP-${deposit.id}`, amountCents: deposit.amount, currency: deposit.currency,
+      status: 'succeeded' as const, providerStatusCode: '2', receivedAt: new Date(),
+      payloadSha256: '4'.repeat(64), sanitizedPayload: { order_id: deposit.orderId, status_code: '2' },
+    };
+    expect((await settlement.acceptVerifiedEvent(depositEvent)).kind).toBe('settled');
+    return { booking, settlement, depositEvent };
+  }
+
+  it('settles a balance after its deposit as one sale and leaves the booking paid', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-ok');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `bal-ok-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_000, payloadSha256: '5'.repeat(64),
+    });
+    expect(outcome.kind).toBe('balance_settled');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
+  it('still flags a balance that would take more than the total as a double capture', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-over');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_001,
+      currency: booking.currency, idempotencyKey: `bal-over-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_001, payloadSha256: '6'.repeat(64),
+    });
+    expect(outcome.kind).toBe('double_capture');
+  });
+
   it('persists a quote with JSONB request/result and patches its status', async () => {
     const saved = await quotes.save({
       product: 'private',
