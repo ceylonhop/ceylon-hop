@@ -47,6 +47,7 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   payment_recovery: { templateKey: 'payment-recovery', source: 'scheduled_job', actorType: 'scheduler' },
   payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
   deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
+  balance_received: { templateKey: 'balance-received', source: 'payment_webhook', actorType: 'provider' },
 };
 
 function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
@@ -913,14 +914,17 @@ export async function sendPaymentFailed(
   });
 }
 
-// ── Deposit received (a partial deposit was collected; balance due later) ──
-// Dormant today: the engine charges the full amount for every booking, so no public flow
-// produces amountDueNow < total. Wired to fire only on a real partial deposit.
+// ── Deposit received (a deposit was collected; balance due later) ──
+// A deposit was collected; the balance is paid on the same pay link, any time (spec 2026-10-07,
+// revised 2026-10-08). Fires only on a real partial deposit (amountDueNow < total).
 export async function sendDepositReceived(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome, like sendBookingConfirmation: this email IS a deposit
+  // booking's confirmation (the watchdog accepts its log row as one), so the caller records it
+  // only when it actually left.
   const first = esc(booking.input.customer.firstName);
   const balance = money(booking.total - (booking.amountDueNow ?? booking.total), booking.currency);
   const html = page(
@@ -937,7 +941,7 @@ export async function sendDepositReceived(
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Paying the balance',
-        `Your remaining balance of ${esc(balance)} is due before travel — we’ll share the payment details on WhatsApp closer to the day.`,
+        `Your remaining balance is due before travel. Pay the balance of ${esc(balance)} any time before your trip, using the same link you paid the deposit with.`,
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -948,14 +952,51 @@ export async function sendDepositReceived(
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     `Balance due before travel: ${balance}`,
+    `Pay the balance of ${balance} any time before your trip, using the same link you paid the deposit with.`,
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
-  await email.send({
+  return email.send({
     to: booking.input.customer.email,
     subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
     tracking: emailTracking(booking, 'deposit_received'),
+  });
+}
+
+// ── Balance received (the second half of a deposit booking — now fully paid) ──
+export async function sendBalanceReceived(
+  booking: Booking,
+  // What was actually collected, read from the succeeded payment rows (not derived from the total).
+  paid: { depositCents: number; balanceCents: number },
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const rows: [string, string][] = [
+    ['Deposit paid', money(paid.depositCents, booking.currency)],
+    ['Balance paid', money(paid.balanceCents, booking.currency)],
+    ['Total paid', money(paid.depositCents + paid.balanceCents, booking.currency)],
+  ];
+  const html = page(
+    brandHeader() +
+      introBlock('Fully paid', TEAL_DEEP, `Thanks, ${first} — you’re fully paid`, 'We’ve received your balance. Nothing more is due for this trip.') +
+      ticketCard(booking, BADGE_PAID) +
+      rows.map(([label, amount]) => totalBlock(label, amount)).join('') +
+      (links.manage ? manageButton(links.manage) : '') +
+      footer(),
+  );
+  const text = textShell('balance received', 'We’ve received your balance — you’re fully paid.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...rows.map(([label, amount]) => `${label}: ${amount}`),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `You’re fully paid — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'balance_received'),
   });
 }
 

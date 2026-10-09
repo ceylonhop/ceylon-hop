@@ -15,6 +15,7 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
 import type { MapsAdapter } from '../adapters/maps';
 import { InMemoryCustomerCommunicationRepo } from '../db/customerCommunicationRepo';
+import { runWatchdog } from '../services/watchdog';
 import { InMemoryExperienceRepo } from '../db/experienceRepo';
 import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
@@ -608,6 +609,169 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(alerts.sent.map((a) => a.kind)).not.toContain('paid_in_unexpected_status');
     // the gateway money is recorded, not dropped — the business is holding both amounts
     expect((await payments.findByOrderId(b.reference))!.status).toBe('succeeded');
+  });
+
+  // Deposits (spec 2026-10-07 §5.1): the balance of a deposit booking is the second half of ONE
+  // sale. The customer gets a "fully paid" receipt and the team a money line; nothing is paged.
+  async function depositBooking(bookings: InMemoryBookingRepo, payments: InMemoryPaymentRepo) {
+    const booking = await bookings.create({
+      mode: 'single', total: 20_000, amountDueNow: 5_000, currency: 'USD',
+      input: {
+        from: 'Colombo', to: 'Kandy', vehicleType: 'car', adults: 2, children: 0, bags: 1,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+94770000000', country: 'LK' },
+      },
+    });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:deposit`, purpose: 'deposit',
+    });
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 15_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    return { booking, deposit, balance };
+  }
+
+  it('a deposit settle titles the team "Paid:" with the amount actually paid, not the total', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  // Customer choice: start a deposit, switch to full (amountDueNow rewritten to the total while the
+  // deposit attempt is still pending), then the DEPOSIT notify lands - and the reverse. What was
+  // charged decides the email, not what amountDueNow said when the customer last tapped.
+  it('a deposit that lands after the customer switched to full still gets the deposit email', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    bookings.setAmountDueNowForSettlement(booking.id, 20_000); // the switch to "full"
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('deposit_received');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('confirmation');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(5_000);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  it('a full payment that lands after the customer switched to a deposit gets the confirmation', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, bookings, payments });
+    const { booking } = await depositBooking(bookings, payments); // amountDueNow 5_000
+    const full = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 20_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}`,
+    });
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: full.orderId, amount: 20_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('confirmation');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('deposit_received');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(20_000);
+  });
+
+  // sendDepositReceived is the deposit booking's confirmation (the watchdog accepts its row as
+  // one), so it must obey the same rule: a suppressed send writes nothing and the alarm still fires.
+  it('does NOT record a deposit-received or balance receipt that notifications suppressed, and the watchdog still alerts', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const watchdogAlerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, bookings, payments, notificationLog, emailPolicy: { enabled: false } });
+    const { booking, deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' }),
+    });
+    expect(await notificationLog.wasSent(booking.id, 'deposit_received')).toBe(false);
+    expect(await notificationLog.wasSent(booking.id, 'balance_received')).toBe(false);
+
+    const res = await runWatchdog(new Date(Date.now() + 16 * 60_000), { bookings, log: notificationLog, alerts: watchdogAlerts });
+    expect(res.paidUnconfirmed).toBe(1);
+    expect(watchdogAlerts.sent[0].kind).toBe('watchdog_paid_unconfirmed');
+  });
+
+  it('a balance after its deposit sends the fully-paid receipt and the team money line, and pages nothing', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const concierge = new InMemoryConciergeTaskRepo();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments, conciergeTasks: concierge, notificationLog });
+    const { booking, deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    const sentBefore = email.sent.length;
+    const tasksBefore = (await concierge.list()).length;
+
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'payment_double_capture')).toBeUndefined();
+    expect(email.sent).toHaveLength(sentBefore + 1);
+    expect(email.sent.at(-1)!.subject).toMatch(/^You’re fully paid/);
+    expect(await notificationLog.wasSent(booking.id, 'balance_received')).toBe(true);
+    expect(alerts.sent.filter((a) => a.kind === 'booking_paid').at(-1)!.title).toBe(
+      `Balance paid: ${booking.reference} — $150.00`,
+    );
+    expect((await bookings.get(booking.id))!.status).toBe('paid');
+    expect((await concierge.list()).length).toBe(tasksBefore); // no second confirm_pickup task
+    // The owner forwards money-landed mail from Gmail on the "Paid: " subject prefix.
+    const mail = alerts.sent.filter((a) => a.kind === 'booking_paid').at(-1)!.email!;
+    expect(mail.subject.startsWith('Paid: ')).toBe(true);
+    expect(mail.subject).toContain('balance $150.00');
+    expect(mail.text).toContain('Balance paid');
+  });
+
+  it('a re-delivered balance notify sends no second receipt and no second team mail', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments });
+    const { deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    const body = adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+    const emails = email.sent.length;
+    const paidAlerts = alerts.sent.filter((a) => a.kind === 'booking_paid').length;
+
+    const again = await app.request('/webhooks/payments', { method: 'POST', body });
+
+    expect(again.status).toBe(200);
+    expect(email.sent).toHaveLength(emails);
+    expect(alerts.sent.filter((a) => a.kind === 'booking_paid')).toHaveLength(paidAlerts);
   });
 
   it('does not 500 the webhook when concierge-task creation fails (booking stays paid, alert raised)', async () => {
