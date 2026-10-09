@@ -110,6 +110,7 @@ const isManual = (p: CasePayment) => p.settlementSource === 'manual';
 
 interface Money {
   gateway: CasePayment | null;
+  balance: CasePayment | null; // a succeeded card `balance` payment: the other half of a deposit sale
   manual: CasePayment | null;
   gwNotices: PaymentEvent[]; // oldest first
   successes: PaymentEvent[];
@@ -122,17 +123,26 @@ interface Money {
 }
 
 function moneyOf(e: CaseEvidence): Money {
-  const gateway = e.payments.find((p) => !isManual(p)) ?? null;
+  // The card payment the case is about is the FIRST one (full or deposit). A deposit booking's
+  // balance is the second half of the same sale (spec 2026-10-07): counted in captured money,
+  // never judged as a second capture. With customer choice a booking can also hold an abandoned
+  // (`pending`/`failed`) attempt of the other kind beside the one that was paid (spec §5.1,
+  // 2026-10-08): the succeeded row is the case, the abandoned one is history. Two SUCCEEDED first
+  // payments stay one case with both rows' notices, so they still read `paid_twice`.
+  const firsts = e.payments.filter((p) => !isManual(p) && p.purpose !== 'balance');
+  const paidFirsts = firsts.filter((p) => p.status === 'succeeded');
+  const gateway = paidFirsts[0] ?? firsts[0] ?? null;
+  const caseIds = new Set((paidFirsts.length ? paidFirsts : gateway ? [gateway] : []).map((p) => p.id));
+  const balance = e.payments.find((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded') ?? null;
   const manual = e.payments.find(isManual) ?? null;
-  const gwNotices = gateway
-    ? e.notices.filter((n) => n.paymentId === gateway.id).sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt))
-    : [];
+  const gwNotices = e.notices.filter((n) => caseIds.has(n.paymentId)).sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt));
   const successes = gwNotices.filter((n) => codeOf(n) === '2');
   // Settled before notices were stored: the row itself is the only evidence there is.
   const legacy = !!gateway && gateway.status === 'succeeded' && gateway.settlementSource === 'legacy_backfill';
   const manualPaid = !!manual && manual.status === 'succeeded';
   return {
     gateway,
+    balance,
     manual,
     gwNotices,
     successes,
@@ -172,7 +182,10 @@ function refundOf(e: CaseEvidence, m: Money): Verdict['refund'] {
   return {
     state,
     refundedCents: live.filter((r) => CONFIRMED_REFUND.has(r.status)).reduce((s, r) => s + r.amountCents, 0),
-    capturedCents: (m.cardPaid && m.gateway ? m.gateway.amount : 0) + (m.manualPaid && m.manual ? m.manual.amount : 0),
+    capturedCents:
+      (m.cardPaid && m.gateway ? m.gateway.amount : 0) +
+      (m.balance ? m.balance.amount : 0) +
+      (m.manualPaid && m.manual ? m.manual.amount : 0),
   };
 }
 
