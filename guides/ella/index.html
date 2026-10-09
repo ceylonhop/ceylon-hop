@@ -247,12 +247,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .live{display:inline-flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft);margin-top:18px}
   .live i{width:9px;height:9px;border-radius:50%;background:var(--teal)}
   .all{margin:20px 0 0;font-size:.95rem}.all a{font-weight:600}
-  .ask{background:var(--btn-accent);color:#fff}
-  .ask .wrap{display:grid;gap:22px;align-items:center}
-  @media(min-width:760px){.ask .wrap{grid-template-columns:1fr auto}}
-  .ask .eyebrow{color:#fff;opacity:.85}.ask .eyebrow::before{background:#fff}
-  .ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
-  .ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
+  section.ask{background:var(--btn-accent);color:#fff} /* section.: the Eat/Stay card is .pl.ask too */
+  section.ask .wrap{display:grid;gap:22px;align-items:center}
+  @media(min-width:760px){section.ask .wrap{grid-template-columns:1fr auto}}
+  section.ask .eyebrow{color:#fff;opacity:.85}section.ask .eyebrow::before{background:#fff}
+  section.ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
+  section.ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
   .credits{padding:20px 0 30px;font-size:.74rem;color:var(--ink-soft)}
   .credits .wrap{display:flex;flex-wrap:wrap;gap:6px 14px}
   @media(max-width:759px){
