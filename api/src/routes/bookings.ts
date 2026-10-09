@@ -28,7 +28,8 @@ import { measureLeg } from '../quote/routeChoice';
 import { promoDiscount, roadRow } from '../services/notifications';
 import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
-import type { PaymentRepo } from '../db/paymentRepo';
+import type { PaymentRepo, Payment } from '../db/paymentRepo';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
@@ -176,6 +177,10 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // Money actually received (Σ succeeded payments) and whether the manage page may offer the
+  // balance (spec 2026-10-07 §5.3).
+  paidCents: number;
+  balancePayable: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
@@ -186,7 +191,7 @@ export interface CustomerBookingView {
   discountCents?: number;
 }
 
-export function projectBooking(b: Booking): CustomerBookingView {
+export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
   const road = roadRow(b)?.[1];
   const promo = promoDiscount(b);
@@ -198,7 +203,9 @@ export function projectBooking(b: Booking): CustomerBookingView {
     currency: b.currency,
     totalCents: b.total,
     amountDueNowCents: dueNow,
-    balanceDueCents: Math.max(0, b.total - dueNow),
+    balanceDueCents: balanceDueCents(b, payments),
+    paidCents: paidCents(payments),
+    balancePayable: isBalanceOpen(b, payments),
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -921,7 +928,7 @@ function invalidRequest(error: ZodError) {
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
     // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
-    return c.json({ ...projectBooking(booking), ga4Item: browserItem(booking) }, 200);
+    return c.json({ ...projectBooking(booking, await payments.findByBookingId(booking.id)), ga4Item: browserItem(booking) }, 200);
   });
 
   r.post('/view/checkout-token', async (c) => {

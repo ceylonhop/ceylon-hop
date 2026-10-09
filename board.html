@@ -10,6 +10,10 @@
      so the cookie is third-party there and browsers blocking third-party cookies drop it,
      leaving sign-in looking fine but every write 401ing. Same registrable domain = same site. -->
 <script>(function(){var p=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ops.ceylonhop.com');})();</script>
+<!-- Share links: on the live site Copy link / WhatsApp / Facebook hand out ceylonhop.com/r/CODE,
+     which a Cloudflare Worker passes to the API's per-ride preview. Anywhere else (local, staging)
+     no Worker answers /r/, so board.js falls back to the API's own /r/ path. -->
+<script>if(location.hostname==='ceylonhop.com')window.CEYLON_HOP_SHARE_ORIGIN='https://ceylonhop.com/r';</script>
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      Set 2026-07-25 to open self-serve joining — same OAuth client as ops sign-in, with
      https://prod.ceylonhop.com added to its Authorized JavaScript origins. PayHere card
@@ -49,7 +53,7 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <!-- transfers-data.js: PLACES + CORRIDORS for the create-a-list dropdowns -->
-<script src="transfers-data.js?v=3d09af3709"></script>
+<script src="transfers-data.js?v=095fe1f9cc"></script>
 <!-- Google Identity Services (renders the real sign-in button) -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
@@ -1034,6 +1038,6 @@ body.detail-open .detail{display:block}
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
-<script src="board.js?v=74036e1b59" defer></script>
+<script src="board.js?v=6fbf312094" defer></script>
 </body>
 </html>

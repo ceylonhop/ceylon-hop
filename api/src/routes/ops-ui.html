@@ -3132,9 +3132,9 @@ function anDemandHtml(d){
     anTile('Unrecorded intent',sm.unrecorded,'')+
   '</div>';
   html+='<div class="an-grid">';
-  html+=`<div class="an-card"><h3>Top origins</h3><p class="an-cap">Where requested journeys begin.</p>${anHBars((d.topOrigins||[]).map(x=>({label:x.place,n:x.count})))}</div>`;
-  html+=`<div class="an-card" data-testid="analytics-top-destinations"><h3>Top destinations</h3><p class="an-cap">Where requested journeys end. ${cov}</p>${anHBars(d.topDestinations.map(x=>({label:x.place,n:x.count||x.touches})))}</div>`;
-  html+=`<div class="an-card an-wide"><h3>Corridor performance</h3><p class="an-cap">Requests · wins · cohort win rate · booked quote value touching the route.</p>${anHBars(d.topCorridors.map(c=>({label:c.from+' → '+c.to,n:c.count,sub:(c.winRatePct===undefined?'':c.wins+' won · '+c.winRatePct+'% · '+anMoney(c.bookedValueCents))})))}</div>`;
+  html+=`<div class="an-card"><h3>Top origins</h3><p class="an-cap">Where requested journeys begin, by town.</p>${anHBars((d.topOrigins||[]).map(x=>({label:x.place,n:x.count})))}</div>`;
+  html+=`<div class="an-card" data-testid="analytics-top-destinations"><h3>Top destinations</h3><p class="an-cap">Where requested journeys end, by town. ${cov}</p>${anHBars(d.topDestinations.map(x=>({label:x.place,n:x.count||x.touches})))}</div>`;
+  html+=`<div class="an-card an-wide"><h3>Corridor performance</h3><p class="an-cap">Region to region. Requests · wins · cohort win rate · booked quote value touching the route.</p>${anHBars(d.topCorridors.map(c=>({label:c.from+' → '+c.to,n:c.count,sub:(c.winRatePct===undefined?'':c.wins+' won · '+c.winRatePct+'% · '+anMoney(c.bookedValueCents))})))}</div>`;
   html+=`<div class="an-card"><h3>Requested service by week</h3><p class="an-cap">private (teal) · chauffeur (amber) · both (green)</p>${anSvgBars(d.serviceTrend,[{key:'private',color:'var(--go)'},{key:'chauffeur',color:'var(--wait)'},{key:'both',color:'var(--ok)'}])}</div>`;
   html+=`<div class="an-card"><h3>Vehicle demand</h3><p class="an-cap">Vehicle selected on the quote.</p>${anHBars(Object.entries(t.vehicleMix||{}).map(([label,n])=>({label,n})))}</div>`;
   html+=`<div class="an-card"><h3>Trip distance</h3><p class="an-cap">priced km per quote</p>${anHBars(t.kmBuckets.map(b=>({label:b.bucket+' km',n:b.count})))}</div>`;
@@ -8250,9 +8250,9 @@ function renderRatesEditor() {
   }).join('');
   var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
     + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
-  // Read-only in both modes (owner, 2026-09-26): no booking charges a deposit today.
-  var deposit = row('Deposit', 'not charged — bookings are paid in full',
-    view(esc(String(d.readOnly.depositPct)) + '%', 'cap ' + rtUsd(d.readOnly.depositCapCents)), null);
+  // Read-only in both modes: the deposit rule is fixed (owner, 2026-10-07).
+  var deposit = row('Deposit', 'optional on private & chauffeur trips from ' + rtUsd(d.readOnly.depositEligibleMinCents),
+    view(esc(String(d.readOnly.depositPct)) + '%', 'min ' + rtUsd(d.readOnly.depositMinCents)), null);
 
   var live = d.live;
   var liveLabel = live.source === 'revision'
