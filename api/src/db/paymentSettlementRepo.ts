@@ -214,6 +214,7 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       amount: payment.amount,
       currency: payment.currency,
       status: payment.status,
+      purpose: payment.purpose,
       idempotencyKey: payment.idempotencyKey,
       attemptCount: payment.attemptCount,
       lastAttemptAt: payment.lastAttemptAt,
