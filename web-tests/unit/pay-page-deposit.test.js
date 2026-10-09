@@ -90,8 +90,11 @@ describe('the page wires the choice through', () => {
     expect(m[0]).toMatch(/if \(data && data\.deposit\) startBody\.payment = payChoice/);
     expect(m[0]).toMatch(/JSON\.stringify\(startBody\)/);
   });
-  it('stashes what is actually charged for the return leg’s purchase', () => {
-    expect(html).toMatch(/cents: chargedCents\(data, payChoice\)/);
+  it('stashes what the SERVER charged (the checkout response’s amount), falling back to the page’s belief', () => {
+    const m = html.match(/function remember\(\)\{[\s\S]*?\n  \}\n/);
+    expect(m, 'remember not found').toBeTruthy();
+    expect(m[0]).toMatch(/serverCents > 0 \? serverCents : chargedCents\(data, payChoice\)/);
+    expect(html).toMatch(/serverCents = Number\(checkout\.amount\) \|\| 0;\s*remember\(\);/);
   });
   it('reports the stashed charge, not the trip total, as the purchase value', () => {
     const m = html.match(/function trackPurchase\(reference\)\{[\s\S]*?\n  \}\n/);

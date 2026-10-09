@@ -562,7 +562,6 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
   });
 });
 
-// The ops mint route and this public route agree end to end.
 // ── Deposit or full, chosen by the customer on the link (spec 2026-10-07 §5.2, rev. 2026-10-08) ──
 const startPaying = (app: App, t: string, payment: unknown) =>
   startRaw(app, { t, customer: CUSTOMER, termsAccepted: true, payment });
@@ -690,6 +689,58 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const first = await (await startPaying(app, t, 'deposit')).json();
     await start(app, t); // an older cached pay.html: no `payment` at all
     expect((await bookings.get(first.bookingId))!.amountDueNow).toBe(21900);
+  });
+
+  // After a cancellation every later start resolves under the `:after:<cancelled id>` key, not the
+  // base key — that replacement booking must follow the choice exactly as a first booking does.
+  it('after a cancellation, the replacement booking follows a deposit → full switch (and charges REF)', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
+
+    const b2 = await (await startPaying(app, t, 'deposit')).json();
+    expect((await bookings.get(b2.bookingId))!.amountDueNow).toBe(5000);
+    const again = await (await startPaying(app, t, 'full')).json();
+    expect(again.bookingId).toBe(b2.bookingId);
+    expect((await bookings.get(b2.bookingId))!.amountDueNow).toBe(21900);
+
+    const co = await (await app.request(`/bookings/${b2.bookingId}/checkout`, {
+      method: 'POST', headers: { authorization: `Bearer ${again.checkoutToken}` },
+    })).json();
+    expect(co.amount).toBe(21900);
+    const [row] = await payments.findByBookingId(b2.bookingId);
+    expect(row).toMatchObject({ amount: 21900, purpose: 'full', orderId: (await bookings.get(b2.bookingId))!.reference });
+  });
+
+  it('after a cancellation, the replacement booking follows a full → deposit switch', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
+
+    const b2 = await (await startPaying(app, t, 'full')).json();
+    expect((await bookings.get(b2.bookingId))!.amountDueNow).toBe(21900);
+    const again = await (await startPaying(app, t, 'deposit')).json();
+    expect(again.bookingId).toBe(b2.bookingId);
+    expect((await bookings.get(b2.bookingId))!.amountDueNow).toBe(5000);
+  });
+
+  it('the replacement booking also takes the corrected payer details on a resume', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
+    const b2 = await (await start(app, t)).json();
+    await start(app, t, { ...CUSTOMER, firstName: 'Corrected' });
+    expect((await bookings.get(b2.bookingId))!.input.customer.firstName).toBe('Corrected');
   });
 
   it('a resume refused as ineligible leaves the booking exactly as it was', async () => {
@@ -852,6 +903,7 @@ describe('POST /quotes/pay/balance', () => {
   });
 });
 
+// The ops mint route and this public route agree end to end.
 describe('mint → view round trip', () => {
   it('a minted URL opens payable', async () => {
     const quotes = new InMemoryQuoteRepo();

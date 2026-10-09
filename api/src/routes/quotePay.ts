@@ -330,17 +330,20 @@ export function quotePayRoutes(deps: {
     // after the fact is not an option either.)
     const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
     const found = await deps.bookings.findByIdempotencyKey(baseKey);
-    const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
-    if (found && chargeable) {
+    // ONE path for "an existing booking that can still be charged": the one under this selection's
+    // base key, or — after a cancellation — its replacement under the `:after:` key. Both must
+    // re-record the payer AND the deposit-or-full choice; handing the replacement back untouched
+    // charged the first tap's amount on a page that showed the second (review of #958).
+    const payer = { customer: body.data.customer, billing: body.data.billing };
+    async function resume(existing: { id: string }) {
       // Re-record the payer before handing back the booking. Everything the gateway sees — name,
       // email, phone, billing address — is read from this row, never from the request that opened
       // the payment, so resuming used to charge against whatever was typed on the FIRST attempt
       // and silently discard the corrections. A payer who mistyped their address, was declined,
       // and fixed it was re-sent the bad address; and because those fields feed the issuer's 3DS
       // risk decision, the retry was arguably worse off than the original attempt.
-      const refreshed = await deps.bookings.refreshPayerDetails(found.id, {
-        customer: body.data.customer,
-        billing: body.data.billing,
+      const refreshed = await deps.bookings.refreshPayerDetails(existing.id, {
+        ...payer,
         // /start requires termsAccepted:true on every call, so the resuming payer has just
         // agreed. Keeping the earlier submitter's timestamp would leave a refund dispute
         // holding evidence about a different person.
@@ -354,12 +357,19 @@ export function quotePayRoutes(deps: {
         200,
       );
     }
+    const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
+    if (found && isChargeable(found)) return resume(found);
     // Derived from whatever booking already exists — this selection's dead one, or the previous
     // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
     // cancellation (or the same re-pick) still yields ONE new booking rather than two.
     const prior =
       found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
     const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
+    // …and that one booking, once it exists and is still chargeable, is a resume like any other.
+    if (idempotencyKey !== baseKey) {
+      const replacement = await deps.bookings.findByIdempotencyKey(idempotencyKey);
+      if (replacement && isChargeable(replacement)) return resume(replacement);
+    }
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.

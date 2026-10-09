@@ -355,13 +355,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   //
   // NO CARD DATA is ever on this page, and none may ever be put here.
   var STORE = 'ch_pay_v1';
+  var serverCents = 0;     // what the checkout response said it charged, in minor units
   function remember(){
     // `cents` rides along for the same reason `typed` does: the return leg renders before
     // /view has been re-fetched, so without it a `purchase` would report a value of zero. It is
-    // what is being CHARGED — the deposit when that was chosen, not the trip total.
+    // what is being CHARGED, and the checkout response's `amount` (minor units) is the server's
+    // own word for that — the page's belief (deposit or total, by its choice) is only the
+    // fallback when the response carries none, because a booking switched underneath the page
+    // would otherwise report revenue GA4 cannot take back.
+    var cents = serverCents > 0 ? serverCents : chargedCents(data, payChoice);
     try {
       sessionStorage.setItem(STORE, JSON.stringify({
-        t: t, typed: typed, cents: chargedCents(data, payChoice),
+        t: t, typed: typed, cents: cents,
         item: (booking && booking.ga4Item) || null,
       }));
     }
@@ -1197,6 +1202,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
     // Remember the link before leaving our origin: the return trip lands on a URL that carries
     // only a settlement-status token, so this is how the page finds its way back to the quote.
+    serverCents = Number(checkout.amount) || 0;
     remember();
     // Record WHICH gateway we are handing off to, before we lose sight of the URL. The return
     // leg never sees it, and a sandbox settlement reported as revenue is permanent in GA4.

@@ -149,3 +149,28 @@ test('a deposit refused as ineligible drops the offer and re-reads the link', as
   await expect(page.locator('#paybtn')).toHaveText('Pay with PayHere');
   await expect(page.locator('.pay-opt')).toHaveCount(0);
 });
+
+test('the browser purchase reports the amount the SERVER charged when it disagrees with the page’s choice', async ({ page }) => {
+  await stubView(page, { deposit: DEPOSIT });
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'chIsProd', { get: () => () => true, set: () => {}, configurable: true });
+  });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
+    body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1', ga4Item: { item_id: 'x', item_name: 'x' } }) }));
+  // The page chose the DEPOSIT, but the booking was switched to full underneath it: the checkout
+  // charges 219.00 (minor units on `amount`). The purchase must say what was charged.
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ amount: 21900, checkoutUrl: 'https://www.payhere.lk/pay/checkout',
+      fields: { order_id: 'o-1', merchant_id: 'm-1', amount: '219.00', hash: 'H' } }) }));
+  await page.route('https://www.payhere.lk/pay/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
+  await page.goto(PAGE);
+  await page.locator('input[name=paychoice][value=deposit]').check();
+  await fillAndContinue(page);
+  await page.waitForURL(/payhere\.lk/);
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-SRV01', sandbox: false }) }));
+  await page.goto('/pay.html?rt=any-token');
+  await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter((e) => e && e.event === 'purchase').length)).toBe(1);
+  const purchase = await page.evaluate(() => (window.dataLayer || []).find((e) => e && e.event === 'purchase'));
+  expect(purchase.value).toBe(219);
+});
