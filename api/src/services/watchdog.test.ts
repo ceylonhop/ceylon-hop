@@ -91,6 +91,17 @@ describe('runWatchdog', () => {
     expect(alerts.sent).toHaveLength(0);
   });
 
+  // A deposit booking's confirmation IS the deposit-received email (spec 2026-10-07).
+  it('stays quiet when the deposit-received email was sent instead of the confirmation', async () => {
+    const { bookings, booking } = await seed('paid');
+    const log = new InMemoryNotificationLogRepo();
+    await log.markSent(booking.id, 'deposit_received');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log, alerts });
+    expect(res.paidUnconfirmed).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
 
   // The exemption is about HOW the money arrived, not which channel booked it. That only
   // started mattering once ops could hand a WhatsApp customer a card link: a whatsapp-channel
