@@ -52,13 +52,44 @@ describe('watchdog booking-tracking reconciliation', () => {
       log: new InMemoryNotificationLogRepo(), alerts,
     });
 
-    expect(result.trackingFindings).toBe(3);
+    // The unlinked bounce is NOT a finding: the Resend webhook already alerted it on arrival.
+    expect(result.trackingFindings).toBe(2);
     expect(alerts.sent.map((alert) => alert.kind).sort()).toEqual([
       'tracking_email_attempt_unresolved',
       'tracking_payment_transition_missing',
-      'tracking_provider_event_orphan',
     ]);
     expect(alerts.sent.every((alert) => !!alert.dedupeKey)).toBe(true);
     expect(JSON.stringify(alerts.sent)).not.toContain('maya@example.com');
+  });
+
+  it('does not feed on its own mail: untracked emails\' Resend events raise no alerts', async () => {
+    // Ops alerts, the digest and board mail go out untracked, so the Resend webhook stores their
+    // sent/delivered events with no communication. When those were findings, every alert email
+    // minted two more orphans, each alerted on the next sweep — and so on, every 30 minutes.
+    const communications = new InMemoryCustomerCommunicationRepo();
+    let message = 0;
+    const resendEventsFor = async (at: Date) => {
+      const id = `untracked-${++message}`;
+      for (const eventType of ['provider_sent', 'delivered'] as const) {
+        await communications.recordProviderEvent({
+          communicationId: null, eventType, providerEventId: `${id}:${eventType}`,
+          providerMessageId: id, reasonCode: null, detailJson: null, occurredAt: at,
+        });
+      }
+    };
+    // Every alert this watchdog sends is itself an untracked email.
+    const alerts = new FakeAlertAdapter();
+    const send = alerts.send.bind(alerts);
+    alerts.send = async (alert) => { await send(alert); await resendEventsFor(NOW); };
+
+    await resendEventsFor(NOW); // one untracked email (say, yesterday's digest) to start it off
+    const deps = {
+      bookings: new InMemoryBookingRepo(), payments: new InMemoryPaymentRepo(),
+      customerCommunications: communications, log: new InMemoryNotificationLogRepo(), alerts,
+    };
+    await runWatchdog(NOW, deps);
+    await runWatchdog(new Date(NOW.getTime() + 31 * 60_000), deps);
+
+    expect(alerts.sent).toEqual([]);
   });
 });

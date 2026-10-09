@@ -65,15 +65,6 @@ export type CustomerCommunicationReconciliationFinding =
       eventType: 'send_attempted';
     }
   | {
-      kind: 'orphan_provider_event';
-      communicationId: null;
-      bookingId: null;
-      communicationKind: null;
-      occurredAt: Date;
-      providerMessageId: string;
-      eventType: CustomerCommunicationEventType;
-    }
-  | {
       kind: 'provider_communication_failure';
       communicationId: string;
       bookingId: string;
@@ -163,14 +154,7 @@ export class InMemoryCustomerCommunicationRepo implements CustomerCommunicationR
     const unresolvedReported = new Set<string>();
     for (const row of [...this.events].sort((a, b) =>
       a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id))) {
-      if (!row.communicationId && row.providerMessageId) {
-        findings.push({
-          kind: 'orphan_provider_event', communicationId: null, bookingId: null,
-          communicationKind: null, occurredAt: new Date(row.occurredAt),
-          providerMessageId: row.providerMessageId, eventType: row.eventType,
-        });
-        continue;
-      }
+      // An unlinked provider event is never a finding — see the Postgres repo.
       if (!row.communicationId) continue;
       const communication = this.communications.get(row.communicationId);
       if (!communication) continue;

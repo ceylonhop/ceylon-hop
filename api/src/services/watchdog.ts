@@ -367,13 +367,6 @@ function trackingFindingAlert(finding: BookingTrackingFinding) {
     body: `Communication ${finding.communicationId} (${finding.communicationKind}) for booking ${finding.bookingId} has no provider acceptance or send failure.`,
     dedupeKey: finding.communicationId,
   };
-  if (finding.kind === 'orphan_provider_event') return {
-    severity: 'warning' as const,
-    kind: 'tracking_provider_event_orphan',
-    title: 'Resend event has no matching communication',
-    body: `Provider event ${finding.eventType} for message ${finding.providerMessageId} could not be linked to a booking communication.`,
-    dedupeKey: `${finding.providerMessageId}:${finding.eventType}`,
-  };
   return {
     severity: 'critical' as const,
     kind: 'tracking_provider_failure',
