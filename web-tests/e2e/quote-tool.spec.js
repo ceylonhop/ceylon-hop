@@ -342,7 +342,8 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   expect(waEditedText).toMatch(/4 day\(s\)/); // rest day IS charged — day rate spans the Aug 1→4 window
   expect(waEditedText).toMatch(/[1-9]\d* idle-day min/); // …and the idle day adds non-zero idle km
   expect(waEditedText).toContain('Mirissa'); // the transfer AFTER the gap is not dropped (old V1 bug)
-  expect(waEditedText).toMatch(/Pay in full to confirm/); // chauffeur full-payment line
+  // $150+ chauffeur quote → its pay link offers a deposit, so the message offers both (owner, 2026-10-09).
+  expect(waEditedText).toMatch(/Pay a deposit of \$[\d,]+\.\d\d to confirm \(balance \$[\d,]+\.\d\d any time before your trip\), or pay in full: /);
   expect(waEditedText).toContain(summaryTotal.trim()); // message total matches the Summary card
 });
 

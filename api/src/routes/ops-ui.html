@@ -216,6 +216,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
   .pill .pd{width:7px;height:7px;border-radius:50%;background:var(--c,var(--ink-faint))}
+  /* A deposit booking's open balance, beside its stage pill — the same amber as "due". */
+  .pill.pill-bal{--c:var(--wait);--cbg:var(--wait-bg)}
   .tk-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
@@ -2120,6 +2122,9 @@ const reason=t=>{
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Day one of a deposit trip with the balance still open: the driver is about to go, so this
+     outranks the housekeeping reasons below. */
+  if(t.balance>0&&t.date&&t.date===TODAY)return 'Balance due — travels today';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -2228,6 +2233,9 @@ function rowToTicket(row){
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
+    /* A deposit booking: what has landed and what is still owed (the ledger's figures, never
+       derived here). balance>0 on a paid row means the customer owes the rest. */
+    paidCents:row.paidCents||0, balance:row.balanceCents||0,
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
     notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
     /* Ride-board vans ride in the same queue as bookings but are read-only
@@ -2496,6 +2504,7 @@ function ticketRow(t,i){
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
+      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
       <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
     </div>
   </div>`;
@@ -3876,7 +3885,7 @@ function sheetHeadHtml(t,o){
     <div class="perf"><i></i><i></i></div>`;
 }
 function bookingStubHtml(t){
-  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
+  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid&&t.balance>0?'<span class="paych due">DEPOSIT</span>':t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
     +`<div class="stub"><div class="sl">Travel</div><div class="sv">${t.date?esc(fmtDate(t.date)):'Flexible'}${t.time?' · '+esc(t.time):''}</div></div>`
     +`<div class="stub"><div class="sl">Guests</div><div class="sv">${t.guests==null?'—':esc(String(t.guests))}</div></div>`
     +`<div class="stub"><div class="sl">Type</div><div class="sv">${esc(MODE[t.mode]||t.mode)}</div></div>`;
@@ -4054,8 +4063,12 @@ function renderSheet(){
       <div class="block"><h4>Payment</h4>
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
-        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
+        ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>
+        <div class="kv"><span class="k">Balance due</span><span class="v" style="color:var(--wait);font-weight:700">${money({amount:t.balance,currency:t.currency})}</span></div>`:''}
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
+        ${d.balancePayLink?`<div class="sheet-actions"><button class="btn" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Copy pay link</button></div>
+        <p style="margin:6px 0 0;font-size:.82rem;color:var(--ink-soft)">Balance — any time before the trip. Paste it to the customer; the link they already have shows what is left.</p>`:''}
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
         ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
@@ -4526,6 +4539,7 @@ document.addEventListener('click',async e=>{
       }
       break;
     }
+    case 'balancelink':{const link=state.detailData&&state.detailData.balancePayLink;if(!link){toast('No balance is open on this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Pay link copied — balance, any time before the trip');break;}
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
@@ -9490,6 +9504,17 @@ function productBlurb(veh) {
   return 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.';
 }
 
+/* The payment line of the quote message (WhatsApp and email). An eligible quote's pay link offers a
+   deposit or full payment (spec 2026-10-07 rev. 2026-10-08), so the message says both — driven by the
+   engine's own deposit figure, the same one /quotes/pay/view offers. Owner wording, 2026-10-09. */
+const payLineText = (est, totalCents, M) => {
+  var due = est.amountDueNow && est.amountDueNow.cents != null ? est.amountDueNow.cents : 0;
+  var dep = est.deposit && est.deposit.cents > 0 ? est.deposit.cents : 0;
+  return dep > 0
+    ? 'Pay a deposit of ' + M(dep) + ' to confirm (balance ' + M(totalCents - dep) + ' any time before your trip), or pay in full: ' + M(totalCents) + '.'
+    : 'Pay in full to confirm: ' + M(due) + '.';
+};
+
 function generatedWhatsappMessage() {
   if (!lastEstimate) return null;
   var name = customerName() || 'there';
@@ -9514,8 +9539,7 @@ function generatedWhatsappMessage() {
     });
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     // PRIVATE: per driving leg (date — route — price), then extras, then total.
     privateLegRows().forEach(function(r) {
@@ -9553,8 +9577,7 @@ function generatedEmailMessage() {
       lines.push('  ' + (it.displayLabel || it.label) + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     privateLegRows().forEach(function(r) {
       lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));

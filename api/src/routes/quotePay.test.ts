@@ -6,7 +6,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import { payLines, selectionAmountCents } from '../quote/paySelection';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
-import { signQuotePayToken } from '../lib/bookingToken';
+import { signQuotePayToken, verifyCheckoutToken } from '../lib/bookingToken';
 import { signSession } from '../lib/opsAuth';
 
 // The customer-facing half of pay links (spec §3–§5). Everything here is reachable by
@@ -753,6 +753,153 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     expect(res.status).toBe(409);
     const b = (await bookings.get(first.bookingId))!;
     expect(b.amountDueNow).toBe(b.total);
+  });
+});
+
+// ── The balance, on the same pay link (spec 2026-10-07 §5.3, rev. 2026-10-08) ──
+const payBalance = (app: App, t: string) =>
+  app.request('/quotes/pay/balance', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t }) });
+
+// A quote whose customer paid the deposit on its link: booking `paid`, a succeeded `deposit` row,
+// the quote claimed `won` (settlement does that), and the link still in the customer's hands.
+async function depositPaid(opts: { balanceStatus?: 'succeeded' | 'pending' } = {}) {
+  const quotes = new InMemoryQuoteRepo();
+  const bookings = new InMemoryBookingRepo();
+  const payments = new InMemoryPaymentRepo();
+  const app = createApp({ quotes, bookings, payments });
+  const q = await readyQuote(quotes);
+  const t = signQuotePayToken(q.id, q.revision, SECRET);
+  const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
+  const booking = (await bookings.get(bookingId))!;
+  const dep = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5000, currency: 'USD', idempotencyKey: `checkout:${bookingId}:deposit`, purpose: 'deposit' });
+  await payments.markSucceeded(dep.id);
+  const rec = payments.getForSettlement(dep.id)!;
+  payments.putForSettlement({ ...rec, settledAt: new Date('2026-10-05T08:00:00Z') });
+  await bookings.setStatus(bookingId, 'paid');
+  await quotes.patch(q.id, { status: 'won' });
+  if (opts.balanceStatus) {
+    const bal = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 16900, currency: 'USD', idempotencyKey: `checkout:${bookingId}:balance`, purpose: 'balance' });
+    if (opts.balanceStatus === 'succeeded') await payments.markSucceeded(bal.id);
+  }
+  return { quotes, bookings, payments, app, q, t, bookingId, booking };
+}
+
+describe('GET /quotes/pay/view — the balance state', () => {
+  it('a paid deposit reopens as the balance state, with the paid/balance figures', async () => {
+    const { app, t } = await depositPaid();
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('balance');
+    expect(body.balance).toEqual({
+      title: 'Colombo Airport (CMB) → Galle', totalUsd: '$219.00', paidUsd: '$50.00',
+      paidOn: '2026-10-05', balanceCents: 16900, balanceUsd: '$169.00',
+    });
+  });
+
+  it('shows the balance whatever the token\'s revision or seq (checked before them, like paid)', async () => {
+    const { app, quotes, q } = await depositPaid();
+    await quotes.patch(q.id, { status: 'won' });
+    const stale = signQuotePayToken(q.id, q.revision + 7, SECRET, 3);
+    expect((await (await view(app, stale)).json()).state).toBe('balance');
+  });
+
+  it('once the balance lands the link shows the paid keepsake', async () => {
+    const { app, t } = await depositPaid({ balanceStatus: 'succeeded' });
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('paid');
+    expect(body).not.toHaveProperty('balance');
+    // The keepsake states what the trip cost in total, not just the first payment ($50 deposit).
+    expect(body.paid.amountUsd).toBe('$219.00');
+  });
+
+  it('a pending (unfinished) balance attempt still reads as balance', async () => {
+    const { app, t } = await depositPaid({ balanceStatus: 'pending' });
+    expect((await (await view(app, t)).json()).state).toBe('balance');
+  });
+
+  it('a fully-paid booking is paid, unchanged', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t)).json();
+    const p = await payments.create({ bookingId, provider: 'payhere', orderId: 'x', amount: 21900, currency: 'USD', idempotencyKey: 'k' });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(bookingId, 'paid');
+    expect((await (await view(app, t)).json()).state).toBe('paid');
+  });
+
+  it('a cancelled deposit booking is not a balance state', async () => {
+    const { app, t, bookings, bookingId } = await depositPaid();
+    await bookings.setStatus(bookingId, 'cancelled');
+    expect((await (await view(app, t)).json()).state).toBe('paid');
+  });
+
+  it('a deposit still pending (not succeeded) is not a balance state', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
+    await payments.create({ bookingId, provider: 'payhere', orderId: 'x-D', amount: 5000, currency: 'USD', idempotencyKey: 'kd', purpose: 'deposit' });
+    expect((await (await view(app, t)).json()).state).toBe('payable');
+  });
+});
+
+describe('POST /quotes/pay/balance', () => {
+  it('hands back the booking and a checkout token while the balance is open', async () => {
+    const { app, t, bookingId } = await depositPaid();
+    const res = await payBalance(app, t);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.bookingId).toBe(bookingId);
+    expect(verifyCheckoutToken(body.checkoutToken, bookingId, SECRET, Date.now())).toBe(true);
+  });
+
+  it('409 no_balance_due once the balance has been paid', async () => {
+    const { app, t } = await depositPaid({ balanceStatus: 'succeeded' });
+    const res = await payBalance(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('no_balance_due');
+  });
+
+  it('409 no_balance_due on a full-paid, a cancelled and a not-yet-paid booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    // not yet paid: only a started booking
+    const { bookingId } = await (await start(app, t)).json();
+    expect((await payBalance(app, t)).status).toBe(409);
+    // full-paid
+    const p = await payments.create({ bookingId, provider: 'payhere', orderId: 'x', amount: 21900, currency: 'USD', idempotencyKey: 'k' });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(bookingId, 'paid');
+    const full = await payBalance(app, t);
+    expect(full.status).toBe(409);
+    expect((await full.json()).error).toBe('no_balance_due');
+    // cancelled deposit booking
+    const dp = await depositPaid();
+    await dp.bookings.setStatus(dp.bookingId, 'cancelled');
+    expect((await payBalance(dp.app, dp.t)).status).toBe(409);
+  });
+
+  it('a garbage token gets the same soft refusal /start gives (409 quote_unavailable)', async () => {
+    const { app } = await depositPaid();
+    const res = await payBalance(app, 'garbage');
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+  });
+
+  it('a missing body is a 400, not a crash', async () => {
+    const { app } = await depositPaid();
+    const res = await app.request('/quotes/pay/balance', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    expect(res.status).toBe(400);
   });
 });
 

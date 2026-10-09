@@ -10,6 +10,8 @@ import { payLines } from '../quote/paySelection';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
 import { depositFor } from '../quote/extrasDeposit';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
+import { isoToday } from '../domain/dateRules';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -28,7 +30,7 @@ import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 // not on the webhook (payments.booking_id is NOT NULL, so settlement needs a booking to
 // land on). Idempotent per quote+revision, so a double tap resumes rather than duplicates.
 
-type PayState = 'paid' | 'revised' | 'payable' | 'unavailable';
+type PayState = 'balance' | 'paid' | 'revised' | 'payable' | 'unavailable';
 
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
@@ -46,6 +48,8 @@ const StartSchema = z.object({
   // cached pay.html keeps working. Never an amount: the server recomputes the deposit.
   payment: z.enum(['full', 'deposit']).optional(),
 }).strict();
+
+const BalanceSchema = z.object({ t: z.string() }).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
@@ -170,18 +174,23 @@ export function quotePayRoutes(deps: {
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
-  // State precedence per spec §4: paid → revised → payable → unavailable. Paid is checked
+  // State precedence per spec §4: balance → paid → revised → payable → unavailable. Paid is checked
   // FIRST so a customer reopening their link after paying always finds the keepsake — a
   // won quote must never read as a dead end, and a settled booking must never re-offer Pay.
+  // `balance` sits before it for the same reason: a customer who paid a deposit reopens the link
+  // they hold and must find what they still owe, not a "paid" keepsake (spec 2026-10-07 §5.3).
   async function stateFor(
     quote: SavedQuote | null,
     parsed: { revision: number; seq: number },
   ): Promise<{ state: PayState; paidVia?: { bookingId: string } }> {
     if (!quote) return { state: 'unavailable' };
     if (quote.convertedBookingId) {
-      const settled = (await deps.payments.findByBookingId(quote.convertedBookingId)).some(
-        (p) => p.status === 'succeeded',
-      );
+      const rows = await deps.payments.findByBookingId(quote.convertedBookingId);
+      const booking = await deps.bookings.get(quote.convertedBookingId);
+      if (booking && isBalanceOpen(booking, rows)) {
+        return { state: 'balance', paidVia: { bookingId: booking.id } };
+      }
+      const settled = rows.some((p) => p.status === 'succeeded');
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
       }
@@ -202,18 +211,42 @@ export function quotePayRoutes(deps: {
     const quote = await deps.quotes.get(parsed.quoteId);
     const { state, paidVia } = await stateFor(quote, parsed);
 
+    if (state === 'balance' && quote && paidVia) {
+      const booking = await deps.bookings.get(paidVia.bookingId);
+      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
+      const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
+      const balance = booking ? balanceDueCents(booking, rows) : 0;
+      return c.json({
+        state,
+        balance: {
+          title: payPageCopy(quote, quote.payLinkSelection).title,
+          totalUsd: usd(booking?.total ?? quote.totalCents),
+          paidUsd: usd(paidCents(rows)),
+          // The deposit's settled day (Asia/Colombo), or null when the ledger has no timestamp.
+          paidOn: settledAt ? isoToday('Asia/Colombo', settledAt) : null,
+          balanceCents: balance,
+          balanceUsd: usd(balance),
+        },
+      });
+    }
+
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
-      const payment = paidVia
-        ? (await deps.payments.findByBookingId(paidVia.bookingId)).find((p) => p.status === 'succeeded')
-        : undefined;
+      const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
+      const payment = paidRows.find((p) => p.status === 'succeeded');
+      // A deposit + balance pair is ONE sale: the keepsake states what the whole trip cost, not
+      // the first payment's $50. Any other history keeps today's first-succeeded reading.
+      const paidTotal = paidRows.some((p) => p.purpose === 'balance' && p.status === 'succeeded')
+        ? paidCents(paidRows)
+        : payment?.amount;
       const paidCopy = payPageCopy(quote, quote.payLinkSelection);
       return c.json({
         state,
         paid: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
-          amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
+          amountUsd: paidTotal != null ? usd(paidTotal) : usd(quote.totalCents),
           // Selection-aware here too: a keepsake for a two-leg payment must not be headed
           // "Four journeys" either.
           title: paidCopy.title,
@@ -258,7 +291,7 @@ export function quotePayRoutes(deps: {
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
     const quote = await deps.quotes.get(parsed.quoteId);
     const { state } = await stateFor(quote, parsed);
-    if (state === 'paid') return c.json({ error: 'already_paid' }, 409);
+    if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
 
@@ -391,6 +424,23 @@ export function quotePayRoutes(deps: {
       // ga4Item: pay.html stashes it across the gateway round trip for its `purchase` (ga4Hits.ts).
       { bookingId: booking.id, checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(booking) },
       201,
+    );
+  });
+
+  // The balance of a deposit booking, on the link the customer already holds (spec §5.3). Same
+  // token as /start, no terms re-acceptance (accepted at the deposit). Only the `balance` state
+  // proceeds; the amount is never read from the client — checkout charges balanceDueCents.
+  r.post('/balance', async (c) => {
+    const body = BalanceSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
+    if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
+    const quote = await deps.quotes.get(parsed.quoteId);
+    const { state, paidVia } = await stateFor(quote, parsed);
+    if (state !== 'balance' || !paidVia) return c.json({ error: 'no_balance_due' }, 409);
+    return c.json(
+      { bookingId: paidVia.bookingId, checkoutToken: signCheckoutToken(paidVia.bookingId, deps.linkSecret, checkoutNow()) },
+      200,
     );
   });
 
