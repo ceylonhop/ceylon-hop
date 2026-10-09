@@ -286,6 +286,7 @@ const state={
   ad: Math.max(1, parseInt(params.get('ad'))||parseInt(params.get('pax'))||1),
   ch: Math.max(0, parseInt(params.get('ch'))||0),
   addons: new Set(),
+  experiences: new Map(), // partner experiences the customer is interested in: id -> {name, partnerName}. Never priced.
   bags: Math.min(2, maxBags),
   locFrom: '',
   locTo: '',
@@ -836,6 +837,10 @@ if(isTrip){
     // renumber panels into the journey: Service=3, Payment=4; park the dropped When + vehicle steps
     if(whenPanel){ whenPanel.dataset.panel='99'; whenPanel.classList.remove('active'); }
     if(tripPanel) tripPanel.dataset.panel='3';
+    // A trip parks the travellers panel (below), and the experiences block lives in it - move the block
+    // to the trip's own Service step so the trip still gets "While you're in {stop}".
+    const xpBlock=document.getElementById('experiences-block'), tripNav=tripPanel && tripPanel.querySelector('.nav-btns');
+    if(xpBlock && tripNav) tripNav.before(xpBlock);
     // vehicle & headcount are fixed in the planner, so the standalone vehicle step is dropped here
     if(tvPanel){ tvPanel.dataset.panel='97'; tvPanel.classList.remove('active'); }
     if(dtPanel) dtPanel.dataset.panel='4';
@@ -1350,6 +1355,208 @@ window.toggleAddon=function(el){
 // the keys in addonNames; EXTRAS carrying additional codes (safari-wait, waiting) is harmless.
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
+
+/* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
+   "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
+   estimate, so a tap cannot move the Total. Only ids go to the API (payload.experienceIds); every
+   name on screen came from GET /experiences/near and goes through acEsc (which does not escape ',
+   so every attribute below is double-quoted). The block stays hidden on any error, timeout or
+   empty answer - an upsell must never get in the way of the booking. */
+const expUi = { key:null, seq:0, ctl:null, meta:new Map(), rateSeq:0, rateCtl:null };   // meta: id -> {name, partnerName, slug, place}
+const EXP_TIMEOUT_MS = 3000;
+const expLabel = s => String(s||'').split(' / ')[0].trim().slice(0,60);
+const expRound = n => Math.round(n*1000)/1000;
+const expDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function expDays(days){
+  const set=new Set((days||[]).filter(d=>d>=0&&d<=6));
+  if(!set.size) return '';
+  if(set.size===7) return 'Daily';
+  const order=[1,2,3,4,5,6,0].filter(d=>set.has(d)), runs=[];
+  let i=0;
+  while(i<order.length){
+    let j=i;
+    while(j+1<order.length && (order[j+1]===(order[j]+1)%7)) j++;
+    runs.push(j-i>=2 ? expDay[order[i]]+'–'+expDay[order[j]] : order.slice(i,j+1).map(d=>expDay[d]).join(', '));
+    i=j+1;
+  }
+  return runs.join(', ');
+}
+function expPrice(it){
+  const c=Number(it.priceCents);
+  if(!(c>0)) return '';
+  return '$'+(c/100).toFixed(c%100?2:0)+(it.priceUnit==='per_group'?' per group':' pp');
+}
+// The stop points to ask about (spec D9). Trip: every stop by name. Private single: the exact
+// drop-off picked in step 2, else the catalogue place, else a known name. Shared: the catalogue
+// drop-off. A place we cannot locate is simply left out.
+function experienceStops(){
+  const T=window.TRANSFERS;
+  if(!T) return [];
+  const stop=(label,p)=>{
+    const l=expLabel(label);
+    return (l && p && typeof p.lat==='number' && typeof p.lng==='number') ? { label:l, lat:expRound(p.lat), lng:expRound(p.lng) } : null;
+  };
+  let stops;
+  if(isTrip) stops=tripStops.map(n=>stop(n,T.resolvePlace(n)));
+  else {
+    const geo=(!isShared && state.locToGeo) ? state.locToGeo : null;
+    stops=[stop(AREA_TO, geo || (routeToId && T.place(routeToId)) || T.resolvePlace(AREA_TO))];
+  }
+  return stops.filter(Boolean).slice(0,8);
+}
+function syncExperiences(){
+  try { syncExperiencesNow(); } catch(e) { /* an upsell must never break the booking flow (spec D17) */ }
+}
+function syncExperiencesNow(){
+  const block=document.getElementById('experiences-block');
+  const panel=block && block.closest('.panel');   // step 3's panel (a trip's block is moved into its Service step)
+  if(!block || !panel || !panel.classList.contains('active')) return;
+  const stops=experienceStops();
+  const key=JSON.stringify(stops);
+  if(key===expUi.key) return;          // same question as last time: nothing to do
+  expUi.key=key;
+  const seq=++expUi.seq;               // a slower, older answer must not overwrite a newer one
+  if(expUi.ctl) expUi.ctl.abort();
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!stops.length || !base){ showExperiences([]); return; }
+  const ctl=new AbortController(); expUi.ctl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/near?'+stops.map(s=>'at='+encodeURIComponent(s.label+'@'+s.lat+','+s.lng)).join('&'),
+    { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('experiences_'+res.status); return res.json(); })
+    .then(data=>{ if(seq===expUi.seq) showExperiences(data && Array.isArray(data.stops) ? data.stops : []); })
+    .catch(()=>{ if(seq===expUi.seq) showExperiences([]); })
+    .then(()=>clearTimeout(timer));
+}
+function expCardHtml(it, place, n){
+  const id=acEsc(it.id), on=state.experiences.has(it.id);
+  const photos=Array.isArray(it.photos) ? it.photos.filter(p=>p && typeof p.small==='string' && typeof p.large==='string') : [];
+  const km=Number(it.aboutKm);
+  const days=expDays(it.openWeekdays), price=expPrice(it);
+  const times=Array.isArray(it.startTimes) ? it.startTimes.filter(t=>typeof t==='string') : [];
+  const details=String(it.details||'').split(/\n+/).map(t=>t.trim()).filter(Boolean);
+  const meta=[it.partnerName, km>0 ? Math.round(km)+' km' : '', it.durationText, days].filter(Boolean).map(t=>acEsc(t)).join(' · ');
+  const cut=price.indexOf(' ');
+  const panelId='xp-panel-'+n;
+  // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
+  return `<article class="xp-row${photos.length?'':' nophoto'}${on?' on':''}" data-id="${id}">`
+    + (photos.length ? `<img class="xp-photo" src="${acEsc(photos[0].small)}" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility='hidden'">` : '')
+    + `<div class="xp-main"><b class="xp-name">${acEsc(it.name)}</b><span class="xp-meta">${meta}</span>`
+    + `<button type="button" class="xp-more" aria-expanded="false" aria-controls="${panelId}">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>`
+    + `<div class="xp-buy">${price?`<span class="xp-price"><b>${acEsc(price.slice(0,cut))}</b> <small>${acEsc(price.slice(cut+1))}</small></span>`:''}`
+    + `<button type="button" class="xp-btn" data-id="${id}" aria-pressed="${on}">${on?'✓ Requested':'Request'}</button></div>`
+    + `<div class="xp-panel" id="${panelId}" hidden>${details.map(t=>`<p>${acEsc(t)}</p>`).join('')}`
+    + `<p class="xp-facts">${days?`Open: ${acEsc(days)}`:''}${days&&times.length?'<br>':''}${times.length?`Times: ${acEsc(times.join(' · '))}`:''}</p>`
+    + (photos.length ? `<div class="xp-photos">${photos.map(p=>`<img src="${acEsc(p.small)}" srcset="${acEsc(p.small)} 900w, ${acEsc(p.large)} 1800w" sizes="(max-width:560px) 45vw, 200px" alt="${acEsc(it.name)}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : '')
+    + `</div></article>`;
+}
+// Live Tripadvisor ratings (spec D22). Asked once, AFTER the rows are on screen, for the ids just rendered
+// (the endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is cached here
+// either: each fresh render asks again. Any failure, timeout or odd answer leaves the rows as they are.
+const EXP_RATING_IDS = 6;
+function expRatingHtml(r, logoUrl){
+  const https=u=>typeof u==='string' && /^https:\/\//i.test(u);
+  // Tripadvisor's display rules: a bubble rating is shown only with their logo to its left (>= 20px tall, bubbles >= 55px wide).
+  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl) || !https(logoUrl)) return '';
+  const rating=r.rating, n=r.numReviews;
+  if(typeof rating!=='number' || !(rating>=0 && rating<=5) || typeof n!=='number' || !Number.isInteger(n) || n<0) return '';
+  return `<a class="xp-ta" href="${acEsc(r.webUrl)}" target="_blank" rel="noopener noreferrer">`
+    + `<img class="xp-ta-logo" src="${acEsc(logoUrl)}" alt="Tripadvisor" height="20">`
+    + `<img class="xp-ta-bubbles" src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" width="75" height="15">`
+    + `<span>${n} ${n===1?'review':'reviews'}</span></a>`;
+}
+function loadExperienceRatings(){
+  try { loadExperienceRatingsNow(); } catch(e) { /* a rating must never break the booking flow */ }
+}
+function loadExperienceRatingsNow(){
+  const seq=++expUi.rateSeq;           // a newer render (or a newer ask) makes an older answer stale
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const block=document.getElementById('experiences-block');
+  const ids=[...expUi.meta.keys()].slice(0,EXP_RATING_IDS);
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!block || !ids.length || !base) return;
+  const ctl=new AbortController(); expUi.rateCtl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/ratings?ids='+ids.map(encodeURIComponent).join(','), { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('ratings_'+res.status); return res.json(); })
+    .then(data=>{
+      if(seq!==expUi.rateSeq || !data || !Array.isArray(data.ratings)) return;
+      data.ratings.forEach(r=>{
+        if(!r || typeof r.id!=='string') return;
+        const row=[...block.querySelectorAll('.xp-row')].find(x=>x.dataset.id===r.id);
+        const html=expRatingHtml(r, data.logoUrl), meta=row && row.querySelector('.xp-meta');
+        if(html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
+      });
+    })
+    .catch(()=>{})
+    .then(()=>clearTimeout(timer));
+}
+function showExperiences(stops){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  expUi.rateSeq++;                     // whatever ratings were in flight belong to rows that are about to go
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const usable=(stops||[]).map(s=>({ place:expLabel(s && s.place), items:(s && Array.isArray(s.items) ? s.items : []).filter(it=>it && typeof it.id==='string' && typeof it.name==='string') }))
+    .filter(s=>s.place && s.items.length);
+  expUi.meta.clear();
+  let html='', n=0;
+  usable.forEach((s,i)=>{
+    // The accent line and the one explanation line open the first stop only (owner: don't repeat yourself).
+    html+=`<section class="xp-stop">`
+      + (i===0 ? `<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>` : '')
+      + `<h3>While you’re in ${acEsc(s.place)}</h3>`
+      + (i===0 ? `<p class="xp-sub">Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.</p>` : '')
+      + `<div class="xp-list">`;
+    s.items.forEach(it=>{
+      if(!expUi.meta.has(it.id)) expUi.meta.set(it.id,{ name:it.name, partnerName:String(it.partnerName||''), slug:String(it.slug||''), place:s.place });
+      html+=expCardHtml(it, s.place, n++);
+    });
+    html+='</div></section>';
+  });
+  // A choice for something no longer offered (the drop-off changed) is not carried to the booking.
+  [...state.experiences.keys()].forEach(id=>{ if(!expUi.meta.has(id)) state.experiences.delete(id); });
+  if(!usable.length){ block.hidden=true; block.innerHTML=''; renderExperienceSummary(); return; }
+  block.innerHTML=html;
+  block.hidden=false;
+  renderExperienceSummary();
+  loadExperienceRatings();
+}
+function renderExperienceSummary(){
+  const box=document.getElementById('sum-experiences'), count=document.getElementById('sum-experiences-count'), list=document.getElementById('sum-experiences-list');
+  if(!box || !count || !list) return;
+  const names=[...state.experiences.values()].map(v=>v.name);
+  count.textContent=names.length+' requested · no charge';
+  list.textContent=names.join(' · ');
+  box.hidden = names.length===0;
+}
+window.toggleExperience=function(btn){
+  const id=btn && btn.dataset.id, meta=id && expUi.meta.get(id);
+  if(!meta) return;
+  const interested=!state.experiences.has(id);
+  if(interested) state.experiences.set(id,{ name:meta.name, partnerName:meta.partnerName });
+  else state.experiences.delete(id);
+  const card=btn.closest('.xp-row');
+  btn.setAttribute('aria-pressed',String(interested));
+  btn.textContent=interested ? '✓ Requested' : 'Request';
+  if(card) card.classList.toggle('on',interested);
+  renderExperienceSummary();
+  if(typeof window.chTrack==='function') window.chTrack('experience_interest',{ experience_slug:meta.slug, place:meta.place, source:'booking_page', interested });
+};
+(function(){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  block.addEventListener('click',function(e){
+    const btn=e.target.closest('.xp-btn');
+    if(btn){ window.toggleExperience(btn); return; }
+    const more=e.target.closest('.xp-more');
+    if(more){
+      const open=more.getAttribute('aria-expanded')!=='true';
+      more.setAttribute('aria-expanded',String(open));
+      const panel=document.getElementById(more.getAttribute('aria-controls'));
+      if(panel) panel.hidden=!open;
+    }
+  });
+})();
 
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
@@ -2370,6 +2577,7 @@ function render(){
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
+  syncExperiences(); // no-op unless step 3 is showing and the drop-off changed since the last ask
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
     // A chauffeur-guide trip used to split this into "Chauffeur distance" + a "Chauffeur-guide · N days"
@@ -2534,6 +2742,7 @@ window.goStep=function(n){
   // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
   // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
   renderRepriceNote();
+  syncExperiences(); // step 3 opens: ask what is near the drop-off (no-op elsewhere / when unchanged)
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
@@ -3211,6 +3420,9 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
+  // The partner experiences they tapped "Request" on - ids only (the API looks the names up
+  // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
+  if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);

@@ -53,3 +53,22 @@ describe('server.ts wires every Postgres repository', () => {
     expect(server).toContain('quoteDiscounts:');
   });
 });
+
+describe('server.ts wires the partner-experience repos', () => {
+  it('hands both Postgres repos to createApp under the AppDeps names', () => {
+    const server = readFileSync(SERVER, 'utf8');
+    expect(server).toContain('experiences: new PostgresExperienceRepo(db)');
+    expect(server).toContain('experienceInterests: new PostgresExperienceInterestRepo(db)');
+  });
+});
+
+describe('server.ts wires Tripadvisor ratings only with the logo', () => {
+  it('picks the adapter through selectTripadvisor (key AND logo) and hands the logo url to createApp', () => {
+    const server = readFileSync(SERVER, 'utf8');
+    expect(server).toContain('selectTripadvisor(');
+    expect(server).toContain('config.TRIPADVISOR_LOGO_URL');
+    expect(server).toContain('tripadvisorLogoUrl:');
+    // The old key-only wiring must be gone: it would show bubbles without the logo.
+    expect(server).not.toMatch(/config\.TRIPADVISOR_API_KEY\s*\?/);
+  });
+});

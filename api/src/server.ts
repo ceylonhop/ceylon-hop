@@ -26,6 +26,8 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresExperienceRepo } from './db/postgresExperienceRepo';
+import { PostgresExperienceInterestRepo } from './db/postgresExperienceInterestRepo';
 import { PostgresRateRevisionRepo } from './db/postgresRateRevisionRepo';
 import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
@@ -40,6 +42,7 @@ import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRep
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 import { MeasurementProtocolAdapter } from './adapters/ga4';
+import { selectTripadvisor } from './adapters/tripadvisor';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -98,6 +101,10 @@ const email = config.RESEND_API_KEY
 const ga4Adapter = config.GA4_API_SECRET
   ? new MeasurementProtocolAdapter(config.GA4_MEASUREMENT_ID, config.GA4_API_SECRET)
   : undefined;
+
+// Live Tripadvisor ratings - dormant unless BOTH the key and the Tripadvisor logo URL are set (their display
+// rules require the logo beside every bubble): otherwise the null adapter is used and no rating is shown.
+const tripadvisor = selectTripadvisor({ apiKey: config.TRIPADVISOR_API_KEY, logoUrl: config.TRIPADVISOR_LOGO_URL, referer: config.TRIPADVISOR_REFERER });
 
 const { db, sql } = createDb(config.DATABASE_URL);
 
@@ -171,6 +178,12 @@ const app = createApp({
   quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
+  // Partner experiences (spec 2026-10-06). WITHOUT these lines app.ts falls back to empty in-memory
+  // repos: every experience ops enters and every customer interest would vanish on restart.
+  experiences: new PostgresExperienceRepo(db),
+  tripadvisor: tripadvisor.adapter,
+  ...(tripadvisor.logoUrl ? { tripadvisorLogoUrl: tripadvisor.logoUrl } : {}),
+  experienceInterests: new PostgresExperienceInterestRepo(db),
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),
