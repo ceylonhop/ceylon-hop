@@ -339,8 +339,18 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
 
 const channelLabel = (b: Booking) => (b.channel === 'whatsapp' ? 'WhatsApp' : 'Website');
 
-export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
-  const f = bookingFacts(b);
+export interface TeamInterest { name: string; partnerName?: string; status: string }
+
+// "Ayurvedic massage (Atherya Spa) — new lead": a plain-words status, so a glance reads as a to-do.
+const interestRow = (i: TeamInterest): [string, string] => [
+  'Interested in',
+  `${i.name}${i.partnerName ? ` (${i.partnerName})` : ''} — ${i.status === 'new' ? 'new lead' : i.status.replace('_', ' ')}`,
+];
+
+export function teamPaidEmail(b: Booking, opsBaseUrl: string, interests: TeamInterest[] = []): { subject: string; html: string; text: string } {
+  const facts = bookingFacts(b);
+  // Only this email carries the row, so it joins this email's own copy of the facts.
+  const f = { ...facts, tripRows: [...facts.tripRows, ...interests.map(interestRow)] };
   const balance = b.total - f.paidNow;
   const paid = money(f.paidNow, b.currency);
   const subject = `Paid: ${f.subjectRoute}, ${f.when} — ${f.people} — ${paid}`;

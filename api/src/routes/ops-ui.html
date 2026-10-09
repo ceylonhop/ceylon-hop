@@ -933,6 +933,31 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* The builder's history meta truncates to one line; here who and when must read in full. */
 .qv .ch-rt-hist-row .ch-hist-meta { flex: 0 1 auto; white-space: normal; overflow: visible; }
 .qv .ch-rt-hist-row .ch-hist-rev { color: var(--ink); font-weight: 700; }
+/* Experiences page (spec 2026-10-06 D14): the catalogue list and its form. Reuses the Rates card,
+   .ch-hz-form (the inset composer), .ch-input-wrap inputs and .ch-badge; these rules add the rest. */
+.qv .ch-exp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.qv .ch-exp-top .ch-lock-note { flex: 1 1 260px; }
+.qv .ch-exp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.qv .ch-exp-thumb { width: 56px; height: 56px; flex: none; border-radius: var(--r-sm); background: var(--cream); overflow: hidden; }
+.qv .ch-exp-thumb .ch-exp-img { width: 100%; height: 100%; }
+.qv .ch-exp-img { display: block; object-fit: cover; }
+.qv .ch-exp-img[hidden], .qv .ch-exp-note[hidden] { display: none; }
+.qv .ch-exp-main { flex: 1 1 220px; min-width: 0; }
+.qv .ch-exp-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.qv .ch-exp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.qv .ch-exp-wide { grid-column: 1 / -1; }
+.qv .ch-exp-days { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.qv .ch-exp-prev { display: flex; align-items: center; gap: 8px; }
+.qv .ch-exp-prev .ch-exp-img { width: 72px; height: 48px; border-radius: 4px; margin-top: 6px; }
+.qv .ch-exp-note, .qv .ch-exp-err { font-size: 11.5px; color: var(--red); line-height: 1.35; }
+.qv .ch-exp-err:empty { display: none; }
+.qv .ch-lead-row .ch-input-wrap { width: 150px; }
+.qv .ch-lead-row .ch-lead-amt { width: 90px; }
+.qv .ch-lead-row .ch-lead-note { flex: 1 1 100%; width: auto; }
+.qv .ch-lead-row .ch-lead-ref { background: none; border: none; padding: 0; color: var(--teal-deep, var(--teal)); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qv .ch-lead-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qv .ch-exp-tabs { max-width: 280px; }
+@media (max-width: 580px) { .qv .ch-exp-grid { grid-template-columns: 1fr; } }
 .qv .ch-rt-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
 .qv .ch-rt-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted-2); padding: 4px 6px; border-bottom: 1px solid var(--line); }
 .qv .ch-rt-table td { padding: 6px; border-bottom: 1px dashed var(--line); vertical-align: top; }
@@ -2270,6 +2295,7 @@ let closeSel=new Set();
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',view:'date',type:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
+const INTEREST_STATUS={new:'New',contacted:'Contacted',link_sent:'Link sent',paid:'Paid',declined:'Declined'};
 let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
 /* The one "we're fetching a list" idiom, shared by the Bookings and Quotes queues. Rows rather
    than a spinner or a word: it holds the layout so nothing jumps when the data lands, and it
@@ -2296,6 +2322,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
   /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
   if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
+  /* Experiences (spec 2026-10-06 D14): the partner catalogue, founder + ops (experiences:manage). */
+  if(url.hash==='#experiences'&&state.caps&&state.caps.includes('experiences:manage'))return { route:'experiences', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null, routeBookingId:null };
   // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
   // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
@@ -2308,6 +2336,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   else if(route==='analytics')url.hash='#analytics';
   else if(route==='lookup')url.hash='#lookup';
   else if(route==='rates')url.hash='#rates';
+  else if(route==='experiences')url.hash='#experiences';
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
@@ -2445,12 +2474,14 @@ const NAV_ICONS={
   analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
   lookup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
   rates:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
+  experiences:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
   const canLookup=state.caps&&state.caps.includes('payments:act');
   const canAnalytics=state.caps&&state.caps.includes('analytics:view');
   const canRates=state.caps&&state.caps.includes('margin:view');
+  const canExperiences=state.caps&&state.caps.includes('experiences:manage');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
@@ -2465,7 +2496,8 @@ function setNav(){
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
-    (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'');
+    (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'')+
+    (canExperiences?`<button data-route="experiences" data-testid="experiences-nav" class="${state.route==='experiences'?'active':''}" title="Experiences">${NAV_ICONS.experiences}<span class="nav-txt">Experiences</span></button>`:'');
 }
 
 function ticketRow(t,i){
@@ -3525,6 +3557,19 @@ function viewRates(){
   }
   QuoteView.showRates(mount);
 }
+/* Experiences (spec 2026-10-06 D14): the partner catalogue, rendered in QuoteView exactly like Rates. */
+function viewExperiences(){
+  $('#topbar').innerHTML='';
+  const view=$('#view');
+  let mount=view.querySelector('#experiences-mount');
+  if(!mount){
+    view.innerHTML=`<div class="qhead pagehead"><h1>Experiences</h1></div>
+    <p class="pagesub">Partner activities we offer travellers near their route</p>
+    <div id="experiences-mount"></div>`;
+    mount=view.querySelector('#experiences-mount');
+  }
+  QuoteView.showExperiences(mount);
+}
 document.addEventListener('submit',e=>{
   if(e.target.id!=='lookup-form')return;
   e.preventDefault();
@@ -4031,6 +4076,22 @@ function renderSheet(){
      public, so it is escaped like every other value here; pre-line keeps their line breaks. */
   const custNote=d?.booking?.customerNotes;
   const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
+  /* Partner experiences the customer tapped on the booking page (spec 2026-10-06 D15). Only
+     bookings:operate may move a lead (the PATCH is gated on it; finance holds bookings:read and
+     would get a 403), so everyone else reads the status as text. Double-quoted attributes only —
+     this script's esc() leaves ' alone. */
+  const ints=Array.isArray(d?.experienceInterests)?d.experienceInterests:[];
+  const canMoveLead=!!(state.caps&&state.caps.includes('bookings:operate'));
+  const intRows=ints.map(i=>{
+    const price='$'+(i.priceCentsSnapshot%100===0?String(i.priceCentsSnapshot/100):(i.priceCentsSnapshot/100).toFixed(2))+(i.priceUnitSnapshot==='per_group'?' per group':' pp');
+    const status=canMoveLead
+      ?`<select class="sel" data-act="intstatus" data-id="${esc(i.id)}" aria-label="Status of ${esc(i.experienceName)}">${Object.keys(INTEREST_STATUS).map(k=>`<option value="${k}"${i.status===k?' selected':''}>${INTEREST_STATUS[k]}</option>`).join('')}</select>`
+      :esc(INTEREST_STATUS[i.status]||i.status);
+    const paid=i.paymentRef?`<div class="kv"><span class="k">PayHere ref</span><span class="v">${esc(i.paymentRef)}${i.amountPaidCents!=null?' · '+esc(i.amountPaidCurrency||'')+' '+(i.amountPaidCents/100).toFixed(2):''}</span></div>`:'';
+    const note=i.opsNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(i.opsNote)}</span></div>`:'';
+    return `<div class="kv"><span class="k">${esc(i.experienceName)}</span><span class="v">${esc(i.areaLabel)} · ${esc(price)} · ${status}</span></div>${paid}${note}`;
+  }).join('');
+  const interestBlock=ints.length?`<div class="block" data-testid="sheet-interests"><h4>Interested in</h4>${intRows}</div>`:'';
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
@@ -4051,6 +4112,7 @@ function renderSheet(){
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
+      ${interestBlock}
       <div class="block"><h4>Payment</h4>
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
@@ -4215,10 +4277,12 @@ function render(){
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
   if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
+  if(state.route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))state.route='tickets'; /* founder + ops; the same silent bounce */
   /* The Rates page renders in QuoteView (it shares the builder's helpers and .qv styles) but paints
      into #view — unmount it on every other route so a late rate-card/zone response can't paint
      over the page that replaced it. */
   if(state.route!=='rates')QuoteView.hideRates();
+  if(state.route!=='experiences')QuoteView.hideExperiences(); /* same rule for the Experiences page */
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -4270,6 +4334,15 @@ function render(){
       const navBtn=document.querySelector('#nav [data-route="rates"]');
       if(navBtn)navBtn.focus();
     }
+  }else if(state.route==='experiences'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewExperiences();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="experiences"]');
+      if(navBtn)navBtn.focus();
+    }
   }else{
     hideQuoteView();viewTickets();renderSheet();
     if(entering){
@@ -4319,6 +4392,7 @@ document.addEventListener('click',e=>{
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
   if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
+  if(route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -4419,6 +4493,26 @@ document.addEventListener('click',e=>{
 });
 $('#scrim').addEventListener('click',()=>closeDetail('push'));
 document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
+/* The booking sheet's experience-interest status <select>. PATCHes the lead (the same route the
+   Experiences page uses); "paid" needs the PayHere reference that page records, so it is refused
+   here when none is stored. The detail is re-read after, so the sheet shows what the server holds. */
+document.addEventListener('change',async e=>{
+  const sel=e.target.closest&&e.target.closest('select[data-act="intstatus"]');if(!sel)return;
+  const bookingId=state.detail,iid=sel.dataset.id;
+  const it=((state.detailData&&state.detailData.experienceInterests)||[]).find(x=>x.id===iid);
+  if(!it||sel.value===it.status)return;
+  const want=sel.value;
+  if(want==='paid'&&!it.paymentRef){toast('Add the PayHere reference first — on the Experiences page, Leads tab','error');sel.value=it.status;return;}
+  sel.disabled=true;
+  try{
+    const r=await fetch('/admin/experiences/leads/'+encodeURIComponent(iid),{method:'PATCH',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({status:want})});
+    if(r.status===401){showLogin();return;}
+    if(!r.ok)throw new Error('api '+r.status);
+    await refreshDetail(bookingId);
+    toast('Updated');
+  }catch(err){window.opsReportError&&window.opsReportError('interest status',err);toast('Could not update','error');sel.value=it.status;}
+  finally{sel.disabled=false;if(state.detail===bookingId)renderSheet();}
+});
 document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}if(e.target.id==='typesel'){state.type=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
@@ -4682,6 +4776,17 @@ function bootApp(identity){
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
+  /* The Experiences page (QuoteView) opens a lead's booking or quote through these. The queue only
+     holds open bookings, so a booking it does not carry is fetched once; if it is still absent
+     the sheet cannot open, and the operator is told rather than left on an empty queue. */
+  window.opsOpenQuote=openOpsQuote;
+  window.opsOpenBooking=async(id)=>{
+    if(!id)return;
+    setShellRoute('tickets',{});
+    if(!tickets.some(x=>x.id===id))await loadQueue().catch(()=>{});
+    if(!tickets.some(x=>x.id===id)){toast('That booking is no longer in the queue','error');return;}
+    openDetail(id);
+  };
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
@@ -4714,7 +4819,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -8626,6 +8731,567 @@ document.addEventListener('input', function (e) {
   if (out) out.textContent = 'margin ' + (price != null && cost != null ? rtMargin(price, cost) : '—');
 });
 
+// ── Experiences page (spec 2026-10-06 D14) — the partner catalogue ───────────
+// Same arrangement as Rates: the shell owns the header and hands us #experiences-mount; the page
+// renders here for this module's helpers (api, esc) and its .qv CSS. `expEl` is non-null only while
+// the page is showing. Every await is guarded by a sequence counter: `_expSeq` moves on arriving and
+// leaving (a response from an earlier visit paints nothing), `_expListSeq` on each list read (the
+// latest read wins). The list is diffed with morphdom; the form lives in its own host and is written
+// once on open, so a list repaint can never wipe what the operator is typing.
+var expEl = null;
+var expData = null;        // { experiences, stats } from GET /admin/experiences; null until loaded
+var expLoadFailed = false;
+var expForm = null;        // the open form: { id } (id null = a new experience), else null
+var expBusy = false;       // a save is in flight
+var _expSeq = 0;
+var _expListSeq = 0;
+// The Leads tab (spec D15). `_expLeadsSeq` makes the latest read win; `expLeadBusy` keeps one write
+// per lead in flight; `expLeadPayOpen` keeps a lead's payment inputs showing after "paid" was refused.
+var expTab = 'catalogue';  // 'catalogue' | 'leads'
+var expLeads = null;       // Lead[] from GET /admin/experiences/leads; null until loaded
+var expLeadsFailed = false;
+var expLeadBusy = {};
+// The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
+var expLeadPending = {};
+async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
+var expLeadPayOpen = {};
+var _expLeadsSeq = 0;
+var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent', 'Link sent'], ['paid', 'Paid'], ['declined', 'Declined']];
+
+var EXP_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = the API's weekday number
+var EXP_PHOTO_STEM = /^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/;           // mirrors PHOTO_STEM in experience.ts
+var EXP_PHOTO_ORIGIN = 'https://ceylonhop.com';
+var EXP_NOT_LIVE = 'Not live yet — photos appear after the site promote';
+// Server field → the form's data-err key (the rest map to themselves).
+var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
+  openWeekdays: 'days', startTimes: 'times', lat: 'loc', lng: 'loc', radiusKm: 'radius', partnerContact: 'contact' };
+
+// "7.977, 80.76" or a Google Maps link (/@lat,lng,… or ?q=lat,lng) → { lat, lng }, else null. Only
+// checks that the pair is a real coordinate; being inside Sri Lanka is expInSriLanka's rule.
+function parseLatLng(text) {
+  var s = String(text == null ? '' : text).trim();
+  var N = '(-?\\d+(?:\\.\\d+)?)';
+  // A place link carries the place's own pin as !3d<lat>!4d<lng>; its /@lat,lng is only where the
+  // map view is centred, so the pin is read first.
+  var m = new RegExp('^' + N + '\\s*[,\\s]\\s*' + N + '$').exec(s)
+    || new RegExp('!3d' + N + '!4d' + N).exec(s)
+    || new RegExp('/@' + N + ',' + N).exec(s)
+    || new RegExp('[?&](?:q|ll|query)=' + N + '(?:,|%2C)\\s*' + N, 'i').exec(s);
+  if (!m) return null;
+  var lat = Number(m[1]), lng = Number(m[2]);
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat: lat, lng: lng };
+}
+// Sri Lanka's bounding box, as in experience.ts: a "lng, lat" paste lands in the ocean.
+function expInSriLanka(p) { return p.lat >= 5.8 && p.lat <= 10 && p.lng >= 79.4 && p.lng <= 82; }
+
+function expMoney(cents) { return '$' + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2)); }
+function expPrice(e) { return expMoney(e.priceCents) + (e.priceUnit === 'per_group' ? ' per group' : ' pp'); }
+function expDaysLabel(days) {
+  var open = EXP_DAYS.filter(function (_, i) { return days.indexOf(i) >= 0; });
+  var closed = EXP_DAYS.filter(function (_, i) { return days.indexOf(i) < 0; });
+  if (!open.length) return 'No days set';
+  if (!closed.length) return 'Daily';
+  return closed.length <= 2 ? 'Closed ' + closed.join(', ') : open.join(', ');
+}
+function expStatsLine(s) {
+  s = s || { interested: 0, paid: 0, paidCents: { USD: 0, LKR: 0 } };
+  var paid = [];
+  if (s.paidCents.USD > 0) paid.push(expMoney(s.paidCents.USD));
+  if (s.paidCents.LKR > 0) paid.push('LKR ' + Math.round(s.paidCents.LKR / 100).toLocaleString('en-US'));
+  return s.interested + ' interested · ' + s.paid + ' paid' + (paid.length ? ' · ' + paid.join(' + ') : '');
+}
+function expPhotoUrl(stem) { return EXP_PHOTO_ORIGIN + '/img/' + stem + '-900.jpg'; } // photoUrls(stem).small
+
+async function loadExperiences() {
+  var seq = _expSeq, ls = ++_expListSeq;
+  try {
+    var r = await api('/admin/experiences');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (seq !== _expSeq || ls !== _expListSeq) return;
+    if (d && Array.isArray(d.experiences)) {
+      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [] };
+      expLoadFailed = false;
+    } else expLoadFailed = true;
+  } catch (e) {
+    if (seq !== _expSeq || ls !== _expListSeq) return;
+    window.opsReportError && window.opsReportError('experiences load', e);
+    expLoadFailed = true;
+  }
+  renderExperiencesPage();
+}
+
+function renderExpRow(e, stats) {
+  var s = null;
+  for (var i = 0; i < stats.length; i++) if (stats[i].experienceId === e.id) s = stats[i];
+  return '<div class="ch-exp-row" data-testid="exp-row" data-id="' + esc(e.id) + '">'
+    + '<div class="ch-exp-thumb">' + (e.photos.length ? '<img class="ch-exp-img" alt="" loading="lazy" src="' + esc(expPhotoUrl(e.photos[0])) + '">' : '') + '</div>'
+    + '<div class="ch-exp-main">'
+    +   '<div><b>' + esc(e.name) + '</b>' + (e.active ? '' : ' <span class="ch-badge tone-slate">paused</span>') + '</div>'
+    +   '<div class="ch-exp-meta">' + [e.partnerName, e.areaLabel, expPrice(e), e.radiusKm + ' km', expDaysLabel(e.openWeekdays)].map(esc).join(' · ') + '</div>'
+    +   '<div class="ch-exp-meta">' + esc(expStatsLine(s)) + '</div>'
+    + '</div>'
+    + '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" data-action="expToggle" data-id="' + esc(e.id) + '"' + (e.active ? ' checked' : '') + '> Active</label>'
+    + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expEdit" data-id="' + esc(e.id) + '">Edit</button>'
+    + '</div>';
+}
+
+function renderExpList() {
+  var body;
+  if (expLoadFailed) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0" data-testid="experiences-load-failed">Couldn’t load the experiences. <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expRetry">Retry</button></div>';
+  else if (!expData) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading experiences…</div>';
+  else if (!expData.experiences.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No experiences yet.</div>';
+  else body = expData.experiences.map(function (e) { return renderExpRow(e, expData.stats); }).join('');
+  return '<div class="ch-exp-top"><div class="ch-lock-note" style="margin:0">Partner activities shown to travellers near their drop-off. Nothing is charged on the site — when a customer goes ahead, the team sends them a PayHere link for the price shown here.</div>'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-testid="exp-new" data-action="expNew">New experience</button></div>' + body;
+}
+
+function renderExperiencesPage() {
+  if (!expEl || !expEl.isConnected) return;
+  var host = expEl.querySelector('#exp-list-host');
+  if (!host) return;
+  var leads = expTab === 'leads';
+  Array.prototype.forEach.call(expEl.querySelectorAll('[data-action="expTab"]'), function (b) {
+    var on = b.getAttribute('data-tab') === expTab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  host.hidden = leads;
+  expEl.querySelector('#exp-form-host').hidden = leads;
+  var lh = expEl.querySelector('#exp-leads-host');
+  lh.hidden = !leads;
+  var skip = function (fromEl, toEl) { return !fromEl.isEqualNode(toEl); };
+  if (leads) morphdom(lh, '<div>' + renderLeadsTab() + '</div>', { childrenOnly: true, onBeforeElUpdated: skip });
+  else morphdom(host, '<div>' + renderExpList() + '</div>', { childrenOnly: true, onBeforeElUpdated: skip });
+}
+
+// ── Leads tab ────────────────────────────────────────────────────────────────
+function expDay(iso, tz) {
+  var d = new Date(iso);
+  if (!iso || isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz || 'UTC' });
+}
+function expLeadById(id) {
+  for (var i = 0; expLeads && i < expLeads.length; i++) if (expLeads[i].id === id) return expLeads[i];
+  return null;
+}
+
+async function loadExpLeads() {
+  var seq = _expSeq, ls = ++_expLeadsSeq;
+  try {
+    var r = await api('/admin/experiences/leads');
+    var d = r.ok ? await jsonOrNull(r) : null;
+    if (seq !== _expSeq || ls !== _expLeadsSeq) return;
+    if (d && Array.isArray(d.leads)) { expLeads = d.leads; expLeadsFailed = false; } else expLeadsFailed = true;
+  } catch (e) {
+    if (seq !== _expSeq || ls !== _expLeadsSeq) return;
+    window.opsReportError && window.opsReportError('experience leads load', e);
+    expLeadsFailed = true;
+  }
+  renderExperiencesPage();
+}
+
+function renderLeadRow(l) {
+  var showPay = l.status === 'link_sent' || l.status === 'paid' || !!expLeadPayOpen[l.id];
+  var opts = EXP_LEAD_STATUSES.map(function (o) {
+    return '<option value="' + o[0] + '"' + (l.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+  }).join('');
+  var pay = '';
+  if (showPay) {
+    pay = '<div class="ch-lead-pay">'
+      + '<div class="ch-input-wrap"><input class="ch-input" data-lead-field="paymentRef" autocomplete="off" placeholder="PayHere reference" aria-label="PayHere reference" value="' + esc(l.paymentRef || '') + '"></div>'
+      + '<div class="ch-input-wrap ch-lead-amt"><input class="ch-input" data-lead-field="amount" inputmode="decimal" autocomplete="off" placeholder="Amount" aria-label="Amount paid" value="' + esc(l.amountPaidCents == null ? '' : (l.amountPaidCents / 100).toFixed(2)) + '"></div>'
+      + '<select class="ch-input" data-lead-field="currency" aria-label="Currency" style="width:auto"><option value=""' + (l.amountPaidCurrency ? '' : ' selected') + '>—</option>'
+      + ['USD', 'LKR'].map(function (c) { return '<option value="' + c + '"' + (l.amountPaidCurrency === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>'
+      + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadSavePay" data-id="' + esc(l.id) + '">Save payment</button>'
+      + '</div>';
+  }
+  var who = [l.customerName || 'Unnamed', l.contact].filter(Boolean).map(esc).join(' · ');
+  var meta = [expDay(l.createdAt, 'Asia/Colombo'), l.travelDate ? 'travels ' + expDay(l.travelDate) : '', l.areaLabel, l.experienceName,
+    expPrice({ priceCents: l.priceCentsSnapshot, priceUnit: l.priceUnitSnapshot })].filter(Boolean).map(esc).join(' · ');
+  return '<div class="ch-exp-row ch-lead-row" data-testid="lead-row" data-id="' + esc(l.id) + '">'
+    + '<div class="ch-exp-main"><div><b>' + who + '</b> · <button class="ch-lead-ref" data-action="expLeadOpen" data-id="' + esc(l.id) + '" title="Open ' + (l.ownerKind === 'quote' ? 'quote' : 'booking') + '">' + esc(l.reference) + '</button></div>'
+    + '<div class="ch-exp-meta">' + meta + '</div></div>'
+    + '<select class="ch-input" data-action="expLeadStatus" data-id="' + esc(l.id) + '" aria-label="Status" style="width:auto">' + opts + '</select>'
+    + pay
+    + '<div class="ch-input-wrap ch-lead-note"><input class="ch-input" data-lead-field="opsNote" data-id="' + esc(l.id) + '" autocomplete="off" maxlength="1000" placeholder="Note" aria-label="Note" value="' + esc(l.opsNote || '') + '"></div>'
+    + '</div>';
+}
+
+function renderLeadsTab() {
+  var body;
+  if (expLeadsFailed) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0" data-testid="leads-load-failed">Couldn’t load the leads. <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="expLeadsRetry">Retry</button></div>';
+  else if (!expLeads) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading leads…</div>';
+  else if (!expLeads.length) body = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No open leads yet.</div>';
+  else body = expLeads.map(renderLeadRow).join('');
+  return '<div class="ch-lock-note">Customers who tapped an experience on a paid booking or a live quote. Send them the PayHere link, then record the reference here — a lead leaves this list once it is paid or declined.</div>' + body;
+}
+
+// The payment inputs' fields that differ from what the lead holds → { fields } or { error }.
+function expLeadPayFields(l, rowEl) {
+  var ref = rowEl.querySelector('[data-lead-field="paymentRef"]');
+  var f = {};
+  if (!ref) return { fields: f };
+  var refV = ref.value.trim() || null;
+  if (refV !== (l.paymentRef || null)) {
+    if (refV && refV.length < 3) return { error: 'That PayHere reference is too short.' };
+    f.paymentRef = refV;
+  }
+  var amtTxt = rowEl.querySelector('[data-lead-field="amount"]').value.trim();
+  var cents = null;
+  if (amtTxt) {
+    if (!/^\d+(\.\d{1,2})?$/.test(amtTxt)) return { error: 'Amount should look like 35.50.' };
+    cents = Math.round(parseFloat(amtTxt) * 100);
+  }
+  if (cents !== (l.amountPaidCents == null ? null : l.amountPaidCents)) f.amountPaidCents = cents;
+  var cur = rowEl.querySelector('[data-lead-field="currency"]').value || null;
+  if (cur !== (l.amountPaidCurrency || null)) f.amountPaidCurrency = cur;
+  return { fields: f };
+}
+
+// One PATCH for a lead. true = saved (the lead is updated in place); false = refused or failed, with
+// the operator already told why. The caller repaints, which puts a refused <select> back.
+async function expLeadPatch(l, body) {
+  var seq = _expSeq;
+  expLeadBusy[l.id] = true;
+  var settle, pending = new Promise(function (res) { settle = res; });
+  expLeadPending[l.id] = pending;
+  try {
+    var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (seq !== _expSeq) return false;
+    var d = await jsonOrNull(r);
+    if (seq !== _expSeq) return false;
+    if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); return true; }
+    if (d && d.error === 'paid_requires_ref') { expLeadPayOpen[l.id] = true; ratesToast('Add the PayHere reference first', 'error'); }
+    else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t save — try again.', 'error');
+    return false;
+  } catch (e) {
+    if (seq !== _expSeq) return false;
+    window.opsReportError && window.opsReportError('experience lead save', e);
+    ratesToast('Couldn’t save — try again.', 'error');
+    return false;
+  } finally {
+    if (seq === _expSeq) delete expLeadBusy[l.id];
+    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
+    settle();
+  }
+}
+
+async function expLeadStatusChange(sel) {
+  var l = expLeadById(sel.getAttribute('data-id'));
+  if (!l) return;
+  var want = sel.value;
+  var back = function () { sel.value = l.status; renderExperiencesPage(); };
+  if (want === l.status || expLeadBusy[l.id]) return back();
+  var pay = expLeadPayFields(l, sel.closest('.ch-lead-row'));
+  if (pay.error) { ratesToast(pay.error, 'error'); return back(); }
+  var body = Object.assign({ status: want }, pay.fields);
+  var ref = 'paymentRef' in body ? body.paymentRef : l.paymentRef;
+  // Settled here first: the server refuses the same thing, but a round trip to be told is a slow no.
+  if (want === 'paid' && !ref) { expLeadPayOpen[l.id] = true; ratesToast('Add the PayHere reference first', 'error'); return back(); }
+  if (!(await expLeadPatch(l, body))) return back();
+  renderExperiencesPage();
+}
+
+async function expLeadSavePay(btn) {
+  var l = expLeadById(btn.getAttribute('data-id'));
+  if (!l || expLeadBusy[l.id]) return;
+  var pay = expLeadPayFields(l, btn.closest('.ch-lead-row'));
+  if (pay.error) { ratesToast(pay.error, 'error'); return; }
+  if (!Object.keys(pay.fields).length) return;
+  if (await expLeadPatch(l, pay.fields)) ratesToast('Saved');
+  renderExperiencesPage();
+}
+
+async function expLeadNoteChange(input) {
+  var id = input.getAttribute('data-id');
+  // A note blurred while another save on this lead is in flight waits for it — it used to be dropped.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
+  var v = input.value.trim() || null;
+  if (v === (l.opsNote || null)) return;
+  if (!(await expLeadPatch(l, { opsNote: v }))) input.value = l.opsNote || '';
+  renderExperiencesPage();
+}
+
+// The reference opens the thing it belongs to, through the shell: it owns the routes and the queue.
+function expLeadOpen(id) {
+  var l = expLeadById(id);
+  if (!l) return;
+  if (l.ownerKind === 'quote' && l.quoteId) window.opsOpenQuote && window.opsOpenQuote(l.quoteId);
+  else if (l.bookingId) window.opsOpenBooking && window.opsOpenBooking(l.bookingId);
+}
+
+function expField(key, label, control, cls) {
+  return '<div class="ch-field ' + (cls || '') + '"><label class="ch-hz-lbl" for="exp-' + key + '">' + label + '</label>' + control
+    + '<div class="ch-exp-err" data-err="' + key + '"></div></div>';
+}
+function expInput(key, label, value, extra) {
+  return expField(key, label, '<div class="ch-input-wrap"><input id="exp-' + key + '" class="ch-input" autocomplete="off" value="' + esc(value) + '"' + (extra || '') + '></div>');
+}
+
+function renderExpForm(e) {
+  var d = e || { slug: '', name: '', partnerName: '', areaLabel: '', summary: '', details: '', priceCents: null, priceUnit: 'per_person',
+    durationText: null, openWeekdays: [0, 1, 2, 3, 4, 5, 6], startTimes: [], lat: null, lng: null, radiusKm: 5, photos: [], partnerContact: null, active: true };
+  var days = EXP_DAYS.map(function (n, i) {
+    return '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-day-' + i + '"' + (d.openWeekdays.indexOf(i) >= 0 ? ' checked' : '') + '> ' + n + '</label>';
+  }).join('');
+  var photos = '';
+  for (var i = 0; i < 6; i++) {
+    photos += '<div class="ch-input-wrap" style="margin-top:' + (i ? 6 : 0) + 'px"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1') + '" value="' + esc(d.photos[i] || '') + '"></div>'
+      + '<div class="ch-exp-prev" id="exp-photo-' + i + '-prev"></div>';
+  }
+  return '<div class="ch-hz-form" id="exp-form">'
+    + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
+    + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
+    + '<div class="ch-exp-grid">'
+    + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
+    + expInput('name', 'Name', d.name)
+    + expInput('partner', 'Partner', d.partnerName)
+    + expInput('area', 'Area', d.areaLabel, ' placeholder="Sigiriya"')
+    + expField('summary', 'Summary (one line)', '<div class="ch-input-wrap"><input id="exp-summary" class="ch-input" maxlength="160" autocomplete="off" value="' + esc(d.summary) + '"></div>', 'ch-exp-wide')
+    + expField('details', 'Details', '<textarea id="exp-details" class="ch-input ch-textarea" rows="4">' + esc(d.details) + '</textarea>', 'ch-exp-wide')
+    + expField('price', 'Price (USD)', '<div class="ch-input-wrap"><span class="ch-input-prefix">$</span><input id="exp-price" class="ch-input" inputmode="decimal" autocomplete="off" value="' + esc(d.priceCents == null ? '' : String(d.priceCents / 100)) + '"></div>')
+    + expField('unit', 'Per', '<div class="ch-input-wrap"><select id="exp-unit" class="ch-input"><option value="per_person"' + (d.priceUnit === 'per_person' ? ' selected' : '') + '>person</option><option value="per_group"' + (d.priceUnit === 'per_group' ? ' selected' : '') + '>group</option></select></div>')
+    + expInput('duration', 'Duration', d.durationText || '', ' placeholder="90 min"')
+    + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
+    + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
+    + expField('photos', 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
+    + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
+      + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
+    + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
+    + expInput('contact', 'Partner contact (ops only)', d.partnerContact || '')
+    + '<div class="ch-field ch-exp-wide"><label class="ch-hz-toggle"><input type="checkbox" id="exp-active"' + (d.active ? ' checked' : '') + '> Active (offered to travellers)</label></div>'
+    + '</div>'
+    + '<div class="ch-hz-actions" style="margin-top:14px">'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="expSave">' + (e ? 'Save changes' : 'Create experience') + '</button>'
+    + '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="expCancel">Cancel</button>'
+    + '</div></div>';
+}
+
+// The check line under the location box: parsed values and a Maps link, or why the box isn't usable.
+// Returns the point when it is usable, else null.
+function expLocUpdate() {
+  var box = document.getElementById('exp-loc'), out = document.getElementById('exp-loc-out');
+  if (!box || !out) return null;
+  if (!box.value.trim()) { out.innerHTML = ''; return null; }
+  var p = parseLatLng(box.value);
+  if (!p) {
+    out.innerHTML = '<div class="ch-exp-err" data-testid="exp-loc-error">Couldn’t read a location — paste “lat, lng” (for example 7.977, 80.76) or a Google Maps link.</div>';
+    return null;
+  }
+  if (!expInSriLanka(p)) {
+    out.innerHTML = '<div class="ch-exp-err" data-testid="exp-loc-error">That point is outside Sri Lanka — latitude comes first (about 7), then longitude (about 80).</div>';
+    return null;
+  }
+  out.innerHTML = '<span data-testid="exp-loc-parsed">Lat ' + esc(String(p.lat)) + ' · Lng ' + esc(String(p.lng)) + '</span> · '
+    + '<a data-testid="exp-loc-check" href="https://www.google.com/maps?q=' + esc(p.lat + ',' + p.lng) + '" target="_blank" rel="noopener">Open in Google Maps</a>';
+  return p;
+}
+
+// A live preview of one photo path; the capture-phase error listener below shows the note when the
+// image isn't on the site yet (photos ship with the next promote, spec D8).
+function expPhotoPreview(i) {
+  var inp = document.getElementById('exp-photo-' + i), out = document.getElementById('exp-photo-' + i + '-prev');
+  if (!inp || !out) return;
+  var stem = inp.value.trim();
+  out.innerHTML = EXP_PHOTO_STEM.test(stem)
+    ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '"><span class="ch-exp-note" data-testid="exp-photo-note" hidden>' + EXP_NOT_LIVE + '</span>'
+    : '';
+}
+
+function expOpenForm(id) {
+  var e = id ? (expData && expData.experiences.filter(function (x) { return x.id === id; })[0]) : null;
+  if (id && !e) return;
+  var host = expEl && expEl.querySelector('#exp-form-host');
+  if (!host) return;
+  expForm = { id: id || null };
+  host.innerHTML = renderExpForm(e || null);
+  expLocUpdate();
+  for (var i = 0; i < 6; i++) expPhotoPreview(i);
+  var first = document.getElementById('exp-slug');
+  if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
+  if (first) first.focus({ preventScroll: true });
+}
+function expCloseForm() {
+  expForm = null;
+  var host = expEl && expEl.querySelector('#exp-form-host');
+  if (host) host.innerHTML = '';
+}
+
+function expShowErrors(errors) {
+  var form = document.getElementById('exp-form');
+  if (!form) return;
+  form.querySelectorAll('[data-err]').forEach(function (el) { el.textContent = errors[el.getAttribute('data-err')] || ''; });
+  var firstKey = Object.keys(errors)[0];
+  var first = firstKey && form.querySelector('[data-err="' + firstKey + '"]');
+  if (first && first.scrollIntoView) first.scrollIntoView({ block: 'nearest' });
+}
+
+// Reads the open form into the POST/PATCH body. Returns { body } or { errors: { key: message } };
+// everything the server checks (lengths, HH:MM, the photo path) is left to it and mapped back.
+function expReadForm() {
+  var v = function (k) { return document.getElementById('exp-' + k).value.trim(); };
+  var errors = {};
+  var priceText = v('price'), price = priceText === '' ? NaN : Number(priceText);
+  if (!isFinite(price) || price < 0) errors.price = 'Enter the price in dollars, for example 35 or 35.50.';
+  var radiusText = v('radius'), radius = radiusText === '' ? 5 : Number(radiusText);
+  if (!isFinite(radius) || radius <= 0) errors.radius = 'Enter the reach in km, for example 5.';
+  var p = expLocUpdate();
+  if (!p && !v('loc')) errors.loc = 'Paste the pin: “lat, lng” or a Google Maps link.'; // a bad pin already shows its own message
+  if (!p || Object.keys(errors).length) return { errors: errors };
+  var days = [], photos = [];
+  for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
+  for (var j = 0; j < 6; j++) { var ph = document.getElementById('exp-photo-' + j).value.trim(); if (ph) photos.push(ph); }
+  var times = v('times').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+  return { body: {
+    slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
+    details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
+    durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
+    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null,
+    active: document.getElementById('exp-active').checked,
+  } };
+}
+
+async function expSave() {
+  if (!expForm || expBusy) return;
+  var f = expReadForm();
+  expShowErrors(f.errors || {});
+  if (!f.body) return;
+  var seq = _expSeq, id = expForm.id;
+  var btn = document.querySelector('#exp-form [data-action="expSave"]');
+  expBusy = true;
+  if (btn) btn.disabled = true;
+  try {
+    var r = await api(id ? '/admin/experiences/' + encodeURIComponent(id) : '/admin/experiences',
+      { method: id ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
+    if (seq !== _expSeq) return;
+    if (r.ok) {
+      expCloseForm();
+      ratesToast(id ? 'Experience saved' : 'Experience created');
+      loadExperiences();
+      return;
+    }
+    var d = await jsonOrNull(r);
+    if (seq !== _expSeq) return;
+    var errors = {};
+    if (r.status === 409) errors.slug = 'That slug is taken';
+    else if (r.status === 400 && d && Array.isArray(d.issues)) {
+      d.issues.forEach(function (iss) {
+        var k = iss.path && iss.path.length ? String(iss.path[0]) : '';
+        k = EXP_ERR_KEY[k] || k;
+        errors[k] = (errors[k] ? errors[k] + '; ' : '') + iss.message;
+      });
+    }
+    if (Object.keys(errors).length) expShowErrors(errors);
+    else if (r.status !== 401) ratesToast('Couldn’t save — try again.', 'error');
+  } catch (e) {
+    if (seq !== _expSeq) return;
+    window.opsReportError && window.opsReportError('experiences save', e);
+    ratesToast('Couldn’t save — try again.', 'error');
+  } finally {
+    if (seq === _expSeq) { expBusy = false; if (btn) btn.disabled = false; }
+  }
+}
+
+// The row's Active checkbox → PATCH {active}. The box is locked while the request runs and put back
+// if it fails, so what it shows is always what the server holds.
+async function expToggle(id, box) {
+  var seq = _expSeq, want = box.checked;
+  box.disabled = true;
+  var ok = false;
+  try {
+    var r = await api('/admin/experiences/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: want }) });
+    if (seq !== _expSeq) return;
+    ok = r.ok;
+  } catch (e) {
+    if (seq !== _expSeq) return;
+    window.opsReportError && window.opsReportError('experiences toggle', e);
+  }
+  box.disabled = false;
+  if (!ok) { box.checked = !want; ratesToast('Couldn’t update — try again.', 'error'); return; }
+  (expData ? expData.experiences : []).forEach(function (x) { if (x.id === id) x.active = want; });
+  renderExperiencesPage();
+}
+
+// Mount (or re-mount) into the shell's #experiences-mount. A NEW mount node means the operator just
+// arrived — fetch fresh; the same node again is a routine shell repaint.
+function showExperiences(el) {
+  var arriving = expEl !== el;
+  expEl = el;
+  if (arriving) {
+    _expSeq++;
+    expData = null; expLoadFailed = false; expForm = null; expBusy = false;
+    expTab = 'catalogue'; expLeads = null; expLeadsFailed = false; expLeadBusy = {}; expLeadPending = {}; expLeadPayOpen = {};
+    el.innerHTML = '<div class="qv qv-page" data-testid="experiences-page"><div class="ch-rates-card">'
+      + '<div class="ch-tabs ch-exp-tabs" role="tablist">'
+      + '<button class="ch-tab active" role="tab" aria-selected="true" data-action="expTab" data-tab="catalogue">Catalogue</button>'
+      + '<button class="ch-tab" role="tab" aria-selected="false" data-action="expTab" data-tab="leads">Leads</button></div>'
+      + '<div id="exp-form-host"></div><div id="exp-list-host"></div><div id="exp-leads-host" hidden></div></div></div>';
+    loadExperiences();
+  }
+  renderExperiencesPage();
+}
+
+function hideExperiences() {
+  if (!expEl) return;
+  expEl = null;
+  _expSeq++;
+  expForm = null;
+  expBusy = false;
+}
+
+document.addEventListener('click', function (e) {
+  if (!expEl) return;
+  var el = e.target.closest('[data-action]');
+  if (!el || !expEl.contains(el)) return;
+  var action = el.getAttribute('data-action');
+  if (action === 'expNew') expOpenForm(null);
+  else if (action === 'expEdit') expOpenForm(el.getAttribute('data-id'));
+  else if (action === 'expCancel') expCloseForm();
+  else if (action === 'expSave') expSave();
+  else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
+  else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
+  else if (action === 'expTab') {
+    expTab = el.getAttribute('data-tab') === 'leads' ? 'leads' : 'catalogue';
+    renderExperiencesPage();
+    if (expTab === 'leads') loadExpLeads(); // fresh on every visit: leads arrive while the page is open
+  }
+  else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
+  else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
+  else if (action === 'expLeadSavePay') expLeadSavePay(el);
+});
+
+// A lead's status <select> and note <input> save on change (the note: on blur, when it differs).
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!expEl || !t || !expEl.contains(t)) return;
+  if (t.getAttribute('data-action') === 'expLeadStatus') expLeadStatusChange(t);
+  else if (t.getAttribute('data-lead-field') === 'opsNote') expLeadNoteChange(t);
+});
+
+// Typing in the location box or a photo box refreshes its check line / preview, and clears any
+// server error that was showing on that field.
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!expEl || !t || !t.id || !expEl.contains(t) || t.id.indexOf('exp-') !== 0) return;
+  var fld = t.closest('.ch-field'), err = fld && fld.querySelector('[data-err]');
+  if (err) err.textContent = '';
+  if (t.id === 'exp-loc') expLocUpdate();
+  else if (t.hasAttribute('data-photo')) expPhotoPreview(Number(t.getAttribute('data-photo')));
+});
+
+// <img> errors don't bubble; the capture phase sees them. A photo that isn't on the site yet hides
+// its image and, in the form, shows the note (the list thumb just goes blank).
+document.addEventListener('error', function (e) {
+  var img = e.target;
+  if (!expEl || !img || !img.classList || !img.classList.contains('ch-exp-img') || !expEl.contains(img)) return;
+  img.hidden = true;
+  var note = img.parentNode.querySelector('.ch-exp-note');
+  if (note) note.hidden = false;
+}, true);
+
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
 // Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
 // chooser. The selected box gets the teal-accent border/fill; each shows its
@@ -12458,6 +13124,7 @@ function teardown() {
   _ac.timer = null;
   acClose();
   hideRates();
+  hideExperiences();
   _inited = false;
   // Drop the open-veil unconditionally: logging out mid-open leaves openQuote's finally
   // unreachable for that call, and a stuck veil would greet the next sign-in.
@@ -12507,7 +13174,7 @@ window.opsQuoteKbar = function() {
   return acts;
 };
 
-return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew, showRates: showRates, hideRates: hideRates };
+return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew, showRates: showRates, hideRates: hideRates, showExperiences: showExperiences, hideExperiences: hideExperiences };
 })();
 </script>
 </body>

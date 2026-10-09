@@ -1,4 +1,12 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
+import { aboutKm, toPublicExperience, type Experience } from '../experiences/experience';
+import { matchExperiences, type StopMatch } from '../experiences/match';
+import { quoteStopPoints } from '../experiences/quoteStops';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 import type { QuoteRepo, SavedQuote } from '../db/quoteRepo';
 import type { BookingRepo } from '../db/bookingRepo';
 import { verifyQuoteViewToken, signBookingToken } from '../lib/bookingToken';
@@ -9,8 +17,14 @@ import { drives } from '../quote/legCategory';
 import type { QuoteRequest, PrivateLeg, Ride, ChauffeurTravelDay, ChauffeurRideDay } from '../quote/types';
 import type { RateCard } from '../quote/rateCard';
 
-// The customer half of quote links (spec 2026-08-05). ONE route, and it READS — this module has
-// no POST and touches no repo mutation, which is what makes a forwarded quote link harmless.
+// The customer half of quote links (spec 2026-08-05). The page is a READ — a forwarded quote link
+// can never start a payment or change the quote. ONE write exists, by deliberate exception
+// (partner experiences, spec 2026-10-06 D12): POST /interest, where the customer says "I would
+// like to hear about this". It records a lead for ops and nothing else — no money, no change to
+// the quote, no booking — and it is keyed by the same token as the page, so a forwarded link can
+// at worst leave a free, withdrawable "interested" tick that ops reads as a lead, never acts on
+// without contacting the customer. Reverses this module's earlier "no POST" rule; every other
+// mutation stays out of here.
 // Two invariants dominate the file:
 //
 //   1. MARGIN NEVER REACHES THE WIRE. The stored quote carries marginCents, the locked rate card
@@ -148,9 +162,22 @@ export function quoteViewRoutes(deps: {
   linkSecret: string;
   appBaseUrl?: string;
   now?: () => number;
+  // Partner experiences (spec 2026-10-06). All optional: without them the page simply has none.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
+  placeResolutions?: PlaceResolutionRepo;
 }) {
   const r = new Hono();
   const nowMs = deps.now ?? (() => Date.now());
+
+  // The experiences near this quote's stops — ONE computation shared by the page's read and the
+  // POST's "is this one actually offered here" check, so the two can never disagree (spec D9).
+  async function offeredFor(quote: SavedQuote): Promise<StopMatch<Experience>[]> {
+    if (!deps.experiences || !deps.placeResolutions) return [];
+    const stops = await quoteStopPoints(quote.request, deps.placeResolutions);
+    if (stops.length === 0) return [];
+    return matchExperiences(stops, await deps.experiences.listActive());
+  }
 
   r.get('/', async (c) => {
     // Every answer is 200 + no-store. A following link whose response is cached anywhere is a
@@ -189,11 +216,60 @@ export function quoteViewRoutes(deps: {
     }
 
     const lapsed = !!quote.offerValidUntil && quote.offerValidUntil.getTime() < now.getTime();
+    // Partner experiences are a courtesy: whatever goes wrong here costs the customer nothing
+    // but the section (spec D17) — the quote itself always renders.
+    let experiences: unknown[] = [];
+    try {
+      const matched = await offeredFor(quote);
+      if (matched.length && deps.experienceInterests) {
+        const ticked = new Set((await deps.experienceInterests.listForQuote(quote.id)).map((i) => i.experienceId));
+        experiences = matched.map((s) => ({
+          place: s.place,
+          items: s.items.map((m) => ({
+            ...toPublicExperience(m.experience), aboutKm: aboutKm(m.distanceKm), interested: ticked.has(m.experience.id),
+          })),
+        }));
+      }
+    } catch (err) {
+      console.error(`[experiences] quote-view could not list experiences for ${quote.id}:`, err);
+    }
     return send({
       state: (lapsed ? 'lapsed' : 'live') as ViewState,
       view: customerQuoteView(quote, servicesFor(quote, now)),
       validUntil: quote.offerValidUntil ? quote.offerValidUntil.toISOString() : null,
+      experiences,
     });
+  });
+
+  // "Interested" tick from the quote page (spec D12). Open to lapsed quotes — a customer coming
+  // back after the offer lapsed is exactly who we want to hear from — but never to a deleted,
+  // draft, lost or booked one.
+  const InterestBody = z.object({ t: z.string().max(2000), experienceId: z.string().uuid(), interested: z.boolean() }).strict();
+  r.post('/interest', async (c) => {
+    const body = InterestBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const unavailable = () => c.json({ error: 'quote_unavailable' }, 409);
+
+    const parsed = verifyQuoteViewToken(body.data.t, deps.linkSecret);
+    if (!parsed || !deps.experienceInterests) return unavailable();
+    const quote = await deps.quotes.get(parsed.quoteId); // get() hides soft-deleted quotes
+    if (!quote || (quote.status !== 'ready' && quote.status !== 'sent')) return unavailable();
+
+    const offered = (await offeredFor(quote)).flatMap((s) => s.items).find((m) => m.experience.id === body.data.experienceId);
+    if (!offered) return c.json({ error: 'not_offered' }, 422);
+
+    if (body.data.interested) {
+      await deps.experienceInterests.record({ experience: offered.experience, source: 'quote_page', quoteId: quote.id });
+      // /quotes/pay/start books the quote but leaves it `sent` until payment settles. A tick in that
+      // window must follow the quote into its booking, or it stays quote-only and drops out of the
+      // ops queue once the quote is won. Courtesy link: logged, never fails the tap.
+      if (quote.convertedBookingId) await linkQuoteInterests(deps.experienceInterests, quote.id, quote.convertedBookingId);
+      return c.json({ interested: true });
+    }
+    // Withdraw only while ops has not touched it; otherwise report what is really stored.
+    await deps.experienceInterests.withdrawFromQuote(offered.experience.id, quote.id);
+    const stillThere = (await deps.experienceInterests.listForQuote(quote.id)).some((i) => i.experienceId === offered.experience.id);
+    return c.json({ interested: stillThere });
   });
 
   return r;

@@ -53,3 +53,11 @@ describe('server.ts wires every Postgres repository', () => {
     expect(server).toContain('quoteDiscounts:');
   });
 });
+
+describe('server.ts wires the partner-experience repos', () => {
+  it('hands both Postgres repos to createApp under the AppDeps names', () => {
+    const server = readFileSync(SERVER, 'utf8');
+    expect(server).toContain('experiences: new PostgresExperienceRepo(db)');
+    expect(server).toContain('experienceInterests: new PostgresExperienceInterestRepo(db)');
+  });
+});

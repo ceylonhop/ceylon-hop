@@ -441,8 +441,10 @@ function detailsRow(facts: [string, string][]): string {
 
 // Composes the letter body: reference + status, the journey line, then (optionally) the
 // facts list. Keeps the same call shape the senders already use.
-function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean } = {}): string {
-  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(factRows(booking)) : '');
+// `extraFacts` are rows only THIS email adds after the shared factRows (never into factRows itself).
+function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean; extraFacts?: [string, string][] } = {}): string {
+  return metaRow(booking, badge) + routeRow(booking)
+    + (opts.facts !== false ? detailsRow([...factRows(booking), ...(opts.extraFacts ?? [])]) : '');
 }
 
 // Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
@@ -570,12 +572,26 @@ function paidRows(booking: Booking): [string, string][] {
   return [['Total paid', money(booking.total, booking.currency)]];
 }
 
+// Partner experiences the customer tapped "I'm interested" on (spec 2026-10-06 D16). Only the
+// confirmation carries this row — it is built here, not in factRows, which a dozen emails share.
+export interface ConfirmationInterest { name: string; partnerName?: string }
+function interestRows(interests: ConfirmationInterest[]): [string, string][] {
+  if (!interests.length) return [];
+  const names = interests.map((i) => `${i.name}${i.partnerName ? ` (${i.partnerName})` : ''}`).join(', ');
+  return [['Interested in', `${names} — not charged; our Pro team will reach out`]];
+}
+
 function coverageLine(coverage?: { soldLegs: number; totalLegs: number }): string {
   if (!coverage) return '';
   return `This booking covers ${coverage.soldLegs} of the ${coverage.totalLegs} legs in your itinerary; travel between them is your own arrangement.`;
 }
 
-function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
+function renderHtml(
+  booking: Booking,
+  manageLink?: string,
+  coverage?: { soldLegs: number; totalLegs: number },
+  interests: ConfirmationInterest[] = [],
+): string {
   const first = esc(booking.input.customer.firstName);
   return page(
     brandHeader() +
@@ -590,7 +606,7 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
       (coverage
         ? `<tr><td style="padding:0 34px 14px"><p style="margin:0;font-size:13px;color:${MUTED}">${esc(coverageLine(coverage))}</p></td></tr>`
         : '') +
-      ticketCard(booking, BADGE_PAID) +
+      ticketCard(booking, BADGE_PAID, { extraFacts: interestRows(interests) }) +
       promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (manageLink ? manageButton(manageLink) : '') +
@@ -603,10 +619,15 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
   );
 }
 
-function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
+function renderText(
+  booking: Booking,
+  manageLink?: string,
+  coverage?: { soldLegs: number; totalLegs: number },
+  interests: ConfirmationInterest[] = [],
+): string {
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...(coverage ? [coverageLine(coverage), ''] : []),
-    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...[...factRows(booking), ...interestRows(interests)].map(([k, v]) => `${k}: ${v}`),
     ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
@@ -623,7 +644,7 @@ function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs
 export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
-  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
+  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number }; interests?: ConfirmationInterest[] } = {},
 ): Promise<SendOutcome | void> {
   // Returns the adapter's outcome so the caller can decide whether to write this down. A
   // suppressed confirmation must NOT be recorded as sent: that row is what the watchdog
@@ -631,8 +652,8 @@ export async function sendBookingConfirmation(
   return email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
-    html: renderHtml(booking, links.manage, links.coverage),
-    text: renderText(booking, links.manage, links.coverage),
+    html: renderHtml(booking, links.manage, links.coverage, links.interests),
+    text: renderText(booking, links.manage, links.coverage, links.interests),
     tracking: emailTracking(booking, 'confirmation'),
   });
 }
