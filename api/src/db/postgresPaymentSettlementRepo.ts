@@ -5,7 +5,7 @@ import type { Db } from './client';
 import { paymentEvents, payments, bookings } from './schema';
 import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
-  isBalanceAfterDeposit,
+  captureKindWithOthers,
   PaymentSettlementError,
   recordedCaptureId,
   type PaymentSettlementOutcome,
@@ -151,11 +151,9 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
 
       // Keep the capture (the money moved; the refund ceiling must reflect it) but leave the
       // booking as the first settlement left it and hand the case to a human, loudly — unless it
-      // is the balance of a deposit booking (isBalanceAfterDeposit), which is one sale in two parts.
+      // is the balance of a deposit booking still going ahead (captureKindWithOthers), which is one sale in two parts.
       if (otherCaptures.length) {
-        const kind = isBalanceAfterDeposit(payment, otherCaptures, booking.total)
-          ? ('balance_settled' as const)
-          : ('double_capture' as const);
+        const kind = captureKindWithOthers(payment, otherCaptures, booking);
         return { kind, payment: succeeded, bookingId: booking.id };
       }
 

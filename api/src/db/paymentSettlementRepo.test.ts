@@ -270,6 +270,38 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event)).kind).toBe('double_capture');
   });
 
+  // Payment rows stay `succeeded` after a refund, so the pair rule must also ask the booking: a
+  // balance landing on a cancelled / refunded / finished booking is money with nowhere to go and
+  // must take the loud path, never the quiet "fully paid" one.
+  const PATH_FROM_PAID = {
+    cancelled: ['cancelled'],
+    refunded: ['refunded'],
+    completed: ['confirmed', 'in_progress', 'completed'],
+    no_show: ['confirmed', 'no_show'],
+    confirmed: ['confirmed'],
+    in_progress: ['confirmed', 'in_progress'],
+  } as const;
+  const walk = async (f: Awaited<ReturnType<typeof depositThenBalance>>['f'], to: keyof typeof PATH_FROM_PAID) => {
+    for (const step of PATH_FROM_PAID[to]) await f.bookings.setStatus(f.booking.id, step);
+  };
+
+  it.each(['cancelled', 'refunded', 'completed', 'no_show'] as const)(
+    'does not call a balance on a %s booking a settled sale',
+    async (status) => {
+      const { f, event } = await depositThenBalance();
+      await walk(f, status);
+      const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+      expect(outcome.kind).toBe('unexpected_booking_state');
+      expect(outcome.payment.status).toBe('succeeded'); // the money is recorded, not dropped
+    },
+  );
+
+  it.each(['confirmed', 'in_progress'] as const)('settles a balance on a %s booking', async (status) => {
+    const { f, event } = await depositThenBalance();
+    await walk(f, status);
+    expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event)).kind).toBe('balance_settled');
+  });
+
   it('flags a balance with no succeeded deposit behind it', async () => {
     const f = await fixture();
     await f.payments.markSucceeded(f.payment.id); // a FULL capture, not a deposit

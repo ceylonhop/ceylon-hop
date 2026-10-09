@@ -1178,6 +1178,22 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  it('does not call a balance on a cancelled booking a settled sale', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-cancelled');
+    await bookings.setStatus(booking.id, 'cancelled');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `bal-cancelled-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_000, payloadSha256: '7'.repeat(64),
+    });
+    expect(outcome.kind).toBe('unexpected_booking_state');
+    expect(outcome.payment.status).toBe('succeeded'); // recorded, not dropped
+    expect((await bookings.get(booking.id))?.status).toBe('cancelled');
+  });
+
   it('still flags a balance that would take more than the total as a double capture', async () => {
     const { booking, settlement, depositEvent } = await depositBooking('bal-over');
     const balance = await payments.create({
