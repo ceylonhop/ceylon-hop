@@ -752,8 +752,6 @@ export const quotes = pgTable('quotes', {
   // monotonic per quote and never reset, so a retired link's seq is never reused.
   payLinkSelection: jsonb('pay_link_selection'),
   soldCents: integer('sold_cents'),
-  // 0066 — the deposit a deposit pay link charges, frozen at mint (null = not a deposit link).
-  payLinkDepositCents: integer('pay_link_deposit_cents'),
   payLinkSeq: integer('pay_link_seq').notNull().default(0),
   // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
   // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
@@ -810,7 +808,6 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
-  check('quotes_pay_link_deposit_cents_positive', sql`${t.payLinkDepositCents} is null or ${t.payLinkDepositCents} > 0`),
 ]);
 
 // Branded customer-link aliases (spec 2026-08-24). code_digest is SHA-256(code): the bearer
