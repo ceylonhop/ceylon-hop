@@ -328,7 +328,7 @@ const GUIDE_STYLE = `
   .g-hero::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(9,38,36,.35) 0%,rgba(9,38,36,0) 22%,rgba(9,38,36,.55) 68%,rgba(9,38,36,.82) 100%)}
   .g-hero .wrap{padding-top:120px;padding-bottom:34px;width:100%}
   .g-hero .eyebrow{color:var(--saffron)}.g-hero .eyebrow::before{background:var(--saffron)}
-  .g-hero h1{color:#fff;font-size:clamp(3.2rem,10vw,6.4rem);line-height:.98;margin:0 0 .5rem;font-variation-settings:"opsz" 96;text-shadow:0 2px 24px rgba(0,0,0,.25)}
+  .g-hero h1{color:#fff;font-size:clamp(3.2rem,10vw,6.4rem);line-height:.98;margin:0 0 .5rem;font-variation-settings:"opsz" 11;text-shadow:0 2px 24px rgba(0,0,0,.25)}
   .g-hero .sub{max-width:34rem;margin:0;font-size:1.05rem;line-height:1.6;color:rgba(255,255,255,.95)}
   .g-hero .credit{position:absolute;right:14px;bottom:10px;font-size:.66rem;color:rgba(255,255,255,.7)}
   @media(min-width:760px){.g-hero{min-height:680px}.g-hero .wrap{padding-bottom:64px}.g-hero .sub{font-size:1.2rem}}
@@ -402,7 +402,7 @@ const GUIDE_STYLE = `
     .poi.feature{grid-column:1/-1;display:grid;grid-template-columns:1.2fr 1fr}
     .poi.feature img{height:100%;aspect-ratio:auto;min-height:480px}
     .poi.feature .bd{padding:44px;display:flex;flex-direction:column;justify-content:center}
-    .poi.feature h3{font-size:clamp(2rem,3.4vw,2.8rem);font-variation-settings:"opsz" 72}
+    .poi.feature h3{font-size:clamp(2rem,3.4vw,2.8rem);font-variation-settings:"opsz" 11}
     .poi.feature p{font-size:1.08rem}
     .poi:not(.feature):last-child:nth-child(even){grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}
     .poi:not(.feature):last-child:nth-child(even) img{height:100%;aspect-ratio:auto;min-height:360px}}

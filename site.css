@@ -216,19 +216,22 @@ button{font-family:inherit;color:inherit;cursor:pointer}
    the opposite treatment to the Newsreader it replaced —
      · no negative tracking (the old -.005em/-.012em closed the counters up),
      · a touch more leading (hairlines need air or the lines vibrate),
-     · optical sizing pinned high so the display cut is used at display sizes.
-   `font-optical-sizing:auto` alone picks a text cut for headings on some engines. */
+     · optical sizing pinned LOW ("opsz" 11), everywhere the display face is used.
+   Only Bodoni Moda has an opsz axis — Apple visitors get local Bodoni 72, which
+   ignores it — so this setting only ever reaches Windows/Android. Its display cuts
+   (opsz 24–96) have sub-pixel hairlines that drop out on 1x screens: hyphens vanish,
+   the v/w break, the line looks letterspaced. The text cut keeps every stroke. */
 h1,h2,h3,h4{
   font-family:var(--display);font-weight:700;line-height:1.14;margin:0;letter-spacing:0;
-  font-optical-sizing:auto;font-variation-settings:"opsz" 72;
+  font-optical-sizing:auto;font-variation-settings:"opsz" 11;
 }
 h2{margin-bottom:.5rem}
-.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:700;line-height:1.06;letter-spacing:-.004em;margin-bottom:0;font-variation-settings:"opsz" 96}
+.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:700;line-height:1.06;letter-spacing:-.004em;margin-bottom:0;font-variation-settings:"opsz" 11}
 h1{font-size:clamp(2.2rem,5vw,3.8rem)}
 h2{font-size:clamp(1.9rem,3.6vw,3rem)}
 /* h3 bottoms out at 1.3rem ≈ 21px — under the ~24px floor where Bodoni's hairlines
    start to break up, so it runs a heavier weight and a text-grade optical size. */
-h3{font-size:clamp(1.35rem,2.2vw,1.7rem);font-weight:700;font-variation-settings:"opsz" 24}
+h3{font-size:clamp(1.35rem,2.2vw,1.7rem);font-weight:700;font-variation-settings:"opsz" 11}
 p{margin:0 0 1rem}
 .eyebrow{
   font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;
@@ -324,7 +327,7 @@ p{margin:0 0 1rem}
   background:linear-gradient(180deg, rgba(255,253,248,.86), rgba(255,253,248,.72));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.08), 0 14px 34px -22px rgba(44,42,43,.35);
 }
-.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.005em;white-space:nowrap;font-variation-settings:"opsz" 36}
+.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.005em;white-space:nowrap;font-variation-settings:"opsz" 11}
 .brand .cmark{width:34px;height:34px;flex:none}
 
 /* ---------- Brand marks (docs/brand-book.md pp.2-3, 5-6) ----------
@@ -338,7 +341,7 @@ p{margin:0 0 1rem}
   /* the 0.5x clear-space buffer, expressed against the lockup's own height */
   padding:.5em;
   font-family:var(--display);font-weight:700;line-height:.94;letter-spacing:.005em;
-  font-variation-settings:"opsz" 48;
+  font-variation-settings:"opsz" 11;
 }
 .brand-lockup .cmark{width:1.9em;height:1.9em;flex:none}
 .brand-lockup .bl-words{display:flex;flex-direction:column}
