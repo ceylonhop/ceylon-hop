@@ -7,6 +7,7 @@ import {
   sendTripReminder,
   sendReviewRequest,
   sendPaymentFailed,
+  sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
   routeText,
@@ -532,6 +533,28 @@ describe('sendDepositReceived', () => {
     expect(m.html).toContain('$50.00'); // deposit
     expect(m.html).toContain('$150.00'); // balance
     expect(m.text).toContain('Balance due before travel: $150.00');
+  });
+
+  it('says the balance can be paid any time with the same link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDepositReceived({ ...single, total: 20000, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('any time before your trip, using the same link you paid the deposit with');
+    expect(m.html).not.toContain('WhatsApp closer to the day');
+  });
+});
+
+describe('sendBalanceReceived', () => {
+  it('says fully paid with deposit, balance and total', async () => {
+    const email = new FakeEmailAdapter();
+    const booking = { ...single, total: 20000, amountDueNow: 5000 };
+    await sendBalanceReceived(booking, 15000, email, { manage: 'https://x/m' });
+    const sent = email.sent.at(-1)!;
+    expect(sent.subject).toBe(`You’re fully paid — ${booking.reference}`);
+    expect(sent.text).toContain('Deposit paid: $50.00');
+    expect(sent.text).toContain('Balance paid: $150.00');
+    expect(sent.text).toContain('Total paid: $200.00');
+    expect(sent.tracking?.kind).toBe('balance_received');
   });
 });
 

@@ -526,6 +526,77 @@ describe('payment webhook ops alerts (M17)', () => {
     expect((await payments.findByOrderId(b.reference))!.status).toBe('succeeded');
   });
 
+  // Deposits (spec 2026-10-07 §5.1): the balance of a deposit booking is the second half of ONE
+  // sale. The customer gets a "fully paid" receipt and the team a money line; nothing is paged.
+  async function depositBooking(bookings: InMemoryBookingRepo, payments: InMemoryPaymentRepo) {
+    const booking = await bookings.create({
+      mode: 'single', total: 20_000, amountDueNow: 5_000, currency: 'USD',
+      input: {
+        from: 'Colombo', to: 'Kandy', vehicleType: 'car', adults: 2, children: 0, bags: 1,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+94770000000', country: 'LK' },
+      },
+    });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:deposit`, purpose: 'deposit',
+    });
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 15_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    return { booking, deposit, balance };
+  }
+
+  it('a deposit settle titles the team "Paid:" with the amount actually paid, not the total', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  it('a balance after its deposit sends the fully-paid receipt and the team money line, and pages nothing', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const concierge = new InMemoryConciergeTaskRepo();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments, conciergeTasks: concierge, notificationLog });
+    const { booking, deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    const sentBefore = email.sent.length;
+    const tasksBefore = (await concierge.list()).length;
+
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'payment_double_capture')).toBeUndefined();
+    expect(email.sent).toHaveLength(sentBefore + 1);
+    expect(email.sent.at(-1)!.subject).toMatch(/^You’re fully paid/);
+    expect(await notificationLog.wasSent(booking.id, 'balance_received')).toBe(true);
+    expect(alerts.sent.filter((a) => a.kind === 'booking_paid').at(-1)!.title).toBe(
+      `Balance paid: ${booking.reference} — $150.00`,
+    );
+    expect((await bookings.get(booking.id))!.status).toBe('paid');
+    expect((await concierge.list()).length).toBe(tasksBefore); // no second confirm_pickup task
+  });
+
   it('does not 500 the webhook when concierge-task creation fails (booking stays paid, alert raised)', async () => {
     const adapter = new FakePaymentAdapter();
     const alerts = new FakeAlertAdapter();
