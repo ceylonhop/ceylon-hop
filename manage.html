@@ -166,11 +166,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (sessionStorage.getItem(seen) === String(v.reference || '1')) return;
       sessionStorage.setItem(seen, String(v.reference || '1'));
     } catch (e) { /* private mode — better a possible double than a missing purchase */ }
-    track('purchase', {
+    var p = {
       transaction_id: String(v.reference || ''),
       value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
       currency: v.currency || 'USD',
-    });
+    };
+    // /view's ga4Item is the server purchase's own item (route, private/shared, regions); absent
+    // from an older API, in which case the purchase simply goes without one.
+    if (v.ga4Item && typeof v.ga4Item === 'object') p.items = [Object.assign({}, v.ga4Item, { price: p.value, quantity: 1 })];
+    track('purchase', p);
   }
   function moneyOf(v){
     return { value: Math.round(Number(v && v.amountDueNowCents || 0)) / 100, currency: (v && v.currency) || 'USD' };

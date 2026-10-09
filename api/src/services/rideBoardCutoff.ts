@@ -1,7 +1,7 @@
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { EmailAdapter } from '../adapters/email';
-import { committedSeats, isSeedMember, popularTime, type Slot, type RideMember } from '../domain/rideList';
+import { committedSeats, isSeedMember, paysByLink, popularTime, type Slot, type RideMember } from '../domain/rideList';
 import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideCalledOffRefundDue } from './rideBoardEmails';
 import type { AlertAdapter } from '../adapters/alerts';
 import { teamRideLockedEmail } from './opsNotifications';
@@ -117,7 +117,7 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         reason: 'below_threshold', committed: liveSeats(held), minSeats: list.minSeats,
         travellers: real.length, seedSeats,
       });
-      for (const m of real) await mail('called off', m, () => sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list }));
+      for (const m of real) await mail('called off', m, () => sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list, payLater: paysByLink(list, m) }));
       await reportMissed();
       continue;
     }
@@ -128,6 +128,9 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
 
     const chargedOk: RideMember[] = [];
     const failed: RideMember[] = [];
+    // The starter, who gave no card (owner, 2026-10-07; domain/rideList.ts paysByLink): their
+    // seat counts toward the van, nothing is charged, and ops sends them a payment link.
+    const toCollect: RideMember[] = [];
     // Seats whose charge came back `succeeded` in THIS run, and only those (GA4 reporting below).
     const chargedNow: RideMember[] = [];
     // Sent, reply lost — the card may or may not have been debited. Held apart only so a human
@@ -138,6 +141,10 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
     for (const m of real) {
       if (m.status === 'charged') {
         chargedOk.push(m);
+        continue;
+      }
+      if (paysByLink(list, m)) {
+        toCollect.push(m);
         continue;
       }
       const orderId = `${list.code}-${m.sub}`;
@@ -194,7 +201,8 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       continue;
     }
 
-    const ranThisList = chargedOk.reduce((n, m) => n + m.seats, 0) + seedSeats >= list.minSeats;
+    const ranThisList =
+      chargedOk.reduce((n, m) => n + m.seats, 0) + toCollect.reduce((n, m) => n + m.seats, 0) + seedSeats >= list.minSeats;
     if (ranThisList) {
       // Confirmed with the successfully-charged travellers.
       await deps.rideLists.setStatus(list.id, 'confirmed');
@@ -207,24 +215,28 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
         // Part of revenueCents above is money we only PROBABLY hold — an indeterminate charge
         // counts toward the van running, so the revenue figure means little without this.
         chargeUnknown: indeterminate.length,
+        // Seats on the van whose fare ops collects by hand (not in `seats` or revenueCents).
+        toCollect: toCollect.reduce((n, m) => n + m.seats, 0),
         // Seats on the manifest that are nobody: `seats` and revenueCents above are real
         // travellers only, so seats + seedSeats is what cleared minSeats.
         seedSeats,
       });
       for (const m of chargedOk) await mail('confirmed', m, () => sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time }));
+      for (const m of toCollect) await mail('confirmed', m, () => sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time, payLater: true }));
       for (const m of failed) await mail('at risk', m, () => sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list }));
       // The team's copy (owner, 2026-09-23): until this, a van locking in and cards being charged
       // reached only the travellers. Best-effort and after their emails; dedupeKey is the code,
       // and a confirmed list never comes due again, so this sends once.
-      if (chargedOk.length > 0 && deps.alerts) {
+      if ((chargedOk.length > 0 || toCollect.length > 0) && deps.alerts) {
         try {
           const unknown = indeterminate.map((i) => i.member);
-          const mail = teamRideLockedEmail({ list, time, charged: chargedOk, declined: failed, unknown, seedSeats, currency }, deps.opsBaseUrl ?? '');
+          const mail = teamRideLockedEmail({ list, time, charged: chargedOk, declined: failed, unknown, toCollect, seedSeats, currency }, deps.opsBaseUrl ?? '');
           await deps.alerts.send({
             severity: 'info',
             kind: 'ride_board_locked',
             title: mail.subject,
-            body: `Ride ${list.code} locked in at ${time}: ${chargedOk.length} traveller(s) charged, ${failed.length} declined.`,
+            body: `Ride ${list.code} locked in at ${time}: ${chargedOk.length} traveller(s) charged, ${failed.length} declined`
+              + `${toCollect.length ? `, ${toCollect.length} to collect by payment link` : ''}.`,
             email: mail,
             dedupeKey: list.code,
           });
@@ -249,18 +261,19 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
           await deps.alerts.send({
             severity: 'warning',
             kind: 'ride_board_seeded_list_running',
-            title: `Seeded ride ${list.code} is really running — ${chargedOk.length} real traveller(s)`,
+            title: `Seeded ride ${list.code} is really running — ${chargedOk.length + toCollect.length} real traveller(s)`,
             body: [
               `Ride ${list.code} — ${list.fromPlace} → ${list.toPlace} on ${list.date}, departing ${time}`,
-              `Confirmed with ${chargedOk.length} real traveller(s) and ${seedSeats} seeded placeholder seat(s).`,
+              `Confirmed with ${chargedOk.length + toCollect.length} real traveller(s) and ${seedSeats} seeded placeholder seat(s).`,
               `The placeholders are not people: this van runs for the traveller(s) below, who have`,
-              `been charged and emailed that it is confirmed.`,
-              ...chargedOk.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s)`),
+              `been emailed that it is confirmed.`,
+              ...chargedOk.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s), charged`),
+              ...toCollect.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s), no card: send a payment link`),
               ...(failed.length
                 ? [`Card declined (emailed "at risk", not on the van unless they pay):`,
                    ...failed.map((m) => `  ${m.firstName} <${m.email}> — ${m.seats} seat(s)`)]
                 : []),
-              `There are ${list.capacity - chargedOk.reduce((n, m) => n + m.seats, 0)} real seat(s) still free on it.`,
+              `There are ${list.capacity - [...chargedOk, ...toCollect].reduce((n, m) => n + m.seats, 0)} real seat(s) still free on it.`,
             ].join('\n'),
             dedupeKey: `ride_board_seeded_list_running:${list.code}`,
           });
