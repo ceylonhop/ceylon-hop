@@ -184,7 +184,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
   };
   const verdict = paymentVerdict(evidence);
 
-  const row = toOpsRow(b, { paid: (paid ?? []).some((p) => p.status === 'succeeded'), teamEmails: deps.teamEmails });
+  const row = toOpsRow(b, { paid: (paid ?? []).some((p) => p.status === 'succeeded'), teamEmails: deps.teamEmails, payments: paid ?? [] });
   const c = b.input.customer;
   return {
     kind: 'found',
@@ -223,7 +223,7 @@ async function otherBookingsOf(deps: PaymentCaseDeps, b: Booking): Promise<CaseR
     const paidIds = new Set(payments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     return {
       rows: shown.map((x) => {
-        const row = toOpsRow(x, { paid: paidIds.has(x.id), teamEmails: deps.teamEmails });
+        const row = toOpsRow(x, { paid: paidIds.has(x.id), teamEmails: deps.teamEmails, payments: payments.filter((p) => p.bookingId === x.id) });
         return {
           id: x.id, reference: x.reference, status: x.status, mode: x.mode, channel: x.channel, createdAt: x.createdAt,
           route: row.route, travelDate: row.travelDate, travelTime: row.travelTime, pax: row.pax,

@@ -4,6 +4,7 @@ import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
 import { roadRow } from './notifications';
+import { balanceDueCents, paidCents } from '../domain/balance';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -39,6 +40,10 @@ export interface OpsBookingRow {
   stage: OpsStage;
   paymentStatus: 'paid' | 'unpaid';
   amount: number; // minor units
+  /** Σ succeeded payments (gross), and what is still owed — the ledger's own figures
+   *  (domain/balance.ts), so a deposit booking reads "paid $50 · balance $169" on the row. */
+  paidCents: number;
+  balanceCents: number;
   currency: string;
   customerFirstName: string;
   customerName: string;
@@ -104,14 +109,16 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string> },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string }> },
 ): OpsBookingRow {
+  const ledger = opts.payments ?? [];
   const t = travel(b);
   const c = b.input.customer;
   return {
     id: b.id, reference: b.reference, mode: b.mode, channel: b.channel,
     bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
+    paidCents: paidCents(ledger), balanceCents: balanceDueCents(b, ledger),
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
     route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),

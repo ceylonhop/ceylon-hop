@@ -24,6 +24,8 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, manageUrl } from '../services/notifications';
+import { isBalanceOpen } from '../domain/balance';
+import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
 import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
 
@@ -238,9 +240,14 @@ export function opsRoutes(deps: OpsDeps) {
     const [ops, allPayments] = await Promise.all([deps.rideOps.listByBookingIds(ids), deps.payments.findByBookingIds(ids)]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
     const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    const paymentsById = new Map<string, typeof allPayments>();
+    for (const p of allPayments) paymentsById.set(p.bookingId, [...(paymentsById.get(p.bookingId) ?? []), p]);
     const rows: OpsBookingRow[] = [];
     for (const b of all) {
-      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails });
+      const row = toOpsRow(b, {
+        rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
+        payments: paymentsById.get(b.id) ?? [],
+      });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;
@@ -329,7 +336,13 @@ export function opsRoutes(deps: OpsDeps) {
         console.error(`[ops] checkout events unavailable for ${b.id}:`, err);
       }
     }
-    return c.json({ booking: b, ops, payments, payLink, coverage, checkoutEvents });
+    // The balance of a deposit booking is paid on the SAME link the customer already holds — the
+    // source quote's pay URL (spec 2026-10-07 §5.3) — so ops resends exactly that. Only while the
+    // balance is open; a booking that did not come from a quote has no such link.
+    const balancePayLink = srcQuote && isBalanceOpen(b, payments) && deps.baseUrl && deps.linkSecret
+      ? `${deps.baseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(srcQuote.id, srcQuote.revision, deps.linkSecret, srcQuote.payLinkSeq)}`
+      : null;
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
