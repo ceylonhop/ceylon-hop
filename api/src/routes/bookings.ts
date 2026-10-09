@@ -907,9 +907,15 @@ function invalidRequest(error: ZodError) {
     // someone who just paid "no charge was made — try again", and PayHere takes a second payment
     // on the same order. So the return leg stays `pending` until the money lands; if it never
     // does, the page's poll budget runs out into its own "we haven't heard back from your bank".
-    const status = rows.some((p) => p.status === 'succeeded')
+    //
+    // A balance attempt is judged on its OWN row (spec 2026-10-07 §5.3): the deposit has already
+    // succeeded, so "any payment succeeded" would tell a customer who just came back from the
+    // balance's PayHere page "paid" before the balance's webhook has landed, or after it declined.
+    const balanceRow = rows.find((p) => p.purpose === 'balance');
+    const judged = balanceRow ? [balanceRow] : rows;
+    const status = judged.some((p) => p.status === 'succeeded')
       ? 'paid'
-      : token.leg === 'cancel' && rows.some((p) => p.status === 'failed')
+      : token.leg === 'cancel' && judged.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
     // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
@@ -971,10 +977,23 @@ function invalidRequest(error: ZodError) {
     }
     const booking = await bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
-    // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
-    // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
-    // form — that is how a customer ends up paying for a trip that no longer exists.
-    if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
+    // The caller's INTENT (never an amount): returnTo, the GA visitor, and — for the balance of a
+    // deposit booking — purpose. Read once, here, because the balance branch changes which gate
+    // applies.
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown; purpose?: unknown } | null;
+    const wantsBalance = body?.purpose === 'balance';
+    // The balance of a deposit booking (spec 2026-10-07 §5.3): the booking is already SECURED
+    // (paid | confirmed | in_progress), so the draft/payment_pending gate below would refuse it.
+    // The only way in is isBalanceOpen — a succeeded deposit and money still owed.
+    let balanceDue = 0;
+    if (wantsBalance) {
+      const rows = await payments.findByBookingId(booking.id);
+      if (!isBalanceOpen(booking, rows)) return c.json({ error: 'no_balance_due' }, 409);
+      balanceDue = balanceDueCents(booking, rows);
+    } else if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
+      // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
+      // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
+      // form — that is how a customer ends up paying for a trip that no longer exists.
       return c.json({ error: 'not_chargeable', status: booking.status }, 409);
     }
     // The engine could not price this, so `total` is a flat placeholder rather than a quote.
@@ -989,14 +1008,15 @@ function invalidRequest(error: ZodError) {
         409,
       );
     }
-    const dueNow = booking.amountDueNow ?? booking.total;
+    // The balance charges exactly what is still owed (the ledger's figure), never amountDueNow.
+    const dueNow = wantsBalance ? balanceDue : (booking.amountDueNow ?? booking.total);
 
     // One row per kind of attempt (spec 2026-10-07 §4, rev. 2026-10-08): a customer who tries the
     // deposit and then switches to full gets a fresh row, never a UNIQUE collision on order_id /
     // idempotency_key. Full keeps REF so every existing booking reads exactly as before.
-    const purpose = dueNow < booking.total ? 'deposit' : 'full';
-    const idempotencyKey = purpose === 'deposit' ? `checkout:${booking.id}:deposit` : `checkout:${booking.id}`;
-    const orderId = purpose === 'deposit' ? `${booking.reference}-D` : booking.reference;
+    const purpose = wantsBalance ? 'balance' : dueNow < booking.total ? 'deposit' : 'full';
+    const idempotencyKey = purpose === 'full' ? `checkout:${booking.id}` : `checkout:${booking.id}:${purpose}`;
+    const orderId = purpose === 'full' ? booking.reference : `${booking.reference}-${purpose === 'deposit' ? 'D' : 'B'}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
     // Defence in depth: if the payment already settled, refuse a second checkout even if the
     // booking somehow lags in a chargeable status.
@@ -1005,7 +1025,9 @@ function invalidRequest(error: ZodError) {
     }
     // §6.3 — a booking made with a code re-checks its hold before a payment starts. Runs whatever
     // PROMO_CODES_ENABLED says: the flag gates accepting codes, never honouring one already held.
-    if (booking.promoCodeId && deps.promoCodes) {
+    // Not for the balance: the code was honoured at the deposit, and a lapsed code must not block
+    // the customer from paying what they owe.
+    if (!wantsBalance && booking.promoCodeId && deps.promoCodes) {
       const code = await deps.promoCodes.get(booking.promoCodeId);
       if (!code) return c.json({ error: 'promo_code_invalid' }, 409);
       try {
@@ -1058,7 +1080,6 @@ function invalidRequest(error: ZodError) {
     // customer wherever the request body says is a phishing primitive, and the request that
     // reaches here has already crossed the network. So the origin comes from our own config and
     // the token is minted here, over the booking this checkout is actually for.
-    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown } | null;
     // The GA visitor this checkout comes from (analytics.js chWithGa), so the server's purchase
     // joins that visit. Best-effort and not awaited: analytics never delays or fails a checkout.
     if (deps.ga4 && body?.ga !== undefined) {
