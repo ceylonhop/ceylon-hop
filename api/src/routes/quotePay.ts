@@ -9,6 +9,7 @@ import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { payLines } from '../quote/paySelection';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
+import { depositFor } from '../quote/extrasDeposit';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -41,9 +42,26 @@ const StartSchema = z.object({
   customer: CustomerInput,
   billing: BillingInput.optional(),
   termsAccepted: z.literal(true),
+  // The customer's choice on an eligible link (spec 2026-10-07 §5.2). Missing = full, so an older
+  // cached pay.html keeps working. Never an amount: the server recomputes the deposit.
+  payment: z.enum(['full', 'deposit']).optional(),
 }).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+
+// The deposit a customer may pay instead of the full amount on this link, in cents; 0 = not
+// offered (spec 2026-10-07 §5.2, rev. 2026-10-08). Only a link for the WHOLE trip qualifies — a
+// part-of-trip link (a selection, or a frozen soldCents) always pays in full — and only a quote
+// the fixed rule makes eligible. ONE helper for /view and /start so the page can never offer
+// what the server would refuse, or the reverse. The rule reads the quote's own total, which is
+// what a whole-trip link charges.
+function depositOffer(quote: SavedQuote): number {
+  if (quote.payLinkSelection || quote.soldCents != null) return 0;
+  const engine = (quote.request as { engine?: { product?: string } } | null)?.engine;
+  const product = engine?.product ?? quote.product;
+  if (product !== 'private' && product !== 'chauffeur') return 0;
+  return depositFor(product, quote.totalCents);
+}
 
 // Best-effort prefill from what the quote already knows — the page asks only for the rest.
 function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; email: string; whatsapp: string; country: string } {
@@ -210,6 +228,7 @@ export function quotePayRoutes(deps: {
     const soldCents = quote.soldCents ?? quote.totalCents;
     const sel = quote.payLinkSelection;
     const partial = sel ? partialView(quote, sel) : null;
+    const dep = depositOffer(quote);
 
     return c.json({
       state,
@@ -221,6 +240,9 @@ export function quotePayRoutes(deps: {
       ...(sel ? {} : { discount: discountView(quote) }),
       prefill: prefillFor(quote),
       ...(partial ?? {}),
+      // Present only when the customer may choose (a whole-trip link on an eligible quote); the
+      // page is exactly today's page without it. `totals` stays the trip total.
+      ...(dep > 0 ? { deposit: { cents: dep, usd: usd(dep), balanceCents: soldCents - dep, balanceUsd: usd(soldCents - dep) } } : {}),
     });
   });
 
@@ -239,6 +261,14 @@ export function quotePayRoutes(deps: {
     if (state === 'paid') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
+
+    // The customer's choice. A deposit is refused unless the /view rule offered it — the server
+    // recomputes it and never trusts the client for either the option or the amount.
+    const soldCents = quote.soldCents ?? quote.totalCents;
+    const wantsDeposit = body.data.payment === 'deposit';
+    const deposit = wantsDeposit ? depositOffer(quote) : 0;
+    if (wantsDeposit && deposit <= 0) return c.json({ error: 'deposit_ineligible' }, 409);
+    const dueNow = wantsDeposit ? deposit : soldCents;
 
     // Resume an earlier tap: the booking already exists, hand back a fresh checkout token.
     //
@@ -282,6 +312,9 @@ export function quotePayRoutes(deps: {
         // agreed. Keeping the earlier submitter's timestamp would leave a refund dispute
         // holding evidence about a different person.
         termsAcceptedAt: new Date(),
+        // The choice may differ from the first tap; the repo applies it only while nothing on the
+        // booking has succeeded (spec 2026-10-07 §4).
+        amountDueNow: dueNow,
       });
       return c.json(
         { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(refreshed) },
@@ -300,7 +333,6 @@ export function quotePayRoutes(deps: {
     // The booking must carry ONLY the legs that were sold — otherwise the driver's itinerary and
     // the confirmation email promise legs nobody paid for (spec §8).
     const legIndexes = quote.payLinkSelection?.legIndexes;
-    const soldCents = quote.soldCents ?? quote.totalCents;
     const tool = (quote.request as { tool?: { passengerCount?: number; luggageCount?: number; legs?: { date?: string }[] } } | null)?.tool;
     const firstDate = (tool?.legs ?? []).map((l) => l.date).find((d) => !!d);
     let mapped;
@@ -320,9 +352,9 @@ export function quotePayRoutes(deps: {
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
-        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: soldCents,
+        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: dueNow,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() }
-        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: soldCents,
+        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: dueNow,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() };
 
     const created = await deps.bookings.create(newBooking, { idempotencyKey });

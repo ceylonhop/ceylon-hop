@@ -9006,8 +9006,16 @@ function renderSummaryCardBody() {
       + ' to join the total.</div>');
   }
 
-  // Chauffeur product: full due-now amount as a subtle highlighted chip/row.
-  if (est.product === 'chauffeur' && est.amountDueNow) {
+  // An eligible quote (the engine's own deposit rule, the same one /quotes/pay/view applies): ops
+  // mints one ordinary pay link and the CUSTOMER picks a deposit or full on it (spec 2026-10-07
+  // §5.4), so say what they will be offered rather than "pay in full".
+  if (est.deposit && est.deposit.cents > 0) {
+    lines.push('<div class="ch-deposit-chip">');
+    lines.push('  <span class="dep-lbl">Customer can pay a deposit of ' + esc(fmtUsd(est.deposit.cents))
+      + ' (balance ' + esc(fmtUsd(est.total.cents - est.deposit.cents)) + ' later) or in full on the pay link</span>');
+    lines.push('</div>');
+  } else if (est.product === 'chauffeur' && est.amountDueNow) {
+    // Not deposit-eligible: the chauffeur full due-now amount as a subtle highlighted chip/row.
     lines.push('<div class="ch-deposit-chip">');
     lines.push('  <span class="dep-lbl">Pay in full to confirm</span>');
     lines.push('  <span class="dep-val">' + esc(fmtUsd(est.amountDueNow.cents)) + '</span>');

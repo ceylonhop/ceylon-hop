@@ -991,7 +991,12 @@ function invalidRequest(error: ZodError) {
     }
     const dueNow = booking.amountDueNow ?? booking.total;
 
-    const idempotencyKey = `checkout:${booking.id}`;
+    // One row per kind of attempt (spec 2026-10-07 §4, rev. 2026-10-08): a customer who tries the
+    // deposit and then switches to full gets a fresh row, never a UNIQUE collision on order_id /
+    // idempotency_key. Full keeps REF so every existing booking reads exactly as before.
+    const purpose = dueNow < booking.total ? 'deposit' : 'full';
+    const idempotencyKey = purpose === 'deposit' ? `checkout:${booking.id}:deposit` : `checkout:${booking.id}`;
+    const orderId = purpose === 'deposit' ? `${booking.reference}-D` : booking.reference;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
     // Defence in depth: if the payment already settled, refuse a second checkout even if the
     // booking somehow lags in a chargeable status.
@@ -1014,10 +1019,11 @@ function invalidRequest(error: ZodError) {
       payment = await payments.create({
         bookingId: booking.id,
         provider: adapter.provider,
-        orderId: booking.reference,
+        orderId,
         amount: dueNow,
         currency: booking.currency,
         idempotencyKey,
+        purpose,
       });
     }
     // Outside `if (!payment)` on purpose: the payment row and this move are two writes, and when
@@ -1191,7 +1197,8 @@ function invalidRequest(error: ZodError) {
         attempt: parsed.data.attempt ?? null,
         bookingId: asUuid(id),
         reference: booking?.reference ?? null,
-        // The payment's order id is the booking reference (see /checkout).
+        // The beacon cannot tell which attempt it reports (a deposit attempt's order id is REF-D,
+        // see /checkout), so it records the reference; the booking id is the join key.
         orderId: booking?.reference ?? null,
         channel: booking?.channel ?? null,
         ua: uaOf(c),
