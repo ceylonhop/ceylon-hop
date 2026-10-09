@@ -281,7 +281,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </header>
 <div class="mobile-menu" data-mobile><a href="../../trip/">Routes & prices</a><a href="../../board.html">Share a ride</a><a href="../../plan.html">Plan a trip</a><a href="../../tours.html">Tours</a><a href="../../about.html">About</a></div>
 <main>
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
   document.documentElement.classList.add('js');})();</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Arugam Bay guide","description":"Arugam Bay’s surf points for every level, the lagoon, Kumana, when the season runs, where to eat and stay — and how we drive you there.","author":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"publisher":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://ceylonhop.com/guides/arugam-bay/"},"image":"https://ceylonhop.com/img/guides/arugam-bay/hero-1800.jpg","inLanguage":"en"}</script>

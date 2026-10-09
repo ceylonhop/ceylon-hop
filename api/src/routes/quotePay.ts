@@ -8,6 +8,7 @@ import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { payLines } from '../quote/paySelection';
 import { shortenRouteLabel } from '../quote/shortPlace';
+import { browserItem } from '../services/analytics/ga4Hits';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -283,7 +284,7 @@ export function quotePayRoutes(deps: {
         termsAcceptedAt: new Date(),
       });
       return c.json(
-        { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()) },
+        { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(refreshed) },
         200,
       );
     }
@@ -345,7 +346,8 @@ export function quotePayRoutes(deps: {
     await deps.quotes.patch(quote.id, { convertedBookingId: booking.id });
 
     return c.json(
-      { bookingId: booking.id, checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()) },
+      // ga4Item: pay.html stashes it across the gateway round trip for its `purchase` (ga4Hits.ts).
+      { bookingId: booking.id, checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(booking) },
       201,
     );
   });

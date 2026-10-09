@@ -19,7 +19,7 @@ describe('buildPricingPayload', () => {
     expect(p.priceFinishing).toEqual({ maxReductionBps: 250, roundToCents: 50 });
     expect(p.chauffeurDayFee).toBe(31.05);
     expect(p.depositPct).toBe(0.1);
-    expect(p.depositCap).toBe(50);
+    expect(p.depositMin).toBe(50);
     expect(p.extras).toMatchObject({
       sightseeing: 10,
       'safari-wait': 19,

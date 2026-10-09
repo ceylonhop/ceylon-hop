@@ -37,7 +37,7 @@ const RATES = {
 };
 const RATES_BODY = {
   live: { version: '2026-07-14', source: 'defaults', rates: RATES, createdBy: null, createdAt: null },
-  defaults: { version: '2026-07-14', rates: RATES }, history: [], readOnly: { depositPct: 10, depositCapCents: 5000 },
+  defaults: { version: '2026-07-14', rates: RATES }, history: [], readOnly: { depositPct: 10, depositMinCents: 5000, depositEligibleMinCents: 15000 },
 };
 
 // Boots the shell with `caps`. `zones` overrides the zone-list handler (to count or delay it).

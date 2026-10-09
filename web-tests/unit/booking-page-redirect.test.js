@@ -82,8 +82,8 @@ describe('booking page analytics for a real-gateway payment', () => {
 const DEPS = ['site.js', 'ta-data.js', 'routes-data.js', 'transfers-data.js', 'decline-help.js', 'checkout-handoff.js', 'ch-map.js', 'ch-pricing.js']
   .map((f) => readFileSync(path.join(ROOT, f), 'utf8'));
 
-function loadBooking() {
-  const url = 'https://example.test/booking.html?mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90';
+function loadBooking(origin = 'https://example.test') {
+  const url = origin + '/booking.html?mode=private&from=cmb-airport&to=kandy&vehicle=car&price=90&rawPrice=90';
   const dom = new JSDOM(HTML, { url, runScripts: 'dangerously', pretendToBeVisual: true });
   const { window } = dom;
   window.scrollTo = () => {};
@@ -233,5 +233,40 @@ describe('continueToCheckout hands the browser to PayHere', () => {
     await flush(w);
     expect(w.__submitted).toHaveLength(0);
     expect(w.document.getElementById('ph-msg').textContent).toMatch(/Redirecting you to PayHere/);
+  });
+
+  // 2026-10-07: the gateway test was `/payhere\.lk/` anywhere in the URL, so an answer naming
+  // https://evil.example/payhere.lk/… got the customer's browser form-POSTed to a page that looks
+  // like the next step of our own checkout. Only PayHere's own two origins get the hand-off.
+  it('posts the form only to PayHere’s own origins, never a URL that merely mentions payhere.lk', async () => {
+    for (const lookalike of [
+      'https://evil.example/payhere.lk/pay/checkout',
+      'https://payhere.lk.evil.example/pay/checkout',
+      'https://evil.example/pay/checkout?next=https://www.payhere.lk',
+      'http://www.payhere.lk/pay/checkout',
+    ]) {
+      const w = loadBooking();
+      arm(w, lookalike);
+      w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+      await flush(w);
+      expect(w.__submitted, lookalike).toHaveLength(0);
+    }
+  });
+
+  // The live API cannot boot on the fake gateway (api/src/config.ts), so on the production site a
+  // non-PayHere checkout URL is always an anomaly. Simulating there would tell the customer
+  // "Payment approved" and fire `purchase` for a booking nobody paid for — refuse instead.
+  // Staging and local hosts keep the simulated interstitial (the test above).
+  it('on the production site, refuses a non-PayHere checkout instead of simulating an approval', async () => {
+    for (const origin of ['https://ceylonhop.com', 'https://www.ceylonhop.com']) {
+      const w = loadBooking(origin);
+      arm(w, 'https://evil.example/payhere.lk/pay/checkout');
+      w.eval(`continueToCheckout({ id: 'b-123', reference: 'CH-8UVYG', checkoutToken: 'tok.abc' })`);
+      await flush(w);
+      expect(w.__submitted, origin).toHaveLength(0);
+      const msg = w.document.getElementById('ph-msg').textContent;
+      expect(msg, origin).not.toMatch(/Redirecting you to PayHere|Payment approved/);
+      expect(msg, origin).toMatch(/couldn’t start your payment/);
+    }
   });
 });

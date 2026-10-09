@@ -493,7 +493,7 @@ ${headAssets}
 <!-- Live ride dates come from here (route-page.js). "?api=off" disables it and
      "?api=ORIGIN" points it elsewhere — the same contract as search.html and
      booking.html, so one local API can be driven from any of them. -->
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$|\\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
      so the page never shows one price and then another. Set HERE, before first paint, and
      released HERE on a timer too — if that script never loads, the catalogue fares still appear.
@@ -1013,7 +1013,7 @@ ${headAssets}
 <!-- Same CEYLON_HOP_API bootstrap as routePage()'s: "?api=off" disables the engine and
      "?api=ORIGIN" points it elsewhere, so one local API can drive this page too. The index
      lacked this block until route-list-fares.js needed it (Task E1). -->
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$|\\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* List fares: held back (transparent, in place) until route-list-fares.js has the engine's
      answer, so the page never shows one price and then another. Set HERE, before first paint,
      and released HERE on a timer too — if that script never loads, the catalogue fares still
