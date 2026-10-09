@@ -3616,6 +3616,18 @@ function refundSummary(d){
   return {captured,confirmed,pending,remaining:Math.max(0,captured-confirmed-pending),currency:payment?.currency||d?.booking?.currency||'USD'};
 }
 
+/* Each captured payment with what is still refundable on IT. A deposit booking holds two captures
+   and a refund belongs to one of them (spec 2026-10-07 §5.1), so the drawer asks per payment when
+   there are several; with one payment nothing changes. */
+function refundTargets(d){
+  const live=(d?.refunds||[]).filter(r=>REFUND_SETTLED.includes(r.status)||REFUND_IN_FLIGHT.includes(r.status));
+  return (d?.payments||[]).filter(p=>p.status==='succeeded').map(p=>({
+    id:p.id,purpose:p.purpose,amount:p.amount,
+    remaining:Math.max(0,p.amount-live.filter(r=>r.paymentId===p.id).reduce((n,r)=>n+r.amountCents,0)),
+  }));
+}
+const REFUND_PAYMENT_NAME={deposit:'deposit',balance:'balance'};
+
 /* ── the two irreversible actions ───────────────────────────────────────────────────────────
    Cancel and Refund, side by side at the foot of the sheet (owner, 2026-08-02). Both are
    founder-only via payments:reverse — finance can still record money and read refund history,
@@ -3710,6 +3722,14 @@ function refundRequestFor(t, d){
   if(g.blocked){
     return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
       <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
+  }
+  const targets=refundTargets(d);
+  if(targets.length>1){
+    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${REFUND_PAYMENT_NAME[p.purpose]||'payment'} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
+    return `<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
+    </label>
+    <div class="reverse-actions">${buttons}</div>`;
   }
   /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
      reason typed for a cancellation then left behind would be silently attached to a refund —
@@ -4509,7 +4529,11 @@ document.addEventListener('click',async e=>{
       /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
          amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
-      const amountCents=s.remaining;
+      /* A button that names a payment refunds that payment's remainder (deposit bookings, several
+         captures); the plain button refunds the whole booking's remainder as before. */
+      const paymentId=el.dataset.paymentId||'';
+      const target=paymentId?refundTargets(state.detailData).find(p=>p.id===paymentId):null;
+      const amountCents=target?target.remaining:s.remaining;
       const reasonEl=$('#refundreason');
       const reason=((reasonEl&&reasonEl.value)||'').trim();
       if(!amountCents){toast('Nothing left to refund','error');break;}
@@ -4533,7 +4557,7 @@ document.addEventListener('click',async e=>{
       if(!confirm(ask))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{
-        const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});
+        const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason,...(paymentId?{paymentId}:{})});
         clearInput(reasonEl);
         if(!willFire){await reloadRefundDetail(id);toast('Refund requested — no money has moved yet');break;}
         /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the

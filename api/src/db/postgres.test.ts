@@ -807,6 +807,31 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     ).rejects.toMatchObject({ code: 'refund_already_confirmed' });
   });
 
+  it('refunds one named payment of a deposit + balance pair, capped at that payment', async () => {
+    const refunds = new PostgresRefundRepo(db);
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 1_000 });
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 1_000,
+      currency: booking.currency, idempotencyKey: `refund-pair-d-${booking.id}`, purpose: 'deposit',
+    });
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `refund-pair-b-${booking.id}`, purpose: 'balance',
+    });
+    await payments.markSucceeded(deposit.id);
+    await payments.markSucceeded(balance.id);
+    const ask = (amountCents: number, paymentId?: string) =>
+      refunds.request({ bookingId: booking.id, amountCents, currency: 'USD', reason: 'x', requestedBy: 'founder@test', paymentId });
+
+    await expect(ask(100)).rejects.toMatchObject({ code: 'payment_ambiguous' });
+    await expect(ask(1_001, deposit.id)).rejects.toMatchObject({ code: 'refund_exceeds_payment' });
+    await expect(ask(100, randomUUID())).rejects.toMatchObject({ code: 'payment_not_captured' });
+    const ok = await ask(1_000, deposit.id);
+    expect(ok.paymentId).toBe(deposit.id);
+    await expect(ask(1, deposit.id)).rejects.toMatchObject({ code: 'refund_exceeds_payment' });
+    expect((await ask(3_000, balance.id)).paymentId).toBe(balance.id);
+  });
+
   it('atomically records a full-refund transition and rolls both ledgers back on failure', async () => {
     const checkoutRequestId = randomUUID();
     const paidRequestId = randomUUID();
