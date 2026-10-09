@@ -4,8 +4,9 @@ export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'quote:approve_simple' | 'margin:view' | 'bookings:operate'
   | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view'
-  | 'discount:apply_manual' | 'promo_codes:manage' | 'rates:manage';
+  | 'discount:apply_manual' | 'promo_codes:manage' | 'rates:manage' | 'experiences:manage';
 
+// experiences:manage — the partner-experience catalogue (spec 2026-10-06 D14). Display-only price, and the owner wants ops to maintain it.
 // The capability matrix as data (spec §3). Adding a capability is one row here.
 // rates:manage — saving the founder's rate revisions from the ops Rates page (spec 2026-09-26):
 // every customer price moves with it. Founder only, the same class as promo_codes:manage.
@@ -28,9 +29,9 @@ export type OpsAction =
 // the per-quote flag, never on `caps.includes('quote:approve_simple')`, which would offer the
 // button on every quote including the ones the predicate refuses.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual', 'promo_codes:manage', 'rates:manage']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual', 'promo_codes:manage', 'rates:manage', 'experiences:manage']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
-  ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read']),
+  ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read', 'experiences:manage']),
   system: new Set(['admin:jobs']),
 };
 
