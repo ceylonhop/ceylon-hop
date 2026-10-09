@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed';
+// Deposits (spec 2026-10-07): which part of the sale a payment is. 'full' for every booking that
+// pays once — every row before the deposit feature.
+export type PaymentPurpose = 'full' | 'deposit' | 'balance';
 
 export interface NewPayment {
   bookingId: string;
@@ -9,11 +12,13 @@ export interface NewPayment {
   amount: number;
   currency: string;
   idempotencyKey: string;
+  purpose?: PaymentPurpose; // omitted = 'full'
 }
 
-export interface Payment extends NewPayment {
+export interface Payment extends Omit<NewPayment, 'purpose'> {
   id: string;
   status: PaymentStatus;
+  purpose: PaymentPurpose;
   // 0055 — how many checkouts were started against this row and when the last one was. A retry
   // reuses the row (idempotent per booking), so before this the count was invisible.
   attemptCount: number;
@@ -102,6 +107,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     if (existing) return existing;
     const payment: InternalPaymentRecord = {
       ...p,
+      purpose: p.purpose ?? 'full',
       id: randomUUID(),
       status: 'pending',
       attemptCount: 0,
@@ -254,6 +260,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       currency: payment.currency,
       idempotencyKey: payment.idempotencyKey,
       status: payment.status,
+      purpose: payment.purpose,
       attemptCount: payment.attemptCount,
       lastAttemptAt: payment.lastAttemptAt ? new Date(payment.lastAttemptAt) : null,
     };
