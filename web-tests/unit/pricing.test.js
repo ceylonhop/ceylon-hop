@@ -164,10 +164,10 @@ describe('tripQuote (multi-stop)', () => {
 });
 
 describe('chauffeur + deposit constants (engine parity)', () => {
-  it('deposit is 10% capped at $50, chauffeur day fee is $31.05', () => {
-    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 3105 (sell)
+  it('deposit is max(10%, $50) from $150, chauffeur day fee is $31.05', () => {
+    // engine: RATE_CARD.deposit = { pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 }, chauffeur.dayRateCents = 3105 (sell)
     expect(T.DEPOSIT_PCT).toBe(0.10);
-    expect(T.DEPOSIT_CAP).toBe(50);
+    expect(T.DEPOSIT_MIN).toBe(50);
     expect(T.CHAUFFEUR_DAY_FEE).toBe(31.05);
   });
 
@@ -208,7 +208,7 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
 
   it('sources add-on prices, billable-km logic and deposit from shared helpers/constants (no literals)', () => {
     // add-on prices come from the generated EXTRAS table, billable km from T.billableKm, deposit
-    // from DEPOSIT_PCT/CAP — no hand-typed copies that could drift from api/src/quote/rateCard.ts.
+    // from DEPOSIT_PCT/MIN — no hand-typed copies that could drift from api/src/quote/rateCard.ts.
     expect(src).toMatch(/window\.TRANSFERS\.EXTRAS/);
     expect(src).toMatch(/T\.billableKm/);
     expect(src).toMatch(/window\.TRANSFERS\.DEPOSIT_PCT/);

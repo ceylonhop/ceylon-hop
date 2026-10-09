@@ -45,4 +45,30 @@ describe.skipIf(!TEST_URL)('PostgresPaymentRepo.touchAttempt (integration)', () 
     // The bookkeeping never touches settlement.
     expect(after!.status).toBe('pending');
   });
+
+  it('round-trips purpose: omitted reads back as full, balance stays balance', async () => {
+    const booking = await bookings.create({
+      mode: 'single',
+      input: {
+        from: 'Colombo Airport (CMB)', to: 'Ella', date: futureIsoDate(30), time: '09:00', vehicleType: 'car',
+        adults: 2, children: 0, bags: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 20000, amountDueNow: 5000, currency: 'USD',
+    });
+    await payments.create({
+      bookingId: booking.id, provider: 'fake', orderId: `${booking.reference}-a`, amount: 5000, currency: 'USD',
+      idempotencyKey: `purpose-full:${booking.id}`,
+    });
+    await payments.create({
+      bookingId: booking.id, provider: 'fake', orderId: `${booking.reference}-b`, amount: 15000, currency: 'USD',
+      idempotencyKey: `purpose-balance:${booking.id}`, purpose: 'balance',
+    });
+    const byBooking = await payments.findByBookingId(booking.id);
+    expect(byBooking.map((p) => [p.orderId, p.purpose]).sort()).toEqual([
+      [`${booking.reference}-a`, 'full'],
+      [`${booking.reference}-b`, 'balance'],
+    ]);
+    expect((await payments.findByOrderId(`${booking.reference}-b`))!.purpose).toBe('balance');
+  });
 });
