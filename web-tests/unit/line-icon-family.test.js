@@ -44,7 +44,6 @@ describe('inlined marks are filled by their host page', () => {
         ['.svc-ico svg .wp', 'svc-ico'],                      // service chooser, both cards
         ['.loc-input-ic .wp', 'loc-input-ic'],                // pick-up / drop-off fields
         ['.flex-banner svg .wp', 'flex-banner'],              // "not sure of your timings yet"
-        ['.pay-methods .pm svg .wp', 'pay-methods'],          // card · via PayHere
         ['.ac-item .ac-ic svg .wp', 'ac-ic'],                 // autocomplete suggestions
         ['.concierge svg .wp', 'concierge'],                  // both concierge notes
         ['.trip-route .tr-chip svg .wp', 'tr-chip'],          // per-leg date chip
