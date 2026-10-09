@@ -61,6 +61,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .tot.tot-disc .v{color:var(--accent-deep)}
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
 
+  /* The deposit-or-full choice (spec 2026-10-07 §5.2): two option cards above the pay button,
+     only on a link the server marked eligible. Same card shape as .pp-help / .pp-expect, with the
+     accent ring the form fields use on focus; the selected card carries it. */
+  .pay-opts{border:0;margin:14px 0 0;padding:0;min-width:0}
+  .pay-opts legend{padding:0;margin:0 0 7px;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+  .pay-opt{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .pay-opt+.pay-opt{margin-top:8px}
+  .pay-opt input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
+  .pay-opt.is-on{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12)}
+  .pay-opt:focus-within{border-color:var(--accent)}
+  .pay-opt .po-main{flex:1;min-width:0;display:block}
+  .pay-opt .po-main b{display:block;font-size:.9rem;color:var(--ink)}
+  .pay-opt .po-main small{display:block;margin-top:2px;font-size:.76rem;line-height:1.4;color:var(--ink-soft)}
+  .pay-opt .po-amt{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink);white-space:nowrap}
+  .pay-opt .po-amt small{display:block;text-align:right;font-family:var(--body);font-weight:600;font-size:.68rem;color:var(--ink-faint)}
+  @media (prefers-reduced-motion:reduce){ .pay-opt{transition:none} }
+
   /* Follow-along footer. Copied from quote.css, which this page does not load. Deliberately
      quiet — muted until hover: the page's job is the red CTA, and a louder row competes with
      it for the same glance. */
@@ -237,6 +254,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var booking = null;      // { bookingId, checkoutToken } once /start succeeds
   var typed = null;        // raw form values, so a payment failure restores what they typed
   var submitting = false;  // one checkout per press — see startPayment
+  // Deposit or full, when the server offered a choice (view.deposit). Full is the default lane and
+  // the only one a link with no deposit can ever be on.
+  var payChoice = 'full';
 
   // ── funnel + failure reporting (2026-08-07) ───────────────────────────────────────────
   // This page had NO client-side instrumentation at all, which is why a payment that died
@@ -292,6 +312,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       sessionStorage.setItem(seen, String(reference || '1'));
     } catch (e) { /* private mode — better a possible double than a missing purchase */ }
     var p = withMoney({ transaction_id: reference || '' });
+    // The value is what was actually charged. The stash wins over /view's trip total: a deposit
+    // payer whose form was restored (so /view has since been re-fetched) still paid the deposit.
+    if (stashedCents) p.value = Math.round(stashedCents) / 100;
     if (stashedItem) p.items = [Object.assign({}, stashedItem, { price: p.value, quantity: 1 })];
     track('purchase', p);
   }
@@ -325,10 +348,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var STORE = 'ch_pay_v1';
   function remember(){
     // `cents` rides along for the same reason `typed` does: the return leg renders before
-    // /view has been re-fetched, so without it a `purchase` would report a value of zero.
+    // /view has been re-fetched, so without it a `purchase` would report a value of zero. It is
+    // what is being CHARGED — the deposit when that was chosen, not the trip total.
     try {
       sessionStorage.setItem(STORE, JSON.stringify({
-        t: t, typed: typed, cents: (data && data.totals ? Number(data.totals.cents || 0) : 0),
+        t: t, typed: typed, cents: chargedCents(data, payChoice),
         item: (booking && booking.ga4Item) || null,
       }));
     }
@@ -569,8 +593,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + totalsHtml(c, tt, data.discount)
-      + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
-      + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
+      + payOptionsHtml(data, payChoice)
+      + '<button class="btn btn-cta pp-cta" id="paybtn">' + esc(payCtaText(data, payChoice)) + '</button>'
+      + '<div class="paysub" id="paysub">' + esc(paySubText(data, payChoice)) + '</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
       + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
       // The cancellation terms belong on the screen where the decision is made (owner,
@@ -585,6 +610,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="pp-help" id="payhelp" hidden></div>'
       + '</div></div>' + waLine();
     track('view_item', withMoney({ item_category: String((data.copy && data.copy.product) || 'quote') }));
+    wirePayOptions();
     document.getElementById('paybtn').addEventListener('click', function(){
       track('begin_checkout', withMoney());
       renderDetails();
@@ -629,6 +655,56 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!coverage) return '';
     return 'This covers ' + coverage.soldLegs + ' of the ' + coverage.totalLegs
       + ' legs in your itinerary.';
+  }
+
+  /* Deposit or full (spec 2026-10-07 §5.2). The server sends `deposit` ONLY for a whole-trip link
+     on an eligible quote; without it every helper below collapses to today's page and copy.
+     Pure functions of the /view payload and the choice, so they are extracted and tested by
+     web-tests/unit/pay-page-deposit.test.js. The client never sends an amount — /start recomputes
+     the deposit — these only decide what is shown and what the GA4 `purchase` reports. */
+  function chargedCents(view, choice) {
+    if (view && view.deposit && choice === 'deposit') return Number(view.deposit.cents) || 0;
+    return view && view.totals ? Number(view.totals.cents || 0) : 0;
+  }
+  function payOptionsHtml(view, choice) {
+    if (!view || !view.deposit) return '';
+    var d = view.deposit;
+    function card(value, title, note, amount, sub) {
+      var on = choice === value;
+      return '<label class="pay-opt' + (on ? ' is-on' : '') + '"><input type="radio" name="paychoice" value="' + value + '"' + (on ? ' checked' : '') + ' />'
+        + '<span class="po-main"><b>' + esc(title) + '</b><small>' + esc(note) + '</small></span>'
+        + '<span class="po-amt">' + esc(amount) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></label>';
+    }
+    return '<fieldset class="pay-opts"><legend>How would you like to pay?</legend>'
+      + card('full', 'Pay in full', 'Nothing more to pay', view.totals.usd, '')
+      + card('deposit', 'Pay a deposit', 'balance ' + d.balanceUsd + ' any time before your trip', d.usd, 'now')
+      + '</fieldset>';
+  }
+  function payCtaText(view, choice) {
+    if (!view || !view.deposit) return 'Pay with PayHere';
+    return choice === 'deposit' ? 'Pay ' + view.deposit.usd + ' deposit with PayHere' : 'Pay ' + view.totals.usd + ' with PayHere';
+  }
+  function paySubText(view, choice) {
+    if (view && view.deposit && choice === 'deposit') {
+      return 'Pay securely to confirm. ' + view.deposit.usd + ' now, then ' + view.deposit.balanceUsd + ' any time before your trip — no extra fees.';
+    }
+    return 'Pay securely to confirm. ' + view.totals.usd + ' — no extra fees.';
+  }
+  // Wires the radios (when there are any) and keeps the payable screen's button and line in step.
+  function wirePayOptions() {
+    var radios = document.querySelectorAll('input[name=paychoice]');
+    for (var i = 0; i < radios.length; i++) {
+      radios[i].addEventListener('change', function () {
+        payChoice = this.value === 'deposit' ? 'deposit' : 'full';
+        var cards = document.querySelectorAll('.pay-opt');
+        for (var j = 0; j < cards.length; j++) {
+          cards[j].classList.toggle('is-on', cards[j].querySelector('input').checked);
+        }
+        var btn = document.getElementById('paybtn'), sub = document.getElementById('paysub');
+        if (btn) btn.textContent = payCtaText(data, payChoice);
+        if (sub) sub.textContent = paySubText(data, payChoice);
+      });
+    }
   }
 
   /* The total, and — when the founder negotiated one — what came off it (owner, 2026-08-10:
@@ -799,6 +875,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + totalsHtml(data.copy, data.totals, data.discount)
+      + payOptionsHtml(data, payChoice)
       + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '<div class="pp-help" id="payhelp" hidden></div>'
@@ -843,6 +920,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var terms = document.getElementById('f-terms'), go = document.getElementById('gobtn');
     terms.addEventListener('change', function(){ go.classList.toggle('is-off', !terms.checked); });
     go.addEventListener('click', startPayment);
+    wirePayOptions();
   }
 
   // Shown in the instant between form.submit() and the browser leaving for payhere.lk. It is
@@ -1005,9 +1083,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // clicks in the same frame, before this repaint removes the button at all.
     setBusy(document.getElementById('gobtn'), true, 'Opening secure payment…');
     renderLoading();
+    // The customer's choice rides only when the server offered one — otherwise this is exactly the
+    // body an older page sent. A choice the server would refuse comes back 409 deposit_ineligible.
+    var startBody = { t: t, customer: customer, billing: billing, termsAccepted: true };
+    if (data && data.deposit) startBody.payment = payChoice;
     fetchJson(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
+      body: JSON.stringify(startBody),
     }).then(function(r){
       if (r.ok) return r.json();
       return r.json().catch(function(){ return {}; }).then(function(x){
@@ -1016,6 +1098,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         track('payment_start_failed', withMoney({ reason: String(x.error || ('http_' + r.status)) }));
         if (x.error === 'quote_revised') { renderRevised(); throw { handled: true }; }
         if (x.error === 'already_paid') { load(); throw { handled: true }; }
+        // The deposit was offered and then refused (the quote changed under them): take the offer
+        // away and let them pay in full from a fresh read rather than strand the form.
+        if (x.error === 'deposit_ineligible') { payChoice = 'full'; load(); throw { handled: true }; }
         report('pay/start refused', new Error(String(x.error || r.status)));
         throw new Error(x.message || 'We couldn’t start your payment just now — no charge was made.');
       });
@@ -1201,6 +1286,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       return r.json();
     }).then(function(v){
       data = v;
+      // Back from a failed attempt: put the choice back where it was. The stash holds the cents
+      // that were being charged, so a match with the deposit means the deposit was the choice.
+      payChoice = (stashedCents && v.deposit && stashedCents === Number(v.deposit.cents)) ? 'deposit' : 'full';
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
       if (v.state === 'revised') return renderRevised();
       if (v.state !== 'payable') return renderUnavailable();
