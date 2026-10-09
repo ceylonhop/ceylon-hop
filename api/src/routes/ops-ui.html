@@ -2504,7 +2504,7 @@ function ticketRow(t,i){
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
-      ${t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
+      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
       <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
     </div>
   </div>`;

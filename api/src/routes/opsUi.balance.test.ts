@@ -63,7 +63,7 @@ describe('the ticket carries the ledger figures', () => {
 
 describe('ops shell: balance wiring', () => {
   it('the list row shows a "Balance $X" pill only when a balance is owed', () => {
-    expect(body).toMatch(/t\.balance>0\?`<span class="pill pill-bal"[^`]*Balance \$\{money\(\{amount:t\.balance/);
+    expect(body).toMatch(/t\.paid&&t\.balance>0\?`<span class="pill pill-bal"[^`]*Balance \$\{money\(\{amount:t\.balance/);
   });
   it('the drawer shows Paid so far / Balance due and the "Deposit paid" status', () => {
     expect(body).toContain('Paid so far');

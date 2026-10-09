@@ -50,6 +50,14 @@ test('a fully paid row has no balance pill', async ({ page }) => {
   await expect(page.locator('.tk .pill-bal')).toHaveCount(0);
 });
 
+// Before any payment balanceDueCents is total − amountDueNow (spec §4), so a deposit attempt the
+// customer abandoned carries balanceCents too. Nothing is paid — no "Balance" pill (review #959).
+test('an unpaid deposit attempt has no balance pill', async ({ page }) => {
+  await boot(page, { theRow: row({ stage: 'awaiting_payment', paymentStatus: 'unpaid', paidCents: 0, balanceCents: 16900 }), open: false });
+  await expect(page.locator('.tk')).toHaveCount(1);
+  await expect(page.locator('.tk .pill-bal')).toHaveCount(0);
+});
+
 test('a balance still open on the day of travel is an attention reason on the row', async ({ page }) => {
   await boot(page, { theRow: row({ travelDate: isoOf(new Date()) }), open: false });
   await expect(page.locator('.tk .reason')).toHaveText('Balance due — travels today');
