@@ -235,7 +235,8 @@ export async function reconcileBookingTracking(
   try {
     const bookings = await deps.bookings.list();
     const payments = await deps.payments.findByBookingIds(bookings.map((booking) => booking.id));
-    const withEvidence = await Promise.all(payments.filter((payment) => payment.status === 'succeeded').map(async (payment) => ({
+    // A balance never moves the booking — the deposit did (spec 2026-10-07).
+    const withEvidence = await Promise.all(payments.filter((payment) => payment.status === 'succeeded' && payment.purpose !== 'balance').map(async (payment) => ({
       payment,
       evidence: await deps.payments.provenanceFor(payment.id),
     })));

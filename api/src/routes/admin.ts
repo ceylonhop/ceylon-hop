@@ -209,6 +209,7 @@ export function adminRoutes(deps: {
       amountCents: z.number().int().positive(),
       currency: z.string().length(3),
       reason: z.string().trim().min(1).max(500),
+      paymentId: z.string().uuid().optional(),
     })
     .strict();
   const RefundConfirm = z.object({ gatewayRef: z.string().trim().min(1).max(200) }).strict();
