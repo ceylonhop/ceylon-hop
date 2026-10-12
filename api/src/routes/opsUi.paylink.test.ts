@@ -96,3 +96,51 @@ describe('ops shell: the estimate chip names the deposit option', () => {
     expect(body).toContain('no balance due after checkout');
   });
 });
+
+// Pay link for either option of a "both" quote (spec 2026-10-12 §4.4). The chooser is a second
+// way INTO the same mint, not a second mint: one function, one refusal mapper.
+describe('ops shell: the "both" quote payment-link chooser', () => {
+  it('opens from payLinkPress only when the quote carries an alternative, and leaves the plain path alone', () => {
+    const press = body.slice(body.indexOf('async function payLinkPress()'));
+    const fn = press.slice(0, press.indexOf('\n}\n'));
+    // The chooser branch comes first, gated on the server's payOptions…
+    expect(fn).toMatch(/payServiceOptions\(state\.payOptions\)\.length/);
+    expect(fn.indexOf('openPayChooser()')).toBeGreaterThan(-1);
+    expect(fn.indexOf('openPayChooser()')).toBeLessThan(fn.indexOf('if (_payLink) { copyPayLink(); return; }'));
+    // …and the existing copy-synchronously-then-mint lines are still there, unchanged.
+    expect(fn).toContain('if (_payLink) { copyPayLink(); return; }');
+    expect(fn).toContain('await mintPayLink();');
+  });
+
+  it('delegates the pick and the cancel through the action switch', () => {
+    expect(body).toContain("action === 'payChoose'");
+    expect(body).toContain("action === 'cancelPayChoose'");
+    expect(body).toContain('data-action="payChoose"');
+    expect(body).toContain('data-action="cancelPayChoose"');
+    // No inline handler — onclick= is dead under the page CSP.
+    expect(body).not.toMatch(/onclick="pickPayService/);
+  });
+
+  it('mints through the SAME mintPayLink, sending only the service — never an amount', () => {
+    expect(body).toContain('async function mintPayLink(service)');
+    expect(body).toMatch(/JSON\.stringify\(\{ service: service \}\)/);
+    expect(body).toMatch(/await mintPayLink\(service\)/);
+    // The refusal mapper still has exactly its two callers (bodyless/service mint + part picker).
+    const callers = body.split('\n').filter((l) => l.includes('showToast(payLinkRefusal(err,'));
+    expect(callers.length).toBe(2);
+  });
+
+  it('names the product in the toast and the sandbox warning, and says what a refusal means', () => {
+    expect(body).toContain(' payment link copied');
+    expect(body).toMatch(/err\.reason === 'no_alternative'/);
+  });
+
+  it('warns, never blocks, when a payment was started on the current link (D5)', () => {
+    expect(body).toContain('A payment was started on the current link — it is not cancelled by switching.');
+  });
+
+  it('keeps Part of trip as its own point-to-point-only path', () => {
+    expect(body).toContain("action === 'openPayPart'");
+    expect(body).toContain("'/pay-lines'");
+  });
+});
