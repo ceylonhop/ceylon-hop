@@ -10,6 +10,7 @@ import { signQuotePayToken, verifyCheckoutToken } from '../lib/bookingToken';
 import { signSession } from '../lib/opsAuth';
 import { futureIsoDate } from '../testSupport/dates';
 import { depositFor } from '../quote/extrasDeposit';
+import { claimWonQuote } from '../services/quoteOutcome';
 
 // The customer-facing half of pay links (spec §3–§5). Everything here is reachable by
 // anyone holding the URL, so the two properties that matter most are pinned hard:
@@ -1429,6 +1430,22 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
     expect(await bookings.list()).toHaveLength(0);
   });
 
+  // One link (quote + revision + seq) is ONE chargeable booking however many times Continue is tapped
+  // — including when the link was re-minted after a booking already existed from the previous one.
+  it('re-minting to the chauffeur link after a point-to-point booking: three taps are ONE booking', async () => {
+    const c = await bothQuote({ link: false });
+    const earlier = (await (await start(c.app, c.t)).json()).bookingId; // started on the point-to-point link
+    await switchLink(c, 'chauffeur');
+    const t = signQuotePayToken(c.q.id, c.q.revision, SECRET, 7);
+    const taps = [await start(c.app, t), await start(c.app, t), await start(c.app, t)];
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(earlier);
+    expect(taps.map((r) => r.status)).toEqual([201, 200, 200]);
+    expect(await c.bookings.list()).toHaveLength(2);
+    expect((await c.bookings.get(ids[0]))!.total).toBe(c.altTotal);
+  });
+
   it('a "both" quote with NO service selection is untouched: point-to-point copy and total, no deposit', async () => {
     const { app, t, pointTotal } = await bothQuote({ link: false });
     const body = await (await view(app, t)).json();
@@ -1436,5 +1453,149 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
     expect(body.copy.product).not.toBe('chauffeur');
     expect(body.totals.cents).toBe(pointTotal);
     expect(body).not.toHaveProperty('deposit');
+  });
+});
+
+// ── One booking per payment link (quote + revision + seq), however many times Continue is tapped ──
+describe('POST /quotes/pay/start — a re-minted link', () => {
+  async function remintedPartial() {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { quote, token } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    const earlier = (await (await start(app, token)).json()).bookingId; // booking from the FIRST link
+    const sel = { legIndexes: [0], extraIndexes: [] };
+    await quotes.patch(quote.id, { payLinkSelection: sel, soldCents: selectionAmountCents(payLines(quote), sel), payLinkSeq: 2 });
+    return { quotes, bookings, app, quote, earlier, token, token2: signQuotePayToken(quote.id, quote.revision, SECRET, 2) };
+  }
+
+  it('three taps on a part-of-trip link re-minted after a started booking are ONE new booking', async () => {
+    const { bookings, app, earlier, token2 } = await remintedPartial();
+    const taps = [await start(app, token2), await start(app, token2), await start(app, token2)];
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(earlier);
+    expect(taps.map((r) => r.status)).toEqual([201, 200, 200]);
+    expect(await bookings.list()).toHaveLength(2);
+  });
+
+  // A general idempotency check (the repo's key lookup is atomic), NOT a guard for the derived-key fix
+  // above: it passes with the old convertedBookingId fallback too.
+  it('concurrent taps on a re-minted link are still one booking (general idempotency)', async () => {
+    const { bookings, app, token2 } = await remintedPartial();
+    const taps = await Promise.all([start(app, token2), start(app, token2), start(app, token2)]);
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(await bookings.list()).toHaveLength(2);
+  });
+
+  it('a booking cancelled on the CURRENT link is replaced by ONE booking, stable across further taps', async () => {
+    const { bookings, app, token2 } = await remintedPartial();
+    const first = (await (await start(app, token2)).json()).bookingId;
+    await bookings.setStatus(first, 'cancelled');
+    const ids = [] as string[];
+    for (let i = 0; i < 3; i += 1) ids.push((await (await start(app, token2)).json()).bookingId);
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(first);
+    expect((await bookings.get(ids[0]))!.status).toBe('payment_pending');
+    expect(await bookings.list()).toHaveLength(3); // the first link's, the cancelled one, its replacement
+  });
+
+  // claimWonQuote finds the quote through convertedBookingId, which /start moves to the booking it
+  // creates. With one booking per link the booking every tap handed out IS that booking.
+  it('paying the booking the first tap returned still wins the quote after later taps', async () => {
+    const { quotes, app, quote, token2 } = await remintedPartial();
+    const first = (await (await start(app, token2)).json()).bookingId;
+    await start(app, token2);
+    await start(app, token2);
+    expect((await quotes.get(quote.id))!.convertedBookingId).toBe(first);
+    expect(await claimWonQuote(first, { quotes })).toBe(true);
+    expect((await quotes.get(quote.id))!.status).toBe('won');
+  });
+
+  // NOT changed here (it is the "a payment was started on the current link" race the spec accepts as
+  // D5): the quote points at ONE booking, the latest link's. The earlier link's booking, paid later,
+  // is not found through it, so it cannot win the quote. What the two customers see meanwhile:
+  // the newer link stays payable (a second-payment path; settlement's double-capture alert applies)
+  // and the customer who paid the earlier booking, reopening their old link, sees `revised`.
+  it('KNOWN: the earlier link’s booking, paid after a newer link was started, does not claim the quote', async () => {
+    const { quotes, bookings, app, quote, earlier, token, token2 } = await remintedPartial();
+    await start(app, token2);
+    expect((await bookings.get(earlier))!.status).toBe('payment_pending');
+    expect(await claimWonQuote(earlier, { quotes })).toBe(false);
+    expect((await quotes.get(quote.id))!.status).not.toBe('won');
+    expect((await (await view(app, token2)).json()).state).toBe('payable'); // the newer link is still open
+    expect((await (await view(app, token)).json()).state).toBe('revised'); // the old link's holder sees "revised"
+  });
+});
+
+// A replacement booking can be cancelled too. The walk through `:after:` keys must reach the first
+// chargeable one (or create the next), on a link that was never re-minted AND on one that was.
+describe('POST /quotes/pay/start — repeated cancellations on one link', () => {
+  async function tapCancelThrice(app: App, bookings: InMemoryBookingRepo, t: string) {
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i += 1) { // two bookings, each cancelled by ops
+      const id = (await (await start(app, t)).json()).bookingId as string;
+      ids.push(id);
+      await bookings.setStatus(id, 'cancelled');
+    }
+    const third = [] as string[];
+    for (let i = 0; i < 3; i += 1) {
+      const res = await start(app, t);
+      expect(res.status).toBe(i === 0 ? 201 : 200);
+      third.push((await res.json()).bookingId);
+    }
+    return { ids, third };
+  }
+
+  it('a never-re-minted link whose booking was cancelled TWICE still yields a third, chargeable booking (stable across taps)', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const { ids, third } = await tapCancelThrice(app, bookings, signQuotePayToken(q.id, q.revision, SECRET));
+    expect(new Set(third).size).toBe(1);
+    expect(ids).not.toContain(third[0]);
+    expect((await bookings.get(third[0]))!.status).toBe('payment_pending');
+    expect(await bookings.list()).toHaveLength(3);
+    expect((await quotes.get(q.id))!.convertedBookingId).toBe(third[0]);
+  });
+
+  it('stops minting after a bounded number of cancellations (needs a person), without a 500', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    // A chain of 21 cancelled bookings under this link's keys (built directly: /start is rate-limited).
+    let key = `pay:quote:${q.id}:r${q.revision}:s0`;
+    for (let i = 0; i < 21; i += 1) {
+      const b = await bookings.create({
+        mode: 'single', total: 21900, amountDueNow: 21900, currency: 'USD',
+        input: { from: 'A', to: 'B', vehicleType: 'car', adults: 1, children: 0, bags: 0, date: futureIsoDate(30), time: '09:00',
+          customer: { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' } },
+      }, { idempotencyKey: key });
+      await bookings.setStatus(b.id, 'cancelled');
+      key = `pay:quote:${q.id}:r${q.revision}:s0:after:${b.id}`;
+    }
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+    expect(await bookings.list()).toHaveLength(21);
+  });
+
+  it('the same on a re-minted link', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { quote, token } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    await start(app, token); // the first link's booking
+    const sel = { legIndexes: [0], extraIndexes: [] };
+    await quotes.patch(quote.id, { payLinkSelection: sel, soldCents: selectionAmountCents(payLines(quote), sel), payLinkSeq: 2 });
+    const { ids, third } = await tapCancelThrice(app, bookings, signQuotePayToken(quote.id, quote.revision, SECRET, 2));
+    expect(new Set(third).size).toBe(1);
+    expect(ids).not.toContain(third[0]);
+    expect((await bookings.get(third[0]))!.status).toBe('payment_pending');
+    expect(await bookings.list()).toHaveLength(4); // earlier link's + two cancelled + the live one
   });
 });

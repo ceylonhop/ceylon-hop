@@ -50,6 +50,9 @@ const StartSchema = z.object({
   payment: z.enum(['full', 'deposit']).optional(),
 }).strict();
 
+// How many times one pay link's booking may be cancelled and replaced before /start stops minting more.
+const MAX_REPLACEMENTS = 20;
+
 const BalanceSchema = z.object({ t: z.string() }).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
@@ -352,7 +355,6 @@ export function quotePayRoutes(deps: {
     // a different set of legs. (`Booking` does not expose its own idempotency key, so comparing
     // after the fact is not an option either.)
     const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
-    const found = await deps.bookings.findByIdempotencyKey(baseKey);
     // ONE path for "an existing booking that can still be charged": the one under this selection's
     // base key, or — after a cancellation — its replacement under the `:after:` key. Both must
     // re-record the payer AND the deposit-or-full choice; handing the replacement back untouched
@@ -381,18 +383,24 @@ export function quotePayRoutes(deps: {
       );
     }
     const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
-    if (found && isChargeable(found)) return resume(found);
-    // Derived from whatever booking already exists — this selection's dead one, or the previous
-    // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
-    // cancellation (or the same re-pick) still yields ONE new booking rather than two.
-    const prior =
-      found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
-    const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
-    // …and that one booking, once it exists and is still chargeable, is a resume like any other.
-    if (idempotencyKey !== baseKey) {
-      const replacement = await deps.bookings.findByIdempotencyKey(idempotencyKey);
-      if (replacement && isChargeable(replacement)) return resume(replacement);
+    // Walk this link's chain of bookings: baseKey, then `:after:<dead booking>` for each booking that
+    // can no longer be charged. Resume the first chargeable one; otherwise create under the key the
+    // walk ended on. The chain is derived from THIS link's own bookings only — never from
+    // `convertedBookingId`, which /start moves to every booking it creates (it used to be the
+    // fallback, so on a re-minted link the derived key changed on every tap: three taps, three
+    // bookings, only the last reachable from the quote). Each cancelled booking adds one link to the
+    // chain, so a double tap after a cancellation (the Q-2J358 case) still yields ONE replacement,
+    // and a replacement that is itself cancelled is replaced in turn instead of bricking the link.
+    let key = baseKey;
+    let existing = await deps.bookings.findByIdempotencyKey(key);
+    for (let hops = 0; existing && !isChargeable(existing); hops += 1) {
+      // A link ops has cancelled this many times needs a person, not another booking.
+      if (hops >= MAX_REPLACEMENTS) return c.json({ error: 'quote_unavailable' }, 409);
+      key = `${baseKey}:after:${existing.id}`;
+      existing = await deps.bookings.findByIdempotencyKey(key);
     }
+    if (existing) return resume(existing);
+    const idempotencyKey = key;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
