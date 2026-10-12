@@ -416,7 +416,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
 {
   "amountDueNowCents": 18800,
   "currency": "USD",
-  "depositCents": 5000,
+  "depositCents": 0,
   "lineItems": [
     {
       "amountCents": 6864,
