@@ -25,7 +25,7 @@ Website checkout deposits come later, on the same rails.
 | Rule | Value |
 |---|---|
 | Deposit amount | **Fixed rule, not editable by ops:** `max(10% of total, $50)`, capped at the total. Rounded to whole cents (`Math.round`). |
-| Eligibility | Private transfers and chauffeur trips with **total ≥ $150**. Shared rides always pay in full. |
+| Eligibility | **Chauffeur trips only**, with **total ≥ $150**. Private transfers and shared rides always pay in full. *(Owner, 2026-10-12, testing on staging; was: private + chauffeur.)* |
 | Who chooses deposit or full | **The customer**, on the pay link (`pay.html`). Ops mints one ordinary pay link — there is no deposit mode or second link. *(2026-10-08; was: ops mints a deposit link.)* |
 | How the deposit is paid | **Card only**, on the pay link. Offered only when the link covers the **whole trip** (no part-of-trip selection) and the quote is eligible. |
 | How the balance is paid | **Card only**, from the **same pay link**: reopened after a deposit it shows what is paid and a "Pay balance" button. Ops resends that link by hand. *(2026-10-08; was: the manage page.)* The manage page keeps its read-only "Balance due" row and gets no button. |
@@ -266,3 +266,5 @@ deposits or balances · deposit on part-of-trip or shared-ride links.
 | First payment is always `REF` | Deposit attempts use `REF-D`, so switching choice never collides (§4). |
 | Balance paid on the **manage page**, sent on day one | Balance paid on the **same pay link**, any time; ops resends that link. Manage page: read-only row. |
 | Ops "Deposit link" button, "Copy balance link" (manage URL) | No new quote button; drawer "Copy pay link" (the quote's pay URL). |
+
+**2026-10-12 (owner, testing on staging):** deposits are chauffeur-only (§2); the screen after a deposit says "You're booked" and words a chauffeur balance as "due on your arrival day" (#961); the payable totals lead with the deposit once it is chosen (#960).
