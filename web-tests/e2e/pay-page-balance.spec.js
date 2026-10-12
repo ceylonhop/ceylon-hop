@@ -38,16 +38,63 @@ test('the balance state shows the trip, what is paid, what is left, and one Pay 
   await stubBalanceView(page);
   await page.goto(PAGE);
   await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Galle');
-  await expect(page.locator('.t-stub')).toContainText('Paid');
-  await expect(page.locator('.t-stub')).toContainText('$50.00');
-  await expect(page.locator('.t-stub')).toContainText('Balance');
-  await expect(page.locator('.t-stub')).toContainText('$169.00');
-  await expect(page.locator('.included')).toContainText('paid on 5 Oct 2026');
+  await expect(page.locator('.t-stub .tot-paid')).toContainText('Deposit paid · 5 Oct 2026');
+  await expect(page.locator('.t-stub .tot-paid .v')).toHaveText('$50.00');
+  await expect(page.locator('.t-stub .tot-final')).toContainText('Balance');
+  await expect(page.locator('.t-stub .tot-final .v')).toHaveText('$169.00');
   await expect(page.locator('#paybtn')).toHaveText('Pay balance');
   // No contact form, no terms checkbox, no deposit/full choice.
   await expect(page.locator('#f-terms')).toHaveCount(0);
   await expect(page.locator('#f-addr')).toHaveCount(0);
   await expect(page.locator('.pay-opt')).toHaveCount(0);
+});
+
+// Owner, 2026-10-12: right after paying a deposit the customer has just committed to the trip — the
+// screen must say "you're booked", show the trip and the reference, and make the balance calm.
+const CHAUFFEUR = {
+  ...BALANCE, title: 'Three days across Sri Lanka', totalUsd: '$299.00', balanceCents: 24900, balanceUsd: '$249.00',
+  reference: 'CH-5EXFW', firstName: 'Roshen',
+  copy: {
+    product: 'chauffeur', greetingName: 'Roshen', title: 'Three days across Sri Lanka', subtitle: '14–16 Nov · your own car & driver',
+    facts: [{ k: 'Trip', v: 'Colombo Airport (CMB) → Kandy' }, { k: 'Days', v: '3 with your driver' }, { k: 'Travellers', v: '2 · Car' }, { k: 'Starts', v: 'Sat 14 Nov' }],
+    legs: null, includedText: 'Vehicle & English-speaking driver for all 3 days.', totalLabel: 'Total · 3 days',
+  },
+};
+
+test('after a deposit the page says the customer is booked, with their trip and reference', async ({ page }) => {
+  await stubBalanceView(page, { state: 'balance', balance: CHAUFFEUR });
+  await page.goto(PAGE);
+  await expect(page.locator('.st-badge.ok')).toBeVisible();
+  await expect(page.locator('.st-title')).toHaveText('You’re booked, Roshen.');
+  await expect(page.locator('.st-sub')).toContainText('Your deposit is paid');
+  await expect(page.locator('.pp-title')).toHaveText('Three days across Sri Lanka');
+  await expect(page.locator('.ticket')).toContainText('14–16 Nov');
+  await expect(page.locator('.ticket')).toContainText('CH-5EXFW');
+  await expect(page.locator('.ticket')).toContainText('Sat 14 Nov');
+});
+
+test('a chauffeur balance is due on the arrival day, and paying now is optional', async ({ page }) => {
+  await stubBalanceView(page, { state: 'balance', balance: CHAUFFEUR });
+  await page.goto(PAGE);
+  await expect(page.locator('.t-stub .tot-final')).toContainText('due on your arrival day · Sat 14 Nov');
+  await expect(page.locator('.t-stub .tot-final .v')).toHaveText('$249.00');
+  await expect(page.locator('#paysub')).toContainText('No rush');
+  await expect(page.locator('#paybtn')).toHaveText('Pay balance');
+  // The paid figure outranks the quiet rows: same size or bigger than the trip total row.
+  const size = (sel) => page.locator(sel).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await size('.t-stub .tot-paid .v')).toBeGreaterThan(await size('.t-stub .tot-sub .v'));
+});
+
+test('a single transfer balance is due on the day of the transfer; an old-shape body still renders', async ({ page }) => {
+  await stubBalanceView(page, { state: 'balance', balance: { ...BALANCE, reference: 'CH-ABC12', firstName: null, copy: { product: 'single', title: BALANCE.title, subtitle: 'Saturday 8 August 2026', facts: [{ k: 'Travellers', v: '2' }], legs: null, includedText: '', totalLabel: 'Total' } } });
+  await page.goto(PAGE);
+  await expect(page.locator('.st-title')).toHaveText('You’re booked.');
+  await expect(page.locator('.t-stub .tot-final')).toContainText('due on the day of your transfer');
+  // No copy at all (an API one deploy behind): still a working balance page.
+  await stubBalanceView(page);
+  await page.goto(PAGE);
+  await expect(page.locator('#paybtn')).toHaveText('Pay balance');
+  await expect(page.locator('.t-stub .tot-final .v')).toHaveText('$169.00');
 });
 
 test('Pay balance posts /quotes/pay/balance, then the checkout with purpose:"balance" and the pay-link return', async ({ page }) => {

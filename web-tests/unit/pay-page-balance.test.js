@@ -18,22 +18,44 @@ function loadFn(signature) {
   // eslint-disable-next-line no-new-func
   return new Function('esc', 'return (' + m[0] + ')')(esc);
 }
-const balanceRowsHtml = loadFn('balanceRowsHtml(b)');
+const balanceRowsHtml = loadFn('balanceRowsHtml(b, on, due)');
+const balanceDueText = loadFn('balanceDueText(copy)');
 const paidOnLabel = loadFn('paidOnLabel(iso)');
 const chargedCents = loadFn('chargedCents(view, choice)');
 
 const BALANCE = { title: 'Colombo Airport (CMB) → Galle', totalUsd: '$219.00', paidUsd: '$50.00', paidOn: '2026-10-05', balanceCents: 16900, balanceUsd: '$169.00' };
 
 describe('the balance rows', () => {
-  it('shows the trip total, what is paid, and the balance — with the server’s figures', () => {
-    const out = balanceRowsHtml(BALANCE);
+  it('shows the trip total, the deposit paid — marked and dated — and the balance with when it is due', () => {
+    const out = balanceRowsHtml(BALANCE, '5 Oct 2026', 'due on your arrival day · Fri 14 Nov');
     expect(out).toContain('Trip total');
     expect(out).toContain('$219.00');
-    expect(out).toMatch(/Paid<\/span><span class="v">\$50\.00/);
-    expect(out).toMatch(/Balance<\/span><span class="v">\$169\.00/);
+    // The paid row is its own, clearly marked row (owner, 2026-10-12: "the paid amount should be more clear").
+    expect(out).toMatch(/<div class="tot tot-paid"><span class="l">&#10003; Deposit paid · 5 Oct 2026<\/span><span class="v">\$50\.00/);
+    expect(out).toMatch(/<div class="tot tot-final"><span class="l">Balance<small>due on your arrival day · Fri 14 Nov<\/small><\/span><span class="v">\$169\.00/);
+  });
+  it('still reads cleanly with no paid date and no due line', () => {
+    const out = balanceRowsHtml(BALANCE, '', '');
+    expect(out).toMatch(/&#10003; Deposit paid<\/span>/);
+    expect(out).toMatch(/<span class="l">Balance<\/span>/);
   });
   it('escapes what it prints', () => {
-    expect(balanceRowsHtml({ ...BALANCE, balanceUsd: '<b>x</b>' })).not.toContain('<b>x</b>');
+    expect(balanceRowsHtml({ ...BALANCE, balanceUsd: '<b>x</b>' }, '', '<i>y</i>')).not.toMatch(/<b>x<\/b>|<i>y<\/i>/);
+  });
+});
+
+// Owner, 2026-10-12: a chauffeur trip's balance is "due on arrival day"; a transfer's on the day it runs.
+describe('when the balance is due', () => {
+  it('a chauffeur trip: on the arrival day, with the date when the quote has one', () => {
+    expect(balanceDueText({ product: 'chauffeur', facts: [{ k: 'Starts', v: 'Fri 14 Nov' }] })).toBe('due on your arrival day · Fri 14 Nov');
+    expect(balanceDueText({ product: 'chauffeur', facts: [{ k: 'Starts', v: '—' }] })).toBe('due on your arrival day');
+  });
+  it('a single transfer: on the day of the transfer', () => {
+    expect(balanceDueText({ product: 'single', facts: [] })).toBe('due on the day of your transfer');
+  });
+  it('any other trip: on its first day; and nothing known says only "any time"', () => {
+    expect(balanceDueText({ product: 'trip', facts: [] })).toBe('due on the first day of your trip');
+    expect(balanceDueText(null)).toBe('pay any time before your trip');
   });
 });
 

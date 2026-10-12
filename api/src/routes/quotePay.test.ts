@@ -789,10 +789,22 @@ describe('GET /quotes/pay/view — the balance state', () => {
     const { app, t } = await depositPaid();
     const body = await (await view(app, t)).json();
     expect(body.state).toBe('balance');
-    expect(body.balance).toEqual({
+    expect(body.balance).toMatchObject({
       title: 'Colombo Airport (CMB) → Galle', totalUsd: '$219.00', paidUsd: '$50.00',
       paidOn: '2026-10-05', balanceCents: 16900, balanceUsd: '$169.00',
     });
+  });
+
+  // Owner, 2026-10-12: the screen a customer lands on after paying a deposit must read as
+  // "you're booked", not as an invoice — so it needs the trip, the booking reference and a name,
+  // and which product it is (a chauffeur trip's balance is "due on your arrival day").
+  it('carries what the "you\'re booked" screen shows: reference, first name and the trip copy', async () => {
+    const { app, t, booking } = await depositPaid();
+    const { balance } = await (await view(app, t)).json();
+    expect(balance.reference).toBe(booking.reference);
+    expect(balance.firstName).toBe('Nimal');
+    expect(balance.copy).toMatchObject({ product: 'single', title: 'Colombo Airport (CMB) → Galle' });
+    expect(Array.isArray(balance.copy.facts)).toBe(true);
   });
 
   it('shows the balance whatever the token\'s revision or seq (checked before them, like paid)', async () => {

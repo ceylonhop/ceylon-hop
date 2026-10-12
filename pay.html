@@ -60,6 +60,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
   .tot.tot-disc .v{color:var(--accent-deep)}
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
+  /* The deposit-paid screen (owner, 2026-10-12): the customer has just committed to their trip, so it
+     reads "you're booked" — the keepsake's own badge and heading — and the paid figure is the one
+     marked row. Greens are ticket.css's .st-badge.ok pair, so the tick and the row are one colour. */
+  .pp-booked{text-align:center;margin-bottom:20px}
+  .t-main .pp-title{font-size:1.35rem;margin:0 0 2px}
+  .t-main .pp-sub{margin:0 0 10px}
+  .tot.tot-paid{align-items:center;margin-top:9px;padding:9px 12px;border-radius:10px;background:#e6f4ec}
+  .tot.tot-paid .l{color:#2f9558}
+  .tot.tot-paid .v{font-size:1.3rem;color:#2f9558}
+  .tot .l small{display:block;margin-top:3px;font-size:.74rem;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-soft)}
 
   /* The deposit-or-full choice (spec 2026-10-07 §5.2): two option cards above the pay button,
      only on a link the server marked eligible. Same card shape as .pp-help / .pp-expect, with the
@@ -634,10 +644,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* The balance of a deposit booking, on the same link (spec 2026-10-07 §5.3). A pure function of
      the /view `balance` body so web-tests/unit/pay-page-balance.test.js can extract it: the trip
      total, what is already paid, and what is left — in the totals rows the payable ticket uses. */
-  function balanceRowsHtml(b) {
+  function balanceRowsHtml(b, on, due) {
     return '<div class="tot tot-sub"><span class="l">Trip total</span><span class="v">' + esc(b.totalUsd) + '</span></div>'
-      + '<div class="tot tot-sub"><span class="l">Paid</span><span class="v">' + esc(b.paidUsd) + '</span></div>'
-      + '<div class="tot tot-final"><span class="l">Balance</span><span class="v">' + esc(b.balanceUsd) + '</span></div>';
+      + '<div class="tot tot-paid"><span class="l">&#10003; Deposit paid' + (on ? ' · ' + esc(on) : '') + '</span><span class="v">' + esc(b.paidUsd) + '</span></div>'
+      + '<div class="tot tot-final"><span class="l">Balance' + (due ? '<small>' + esc(due) + '</small>' : '') + '</span><span class="v">' + esc(b.balanceUsd) + '</span></div>';
+  }
+  /* When the balance is due, in the customer's terms (owner, 2026-10-12): a chauffeur trip's on the
+     arrival day, a transfer's on the day it runs. From the server's own trip copy; with none (an
+     API one deploy behind) it says only what is always true. Also extracted by the unit test. */
+  function balanceDueText(copy) {
+    if (!copy) return 'pay any time before your trip';
+    if (copy.product === 'chauffeur') {
+      var starts = (copy.facts || []).filter(function (f) { return f.k === 'Starts'; })[0];
+      return 'due on your arrival day' + (starts && starts.v && starts.v !== '—' ? ' · ' + starts.v : '');
+    }
+    if (copy.product === 'single') return 'due on the day of your transfer';
+    return 'due on the first day of your trip';
   }
   // "2026-10-05" → "5 Oct 2026". Date-only strings are split by hand: new Date('2026-10-05') is UTC
   // midnight and would print the previous day west of Greenwich. Anything unexpected prints nothing.
@@ -650,23 +672,32 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 
   function renderBalance(b){
+    var c = b.copy || null;
     var on = paidOnLabel(b.paidOn);
+    var due = balanceDueText(c);
     app.innerHTML =
-      '<div class="pp-hello">Your deposit is in.</div>'
-      + '<h1 class="pp-title">' + esc(b.title) + '</h1>'
-      + '<p class="pp-sub">Pay the balance any time before your trip.</p>'
+      '<div class="pp-booked"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title"' + (b.firstName ? MASK : '') + '>You’re booked' + (b.firstName ? ', ' + esc(b.firstName) : '') + '.</h1>'
+      + '<p class="st-sub">Your deposit is paid and your trip is confirmed.</p></div>'
       + '<div class="ticket"><div class="t-main">'
-      + '<div class="included"><b>Deposit received</b>' + (on ? 'Thank you — paid on ' + esc(on) + '. ' : 'Thank you. ')
-      + 'Your trip is booked; this is what is left to pay.</div>'
+      + '<h2 class="pp-title">' + esc(b.title) + '</h2>'
+      + (c && c.subtitle ? '<p class="pp-sub">' + esc(c.subtitle) + '</p>' : '')
+      + (c ? ticketBody(c) : '')
+      + (b.reference ? '<div class="fact"><span class="k">Booking ref</span><span class="v">' + esc(b.reference) + '</span></div>' : '')
       + '</div><div class="perf"></div><div class="t-stub">'
-      + balanceRowsHtml(b)
+      + balanceRowsHtml(b, on, c ? due : '')
       + '<button class="btn btn-cta pp-cta" id="paybtn">Pay balance</button>'
-      + '<div class="paysub" id="paysub">' + esc('Pay securely with PayHere. ' + b.balanceUsd + ' — no extra fees.') + '</div>'
+      + '<div class="paysub" id="paysub">' + esc('No rush — pay the balance now, or any time with this same link. ' + b.balanceUsd + ', no extra fees.') + '</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
       + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '<div class="pp-help" id="payhelp" hidden></div>'
-      + '</div></div>' + waLine();
+      + '</div></div>'
+      + '<div class="next"><b>What happens next</b><ul>'
+      + '<li>Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details.</li>'
+      + '<li>Your driver and vehicle details will be sent on WhatsApp before pickup.</li>'
+      + '<li>Your balance of ' + esc(b.balanceUsd) + ' is ' + esc(c ? due.split(' · ')[0] : 'payable any time before your trip') + '.</li></ul></div>'
+      + waLine();
     track('view_item', withMoney({ item_category: 'balance' }));
     document.getElementById('paybtn').addEventListener('click', payBalance);
   }
