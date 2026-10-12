@@ -507,11 +507,15 @@ function stripResultMargin(result: Record<string, unknown>): Record<string, unkn
       li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
     );
   }
-  const alt = safe.alt;
-  if (alt && typeof alt === 'object') {
-    const a = alt as Record<string, unknown>;
-    if (a.result && typeof a.result === 'object') {
-      safe.alt = { ...a, result: stripResultMargin(a.result as Record<string, unknown>) };
+  // Fail closed: an alt whose result cannot be stripped (malformed, so unreadable by alternativeOf
+  // anyway) is dropped rather than passed through with whatever it carries.
+  if ('alt' in safe) {
+    const a = safe.alt as Record<string, unknown> | null;
+    const r = a && typeof a === 'object' && !Array.isArray(a) ? a.result : null;
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      safe.alt = { ...a, result: stripResultMargin(r as Record<string, unknown>) };
+    } else {
+      delete safe.alt;
     }
   }
   return safe;
