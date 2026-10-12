@@ -12,7 +12,7 @@ import {
   quotes,
   bookingStatusEvents,
 } from './schema';
-import { chosenAddOns, type PaySelection } from '../quote/paySelection';
+import { chosenAddOns, type PayLinkSelection } from '../quote/paySelection';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -391,7 +391,7 @@ export class PostgresBookingRepo implements BookingRepo {
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
-    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PaySelection | null)]));
+    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PayLinkSelection | null)]));
     return rows.map((row) => {
       const cust = custById.get(row.customerId);
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);

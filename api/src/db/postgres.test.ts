@@ -117,6 +117,27 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
+  // Spec PR #964: a quote sold on a link for the chauffeur option keeps its private lines, but the
+  // customer did not buy them — and the Postgres load reads the raw jsonb selection (no type check).
+  it('a booking sold on a chauffeur-option link names no add-ons, one load or a list', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+      rateCardVersion: RATE_CARD.version, result, request: { engine },
+    });
+    const sold = await bookings.create(sample);
+    await quotes.patch(q.id, { convertedBookingId: sold.id, status: 'won', payLinkSelection: { service: 'chauffeur' }, soldCents: result.totalCents + 5000 });
+    expect((await quotes.get(q.id))?.payLinkSelection).toEqual({ service: 'chauffeur' }); // guard: it round-trips
+    expect((await bookings.get(sold.id))?.addOns).toBeUndefined();
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 50);
+    expect(listed.find((b) => b.id === sold.id)?.addOns).toBeUndefined();
+  });
+
   // A website booking has no quote: it keeps the engine's own priced lines in
   // pricing_snapshot_json, and a load names its add-ons from them.
   it('a website booking keeps the lines it was priced with and names its add-ons', async () => {

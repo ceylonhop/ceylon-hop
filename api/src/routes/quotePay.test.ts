@@ -8,6 +8,8 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { signQuotePayToken, verifyCheckoutToken } from '../lib/bookingToken';
 import { signSession } from '../lib/opsAuth';
+import { futureIsoDate } from '../testSupport/dates';
+import { depositFor } from '../quote/extrasDeposit';
 
 // The customer-facing half of pay links (spec §3–§5). Everything here is reachable by
 // anyone holding the URL, so the two properties that matter most are pinned hard:
@@ -1136,5 +1138,149 @@ describe('a visitor cannot become the customer', () => {
     };
     const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), noSurname as never);
     expect(res.status).toBe(201);
+  });
+});
+
+// ── A pay link sold as the CHAUFFEUR option of a "both" quote (spec PR #964, PR 2: readers) ──
+// Dormant until the mint (PR 3) writes `{ service: 'chauffeur' }`; these seed it directly onto a
+// quote that /save really froze an alternative for, so the readers are tested against the shape the
+// mint will produce. The row itself stays the point-to-point quote throughout.
+describe('a link sold as the chauffeur option of a "both" quote', () => {
+  const BOTH_BODY = {
+    firstName: 'Nimal', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+    legs: [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: futureIsoDate(30) },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: futureIsoDate(32) },
+    ],
+  };
+  const FOUNDER = `ch_ops=${signSession({ email: 'f@x.com', exp: Date.now() + 600_000 }, 'sek')}`;
+
+  type AltResult = { totalCents: number };
+  async function bothQuote(opts: { link?: boolean; soldCents?: number } = {}) {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const res = await app.request('/admin/quote/save', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER }, body: JSON.stringify(BOTH_BODY),
+    });
+    expect([200, 201]).toContain(res.status);
+    const { id } = await res.json();
+    for (const s of ['pending_review', 'ready', 'sent'] as const) await quotes.patch(id, { status: s });
+    const stored = (await quotes.get(id))!;
+    const altTotal = ((stored.result as { alt: { result: AltResult } }).alt).result.totalCents;
+    if (opts.link !== false) {
+      // What the mint will write: the service selection, the alt total frozen as soldCents, a new seq.
+      await quotes.patch(id, { payLinkSelection: { service: 'chauffeur' }, soldCents: opts.soldCents ?? altTotal, payLinkSeq: 1 });
+    }
+    const q = (await quotes.get(id))!;
+    return { quotes, bookings, payments, app, q, altTotal, pointTotal: q.totalCents, t: signQuotePayToken(id, q.revision, SECRET, q.payLinkSeq) };
+  }
+
+  it('/view shows the chauffeur product at the frozen alt total, with the deposit offer — and no margin', async () => {
+    const { app, t, altTotal, pointTotal } = await bothQuote();
+    expect(altTotal).toBeGreaterThanOrEqual(15000); // guard: above the deposit floor
+    expect(altTotal).not.toBe(pointTotal); // guard: the two options really differ
+    const res = await view(app, t);
+    const raw = await res.text();
+    const body = JSON.parse(raw);
+    expect(body.state).toBe('payable');
+    expect(body.copy.product).toBe('chauffeur');
+    expect(body.totals.cents).toBe(altTotal);
+    expect(body.deposit).toMatchObject({ cents: depositFor('chauffeur', altTotal), balanceCents: altTotal - depositFor('chauffeur', altTotal) });
+    expect(body).not.toHaveProperty('lines'); // not a part-of-trip link
+    expect(body).not.toHaveProperty('coverage');
+    expect(raw).not.toMatch(/margin|hotZone|"alt"|rateCard/i);
+  });
+
+  it('/start creates a chauffeur trip booking at the alt total', async () => {
+    const { app, bookings, quotes, q, t, altTotal } = await bothQuote();
+    const res = await start(app, t);
+    expect(res.status).toBe(201);
+    const b = (await bookings.get((await res.json()).bookingId))!;
+    expect(b.mode).toBe('trip');
+    expect((b as { input: { serviceType: string } }).input.serviceType).toBe('chauffeur');
+    expect(b.total).toBe(altTotal);
+    expect(b.amountDueNow).toBe(altTotal);
+    expect((await quotes.get(q.id))!.convertedBookingId).toBe(b.id);
+  });
+
+  it('/start honours payment:"deposit" at the chauffeur deposit', async () => {
+    const { app, bookings, t, altTotal } = await bothQuote();
+    const res = await startPaying(app, t, 'deposit');
+    expect(res.status).toBe(201);
+    const b = (await bookings.get((await res.json()).bookingId))!;
+    expect(b.total).toBe(altTotal);
+    expect(b.amountDueNow).toBe(depositFor('chauffeur', altTotal));
+  });
+
+  it('a dangling selection (no alt behind it) is unavailable on /view and 409 on /start', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes); // a plain private quote: nothing was ever frozen for it
+    await quotes.patch(q.id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 30000, payLinkSeq: 1 });
+    const t = signQuotePayToken(q.id, q.revision, SECRET, 1);
+    expect(await (await view(app, t)).json()).toEqual({ state: 'unavailable' });
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+    expect(await bookings.list()).toHaveLength(0);
+  });
+
+  it('a soldCents that is not the alt total is unavailable on /view and 409 on /start', async () => {
+    const { app, bookings, t } = await bothQuote({ soldCents: 12345 });
+    expect(await (await view(app, t)).json()).toEqual({ state: 'unavailable' });
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+    expect(await bookings.list()).toHaveLength(0);
+  });
+
+  it('after a deposit, the balance and paid states speak chauffeur and /balance still works', async () => {
+    const { app, quotes, bookings, payments, q, t, altTotal } = await bothQuote();
+    const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
+    const booking = (await bookings.get(bookingId))!;
+    const dep = depositFor('chauffeur', altTotal);
+    const p = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-D`, amount: dep, currency: 'USD', idempotencyKey: `checkout:${bookingId}:deposit`, purpose: 'deposit' });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(bookingId, 'paid');
+    await quotes.patch(q.id, { status: 'won' });
+
+    const bal = await (await view(app, t)).json();
+    expect(bal.state).toBe('balance');
+    expect(bal.balance.copy.product).toBe('chauffeur');
+    expect(bal.balance.totalUsd).toBe(`$${(altTotal / 100).toFixed(2)}`);
+    expect((await payBalance(app, t)).status).toBe(200);
+
+    // …and once the balance lands, the keepsake is headed by the chauffeur title, not the legs.
+    const b2 = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-B`, amount: altTotal - dep, currency: 'USD', idempotencyKey: `checkout:${bookingId}:balance`, purpose: 'balance' });
+    await payments.markSucceeded(b2.id);
+    const paid = await (await view(app, t)).json();
+    expect(paid.state).toBe('paid');
+    expect(paid.paid.title).toBe(bal.balance.copy.title);
+    expect(paid.paid.amountUsd).toBe(`$${(altTotal / 100).toFixed(2)}`);
+  });
+
+  it('a soldCents mismatch cannot reach the balance either: /balance refuses like an unknown quote', async () => {
+    const { app, quotes, bookings, payments, q, t, altTotal } = await bothQuote();
+    const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
+    const booking = (await bookings.get(bookingId))!;
+    const p = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-D`, amount: depositFor('chauffeur', altTotal), currency: 'USD', idempotencyKey: `checkout:${bookingId}:deposit`, purpose: 'deposit' });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(bookingId, 'paid');
+    await quotes.patch(q.id, { status: 'won', soldCents: 999 });
+    const res = await payBalance(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('no_balance_due');
+  });
+
+  it('a "both" quote with NO service selection is untouched: point-to-point copy and total, no deposit', async () => {
+    const { app, t, pointTotal } = await bothQuote({ link: false });
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payable');
+    expect(body.copy.product).not.toBe('chauffeur');
+    expect(body.totals.cents).toBe(pointTotal);
+    expect(body).not.toHaveProperty('deposit');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alternativeOf, chauffeurFeasibility } from './quoteAlternative';
+import { alternativeOf, chauffeurFeasibility, soldView } from './quoteAlternative';
 
 // Shapes are hand-built here ONLY to pin the reader's validation; the round-trip through the real
 // /save lives in routes/internalQuote.test.ts.
@@ -71,5 +71,42 @@ describe('alternativeOf', () => {
     ['a non-USD currency', { result: altResult({ currency: 'LKR' }) }],
   ])('rejects %s', (_l, over) => {
     expect(alternativeOf(stored(over) as never)).toBeNull();
+  });
+});
+
+describe('soldView', () => {
+  const sold = (over: Record<string, unknown> = {}) => ({
+    ...stored(
+      { engine: { product: 'chauffeur', vehicle: 'car' }, result: altResult({ marginEstimateCents: 5_100 }) },
+      { product: 'private', totalCents: 11_450, marginCents: 2_000, soldCents: 22_700,
+        payLinkSelection: { service: 'chauffeur' }, request: { tool: { legs: [] }, engine: { product: 'private' } } },
+    ),
+    ...over,
+  });
+
+  it('is the very same quote when there is no service selection', () => {
+    const plain = stored({}, { payLinkSelection: null });
+    expect(soldView(plain as never)).toBe(plain);
+    const part = stored({}, { payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 100 });
+    expect(soldView(part as never)).toBe(part);
+  });
+
+  it('projects the frozen chauffeur option, with the selection and soldCents cleared', () => {
+    const v = soldView(sold() as never)!;
+    expect(v.product).toBe('chauffeur');
+    expect(v.totalCents).toBe(22_700);
+    expect(v.marginCents).toBe(5_100);
+    expect((v.request as { engine: { product: string }; tool: unknown }).engine.product).toBe('chauffeur');
+    expect((v.request as { tool: unknown }).tool).toEqual({ legs: [] }); // the tool payload is kept
+    expect((v.result as { totalCents: number }).totalCents).toBe(22_700);
+    expect(v.payLinkSelection).toBeNull();
+    expect(v.soldCents).toBeNull();
+  });
+
+  it('fails closed (null) when the alternative is gone, malformed or no longer the quote\'s', () => {
+    expect(soldView(sold({ result: { totalCents: 11_450 } }) as never)).toBeNull(); // dangling
+    expect(soldView(sold({ soldCents: 22_699 }) as never)).toBeNull(); // amount mismatch
+    expect(soldView(sold({ soldCents: null }) as never)).toBeNull();
+    expect(soldView(sold({ requestedService: 'private' }) as never)).toBeNull();
   });
 });

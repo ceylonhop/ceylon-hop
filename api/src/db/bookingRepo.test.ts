@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryBookingRepo, type NewBooking, personKeyFor } from './bookingRepo';
 import type { BookingTransitionContext } from '../domain/trackingContract';
+import { InMemoryQuoteRepo } from './quoteRepo';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -173,6 +174,33 @@ describe('InMemoryBookingRepo', () => {
 // transfer_request/trip_request store places and dates but no name. Merging two rows rewrites
 // the traveller on whichever booking wrote first. So we LINK instead: person_key groups them
 // (generated in Postgres by migration 0032) and every booking keeps its own snapshot.
+// A booking names the add-ons its quote charged. A quote sold on a link for the CHAUFFEUR option
+// (spec PR #964) keeps its private lines, but the customer did not buy them.
+describe('InMemoryBookingRepo — add-ons from the linked quote', () => {
+  async function linked(selection: object | null) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    bookings.attachQuotes(quotes);
+    const b = await bookings.create(sample);
+    const engine = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }], extras: [{ code: 'waiting', legIndex: 0 }] };
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 20000, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine },
+      result: { totalCents: 20000, lineItems: [{ label: 'Kandy → Ella (car)', amountCents: 18000 }, { label: 'Waiting fee — Kandy → Ella', amountCents: 2000 }] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, ...(selection ? { payLinkSelection: selection as never, soldCents: 30000 } : {}) });
+    return bookings.get(b.id);
+  }
+
+  it('names them for a whole-trip sale', async () => {
+    expect((await linked(null))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
+  it('names none for a link sold as the chauffeur option', async () => {
+    expect((await linked({ service: 'chauffeur' }))?.addOns).toBeUndefined();
+  });
+});
+
 describe('personKeyFor — grouping people without merging rows', () => {
   it('matches the same human across casing and stray whitespace', () => {
     expect(personKeyFor('Roshen@CeylonHop.com')).toBe('roshen@ceylonhop.com');

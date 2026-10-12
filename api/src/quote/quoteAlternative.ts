@@ -8,6 +8,7 @@
 // prefer the stored number. Pure: no repo, no clock, no rate card.
 import type { SavedQuote } from '../db/quoteRepo';
 import { drives } from './legCategory';
+import { isServiceSelection } from './paySelection';
 import type { QuoteRequest, QuoteResult } from './types';
 
 export interface QuoteAlternative {
@@ -63,4 +64,31 @@ export function alternativeOf(
   if (!Array.isArray(altResult.lineItems)) return null;
 
   return alt as unknown as QuoteAlternative;
+}
+
+/**
+ * The quote AS SOLD on its pay link. Unchanged (the very same object) unless the link was sold as
+ * the chauffeur option; then the quote with `product`, `totalCents`, `marginCents`, `request.engine`
+ * and `result` taken from the frozen alternative, and the selection and `soldCents` cleared — so
+ * every reader below it (copy, deposit offer, booking, balance) sees an ordinary whole-trip
+ * chauffeur quote and needs no idea that a "both" quote sits behind it.
+ *
+ * Returns null — "this link is not payable" — when the selection has nothing valid behind it: no
+ * recognisable alternative, or a frozen `soldCents` that is not the alternative's total. Failing
+ * closed is the point: a charge must never be built from a product and an amount that disagree.
+ */
+export function soldView(quote: SavedQuote): SavedQuote | null {
+  if (!isServiceSelection(quote.payLinkSelection)) return quote;
+  const alt = alternativeOf(quote);
+  if (!alt || quote.soldCents !== alt.result.totalCents) return null;
+  return {
+    ...quote,
+    product: alt.product,
+    totalCents: alt.result.totalCents,
+    marginCents: alt.result.marginEstimateCents ?? null,
+    request: { ...(asRecord(quote.request) ?? {}), engine: alt.engine },
+    result: alt.result,
+    payLinkSelection: null,
+    soldCents: null,
+  };
 }

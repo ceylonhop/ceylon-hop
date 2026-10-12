@@ -2952,6 +2952,40 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     expect(after!.payLinkSeq).toBe(2);
   });
 
+  // Spec PR #964: a service selection is not a leg selection. The ops part-of-trip picker reads
+  // `selection` as one, so it must see "nothing ticked", not `{ service }`.
+  it('GET /pay-lines reports no leg selection for a link sold as the chauffeur option', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 99900, payLinkSeq: 1 });
+    const res = await authedGet(createApp({ quotes }), `/admin/quote/${id}/pay-lines`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).selection).toBeNull();
+  });
+
+  it('GET /pay-lines still reports a part-of-trip selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 100, payLinkSeq: 1 });
+    const body = await (await authedGet(createApp({ quotes }), `/admin/quote/${id}/pay-lines`)).json();
+    expect(body.selection).toEqual({ legIndexes: [0], extraIndexes: [] });
+  });
+
+  // The mint decides "has the selection changed" by comparing the stored one with the requested
+  // one. A stored service selection must compare as itself — if it read as "nothing", a bodyless
+  // mint would find no change and leave the chauffeur selection (and its soldCents) live.
+  it('a bodyless mint retires a stored chauffeur-service selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 99900, payLinkSeq: 1 });
+    const res = await mintSel(createApp({ quotes }), id);
+    expect(res.status).toBe(200);
+    const after = (await quotes.get(id))!;
+    expect(after.payLinkSelection).toBeNull();
+    expect(after.soldCents).toBeNull();
+    expect(after.payLinkSeq).toBe(2);
+  });
+
   it('GET /pay-lines refuses a chauffeur quote', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await priced(quotes, {

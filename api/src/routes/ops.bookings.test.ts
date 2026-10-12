@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { Hono } from 'hono';
 
@@ -381,5 +382,36 @@ describe('ops bookings rows — isTest', () => {
     const rows: Array<{ isTest: boolean }> = await res.json();
     expect(rows).toHaveLength(1);
     expect(rows[0].isTest).toBe(false);
+  });
+});
+
+// A booking sold on a pay link for the CHAUFFEUR option of a "both" quote (spec PR #964) is a
+// whole-trip sale: the drawer shows no "2 of 4 legs" coverage — and, above all, still opens.
+describe('the booking drawer for a booking sold on a chauffeur link', () => {
+  async function drawerFor(selection: object | null) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const b = await bookings.create(bookingInput());
+    await bookings.setStatus(b.id, 'payment_pending');
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } },
+      result: { totalCents: 21900, lineItems: [] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, ...(selection ? { payLinkSelection: selection as never, soldCents: 30000 } : {}) });
+    return app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+  }
+
+  it('opens, with no coverage (it is a whole-trip sale)', async () => {
+    const res = await drawerFor({ service: 'chauffeur' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toBeNull();
+  });
+
+  it('still reports coverage for a part-of-trip sale', async () => {
+    const res = await drawerFor({ legIndexes: [0], extraIndexes: [] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toEqual({ soldLegs: 1, totalLegs: 2 });
   });
 });

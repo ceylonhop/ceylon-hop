@@ -6,7 +6,8 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
-import { payLines } from '../quote/paySelection';
+import { legSelectionOf, payLines } from '../quote/paySelection';
+import { soldView } from '../quote/quoteAlternative';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
 import { depositFor } from '../quote/extrasDeposit';
@@ -208,7 +209,11 @@ export function quotePayRoutes(deps: {
   r.get('/view', async (c) => {
     const parsed = verifyQuotePayToken(c.req.query('t'), deps.linkSecret);
     if (!parsed) return c.json({ state: 'unavailable' as const }, 200); // soft — no detail leak
-    const quote = await deps.quotes.get(parsed.quoteId);
+    // The quote AS SOLD: for a link sold as the chauffeur option of a "both" quote this is the
+    // frozen chauffeur quote, so everything below prices, words and books that product. null (the
+    // selection has nothing valid behind it) reads exactly like an unknown quote.
+    const loaded = await deps.quotes.get(parsed.quoteId);
+    const quote = loaded ? soldView(loaded) : null;
     const { state, paidVia } = await stateFor(quote, parsed);
 
     if (state === 'balance' && quote && paidVia) {
@@ -217,7 +222,7 @@ export function quotePayRoutes(deps: {
       const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
       const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
       const balance = booking ? balanceDueCents(booking, rows) : 0;
-      const copy = payPageCopy(quote, quote.payLinkSelection);
+      const copy = payPageCopy(quote, legSelectionOf(quote.payLinkSelection));
       return c.json({
         state,
         balance: {
@@ -247,7 +252,7 @@ export function quotePayRoutes(deps: {
       const paidTotal = paidRows.some((p) => p.purpose === 'balance' && p.status === 'succeeded')
         ? paidCents(paidRows)
         : payment?.amount;
-      const paidCopy = payPageCopy(quote, quote.payLinkSelection);
+      const paidCopy = payPageCopy(quote, legSelectionOf(quote.payLinkSelection));
       return c.json({
         state,
         paid: {
@@ -266,7 +271,7 @@ export function quotePayRoutes(deps: {
 
     // A partial link charges the frozen soldCents, not the quote total (spec §4).
     const soldCents = quote.soldCents ?? quote.totalCents;
-    const sel = quote.payLinkSelection;
+    const sel = legSelectionOf(quote.payLinkSelection);
     const partial = sel ? partialView(quote, sel) : null;
     const dep = depositOffer(quote);
 
@@ -296,7 +301,8 @@ export function quotePayRoutes(deps: {
     }
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
-    const quote = await deps.quotes.get(parsed.quoteId);
+    const loaded = await deps.quotes.get(parsed.quoteId);
+    const quote = loaded ? soldView(loaded) : null; // the quote as sold — see /view
     const { state } = await stateFor(quote, parsed);
     if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
@@ -382,7 +388,7 @@ export function quotePayRoutes(deps: {
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
     // The booking must carry ONLY the legs that were sold — otherwise the driver's itinerary and
     // the confirmation email promise legs nobody paid for (spec §8).
-    const legIndexes = quote.payLinkSelection?.legIndexes;
+    const legIndexes = legSelectionOf(quote.payLinkSelection)?.legIndexes;
     const tool = (quote.request as { tool?: { passengerCount?: number; luggageCount?: number; legs?: { date?: string }[] } } | null)?.tool;
     const firstDate = (tool?.legs ?? []).map((l) => l.date).find((d) => !!d);
     let mapped;
@@ -442,7 +448,8 @@ export function quotePayRoutes(deps: {
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
-    const quote = await deps.quotes.get(parsed.quoteId);
+    const loaded = await deps.quotes.get(parsed.quoteId);
+    const quote = loaded ? soldView(loaded) : null; // the quote as sold — see /view
     const { state, paidVia } = await stateFor(quote, parsed);
     if (state !== 'balance' || !paidVia) return c.json({ error: 'no_balance_due' }, 409);
     return c.json(

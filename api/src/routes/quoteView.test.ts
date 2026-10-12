@@ -157,6 +157,34 @@ describe('GET /quote-view', () => {
     expect(body.booked.firstName).toBe('Anna');
   });
 
+  // A quote won on a link sold as the CHAUFFEUR option (spec PR #964) is a chauffeur trip to the
+  // customer: the keepsake is headed by that trip, not by the point-to-point legs the row still holds.
+  it('names the chauffeur trip on the keepsake of a quote won on a chauffeur link', async () => {
+    const base = quoteInput();
+    const alt = {
+      product: 'chauffeur',
+      engine: {
+        product: 'chauffeur', vehicle: 'car', pax: 2, bags: 2, firstDate: '2026-08-20', lastDate: '2026-08-22',
+        travelDays: [
+          { date: '2026-08-20', from: 'Colombo Airport', to: 'Sigiriya', distanceKm: 168 },
+          { date: '2026-08-22', from: 'Sigiriya', to: 'Kandy', distanceKm: 92 },
+        ],
+      },
+      result: {
+        product: 'chauffeur', currency: 'USD', lineItems: [], subtotalCents: 25_000, totalCents: 25_000,
+        depositCents: 7_500, amountDueNowCents: 7_500, rateCardVersion: 'v1', warnings: [],
+      },
+    };
+    const saved = await quotes.save({ ...base, requestedService: 'both', result: { ...base.result, alt } } as never);
+    for (const status of ['ready', 'sent', 'won'] as const) await quotes.patch(saved.id, { status });
+    const plain = await (await get(signQuoteViewToken(saved.id, SECRET))).json();
+    expect(plain.booked.title).not.toMatch(/across Sri Lanka/); // guard: without a service link it is the legs
+    await quotes.patch(saved.id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 25_000 });
+    const body = await (await get(signQuoteViewToken(saved.id, SECRET))).json();
+    expect(body.state).toBe('booked');
+    expect(body.booked.title).toMatch(/days across Sri Lanka/);
+  });
+
   // requestedService: 'both' exercises servicesFor's chauffeur-pricing path — chauffeurFromPrivate
   // reconstructs a chauffeur engine request from the stored private one. None of the tests above
   // touch it, so it shipped uncovered; these three pin its offerability gates and its price.

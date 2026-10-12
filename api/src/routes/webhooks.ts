@@ -17,6 +17,7 @@ import { teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../service
 import type { Booking } from '../db/bookingRepo';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { legSelectionOf } from '../quote/paySelection';
 import {
   recordCheckoutEvent,
   type BookingCheckoutEventInput,
@@ -440,7 +441,7 @@ export function webhookRoutes(deps: {
           // say so in the email — the itinerary alone can't (its flat stop list renders a gap
           // as a driven leg, docs/known-bugs.md 2026-07-30). Best-effort like everything here.
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
-          const sel = srcQuote?.payLinkSelection;
+          const sel = legSelectionOf(srcQuote?.payLinkSelection); // a chauffeur-option link is a whole-trip sale: no coverage line
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
           const outcome = await sendBookingConfirmation(paid, email, {
             manage: manageUrl(paid, baseUrl, linkSecret),

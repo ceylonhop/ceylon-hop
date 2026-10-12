@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg, chosenAddOns } from './paySelection';
+import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg, chosenAddOns, isServiceSelection, legSelectionOf } from './paySelection';
 import { quote } from './engine';
 import { RATE_CARD } from './rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -154,5 +154,29 @@ describe('chosenAddOns', () => {
     // A selection that is not a list of indexes filters nothing.
     expect(chosenAddOns(savedQuote(), { extraIndexes: 'all' as unknown as number[] }))
       .toEqual(['Luggage rack — Kandy → Ella', 'Flexi ticket']);
+  });
+});
+
+describe('a service selection (a link sold as the chauffeur option)', () => {
+  const service = { service: 'chauffeur' as const };
+  const leg = { legIndexes: [0], extraIndexes: [1] };
+
+  it('is told apart from a part-of-trip selection', () => {
+    expect(isServiceSelection(service)).toBe(true);
+    expect(isServiceSelection(leg)).toBe(false);
+    expect(isServiceSelection(null)).toBe(false);
+    expect(isServiceSelection(undefined)).toBe(false);
+  });
+
+  it('legSelectionOf is the part-of-trip half only', () => {
+    expect(legSelectionOf(leg)).toBe(leg);
+    expect(legSelectionOf(service)).toBeNull();
+    expect(legSelectionOf(null)).toBeNull();
+  });
+
+  // The stored lines are the PRIVATE quote's; a chauffeur link did not buy them.
+  it('names no add-ons, though the underlying private quote has some', () => {
+    expect(chosenAddOns(savedQuote())).toHaveLength(2); // guard: there ARE add-ons to wrongly name
+    expect(chosenAddOns(savedQuote(), service)).toEqual([]);
   });
 });
