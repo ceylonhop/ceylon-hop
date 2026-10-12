@@ -136,3 +136,31 @@ describe('canOpsSelfApprove', () => {
     }
   });
 });
+
+// Owner decision D3 (2026-10-12): a quote carrying a frozen chauffeur alternative has TWO prices
+// to approve, so it is founder-only. One driving leg + a stay day on another date is the smallest
+// itinerary that is both self-approvable today AND has a feasible chauffeur alternative.
+describe('canOpsSelfApprove — a quote with a chauffeur alternative', () => {
+  // `service: 'private'` is what the builder sends for a point-to-point price; without it a stay day
+  // makes toEngineRequest derive a chauffeur quote.
+  const ONE_DRIVE_PLUS_STAY = {
+    ...SINGLE_LEG,
+    service: 'private',
+    legs: [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: futureIsoDate(30) },
+      { category: 'stay_day', from: 'Kandy', to: '', date: futureIsoDate(31) },
+    ],
+  };
+
+  it('refuses a "both" quote that froze an alternative', async () => {
+    const row = await saved({ ...ONE_DRIVE_PLUS_STAY, requestedService: 'both' });
+    expect((row.result as { alt?: unknown }).alt).toBeDefined(); // guard: /save really froze one
+    expect(canOpsSelfApprove(row)).toBe(false);
+  });
+
+  it('still accepts the same itinerary asked for as private only (control)', async () => {
+    const row = await saved({ ...ONE_DRIVE_PLUS_STAY, requestedService: 'private' });
+    expect((row.result as { alt?: unknown }).alt).toBeUndefined();
+    expect(canOpsSelfApprove(row)).toBe(true);
+  });
+});
