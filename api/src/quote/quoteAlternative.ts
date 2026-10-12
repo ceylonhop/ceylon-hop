@@ -6,9 +6,10 @@
 // copied message and the customer's page could drift from the one that was approved. /save now
 // freezes it in `quotes.result_json` under `result.alt` (no migration), and the readers below
 // prefer the stored number. Pure: no repo, no clock, no rate card.
+import type { Booking } from '../db/bookingRepo';
 import type { SavedQuote } from '../db/quoteRepo';
 import { drives } from './legCategory';
-import { isServiceSelection } from './paySelection';
+import { chosenAddOns, isServiceSelection, legSelectionOf } from './paySelection';
 import type { QuoteRequest, QuoteResult } from './types';
 
 export interface QuoteAlternative {
@@ -66,21 +67,8 @@ export function alternativeOf(
   return alt as unknown as QuoteAlternative;
 }
 
-/**
- * The quote AS SOLD on its pay link. Unchanged (the very same object) unless the link was sold as
- * the chauffeur option; then the quote with `product`, `totalCents`, `marginCents`, `request.engine`
- * and `result` taken from the frozen alternative, and the selection and `soldCents` cleared — so
- * every reader below it (copy, deposit offer, booking, balance) sees an ordinary whole-trip
- * chauffeur quote and needs no idea that a "both" quote sits behind it.
- *
- * Returns null — "this link is not payable" — when the selection has nothing valid behind it: no
- * recognisable alternative, or a frozen `soldCents` that is not the alternative's total. Failing
- * closed is the point: a charge must never be built from a product and an amount that disagree.
- */
-export function soldView(quote: SavedQuote): SavedQuote | null {
-  if (!isServiceSelection(quote.payLinkSelection)) return quote;
-  const alt = alternativeOf(quote);
-  if (!alt || quote.soldCents !== alt.result.totalCents) return null;
+/** The quote with the chauffeur alternative taken as its own product, total and engine. */
+function projectAlt(quote: SavedQuote, alt: QuoteAlternative): SavedQuote {
   return {
     ...quote,
     product: alt.product,
@@ -91,4 +79,68 @@ export function soldView(quote: SavedQuote): SavedQuote | null {
     payLinkSelection: null,
     soldCents: null,
   };
+}
+
+/**
+ * The quote AS SOLD on its pay link, for a link that has NO booking yet. Unchanged (the very same
+ * object) when the selection is empty or a part-of-trip one; with `{ service: 'chauffeur' }`, the
+ * quote with `product`, `totalCents`, `marginCents`, `request.engine` and `result` taken from the
+ * frozen alternative and the selection and `soldCents` cleared — so every reader below it (copy,
+ * deposit offer, booking) sees an ordinary whole-trip chauffeur quote and needs no idea that a
+ * "both" quote sits behind it.
+ *
+ * Returns null — "this link is not payable" — when the selection has nothing valid behind it: a
+ * selection that is neither a leg selection nor a chauffeur one, no recognisable alternative, or a
+ * frozen `soldCents` that is not the alternative's total. Failing closed is the point: a charge
+ * must never be built from a product and an amount that disagree.
+ */
+export function soldView(quote: SavedQuote): SavedQuote | null {
+  const sel = quote.payLinkSelection;
+  if (!sel) return quote;
+  if (!isServiceSelection(sel)) return legSelectionOf(sel) ? quote : null;
+  const alt = alternativeOf(quote);
+  if (!alt || quote.soldCents !== alt.result.totalCents) return null;
+  return projectAlt(quote, alt);
+}
+
+/** The booking's own product: a chauffeur trip. Decided by the booking, never by the quote's current selection. */
+export function isChauffeurBooking(b: Pick<Booking, 'mode' | 'input'>): boolean {
+  return b.mode === 'trip' && (b.input as { serviceType?: string }).serviceType === 'chauffeur';
+}
+
+// The primary quote with any service selection ignored (a leg selection is the caller's business).
+function withoutService(quote: SavedQuote): SavedQuote {
+  return isServiceSelection(quote.payLinkSelection) ? { ...quote, payLinkSelection: null, soldCents: null } : quote;
+}
+
+/**
+ * The quote AS SOLD once a booking exists. The selection lives on the QUOTE and moves whenever the
+ * agent re-mints, but a booking already created stays what it was — so a customer paying an earlier
+ * booking after the link was switched must be described by that booking:
+ *   - a chauffeur booking whose total is the frozen alternative's → the chauffeur projection,
+ *     whatever the quote's selection says now;
+ *   - any other booking → the primary quote, a service selection ignored (a leg selection is left
+ *     as it is);
+ *   - no booking → the selection-based view, falling back to the primary rather than null.
+ * Never null: someone who has paid must never meet a dead end (primary copy is the worst case).
+ */
+export function soldViewFor(quote: SavedQuote, booking: Pick<Booking, 'mode' | 'input' | 'total'> | null): SavedQuote {
+  if (!booking) return soldView(quote) ?? withoutService(quote);
+  if (isChauffeurBooking(booking)) {
+    const alt = alternativeOf(quote);
+    if (alt && booking.total === alt.result.totalCents) return projectAlt(quote, alt);
+  }
+  return withoutService(quote);
+}
+
+/**
+ * The add-ons a BOOKING bought, named from its quote. A chauffeur booking bought none (the stored
+ * lines are the private quote's); any other booking gets what it would with no service selection.
+ */
+export function addOnsFor(
+  quote: Pick<SavedQuote, 'request' | 'result' | 'payLinkSelection'>,
+  booking: Pick<Booking, 'mode' | 'input'>,
+): string[] {
+  if (isChauffeurBooking(booking)) return [];
+  return chosenAddOns(quote, legSelectionOf(quote.payLinkSelection));
 }

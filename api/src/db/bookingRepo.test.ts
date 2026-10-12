@@ -174,14 +174,24 @@ describe('InMemoryBookingRepo', () => {
 // transfer_request/trip_request store places and dates but no name. Merging two rows rewrites
 // the traveller on whichever booking wrote first. So we LINK instead: person_key groups them
 // (generated in Postgres by migration 0032) and every booking keeps its own snapshot.
-// A booking names the add-ons its quote charged. A quote sold on a link for the CHAUFFEUR option
-// (spec PR #964) keeps its private lines, but the customer did not buy them.
+// A booking names the add-ons its quote charged. Which add-ons is decided by the BOOKING, not by
+// the quote's current selection (spec PR #964): a chauffeur booking bought none of the private
+// quote's lines, while a private booking keeps its own even after the link was switched.
 describe('InMemoryBookingRepo — add-ons from the linked quote', () => {
-  async function linked(selection: object | null) {
+  const chauffeurBooking: NewBooking = {
+      mode: 'trip' as const,
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+        vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 30000, amountDueNow: 30000, currency: 'USD',
+    };
+  async function linked(selection: object | null, booking: NewBooking) {
     const bookings = new InMemoryBookingRepo();
     const quotes = new InMemoryQuoteRepo();
     bookings.attachQuotes(quotes);
-    const b = await bookings.create(sample);
+    const b = await bookings.create(booking);
     const engine = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }], extras: [{ code: 'waiting', legIndex: 0 }] };
     const q = await quotes.save({
       channel: 'ops', product: 'private', vehicle: 'car', totalCents: 20000, currency: 'USD', rateCardVersion: 'v1',
@@ -192,12 +202,17 @@ describe('InMemoryBookingRepo — add-ons from the linked quote', () => {
     return bookings.get(b.id);
   }
 
-  it('names them for a whole-trip sale', async () => {
-    expect((await linked(null))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  it('names them for a whole-trip private sale', async () => {
+    expect((await linked(null, sample))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
   });
 
-  it('names none for a link sold as the chauffeur option', async () => {
-    expect((await linked({ service: 'chauffeur' }))?.addOns).toBeUndefined();
+  it('a PRIVATE booking keeps its add-ons after the link was switched to the chauffeur option', async () => {
+    expect((await linked({ service: 'chauffeur' }, sample))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
+  it('a CHAUFFEUR booking names none, with or without the selection still in place', async () => {
+    expect((await linked({ service: 'chauffeur' }, chauffeurBooking))?.addOns).toBeUndefined();
+    expect((await linked(null, chauffeurBooking))?.addOns).toBeUndefined();
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alternativeOf, chauffeurFeasibility, soldView } from './quoteAlternative';
+import { alternativeOf, chauffeurFeasibility, soldView, soldViewFor, addOnsFor } from './quoteAlternative';
 
 // Shapes are hand-built here ONLY to pin the reader's validation; the round-trip through the real
 // /save lives in routes/internalQuote.test.ts.
@@ -108,5 +108,68 @@ describe('soldView', () => {
     expect(soldView(sold({ soldCents: 22_699 }) as never)).toBeNull(); // amount mismatch
     expect(soldView(sold({ soldCents: null }) as never)).toBeNull();
     expect(soldView(sold({ requestedService: 'private' }) as never)).toBeNull();
+  });
+  it('fails closed on a selection that is neither a leg selection nor { service: "chauffeur" }', () => {
+    expect(soldView(sold({ payLinkSelection: { service: 'private' } }) as never)).toBeNull();
+    expect(soldView(sold({ payLinkSelection: {} }) as never)).toBeNull();
+    expect(soldView(sold({ payLinkSelection: { legIndexes: 'x', extraIndexes: [] } }) as never)).toBeNull();
+  });
+});
+
+// As sold follows the BOOKING once there is one: the selection lives on the quote and moves when
+// the agent re-mints, but a booking already created stays what it was.
+describe('soldViewFor / addOnsFor', () => {
+  const chauffeurBooking = (total = 22_700) => ({ mode: 'trip', total, input: { serviceType: 'chauffeur' } });
+  const privateTrip = { mode: 'trip', total: 11_450, input: { serviceType: 'private' } };
+  const single = { mode: 'single', total: 11_450, input: {} };
+  const quoteWith = (selection: unknown, soldCents: number | null = null) => ({
+    ...stored({ engine: { product: 'chauffeur', vehicle: 'car' } }, {
+      product: 'private', totalCents: 11_450, marginCents: 2_000, soldCents, payLinkSelection: selection,
+      request: { tool: { legs: [] }, engine: { product: 'private' } },
+    }),
+  });
+
+  it.each([['no selection', null, null], ['a service selection', { service: 'chauffeur' }, 22_700]])(
+    'a chauffeur booking at the alt total is the chauffeur quote whatever the selection is (%s)', (_l, sel, sold) => {
+      const v = soldViewFor(quoteWith(sel, sold) as never, chauffeurBooking() as never);
+      expect(v.product).toBe('chauffeur');
+      expect(v.totalCents).toBe(22_700);
+      expect(v.payLinkSelection).toBeNull();
+    });
+
+  it('a chauffeur booking whose total is not the alt total is NOT projected', () => {
+    expect(soldViewFor(quoteWith(null) as never, chauffeurBooking(22_699) as never).product).toBe('private');
+  });
+
+  it.each([['a private trip booking', privateTrip], ['a single booking', single]])(
+    '%s is the primary quote even while the selection says chauffeur', (_l, b) => {
+      const v = soldViewFor(quoteWith({ service: 'chauffeur' }, 22_700) as never, b as never);
+      expect(v.product).toBe('private');
+      expect(v.totalCents).toBe(11_450);
+      expect(v.payLinkSelection).toBeNull();
+      expect(v.soldCents).toBeNull();
+    });
+
+  it('leaves a part-of-trip selection alone for a booking', () => {
+    const q = quoteWith({ legIndexes: [0], extraIndexes: [] }, 100);
+    expect(soldViewFor(q as never, privateTrip as never)).toBe(q);
+  });
+
+  it('with no booking it is the selection-based view, falling back to the primary rather than null', () => {
+    expect(soldViewFor(quoteWith({ service: 'chauffeur' }, 22_700) as never, null).product).toBe('chauffeur');
+    expect(soldViewFor(quoteWith({ service: 'chauffeur' }, 5) as never, null).product).toBe('private');
+  });
+
+  const lines = [{ label: 'A → B (car)', amountCents: 1 }, { label: 'Waiting fee — A → B', amountCents: 1 }];
+  const withAddOn = (selection: unknown) => ({
+    request: { engine: { product: 'private', legs: [{}], extras: [{ code: 'waiting', legIndex: 0 }] } },
+    result: { lineItems: lines }, payLinkSelection: selection,
+  });
+  it('add-ons: none for a chauffeur booking; a private booking gets what it would with no service selection', () => {
+    expect(addOnsFor(withAddOn({ service: 'chauffeur' }) as never, chauffeurBooking() as never)).toEqual([]);
+    expect(addOnsFor(withAddOn(null) as never, chauffeurBooking() as never)).toEqual([]);
+    expect(addOnsFor(withAddOn({ service: 'chauffeur' }) as never, single as never)).toEqual(['Waiting fee — A → B']);
+    expect(addOnsFor(withAddOn(null) as never, single as never)).toEqual(['Waiting fee — A → B']);
+    expect(addOnsFor(withAddOn({ legIndexes: [0], extraIndexes: [] }) as never, single as never)).toEqual([]);
   });
 });
