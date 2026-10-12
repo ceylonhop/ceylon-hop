@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { legSelectionOf } from '../quote/paySelection';
+import { isChauffeurBooking } from '../quote/quoteAlternative';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
@@ -316,8 +317,9 @@ export function opsRoutes(deps: OpsDeps) {
     // Partial pay link coverage (spec 2026-08-04) — ops must see what the customer sees: a
     // booking sold as 2-of-4 legs says so, because the flat stop list can't show the gap.
     const srcQuote = deps.quotes ? await deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null;
-    // A link sold as the chauffeur option is a whole-trip sale: no part-of-trip coverage.
-    const sel = legSelectionOf(srcQuote?.payLinkSelection);
+    // Coverage is decided by the BOOKING: a chauffeur booking is a whole-trip sale however the
+    // quote's selection has moved since (e.g. re-minted to a part-of-trip link).
+    const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
     // Payment attempts (2026-09-24): debugging a failed payment took SQL against

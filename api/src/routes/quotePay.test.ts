@@ -1348,6 +1348,27 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
 
   // Strict: only { service: 'chauffeur' } is a service selection. Anything else that is not a leg
   // selection fails closed instead of being sold as something.
+  // The keepsake's figure is the booking's own total; the quote's current figures can have moved
+  // (re-saved, re-priced) since the booking was made. With no succeeded payment row (a quote marked
+  // booked onto an existing booking) the fallback must still be the booking, never the quote.
+  it('the paid keepsake shows the BOOKING total when there is no payment row, not the quote\'s', async () => {
+    const c = await bothQuote({ link: false });
+    const total = 23100; // neither the point-to-point nor the frozen chauffeur total
+    expect([c.pointTotal, c.altTotal]).not.toContain(total); // guard
+    const booking = await c.bookings.create({
+      mode: 'trip', total, amountDueNow: total, currency: 'USD',
+      input: {
+        stops: ['Colombo', 'Kandy', 'Ella'], nights: [1, 1, 0], dates: [futureIsoDate(30), futureIsoDate(32)], pax: 2,
+        vehicleType: 'car', serviceType: 'chauffeur', days: 3, driverNights: 2,
+        customer: { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' },
+      },
+    });
+    await c.quotes.patch(c.q.id, { convertedBookingId: booking.id, status: 'won' });
+    const body = await (await view(c.app, c.t)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe('$231.00');
+  });
+
   it('a stored { service: "private" } is not sold as chauffeur — the link is unavailable', async () => {
     const c = await bothQuote({ link: false });
     await c.quotes.patch(c.q.id, { payLinkSelection: { service: 'private' } as never, soldCents: c.altTotal, payLinkSeq: 1 });
