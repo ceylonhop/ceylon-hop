@@ -7151,6 +7151,8 @@ async function apiBook(id, payload) {
 // and left the agent with nowhere to go. Pure, so it is unit-tested directly.
 function bookErrorText(res) {
   if (!res) return 'Could not book — unknown error';
+  // The customer already started the OTHER option's payment (see /book): not a form error, so no prefix.
+  if (res.reason === 'other_option_started') return 'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.';
   if (res.message) return 'Could not book — ' + res.message;
   var d = res.details;
   if (d && d.fieldErrors) {

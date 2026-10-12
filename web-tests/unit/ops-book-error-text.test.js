@@ -54,4 +54,10 @@ describe('ops "Mark booked" error message', () => {
     expect(bookErrorText(null)).toBe('Could not book — unknown error');
     expect(bookErrorText({})).toBe('Could not book — unknown error');
   });
+
+  it('says what to do when the customer already started the Chauffeur-guide payment (other_option_started)', () => {
+    expect(bookErrorText({ error: 'not_bookable', reason: 'other_option_started', message: 'server wording' })).toBe(
+      'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.',
+    );
+  });
 });

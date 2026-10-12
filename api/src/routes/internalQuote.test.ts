@@ -3650,6 +3650,74 @@ describe('POST /admin/quote/:id/pay-link with { service } — the chauffeur opti
     expect((await payView(w, chauffeurUrl)).state).not.toBe('payable');
   });
 
+  it('NEVER stores { service: "private" }: it takes the bodyless path and leaves selection and soldCents null', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    await mint(w, id, { service: 'private' });
+    const q = (await w.quotes.get(id))!;
+    expect(q.payLinkSelection).toBeNull();
+    expect(q.soldCents).toBeNull();
+  });
+
+  describe('"Mark booked" with a service link out (D4: it books the point-to-point option)', () => {
+    const BOOK_BODY = {
+      customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+      vehicleType: 'car', pax: 2, bags: 1, date: D1, time: '09:00',
+    };
+    const book = (w: W, id: string) => send(w, 'POST', `/admin/quote/${id}/book`, BOOK_BODY);
+    const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
+    // The customer taps Continue on a link: the pay side creates the booking and links the quote.
+    const customerStarts = async (w: W, url: string) => {
+      const res = await w.app.request('/quotes/pay/start', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ t: tokenOf(url), customer: CUSTOMER, termsAccepted: true }),
+      });
+      expect(res.status).toBe(201);
+      return (await res.json()).bookingId as string;
+    };
+
+    it('(a) the link was switched to chauffeur after the customer started the POINT-TO-POINT link: adopts that booking and clears the service selection', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const pointUrl = (await (await mint(w, id)).json()).url as string;
+      const bookingId = await customerStarts(w, pointUrl);
+      await mint(w, id, { service: 'chauffeur' });
+      const before = (await w.quotes.get(id))!;
+      expect(before.payLinkSelection).toEqual({ service: 'chauffeur' }); // guard
+      expect(before.convertedBookingId).toBe(bookingId);
+
+      const res = await book(w, id);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(bookingId);
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('won');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect(after.payLinkSelection).toBeNull();
+      expect(after.soldCents).toBeNull();
+      expect((await w.bookings.get(bookingId))!.total).toBe(before.totalCents); // point-to-point
+    });
+
+    it('(b) the customer already started the CHAUFFEUR link: refuses with other_option_started and touches nothing', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      const before = (await w.quotes.get(id))!;
+
+      const res = await book(w, id);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'not_bookable', reason: 'other_option_started' });
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('sent');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect(after.payLinkSelection).toEqual({ service: 'chauffeur' });
+      expect(after.soldCents).toBe(before.soldCents);
+      const b = (await w.bookings.get(bookingId))!;
+      expect(b.status).toBe('payment_pending'); // the chauffeur booking was not edited
+      expect(b.total).toBe(await altTotalOf(w, id));
+    });
+  });
+
   describe('end to end through /quotes/pay/view', () => {
     it('the chauffeur link shows chauffeur copy at the alt total with the deposit offer; the earlier point-to-point token reads revised', async () => {
       const w = wired();

@@ -1155,10 +1155,32 @@ export function internalQuoteRoutes(deps: {
           409,
         );
       }
+      // "Mark booked" books the point-to-point option (owner D4). A booking the customer started on
+      // the CHAUFFEUR link is the other product at the other price — adopting it would stamp this
+      // quote won against a sale it was not asked to record. Refuse and say how to resolve it.
+      if (isServiceSelection(quote.payLinkSelection) && quote.product === 'private'
+        && (prior as { input?: { serviceType?: string } }).input?.serviceType === 'chauffeur') {
+        return c.json(
+          {
+            error: 'not_bookable',
+            reason: 'other_option_started',
+            message: 'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.',
+          },
+          409,
+        );
+      }
       const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
-      await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      await deps.quotes.patch(id, {
+        convertedBookingId: prior.id,
+        status: 'won',
+        // A service link is retired by booking, exactly as on the create path below: the quote must
+        // not stay won with a selection that says it was sold as the other option.
+        ...(isServiceSelection(quote.payLinkSelection)
+          ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
+          : {}),
+      });
       return c.json(updated, 200);
     }
 
