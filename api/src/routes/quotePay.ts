@@ -217,10 +217,17 @@ export function quotePayRoutes(deps: {
       const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
       const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
       const balance = booking ? balanceDueCents(booking, rows) : 0;
+      const copy = payPageCopy(quote, quote.payLinkSelection);
       return c.json({
         state,
         balance: {
-          title: payPageCopy(quote, quote.payLinkSelection).title,
+          title: copy.title,
+          // The screen a deposit payer lands on is "you're booked", not an invoice (owner,
+          // 2026-10-12): it shows the trip, the reference and a name, and words the balance by
+          // product — so it gets the same copy the payable page had, plus what the keepsake gets.
+          reference: booking?.reference ?? null,
+          firstName: prefillFor(quote).firstName || null,
+          copy,
           totalUsd: usd(booking?.total ?? quote.totalCents),
           paidUsd: usd(paidCents(rows)),
           // The deposit's settled day (Asia/Colombo), or null when the ledger has no timestamp.
