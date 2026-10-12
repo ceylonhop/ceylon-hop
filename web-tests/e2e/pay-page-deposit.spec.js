@@ -174,3 +174,38 @@ test('the browser purchase reports the amount the SERVER charged when it disagre
   const purchase = await page.evaluate(() => (window.dataLayer || []).find((e) => e && e.event === 'purchase'));
   expect(purchase.value).toBe(219);
 });
+
+// Owner, 2026-10-11: selecting the deposit must change the figure above the options — a big "$219.00"
+// over a $50 deposit read as the amount about to be charged.
+test('choosing the deposit leads the totals with what is due now; choosing full puts the total back', async ({ page }) => {
+  await stubView(page, { deposit: DEPOSIT });
+  await page.goto(PAGE);
+  const totals = page.locator('#paytotals');
+  await expect(totals.locator('.tot')).toHaveCount(1);
+  await expect(totals.locator('.tot .v')).toHaveText('$219.00');
+
+  await page.locator('.pay-opt input[value="deposit"]').check();
+  await expect(totals.locator('.tot')).toHaveCount(3);
+  await expect(totals.locator('.tot.tot-final')).toContainText('Deposit due now');
+  await expect(totals.locator('.tot.tot-final .v')).toHaveText('$50.00');
+  await expect(totals.locator('.tot.tot-sub').first()).toContainText('$219.00');
+  await expect(totals.locator('.tot.tot-sub').last()).toContainText('Balance later');
+  await expect(totals.locator('.tot.tot-sub').last()).toContainText('$169.00');
+  // The deposit is the big figure; the trip total is the quiet one.
+  const size = (sel) => totals.locator(sel).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await size('.tot.tot-final .v')).toBeGreaterThan(await size('.tot.tot-sub .v >> nth=0'));
+
+  // …and it follows the customer onto the details step.
+  await page.locator('#paybtn').click();
+  await expect(page.locator('#paytotals .tot.tot-final .v')).toHaveText('$50.00');
+  await page.locator('.pay-opt input[value="full"]').check();
+  await expect(page.locator('#paytotals .tot')).toHaveCount(1);
+  await expect(page.locator('#paytotals .tot .v')).toHaveText('$219.00');
+});
+
+test('a link with no deposit keeps the single total', async ({ page }) => {
+  await stubView(page);
+  await page.goto(PAGE);
+  await expect(page.locator('#paytotals .tot')).toHaveCount(1);
+  await expect(page.locator('#paytotals .tot .v')).toHaveText('$219.00');
+});
