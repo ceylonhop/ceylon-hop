@@ -23,6 +23,7 @@ const chargedCents = loadFn('chargedCents(view, choice)');
 const payOptionsHtml = loadFn('payOptionsHtml(view, choice)');
 const payCtaText = loadFn('payCtaText(view, choice)');
 const paySubText = loadFn('paySubText(view, choice)');
+const depositTotalsHtml = loadFn('depositTotalsHtml(copy, totals, discount, deposit)');
 
 const TOTALS = { cents: 21900, usd: '$219.00' };
 const DEPOSIT = { cents: 5000, usd: '$50.00', balanceCents: 16900, balanceUsd: '$169.00' };
@@ -101,5 +102,28 @@ describe('the page wires the choice through', () => {
     expect(m, 'trackPurchase not found').toBeTruthy();
     expect(m[0]).toMatch(/stashedCents/);
     expect(m[0]).toMatch(/p\.value = /);
+  });
+});
+
+// Owner, 2026-10-11: with the deposit selected the big figure above the options still said the trip
+// total, which read as "you are about to pay $576". The block now leads with what is charged today.
+describe('the totals block once the deposit is chosen', () => {
+  const COPY = { totalLabel: 'Total · 9 days' };
+  const rows = (html) => [...html.matchAll(/<div class="([^"]+)"><span class="l">([^<]*)<\/span><span class="v">([^<]*)<\/span><\/div>/g)]
+    .map((m) => ({ cls: m[1], label: m[2], value: m[3] }));
+
+  it('demotes the trip total, leads with the deposit due now, and states the balance', () => {
+    expect(rows(depositTotalsHtml(COPY, TOTALS, undefined, DEPOSIT))).toEqual([
+      { cls: 'tot tot-sub', label: 'Total · 9 days', value: '$219.00' },
+      { cls: 'tot tot-final', label: 'Deposit due now', value: '$50.00' },
+      { cls: 'tot tot-sub', label: 'Balance later', value: '$169.00' },
+    ]);
+  });
+
+  it('keeps a negotiated discount visible above the deposit', () => {
+    const discount = { totalBeforeUsd: '$250.00', discountUsd: '$31.00' };
+    expect(rows(depositTotalsHtml(COPY, TOTALS, discount, DEPOSIT)).map((r) => r.label + ' ' + r.value.replace('&minus;', '-'))).toEqual([
+      'Total · 9 days $250.00', 'Discount -$31.00', 'Final total $219.00', 'Deposit due now $50.00', 'Balance later $169.00',
+    ]);
   });
 });

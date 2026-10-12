@@ -606,7 +606,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div><div class="perf"></div><div class="t-stub">'
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
-      + totalsHtml(c, tt, data.discount)
+      + payTotalsBlock()
       + payOptionsHtml(data, payChoice)
       + '<button class="btn btn-cta pp-cta" id="paybtn">' + esc(payCtaText(data, payChoice)) + '</button>'
       + '<div class="paysub" id="paysub">' + esc(paySubText(data, payChoice)) + '</div>'
@@ -755,6 +755,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         for (var j = 0; j < cards.length; j++) {
           cards[j].classList.toggle('is-on', cards[j].querySelector('input').checked);
         }
+        var blk = document.getElementById('paytotals');
+        if (blk) blk.outerHTML = payTotalsBlock();
         var btn = document.getElementById('paybtn'), sub = document.getElementById('paysub');
         if (btn) btn.textContent = payCtaText(data, payChoice);
         if (sub) sub.textContent = paySubText(data, payChoice);
@@ -783,6 +785,32 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +   '<span class="v">&minus;' + esc(discount.discountUsd) + '</span></div>'
       + '<div class="tot tot-final"><span class="l">Final total</span>'
       +   '<span class="v">' + esc(totals.usd) + '</span></div>';
+  }
+
+  /* The same block once the customer picks the deposit (owner, 2026-10-11: a big trip total above a
+     $57.60 deposit read as the amount about to be charged). The trip total — and any discount —
+     drop to quiet rows, the big figure becomes what is charged today, and the balance is stated.
+     Existing row classes only. Extracted by web-tests/unit/pay-page-deposit.test.js. */
+  function depositTotalsHtml(copy, totals, discount, deposit) {
+    var sub = function (cls, label, value) {
+      return '<div class="tot tot-sub' + cls + '"><span class="l">' + label + '</span><span class="v">' + value + '</span></div>';
+    };
+    var trip = !discount
+      ? sub('', esc(copy.totalLabel), esc(totals.usd))
+      : sub('', esc(copy.totalLabel), esc(discount.totalBeforeUsd))
+        + sub(' tot-disc', 'Discount', '&minus;' + esc(discount.discountUsd))
+        + sub('', 'Final total', esc(totals.usd));
+    return trip
+      + '<div class="tot tot-final"><span class="l">Deposit due now</span><span class="v">' + esc(deposit.usd) + '</span></div>'
+      + sub('', 'Balance later', esc(deposit.balanceUsd));
+  }
+  // One wrapper for both screens, so the radios can re-render it in place (wirePayOptions).
+  function payTotalsBlock() {
+    return '<div id="paytotals">'
+      + (data.deposit && payChoice === 'deposit'
+        ? depositTotalsHtml(data.copy, data.totals, data.discount, data.deposit)
+        : totalsHtml(data.copy, data.totals, data.discount))
+      + '</div>';
   }
 
   /* The collapsed disclosure the payable screen shows under the CTA. Same source of truth as
@@ -929,7 +957,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="perf"></div><div class="t-stub">'
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
-      + totalsHtml(data.copy, data.totals, data.discount)
+      + payTotalsBlock()
       + payOptionsHtml(data, payChoice)
       + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
