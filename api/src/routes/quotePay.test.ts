@@ -1262,17 +1262,150 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
     expect(paid.paid.amountUsd).toBe(`$${(altTotal / 100).toFixed(2)}`);
   });
 
-  it('a soldCents mismatch cannot reach the balance either: /balance refuses like an unknown quote', async () => {
-    const { app, quotes, bookings, payments, q, t, altTotal } = await bothQuote();
-    const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
+  // ── "As sold" follows the BOOKING once one exists, not the quote's current selection ──
+  type Ctx = Awaited<ReturnType<typeof bothQuote>>;
+  const settle = async (c: Ctx, bookingId: string, amount: number, purpose?: 'deposit' | 'balance') => {
+    const booking = (await c.bookings.get(bookingId))!;
+    const p = await c.payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-${purpose ?? 'F'}`, amount, currency: 'USD', idempotencyKey: `checkout:${bookingId}:${purpose ?? 'full'}`, ...(purpose ? { purpose } : {}) });
+    await c.payments.markSucceeded(p.id);
+    if (booking.status !== 'paid') await c.bookings.setStatus(bookingId, 'paid');
+    await c.quotes.patch(c.q.id, { status: 'won' });
+  };
+  const switchLink = (c: Ctx, to: 'chauffeur' | 'point') =>
+    c.quotes.patch(c.q.id, to === 'chauffeur'
+      ? { payLinkSelection: { service: 'chauffeur' }, soldCents: c.altTotal, payLinkSeq: 7 }
+      : { payLinkSelection: null, soldCents: null, payLinkSeq: 8 });
+  const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+  it('a PRIVATE booking paid after the link was switched to chauffeur is still described as private', async () => {
+    const c = await bothQuote({ link: false });
+    const { bookingId } = await (await start(c.app, c.t)).json(); // started on the point-to-point link
+    expect((await c.bookings.get(bookingId))!.total).toBe(c.pointTotal);
+    await switchLink(c, 'chauffeur'); // the agent switches the link; the customer pays the first booking anyway
+    await settle(c, bookingId, c.pointTotal);
+    const body = await (await view(c.app, c.t)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe(usd(c.pointTotal));
+    expect(body.paid.title).not.toMatch(/across Sri Lanka/);
+    // the same screen with a plain point-to-point quote, for comparison
+    const plain = await bothQuote({ link: false });
+    const pb = await (await start(plain.app, plain.t)).json();
+    await settle(plain, pb.bookingId, plain.pointTotal);
+    expect(body.paid.title).toBe((await (await view(plain.app, plain.t)).json()).paid.title);
+  });
+
+  it('a CHAUFFEUR booking paid after the link was switched back to point-to-point is still chauffeur (balance intact)', async () => {
+    const c = await bothQuote();
+    const { bookingId } = await (await startPaying(c.app, c.t, 'deposit')).json();
+    await switchLink(c, 'point');
+    const dep = depositFor('chauffeur', c.altTotal);
+    await settle(c, bookingId, dep, 'deposit');
+    const bal = await (await view(c.app, c.t)).json();
+    expect(bal.state).toBe('balance');
+    expect(bal.balance.copy.product).toBe('chauffeur');
+    expect(bal.balance.totalUsd).toBe(usd(c.altTotal));
+    expect(bal.balance.balanceCents).toBe(c.altTotal - dep);
+    expect((await payBalance(c.app, c.t)).status).toBe(200);
+    await settle(c, bookingId, c.altTotal - dep, 'balance');
+    const paid = await (await view(c.app, c.t)).json();
+    expect(paid.state).toBe('paid');
+    expect(paid.paid.title).toBe(bal.balance.copy.title);
+    expect(paid.paid.amountUsd).toBe(usd(c.altTotal));
+  });
+
+  // A paid customer is never a dead end: whatever happens to the selection afterwards, the balance
+  // screen and the balance payment stay reachable.
+  it('a deposit payer whose selection later stops validating still sees the balance and can pay it', async () => {
+    const c = await bothQuote();
+    const { bookingId } = await (await startPaying(c.app, c.t, 'deposit')).json();
+    await settle(c, bookingId, depositFor('chauffeur', c.altTotal), 'deposit');
+    await c.quotes.patch(c.q.id, { soldCents: 999 }); // no projection validates any more
+    const bal = await (await view(c.app, c.t)).json();
+    expect(bal.state).toBe('balance');
+    expect(bal.balance.copy.product).toBe('chauffeur'); // the booking itself is chauffeur and the alt is still there
+    expect(bal.balance.totalUsd).toBe(usd(c.altTotal));
+    expect((await payBalance(c.app, c.t)).status).toBe(200);
+  });
+
+  it('a paid customer with no valid projection at all gets the paid screen (primary copy), not unavailable', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes); // a plain private quote: no alt anywhere
+    const t0 = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t0)).json();
+    await quotes.patch(q.id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 30000, payLinkSeq: 1 }); // dangling
     const booking = (await bookings.get(bookingId))!;
-    const p = await payments.create({ bookingId, provider: 'payhere', orderId: `${booking.reference}-D`, amount: depositFor('chauffeur', altTotal), currency: 'USD', idempotencyKey: `checkout:${bookingId}:deposit`, purpose: 'deposit' });
+    const p = await payments.create({ bookingId, provider: 'payhere', orderId: booking.reference, amount: 21900, currency: 'USD', idempotencyKey: 'k' });
     await payments.markSucceeded(p.id);
     await bookings.setStatus(bookingId, 'paid');
-    await quotes.patch(q.id, { status: 'won', soldCents: 999 });
-    const res = await payBalance(app, t);
+    const body = await (await view(app, t0)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe('$219.00');
+  });
+
+  // Strict: only { service: 'chauffeur' } is a service selection. Anything else that is not a leg
+  // selection fails closed instead of being sold as something.
+  it('a stored { service: "private" } is not sold as chauffeur — the link is unavailable', async () => {
+    const c = await bothQuote({ link: false });
+    await c.quotes.patch(c.q.id, { payLinkSelection: { service: 'private' } as never, soldCents: c.altTotal, payLinkSeq: 1 });
+    const t = signQuotePayToken(c.q.id, c.q.revision, SECRET, 1);
+    expect(await (await view(c.app, t)).json()).toEqual({ state: 'unavailable' });
+    expect((await start(c.app, t)).status).toBe(409);
+    expect(await c.bookings.list()).toHaveLength(0);
+  });
+
+  it('a double tap on a chauffeur link resumes the SAME booking', async () => {
+    const { app, t, bookings } = await bothQuote();
+    const first = await start(app, t);
+    const second = await start(app, t);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect((await second.json()).bookingId).toBe((await first.json()).bookingId);
+    expect(await bookings.list()).toHaveLength(1);
+  });
+
+  it('a cancelled chauffeur booking is replaced by ONE fresh chauffeur booking at the alt total', async () => {
+    const { app, t, bookings, altTotal } = await bothQuote();
+    const { bookingId } = await (await start(app, t)).json();
+    await bookings.setStatus(bookingId, 'cancelled');
+    const again = await start(app, t);
+    expect(again.status).toBe(201);
+    const fresh = (await bookings.get((await again.json()).bookingId))!;
+    expect(fresh.id).not.toBe(bookingId);
+    expect(fresh.total).toBe(altTotal);
+    expect((fresh as { input: { serviceType: string } }).input.serviceType).toBe('chauffeur');
+    const third = await start(app, t); // …and a further tap resumes that replacement
+    expect((await third.json()).bookingId).toBe(fresh.id);
+  });
+
+  it('a chauffeur link under $150 offers no deposit and refuses one that is asked for', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes); // private row…
+    // …replaced by a both-quote carrying a cheap (but well-formed) frozen chauffeur alternative.
+    const engine = { product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-09-01', lastDate: '2026-09-02',
+      travelDays: [{ date: '2026-09-01', from: 'CMB', to: 'Galle', distanceKm: 120 }] };
+    const alt = { product: 'chauffeur', engine, result: { product: 'chauffeur', currency: 'USD', lineItems: [], subtotalCents: 14000, totalCents: 14000, depositCents: 4200, amountDueNowCents: 4200, rateCardVersion: 'v1', warnings: [] } };
+    const cheap = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera', customerContact: '+94 77 000 1111',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', requestedService: 'both',
+      request: (await quotes.get(q.id))!.request, result: { totalCents: 21900, lineItems: [], alt },
+    });
+    for (const st of ['pending_review', 'ready', 'sent'] as const) await quotes.patch(cheap.id, { status: st });
+    await quotes.patch(cheap.id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 14000, payLinkSeq: 1 });
+    const t = signQuotePayToken(cheap.id, cheap.revision, SECRET, 1);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payable');
+    expect(body.copy.product).toBe('chauffeur');
+    expect(body.totals.cents).toBe(14000);
+    expect(body).not.toHaveProperty('deposit');
+    const res = await startPaying(app, t, 'deposit');
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toBe('no_balance_due');
+    expect((await res.json()).error).toBe('deposit_ineligible');
+    expect(await bookings.list()).toHaveLength(0);
   });
 
   it('a "both" quote with NO service selection is untouched: point-to-point copy and total, no deposit', async () => {

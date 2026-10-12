@@ -32,13 +32,16 @@ export interface PaySelection {
  */
 export type PayLinkSelection = PaySelection | { service: 'chauffeur' };
 
-export function isServiceSelection(sel: PayLinkSelection | null | undefined): sel is { service: 'chauffeur' } {
-  return !!sel && 'service' in sel;
+/** Strict: only `{ service: 'chauffeur' }` — a stored `{ service: 'private' }` (or any other value) is not one. */
+export function isServiceSelection(sel: unknown): sel is { service: 'chauffeur' } {
+  return !!sel && typeof sel === 'object' && (sel as { service?: unknown }).service === 'chauffeur';
 }
 
-/** The part-of-trip half of a stored selection, or null for nothing / a service link. */
+/** The part-of-trip half of a stored selection; null for nothing, a service link, or anything malformed. */
 export function legSelectionOf(sel: PayLinkSelection | null | undefined): PaySelection | null {
-  return sel && !isServiceSelection(sel) ? sel : null;
+  if (!sel || isServiceSelection(sel)) return null;
+  const leg = sel as Partial<PaySelection>;
+  return Array.isArray(leg.legIndexes) && Array.isArray(leg.extraIndexes) ? (sel as PaySelection) : null;
 }
 
 export interface PayLine {
@@ -116,10 +119,11 @@ export function chosenAddOns(
   quote: Pick<SavedQuote, 'request' | 'result'>,
   selection?: Partial<PaySelection> | { service: 'chauffeur' } | null,
 ): string[] {
-  // A chauffeur link sells the chauffeur product, whose day rate already includes what a private
-  // quote lists as add-ons — and the stored lines here are the PRIVATE quote's, so naming them
-  // would put add-ons on a booking that did not buy them.
-  if (selection && 'service' in selection) return [];
+  // A chauffeur link sells the chauffeur product. The stored lines read here are the PRIVATE
+  // quote's (the chauffeur day rate covers waiting, sightseeing and safari wait; nothing else the
+  // private quote lists is carried over), so naming them would put add-ons on a booking that did
+  // not buy them. Callers holding a booking use addOnsFor, which decides by the booking.
+  if (isServiceSelection(selection)) return [];
   // Booking loads (the ops queue, every email) and the quote and pay pages all come through here,
   // so a malformed stored row must cost a missing line, never a page: check the shape payLines
   // assumes (a legs list, object line items) before handing it over.

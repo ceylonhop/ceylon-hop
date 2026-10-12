@@ -168,6 +168,20 @@ describe('a service selection (a link sold as the chauffeur option)', () => {
     expect(isServiceSelection(undefined)).toBe(false);
   });
 
+  // Strict: the key alone does not make it a service selection.
+  it('only { service: "chauffeur" } is a service selection', () => {
+    expect(isServiceSelection({ service: 'private' })).toBe(false);
+    expect(isServiceSelection({ service: 'shared' })).toBe(false);
+    expect(isServiceSelection({ service: undefined })).toBe(false);
+    expect(isServiceSelection({})).toBe(false);
+    expect(chosenAddOns(savedQuote(), { service: 'private' } as never)).toEqual(chosenAddOns(savedQuote())); // not a service selection
+  });
+
+  it('legSelectionOf accepts only a well-formed leg selection', () => {
+    expect(legSelectionOf({ service: 'private' } as never)).toBeNull();
+    expect(legSelectionOf({ legIndexes: 'x', extraIndexes: [] } as never)).toBeNull();
+  });
+
   it('legSelectionOf is the part-of-trip half only', () => {
     expect(legSelectionOf(leg)).toBe(leg);
     expect(legSelectionOf(service)).toBeNull();

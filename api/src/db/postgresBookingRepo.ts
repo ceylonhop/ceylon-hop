@@ -12,7 +12,8 @@ import {
   quotes,
   bookingStatusEvents,
 } from './schema';
-import { chosenAddOns, type PayLinkSelection } from '../quote/paySelection';
+import { addOnsFor } from '../quote/quoteAlternative';
+import type { PayLinkSelection } from '../quote/paySelection';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -391,7 +392,7 @@ export class PostgresBookingRepo implements BookingRepo {
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
-    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PayLinkSelection | null)]));
+    const quoteBy = new Map(linkedQuotes.map((q) => [q.bookingId, { request: q.request, result: q.result, payLinkSelection: q.selection as PayLinkSelection | null }]));
     return rows.map((row) => {
       const cust = custById.get(row.customerId);
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
@@ -401,7 +402,8 @@ export class PostgresBookingRepo implements BookingRepo {
       const promoCode = row.promoCodeId ? codeBy.get(row.promoCodeId) : undefined;
       const booking = promoCode ? { ...built, promoCode } : built;
       // The booking's quote names them; a website booking has none, so its own snapshot does.
-      const fromQuote = addOnsBy.get(row.id);
+      const linked = quoteBy.get(row.id);
+      const fromQuote = linked ? addOnsFor(linked, built) : undefined;
       const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
       return addOns.length ? { ...booking, addOns } : booking;
     });

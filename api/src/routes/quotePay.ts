@@ -7,7 +7,7 @@ import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { legSelectionOf, payLines } from '../quote/paySelection';
-import { soldView } from '../quote/quoteAlternative';
+import { soldView, soldViewFor } from '../quote/quoteAlternative';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
 import { depositFor } from '../quote/extrasDeposit';
@@ -209,20 +209,19 @@ export function quotePayRoutes(deps: {
   r.get('/view', async (c) => {
     const parsed = verifyQuotePayToken(c.req.query('t'), deps.linkSecret);
     if (!parsed) return c.json({ state: 'unavailable' as const }, 200); // soft — no detail leak
-    // The quote AS SOLD: for a link sold as the chauffeur option of a "both" quote this is the
-    // frozen chauffeur quote, so everything below prices, words and books that product. null (the
-    // selection has nothing valid behind it) reads exactly like an unknown quote.
-    const loaded = await deps.quotes.get(parsed.quoteId);
-    const quote = loaded ? soldView(loaded) : null;
+    const quote = await deps.quotes.get(parsed.quoteId);
     const { state, paidVia } = await stateFor(quote, parsed);
 
+    // Once a booking exists, "as sold" follows the BOOKING (soldViewFor), not the quote's current
+    // selection: the agent may have switched the link after this customer's booking was created.
     if (state === 'balance' && quote && paidVia) {
       const booking = await deps.bookings.get(paidVia.bookingId);
+      const sold = soldViewFor(quote, booking);
       const rows = await deps.payments.findByBookingId(paidVia.bookingId);
       const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
       const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
       const balance = booking ? balanceDueCents(booking, rows) : 0;
-      const copy = payPageCopy(quote, legSelectionOf(quote.payLinkSelection));
+      const copy = payPageCopy(sold, legSelectionOf(sold.payLinkSelection));
       return c.json({
         state,
         balance: {
@@ -233,7 +232,7 @@ export function quotePayRoutes(deps: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
           copy,
-          totalUsd: usd(booking?.total ?? quote.totalCents),
+          totalUsd: usd(booking?.total ?? sold.totalCents),
           paidUsd: usd(paidCents(rows)),
           // The deposit's settled day (Asia/Colombo), or null when the ledger has no timestamp.
           paidOn: settledAt ? isoToday('Asia/Colombo', settledAt) : null,
@@ -252,13 +251,14 @@ export function quotePayRoutes(deps: {
       const paidTotal = paidRows.some((p) => p.purpose === 'balance' && p.status === 'succeeded')
         ? paidCents(paidRows)
         : payment?.amount;
-      const paidCopy = payPageCopy(quote, legSelectionOf(quote.payLinkSelection));
+      const sold = soldViewFor(quote, booking);
+      const paidCopy = payPageCopy(sold, legSelectionOf(sold.payLinkSelection));
       return c.json({
         state,
         paid: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
-          amountUsd: paidTotal != null ? usd(paidTotal) : usd(quote.totalCents),
+          amountUsd: paidTotal != null ? usd(paidTotal) : usd(sold.totalCents),
           // Selection-aware here too: a keepsake for a two-leg payment must not be headed
           // "Four journeys" either.
           title: paidCopy.title,
@@ -269,21 +269,28 @@ export function quotePayRoutes(deps: {
     }
     if (state !== 'payable' || !quote) return c.json({ state });
 
+    // The quote AS SOLD on this (not yet booked) link: for a link sold as the chauffeur option of a
+    // "both" quote this is the frozen chauffeur quote, so everything below prices, words and
+    // offers a deposit on that product. null (the selection has nothing valid behind it) reads like
+    // an unknown quote — fail closed.
+    const live = soldView(quote);
+    if (!live) return c.json({ state: 'unavailable' as const });
+
     // A partial link charges the frozen soldCents, not the quote total (spec §4).
-    const soldCents = quote.soldCents ?? quote.totalCents;
-    const sel = legSelectionOf(quote.payLinkSelection);
-    const partial = sel ? partialView(quote, sel) : null;
-    const dep = depositOffer(quote);
+    const soldCents = live.soldCents ?? live.totalCents;
+    const sel = legSelectionOf(live.payLinkSelection);
+    const partial = sel ? partialView(live, sel) : null;
+    const dep = depositOffer(live);
 
     return c.json({
       state,
       // The copy must know about the selection, or the page describes the whole trip while the
       // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
-      copy: payPageCopy(quote, sel),
+      copy: payPageCopy(live, sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
       // Full links only — see discountView. `sel` is the whole test: a subset link always has one.
-      ...(sel ? {} : { discount: discountView(quote) }),
-      prefill: prefillFor(quote),
+      ...(sel ? {} : { discount: discountView(live) }),
+      prefill: prefillFor(live),
       ...(partial ?? {}),
       // Present only when the customer may choose (a whole-trip link on an eligible quote); the
       // page is exactly today's page without it. `totals` stays the trip total.
@@ -301,12 +308,15 @@ export function quotePayRoutes(deps: {
     }
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
-    const loaded = await deps.quotes.get(parsed.quoteId);
-    const quote = loaded ? soldView(loaded) : null; // the quote as sold — see /view
-    const { state } = await stateFor(quote, parsed);
+    const stored = await deps.quotes.get(parsed.quoteId);
+    const { state } = await stateFor(stored, parsed);
     if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
-    if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
+    if (state !== 'payable' || !stored) return c.json({ error: 'quote_unavailable' }, 409);
+    // The quote AS SOLD on this link — see /view. null (nothing valid behind the selection) is the
+    // same refusal an unknown quote gets.
+    const quote = soldView(stored);
+    if (!quote) return c.json({ error: 'quote_unavailable' }, 409);
 
     // The customer's choice. A deposit is refused unless the /view rule offered it — the server
     // recomputes it and never trusts the client for either the option or the amount.
@@ -448,8 +458,9 @@ export function quotePayRoutes(deps: {
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
-    const loaded = await deps.quotes.get(parsed.quoteId);
-    const quote = loaded ? soldView(loaded) : null; // the quote as sold — see /view
+    // No soldView here: the balance belongs to the booking that took the deposit, so a selection
+    // that stopped validating (or was switched) afterwards must not strand a customer who has paid.
+    const quote = await deps.quotes.get(parsed.quoteId);
     const { state, paidVia } = await stateFor(quote, parsed);
     if (state !== 'balance' || !paidVia) return c.json({ error: 'no_balance_due' }, 409);
     return c.json(

@@ -7,6 +7,7 @@ import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
+import { addOnsFor } from '../quote/quoteAlternative';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
@@ -354,7 +355,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   // with none comes back as the very object stored, exactly as before.
   private async present(b: Booking): Promise<Booking> {
     const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
-    const fromQuote = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const fromQuote = q ? addOnsFor(q, b) : [];
     const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
     return addOns.length ? { ...b, addOns } : b;
   }
