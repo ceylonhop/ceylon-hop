@@ -57,7 +57,7 @@ describe('ops "Mark booked" error message', () => {
 
   it('says what to do when the customer already started the Chauffeur-guide payment (other_option_started)', () => {
     expect(bookErrorText({ error: 'not_bookable', reason: 'other_option_started', message: 'server wording' })).toBe(
-      'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.',
+      "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.",
     );
   });
 });

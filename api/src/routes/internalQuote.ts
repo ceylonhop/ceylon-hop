@@ -23,7 +23,7 @@ import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { depositFor } from '../quote/extrasDeposit';
-import { alternativeOf, chauffeurFeasibility, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
+import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
@@ -1157,14 +1157,15 @@ export function internalQuoteRoutes(deps: {
       }
       // "Mark booked" books the point-to-point option (owner D4). A booking the customer started on
       // the CHAUFFEUR link is the other product at the other price — adopting it would stamp this
-      // quote won against a sale it was not asked to record. Refuse and say how to resolve it.
-      if (isServiceSelection(quote.payLinkSelection) && quote.product === 'private'
-        && (prior as { input?: { serviceType?: string } }).input?.serviceType === 'chauffeur') {
+      // quote won against a sale it was not asked to record. Decided by the BOOKING, never by the
+      // quote's current link (the agent may have switched back since): the same predicate as the
+      // ops drawer and the confirmation email.
+      if (quote.product === 'private' && isChauffeurBooking(prior)) {
         return c.json(
           {
             error: 'not_bookable',
             reason: 'other_option_started',
-            message: 'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.',
+            message: "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.",
           },
           409,
         );

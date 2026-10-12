@@ -182,3 +182,102 @@ test('"Part of trip…" stays: it is still offered on a "both" quote', async ({ 
   await openReadyQuote(page, fullQuote());
   await expect(page.locator('.ch-actionbar [data-action="openPayPart"]')).toBeVisible();
 });
+
+// A refused mint must not leave the PREVIOUS option's link looking like the answer: Point-to-point
+// is cached, Chauffeur-guide is picked, the server says no — nothing is copied and the error shows.
+test('a refused chauffeur mint copies nothing, even with a point-to-point link already held', async ({ page }) => {
+  const { posts } = await openReadyQuote(page, fullQuote());
+  await payBtn(page).click();
+  await chooser(page).locator('[data-action="payChoose"][data-service="private"]').click();
+  await expect.poll(() => copied(page)).toEqual(['https://pay.example.test/private']);
+  await expect(payBtn(page)).toBeEnabled({ timeout: 8000 });
+
+  // From here the server refuses the chauffeur option.
+  await page.route('**/admin/quote/q1/pay-link', (r) => {
+    posts.push(r.request().postData());
+    r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_linkable', reason: 'no_alternative' }) });
+  });
+  await payBtn(page).click();
+  await chooser(page).locator('[data-action="payChoose"][data-service="chauffeur"]').click();
+  await expect.poll(() => posts.length).toBe(2);
+  await expect(page.locator('#ch-toast .ch-toast-msg')).toContainText('no Chauffeur-guide price saved');
+  expect(await copied(page)).toEqual(['https://pay.example.test/private']); // unchanged
+  await expect(chooser(page)).toHaveCount(0);
+});
+
+// A slow mint must not land on a DIFFERENT quote: the response is discarded when the open quote
+// changed, so nothing is copied or toasted for quote A while quote B is on screen.
+async function openTwoQuotes(page, quoteA, quoteB) {
+  const posts = [];
+  // Quote A's mint is HELD until the test releases it, so the response lands exactly when B is open.
+  let release;
+  const held = new Promise((res) => { release = res; });
+  await page.addInitScript(() => {
+    window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
+    window.__copied = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: (t) => { window.__copied.push(t); return Promise.resolve(); } }, configurable: true });
+  });
+  await page.route('**/admin/**', (r) => r.fulfill(json({})));
+  await routeOpsEstimate(page);
+  for (const q of [quoteA, quoteB]) await page.route('**/admin/quote/' + q.id, (r) => r.fulfill(json(q)));
+  await page.route('**/admin/quote/list**', (r) => r.fulfill(json({ quotes: [quoteA, quoteB].map((q) => ({
+    id: q.id, reference: q.reference, customerName: q.customerName, product: 'private', vehicle: 'car', totalCents: 14900, currency: 'USD', status: 'ready',
+  })) })));
+  await page.route('**/admin/quote/*/pay-link', async (r) => {
+    const id = r.request().url().match(/quote\/([^/]+)\/pay-link/)[1];
+    const data = r.request().postData();
+    posts.push({ id, data });
+    if (id === quoteA.id) await held;
+    const service = data ? JSON.parse(data).service : undefined;
+    r.fulfill(json({ url: `https://pay.example.test/${id}/${service || 'plain'}`, payhereMode: 'live', amountCents: 14900, coverage: null, ...(service ? { service } : {}) }));
+  });
+  await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json({
+    rateCardVersion: '2026-07-09', perKmCents: { car: 35, van: 47, van9: 47, van14: 48, custom: 175 },
+    floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 },
+    chauffeurDayRateCents: 3500, fxUsdToLkr: 330, bufferPct: 10,
+  })));
+  await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
+  await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({
+    email: 'founder@e2e.test', role: 'founder',
+    caps: ['quote:manage', 'quote:approve', 'margin:view', 'bookings:read', 'bookings:operate', 'payments:act'],
+  })));
+  await page.goto(OPS_FILE + '#quotes');
+  await page.locator('#view .qrow').first().click();
+  await page.waitForSelector('#quoteRoot .ch-app .ch-status-pill', { timeout: 10000 });
+  await page.waitForLoadState('networkidle');
+  return { posts, release };
+}
+async function switchToSecond(page) {
+  // The builder's own Queue button goes inert while a lifecycle action is in flight; the side nav does not.
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('#view .qrow').nth(1).click();
+  await expect(page.locator('.ch-quoteref b')).toHaveText('Q-Q2', { timeout: 10000 });
+}
+const quoteB = () => fullQuote({ id: 'q2', reference: 'Q-Q2', customerName: 'Nimal', payOptions: null });
+
+for (const [label, quoteA, press] of [
+  ['the Chauffeur-guide pick', () => fullQuote(), async (page) => {
+    await payBtn(page).click();
+    await chooser(page).locator('[data-action="payChoose"][data-service="chauffeur"]').click();
+  }],
+  ['the plain Payment link button', () => fullQuote({ payOptions: null }), async (page) => { await payBtn(page).click(); }],
+]) {
+  test(`a slow mint from ${label} on quote A never copies or toasts once quote B is open`, async ({ page }) => {
+    const { posts, release } = await openTwoQuotes(page, quoteA(), quoteB());
+    await press(page);
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0].id).toBe('q1');
+    await switchToSecond(page);
+
+    // A's response lands while B is open.
+    release();
+    await page.waitForTimeout(800);
+    expect(await copied(page)).toEqual([]);
+    await expect(page.locator('#ch-toast')).not.toHaveClass(/show/);
+    await expect(page.locator('#pay-linkout')).toHaveCount(0);
+
+    // And B still works on its own, with its own link.
+    await payBtn(page).click();
+    await expect.poll(() => copied(page)).toEqual(['https://pay.example.test/q2/plain']);
+  });
+}

@@ -6716,7 +6716,7 @@ function markSent()        { return transition('sent', { toast: 'Marked as sent 
 function payLinkRefusal(err, fallback) {
   if (!err || err.error !== 'not_linkable') return 'Could not create the payment link';
   if (err.reason === 'discounted') return 'A discounted quote can only take a full-total payment link — use "Payment link" instead';
-  if (err.reason === 'no_alternative') return 'This quote has no chauffeur-guide price saved \u2014 re-save it to get one';
+  if (err.reason === 'no_alternative') return 'This quote has no Chauffeur-guide price saved \u2014 reopen the quote and save it again to get one';
   return fallback;
 }
 
@@ -6725,28 +6725,38 @@ function payLinkRefusal(err, fallback) {
    revision. The row it reveals is what ops copies into the WhatsApp message next to the
    quote. A non-live PayHere mode gets an amber SANDBOX chip: a sandbox link takes test-card
    money and marks real bookings Paid, so it must never pass for a live one. */
+/* Resolves true only when a link was minted AND is still the open quote's. Every await below can
+   outlive the quote: pick a link, go back to the queue, open another quote, and the response used to
+   land on that other quote (and be copied there). Same _openSeq guard as reopenQuote — a response
+   for a quote that is no longer open is dropped, silently, and reported as "not minted". */
 async function mintPayLink(service) {
-  if (!state.savedId) return;
+  if (!state.savedId) return false;
+  var seq = _openSeq;
   try {
     /* `service` is only ever sent from the "both" chooser; the server reads the amount from the
        quote's stored price for that option, so the client names a product and nothing else. */
     var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', service
       ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ service: service }) }
       : { method: 'POST' });
+    if (seq !== _openSeq) return false;
     if (!r.ok) {
       var err = await jsonOrNull(r);
+      if (seq !== _openSeq) return false;
       showToast(payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
-      return;
+      return false;
     }
     var body = await jsonOrNull(r);
-    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return; }
+    if (seq !== _openSeq) return false;
+    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return false; }
     _payLink = { url: body.url, mode: body.payhereMode || 'off', service: service || null };
     _payPartial = null; // a bodyless mint is the FULL link — the server just retired any selection
     if (service && state.payOptions) state.payOptions.linkedService = service === 'chauffeur' ? 'chauffeur' : null;
     render();
+    return true;
   } catch (e) {
     window.opsReportError && window.opsReportError('mint pay link', e);
-    showToast('Could not create the payment link', 'error');
+    if (seq === _openSeq) showToast('Could not create the payment link', 'error');
+    return false;
   }
 }
 /* "Payment link" copies. It used to reveal a bar above the builder holding the URL, a Copy
@@ -6966,8 +6976,7 @@ function renderPayPicker() {
 async function payLinkPress() {
   if (payServiceOptions(state.payOptions).length && (state.status === 'ready' || state.status === 'sent')) { openPayChooser(); return; }
   if (_payLink) { copyPayLink(); return; }
-  await mintPayLink();
-  if (_payLink) copyPayLink();
+  if (await mintPayLink() && _payLink) copyPayLink();
 }
 
 /* "Both" quotes (spec 2026-10-12): a quote the customer asked for as point-to-point AND chauffeur-guide
@@ -7008,8 +7017,8 @@ function openPayChooser() {
 async function pickPayService(service) {
   _payChooser = false;
   if (!(_payLink && _payLink.service === service)) {
-    await mintPayLink(service);
-    if (!_payLink || _payLink.service !== service) { render(); return; } // refused — mintPayLink already said why
+    var minted = await mintPayLink(service);
+    if (!minted || !_payLink || _payLink.service !== service) { render(); return; } // refused or stale — mintPayLink already said why
   }
   copyPayLink();
 }
@@ -7152,7 +7161,7 @@ async function apiBook(id, payload) {
 function bookErrorText(res) {
   if (!res) return 'Could not book — unknown error';
   // The customer already started the OTHER option's payment (see /book): not a form error, so no prefix.
-  if (res.reason === 'other_option_started') return 'A Chauffeur-guide payment was started on this quote \u2014 cancel that booking first, or reopen the quote and price it as Chauffeur-guide.';
+  if (res.reason === 'other_option_started') return "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.";
   if (res.message) return 'Could not book — ' + res.message;
   var d = res.details;
   if (d && d.fieldErrors) {

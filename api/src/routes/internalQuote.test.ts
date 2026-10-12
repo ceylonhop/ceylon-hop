@@ -3694,7 +3694,52 @@ describe('POST /admin/quote/:id/pay-link with { service } — the chauffeur opti
       expect(after.convertedBookingId).toBe(bookingId);
       expect(after.payLinkSelection).toBeNull();
       expect(after.soldCents).toBeNull();
+      // The retirement is a seq bump (the stored selection alone would not retire the old token).
+      expect(after.payLinkSeq).toBe(before.payLinkSeq + 1);
       expect((await w.bookings.get(bookingId))!.total).toBe(before.totalCents); // point-to-point
+    });
+
+    it('(c) the customer started the CHAUFFEUR link and the agent then switched back to point-to-point: still refuses (decided by the booking, not the current link)', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      await mint(w, id, { service: 'private' }); // selection cleared
+      const before = (await w.quotes.get(id))!;
+      expect(before.payLinkSelection).toBeNull(); // guard: nothing on the quote says chauffeur any more
+      expect(before.convertedBookingId).toBe(bookingId);
+
+      const res = await book(w, id);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'not_bookable', reason: 'other_option_started' });
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('sent');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect((await w.bookings.get(bookingId))!.total).toBe(await altTotalOf(w, id)); // untouched chauffeur booking
+    });
+
+    it('the way out the refusal names works: reopen, re-price as Chauffeur-guide, approve, Mark booked adopts the chauffeur booking', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const alt = await altTotalOf(w, id);
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      expect((await book(w, id)).status).toBe(409); // guard: refused as a point-to-point sale
+
+      expect((await send(w, 'PATCH', `/admin/quote/${id}`, { status: 'draft' })).status).toBe(200);
+      const saved = await send(w, 'POST', '/admin/quote/save', { ...BOTH, id, requestedService: 'chauffeur', service: 'chauffeur' });
+      expect(saved.status).toBe(200);
+      for (const st of ['pending_review', 'ready', 'sent']) {
+        expect((await send(w, 'PATCH', `/admin/quote/${id}`, { status: st })).status).toBe(200);
+      }
+      const q = (await w.quotes.get(id))!;
+      expect(q.product).toBe('chauffeur');
+      expect(q.totalCents).toBe(alt); // guard: the re-priced total is the booking's total
+
+      const res = await book(w, id);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(bookingId);
+      expect((await w.quotes.get(id))!.status).toBe('won');
     });
 
     it('(b) the customer already started the CHAUFFEUR link: refuses with other_option_started and touches nothing', async () => {

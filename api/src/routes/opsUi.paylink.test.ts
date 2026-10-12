@@ -109,7 +109,7 @@ describe('ops shell: the "both" quote payment-link chooser', () => {
     expect(fn.indexOf('openPayChooser()')).toBeLessThan(fn.indexOf('if (_payLink) { copyPayLink(); return; }'));
     // …and the existing copy-synchronously-then-mint lines are still there, unchanged.
     expect(fn).toContain('if (_payLink) { copyPayLink(); return; }');
-    expect(fn).toContain('await mintPayLink();');
+    expect(fn).toContain('await mintPayLink() && _payLink');
   });
 
   it('delegates the pick and the cancel through the action switch', () => {
@@ -133,6 +133,7 @@ describe('ops shell: the "both" quote payment-link chooser', () => {
   it('names the product in the toast and the sandbox warning, and says what a refusal means', () => {
     expect(body).toContain(' payment link copied');
     expect(body).toMatch(/err\.reason === 'no_alternative'/);
+    expect(body).toContain('This quote has no Chauffeur-guide price saved \\u2014 reopen the quote and save it again to get one');
   });
 
   it('warns, never blocks, when a payment was started on the current link (D5)', () => {
