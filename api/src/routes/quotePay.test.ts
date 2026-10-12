@@ -566,10 +566,13 @@ describe('POST /quotes/pay/start — the booking is born at pay-commit', () => {
 const startPaying = (app: App, t: string, payment: unknown) =>
   startRaw(app, { t, customer: CUSTOMER, termsAccepted: true, payment });
 
+// Deposits are for CHAUFFEUR trips only (owner, 2026-10-12): every deposit case below is built on one.
+const CHAUFFEUR = { product: 'chauffeur' as const };
+
 describe('GET /quotes/pay/view — the deposit option', () => {
   it('offers the deposit on an eligible whole-trip link; totals stay the trip total', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const q = await readyQuote(quotes); // private, $219.00
+    const q = await readyQuote(quotes, CHAUFFEUR); // chauffeur, $219.00
     const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
     expect(body.deposit).toEqual({ cents: 5000, usd: '$50.00', balanceCents: 16900, balanceUsd: '$169.00' });
     expect(body.totals).toEqual({ cents: 21900, usd: '$219.00' });
@@ -584,10 +587,10 @@ describe('GET /quotes/pay/view — the deposit option', () => {
 
   it('omits it below the $150 floor (the boundary is $150, not $149.99)', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const low = await readyQuote(quotes, { totalCents: 14999 });
+    const low = await readyQuote(quotes, { ...CHAUFFEUR, totalCents: 14999 });
     const lowBody = await (await view(createApp({ quotes }), signQuotePayToken(low.id, low.revision, SECRET))).json();
     expect(lowBody).not.toHaveProperty('deposit');
-    const edge = await readyQuote(quotes, { totalCents: 15000 });
+    const edge = await readyQuote(quotes, { ...CHAUFFEUR, totalCents: 15000 });
     const edgeBody = await (await view(createApp({ quotes }), signQuotePayToken(edge.id, edge.revision, SECRET))).json();
     expect(edgeBody.deposit).toMatchObject({ cents: 5000, balanceCents: 10000 });
   });
@@ -599,6 +602,25 @@ describe('GET /quotes/pay/view — the deposit option', () => {
     const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
     expect(body.state).toBe('payable');
     expect(body).not.toHaveProperty('deposit');
+  });
+
+  // Owner, 2026-10-12 (testing on staging): "deposits are only allowed for chauffeur bookings" — a
+  // $187 three-journey private quote was offering one.
+  it('omits it on a private transfer, however much it costs — and refuses one that is asked for anyway', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes, { product: 'private', totalCents: 60000 });
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payable');
+    expect(body).not.toHaveProperty('deposit');
+    const res = await startPaying(app, t, 'deposit');
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('deposit_ineligible');
+    // …and paying in full is untouched.
+    const full = await (await startPaying(app, t, 'full')).json();
+    expect((await bookings.get(full.bookingId))!.amountDueNow).toBe(60000);
   });
 
   it('omits it on a part-of-trip link, whatever the sold amount', async () => {
@@ -617,7 +639,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
   it('payment:"deposit" writes amountDueNow = the deposit, total stays the trip total', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const res = await startPaying(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), 'deposit');
     expect(res.status).toBe(201);
     const b = (await bookings.get((await res.json()).bookingId))!;
@@ -629,10 +651,10 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ quotes, bookings });
-    const a = await readyQuote(quotes);
+    const a = await readyQuote(quotes, CHAUFFEUR);
     const full = await startPaying(app, signQuotePayToken(a.id, a.revision, SECRET), 'full');
     expect((await bookings.get((await full.json()).bookingId))!.amountDueNow).toBe(21900);
-    const b = await readyQuote(quotes);
+    const b = await readyQuote(quotes, CHAUFFEUR);
     const bare = await start(app, signQuotePayToken(b.id, b.revision, SECRET));
     expect((await bookings.get((await bare.json()).bookingId))!.amountDueNow).toBe(21900);
   });
@@ -640,7 +662,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
   it('refuses a deposit on an ineligible quote: 409 deposit_ineligible, no booking born', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
-    const q = await readyQuote(quotes, { totalCents: 14999 });
+    const q = await readyQuote(quotes, { ...CHAUFFEUR, totalCents: 14999 });
     const res = await startPaying(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), 'deposit');
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'deposit_ineligible' });
@@ -659,7 +681,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
 
   it('rejects an unknown payment value with 400', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const res = await startPaying(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET), 'cash');
     expect(res.status).toBe(400);
   });
@@ -668,7 +690,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ quotes, bookings });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     const first = await (await startPaying(app, t, 'deposit')).json();
     expect((await bookings.get(first.bookingId))!.amountDueNow).toBe(5000);
@@ -684,7 +706,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ quotes, bookings });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     const first = await (await startPaying(app, t, 'deposit')).json();
     await start(app, t); // an older cached pay.html: no `payment` at all
@@ -698,7 +720,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
     const app = createApp({ quotes, bookings, payments });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
 
@@ -720,7 +742,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ quotes, bookings });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
 
@@ -735,7 +757,7 @@ describe('POST /quotes/pay/start — the customer’s choice', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ quotes, bookings });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     await bookings.setStatus((await (await start(app, t)).json()).bookingId, 'cancelled');
     const b2 = await (await start(app, t)).json();
@@ -767,7 +789,7 @@ async function depositPaid(opts: { balanceStatus?: 'succeeded' | 'pending' } = {
   const bookings = new InMemoryBookingRepo();
   const payments = new InMemoryPaymentRepo();
   const app = createApp({ quotes, bookings, payments });
-  const q = await readyQuote(quotes);
+  const q = await readyQuote(quotes, CHAUFFEUR);
   const t = signQuotePayToken(q.id, q.revision, SECRET);
   const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
   const booking = (await bookings.get(bookingId))!;
@@ -790,7 +812,7 @@ describe('GET /quotes/pay/view — the balance state', () => {
     const body = await (await view(app, t)).json();
     expect(body.state).toBe('balance');
     expect(body.balance).toMatchObject({
-      title: 'Colombo Airport (CMB) → Galle', totalUsd: '$219.00', paidUsd: '$50.00',
+      title: 'Six days across Sri Lanka', totalUsd: '$219.00', paidUsd: '$50.00',
       paidOn: '2026-10-05', balanceCents: 16900, balanceUsd: '$169.00',
     });
   });
@@ -803,7 +825,7 @@ describe('GET /quotes/pay/view — the balance state', () => {
     const { balance } = await (await view(app, t)).json();
     expect(balance.reference).toBe(booking.reference);
     expect(balance.firstName).toBe('Nimal');
-    expect(balance.copy).toMatchObject({ product: 'single', title: 'Colombo Airport (CMB) → Galle' });
+    expect(balance.copy).toMatchObject({ product: 'chauffeur', title: 'Six days across Sri Lanka' });
     expect(Array.isArray(balance.copy.facts)).toBe(true);
   });
 
@@ -833,7 +855,7 @@ describe('GET /quotes/pay/view — the balance state', () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
     const app = createApp({ quotes, bookings, payments });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     const { bookingId } = await (await start(app, t)).json();
     const p = await payments.create({ bookingId, provider: 'payhere', orderId: 'x', amount: 21900, currency: 'USD', idempotencyKey: 'k' });
@@ -853,7 +875,7 @@ describe('GET /quotes/pay/view — the balance state', () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
     const app = createApp({ quotes, bookings, payments });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     const { bookingId } = await (await startPaying(app, t, 'deposit')).json();
     await payments.create({ bookingId, provider: 'payhere', orderId: 'x-D', amount: 5000, currency: 'USD', idempotencyKey: 'kd', purpose: 'deposit' });
@@ -883,7 +905,7 @@ describe('POST /quotes/pay/balance', () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
     const app = createApp({ quotes, bookings, payments });
-    const q = await readyQuote(quotes);
+    const q = await readyQuote(quotes, CHAUFFEUR);
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     // not yet paid: only a started booking
     const { bookingId } = await (await start(app, t)).json();
