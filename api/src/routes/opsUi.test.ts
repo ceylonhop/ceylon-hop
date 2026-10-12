@@ -450,12 +450,17 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
     expect(msg).not.toMatch(/can't carry/i);
   });
 
-  it("offers a one-click switch on the 'both' mismatch, and only there", async () => {
+  // Owner, 2026-10-12: what the customer asked for decides how the quote is priced, and the
+  // Pricing as cards are display-only. Nothing in the builder may still CHOOSE the priced service:
+  // no element emits setService (the old cards and the 'both' remedy button did), and the estimate
+  // re-derives it from the request while the quote is editable.
+  it('nothing in the builder can pick the priced service by hand', async () => {
     const body = await (await createApp().request('/ops')).text();
-    // The button is gated on exactly the 'both' + chauffeur pair — every other mismatch is a
-    // judgement call, so it must not sprout a remedy button.
-    expect(body).toContain("state.requestedService === 'both' && state.service === 'chauffeur'");
-    expect(body).toMatch(/ch-mismatch-fix[\s\S]{0,200}data-action="setService" data-service="private"/);
+    expect(body).not.toContain('data-action="setService"');
+    expect(body).not.toContain("action === 'setService'");
+    expect(body).not.toContain('ch-mismatch-fix');
+    expect(body).toMatch(/pricedServiceFor\(st\.requestedService, distinctLegDateCount\(\), st\.service\)/);
+    expect(body).toMatch(/setService\(pricedServiceFor\(next, distinctLegDateCount\(\), state\.service\)\)/);
   });
 });
 

@@ -95,8 +95,12 @@ async function chooseVehicle(page, value) {
 
 // Record what the customer asked for — required before a quote can be submitted for review
 // (spec 2026-07-17). 'private' = the Point-to-point chip.
+// The chips are toggles, and since 2026-10-12 they are also how a spec chooses the priced service
+// (the Pricing as cards are display-only) — so this is idempotent: it never unticks a chip a spec
+// already pressed.
 async function recordRequest(page, req = 'private') {
-  await page.locator(`[data-action="setRequestedService"][data-req="${req}"]`).click();
+  const chip = page.locator(`[data-action="setRequestedService"][data-req="${req}"]`);
+  if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
   await page.waitForTimeout(200);
 }
 
@@ -282,10 +286,10 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
   await page.waitForTimeout(600);
 
-  // Choose Chauffeur-guide via the service chooser (all legs dated, 3 distinct dates → enabled).
-  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
-  await expect(chBtn).toBeEnabled({ timeout: 10000 });
-  await chBtn.click();
+  // Ask for Chauffeur-guide (all legs dated, 3 distinct dates) — what the customer asked for is
+  // what prices the quote; the Pricing as cards are display-only (owner, 2026-10-12).
+  await recordRequest(page, 'chauffeur');
+  await expect(page.locator('.ch-svc-box.active .ch-svc-lbl')).toHaveText('Chauffeur-guide', { timeout: 10000 });
   await page.waitForTimeout(600);
 
   // (The Travel|Stay per-leg switch was retired — the Aug-1→Aug-3→Aug-4 span carries one idle
@@ -356,8 +360,8 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
-  await expect(chBtn).toBeDisabled();
+  const chBox = page.locator('.ch-svc-box[data-service="chauffeur"]');
+  await expect(chBox).toHaveClass(/is-off/); // single-day trip: no chauffeur price to show
 
   // Point-to-point (default): the per-leg fee controls exist — inline toggle chips on the
   // leg tools row (the "+ Fees" popover + checkbox tray was replaced 2026-08-01).
@@ -384,7 +388,8 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0); // no stay-day button anymore
 
   // Back to point-to-point → per-leg fee chips return.
-  await page.locator('[data-action="setService"][data-service="private"]').click();
+  await page.locator('[data-action="setRequestedService"][data-req="chauffeur"]').click(); // untick
+  await recordRequest(page, 'private');
   await page.waitForTimeout(600);
   await expect(page.locator('[data-action="toggleFee"]').first()).toBeAttached();
 });
@@ -647,9 +652,7 @@ test('reducing a chauffeur trip to one day reverts to point-to-point (drops the 
   await page.waitForTimeout(600);
 
   // Choose chauffeur — the summary now carries a day rate.
-  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
-  await expect(chBtn).toBeEnabled({ timeout: 10000 });
-  await chBtn.click();
+  await recordRequest(page, 'chauffeur');
   await expect(page.locator('#quoteRoot')).toContainText('Chauffeur day rate', { timeout: 10000 });
 
   // Delete leg 2 → single leg / single date → chauffeur ineligible. Service must auto-revert to
