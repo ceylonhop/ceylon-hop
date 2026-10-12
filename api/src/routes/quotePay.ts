@@ -382,11 +382,14 @@ export function quotePayRoutes(deps: {
     }
     const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
     if (found && isChargeable(found)) return resume(found);
-    // Derived from whatever booking already exists — this selection's dead one, or the previous
-    // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
-    // cancellation (or the same re-pick) still yields ONE new booking rather than two.
-    const prior =
-      found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
+    // The replacement key is derived from THIS link's own booking, and only that: the first tap on a
+    // link has none (so it creates under baseKey) and every later tap finds it through `found`. It
+    // used to fall back to `convertedBookingId` — the previous link's booking — but /start moves
+    // that pointer to each booking it creates, so the derived key changed on every tap and every
+    // tap on a re-minted link made a NEW booking (three taps, four payment_pending rows, and only
+    // the last one reachable from the quote). `found` is stable, so a double tap after a
+    // cancellation (the Q-2J358 case) still yields ONE replacement.
+    const prior = found;
     const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
     // …and that one booking, once it exists and is still chargeable, is a resume like any other.
     if (idempotencyKey !== baseKey) {

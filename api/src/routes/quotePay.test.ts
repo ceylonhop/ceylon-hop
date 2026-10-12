@@ -10,6 +10,7 @@ import { signQuotePayToken, verifyCheckoutToken } from '../lib/bookingToken';
 import { signSession } from '../lib/opsAuth';
 import { futureIsoDate } from '../testSupport/dates';
 import { depositFor } from '../quote/extrasDeposit';
+import { claimWonQuote } from '../services/quoteOutcome';
 
 // The customer-facing half of pay links (spec §3–§5). Everything here is reachable by
 // anyone holding the URL, so the two properties that matter most are pinned hard:
@@ -1408,6 +1409,22 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
     expect(await bookings.list()).toHaveLength(0);
   });
 
+  // One link (quote + revision + seq) is ONE chargeable booking however many times Continue is tapped
+  // — including when the link was re-minted after a booking already existed from the previous one.
+  it('re-minting to the chauffeur link after a point-to-point booking: three taps are ONE booking', async () => {
+    const c = await bothQuote({ link: false });
+    const earlier = (await (await start(c.app, c.t)).json()).bookingId; // started on the point-to-point link
+    await switchLink(c, 'chauffeur');
+    const t = signQuotePayToken(c.q.id, c.q.revision, SECRET, 7);
+    const taps = [await start(c.app, t), await start(c.app, t), await start(c.app, t)];
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(earlier);
+    expect(taps.map((r) => r.status)).toEqual([201, 200, 200]);
+    expect(await c.bookings.list()).toHaveLength(2);
+    expect((await c.bookings.get(ids[0]))!.total).toBe(c.altTotal);
+  });
+
   it('a "both" quote with NO service selection is untouched: point-to-point copy and total, no deposit', async () => {
     const { app, t, pointTotal } = await bothQuote({ link: false });
     const body = await (await view(app, t)).json();
@@ -1415,5 +1432,71 @@ describe('a link sold as the chauffeur option of a "both" quote', () => {
     expect(body.copy.product).not.toBe('chauffeur');
     expect(body.totals.cents).toBe(pointTotal);
     expect(body).not.toHaveProperty('deposit');
+  });
+});
+
+// ── One booking per payment link (quote + revision + seq), however many times Continue is tapped ──
+describe('POST /quotes/pay/start — a re-minted link', () => {
+  async function remintedPartial() {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { quote, token } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    const earlier = (await (await start(app, token)).json()).bookingId; // booking from the FIRST link
+    const sel = { legIndexes: [0], extraIndexes: [] };
+    await quotes.patch(quote.id, { payLinkSelection: sel, soldCents: selectionAmountCents(payLines(quote), sel), payLinkSeq: 2 });
+    return { quotes, bookings, app, quote, earlier, token2: signQuotePayToken(quote.id, quote.revision, SECRET, 2) };
+  }
+
+  it('three taps on a part-of-trip link re-minted after a started booking are ONE new booking', async () => {
+    const { bookings, app, earlier, token2 } = await remintedPartial();
+    const taps = [await start(app, token2), await start(app, token2), await start(app, token2)];
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(earlier);
+    expect(taps.map((r) => r.status)).toEqual([201, 200, 200]);
+    expect(await bookings.list()).toHaveLength(2);
+  });
+
+  it('the same under concurrent taps', async () => {
+    const { bookings, app, token2 } = await remintedPartial();
+    const taps = await Promise.all([start(app, token2), start(app, token2), start(app, token2)]);
+    const ids = await Promise.all(taps.map(async (r) => (await r.json()).bookingId));
+    expect(new Set(ids).size).toBe(1);
+    expect(await bookings.list()).toHaveLength(2);
+  });
+
+  it('a booking cancelled on the CURRENT link is replaced by ONE booking, stable across further taps', async () => {
+    const { bookings, app, token2 } = await remintedPartial();
+    const first = (await (await start(app, token2)).json()).bookingId;
+    await bookings.setStatus(first, 'cancelled');
+    const ids = [] as string[];
+    for (let i = 0; i < 3; i += 1) ids.push((await (await start(app, token2)).json()).bookingId);
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).not.toBe(first);
+    expect((await bookings.get(ids[0]))!.status).toBe('payment_pending');
+    expect(await bookings.list()).toHaveLength(3); // the first link's, the cancelled one, its replacement
+  });
+
+  // claimWonQuote finds the quote through convertedBookingId, which /start moves to the booking it
+  // creates. With one booking per link the booking every tap handed out IS that booking.
+  it('paying the booking the first tap returned still wins the quote after later taps', async () => {
+    const { quotes, app, quote, token2 } = await remintedPartial();
+    const first = (await (await start(app, token2)).json()).bookingId;
+    await start(app, token2);
+    await start(app, token2);
+    expect((await quotes.get(quote.id))!.convertedBookingId).toBe(first);
+    expect(await claimWonQuote(first, { quotes })).toBe(true);
+    expect((await quotes.get(quote.id))!.status).toBe('won');
+  });
+
+  // NOT changed here (it is the "a payment was started on the current link" race the spec accepts as
+  // D5): the quote points at ONE booking, the latest link's. The earlier link's booking, paid later,
+  // is not found through it, so it cannot win the quote.
+  it('KNOWN: the earlier link’s booking, paid after a newer link was started, does not claim the quote', async () => {
+    const { quotes, app, quote, earlier, token2 } = await remintedPartial();
+    await start(app, token2);
+    expect(await claimWonQuote(earlier, { quotes })).toBe(false);
+    expect((await quotes.get(quote.id))!.status).not.toBe('won');
   });
 });
