@@ -163,4 +163,20 @@ describe('canOpsSelfApprove — a quote with a chauffeur alternative', () => {
     expect((row.result as { alt?: unknown }).alt).toBeUndefined();
     expect(canOpsSelfApprove(row)).toBe(true);
   });
+
+  // The predicate tests the RAW key (`!= null`), not alternativeOf(): a malformed alt must still
+  // block. Only null/undefined mean "no alternative" — so 0, false and '' also block (they are
+  // not null). A refactor to alternativeOf(quote) != null would let all of these through.
+  it.each([
+    ['{}', {}], ["'x'", 'x'], ['0', 0], ['false', false], ["''", ''], ['[]', []], ['a bare product', { product: 'chauffeur' }],
+  ])('a malformed alt (%s) still blocks self-approval', async (_l, alt) => {
+    const row = await saved({ ...ONE_DRIVE_PLUS_STAY, requestedService: 'private' });
+    expect(canOpsSelfApprove(row)).toBe(true); // guard: nothing else blocks it
+    expect(canOpsSelfApprove({ ...row, result: { ...(row.result as object), alt } })).toBe(false);
+  });
+
+  it('treats alt: null as no alternative', async () => {
+    const row = await saved({ ...ONE_DRIVE_PLUS_STAY, requestedService: 'private' });
+    expect(canOpsSelfApprove({ ...row, result: { ...(row.result as object), alt: null } })).toBe(true);
+  });
 });
