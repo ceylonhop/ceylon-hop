@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuoteViewToken, signQuotePayToken } from '../lib/bookingToken';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { signSession } from '../lib/opsAuth';
+import { futureIsoDate } from '../testSupport/dates';
 import { chauffeurFromPrivate } from './quoteView';
 import type { QuoteRequest } from '../quote/types';
 
@@ -318,5 +321,52 @@ describe('chauffeurFromPrivate (direct)', () => {
       expect(result!.firstDate).toBe('2026-08-20');
       expect(result!.lastDate).toBe('2026-08-22');
     }
+  });
+});
+
+// A won quote's "booked" title is the trip that was SOLD, decided by the BOOKING once there is one
+// (spec PR #964): the quote's current pay-link selection can have moved since. Built through a real
+// /save (so result.alt is the engine's own) and a real /quotes/pay/start.
+describe('GET /quote-view — the booked title follows the booking', () => {
+  const FOUNDER = `ch_ops=${signSession({ email: 'f@x.com', exp: Date.now() + 600_000 }, 'sek')}`;
+  const BODY = {
+    firstName: 'Anna', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+    legs: [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: futureIsoDate(30) },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: futureIsoDate(32) },
+    ],
+  };
+  const CUSTOMER = { firstName: 'Anna', lastName: 'B', email: 'anna@x.com', whatsapp: '+94770001111', country: 'SE' };
+
+  async function wonOn(linkAtStart: 'point' | 'chauffeur', linkAtPay: 'point' | 'chauffeur') {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings, bookingLinkSecret: SECRET, auth: { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' }, adminApiKey: 'k' });
+    const saved = await (await app.request('/admin/quote/save', { method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER }, body: JSON.stringify(BODY) })).json();
+    for (const st of ['pending_review', 'ready', 'sent'] as const) await quotes.patch(saved.id, { status: st });
+    const altTotal = ((await quotes.get(saved.id))!.result as { alt: { result: { totalCents: number } } }).alt.result.totalCents;
+    const setLink = (to: 'point' | 'chauffeur', seq: number) => quotes.patch(saved.id, to === 'chauffeur'
+      ? { payLinkSelection: { service: 'chauffeur' }, soldCents: altTotal, payLinkSeq: seq }
+      : { payLinkSelection: null, soldCents: null, payLinkSeq: seq });
+    await setLink(linkAtStart, 1);
+    const q = (await quotes.get(saved.id))!;
+    const res = await app.request('/quotes/pay/start', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t: signQuotePayToken(q.id, q.revision, SECRET, 1), customer: CUSTOMER, termsAccepted: true }) });
+    expect(res.status).toBe(201);
+    await setLink(linkAtPay, 2); // the agent switches the link before the customer pays the booking they started
+    await bookings.setStatus((await res.json()).bookingId, 'paid');
+    await quotes.patch(saved.id, { status: 'won' });
+    return (await (await app.request(`/quote-view?t=${encodeURIComponent(signQuoteViewToken(saved.id, SECRET))}`)).json()).booked.title as string;
+  }
+
+  it('a chauffeur booking is headed by the chauffeur trip, even once the link points back at point-to-point', async () => {
+    expect(await wonOn('chauffeur', 'point')).toMatch(/days across Sri Lanka/);
+    expect(await wonOn('chauffeur', 'chauffeur')).toMatch(/days across Sri Lanka/);
+  });
+
+  it('a point-to-point booking is headed by its legs, even once the link was switched to chauffeur', async () => {
+    const plain = await wonOn('point', 'point');
+    expect(plain).not.toMatch(/across Sri Lanka/);
+    expect(await wonOn('point', 'chauffeur')).toBe(plain);
   });
 });

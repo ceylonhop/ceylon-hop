@@ -36,7 +36,10 @@ import {
   selectionAmountCents,
   isFullSelection,
   NotLineablePriceError,
+  isServiceSelection,
+  legSelectionOf,
   type PaySelection,
+  type PayLinkSelection,
 } from '../quote/paySelection';
 import { changedFields } from '../quote/quoteDiff';
 import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
@@ -645,8 +648,13 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
 
 // Canonical form of a selection: deduped and sorted, so [1,0] and [0,1] are ONE selection and
 // re-minting the same picks can't look like a change (which would retire the link ops just sent).
-function normalizeSel(sel: PaySelection | null | undefined): PaySelection | null {
+// A stored service selection (`{ service }`, a link sold as the chauffeur option) is its own
+// canonical form — it must compare as itself, never as "no selection" or as an empty leg list.
+function normalizeSel(sel: PaySelection): PaySelection;
+function normalizeSel(sel: PayLinkSelection | null | undefined): PayLinkSelection | null;
+function normalizeSel(sel: PayLinkSelection | null | undefined): PayLinkSelection | null {
   if (!sel) return null;
+  if (isServiceSelection(sel)) return { service: sel.service };
   return {
     legIndexes: [...new Set(sel.legIndexes)].sort((a, b) => a - b),
     extraIndexes: [...new Set(sel.extraIndexes)].sort((a, b) => a - b),
@@ -1433,7 +1441,8 @@ export function internalQuoteRoutes(deps: {
       return c.json({
         lines: payLines(quote),
         totalCents: quote.totalCents,
-        selection: quote.payLinkSelection,
+        // The picker ticks legs; a link sold as the chauffeur option has nothing for it to tick.
+        selection: legSelectionOf(quote.payLinkSelection),
       });
     } catch (e) {
       if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);

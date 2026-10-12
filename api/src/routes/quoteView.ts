@@ -6,7 +6,7 @@ import { customerQuoteView } from '../quote/customerQuoteView';
 import { rateCardFor } from '../quote/rateLock';
 import { quote as priceQuote } from '../quote/engine';
 import { drives } from '../quote/legCategory';
-import { alternativeOf } from '../quote/quoteAlternative';
+import { alternativeOf, soldViewFor } from '../quote/quoteAlternative';
 import type { QuoteRequest, PrivateLeg, Ride, ChauffeurTravelDay, ChauffeurRideDay } from '../quote/types';
 import type { RateCard } from '../quote/rateCard';
 
@@ -174,12 +174,16 @@ export function quoteViewRoutes(deps: {
       const booking = quote.convertedBookingId && deps.bookings
         ? await deps.bookings.get(quote.convertedBookingId)
         : null;
+      // Named for what was SOLD, which the BOOKING decides once there is one: a quote won on a
+      // chauffeur link is a chauffeur trip, a private booking stays point-to-point even if the link
+      // was switched after it was started. Never a dead end for a won quote.
+      const sold = soldViewFor(quote, booking);
       return send({
         state: 'booked' as ViewState,
         booked: {
           reference: booking?.reference ?? null,
           firstName: (quote.customerName ?? '').trim().split(/\s+/)[0] || null,
-          title: customerQuoteView(quote, servicesFor(quote, now)).title,
+          title: customerQuoteView(sold, servicesFor(sold, now)).title,
           // The keepsake hands the customer to where their booking actually lives.
           manageUrl: booking && deps.appBaseUrl
             ? `${deps.appBaseUrl.replace(/\/$/, '')}/manage.html?t=${signBookingToken(booking.id, deps.linkSecret)}`

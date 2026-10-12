@@ -117,6 +117,45 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
+  // Spec PR #964: which add-ons a booking names is decided by the BOOKING, not by the quote's
+  // current selection — and the Postgres load reads the raw jsonb selection (no type check).
+  it('add-ons follow the booking: a chauffeur booking names none, a private one keeps its own after a switch', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const chauffeurTrip: NewBooking = {
+      mode: 'trip' as const,
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+        vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 30000, amountDueNow: 30000, currency: 'USD',
+    };
+    const seed = async (booking: NewBooking) => {
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+        rateCardVersion: RATE_CARD.version, result, request: { engine },
+      });
+      const b = await bookings.create(booking);
+      await quotes.patch(q.id, { convertedBookingId: b.id, status: 'won', payLinkSelection: { service: 'chauffeur' }, soldCents: result.totalCents + 5000 });
+      expect((await quotes.get(q.id))?.payLinkSelection).toEqual({ service: 'chauffeur' }); // guard: it round-trips
+      return b;
+    };
+    const chauffeur = await seed(chauffeurTrip);
+    expect((await bookings.get(chauffeur.id))?.addOns).toBeUndefined();
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 50);
+    expect(listed.find((b) => b.id === chauffeur.id)?.addOns).toBeUndefined();
+    // the same selection, but the booking is the PRIVATE one that was started before the switch
+    const priv = await seed(sample);
+    expect((await bookings.get(priv.id))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    expect((await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 50)).find((b) => b.id === priv.id)?.addOns)
+      .toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
   // A website booking has no quote: it keeps the engine's own priced lines in
   // pricing_snapshot_json, and a load names its add-ons from them.
   it('a website booking keeps the lines it was priced with and names its add-ons', async () => {
