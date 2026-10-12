@@ -1,8 +1,9 @@
 // api/src/quote/simpleApproval.ts
 // Which quotes an `ops` agent may approve without a founder (plan 2026-08-11).
 //
-// A quote qualifies when ALL FIVE hold: it is a private transfer, it has exactly one leg, it is
-// not on the custom vehicle tier, it carries no hand-set $/km, and it has no active discount.
+// A quote qualifies when ALL SIX hold: it is a private transfer, it has exactly one leg, it is
+// not on the custom vehicle tier, it carries no hand-set $/km, it has no active discount, and it
+// carries no frozen chauffeur alternative.
 // Anything else stays founder-only. Approval is what unlocks the pay-link mint and the booking
 // conversion, so this predicate is the gate on ops taking a customer's money against a price no
 // second person reviewed — it fails CLOSED on every shape it does not positively recognise.
@@ -47,6 +48,11 @@ export function canOpsSelfApprove(quote: SavedQuote): boolean {
   const result = asRecord(quote.result);
   if (result?.discount != null) return false;
   if (typeof result?.discountCents === 'number' && result.discountCents > 0) return false;
+
+  // A frozen chauffeur alternative (/save, "both" quotes) means two prices are being approved, not
+  // one (owner decision D3, 2026-10-12): founder only. Tested on the raw key, not alternativeOf(),
+  // so a malformed `alt` still blocks self-approval rather than slipping through as "no alt".
+  if (result?.alt != null) return false;
 
   return true;
 }

@@ -22,6 +22,7 @@ import type { DiscountIntent } from '../db/quoteRepo';
 import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { canOpsSelfApprove } from '../quote/simpleApproval';
+import { alternativeOf, chauffeurFeasibility, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
@@ -490,6 +491,33 @@ function shape(result: QuoteResult, canMargin: boolean, fx: number) {
 // QuoteResult, and QuoteResult.marginEstimateCents is the same cost/margin figure. A shallow
 // delete of marginCents alone leaks it nested. Strip both. (breakdown/lineItems carry only
 // customer-facing prices, so no other nested field needs stripping — see quote/types.ts.)
+// One stored QuoteResult → the same without its margin-class fields. Recurses into `alt` (the frozen
+// chauffeur alternative of a "both" quote, spec PR #964), which is a full QuoteResult of its own:
+// stripping only the top level would leak the chauffeur margin and zone annotation one key down.
+function stripResultMargin(result: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = { ...result };
+  delete safe.marginEstimateCents;
+  // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
+  // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
+  if (Array.isArray(safe.lineItems)) {
+    safe.lineItems = (safe.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
+      li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
+    );
+  }
+  // Fail closed: an alt whose result cannot be stripped (malformed, so unreadable by alternativeOf
+  // anyway) is dropped rather than passed through with whatever it carries.
+  if ('alt' in safe) {
+    const a = safe.alt as Record<string, unknown> | null;
+    const r = a && typeof a === 'object' && !Array.isArray(a) ? a.result : null;
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      safe.alt = { ...a, result: stripResultMargin(r as Record<string, unknown>) };
+    } else {
+      delete safe.alt;
+    }
+  }
+  return safe;
+}
+
 function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents' | 'rateCardJson'> {
   const rest: Record<string, unknown> = { ...q };
   delete rest.marginCents;
@@ -498,37 +526,29 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   // roles. The client renders from `result` (sell prices), never from this snapshot.
   delete rest.rateCardJson;
   if (rest.result && typeof rest.result === 'object') {
-    const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
-    delete safeResult.marginEstimateCents;
-    // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
-    // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
-    if (Array.isArray(safeResult.lineItems)) {
-      safeResult.lineItems = (safeResult.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
-        li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
-      );
-    }
-    rest.result = safeResult;
+    rest.result = stripResultMargin(rest.result as Record<string, unknown>);
   }
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
 }
 
-function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'private' | 'chauffeur', selectedResult: QuoteResult): ServiceChooserData {
+// `storedAlt`, when given, is the chauffeur price /save froze for a "both" quote: it replaces the
+// recompute for the non-priced service, so the card shows the number that was approved.
+function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'private' | 'chauffeur', selectedResult: QuoteResult, storedAlt: QuoteAlternative | null = null): ServiceChooserData {
   const services: ServiceChooserData = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
 
   services.pointToPoint = selected === 'private'
     ? summary(selectedResult, rateCard.fxUsdToLkr)
     : summary(quote(toEngineRequest(body, 'private'), rateCard), rateCard.fxUsdToLkr);
 
-  const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
-  const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
-  if (chauffeurLegs.some((l) => !l.date)) {
-    services.chauffeur = { error: 'add a date to every leg' };
-  } else if (distinctDates.size <= 1) {
-    services.chauffeur = { error: 'single-day — point-to-point only' };
+  const notFeasible = chauffeurFeasibility(body.legs);
+  if (notFeasible) {
+    services.chauffeur = { error: notFeasible };
+  } else if (selected === 'chauffeur') {
+    services.chauffeur = summary(selectedResult, rateCard.fxUsdToLkr);
+  } else if (storedAlt) {
+    services.chauffeur = summary(storedAlt.result, rateCard.fxUsdToLkr);
   } else {
-    services.chauffeur = selected === 'chauffeur'
-      ? summary(selectedResult, rateCard.fxUsdToLkr)
-      : summary(quote(toEngineRequest(body, 'chauffeur'), rateCard), rateCard.fxUsdToLkr);
+    services.chauffeur = summary(quote(toEngineRequest(body, 'chauffeur'), rateCard), rateCard.fxUsdToLkr);
   }
 
   return services;
@@ -561,10 +581,14 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: R
     // Match the live /estimate shape so a ready/sent quote renders its per-leg prices AND the
     // point-to-point vs chauffeur comparison — all priced against the LOCKED card (frozen numbers).
     const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
+    // A ready/sent quote shows the chauffeur price that was frozen at save (and approved), not a
+    // recompute on the locked card — the two differ when the live card moved between save and
+    // approval. Drafts stay live: the builder re-prices them on every edit anyway.
+    const storedAlt = q.status === 'ready' || q.status === 'sent' ? alternativeOf(q) : null;
     return {
       ...base,
       breakdown: quoteBreakdown(engineReq, rateCard),
-      services: serviceChooserData(toolReq, rateCard, selected, result),
+      services: serviceChooserData(toolReq, rateCard, selected, result, storedAlt),
       displayPlaces: displayPlacesFor(toolReq.legs),
     };
   } catch {
@@ -937,7 +961,23 @@ export function internalQuoteRoutes(deps: {
 
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver, effectiveDiscount);
+      const card = await liveCard();
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver, effectiveDiscount);
+      // Freeze the chauffeur alternative of a "both" quote (spec PR #964) on the SAME card instance as
+      // the primary. Only for a point-to-point price with no discount (D2 — the discount belongs to
+      // the point-to-point price) and a feasible chauffeur itinerary. Best-effort by design: any
+      // failure means no `alt`, never a failed save. A re-save runs this again, so it recomputes
+      // or disappears with the content it was derived from.
+      let alt: QuoteAlternative | null = null;
+      if (body.requestedService === 'both' && req.product === 'private' && !effectiveDiscount && !result.discount
+        && chauffeurFeasibility(body.legs) === null) {
+        try {
+          const engine = toEngineRequest(body, 'chauffeur');
+          if (engine.product === 'chauffeur') alt = { product: 'chauffeur', engine, result: quote(engine, card) };
+        } catch {
+          alt = null;
+        }
+      }
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
@@ -950,7 +990,7 @@ export function internalQuoteRoutes(deps: {
         // V19: persist the reopenable tool payload alongside the engine request.
         // GET /:id returns request.tool for the UI to reopen the draft.
         request: { tool: body, engine: req },
-        result,
+        result: alt ? { ...result, alt } : result,
         notes: body.notes ?? null,
         internalNotes: body.internalNotes ?? null,
         // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column

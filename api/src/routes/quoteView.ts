@@ -6,6 +6,7 @@ import { customerQuoteView } from '../quote/customerQuoteView';
 import { rateCardFor } from '../quote/rateLock';
 import { quote as priceQuote } from '../quote/engine';
 import { drives } from '../quote/legCategory';
+import { alternativeOf } from '../quote/quoteAlternative';
 import type { QuoteRequest, PrivateLeg, Ride, ChauffeurTravelDay, ChauffeurRideDay } from '../quote/types';
 import type { RateCard } from '../quote/rateCard';
 
@@ -131,9 +132,12 @@ function servicesFor(quote: SavedQuote, now: Date): {
   };
 
   if (engine.product === 'private') {
+    // The chauffeur price frozen at /save wins over a recompute, so the page shows what was
+    // approved (spec PR #964). No stored alternative (legacy, discounted, single-day) → recompute.
+    const stored = alternativeOf(quote);
     return {
       pointToPoint: price(engine),
-      chauffeur: price(chauffeurFromPrivate(engine, req?.tool?.legs)),
+      chauffeur: stored ? { totalCents: stored.result.totalCents } : price(chauffeurFromPrivate(engine, req?.tool?.legs)),
     };
   }
   return {

@@ -225,6 +225,48 @@ describe('GET /quote-view', () => {
       expect(body.view.options).toHaveLength(1);
       expect(body.view.options[0].service).toBe('private');
     });
+
+    // Spec PR #964: /save freezes the chauffeur price in result.alt. The page shows THAT number, so
+    // the proposal, the builder cards and (later) the pay link cannot disagree after the card moves.
+    describe('a frozen alternative (result.alt)', () => {
+      const alt = (totalCents: number, over: Record<string, unknown> = {}) => ({
+        product: 'chauffeur',
+        engine: { product: 'chauffeur' },
+        result: {
+          product: 'chauffeur', currency: 'USD', lineItems: [], subtotalCents: totalCents, totalCents,
+          depositCents: 7_500, amountDueNowCents: 7_500, rateCardVersion: 'v1', warnings: [],
+        },
+        ...over,
+      });
+      const withAlt = (a: unknown, over: Record<string, unknown> = {}) => {
+        const base = quoteInput();
+        return { ...base, requestedService: 'both' as const, result: { ...base.result, alt: a }, ...over };
+      };
+      const view = async (input: unknown) => {
+        const saved = await quotes.save(input as never);
+        const q = (await quotes.patch(saved.id, { status: 'ready' }))!;
+        return (await (await get(signQuoteViewToken(q.id, SECRET))).json()).view;
+      };
+
+      it('shows the stored chauffeur total, not the recompute (22,700)', async () => {
+        const v = await view(withAlt(alt(25_000)));
+        expect(v.options).toHaveLength(2);
+        expect(v.options[1].service).toBe('chauffeur');
+        expect(v.options[1].totalCents).toBe(25_000);
+        expect(v.options[1].totalUsd).toBe('$250');
+        expect(v.heroTotalNote).toContain('$250');
+      });
+
+      it('falls back to the recompute when the stored alternative is malformed', async () => {
+        const v = await view(withAlt(alt(25_000, { result: { product: 'chauffeur', totalCents: 'lots' } })));
+        expect(v.options[1].totalCents).toBe(22_700);
+      });
+
+      it('ignores a stored alternative on a quote that was not asked for as both', async () => {
+        const v = await view(withAlt(alt(25_000), { requestedService: 'private' }));
+        expect(v.options).toHaveLength(1);
+      });
+    });
   });
 });
 

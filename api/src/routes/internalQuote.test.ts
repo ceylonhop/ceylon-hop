@@ -12,6 +12,8 @@ import type { QuoteRequest } from '../quote/types';
 import { signSession } from '../lib/opsAuth';
 import { verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryZonesRepo } from '../db/zonesRepo';
+import { futureIsoDate } from '../testSupport/dates';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -3215,5 +3217,191 @@ describe('POST /admin/quote/:id/quote-link — mint the customer quote link (spe
     const days = (after!.offerValidUntil!.getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(6.9);
     expect(days).toBeLessThan(7.1);
+  });
+});
+
+// Owner 2026-10-12 (spec PR #964): a quote asked for as "both" freezes the chauffeur price at /save,
+// so the figure shown, approved and (in a later PR) charged is one number.
+describe('/save freezes the chauffeur alternative of a "both" quote', () => {
+  const D1 = futureIsoDate(30);
+  const D2 = futureIsoDate(32);
+  const BOTH = {
+    firstName: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+    legs: [
+      leg({ from: 'Colombo', to: 'Kandy', distanceKm: 115, date: D1 }),
+      leg({ from: 'Kandy', to: 'Ella', distanceKm: 140, date: D2 }),
+    ],
+  };
+  type AltRow = { alt?: { product: string; engine: { product: string }; result: { totalCents: number; marginEstimateCents?: number; lineItems: { meta?: Record<string, unknown> }[] } } };
+
+  function wired(extra: AppDeps = {}) {
+    const discounts = new InMemoryQuoteDiscountRepo();
+    const quotes = new InMemoryQuoteRepo(discounts);
+    const zones = new InMemoryZonesRepo();
+    const app = createApp({ quotes, quoteDiscounts: discounts, opsManualDiscountsEnabled: true, zones, ...extra });
+    return { app, quotes, zones };
+  }
+  type Wired = ReturnType<typeof wired>;
+  const send = (w: Wired, method: string, path: string, body: unknown, ck = FOUNDER_COOKIE) =>
+    w.app.request(path, { method, headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify(body) });
+  const altOf = async (w: Wired, id: string) => ((await w.quotes.get(id))!.result as AltRow).alt;
+  const saveBoth = async (w: Wired, body: unknown = BOTH, ck = FOUNDER_COOKIE) => {
+    const res = await send(w, 'POST', '/admin/quote/save', body, ck);
+    expect([200, 201]).toContain(res.status);
+    return (await res.json()) as { id: string; totalCents: number };
+  };
+  const estimateChauffeurCents = async (w: Wired, body: unknown = BOTH) =>
+    ((await (await send(w, 'POST', '/admin/quote/estimate', body)).json()).services.chauffeur.total.cents) as number;
+
+  it('stores the chauffeur price, equal to what /estimate shows for it', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    const alt = await altOf(w, saved.id);
+    expect(alt?.product).toBe('chauffeur');
+    expect(alt?.engine.product).toBe('chauffeur');
+    expect(alt?.result.totalCents).toBe(await estimateChauffeurCents(w));
+    // The row itself is still the point-to-point quote at the point-to-point price.
+    const row = (await w.quotes.get(saved.id))!;
+    expect(row.product).toBe('private');
+    expect(row.totalCents).toBe(saved.totalCents);
+    expect(alt!.result.totalCents).not.toBe(row.totalCents);
+  });
+
+  it.each([
+    ['asked for private only', { ...BOTH, requestedService: 'private' }],
+    ['asked for chauffeur only', { ...BOTH, requestedService: 'chauffeur' }],
+    ['not recorded', { ...BOTH, requestedService: null }],
+    ['single-day', { ...BOTH, legs: BOTH.legs.map((l) => ({ ...l, date: D1 })) }],
+    ['an undated leg', { ...BOTH, legs: [BOTH.legs[0], { ...BOTH.legs[1], date: '' }] }],
+  ])('stores no alternative when %s', async (_l, body) => {
+    const w = wired();
+    const saved = await saveBoth(w, body);
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('stores no alternative on a discounted quote, and restores it when the discount is removed (D2)', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    expect(await altOf(w, saved.id)).toBeDefined();
+
+    await saveBoth(w, { ...BOTH, id: saved.id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+    expect((await w.quotes.get(saved.id))!.totalCents).toBeLessThan(saved.totalCents); // guard: really discounted
+    expect(await altOf(w, saved.id)).toBeUndefined();
+
+    // A plain content save PRESERVES the discount — still no alternative.
+    await saveBoth(w, { ...BOTH, id: saved.id });
+    expect(await altOf(w, saved.id)).toBeUndefined();
+
+    await saveBoth(w, { ...BOTH, id: saved.id, discount: null });
+    expect(await altOf(w, saved.id)).toBeDefined();
+  });
+
+  it('a discounted first save carries no alternative either', async () => {
+    const w = wired();
+    const saved = await saveBoth(w, { ...BOTH, discount: { method: 'percentage', basisPoints: 500, reason: 'repeat' } });
+    expect((await w.quotes.get(saved.id))!.result).toHaveProperty('discount');
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('prices the alternative on the same live card as the primary (an active hot zone shows in it)', async () => {
+    const plain = wired();
+    const base = (await altOf(plain, (await saveBoth(plain)).id))!.result.totalCents;
+
+    const w = wired();
+    await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+    const saved = await saveBoth(w);
+    const alt = (await altOf(w, saved.id))!;
+    expect(alt.result.totalCents).toBeGreaterThan(base);
+    expect(alt.result.totalCents).toBe(await estimateChauffeurCents(w));
+    expect(JSON.stringify(alt.result.lineItems)).toContain('Ella premium +15%');
+  });
+
+  it('a re-save recomputes the alternative, and removes it when the quote stops being "both"', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    const first = (await altOf(w, saved.id))!.result.totalCents;
+
+    const longer = { ...BOTH, id: saved.id, legs: [BOTH.legs[0], { ...BOTH.legs[1], distanceKm: 300 }] };
+    await saveBoth(w, longer);
+    const second = (await altOf(w, saved.id))!.result.totalCents;
+    expect(second).toBeGreaterThan(first);
+    expect(second).toBe(await estimateChauffeurCents(w, longer));
+
+    await saveBoth(w, { ...longer, requestedService: 'private' });
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('saves without an alternative when the chauffeur pass throws (best-effort, never a failed save)', async () => {
+    const w = wired();
+    // '2027-13-45' passes the ISO_DATE regex, so the quote prices point-to-point (which ignores
+    // dates) and chauffeurFeasibility() passes, but the chauffeur engine throws on the date.
+    const body = { ...BOTH, legs: [BOTH.legs[0], { ...BOTH.legs[1], date: '2027-13-45' }] };
+    const res = await send(w, 'POST', '/admin/quote/save', body);
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = (await w.quotes.get(id))!;
+    expect(row.product).toBe('private');
+    expect(row.totalCents).toBeGreaterThan(0);
+    expect(await altOf(w, id)).toBeUndefined();
+  });
+
+  it('drops an alt whose result is not an object for a non-margin role (fail closed)', async () => {
+    const w = wired();
+    const saved = await saveBoth(w, BOTH, cookie('op@x.com'));
+    const row = (await w.quotes.get(saved.id))!;
+    const OPS_COOKIE = cookie('op@x.com');
+    for (const alt of [{ product: 'chauffeur', marginEstimateCents: 999 }, { product: 'chauffeur', result: 'x', marginEstimateCents: 999 }, 'x', 42, []]) {
+      await w.quotes.update(saved.id, { ...row, result: { ...(row.result as object), alt } } as never);
+      const raw = await (await w.app.request(`/admin/quote/${saved.id}`, { headers: { cookie: OPS_COOKIE } })).text();
+      expect(raw, JSON.stringify(alt)).not.toMatch(/marginEstimateCents|"alt"/);
+    }
+  });
+
+  it('shows ops (no margin:view) neither margin nor hot-zone text anywhere under result.alt, on GET and PATCH', async () => {
+    const w = wired();
+    await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+    const OPS_COOKIE = cookie('op@x.com');
+    const saved = await saveBoth(w, BOTH, OPS_COOKIE);
+    const stored = (await altOf(w, saved.id))!;
+    expect(stored.result.marginEstimateCents).toBeGreaterThan(0); // guard: there IS something to leak
+    expect(JSON.stringify(stored.result.lineItems)).toContain('hotZone');
+
+    const getRaw = await (await w.app.request(`/admin/quote/${saved.id}`, { headers: { cookie: OPS_COOKIE } })).text();
+    expect(getRaw).toContain('"alt"'); // guard: the alternative IS returned, just stripped
+    expect(getRaw).not.toMatch(/marginEstimateCents|hotZone/);
+
+    const patchRaw = await (await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'pending_review' }, OPS_COOKIE)).text();
+    expect(patchRaw).toContain('"alt"');
+    expect(patchRaw).not.toMatch(/marginEstimateCents|hotZone/);
+
+    // The founder still sees both — the strip is per role, not global.
+    const founder = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+    expect(founder.result.alt.result.marginEstimateCents).toBeGreaterThan(0);
+    expect(JSON.stringify(founder.result.alt.result.lineItems)).toContain('hotZone');
+  });
+
+  describe('the stored number wins over a recompute for ready | sent quotes', () => {
+    it('GET /:id builder cards show the stored chauffeur total after the card moved before approval', async () => {
+      const w = wired();
+      const saved = await saveBoth(w);
+      const stored = (await altOf(w, saved.id))!.result.totalCents;
+
+      // The card moves AFTER the save and BEFORE approval: the frozen snapshot now holds the zone.
+      await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+      await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'pending_review' });
+      expect((await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'ready' })).status).toBe(200);
+      expect(await estimateChauffeurCents(w)).not.toBe(stored); // guard: a recompute WOULD differ
+
+      const got = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+      expect(got.estimate.services.chauffeur.total.cents).toBe(stored);
+    });
+
+    it('a draft still shows the live recompute (stored-wins is for ready | sent)', async () => {
+      const w = wired();
+      const saved = await saveBoth(w);
+      await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+      const got = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+      expect(got.estimate.services.chauffeur.total.cents).toBe(await estimateChauffeurCents(w));
+    });
   });
 });
