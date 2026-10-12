@@ -1606,18 +1606,17 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-veh-chips .ch-veh-chip.unfit:hover { border-color: var(--line); background: var(--line-soft); color: var(--muted-2); cursor: not-allowed; box-shadow: none; }
 .qv .ch-veh-chip.unfit .ch-veh-cap { color: #b06a00; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
-.qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
-.qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
+.qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: default; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box.active { border-color: var(--teal); background: rgba(var(--blue-rgb),.06); box-shadow: 0 0 0 1px var(--teal) inset; }
-.qv .ch-svc-box:disabled { cursor: not-allowed; background: var(--cream); border-color: var(--line); }
+.qv .ch-svc-box.is-off { background: var(--cream); border-color: var(--line); }
 .qv .ch-svc-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
 .qv .ch-svc-box.active .ch-svc-lbl { color: var(--teal-d); }
 .qv .ch-svc-price { font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--ink); line-height: 1.1; }
 .qv .ch-svc-box:not(.active) .ch-svc-price { color: var(--muted); }
-.qv .ch-svc-box:disabled .ch-svc-price { color: var(--muted-2); }
+.qv .ch-svc-box.is-off .ch-svc-price { color: var(--muted-2); }
 .qv .ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
 .qv .ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
-.qv .ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
+.qv .ch-svc-box.is-off .ch-svc-hint { color: var(--muted-2); }
 /* "Customer asked for" now lives in the trip basics next to the vehicle chips, so it mirrors
    their head+row layout (ch-veh-head/ch-veh-row) — the two intake questions read as a pair. */
 .qv .ch-req-choose { padding: 0; }
@@ -1650,8 +1649,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-needs:hover { opacity: 1; }
 /* The one-click remedy inside the 'both' mismatch note. Sits on its own line under the sentence
    so the note still reads as prose, not as a button with a caption. */
-.qv .ch-mismatch-fix { display: block; margin-top: 7px; padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(214,138,42,.45); background: rgba(214,138,42,.14); color: #8a5a12; font: inherit; font-weight: 700; cursor: pointer; }
-.qv .ch-mismatch-fix:hover { background: rgba(214,138,42,.24); }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -1676,6 +1673,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-needs { border: 0; padding: 4px 0 0; font-size: 12px; color: var(--muted); }
 .qv .ch-svc-head { padding: 12px 16px 0; }
 .qv .ch-svc-caption-lbl { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); }
+.qv .ch-svc-follows { margin-left: 8px; font-size: 10.5px; color: var(--muted-2); }
 .qv .ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
 /* Price drift (2026-08-05): quiet by design — it sits under the total and states a fact. The fade
    matches the total's own colour transition so the pane never snaps. */
@@ -1834,8 +1832,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* amber-tinted one-offs that hardcode light values */
   :root[data-theme="dark"] .qv .ch-sendback{border-color:#5b4a22}
   :root[data-theme="dark"] .qv .ch-req-mismatch{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
-  :root[data-theme="dark"] .qv .ch-mismatch-fix{background:rgba(224,163,62,.18);border-color:rgba(224,163,62,.45);color:#f0c880}
-  :root[data-theme="dark"] .qv .ch-mismatch-fix:hover{background:rgba(224,163,62,.3)}
   :root[data-theme="dark"] .qv .ch-blockers{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
   :root[data-theme="dark"] .qv .ch-blocker-row{background:rgba(255,255,255,.05);border-color:rgba(224,163,62,.3)}
   :root[data-theme="dark"] .qv .ch-blocker-row:hover{background:rgba(255,255,255,.1);border-color:rgba(224,163,62,.5)}
@@ -5222,7 +5218,15 @@ async function _runEstimate() {
   // deleted on a reopened chauffeur quote), auto-revert to point-to-point BEFORE pricing —
   // otherwise the quote keeps a chauffeur day rate on what is now a single transfer. The chooser
   // disables chauffeur but does not flip the service; this does. render() below reflects it.
-  if (st.service === 'chauffeur' && distinctLegDateCount() <= 1) {
+  //
+  // While the quote is editable the priced service is re-derived from what the customer asked for
+  // on EVERY estimate (owner, 2026-10-12) — the revert above used to be one-way, so a quote whose
+  // Chauffeur-guide pick came before its second dated day stayed point-to-point for good. A locked
+  // quote (ready/sent/…) keeps what was approved; only the old single-day revert applies to it.
+  if (isEditableNow()) {
+    var wantService = pricedServiceFor(st.requestedService, distinctLegDateCount(), st.service);
+    if (wantService !== st.service) { applyPricedService(wantService); markDirty(); }
+  } else if (st.service === 'chauffeur' && distinctLegDateCount() <= 1) {
     st.service = 'private';
   }
 
@@ -5793,6 +5797,15 @@ function requestMismatch(requested, priced) {
 function requestedIncludes(dim) {
   return state.requestedService === dim || state.requestedService === 'both';
 }
+/* Which service a quote is PRICED as, given what the customer asked for (owner, 2026-10-12). Pure.
+   A chauffeur trip needs 2+ distinct travel days; until the itinerary has them it can only be
+   priced point-to-point, and it moves to chauffeur the moment it can. Nothing recorded yet (a new
+   or legacy quote) keeps what it is priced as, subject to the same 2-day floor. */
+function pricedServiceFor(requested, distinctDates, current) {
+  if (requested === 'chauffeur') return distinctDates >= 2 ? 'chauffeur' : 'private';
+  if (requested === 'private' || requested === 'both') return 'private';
+  return current === 'chauffeur' && distinctDates >= 2 ? 'chauffeur' : 'private';
+}
 // Toggle one dimension; re-derive the stored enum from the two flags (both on → 'both',
 // one on → that one, neither → null). Storage shape is unchanged, so nothing downstream moves.
 function setRequestedService(dim) {
@@ -5807,16 +5820,15 @@ function setRequestedService(dim) {
      toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
      price (see requestMismatch's 'both'+chauffeur case). */
   if (next === 'both') outputIncludeChauffeurUpsell = true;
-  /* Picking ONE service also prices the quote that way (owner, 2026-08-06). These two controls
-     were fully decoupled — deliberately, so the tool could record a request it did NOT price
-     (see requestMismatch) — but in practice the decoupling only ever produced the mistake: pick
-     Chauffeur-guide at intake, leave the quote priced Point-to-point, approve past the banner,
-     and the customer opens their quote link to the wrong service. Worse, the pay link charges
-     the STORED total, so a chauffeur trip would have gone out at the point-to-point price.
-     The mismatch state still exists and is still flagged — ops can always change Pricing as
-     afterwards — but it now takes a deliberate second action rather than being the default.
-     'both' is untouched: two requested services cannot imply one priced service. */
-  if (next === 'private' || next === 'chauffeur') setService(next);
+  /* What the customer asked for DECIDES how the quote is priced (owner, 2026-10-12: "the first
+     choice is what decides the intention of the customer"). History: the two controls were fully
+     decoupled (2026-07-17), then a single pick moved the price once, at click time (2026-08-06) —
+     but that one-shot sync lost to the estimate's own revert whenever the pick came before the
+     itinerary had two dated days, and ops approved a "Chauffeur-guide" quote priced point-to-point.
+     Now the priced service is derived, here and on every estimate (see _runEstimate), and the
+     Pricing as cards are display-only. 'both' is the point-to-point price with the chauffeur price
+     alongside (I9/I10). */
+  setService(pricedServiceFor(next, distinctLegDateCount(), state.service));
   markDirty();
   render();
 }
@@ -5849,6 +5861,14 @@ function setShowLegPrices(on) {
 function setService(service) {
   if (service !== 'private' && service !== 'chauffeur') service = 'private';
   if (service === state.service) return;
+  applyPricedService(service);
+  markDirty();
+  refreshEstimate();
+  render();
+}
+// The state change alone — no dirty flag, estimate or render — so _runEstimate can apply it
+// mid-flight without re-entering itself.
+function applyPricedService(service) {
   state.service = service;
   if (service !== 'private') outputIncludeChauffeurUpsell = false;
   if (service === 'private') {
@@ -5858,9 +5878,6 @@ function setService(service) {
         : leg;
     });
   }
-  markDirty();
-  refreshEstimate();
-  render();
 }
 
 // Count distinct leg dates — chauffeur needs >1 to be feasible (R6).
@@ -8755,20 +8772,22 @@ function renderServiceChooser() {
   var chaufActive = (state.service === 'chauffeur');
 
   var parts = [];
-  parts.push('<div class="ch-svc-head"><span class="ch-svc-caption-lbl">Pricing as</span></div>');
+  // Display-only (owner, 2026-10-12): which one is priced follows "Customer asked for" — see
+  // pricedServiceFor. No data-action, not buttons: there is nothing here to click.
+  parts.push('<div class="ch-svc-head"><span class="ch-svc-caption-lbl">Pricing as</span><span class="ch-svc-follows">set by &ldquo;Customer asked for&rdquo;</span></div>');
   parts.push('<div class="ch-svc-choose">');
   // Point-to-point box
-  parts.push('  <button class="ch-svc-box' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
+  parts.push('  <div class="ch-svc-box' + (p2pActive ? ' active' : '') + '" data-service="private">');
   parts.push('    <span class="ch-svc-lbl">Point-to-point</span>');
   parts.push('    <span class="ch-svc-price">' + p2pPrice + '</span>'); // pre-escaped above
-  parts.push('  </button>');
+  parts.push('  </div>');
   // Chauffeur-guide box. When the trip calendar is warning about the span, this price is
   // BUILT ON that span (chauffeur.ts charges every day between first and last leg), so it
   // must not read as authoritative — an $4,339 quote from a fat-fingered month looked
   // exactly as confident as a real one. Amber + a one-line reason, never a hidden number:
   // the operator still needs to see it to recognise it as wrong.
   var spanSuspect = !chaufDisabled && !!_calModel && !!tripCal.warning(_calModel, state.service === 'chauffeur');
-  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  parts.push('  <div class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + (chaufDisabled ? ' is-off' : '') + '" data-service="chauffeur">');
   parts.push('    <span class="ch-svc-lbl">Chauffeur-guide</span>');
   parts.push('    <span class="ch-svc-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
   if (chaufDisabled) {
@@ -8776,7 +8795,7 @@ function renderServiceChooser() {
   } else if (spanSuspect) {
     parts.push('    <span class="ch-svc-flag">reflects the ' + _calModel.span + '-day span &mdash; check the dates</span>');
   }
-  parts.push('  </button>');
+  parts.push('  </div>');
   parts.push('</div>');
 
   // Quote intent (spec 2026-07-17). The "Customer asked for" control itself lives up in the trip
@@ -8785,15 +8804,14 @@ function renderServiceChooser() {
   // the trip is priced, and this is where the priced service (state.service) is chosen and shown.
   // I8: signal, not a gate.
   var _mm = requestMismatch(state.requestedService, state.service);
+  // An editable quote can now disagree in exactly one way: Chauffeur-guide was asked for but the
+  // itinerary cannot be a chauffeur trip yet. Say what is missing — it prices itself as chauffeur
+  // the moment the second travel day has a date. (A locked legacy quote keeps the plain sentence.)
+  if (_mm && isEditableNow() && state.requestedService === 'chauffeur' && state.service !== 'chauffeur') {
+    _mm = 'Chauffeur-guide needs 2 or more travel days (legs on different dates) — priced Point-to-point until the itinerary has them.';
+  }
   if (_mm) {
-    // The 'both' case names exactly one remedy — switching the priced service to point-to-point —
-    // so put it one click away instead of asking the operator to go find the chooser box above.
-    // Every other mismatch is a judgement call (the reviewer may well want the priced service it
-    // has), so those stay a plain sentence with no button.
-    var _mmFix = (state.requestedService === 'both' && state.service === 'chauffeur')
-      ? '<button class="ch-mismatch-fix" data-action="setService" data-service="private" type="button">Switch to Point-to-point</button>'
-      : '';
-    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + _mmFix + '</div>');
+    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
   }
 
   if (chaufActive && !chaufDisabled) {
@@ -11104,9 +11122,6 @@ function attachEventListeners() {
           }
         }
       }
-    } else if (action === 'setService') {
-      if (el.disabled) return;
-      setService(el.getAttribute('data-service'));
     } else if (action === 'setRequestedService') {
       setRequestedService(el.getAttribute('data-req'));
     } else if (action === 'setShowLegPrices') {
