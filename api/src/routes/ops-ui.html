@@ -751,6 +751,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-payline .l { flex: 1; min-width: 0; }
 .qv .ch-payline .v { font-variant-numeric: tabular-nums; }
 .qv .ch-paypicker-warn { margin: 8px 0 0; padding: 7px 10px; font-size: 12px; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 8px; }
+.qv .ch-paychoose-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.qv .ch-paychoose-opt { flex: 1 1 200px; max-width: 340px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; text-align: left; font: inherit; color: var(--ink); background: var(--cream); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.qv .ch-paychoose-opt:hover { border-color: var(--teal); }
+.qv .ch-paychoose-lbl { font-size: 13px; font-weight: 700; }
+.qv .ch-paychoose-amt { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.qv .ch-paychoose-note { font-size: 11.5px; color: var(--muted-2); }
 .qv .ch-paypicker-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .qv .ch-paypicker-sum { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .legs-coverage { margin: 0 0 8px; padding: 6px 10px; font-size: .84rem; color: var(--ink-faint); background: var(--cream, #faf6ee); border: 1px dashed var(--line, #e8e0d2); border-radius: 8px; }
@@ -4963,6 +4969,7 @@ var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
 var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
+var _payChooser = false;  // the "which option is this link for" chooser is open (a "both" quote)
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
 var _payLinkCopiedT = null;
 var _payLinkShowRow = false;  // fallback only — the URL row appears when the clipboard write fails
@@ -6316,6 +6323,7 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
     // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
     // founder always may; ops may only on a single-leg standard transfer. Never derive it from
     // caps: the capability alone is true on every quote, including the ones the server refuses.
@@ -6333,7 +6341,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -6647,6 +6655,7 @@ async function transition(toStatus, opts) {
     return;
   }
   state.status = toStatus;
+  state.payOptions = null; // priced for the previous status; the next open of the quote re-reads it
   // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
   // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
@@ -6707,6 +6716,7 @@ function markSent()        { return transition('sent', { toast: 'Marked as sent 
 function payLinkRefusal(err, fallback) {
   if (!err || err.error !== 'not_linkable') return 'Could not create the payment link';
   if (err.reason === 'discounted') return 'A discounted quote can only take a full-total payment link — use "Payment link" instead';
+  if (err.reason === 'no_alternative') return 'This quote has no Chauffeur-guide price saved \u2014 reopen the quote and save it again to get one';
   return fallback;
 }
 
@@ -6715,23 +6725,38 @@ function payLinkRefusal(err, fallback) {
    revision. The row it reveals is what ops copies into the WhatsApp message next to the
    quote. A non-live PayHere mode gets an amber SANDBOX chip: a sandbox link takes test-card
    money and marks real bookings Paid, so it must never pass for a live one. */
-async function mintPayLink() {
-  if (!state.savedId) return;
+/* Resolves true only when a link was minted AND is still the open quote's. Every await below can
+   outlive the quote: pick a link, go back to the queue, open another quote, and the response used to
+   land on that other quote (and be copied there). Same _openSeq guard as reopenQuote — a response
+   for a quote that is no longer open is dropped, silently, and reported as "not minted". */
+async function mintPayLink(service) {
+  if (!state.savedId) return false;
+  var seq = _openSeq;
   try {
-    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', { method: 'POST' });
+    /* `service` is only ever sent from the "both" chooser; the server reads the amount from the
+       quote's stored price for that option, so the client names a product and nothing else. */
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', service
+      ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ service: service }) }
+      : { method: 'POST' });
+    if (seq !== _openSeq) return false;
     if (!r.ok) {
       var err = await jsonOrNull(r);
+      if (seq !== _openSeq) return false;
       showToast(payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
-      return;
+      return false;
     }
     var body = await jsonOrNull(r);
-    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return; }
-    _payLink = { url: body.url, mode: body.payhereMode || 'off' };
+    if (seq !== _openSeq) return false;
+    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return false; }
+    _payLink = { url: body.url, mode: body.payhereMode || 'off', service: service || null };
     _payPartial = null; // a bodyless mint is the FULL link — the server just retired any selection
+    if (service && state.payOptions) state.payOptions.linkedService = service === 'chauffeur' ? 'chauffeur' : null;
     render();
+    return true;
   } catch (e) {
     window.opsReportError && window.opsReportError('mint pay link', e);
-    showToast('Could not create the payment link', 'error');
+    if (seq === _openSeq) showToast('Could not create the payment link', 'error');
+    return false;
   }
 }
 /* "Payment link" copies. It used to reveal a bar above the builder holding the URL, a Copy
@@ -6744,6 +6769,13 @@ async function mintPayLink() {
    alert mark; "copied" is not the part that needs emphasis. */
 function payLinkToast() {
   var live = _payLink && _payLink.mode === 'live';
+  /* A link minted from the "both" chooser names its product, so "copied" can't be read as the other option. */
+  if (_payLink && _payLink.service) {
+    var named = PAY_SERVICE_LABEL[_payLink.service] + ' payment link copied';
+    if (live) showToast(named);
+    else showToast(named + ' \u2014 SANDBOX, test cards only', 'error');
+    return;
+  }
   if (live) showToast('Payment link copied');
   else showToast('Payment link copied — SANDBOX, test cards only', 'error');
 }
@@ -6863,6 +6895,7 @@ async function openPayPartPicker() {
       ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
       : paySelectionState(body.lines);
     _payPicker = { lines: body.lines, sel: sel, busy: false };
+    _payChooser = false;
     render();
   } catch (e) {
     window.opsReportError && window.opsReportError('open pay picker', e);
@@ -6941,9 +6974,87 @@ function renderPayPicker() {
    - Not minted yet: mint, then try. If the write is refused after the await, copyPayLink falls
      back to showing the row so the operator can still get the URL by hand. */
 async function payLinkPress() {
+  if (payServiceOptions(state.payOptions).length && (state.status === 'ready' || state.status === 'sent')) { openPayChooser(); return; }
   if (_payLink) { copyPayLink(); return; }
-  await mintPayLink();
-  if (_payLink) copyPayLink();
+  if (await mintPayLink() && _payLink) copyPayLink();
+}
+
+/* "Both" quotes (spec 2026-10-12): a quote the customer asked for as point-to-point AND chauffeur-guide
+   carries both prices, so Payment link asks which option the link is for. The pure helpers sit first
+   (web-tests/unit/ops-pay-service-chooser.test.js loads them by source), then the chooser itself. */
+var PAY_SERVICE_LABEL = { private: 'Point-to-point', chauffeur: 'Chauffeur-guide' };
+function payServiceOptions(payOptions) {
+  if (!payOptions || !payOptions.primary || !payOptions.alternative) return [];
+  return [
+    { service: 'private', label: 'Point-to-point', totalCents: payOptions.primary.totalCents, depositCents: 0 },
+    { service: 'chauffeur', label: 'Chauffeur-guide', totalCents: payOptions.alternative.totalCents, depositCents: payOptions.alternative.depositCents || 0 },
+  ];
+}
+/* Which option's link is out: what this session minted wins, then the server's linkedService, then
+   point-to-point if a link is known to exist at all. null = no link known — say nothing. */
+function payLinkOutService(payOptions, sessionService, hasLink) {
+  if (!payOptions || !payOptions.alternative) return null;
+  if (sessionService) return sessionService;
+  if (payOptions.linkedService) return payOptions.linkedService;
+  return hasLink ? 'private' : null;
+}
+function payLinkOutText(service) {
+  if (service !== 'private' && service !== 'chauffeur') return '';
+  return (service === 'chauffeur' ? 'Chauffeur-guide' : 'Point-to-point') + ' link is out — sending the other option replaces it';
+}
+/* A link is known to be out: minted this session, stamped by a pay-link mint, or already used to
+   start a booking. (customerTotalVia 'quote_link' alone says nothing about a PAY link.) */
+function payLinkKnownOut() {
+  return !!(_payLink || state.customerTotalVia === 'pay_link' || state.convertedBookingId);
+}
+function openPayChooser() {
+  _payChooser = true;
+  _payPicker = null; // one picker at a time
+  render();
+}
+/* The pick mints through the SAME mintPayLink as every other path. The same option again copies the
+   link already held (synchronously — see payLinkPress); the other option mints, which retires the first. */
+async function pickPayService(service) {
+  _payChooser = false;
+  if (!(_payLink && _payLink.service === service)) {
+    var minted = await mintPayLink(service);
+    if (!minted || !_payLink || _payLink.service !== service) { render(); return; } // refused or stale — mintPayLink already said why
+  }
+  copyPayLink();
+}
+function renderPayChooser() {
+  if (!_payChooser) return '';
+  var opts = payServiceOptions(state.payOptions);
+  if (!opts.length) return '';
+  var buttons = opts.map(function (o) {
+    var note = o.depositCents > 0
+      ? '<span class="ch-paychoose-note">customer can pay a ' + fmtUsd(o.depositCents) + ' deposit</span>'
+      : '';
+    return '<button class="ch-paychoose-opt" data-action="payChoose" data-service="' + o.service + '">'
+      + '<span class="ch-paychoose-lbl">' + esc(o.label) + '</span>'
+      + '<span class="ch-paychoose-amt">' + fmtUsd(o.totalCents) + '</span>'
+      + note
+      + '</button>';
+  }).join('');
+  /* Warn, never block (owner D5): a checkout may be open on the link being replaced, and switching
+     does not cancel it — if that customer pays it, both options end up paid. */
+  var warn = state.convertedBookingId && payLinkOutService(state.payOptions, _payLink && _payLink.service, payLinkKnownOut())
+    ? '<div class="ch-paypicker-warn">A payment was started on the current link — it is not cancelled by switching.</div>'
+    : '';
+  return '<div class="ch-paypicker" id="pay-chooser">'
+    + '<div class="ch-paypicker-title">Which option is this payment link for?</div>'
+    + '<div class="ch-paychoose-row">' + buttons + '</div>'
+    + warn
+    + '<div class="ch-paypicker-foot"><span class="ch-paypicker-sum"></span>'
+    + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="cancelPayChoose">Cancel</button></div>'
+    + '</div>';
+}
+/* Which option's link is currently out — so ops doesn't have to remember what the customer holds. */
+function renderPayLinkOut() {
+  if (_payPartial || _payChooser) return '';
+  if (!payServiceOptions(state.payOptions).length || (state.status !== 'ready' && state.status !== 'sent')) return '';
+  var out = payLinkOutService(state.payOptions, _payLink && _payLink.service, payLinkKnownOut());
+  return out ? '<div class="ch-paypartial-chip" id="pay-linkout">' + esc(payLinkOutText(out)) + '</div>' : '';
 }
 
 /* What the outstanding partial link covers — so ops doesn't have to remember what was sent,
@@ -7049,6 +7160,8 @@ async function apiBook(id, payload) {
 // and left the agent with nowhere to go. Pure, so it is unit-tested directly.
 function bookErrorText(res) {
   if (!res) return 'Could not book — unknown error';
+  // The customer already started the OTHER option's payment (see /book): not a form error, so no prefix.
+  if (res.reason === 'other_option_started') return "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.";
   if (res.message) return 'Could not book — ' + res.message;
   var d = res.details;
   if (d && d.fieldErrors) {
@@ -7101,7 +7214,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -7307,6 +7420,7 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+  state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
 
   /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
      state.discount is client state and starts null on every page load; without this the pane
@@ -7335,7 +7449,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -10512,7 +10626,9 @@ function render() {
     '  </div>',
     renderPayLinkRow(),
     renderPayPicker(),
+    renderPayChooser(),
     renderPayPartialChip(),
+    renderPayLinkOut(),
     '</header>',
 
     '<div class="ch-container">',
@@ -11201,6 +11317,12 @@ function attachEventListeners() {
       render();
     } else if (action === 'confirmPayPart') {
       runAction(action, confirmPayPart);
+    } else if (action === 'payChoose') {
+      var chosenService = el.getAttribute('data-service');
+      runAction(action, function () { return pickPayService(chosenService); });
+    } else if (action === 'cancelPayChoose') {
+      _payChooser = false;
+      render();
     } else if (action === 'confirmPlace') {
       openConfirmPlace(el.getAttribute('data-name') || '');
     } else if (action === 'confirmPlaceClose') {
@@ -11217,7 +11339,7 @@ function attachEventListeners() {
       runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
       render();
     } else if (action === 'reopenToDraft') {
       runAction(action, reopenToDraft);
