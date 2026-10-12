@@ -3331,10 +3331,30 @@ describe('/save freezes the chauffeur alternative of a "both" quote', () => {
     expect(await altOf(w, saved.id)).toBeUndefined();
   });
 
-  it('a custom-rate van both-quote still saves (the alternative is best-effort, never a failed save)', async () => {
+  it('saves without an alternative when the chauffeur pass throws (best-effort, never a failed save)', async () => {
     const w = wired();
-    const res = await send(w, 'POST', '/admin/quote/save', { ...BOTH, vehicle: 'van_14', customRatePerKmCents: 250 });
-    expect([200, 201]).toContain(res.status);
+    // '2027-13-45' passes the ISO_DATE regex, so the quote prices point-to-point (which ignores
+    // dates) and chauffeurFeasibility() passes, but the chauffeur engine throws on the date.
+    const body = { ...BOTH, legs: [BOTH.legs[0], { ...BOTH.legs[1], date: '2027-13-45' }] };
+    const res = await send(w, 'POST', '/admin/quote/save', body);
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = (await w.quotes.get(id))!;
+    expect(row.product).toBe('private');
+    expect(row.totalCents).toBeGreaterThan(0);
+    expect(await altOf(w, id)).toBeUndefined();
+  });
+
+  it('drops an alt whose result is not an object for a non-margin role (fail closed)', async () => {
+    const w = wired();
+    const saved = await saveBoth(w, BOTH, cookie('op@x.com'));
+    const row = (await w.quotes.get(saved.id))!;
+    const OPS_COOKIE = cookie('op@x.com');
+    for (const alt of [{ product: 'chauffeur', marginEstimateCents: 999 }, { product: 'chauffeur', result: 'x', marginEstimateCents: 999 }, 'x', 42, []]) {
+      await w.quotes.update(saved.id, { ...row, result: { ...(row.result as object), alt } } as never);
+      const raw = await (await w.app.request(`/admin/quote/${saved.id}`, { headers: { cookie: OPS_COOKIE } })).text();
+      expect(raw, JSON.stringify(alt)).not.toMatch(/marginEstimateCents|"alt"/);
+    }
   });
 
   it('shows ops (no margin:view) neither margin nor hot-zone text anywhere under result.alt, on GET and PATCH', async () => {
