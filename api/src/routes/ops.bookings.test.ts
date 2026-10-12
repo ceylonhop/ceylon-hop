@@ -387,12 +387,21 @@ describe('ops bookings rows — isTest', () => {
 
 // A booking sold on a pay link for the CHAUFFEUR option of a "both" quote (spec PR #964) is a
 // whole-trip sale: the drawer shows no "2 of 4 legs" coverage — and, above all, still opens.
+const chauffeurTrip = {
+  mode: 'trip' as const, total: 30000, amountDueNow: 30000, currency: 'USD',
+  input: {
+    stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+    vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+    customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' },
+  },
+};
+
 describe('the booking drawer for a booking sold on a chauffeur link', () => {
-  async function drawerFor(selection: object | null) {
+  async function drawerFor(selection: object | null, booking: ReturnType<typeof bookingInput> | typeof chauffeurTrip = bookingInput()) {
     const bookings = new InMemoryBookingRepo();
     const quotes = new InMemoryQuoteRepo();
     const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
-    const b = await bookings.create(bookingInput());
+    const b = await bookings.create(booking as never);
     await bookings.setStatus(b.id, 'payment_pending');
     const q = await quotes.save({
       channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
@@ -413,5 +422,13 @@ describe('the booking drawer for a booking sold on a chauffeur link', () => {
     const res = await drawerFor({ legIndexes: [0], extraIndexes: [] });
     expect(res.status).toBe(200);
     expect((await res.json()).coverage).toEqual({ soldLegs: 1, totalLegs: 2 });
+  });
+
+  // Coverage is decided by the BOOKING: a chauffeur booking is a whole-trip sale however the quote's
+  // selection moved afterwards (here: re-minted to a part-of-trip link).
+  it('a chauffeur booking has no coverage even when the quote now carries a part-of-trip selection', async () => {
+    const res = await drawerFor({ legIndexes: [0], extraIndexes: [] }, chauffeurTrip);
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toBeNull();
   });
 });

@@ -258,7 +258,7 @@ export function quotePayRoutes(deps: {
         paid: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
-          amountUsd: paidTotal != null ? usd(paidTotal) : usd(sold.totalCents),
+          amountUsd: paidTotal != null ? usd(paidTotal) : usd(booking?.total ?? sold.totalCents),
           // Selection-aware here too: a keepsake for a two-leg payment must not be headed
           // "Four journeys" either.
           title: paidCopy.title,
