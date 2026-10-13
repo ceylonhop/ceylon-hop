@@ -68,6 +68,8 @@ import type { PromoCodeRepo } from '../db/promoCodeRepo';
 import { SeenOnce } from '../lib/seenOnce';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { browserItem } from '../services/analytics/ga4Hits';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -300,6 +302,9 @@ export function bookingRoutes(deps: {
   checkoutEvents?: BookingCheckoutEventRepo;
   // Server-side GA4: remembers the checkout's GA visitor. Unset → nothing captured.
   ga4?: Ga4Reporter;
+  // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -420,6 +425,19 @@ export function bookingRoutes(deps: {
     }
   }
 
+  // Best-effort, after the booking exists — the flagForOps shape. A lead is never a reason to fail
+  // the booking the customer is about to pay for (spec 2026-10-06 D17).
+  async function recordInterests(booking: Booking, ids: string[]): Promise<void> {
+    if (!ids.length || !deps.experiences || !deps.experienceInterests) return;
+    try {
+      for (const experience of (await deps.experiences.getMany(ids)).filter((e) => e.active)) {
+        await deps.experienceInterests.record({ experience, source: 'booking_page', bookingId: booking.id });
+      }
+    } catch (err) {
+      console.error(`experience interests failed for ${booking.reference}:`, err);
+    }
+  }
+
   async function flagPricing(
     booking: Booking,
     resolved: { mismatch: boolean; unpriced: boolean; total: number; reason?: string },
@@ -486,6 +504,18 @@ function customerNotesFrom(body: unknown): { ok: true; notes: string | undefined
     .trim();
   if (notes.length > MAX_CUSTOMER_NOTES) return { ok: false };
   return { ok: true, notes: notes || undefined };
+}
+// Partner experiences the customer tapped "I'm interested" on (spec 2026-10-06 D10/D11). Only
+// uuids come from the browser — every label ops sees is the server's. Read off the raw body like
+// customerNotes so the domain inputs (stable interfaces) don't change. Never a 400: a malformed
+// list from an old cached page must not cost us a booking.
+const MAX_EXPERIENCE_IDS = 10;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function experienceIdsFrom(body: unknown): string[] {
+  const raw = (body as { experienceIds?: unknown } | null)?.experienceIds;
+  if (!Array.isArray(raw)) return [];
+  const ids = raw.filter((x): x is string => typeof x === 'string' && UUID.test(x)).map((x) => x.toLowerCase());
+  return [...new Set(ids)].slice(0, MAX_EXPERIENCE_IDS);
 }
 const INVALID_NOTES = { error: 'invalid_notes', message: 'Please keep your note to 1,000 characters or fewer.' };
 
@@ -613,6 +643,7 @@ function invalidRequest(error: ZodError) {
       throw err;
     }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 
@@ -739,6 +770,7 @@ function invalidRequest(error: ZodError) {
       throw err;
     }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 
@@ -869,6 +901,7 @@ function invalidRequest(error: ZodError) {
         `price mismatch ${booking.reference}: site quoted ${req.quotedTotal}¢, engine priced ${total}¢`,
       );
     }
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 

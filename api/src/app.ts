@@ -512,6 +512,8 @@ export function createApp(deps: AppDeps = {}) {
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
       ...(ga4 ? { ga4 } : {}),
+      experiences,
+      experienceInterests,
     }),
   );
   app.route(

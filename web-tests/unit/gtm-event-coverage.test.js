@@ -26,7 +26,12 @@ const SKIP = new Set(['api', 'docs', 'tools', 'web-tests', 'img', 'node_modules'
     container (gtm.js?id=GTM-NL6K22CM) and finding the tag. */
 const ALREADY_LIVE = new Set([]);
 /** Deliberately never a GA4 event — it labels the session, it is not a thing that happened. */
-const DELIBERATELY_UNTAGGED = new Set(['ch_context']);
+/** `experience_interest` (partner experiences, spec 2026-10-06 D19) is pushed to the dataLayer but
+    has no GTM tag YET: the primary measure is our own bookings/interests data, and tagging it means
+    regenerating docs/analytics/gtm-missing-tags.json for the owner to import - a separate step.
+    Remove it from here when that tag is built (the 'plans no tag for an event the site never emits'
+    test then keeps the pair honest). */
+const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest']);
 
 function siteFiles(dir = ROOT, out = []) {
   for (const entry of readdirSync(dir)) {
