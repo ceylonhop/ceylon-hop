@@ -6324,6 +6324,8 @@ function resetToNew() {
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
     payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
+    balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
+    balanceCents: null, // what is still owed on it, for the copy toast
     // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
     // founder always may; ops may only on a single-leg standard transfer. Never derive it from
     // caps: the capability alone is true on every quote, including the ones the server refuses.
@@ -6656,6 +6658,7 @@ async function transition(toStatus, opts) {
   }
   state.status = toStatus;
   state.payOptions = null; // priced for the previous status; the next open of the quote re-reads it
+  state.balancePayLink = null; state.balanceCents = null; // same rule: read with the quote, never carried across a status change
   // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
   // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
@@ -6823,6 +6826,25 @@ async function copyQuoteLink() {
     window.opsReportError && window.opsReportError('mint quote link', e);
     showToast('Could not create the quote link', 'error');
   }
+}
+
+/* The BALANCE payment link (owner, 2026-10-12). Once a deposit is paid the quote is won and takes
+   no new pay link, so there was nowhere here to get the link the customer pays the balance on.
+   It is the link they already hold, and it arrives with the quote (reopenQuote) — so a press
+   mints nothing and asks the server nothing: copy, say how much is still owed, done.
+   No SANDBOX variant: the PayHere mode only travels with a freshly minted link, and this one is
+   not minted here. "Copied" is said only once the clipboard took it; the guard drops an answer
+   that lands after another quote was opened. */
+function copyBalanceLink() {
+  var link = state.balancePayLink;
+  if (!link) return;
+  var seq = _openSeq;
+  var owed = state.balanceCents == null ? '' : ' \u2014 ' + fmtUsd(state.balanceCents) + ' still to pay';
+  var failed = function () { if (seq === _openSeq) showToast('Could not copy the balance payment link', 'error'); };
+  if (!(navigator.clipboard && navigator.clipboard.writeText)) { failed(); return; }
+  navigator.clipboard.writeText(link).then(function () {
+    if (seq === _openSeq) showToast('Balance payment link copied' + owed);
+  }, failed);
 }
 
 /* ── Part of trip… (partial pay links, spec 2026-08-04) ─────────────────────────────────
@@ -7428,6 +7450,8 @@ async function reopenQuote(id) {
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
   state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
+  state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
+  state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
 
   /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
      state.discount is client state and starts null on every page load; without this the pane
@@ -9976,6 +10000,9 @@ function renderActionBar() {
   var PAYPART = state.service !== 'chauffeur'
     ? B('openPayPart', 'Part of trip\u2026', 'ch-btn-ghost', false, 'Send a payment link for only some legs')
     : null;
+  // The balance link (owner, 2026-10-12): the one thing a booked quote still hands out, and only
+  // while its booking owes a balance. Built once, placed once per role, like the links above.
+  var BALLINK = B('copyBalanceLink', 'Balance payment link', 'ch-btn-outline', false, 'Copies the link the customer pays the balance on');
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
     // before it can be Approved (no self-approve straight from a draft). Approve appears only in
@@ -9985,6 +10012,7 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
@@ -9996,6 +10024,7 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
        says this particular quote qualifies — a single-leg, standard-priced, undiscounted private
        transfer. Keyed on state.mayApprove, never on the capability: quote:approve_simple is true
@@ -11305,6 +11334,8 @@ function attachEventListeners() {
       runAction(action, payLinkPress);
     } else if (action === 'copyQuoteLink') {
       runAction(action, copyQuoteLink);
+    } else if (action === 'copyBalanceLink') {
+      copyBalanceLink();
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'toggleHistory') {

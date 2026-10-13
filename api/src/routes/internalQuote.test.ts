@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
@@ -6,11 +6,12 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryQuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { quote } from '../quote/engine';
 import type { QuoteRequest } from '../quote/types';
 import { signSession } from '../lib/opsAuth';
-import { verifyQuotePayToken } from '../lib/bookingToken';
+import { signQuotePayToken, verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryZonesRepo } from '../db/zonesRepo';
 import { futureIsoDate } from '../testSupport/dates';
@@ -3848,5 +3849,144 @@ describe('POST /admin/quote/:id/pay-link with { service } — the chauffeur opti
         expect(JSON.stringify(body.payOptions)).not.toMatch(/margin|cost|hotZone/i);
       }
     });
+  });
+});
+
+// Owner, 2026-10-12: "after the deposit is paid, there is no place to get the balance payment link
+// again, that link should be available both in the quote and in the booking pane". The booking pane
+// had it (ops.balance.test.ts); a won quote offered nothing and /pay-link refuses a won quote. The
+// quote read now carries the same link — the customer's own pay URL, which reads `balance`.
+describe('GET /admin/quote/:id — balancePayLink (the balance link after a deposit)', () => {
+  const OPS_COOKIE = cookie('op@x.com');
+  const CUSTOMER = { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' };
+
+  async function world(opts: { amountDueNow?: number; payments?: InMemoryPaymentRepo } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const payments = opts.payments ?? new InMemoryPaymentRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, payments, quotes, payBaseUrl: 'https://pay.example' });
+    const saved = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Maya', customerContact: '+34600',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', marginCents: 4300, result: { totalCents: 21900 }, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: '2026-09-01' }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    for (const s of ['pending_review', 'ready', 'sent'] as const) await quotes.patch(saved.id, { status: s });
+    const b = await bookings.create({
+      mode: 'single', total: 21900, amountDueNow: opts.amountDueNow ?? 5000, currency: 'USD',
+      input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: '2026-06-22', time: '09:00', customer: CUSTOMER },
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const pay = async (amount: number, purpose?: 'deposit' | 'balance') => {
+      const p = await payments.create({
+        bookingId: b.id, provider: 'payhere', orderId: `${b.reference}-${purpose ?? 'F'}`, amount, currency: 'USD',
+        idempotencyKey: `checkout:${b.id}:${purpose ?? 'full'}`, ...(purpose ? { purpose } : {}),
+      });
+      await payments.markSucceeded(p.id);
+    };
+    // What the payment webhook leaves behind: the booking secured, the quote won and bound to it.
+    const convert = async () => {
+      await bookings.setStatus(b.id, 'paid');
+      await quotes.patch(saved.id, { status: 'won', convertedBookingId: b.id });
+    };
+    const read = async (ck = FOUNDER_COOKIE) => {
+      const res = await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: ck } });
+      expect(res.status).toBe(200);
+      return res.json();
+    };
+    const pane = async () => (await (await app.request(`/admin/ops/bookings/${b.id}`, { headers: { cookie: FOUNDER_COOKIE } })).json());
+    const payView = async (url: string) =>
+      (await app.request(`/quotes/pay/view?t=${encodeURIComponent(new URL(url).searchParams.get('t')!)}`)).json();
+    return { app, bookings, quotes, id: saved.id, b, pay, convert, read, pane, payView };
+  }
+  // The headline case: a $50 deposit landed on a $219 booking.
+  async function depositPaid(opts: Parameters<typeof world>[0] = {}) {
+    const w = await world(opts);
+    await w.pay(5000, 'deposit');
+    await w.convert();
+    return w;
+  }
+
+  it('a won quote whose booking still owes a balance carries the link and the amount', async () => {
+    const w = await depositPaid();
+    const q = (await w.quotes.get(w.id))!;
+    const body = await w.read();
+    expect(body.status).toBe('won');
+    expect(body.balancePayLink).toBe(`https://pay.example/p?t=${signQuotePayToken(q.id, q.revision, 'test-link-secret', q.payLinkSeq)}`);
+    expect(body.balanceCents).toBe(16900);
+  });
+
+  it('is the IDENTICAL link the booking pane hands out for that booking', async () => {
+    const w = await depositPaid();
+    const fromPane = (await w.pane()).balancePayLink;
+    expect(fromPane).toEqual(expect.stringContaining('https://pay.example/p?t='));
+    expect((await w.read()).balancePayLink).toBe(fromPane);
+  });
+
+  it('opens on the customer page as the balance still to pay — not a dead or "paid" link', async () => {
+    const w = await depositPaid();
+    const { balancePayLink, balanceCents } = await w.read();
+    const view = await w.payView(balancePayLink);
+    expect(view.state).toBe('balance');
+    expect(view.balance.balanceCents).toBe(balanceCents);
+  });
+
+  it('is null on a quote that is not won and has no booking', async () => {
+    const w = await world();
+    const body = await w.read();
+    expect(body.status).toBe('sent');
+    expect(body).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null when the booking was paid in full (no deposit)', async () => {
+    const w = await world({ amountDueNow: 21900 });
+    await w.pay(21900);
+    await w.convert();
+    expect(await w.read()).toMatchObject({ status: 'won', balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null once the balance has been settled', async () => {
+    const w = await depositPaid();
+    await w.pay(16900, 'balance');
+    expect(await w.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null once the booking is cancelled or refunded', async () => {
+    const cancelled = await depositPaid();
+    await cancelled.bookings.setStatus(cancelled.b.id, 'cancelled');
+    expect(await cancelled.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+
+    const refunded = await depositPaid();
+    await refunded.bookings.setStatus(refunded.b.id, 'refunded');
+    expect(await refunded.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('reaches every role that can read the quote', async () => {
+    const w = await depositPaid();
+    const founder = await w.read();
+    for (const ck of [OPS_COOKIE, cookie('fin@x.com')]) {
+      expect(await w.read(ck)).toMatchObject({ balancePayLink: founder.balancePayLink, balanceCents: 16900 });
+    }
+  });
+
+  it('a payments read that fails costs the link, never the quote', async () => {
+    class Unreadable extends InMemoryPaymentRepo {
+      down = false;
+      override async findByBookingId(bookingId: string) {
+        if (this.down) throw new Error('payments unavailable');
+        return super.findByBookingId(bookingId);
+      }
+    }
+    const payments = new Unreadable();
+    const w = await depositPaid({ payments });
+    expect((await w.read()).balancePayLink).not.toBeNull(); // guard: readable, the link is there
+    payments.down = true;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await w.read()).toMatchObject({ status: 'won', balancePayLink: null, balanceCents: null });
+      expect(logged).toHaveBeenCalledTimes(1); // the failure was the ledger read, and it was caught
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

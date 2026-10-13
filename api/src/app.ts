@@ -643,7 +643,7 @@ export function createApp(deps: AppDeps = {}) {
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
