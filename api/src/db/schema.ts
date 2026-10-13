@@ -977,3 +977,58 @@ export const promoCodes = pgTable('promo_codes', {
   check('promo_codes_window_valid', sql`${t.startsAt} IS NULL OR ${t.startsAt} < ${t.expiresAt}`),
   check('promo_codes_created_by_present', sql`btrim(${t.createdBy}) <> ''`),
 ]);
+
+// Partner experiences (spec 2026-10-06 D4; migration 0065). The catalogue ops maintains on the
+// Experiences page. Money is cents + currency; open days and start times are structured so a later
+// paid phase can use them. partner_contact and the pin are ops-only.
+export const experiences = pgTable('experiences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  partnerName: text('partner_name').notNull(),
+  areaLabel: text('area_label').notNull(),
+  summary: text('summary').notNull(),
+  details: text('details').notNull().default(''),
+  priceCents: integer('price_cents').notNull(),
+  currency: text('currency').notNull().default('USD'),
+  priceUnit: text('price_unit').notNull(),
+  durationText: text('duration_text'),
+  openWeekdays: integer('open_weekdays').array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`),
+  startTimes: text('start_times').array().notNull().default(sql`'{}'::text[]`),
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
+  radiusKm: doublePrecision('radius_km').notNull().default(5),
+  photos: text('photos').array().notNull().default(sql`'{}'::text[]`),
+  partnerContact: text('partner_contact'),
+  active: boolean('active').notNull().default(true),
+  createdBy: text('created_by'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// One row per customer × experience (spec D5). Snapshots keep the price THIS customer was shown —
+// the amount ops puts on their PayHere link. Payment happens outside our system (spec D13), so
+// payment_ref + amount are the only record of it. A quote interest gains booking_id at conversion.
+export const experienceInterests = pgTable('experience_interests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experienceId: uuid('experience_id').notNull().references(() => experiences.id),
+  bookingId: uuid('booking_id').references(() => bookings.id),
+  quoteId: uuid('quote_id').references(() => quotes.id),
+  source: text('source').notNull(),
+  nameSnapshot: text('name_snapshot').notNull(),
+  priceCentsSnapshot: integer('price_cents_snapshot').notNull(),
+  priceUnitSnapshot: text('price_unit_snapshot').notNull(),
+  status: text('status').notNull().default('new'),
+  paymentRef: text('payment_ref'),
+  amountPaidCents: integer('amount_paid_cents'),
+  amountPaidCurrency: text('amount_paid_currency'),
+  opsNote: text('ops_note'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('experience_interests_booking_uq').on(t.experienceId, t.bookingId).where(sql`${t.bookingId} IS NOT NULL`),
+  uniqueIndex('experience_interests_quote_uq').on(t.experienceId, t.quoteId).where(sql`${t.quoteId} IS NOT NULL`),
+  index('experience_interests_status_idx').on(t.status),
+]);

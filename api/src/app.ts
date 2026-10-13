@@ -42,6 +42,8 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import type { ExperienceRepo } from './db/experienceRepo';
+import type { ExperienceInterestRepo } from './db/experienceInterestRepo';
 import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
@@ -108,6 +110,9 @@ export interface AppDeps {
   analyticsData?: AnalyticsDataRepo;
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
+  /** Partner experiences (spec 2026-10-06): the catalogue, and one row per customer interest. */
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
   placeResolutions?: PlaceResolutionRepo;
