@@ -103,6 +103,13 @@ describe('normaliseCaseRef', () => {
     expect(normaliseCaseRef(' ch-ab12c-manual ')).toEqual({ kind: 'booking', ref: 'CH-AB12C' });
     expect(normaliseCaseRef('q-7f3kx')).toEqual({ kind: 'quote', ref: 'Q-7F3KX' });
   });
+  it('drops a deposit or balance order-id suffix from a booking reference only', () => {
+    expect(normaliseCaseRef(' ch-ab12c-d ')).toEqual({ kind: 'booking', ref: 'CH-AB12C' });
+    expect(normaliseCaseRef('CH-AB12C-B')).toEqual({ kind: 'booking', ref: 'CH-AB12C' });
+    expect(normaliseCaseRef('Q-7F3KX-D')).toBeNull();
+    expect(normaliseCaseRef('CH-AB12C-D-D')).toBeNull();
+    expect(normaliseCaseRef('CH-AB12C-X')).toBeNull();
+  });
   it('refuses anything that is not a booking or quote reference', () => {
     for (const bad of ['', 'hello', 'CH-', 'X-AB12C', 'CH-AB 12C', 'CH-AB12C;drop']) expect(normaliseCaseRef(bad)).toBeNull();
   });
