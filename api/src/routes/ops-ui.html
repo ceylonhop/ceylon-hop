@@ -216,6 +216,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
   .pill .pd{width:7px;height:7px;border-radius:50%;background:var(--c,var(--ink-faint))}
+  /* A deposit booking's open balance, beside its stage pill — the same amber as "due". */
+  .pill.pill-bal{--c:var(--wait);--cbg:var(--wait-bg)}
   .tk-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
@@ -749,6 +751,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-payline .l { flex: 1; min-width: 0; }
 .qv .ch-payline .v { font-variant-numeric: tabular-nums; }
 .qv .ch-paypicker-warn { margin: 8px 0 0; padding: 7px 10px; font-size: 12px; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 8px; }
+.qv .ch-paychoose-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.qv .ch-paychoose-opt { flex: 1 1 200px; max-width: 340px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; text-align: left; font: inherit; color: var(--ink); background: var(--cream); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.qv .ch-paychoose-opt:hover { border-color: var(--teal); }
+.qv .ch-paychoose-lbl { font-size: 13px; font-weight: 700; }
+.qv .ch-paychoose-amt { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.qv .ch-paychoose-note { font-size: 11.5px; color: var(--muted-2); }
 .qv .ch-paypicker-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .qv .ch-paypicker-sum { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .legs-coverage { margin: 0 0 8px; padding: 6px 10px; font-size: .84rem; color: var(--ink-faint); background: var(--cream, #faf6ee); border: 1px dashed var(--line, #e8e0d2); border-radius: 8px; }
@@ -1629,18 +1637,17 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-veh-chips .ch-veh-chip.unfit:hover { border-color: var(--line); background: var(--line-soft); color: var(--muted-2); cursor: not-allowed; box-shadow: none; }
 .qv .ch-veh-chip.unfit .ch-veh-cap { color: #b06a00; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
-.qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
-.qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
+.qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: default; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box.active { border-color: var(--teal); background: rgba(var(--blue-rgb),.06); box-shadow: 0 0 0 1px var(--teal) inset; }
-.qv .ch-svc-box:disabled { cursor: not-allowed; background: var(--cream); border-color: var(--line); }
+.qv .ch-svc-box.is-off { background: var(--cream); border-color: var(--line); }
 .qv .ch-svc-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
 .qv .ch-svc-box.active .ch-svc-lbl { color: var(--teal-d); }
 .qv .ch-svc-price { font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--ink); line-height: 1.1; }
 .qv .ch-svc-box:not(.active) .ch-svc-price { color: var(--muted); }
-.qv .ch-svc-box:disabled .ch-svc-price { color: var(--muted-2); }
+.qv .ch-svc-box.is-off .ch-svc-price { color: var(--muted-2); }
 .qv .ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
 .qv .ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
-.qv .ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
+.qv .ch-svc-box.is-off .ch-svc-hint { color: var(--muted-2); }
 /* "Customer asked for" now lives in the trip basics next to the vehicle chips, so it mirrors
    their head+row layout (ch-veh-head/ch-veh-row) — the two intake questions read as a pair. */
 .qv .ch-req-choose { padding: 0; }
@@ -1673,8 +1680,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-needs:hover { opacity: 1; }
 /* The one-click remedy inside the 'both' mismatch note. Sits on its own line under the sentence
    so the note still reads as prose, not as a button with a caption. */
-.qv .ch-mismatch-fix { display: block; margin-top: 7px; padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(214,138,42,.45); background: rgba(214,138,42,.14); color: #8a5a12; font: inherit; font-weight: 700; cursor: pointer; }
-.qv .ch-mismatch-fix:hover { background: rgba(214,138,42,.24); }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -1699,6 +1704,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-needs { border: 0; padding: 4px 0 0; font-size: 12px; color: var(--muted); }
 .qv .ch-svc-head { padding: 12px 16px 0; }
 .qv .ch-svc-caption-lbl { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); }
+.qv .ch-svc-follows { margin-left: 8px; font-size: 10.5px; color: var(--muted-2); }
 .qv .ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
 /* Price drift (2026-08-05): quiet by design — it sits under the total and states a fact. The fade
    matches the total's own colour transition so the pane never snaps. */
@@ -1857,8 +1863,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* amber-tinted one-offs that hardcode light values */
   :root[data-theme="dark"] .qv .ch-sendback{border-color:#5b4a22}
   :root[data-theme="dark"] .qv .ch-req-mismatch{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
-  :root[data-theme="dark"] .qv .ch-mismatch-fix{background:rgba(224,163,62,.18);border-color:rgba(224,163,62,.45);color:#f0c880}
-  :root[data-theme="dark"] .qv .ch-mismatch-fix:hover{background:rgba(224,163,62,.3)}
   :root[data-theme="dark"] .qv .ch-blockers{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
   :root[data-theme="dark"] .qv .ch-blocker-row{background:rgba(255,255,255,.05);border-color:rgba(224,163,62,.3)}
   :root[data-theme="dark"] .qv .ch-blocker-row:hover{background:rgba(255,255,255,.1);border-color:rgba(224,163,62,.5)}
@@ -2145,6 +2149,9 @@ const reason=t=>{
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Day one of a deposit trip with the balance still open: the driver is about to go, so this
+     outranks the housekeeping reasons below. */
+  if(t.balance>0&&t.date&&t.date===TODAY)return 'Balance due — travels today';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -2253,6 +2260,9 @@ function rowToTicket(row){
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
+    /* A deposit booking: what has landed and what is still owed (the ledger's figures, never
+       derived here). balance>0 on a paid row means the customer owes the rest. */
+    paidCents:row.paidCents||0, balance:row.balanceCents||0,
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
     notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
     /* Ride-board vans ride in the same queue as bookings but are read-only
@@ -2528,6 +2538,7 @@ function ticketRow(t,i){
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
+      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
       <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
     </div>
   </div>`;
@@ -3912,16 +3923,16 @@ function sheetHeadHtml(t,o){
   return `<div class="sheet-h">
       <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
       <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
-      <div class="idrow">
+      <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
-        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>
+        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
       </div>${pipe}
     </div>
     <div class="sheet-stub">${o.stub}</div>
     <div class="perf"><i></i><i></i></div>`;
 }
 function bookingStubHtml(t){
-  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
+  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid&&t.balance>0?'<span class="paych due">DEPOSIT</span>':t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
     +`<div class="stub"><div class="sl">Travel</div><div class="sv">${t.date?esc(fmtDate(t.date)):'Flexible'}${t.time?' · '+esc(t.time):''}</div></div>`
     +`<div class="stub"><div class="sl">Guests</div><div class="sv">${t.guests==null?'—':esc(String(t.guests))}</div></div>`
     +`<div class="stub"><div class="sl">Type</div><div class="sv">${esc(MODE[t.mode]||t.mode)}</div></div>`;
@@ -4031,7 +4042,10 @@ function renderSheet(){
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx});
+    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx,
+    /* The row's own balance tag, repeated in the header so an open balance is visible without
+       scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
+    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
      print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
   if(!d){
@@ -4114,9 +4128,15 @@ function renderSheet(){
       </div>
       ${interestBlock}
       <div class="block"><h4>Payment</h4>
+        ${t.paid&&t.balance>0?`<div class="followup bal-card"><div>
+          <b>Balance due · ${money({amount:t.balance,currency:t.currency})}</b>
+          <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}</div>
+          ${d.balancePayLink?`<div style="margin-top:10px"><button class="btn btn-go" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Balance payment link</button></div>`:''}
+        </div></div>`:''}
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
-        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
+        ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
         ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
@@ -4620,6 +4640,7 @@ document.addEventListener('click',async e=>{
       }
       break;
     }
+    case 'balancelink':{const link=state.detailData&&state.detailData.balancePayLink;if(!link){toast('No balance is open on this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Balance payment link copied');break;}
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
@@ -5058,6 +5079,7 @@ var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
 var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
+var _payChooser = false;  // the "which option is this link for" chooser is open (a "both" quote)
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
 var _payLinkCopiedT = null;
 var _payLinkShowRow = false;  // fallback only — the URL row appears when the clipboard write fails
@@ -5313,7 +5335,15 @@ async function _runEstimate() {
   // deleted on a reopened chauffeur quote), auto-revert to point-to-point BEFORE pricing —
   // otherwise the quote keeps a chauffeur day rate on what is now a single transfer. The chooser
   // disables chauffeur but does not flip the service; this does. render() below reflects it.
-  if (st.service === 'chauffeur' && distinctLegDateCount() <= 1) {
+  //
+  // While the quote is editable the priced service is re-derived from what the customer asked for
+  // on EVERY estimate (owner, 2026-10-12) — the revert above used to be one-way, so a quote whose
+  // Chauffeur-guide pick came before its second dated day stayed point-to-point for good. A locked
+  // quote (ready/sent/…) keeps what was approved; only the old single-day revert applies to it.
+  if (isEditableNow()) {
+    var wantService = pricedServiceFor(st.requestedService, distinctLegDateCount(), st.service);
+    if (wantService !== st.service) { applyPricedService(wantService); markDirty(); }
+  } else if (st.service === 'chauffeur' && distinctLegDateCount() <= 1) {
     st.service = 'private';
   }
 
@@ -5884,6 +5914,15 @@ function requestMismatch(requested, priced) {
 function requestedIncludes(dim) {
   return state.requestedService === dim || state.requestedService === 'both';
 }
+/* Which service a quote is PRICED as, given what the customer asked for (owner, 2026-10-12). Pure.
+   A chauffeur trip needs 2+ distinct travel days; until the itinerary has them it can only be
+   priced point-to-point, and it moves to chauffeur the moment it can. Nothing recorded yet (a new
+   or legacy quote) keeps what it is priced as, subject to the same 2-day floor. */
+function pricedServiceFor(requested, distinctDates, current) {
+  if (requested === 'chauffeur') return distinctDates >= 2 ? 'chauffeur' : 'private';
+  if (requested === 'private' || requested === 'both') return 'private';
+  return current === 'chauffeur' && distinctDates >= 2 ? 'chauffeur' : 'private';
+}
 // Toggle one dimension; re-derive the stored enum from the two flags (both on → 'both',
 // one on → that one, neither → null). Storage shape is unchanged, so nothing downstream moves.
 function setRequestedService(dim) {
@@ -5898,16 +5937,15 @@ function setRequestedService(dim) {
      toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
      price (see requestMismatch's 'both'+chauffeur case). */
   if (next === 'both') outputIncludeChauffeurUpsell = true;
-  /* Picking ONE service also prices the quote that way (owner, 2026-08-06). These two controls
-     were fully decoupled — deliberately, so the tool could record a request it did NOT price
-     (see requestMismatch) — but in practice the decoupling only ever produced the mistake: pick
-     Chauffeur-guide at intake, leave the quote priced Point-to-point, approve past the banner,
-     and the customer opens their quote link to the wrong service. Worse, the pay link charges
-     the STORED total, so a chauffeur trip would have gone out at the point-to-point price.
-     The mismatch state still exists and is still flagged — ops can always change Pricing as
-     afterwards — but it now takes a deliberate second action rather than being the default.
-     'both' is untouched: two requested services cannot imply one priced service. */
-  if (next === 'private' || next === 'chauffeur') setService(next);
+  /* What the customer asked for DECIDES how the quote is priced (owner, 2026-10-12: "the first
+     choice is what decides the intention of the customer"). History: the two controls were fully
+     decoupled (2026-07-17), then a single pick moved the price once, at click time (2026-08-06) —
+     but that one-shot sync lost to the estimate's own revert whenever the pick came before the
+     itinerary had two dated days, and ops approved a "Chauffeur-guide" quote priced point-to-point.
+     Now the priced service is derived, here and on every estimate (see _runEstimate), and the
+     Pricing as cards are display-only. 'both' is the point-to-point price with the chauffeur price
+     alongside (I9/I10). */
+  setService(pricedServiceFor(next, distinctLegDateCount(), state.service));
   markDirty();
   render();
 }
@@ -5940,6 +5978,14 @@ function setShowLegPrices(on) {
 function setService(service) {
   if (service !== 'private' && service !== 'chauffeur') service = 'private';
   if (service === state.service) return;
+  applyPricedService(service);
+  markDirty();
+  refreshEstimate();
+  render();
+}
+// The state change alone — no dirty flag, estimate or render — so _runEstimate can apply it
+// mid-flight without re-entering itself.
+function applyPricedService(service) {
   state.service = service;
   if (service !== 'private') outputIncludeChauffeurUpsell = false;
   if (service === 'private') {
@@ -5949,9 +5995,6 @@ function setService(service) {
         : leg;
     });
   }
-  markDirty();
-  refreshEstimate();
-  render();
 }
 
 // Count distinct leg dates — chauffeur needs >1 to be feasible (R6).
@@ -6390,6 +6433,9 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
+    balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
+    balanceCents: null, // what is still owed on it, for the copy toast
     // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
     // founder always may; ops may only on a single-leg standard transfer. Never derive it from
     // caps: the capability alone is true on every quote, including the ones the server refuses.
@@ -6407,7 +6453,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -6721,6 +6767,8 @@ async function transition(toStatus, opts) {
     return;
   }
   state.status = toStatus;
+  state.payOptions = null; // priced for the previous status; the next open of the quote re-reads it
+  state.balancePayLink = null; state.balanceCents = null; // same rule: read with the quote, never carried across a status change
   // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
   // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
@@ -6781,6 +6829,7 @@ function markSent()        { return transition('sent', { toast: 'Marked as sent 
 function payLinkRefusal(err, fallback) {
   if (!err || err.error !== 'not_linkable') return 'Could not create the payment link';
   if (err.reason === 'discounted') return 'A discounted quote can only take a full-total payment link — use "Payment link" instead';
+  if (err.reason === 'no_alternative') return 'This quote has no Chauffeur-guide price saved \u2014 reopen the quote and save it again to get one';
   return fallback;
 }
 
@@ -6789,23 +6838,38 @@ function payLinkRefusal(err, fallback) {
    revision. The row it reveals is what ops copies into the WhatsApp message next to the
    quote. A non-live PayHere mode gets an amber SANDBOX chip: a sandbox link takes test-card
    money and marks real bookings Paid, so it must never pass for a live one. */
-async function mintPayLink() {
-  if (!state.savedId) return;
+/* Resolves true only when a link was minted AND is still the open quote's. Every await below can
+   outlive the quote: pick a link, go back to the queue, open another quote, and the response used to
+   land on that other quote (and be copied there). Same _openSeq guard as reopenQuote — a response
+   for a quote that is no longer open is dropped, silently, and reported as "not minted". */
+async function mintPayLink(service) {
+  if (!state.savedId) return false;
+  var seq = _openSeq;
   try {
-    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', { method: 'POST' });
+    /* `service` is only ever sent from the "both" chooser; the server reads the amount from the
+       quote's stored price for that option, so the client names a product and nothing else. */
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', service
+      ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ service: service }) }
+      : { method: 'POST' });
+    if (seq !== _openSeq) return false;
     if (!r.ok) {
       var err = await jsonOrNull(r);
+      if (seq !== _openSeq) return false;
       showToast(payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
-      return;
+      return false;
     }
     var body = await jsonOrNull(r);
-    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return; }
-    _payLink = { url: body.url, mode: body.payhereMode || 'off' };
+    if (seq !== _openSeq) return false;
+    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return false; }
+    _payLink = { url: body.url, mode: body.payhereMode || 'off', service: service || null };
     _payPartial = null; // a bodyless mint is the FULL link — the server just retired any selection
+    if (service && state.payOptions) state.payOptions.linkedService = service === 'chauffeur' ? 'chauffeur' : null;
     render();
+    return true;
   } catch (e) {
     window.opsReportError && window.opsReportError('mint pay link', e);
-    showToast('Could not create the payment link', 'error');
+    if (seq === _openSeq) showToast('Could not create the payment link', 'error');
+    return false;
   }
 }
 /* "Payment link" copies. It used to reveal a bar above the builder holding the URL, a Copy
@@ -6818,6 +6882,13 @@ async function mintPayLink() {
    alert mark; "copied" is not the part that needs emphasis. */
 function payLinkToast() {
   var live = _payLink && _payLink.mode === 'live';
+  /* A link minted from the "both" chooser names its product, so "copied" can't be read as the other option. */
+  if (_payLink && _payLink.service) {
+    var named = PAY_SERVICE_LABEL[_payLink.service] + ' payment link copied';
+    if (live) showToast(named);
+    else showToast(named + ' \u2014 SANDBOX, test cards only', 'error');
+    return;
+  }
   if (live) showToast('Payment link copied');
   else showToast('Payment link copied — SANDBOX, test cards only', 'error');
 }
@@ -6865,6 +6936,25 @@ async function copyQuoteLink() {
     window.opsReportError && window.opsReportError('mint quote link', e);
     showToast('Could not create the quote link', 'error');
   }
+}
+
+/* The BALANCE payment link (owner, 2026-10-12). Once a deposit is paid the quote is won and takes
+   no new pay link, so there was nowhere here to get the link the customer pays the balance on.
+   It is the link they already hold, and it arrives with the quote (reopenQuote) — so a press
+   mints nothing and asks the server nothing: copy, say how much is still owed, done.
+   No SANDBOX variant: the PayHere mode only travels with a freshly minted link, and this one is
+   not minted here. "Copied" is said only once the clipboard took it; the guard drops an answer
+   that lands after another quote was opened. */
+function copyBalanceLink() {
+  var link = state.balancePayLink;
+  if (!link) return;
+  var seq = _openSeq;
+  var owed = state.balanceCents == null ? '' : ' \u2014 ' + fmtUsd(state.balanceCents) + ' still to pay';
+  var failed = function () { if (seq === _openSeq) showToast('Could not copy the balance payment link', 'error'); };
+  if (!(navigator.clipboard && navigator.clipboard.writeText)) { failed(); return; }
+  navigator.clipboard.writeText(link).then(function () {
+    if (seq === _openSeq) showToast('Balance payment link copied' + owed);
+  }, failed);
 }
 
 /* ── Part of trip… (partial pay links, spec 2026-08-04) ─────────────────────────────────
@@ -6937,6 +7027,7 @@ async function openPayPartPicker() {
       ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
       : paySelectionState(body.lines);
     _payPicker = { lines: body.lines, sel: sel, busy: false };
+    _payChooser = false;
     render();
   } catch (e) {
     window.opsReportError && window.opsReportError('open pay picker', e);
@@ -6944,21 +7035,27 @@ async function openPayPartPicker() {
   }
 }
 
+/* Same _openSeq guard as mintPayLink: this is its own fetch, so a part-of-trip mint that outlives
+   its quote (confirm, leave, open another) is dropped — nothing written, copied or toasted. */
 async function confirmPayPart() {
   if (!_payPicker || _payPicker.busy) return;
+  var seq = _openSeq;
   _payPicker.busy = true; render();
   try {
     var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(_payPicker.sel),
     });
+    if (seq !== _openSeq) return;
     if (!r.ok) {
       var err = await jsonOrNull(r);
+      if (seq !== _openSeq) return;
       showToast(payLinkRefusal(err, 'That selection can\u2019t be sold on its own'), 'error');
       _payPicker.busy = false; render();
       return;
     }
     var body = await jsonOrNull(r);
+    if (seq !== _openSeq) return;
     if (!body || !body.url) { showToast('Could not create the payment link', 'error'); _payPicker.busy = false; render(); return; }
     _payLink = { url: body.url, mode: body.payhereMode || 'off' };
     _payPartial = body.coverage
@@ -6968,6 +7065,7 @@ async function confirmPayPart() {
     copyPayLink();
   } catch (e) {
     window.opsReportError && window.opsReportError('mint partial pay link', e);
+    if (seq !== _openSeq) return;
     showToast('Could not create the payment link', 'error');
     if (_payPicker) { _payPicker.busy = false; render(); }
   }
@@ -7015,9 +7113,87 @@ function renderPayPicker() {
    - Not minted yet: mint, then try. If the write is refused after the await, copyPayLink falls
      back to showing the row so the operator can still get the URL by hand. */
 async function payLinkPress() {
+  if (payServiceOptions(state.payOptions).length && (state.status === 'ready' || state.status === 'sent')) { openPayChooser(); return; }
   if (_payLink) { copyPayLink(); return; }
-  await mintPayLink();
-  if (_payLink) copyPayLink();
+  if (await mintPayLink() && _payLink) copyPayLink();
+}
+
+/* "Both" quotes (spec 2026-10-12): a quote the customer asked for as point-to-point AND chauffeur-guide
+   carries both prices, so Payment link asks which option the link is for. The pure helpers sit first
+   (web-tests/unit/ops-pay-service-chooser.test.js loads them by source), then the chooser itself. */
+var PAY_SERVICE_LABEL = { private: 'Point-to-point', chauffeur: 'Chauffeur-guide' };
+function payServiceOptions(payOptions) {
+  if (!payOptions || !payOptions.primary || !payOptions.alternative) return [];
+  return [
+    { service: 'private', label: 'Point-to-point', totalCents: payOptions.primary.totalCents, depositCents: 0 },
+    { service: 'chauffeur', label: 'Chauffeur-guide', totalCents: payOptions.alternative.totalCents, depositCents: payOptions.alternative.depositCents || 0 },
+  ];
+}
+/* Which option's link is out: what this session minted wins, then the server's linkedService, then
+   point-to-point if a link is known to exist at all. null = no link known — say nothing. */
+function payLinkOutService(payOptions, sessionService, hasLink) {
+  if (!payOptions || !payOptions.alternative) return null;
+  if (sessionService) return sessionService;
+  if (payOptions.linkedService) return payOptions.linkedService;
+  return hasLink ? 'private' : null;
+}
+function payLinkOutText(service) {
+  if (service !== 'private' && service !== 'chauffeur') return '';
+  return (service === 'chauffeur' ? 'Chauffeur-guide' : 'Point-to-point') + ' link is out — sending the other option replaces it';
+}
+/* A link is known to be out: minted this session, stamped by a pay-link mint, or already used to
+   start a booking. (customerTotalVia 'quote_link' alone says nothing about a PAY link.) */
+function payLinkKnownOut() {
+  return !!(_payLink || state.customerTotalVia === 'pay_link' || state.convertedBookingId);
+}
+function openPayChooser() {
+  _payChooser = true;
+  _payPicker = null; // one picker at a time
+  render();
+}
+/* The pick mints through the SAME mintPayLink as every other path. The same option again copies the
+   link already held (synchronously — see payLinkPress); the other option mints, which retires the first. */
+async function pickPayService(service) {
+  _payChooser = false;
+  if (!(_payLink && _payLink.service === service)) {
+    var minted = await mintPayLink(service);
+    if (!minted || !_payLink || _payLink.service !== service) { render(); return; } // refused or stale — mintPayLink already said why
+  }
+  copyPayLink();
+}
+function renderPayChooser() {
+  if (!_payChooser) return '';
+  var opts = payServiceOptions(state.payOptions);
+  if (!opts.length) return '';
+  var buttons = opts.map(function (o) {
+    var note = o.depositCents > 0
+      ? '<span class="ch-paychoose-note">customer can pay a ' + fmtUsd(o.depositCents) + ' deposit</span>'
+      : '';
+    return '<button class="ch-paychoose-opt" data-action="payChoose" data-service="' + o.service + '">'
+      + '<span class="ch-paychoose-lbl">' + esc(o.label) + '</span>'
+      + '<span class="ch-paychoose-amt">' + fmtUsd(o.totalCents) + '</span>'
+      + note
+      + '</button>';
+  }).join('');
+  /* Warn, never block (owner D5): a checkout may be open on the link being replaced, and switching
+     does not cancel it — if that customer pays it, both options end up paid. */
+  var warn = state.convertedBookingId && payLinkOutService(state.payOptions, _payLink && _payLink.service, payLinkKnownOut())
+    ? '<div class="ch-paypicker-warn">A payment was started on the current link — it is not cancelled by switching.</div>'
+    : '';
+  return '<div class="ch-paypicker" id="pay-chooser">'
+    + '<div class="ch-paypicker-title">Which option is this payment link for?</div>'
+    + '<div class="ch-paychoose-row">' + buttons + '</div>'
+    + warn
+    + '<div class="ch-paypicker-foot"><span class="ch-paypicker-sum"></span>'
+    + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="cancelPayChoose">Cancel</button></div>'
+    + '</div>';
+}
+/* Which option's link is currently out — so ops doesn't have to remember what the customer holds. */
+function renderPayLinkOut() {
+  if (_payPartial || _payChooser) return '';
+  if (!payServiceOptions(state.payOptions).length || (state.status !== 'ready' && state.status !== 'sent')) return '';
+  var out = payLinkOutService(state.payOptions, _payLink && _payLink.service, payLinkKnownOut());
+  return out ? '<div class="ch-paypartial-chip" id="pay-linkout">' + esc(payLinkOutText(out)) + '</div>' : '';
 }
 
 /* What the outstanding partial link covers — so ops doesn't have to remember what was sent,
@@ -7123,6 +7299,8 @@ async function apiBook(id, payload) {
 // and left the agent with nowhere to go. Pure, so it is unit-tested directly.
 function bookErrorText(res) {
   if (!res) return 'Could not book — unknown error';
+  // The customer already started the OTHER option's payment (see /book): not a form error, so no prefix.
+  if (res.reason === 'other_option_started') return "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.";
   if (res.message) return 'Could not book — ' + res.message;
   var d = res.details;
   if (d && d.fieldErrors) {
@@ -7175,7 +7353,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -7381,6 +7559,9 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+  state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
+  state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
+  state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
 
   /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
      state.discount is client state and starts null on every page load; without this the pane
@@ -7409,7 +7590,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -8387,7 +8568,7 @@ function renderRatesEditor() {
   var bufFx = row('Buffer', 'added to each leg’s distance', view(esc(String(r.bufferPct)) + '%'), rtInput('rt-buffer', String(r.bufferPct), '', '%', 'Buffer percent'))
     + row('FX', 'LKR per USD · display only', view('Rs ' + esc(String(fx)) + ' / $'), rtInput('rt-fx', String(fx), 'Rs', '', 'Rupees per dollar'));
   // Read-only in both modes: the deposit rule is fixed (owner, 2026-10-07).
-  var deposit = row('Deposit', 'optional on private & chauffeur trips from ' + rtUsd(d.readOnly.depositEligibleMinCents),
+  var deposit = row('Deposit', 'optional on chauffeur trips from ' + rtUsd(d.readOnly.depositEligibleMinCents),
     view(esc(String(d.readOnly.depositPct)) + '%', 'min ' + rtUsd(d.readOnly.depositMinCents)), null);
 
   var live = d.live;
@@ -9407,20 +9588,22 @@ function renderServiceChooser() {
   var chaufActive = (state.service === 'chauffeur');
 
   var parts = [];
-  parts.push('<div class="ch-svc-head"><span class="ch-svc-caption-lbl">Pricing as</span></div>');
+  // Display-only (owner, 2026-10-12): which one is priced follows "Customer asked for" — see
+  // pricedServiceFor. No data-action, not buttons: there is nothing here to click.
+  parts.push('<div class="ch-svc-head"><span class="ch-svc-caption-lbl">Pricing as</span><span class="ch-svc-follows">set by &ldquo;Customer asked for&rdquo;</span></div>');
   parts.push('<div class="ch-svc-choose">');
   // Point-to-point box
-  parts.push('  <button class="ch-svc-box' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
+  parts.push('  <div class="ch-svc-box' + (p2pActive ? ' active' : '') + '" data-service="private">');
   parts.push('    <span class="ch-svc-lbl">Point-to-point</span>');
   parts.push('    <span class="ch-svc-price">' + p2pPrice + '</span>'); // pre-escaped above
-  parts.push('  </button>');
+  parts.push('  </div>');
   // Chauffeur-guide box. When the trip calendar is warning about the span, this price is
   // BUILT ON that span (chauffeur.ts charges every day between first and last leg), so it
   // must not read as authoritative — an $4,339 quote from a fat-fingered month looked
   // exactly as confident as a real one. Amber + a one-line reason, never a hidden number:
   // the operator still needs to see it to recognise it as wrong.
   var spanSuspect = !chaufDisabled && !!_calModel && !!tripCal.warning(_calModel, state.service === 'chauffeur');
-  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  parts.push('  <div class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + (chaufDisabled ? ' is-off' : '') + '" data-service="chauffeur">');
   parts.push('    <span class="ch-svc-lbl">Chauffeur-guide</span>');
   parts.push('    <span class="ch-svc-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
   if (chaufDisabled) {
@@ -9428,7 +9611,7 @@ function renderServiceChooser() {
   } else if (spanSuspect) {
     parts.push('    <span class="ch-svc-flag">reflects the ' + _calModel.span + '-day span &mdash; check the dates</span>');
   }
-  parts.push('  </button>');
+  parts.push('  </div>');
   parts.push('</div>');
 
   // Quote intent (spec 2026-07-17). The "Customer asked for" control itself lives up in the trip
@@ -9437,15 +9620,14 @@ function renderServiceChooser() {
   // the trip is priced, and this is where the priced service (state.service) is chosen and shown.
   // I8: signal, not a gate.
   var _mm = requestMismatch(state.requestedService, state.service);
+  // An editable quote can now disagree in exactly one way: Chauffeur-guide was asked for but the
+  // itinerary cannot be a chauffeur trip yet. Say what is missing — it prices itself as chauffeur
+  // the moment the second travel day has a date. (A locked legacy quote keeps the plain sentence.)
+  if (_mm && isEditableNow() && state.requestedService === 'chauffeur' && state.service !== 'chauffeur') {
+    _mm = 'Chauffeur-guide needs 2 or more travel days (legs on different dates) — priced Point-to-point until the itinerary has them.';
+  }
   if (_mm) {
-    // The 'both' case names exactly one remedy — switching the priced service to point-to-point —
-    // so put it one click away instead of asking the operator to go find the chooser box above.
-    // Every other mismatch is a judgement call (the reviewer may well want the priced service it
-    // has), so those stay a plain sentence with no button.
-    var _mmFix = (state.requestedService === 'both' && state.service === 'chauffeur')
-      ? '<button class="ch-mismatch-fix" data-action="setService" data-service="private" type="button">Switch to Point-to-point</button>'
-      : '';
-    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + _mmFix + '</div>');
+    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
   }
 
   if (chaufActive && !chaufDisabled) {
@@ -9679,8 +9861,16 @@ function renderSummaryCardBody() {
       + ' to join the total.</div>');
   }
 
-  // Chauffeur product: full due-now amount as a subtle highlighted chip/row.
-  if (est.product === 'chauffeur' && est.amountDueNow) {
+  // An eligible quote (the engine's own deposit rule, the same one /quotes/pay/view applies): ops
+  // mints one ordinary pay link and the CUSTOMER picks a deposit or full on it (spec 2026-10-07
+  // §5.4), so say what they will be offered rather than "pay in full".
+  if (est.deposit && est.deposit.cents > 0) {
+    lines.push('<div class="ch-deposit-chip">');
+    lines.push('  <span class="dep-lbl">Customer can pay a deposit of ' + esc(fmtUsd(est.deposit.cents))
+      + ' (balance ' + esc(fmtUsd(est.total.cents - est.deposit.cents)) + ' later) or in full on the pay link</span>');
+    lines.push('</div>');
+  } else if (est.product === 'chauffeur' && est.amountDueNow) {
+    // Not deposit-eligible: the chauffeur full due-now amount as a subtle highlighted chip/row.
     lines.push('<div class="ch-deposit-chip">');
     lines.push('  <span class="dep-lbl">Pay in full to confirm</span>');
     lines.push('  <span class="dep-val">' + esc(fmtUsd(est.amountDueNow.cents)) + '</span>');
@@ -10148,6 +10338,17 @@ function productBlurb(veh) {
   return 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.';
 }
 
+/* The payment line of the quote message (WhatsApp and email). An eligible quote's pay link offers a
+   deposit or full payment (spec 2026-10-07 rev. 2026-10-08), so the message says both — driven by the
+   engine's own deposit figure, the same one /quotes/pay/view offers. Owner wording, 2026-10-09. */
+const payLineText = (est, totalCents, M) => {
+  var due = est.amountDueNow && est.amountDueNow.cents != null ? est.amountDueNow.cents : 0;
+  var dep = est.deposit && est.deposit.cents > 0 ? est.deposit.cents : 0;
+  return dep > 0
+    ? 'Pay a deposit of ' + M(dep) + ' to confirm (balance ' + M(totalCents - dep) + ' any time before your trip), or pay in full: ' + M(totalCents) + '.'
+    : 'Pay in full to confirm: ' + M(due) + '.';
+};
+
 function generatedWhatsappMessage() {
   if (!lastEstimate) return null;
   var name = customerName() || 'there';
@@ -10172,8 +10373,7 @@ function generatedWhatsappMessage() {
     });
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     // PRIVATE: per driving leg (date — route — price), then extras, then total.
     privateLegRows().forEach(function(r) {
@@ -10211,8 +10411,7 @@ function generatedEmailMessage() {
       lines.push('  ' + (it.displayLabel || it.label) + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
+    lines.push('', payLineText(lastEstimate, totalCents, M));
   } else {
     privateLegRows().forEach(function(r) {
       lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));
@@ -10472,6 +10671,9 @@ function renderActionBar() {
   var PAYPART = state.service !== 'chauffeur'
     ? B('openPayPart', 'Part of trip\u2026', 'ch-btn-ghost', false, 'Send a payment link for only some legs')
     : null;
+  // The balance link (owner, 2026-10-12): the one thing a booked quote still hands out, and only
+  // while its booking owes a balance. Built once, placed once per role, like the links above.
+  var BALLINK = B('copyBalanceLink', 'Balance payment link', 'ch-btn-outline', false, 'Copies the link the customer pays the balance on');
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
     // before it can be Approved (no self-approve straight from a draft). Approve appears only in
@@ -10481,6 +10683,7 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
@@ -10492,6 +10695,7 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
        says this particular quote qualifies — a single-leg, standard-priced, undiscounted private
        transfer. Keyed on state.mayApprove, never on the capability: quote:approve_simple is true
@@ -11129,7 +11333,9 @@ function render() {
     '  </div>',
     renderPayLinkRow(),
     renderPayPicker(),
+    renderPayChooser(),
     renderPayPartialChip(),
+    renderPayLinkOut(),
     '</header>',
 
     '<div class="ch-container">',
@@ -11739,9 +11945,6 @@ function attachEventListeners() {
           }
         }
       }
-    } else if (action === 'setService') {
-      if (el.disabled) return;
-      setService(el.getAttribute('data-service'));
     } else if (action === 'setRequestedService') {
       setRequestedService(el.getAttribute('data-req'));
     } else if (action === 'setShowLegPrices') {
@@ -11802,6 +12005,8 @@ function attachEventListeners() {
       runAction(action, payLinkPress);
     } else if (action === 'copyQuoteLink') {
       runAction(action, copyQuoteLink);
+    } else if (action === 'copyBalanceLink') {
+      copyBalanceLink();
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'toggleHistory') {
@@ -11821,6 +12026,12 @@ function attachEventListeners() {
       render();
     } else if (action === 'confirmPayPart') {
       runAction(action, confirmPayPart);
+    } else if (action === 'payChoose') {
+      var chosenService = el.getAttribute('data-service');
+      runAction(action, function () { return pickPayService(chosenService); });
+    } else if (action === 'cancelPayChoose') {
+      _payChooser = false;
+      render();
     } else if (action === 'confirmPlace') {
       openConfirmPlace(el.getAttribute('data-name') || '');
     } else if (action === 'confirmPlaceClose') {
@@ -11837,7 +12048,7 @@ function attachEventListeners() {
       runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
       render();
     } else if (action === 'reopenToDraft') {
       runAction(action, reopenToDraft);

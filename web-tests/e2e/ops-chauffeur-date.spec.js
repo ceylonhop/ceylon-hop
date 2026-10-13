@@ -79,11 +79,8 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await setLegField(page, 1, 'dropoffLocation', 'Colombo Airport (CMB)');
   await setLegField(page, 1, 'date', legDate2);
 
-  // Force chauffeur mode.
-  await page.evaluate(() => {
-    const btn = document.querySelector('[data-action="setService"][data-service="chauffeur"]');
-    if (btn) { btn.disabled = false; btn.click(); }
-  });
+  // Chauffeur mode — by what the customer asked for; the Pricing as cards are display-only (2026-10-12).
+  await page.locator('[data-action="setRequestedService"][data-req="chauffeur"]').click();
   await expect(page.locator('.ch-leg.is-chauffeur').first()).toBeVisible({ timeout: 5000 });
 
   // Fetch each leg's distance via the real distance control (set → auto) so both legs get

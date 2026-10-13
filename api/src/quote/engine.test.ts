@@ -47,7 +47,14 @@ describe('quote()', () => {
   });
 
   it('a quote locked on an older rate card (old deposit shape) still gets the fixed deposit rule, never NaN', () => {
-    const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 800 }] };
+    // A chauffeur trip — the only product that takes a deposit (owner, 2026-10-12).
+    const req: QuoteRequest = {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+        { date: '2026-02-22', from: 'Kandy', to: 'Airport', distanceKm: 120 },
+      ],
+    };
     const current = quote(req);
     expect(current.totalCents).toBeGreaterThanOrEqual(15_000); // eligible for a deposit
     expect(current.depositCents).toBeGreaterThan(0);
