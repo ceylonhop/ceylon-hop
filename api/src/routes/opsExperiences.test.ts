@@ -76,6 +76,20 @@ describe('GET/POST/PATCH /admin/experiences', () => {
     expect((await send('POST', '/admin/experiences', { ...BODY, bogus: 1 })).status).toBe(400);
   });
 
+  it('the Tripadvisor location id (D22): saved on create, replaced and cleared by PATCH, digits only', async () => {
+    const { send } = setup();
+    const made = (await (await send('POST', '/admin/experiences', { ...BODY, tripadvisorLocationId: '6789012' })).json()).experience;
+    expect(made.tripadvisorLocationId).toBe('6789012');
+    const noId = (await (await send('POST', '/admin/experiences', { ...BODY, slug: 'no-listing' })).json()).experience;
+    expect(noId.tripadvisorLocationId).toBeNull();
+    expect((await (await send('PATCH', `/admin/experiences/${made.id}`, { active: false })).json()).experience.tripadvisorLocationId).toBe('6789012');
+    expect((await (await send('PATCH', `/admin/experiences/${made.id}`, { tripadvisorLocationId: '42' })).json()).experience.tripadvisorLocationId).toBe('42');
+    expect((await (await send('PATCH', `/admin/experiences/${made.id}`, { tripadvisorLocationId: null })).json()).experience.tripadvisorLocationId).toBeNull();
+    for (const bad of ['abc', '', 'https://www.tripadvisor.com/x-d1-Reviews', '1234567890123456']) {
+      expect((await send('PATCH', `/admin/experiences/${made.id}`, { tripadvisorLocationId: bad })).status, bad).toBe(400);
+    }
+  });
+
   it('a duplicate slug is 409 slug_taken on create and on patch', async () => {
     const { send } = setup();
     await send('POST', '/admin/experiences', BODY);

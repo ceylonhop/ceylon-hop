@@ -13,21 +13,21 @@ export const PLACEHOLDERS: ExperienceInput[] = [
     summary: 'A 90-minute Ayurvedic massage with herbal oils.', details: `${DETAILS} Massage.`,
     priceCents: 3500, priceUnit: 'per_person', durationText: '90 min', openWeekdays: DAILY,
     startTimes: ['09:00', '11:00', '14:00', '16:00'], lat: 7.977, lng: 80.76, radiusKm: 5,
-    photos: ['guides/sigiriya/ayurveda'], partnerContact: null, active: true,
+    photos: ['guides/sigiriya/ayurveda'], partnerContact: null, tripadvisorLocationId: null, active: true,
   },
   {
     slug: 'placeholder-village-cooking-lesson', name: 'Village cooking lesson', partnerName: 'Suwee', areaLabel: 'Sigiriya',
     summary: 'Cook a Sri Lankan village meal with a local family.', details: `${DETAILS} Cooking.`,
     priceCents: 2500, priceUnit: 'per_person', durationText: '3 hrs', openWeekdays: [1, 2, 3, 4, 5, 6],
     startTimes: ['10:00', '16:00'], lat: 7.95, lng: 80.796, radiusKm: 5,
-    photos: ['guides/sigiriya/family-food', 'guides/sigiriya/village'], partnerContact: null, active: true,
+    photos: ['guides/sigiriya/family-food', 'guides/sigiriya/village'], partnerContact: null, tripadvisorLocationId: null, active: true,
   },
   {
     slug: 'placeholder-elephant-jeep-safari', name: 'Elephant jeep safari', partnerName: 'Sample jeep partner', areaLabel: 'Sigiriya',
     summary: 'A jeep safari to see wild elephants.', details: `${DETAILS} Safari.`,
     priceCents: 4500, priceUnit: 'per_group', durationText: '3-4 hrs', openWeekdays: DAILY,
     startTimes: ['14:00'], lat: 7.92, lng: 80.81, radiusKm: 10,
-    photos: ['guides/sigiriya/elephants'], partnerContact: null, active: true,
+    photos: ['guides/sigiriya/elephants'], partnerContact: null, tripadvisorLocationId: null, active: true,
   },
 ];
 

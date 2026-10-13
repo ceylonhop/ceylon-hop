@@ -13,7 +13,7 @@ function toExperience(r: Row): Experience {
     summary: r.summary, details: r.details, priceCents: r.priceCents, currency: 'USD',
     priceUnit: r.priceUnit as Experience['priceUnit'], durationText: r.durationText,
     openWeekdays: r.openWeekdays, startTimes: r.startTimes, lat: r.lat, lng: r.lng, radiusKm: r.radiusKm,
-    photos: r.photos, partnerContact: r.partnerContact, active: r.active,
+    photos: r.photos, partnerContact: r.partnerContact, tripadvisorLocationId: r.tripadvisorLocationId, active: r.active,
     createdBy: r.createdBy, updatedBy: r.updatedBy, createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }

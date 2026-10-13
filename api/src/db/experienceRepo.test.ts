@@ -42,6 +42,16 @@ function contract(name: string, make: () => Promise<ExperienceRepo>, slugPrefix:
       expect(got!.updatedAt).toBeInstanceOf(Date);
     });
 
+    it('the Tripadvisor location id round-trips, defaults to null and can be set and cleared by patch (D22)', async () => {
+      const plain = await repo.create(input(s('ta-none')));
+      expect(plain.tripadvisorLocationId).toBeNull();
+      const made = await repo.create(input(s('ta'), { tripadvisorLocationId: '6789012' }));
+      expect((await repo.get(made.id))!.tripadvisorLocationId).toBe('6789012');
+      expect((await repo.patch(made.id, { tripadvisorLocationId: '42' }))!.tripadvisorLocationId).toBe('42');
+      expect((await repo.patch(made.id, { active: false }))!.tripadvisorLocationId).toBe('42');
+      expect((await repo.patch(made.id, { tripadvisorLocationId: null }))!.tripadvisorLocationId).toBeNull();
+    });
+
     it('get of an unknown id is null', async () => {
       expect(await repo.get('00000000-0000-4000-8000-000000000000')).toBeNull();
     });

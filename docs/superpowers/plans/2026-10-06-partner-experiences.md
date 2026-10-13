@@ -905,6 +905,19 @@ Branch: `feat/experiences-confirmation-email`, stacked on PR 6. **Contains migra
 
 ---
 
+## PR 8 — Live Tripadvisor ratings (spec D22)
+
+Branch: `feat/experiences-tripadvisor`, stacked on PR 7. **Contains migration 0068. Release order: #930 → #940 → #950 → this PR.** Dormant until the owner sets `TRIPADVISOR_API_KEY` on Render (and Tripadvisor approves the account).
+
+- [ ] **Migration** `0068_experience_tripadvisor` (journal idx 68, `when` 1791417600000 — later than #950's 0067 at 1791331200000): `experiences.tripadvisor_location_id` text + CHECK `^[0-9]{1,15}$` or null. Test reads the journal entry **by tag**.
+- [ ] **Catalogue:** `ExperienceInput.tripadvisorLocationId` (digits only, nullable), both repos; the public projection is unchanged.
+- [ ] **Adapter:** `TripadvisorAdapter` + `HttpTripadvisorAdapter` (2 s timeout, `Referer`, host-checked URLs, any failure -> null) + `NullTripadvisorAdapter` + `FakeTripadvisorAdapter`; config `TRIPADVISOR_API_KEY`, `TRIPADVISOR_REFERER`; wired in `server.ts` only when the key is set.
+- [ ] **Route:** `GET /experiences/ratings?ids=` (<= 6 uuids, live and parallel, `no-store`, GET+HEAD rate limit; `{ ratings: [] }` with no DB read when dormant).
+- [ ] **Pages:** `booking.js` + `quote.html` fetch once after the rows render and add the rating link under the meta line. Phones: Request >= 44px, "Details >" 32px tap area.
+- [ ] **Ops form:** "Tripadvisor listing" field (paste address or bare number, inline error, "Open listing" link). e2e in `ops-experiences-page.spec.js`, `booking-experiences.spec.js`, `quote-page.spec.js`.
+
+---
+
 ## Launch checklist (owner + ops)
 
 - [ ] **L1** ~~Owner answers open items~~ — done 2026-10-06 (spec §7). Ops payment message template states: "Free cancellation up to 24 hours before the experience date."
