@@ -27,3 +27,19 @@ export async function loadBookingInterests(
     return [];
   }
 }
+
+// A quote's "interested" ticks follow it into the booking it becomes (spec 2026-10-06 D12), so the
+// lead is worked once, against the paid booking. Called after each point a quote converts; a
+// courtesy, so a failure is logged and never fails the conversion.
+export async function linkQuoteInterests(
+  repo: ExperienceInterestRepo | undefined,
+  quoteId: string,
+  bookingId: string,
+): Promise<void> {
+  if (!repo) return;
+  try {
+    await repo.linkQuoteToBooking(quoteId, bookingId);
+  } catch (err) {
+    console.error(`[experiences] could not link quote ${quoteId} interests to booking ${bookingId}:`, err);
+  }
+}
