@@ -75,6 +75,7 @@ export interface ExperienceInterestRepo {
   listForQuote(quoteId: string): Promise<ExperienceInterest[]>;
   /** Open leads on real bookings and live quotes, newest first. ONE query (spec D15). */
   listLeads(limit: number): Promise<Lead[]>;
+  /** Per experience, counting only real leads: the owner filter of listLeads, across all statuses. */
   stats(): Promise<ExperienceStats[]>;
   /** null for an unknown id. 'paid' without a payment reference rejects. */
   patch(id: string, p: InterestPatch): Promise<ExperienceInterest | null>;
@@ -188,8 +189,14 @@ export class InMemoryExperienceInterestRepo implements ExperienceInterestRepo {
   }
 
   async stats(): Promise<ExperienceStats[]> {
+    const { bookings, quotes } = this.deps;
     const by = new Map<string, ExperienceStats>();
     for (const r of this.rows.values()) {
+      // Real leads only — the listLeads owner filter, across every status (spec D10/D15).
+      if (r.bookingId) {
+        const b = await bookings?.get(r.bookingId);
+        if (!b || !(PAID_BOOKING_STATUSES as readonly string[]).includes(b.status)) continue;
+      } else if (!r.quoteId || !(await quotes?.get(r.quoteId))) continue; // get() hides soft-deleted quotes
       const s = by.get(r.experienceId) ?? { experienceId: r.experienceId, interested: 0, paid: 0, paidCents: { USD: 0, LKR: 0 } };
       s.interested++;
       if (r.status === 'paid') {
