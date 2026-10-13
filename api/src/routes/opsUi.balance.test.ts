@@ -78,7 +78,8 @@ describe('ops shell: balance wiring', () => {
     expect(card.length).toBeGreaterThan(0); // the card sits between the heading and the Amount row
     expect(sheet).toMatch(/<h4>Payment<\/h4>\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
     expect(card).toContain('Balance due · ${money({amount:t.balance,currency:t.currency})}');
-    expect(card).toContain('Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid. The customer pays the rest on the link they already have.');
+    // The second sentence only when there IS a link — a booking with none must not claim the customer holds one.
+    expect(card).toContain("Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}");
     expect(card).toMatch(/\$\{d\.balancePayLink\?`[^`]*<button class="btn btn-go" data-act="balancelink"[^`]*Balance payment link<\/button>/);
     // What the card replaced is gone, so nothing is said twice.
     expect(body).not.toContain('<span class="k">Balance due</span>');

@@ -117,6 +117,9 @@ test('a balance with no link to resend: the card and the tag show, without the b
   await expect(headTag(page)).toHaveText('Balance $169');
   await expect(page.locator('[data-act="balancelink"]')).toHaveCount(0);
   await expect(balCard(page).locator('button')).toHaveCount(0);
+  // No link to point at, so the card does not claim the customer holds one.
+  await expect(balCard(page)).toContainText('Deposit of $50 paid.');
+  await expect(balCard(page)).not.toContainText('link they already have');
 });
 
 test('no balance, no card: a fully paid booking offers no pay link and no tag', async ({ page }) => {

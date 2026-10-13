@@ -4068,7 +4068,7 @@ function renderSheet(){
       <div class="block"><h4>Payment</h4>
         ${t.paid&&t.balance>0?`<div class="followup bal-card"><div>
           <b>Balance due · ${money({amount:t.balance,currency:t.currency})}</b>
-          <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid. The customer pays the rest on the link they already have.</div>
+          <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}</div>
           ${d.balancePayLink?`<div style="margin-top:10px"><button class="btn btn-go" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Balance payment link</button></div>`:''}
         </div></div>`:''}
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
