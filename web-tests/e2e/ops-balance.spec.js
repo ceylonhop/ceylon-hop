@@ -63,25 +63,84 @@ test('a balance still open on the day of travel is an attention reason on the ro
   await expect(page.locator('.tk .reason')).toHaveText('Balance due — travels today');
 });
 
-test('the drawer shows Paid so far, Balance due and the Deposit paid status', async ({ page }) => {
+// The open balance in the drawer (owner, 2026-10-12: the copy button was "easy to miss" — "a better
+// visual indicator the balance is still due"). One amber card at the top of the Payment block says
+// what is owed and carries the link as its primary action; the header repeats the row's tag so the
+// balance is visible without scrolling.
+const payBlock = (page) => page.locator('#sheet .block', { has: page.locator('h4', { hasText: 'Payment' }) });
+const balCard = (page) => payBlock(page).locator('.followup.bal-card');
+const headTag = (page) => page.locator('#sheet .sheet-h .pill.pill-bal');
+
+test('the drawer leads the Payment block with a Balance due card, above the ledger rows', async ({ page }) => {
   await boot(page);
-  const pay = page.locator('.block', { has: page.locator('h4', { hasText: 'Payment' }) });
+  const pay = payBlock(page);
+  await expect(balCard(page)).toHaveCount(1);
+  await expect(balCard(page).locator('b')).toHaveText('Balance due · $169');
+  await expect(balCard(page)).toContainText('Deposit of $50 paid. The customer pays the rest on the link they already have.');
+  // The link is the card's primary action, not a plain grey button under the rows.
+  const btn = balCard(page).locator('[data-act="balancelink"]');
+  await expect(btn).toHaveText('Balance payment link');
+  await expect(btn).toHaveClass(/\bbtn-go\b/);
+  // First thing in the block after its heading.
+  await expect(pay.locator('h4 + *')).toHaveClass(/bal-card/);
+  // Nothing is said twice: the card replaced the "Balance due" row and the helper paragraph.
+  await expect(pay.locator('.kv .k', { hasText: 'Balance due' })).toHaveCount(0);
+  await expect(pay).not.toContainText('any time before the trip');
+  // The ledger rows stay.
+  await expect(pay.getByText('Amount', { exact: true }).locator('..').locator('.v')).toHaveText('$219');
   await expect(pay.getByText('Paid so far').locator('..').locator('.v')).toHaveText('$50');
-  await expect(pay.getByText('Balance due').locator('..').locator('.v')).toHaveText('$169');
-  await expect(pay.getByText('Status').locator('..').locator('.v')).toHaveText('Deposit paid');
+  await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Deposit paid');
+  await expect(pay.getByText('Channel', { exact: true })).toHaveCount(1);
 });
 
-test('Copy pay link copies the booking’s balancePayLink', async ({ page, context }) => {
+test('the sheet header carries the same "Balance $169" tag as the list row', async ({ page }) => {
+  await boot(page);
+  await expect(headTag(page)).toHaveText('Balance $169');
+  // Beside the stage pill, which is still there.
+  await expect(page.locator('#sheet .sheet-h .idrow .pill')).toHaveCount(2);
+});
+
+test('Balance payment link copies the booking’s balancePayLink and says so', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await boot(page);
   await page.locator('[data-act="balancelink"]').click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(PAY_LINK);
+  await expect(page.locator('#toast')).toHaveClass(/show/);
+  await expect(page.locator('#toast')).toHaveText('Balance payment link copied');
 });
 
-test('no balance, no button: a fully paid booking offers no pay link', async ({ page }) => {
+// A booking that did not come from a quote has no pay link to resend — the balance is still owed,
+// so the card and the tag still say so; only the button is absent.
+test('a balance with no link to resend: the card and the tag show, without the button', async ({ page }) => {
+  await boot(page, { theDetail: detail({ balancePayLink: null }) });
+  await expect(balCard(page).locator('b')).toHaveText('Balance due · $169');
+  await expect(headTag(page)).toHaveText('Balance $169');
+  await expect(page.locator('[data-act="balancelink"]')).toHaveCount(0);
+  await expect(balCard(page).locator('button')).toHaveCount(0);
+  // No link to point at, so the card does not claim the customer holds one.
+  await expect(balCard(page)).toContainText('Deposit of $50 paid.');
+  await expect(balCard(page)).not.toContainText('link they already have');
+});
+
+test('no balance, no card: a fully paid booking offers no pay link and no tag', async ({ page }) => {
   await boot(page, { theRow: row({ paidCents: 21900, balanceCents: 0 }), theDetail: detail({ balancePayLink: null }) });
   await expect(page.locator('[data-act="balancelink"]')).toHaveCount(0);
-  const pay = page.locator('.block', { has: page.locator('h4', { hasText: 'Payment' }) });
-  await expect(pay.getByText('Status').locator('..').locator('.v')).toHaveText('Paid');
+  await expect(balCard(page)).toHaveCount(0);
+  await expect(headTag(page)).toHaveCount(0);
+  await expect(page.locator('#sheet .sheet-h .idrow .pill')).toHaveCount(1);
+  const pay = payBlock(page);
+  await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Paid');
   await expect(pay.getByText('Balance due')).toHaveCount(0);
+});
+
+// Nothing is paid yet: balanceCents is the planned split (spec §4), not money owed on a deposit.
+test('an unpaid booking gets neither the card nor the tag', async ({ page }) => {
+  await boot(page, {
+    theRow: row({ stage: 'awaiting_payment', paymentStatus: 'unpaid', paidCents: 0, balanceCents: 16900 }),
+    theDetail: detail({ booking: { ...detail().booking, status: 'payment_pending' }, payments: [], balancePayLink: null }),
+  });
+  await expect(payBlock(page)).toHaveCount(1);
+  await expect(balCard(page)).toHaveCount(0);
+  await expect(headTag(page)).toHaveCount(0);
+  await expect(payBlock(page).getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Awaiting payment');
 });

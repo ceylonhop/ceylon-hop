@@ -31,6 +31,8 @@ import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import type { PaymentRepo } from '../db/paymentRepo';
+import { balanceDueCents, isBalanceOpen } from '../domain/balance';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import {
   payLines,
@@ -693,6 +695,9 @@ export function internalQuoteRoutes(deps: {
   /** Gates CREATION only; an existing discount keeps pricing regardless. */
   discountsEnabled?: boolean;
   bookings: BookingRepo;
+  // The balance pay link on the quote read (owner, 2026-10-12). Optional: with no repo injected
+  // the read simply carries no balance link, as it did before.
+  payments?: PaymentRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
   // Assignment notification (spec 2026-07-16 §6). Optional: with no adapter, assignment still
@@ -1628,7 +1633,27 @@ export function internalQuoteRoutes(deps: {
     // priced result for a discount, and stripping is about exposure, not about what is true.
     const mayApprove = can(role, 'quote:approve')
       || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q));
-    return c.json({ ...view, estimate, mayApprove, payOptions: payOptionsOf(q) });
+    // The balance pay link (owner, 2026-10-12): once a deposit is paid the quote is won, and a won
+    // quote takes no new pay link — so the quote screen had nowhere to get the link the customer
+    // pays the balance on. It is the SAME link they already hold (spec 2026-10-07 §5.3), built
+    // exactly as the booking pane builds it (ops.ts, GET /bookings/:id) so both hand out one URL.
+    // Only while the balance is open. Best-effort: a ledger that cannot be read costs the link,
+    // never the quote. Sell-side only — an amount still owed, no margin or cost.
+    let balancePayLink: string | null = null;
+    let balanceCents: number | null = null;
+    if (q.convertedBookingId && deps.payments && deps.payBaseUrl && deps.linkSecret) {
+      try {
+        const booking = await deps.bookings.get(q.convertedBookingId);
+        const payments = booking ? await deps.payments.findByBookingId(booking.id) : [];
+        if (booking && isBalanceOpen(booking, payments)) {
+          balancePayLink = `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(q.id, q.revision, deps.linkSecret, q.payLinkSeq)}`;
+          balanceCents = balanceDueCents(booking, payments);
+        }
+      } catch (err) {
+        console.error(`[quote] balance link unavailable for ${q.id}:`, err);
+      }
+    }
+    return c.json({ ...view, estimate, mayApprove, payOptions: payOptionsOf(q), balancePayLink, balanceCents });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.

@@ -65,14 +65,36 @@ describe('ops shell: balance wiring', () => {
   it('the list row shows a "Balance $X" pill only when a balance is owed', () => {
     expect(body).toMatch(/t\.paid&&t\.balance>0\?`<span class="pill pill-bal"[^`]*Balance \$\{money\(\{amount:t\.balance/);
   });
-  it('the drawer shows Paid so far / Balance due and the "Deposit paid" status', () => {
+  it('the drawer shows Paid so far and the "Deposit paid" status', () => {
     expect(body).toContain('Paid so far');
-    expect(body).toContain('Balance due');
     expect(body).toContain('Deposit paid');
   });
-  it('Copy pay link is offered only with a balancePayLink, and copies exactly that', () => {
-    expect(body).toMatch(/\$\{d\.balancePayLink\?`<div class="sheet-actions"><button class="btn" data-act="balancelink"/);
+  // Owner, 2026-10-12: the copy button was "easy to miss". The open balance is now an amber card
+  // leading the Payment block — same condition as the row's pill — and the link is its primary
+  // action. The card stands without the button for a booking that has no link to resend.
+  it('the Balance due card is keyed on the open balance, and holds the link button only when there is a link', () => {
+    const sheet = body.slice(body.indexOf('function renderSheet('));
+    const card = sheet.slice(sheet.indexOf('<div class="followup bal-card">'), sheet.indexOf('<div class="kv"><span class="k">Amount</span>'));
+    expect(card.length).toBeGreaterThan(0); // the card sits between the heading and the Amount row
+    expect(sheet).toMatch(/<h4>Payment<\/h4>\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
+    expect(card).toContain('Balance due · ${money({amount:t.balance,currency:t.currency})}');
+    // The second sentence only when there IS a link — a booking with none must not claim the customer holds one.
+    expect(card).toContain("Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}");
+    expect(card).toMatch(/\$\{d\.balancePayLink\?`[^`]*<button class="btn btn-go" data-act="balancelink"[^`]*Balance payment link<\/button>/);
+    // What the card replaced is gone, so nothing is said twice.
+    expect(body).not.toContain('<span class="k">Balance due</span>');
+    expect(body).not.toContain('Copy pay link');
+  });
+  it('the sheet header tag is opt-in: the booking sheet passes it, the ride-board sheet does not', () => {
+    const calls = body.split('sheetHeadHtml(t,{').slice(1).map((c) => c.slice(0, c.indexOf('});')));
+    expect(calls).toHaveLength(2);
+    expect(calls.filter((c) => /\btag:/.test(c))).toHaveLength(1);
+    expect(calls.find((c) => /\btag:/.test(c))).toMatch(/tag:t\.paid&&t\.balance>0\?`<span class="pill pill-bal"[^`]*Balance \$\{money\(\{amount:t\.balance/);
+    expect(calls.find((c) => !/\btag:/.test(c))).toContain('Ride board van');
+  });
+  it('the balance link copies exactly the booking’s balancePayLink', () => {
     expect(body).toMatch(/case 'balancelink':\{const link=state\.detailData&&state\.detailData\.balancePayLink;/);
     expect(body).toMatch(/case 'balancelink':[^\n]*writeText\(link\)/);
+    expect(body).toMatch(/case 'balancelink':[^\n]*toast\('Balance payment link copied'\)/);
   });
 });
