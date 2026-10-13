@@ -586,6 +586,7 @@ export function createApp(deps: AppDeps = {}) {
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
       duplicates: { bookings, departures, payments },
+      experiences, experienceInterests,
       ...(ga4 ? { ga4 } : {}),
     }),
   );
@@ -608,6 +609,7 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+    experiences, experienceInterests,
     ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
     ...(communicationTrackingEnabled ? { customerCommunications } : {}),
   }));

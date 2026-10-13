@@ -29,6 +29,9 @@ import { sendNoShowNotice, manageUrl } from '../services/notifications';
 import { isBalanceOpen } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
+import { loadBookingInterests } from '../experiences/bookingInterests';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
 
 export interface OpsDeps {
@@ -62,6 +65,10 @@ export interface OpsDeps {
   // Optional so every existing ops test keeps working; absent = that source is "unavailable".
   paymentEvents?: PaymentEventRepo;
   refunds?: RefundRepo;
+  // Partner experiences (spec 2026-10-06 D15): the booking sheet's "Interested in" block. Optional;
+  // absent = the block is empty.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
   // Phase A's append-only booking-email evidence. Optional deployments name it as unavailable.
   customerCommunications?: CustomerCommunicationRepo;
 }
@@ -346,7 +353,12 @@ export function opsRoutes(deps: OpsDeps) {
     const balancePayLink = srcQuote && isBalanceOpen(b, payments) && deps.baseUrl && deps.linkSecret
       ? `${deps.baseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(srcQuote.id, srcQuote.revision, deps.linkSecret, srcQuote.payLinkSeq)}`
       : null;
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents });
+    const experienceInterests = (await loadBookingInterests(deps, b.id)).map(({ interest: i, experience: e }) => ({
+      id: i.id, experienceName: e?.name ?? i.nameSnapshot, areaLabel: e?.areaLabel ?? '', nameSnapshot: i.nameSnapshot,
+      priceCentsSnapshot: i.priceCentsSnapshot, priceUnitSnapshot: i.priceUnitSnapshot, status: i.status,
+      paymentRef: i.paymentRef, amountPaidCents: i.amountPaidCents, amountPaidCurrency: i.amountPaidCurrency, opsNote: i.opsNote,
+    }));
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by

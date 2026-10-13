@@ -16,6 +16,8 @@ import { signQuotePayToken } from '../lib/bookingToken';
 import type { MapsAdapter } from '../adapters/maps';
 import { InMemoryCustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { runWatchdog } from '../services/watchdog';
+import { InMemoryExperienceRepo } from '../db/experienceRepo';
+import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
 const valid = {
   from: 'Colombo Airport (CMB)',
@@ -377,6 +379,47 @@ describe('payment webhook ops alerts (M17)', () => {
     const plain = await paidAlert({});
     expect(plain.body).not.toContain('Road:');
     expect(plain.body.split('\n')).toHaveLength(5);
+  });
+
+  // Partner experiences (spec 2026-10-06 D15): the paid mail names what the customer asked about.
+  describe('team email "Interested in" row', () => {
+    const EXP = {
+      slug: 'ayurveda-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
+      summary: 'A massage', details: '', priceCents: 3500, priceUnit: 'per_person' as const, durationText: null,
+      openWeekdays: [], startTimes: [], lat: 7.977, lng: 80.76, radiusKm: 5, photos: [], partnerContact: null, active: true,
+      createdBy: 'seed',
+    };
+    async function paidAlertWith(opts: { interests?: ExperienceInterestRepo; seed?: boolean }) {
+      const adapter = new FakePaymentAdapter();
+      const alerts = new FakeAlertAdapter();
+      const experiences = new InMemoryExperienceRepo();
+      const interests = opts.interests ?? new InMemoryExperienceInterestRepo();
+      const app = createApp({ adapter, alerts, experiences, experienceInterests: interests });
+      const b = await bookAndCheckout(app);
+      if (opts.seed) {
+        const e = await experiences.create(EXP as never);
+        await interests.record({ experience: e, source: 'booking_page', bookingId: b.id });
+      }
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return alerts.sent.find((a) => a.kind === 'booking_paid')!;
+    }
+
+    it('names the experience and partner in the HTML and text', async () => {
+      const paid = await paidAlertWith({ seed: true });
+      expect(paid.email?.html).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+      expect(paid.email?.text).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+    });
+
+    it('is absent when the booking has no interests', async () => {
+      const paid = await paidAlertWith({});
+      expect(paid.email?.html).not.toContain('Interested in');
+    });
+
+    it('a failing interest lookup sends the email without the row', async () => {
+      const paid = await paidAlertWith({ interests: { listForBooking: async () => { throw new Error('db down'); } } as unknown as ExperienceInterestRepo });
+      expect(paid.email?.subject.startsWith('Paid: ')).toBe(true);
+      expect(paid.email?.html).not.toContain('Interested in');
+    });
   });
 
   it('the team notification never costs the customer their confirmation', async () => {

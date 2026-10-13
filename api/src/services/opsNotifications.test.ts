@@ -193,6 +193,27 @@ describe('teamPaidEmail', () => {
     expect(teamPaidEmail(sampleBooking('single'), '').text).not.toContain('Promo');
   });
 
+  // Partner experiences (spec 2026-10-06 D15): the team learns of a lead from the paid mail.
+  it('adds an "Interested in" row, only when the booking has interests', () => {
+    const interests = [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa', status: 'new' as const }];
+    const m = teamPaidEmail(sampleBooking('single'), 'https://ops.example', interests);
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Interested in');
+      expect(part).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+    }
+    expect(m.subject).not.toContain('Ayurvedic');
+    for (const none of [teamPaidEmail(sampleBooking('single'), ''), teamPaidEmail(sampleBooking('single'), '', [])]) {
+      expect(none.html).not.toContain('Interested in');
+      expect(none.text).not.toContain('Interested in');
+    }
+  });
+
+  it('escapes the experience name in the HTML row', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '', [{ name: '<b>Spa</b>', partnerName: 'A&B', status: 'link_sent' }]);
+    expect(m.html).not.toContain('<b>Spa</b>');
+    expect(m.html).toContain('&lt;b&gt;Spa&lt;/b&gt; (A&amp;B) — link sent');
+  });
+
   it('a chauffeur trip: vehicle, head-count and days', () => {
     const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
     expect(m.subject.startsWith('Paid: ')).toBe(true);
