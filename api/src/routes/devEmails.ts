@@ -25,6 +25,7 @@ import {
   sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
+  experienceConfirmedEmail,
 } from '../services/notifications';
 
 // Dev-only preview harness for the customer emails. Renders the ACTUAL sender output
@@ -66,6 +67,13 @@ const LINKS = {
 // One partner experience the customer tapped "I'm interested" on, so the confirmation's row is previewable.
 const SAMPLE_INTEREST = { name: 'Ayurvedic massage', partnerName: 'Atherya Spa' };
 
+// A paid massage, scheduled and ready to confirm (spec D21), so the new email is previewable.
+const SAMPLE_EXPERIENCE_CONFIRMED = {
+  reference: 'CH-4821', customerFirstName: 'Maya', experienceName: 'Ayurvedic massage', partnerName: 'Atherya Spa',
+  scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby, Sigiriya Village',
+  amountPaidCents: 3500, amountPaidCurrency: 'USD', paymentRef: 'PH-123456',
+};
+
 interface EmailDef {
   name: string;
   label: string;
@@ -90,6 +98,7 @@ const EMAILS: EmailDef[] = [
   { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
   { name: 'balance-received', label: 'Balance received (fully paid)', run: (_b, e) => sendBalanceReceived(sampleVariants.singleBalancePaid, { depositCents: 185_000, balanceCents: sampleVariants.singleBalancePaid.total - 185_000 }, e, { manage: LINKS.manage }) },
   { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
+  { name: 'experience-confirmed', label: 'Experience confirmed (date, time, meeting point)', run: (_b, e) => e.send({ to: 'preview@ceylonhop.com', ...experienceConfirmedEmail(SAMPLE_EXPERIENCE_CONFIRMED) }) },
   // Ride Board (self-contained templates in rideBoardEmails.ts). Previously not previewable —
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
   // The team's "Paid:" mail rides the alert channel, so it is rendered here and handed to the

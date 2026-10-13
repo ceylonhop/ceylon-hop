@@ -893,6 +893,18 @@ After the Day-by-day ticket (`quote.html:410-413`), before `pp-note`: same cards
 
 ---
 
+## PR 7 — Experience confirmation email (spec D21)
+
+Branch: `feat/experiences-confirmation-email`, stacked on PR 6. **Contains migration 0067. Release order: #930 → #940 → this PR.** If this merges before #940, re-stamp 0067's `when` or 0066 is skipped.
+
+- [ ] **Migration** `0067_experience_confirmation` (journal idx 67, `when` 1791331200000 — later than #940's 0066 at 1791244800000): four nullable columns on `experience_interests` + the HH:MM and ≤ 200 CHECKs. Test reads the journal entry **by tag** (idx 66 comes from #940, so this branch has a gap).
+- [ ] **Repo** (both implementations): `patch` takes `scheduledDate`/`scheduledTime`/`meetingPoint`; `markConfirmationSent(id, at)`; `listLeads` keeps a paid lead until its confirmation is sent.
+- [ ] **Routes:** `PATCH /admin/experiences/leads/:id` accepts the three fields; `POST …/leads/:id/confirmation` (404 / 409 `not_paid` / 400 `schedule_required` / 422 `no_email` / 502 `send_failed`); the ops booking sheet payload carries the schedule and `confirmationSentAt`.
+- [ ] **Email** `experienceConfirmedEmail()` in `notifications.ts` (HTML + text), dev preview `/dev/emails/experience-confirmed`.
+- [ ] **Ops UI:** Leads tab schedule inputs + Send confirmation / Resend; booking sheet read-only lines. e2e in `ops-experiences-page.spec.js` and `ops-sheet-experience-interests.spec.js`.
+
+---
+
 ## Launch checklist (owner + ops)
 
 - [ ] **L1** ~~Owner answers open items~~ — done 2026-10-06 (spec §7). Ops payment message template states: "Free cancellation up to 24 hours before the experience date."
