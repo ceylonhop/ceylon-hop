@@ -2954,18 +2954,26 @@ async function continueToCheckout(booking){
   // own manage page, carrying only the status-only `rt` (the manage token comes back in the
   // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
   // request body says is a phishing primitive.
+  //
+  // A deadline, like every call pay.html makes: the overlay hides both buttons while this runs
+  // and Pay is latched, so an API that accepts the connection and never answers (a saturated
+  // pool, an instance mid-restart) otherwise leaves the customer on the spinner with no way out
+  // but a reload. An abort lands in the catch below → the generic failure with Try again.
   let checkout=null, refusal=null;
+  const ctrl = new AbortController();
+  const deadline = setTimeout(()=>ctrl.abort(), 20000);
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'}),signal:ctrl.signal}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
   }catch(e){}
+  finally{ clearTimeout(deadline); }
 
   // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
   // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
