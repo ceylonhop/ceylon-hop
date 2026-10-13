@@ -396,6 +396,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p>When PayHere is done, tap <strong>Back to Site</strong> to see your booking.</p></div>');
   }
 
+  // Both checkout calls get a deadline — the one pay.html's fetchJson gives every call, and
+  // booking.js gave its checkout (#974). The hand-off screen above has no button on it, so an API
+  // that accepts the connection and never answers (a saturated pool, an instance mid-restart)
+  // otherwise holds the customer on "Taking you to PayHere…" with no way out but a reload. An
+  // abort rejects into pay()'s catch — the booking view rebuilt with the error named on it and
+  // the Pay button back — in this page's own words, never the browser's abort wording.
+  var NET_TIMEOUT_MS = 20000;
+  function fetchWithDeadline(url, opts){
+    opts = opts || {};
+    if (typeof AbortController === 'undefined') return fetch(url, opts);
+    var ctl = new AbortController();
+    var timer = setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS);
+    opts.signal = ctl.signal;
+    return fetch(url, opts).then(
+      function(r){ clearTimeout(timer); return r; },
+      function(e){
+        clearTimeout(timer);
+        throw (e && e.name === 'AbortError') ? new Error('We couldn’t start your payment just now — no charge was made.') : e;
+      }
+    );
+  }
+
   function pay(v){
     // A return-leg poll still running underneath must not repaint over the hand-off.
     handedOff = true;
@@ -406,7 +428,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     function fail(msg){ render(v, msg); }
     // The link token authorises a checkout token, which authorises the charge. The booking
     // id comes back with it — the view projection withholds it on purpose.
-    fetch(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
+    fetchWithDeadline(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
       .then(function(r){
         return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
           throw new Error(x.error === 'not_chargeable'
@@ -418,7 +440,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // `returnTo` states INTENT, never a URL: the server builds the return address (back to
         // this page, on the manage link's own origin) from its own config — a gateway that
         // redirects wherever the request body says is a phishing primitive.
-        return fetch(A + '/bookings/' + x.bookingId + '/checkout', {
+        return fetchWithDeadline(A + '/bookings/' + x.bookingId + '/checkout', {
           method: 'POST',
           headers: { authorization: 'Bearer ' + x.checkoutToken, 'content-type': 'application/json' },
           body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa({ returnTo: 'manage' }) : { returnTo: 'manage' }),
