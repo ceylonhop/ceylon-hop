@@ -23,6 +23,27 @@ export interface PaySelection {
   extraIndexes: number[];
 }
 
+/**
+ * What `quotes.pay_link_selection` can hold. null = a link for the whole trip as priced; a
+ * PaySelection = part of it (spec 2026-08-04); `{ service: 'chauffeur' }` = a link sold as the
+ * chauffeur option of a "both" quote (spec PR #964) — a whole-trip sale of a DIFFERENT product,
+ * priced from the frozen `result.alt`. A union rather than extra optional fields so the compiler
+ * flags every reader that assumes `.legIndexes`.
+ */
+export type PayLinkSelection = PaySelection | { service: 'chauffeur' };
+
+/** Strict: only `{ service: 'chauffeur' }` — a stored `{ service: 'private' }` (or any other value) is not one. */
+export function isServiceSelection(sel: unknown): sel is { service: 'chauffeur' } {
+  return !!sel && typeof sel === 'object' && (sel as { service?: unknown }).service === 'chauffeur';
+}
+
+/** The part-of-trip half of a stored selection; null for nothing, a service link, or anything malformed. */
+export function legSelectionOf(sel: PayLinkSelection | null | undefined): PaySelection | null {
+  if (!sel || isServiceSelection(sel)) return null;
+  const leg = sel as Partial<PaySelection>;
+  return Array.isArray(leg.legIndexes) && Array.isArray(leg.extraIndexes) ? (sel as PaySelection) : null;
+}
+
 export interface PayLine {
   kind: 'leg' | 'extra';
   /** Index into `engine.legs` or `engine.extras` — positional, matching the `legIndex` convention. */
@@ -96,8 +117,13 @@ export function payLines(quote: Pick<SavedQuote, 'request' | 'result'>): PayLine
  */
 export function chosenAddOns(
   quote: Pick<SavedQuote, 'request' | 'result'>,
-  selection?: { legIndexes?: number[]; extraIndexes?: number[] } | null,
+  selection?: Partial<PaySelection> | { service: 'chauffeur' } | null,
 ): string[] {
+  // A chauffeur link sells the chauffeur product. The stored lines read here are the PRIVATE
+  // quote's (the chauffeur day rate covers waiting, sightseeing and safari wait; nothing else the
+  // private quote lists is carried over), so naming them would put add-ons on a booking that did
+  // not buy them. Callers holding a booking use addOnsFor, which decides by the booking.
+  if (isServiceSelection(selection)) return [];
   // Booking loads (the ops queue, every email) and the quote and pay pages all come through here,
   // so a malformed stored row must cost a missing line, never a page: check the shape payLines
   // assumes (a legs list, object line items) before handing it over.
@@ -112,7 +138,7 @@ export function chosenAddOns(
     if (err instanceof NotLineablePriceError) return [];
     throw err;
   }
-  const picked = Array.isArray(selection?.extraIndexes) ? selection.extraIndexes : null;
+  const picked = selection && 'extraIndexes' in selection && Array.isArray(selection.extraIndexes) ? selection.extraIndexes : null;
   return lines
     .filter((l) => l.kind === 'extra' && typeof l.label === 'string' && (!picked || picked.includes(l.index)))
     .map((l) => l.label);

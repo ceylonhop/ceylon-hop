@@ -17,6 +17,8 @@ import { teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../service
 import type { Booking } from '../db/bookingRepo';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { legSelectionOf } from '../quote/paySelection';
+import { isChauffeurBooking } from '../quote/quoteAlternative';
 import {
   recordCheckoutEvent,
   type BookingCheckoutEventInput,
@@ -446,7 +448,8 @@ export function webhookRoutes(deps: {
           // say so in the email — the itinerary alone can't (its flat stop list renders a gap
           // as a driven leg, docs/known-bugs.md 2026-07-30). Best-effort like everything here.
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
-          const sel = srcQuote?.payLinkSelection;
+          // Decided by the BOOKING: a chauffeur booking is a whole-trip sale however the quote's selection moved since.
+          const sel = isChauffeurBooking(paid) ? null : legSelectionOf(srcQuote?.payLinkSelection);
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
           // Partner experiences the customer tapped (spec 2026-10-06 D16); a failed lookup is just no row.
           const interests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({

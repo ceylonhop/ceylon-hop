@@ -16,20 +16,23 @@ describe('priceExtras', () => {
   });
 });
 
-describe('depositFor (spec 2026-10-07 §2)', () => {
+describe('depositFor (spec 2026-10-07 §2; chauffeur only since 2026-10-12)', () => {
   it.each([
-    ['private', 14_999, 0], // under $150: no deposit
-    ['private', 15_000, 5_000], // $150 → $50 floor
-    ['private', 50_000, 5_000], // 10% = $50
-    ['private', 60_000, 6_000], // 10% above the floor
-    ['chauffeur', 14_999, 0], // under $150: no deposit for chauffeur either
+    ['chauffeur', 14_999, 0], // under $150: no deposit
+    ['chauffeur', 15_000, 5_000], // $150 → $50 floor
+    ['chauffeur', 50_000, 5_000], // 10% = $50
+    ['chauffeur', 60_000, 6_000], // 10% above the floor
     ['chauffeur', 123_456, 12_346], // rounds to the cent
+    // Owner, 2026-10-12 (testing on staging): a private transfer pays in full, whatever it costs.
+    ['private', 15_000, 0],
+    ['private', 18_700, 0],
+    ['private', 60_000, 0],
     ['shared', 90_000, 0], // shared always pays in full
   ] as const)('%s %i → %i', (product, total, expected) => {
     expect(depositFor(product, total)).toBe(expected);
   });
   it('never exceeds the total', () => {
-    expect(depositFor('private', 15_000)).toBeLessThanOrEqual(15_000);
+    expect(depositFor('chauffeur', 15_000)).toBeLessThanOrEqual(15_000);
   });
 });
 

@@ -670,7 +670,7 @@ export function createApp(deps: AppDeps = {}) {
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
   app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, rateRevisions, bookings, placeResolutions, experienceInterests,
+    maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions, experienceInterests,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
