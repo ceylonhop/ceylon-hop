@@ -3878,9 +3878,9 @@ function sheetHeadHtml(t,o){
   return `<div class="sheet-h">
       <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
       <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
-      <div class="idrow">
+      <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
-        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>
+        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
       </div>${pipe}
     </div>
     <div class="sheet-stub">${o.stub}</div>
@@ -3997,7 +3997,10 @@ function renderSheet(){
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx});
+    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx,
+    /* The row's own balance tag, repeated in the header so an open balance is visible without
+       scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
+    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
      print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
   if(!d){
@@ -4063,14 +4066,16 @@ function renderSheet(){
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
       <div class="block"><h4>Payment</h4>
+        ${t.paid&&t.balance>0?`<div class="followup bal-card"><div>
+          <b>Balance due · ${money({amount:t.balance,currency:t.currency})}</b>
+          <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid. The customer pays the rest on the link they already have.</div>
+          ${d.balancePayLink?`<div style="margin-top:10px"><button class="btn btn-go" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Balance payment link</button></div>`:''}
+        </div></div>`:''}
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
-        ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>
-        <div class="kv"><span class="k">Balance due</span><span class="v" style="color:var(--wait);font-weight:700">${money({amount:t.balance,currency:t.currency})}</span></div>`:''}
+        ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${d.balancePayLink?`<div class="sheet-actions"><button class="btn" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Copy pay link</button></div>
-        <p style="margin:6px 0 0;font-size:.82rem;color:var(--ink-soft)">Balance — any time before the trip. Paste it to the customer; the link they already have shows what is left.</p>`:''}
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
         ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
@@ -4541,7 +4546,7 @@ document.addEventListener('click',async e=>{
       }
       break;
     }
-    case 'balancelink':{const link=state.detailData&&state.detailData.balancePayLink;if(!link){toast('No balance is open on this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Pay link copied — balance, any time before the trip');break;}
+    case 'balancelink':{const link=state.detailData&&state.detailData.balancePayLink;if(!link){toast('No balance is open on this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Balance payment link copied');break;}
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
