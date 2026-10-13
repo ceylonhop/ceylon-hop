@@ -137,6 +137,91 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
   });
 });
 
+// Deposit vs full, per attempt (spec 2026-10-07 §4): each kind of attempt is its own payment row, so
+// a customer who tries the deposit and then switches never collides on the UNIQUE order_id /
+// idempotency_key. Full keeps REF so every existing booking reads exactly as before.
+describe('POST /bookings/:id/checkout — the attempt is tagged deposit or full', () => {
+  const TOTAL = 21900;
+  const DEPOSIT = 5000;
+  async function payLinkBooking(bookings: InMemoryBookingRepo, amountDueNow: number) {
+    const created = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport (CMB)', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 2, customer: valid.customer },
+      total: TOTAL, amountDueNow, currency: 'USD',
+    });
+    return { id: created.id, reference: created.reference, checkoutToken: signCheckoutToken(created.id, SECRET, Date.now()) };
+  }
+
+  it('a deposit booking creates a deposit row: REF-D, its own key, purpose deposit', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const b = await payLinkBooking(bookings, DEPOSIT);
+    const res = await checkout(app, b);
+    expect(res.status).toBe(200);
+    const params = await res.json();
+    expect(params.amount).toBe(DEPOSIT);
+    expect(params.orderId).toBe(`${b.reference}-D`); // the gateway is handed the row's own order id
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      amount: DEPOSIT, purpose: 'deposit', orderId: `${b.reference}-D`, idempotencyKey: `checkout:${b.id}:deposit`,
+    });
+  });
+
+  it('a full booking is unchanged: REF, checkout:<id>, purpose full', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const b = await payLinkBooking(bookings, TOTAL);
+    const params = await (await checkout(app, b)).json();
+    expect(params.orderId).toBe(b.reference);
+    expect(await payments.findByBookingId(b.id)).toMatchObject([
+      { amount: TOTAL, purpose: 'full', orderId: b.reference, idempotencyKey: `checkout:${b.id}` },
+    ]);
+  });
+
+  it('switching deposit → full gets a fresh row, leaving the REF-D attempt untouched; switching back reuses it', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const b = await payLinkBooking(bookings, DEPOSIT);
+    expect((await checkout(app, b)).status).toBe(200);
+
+    // The customer came back and chose full: /quotes/pay/start rewrites amountDueNow (Task 10).
+    await bookings.refreshPayerDetails(b.id, { customer: valid.customer, amountDueNow: TOTAL });
+    const full = await checkout(app, b);
+    expect(full.status).toBe(200);
+    const fullParams = await full.json();
+    expect(fullParams).toMatchObject({ amount: TOTAL, orderId: b.reference });
+
+    const rows = (await payments.findByBookingId(b.id)).sort((x, y) => x.amount - y.amount);
+    expect(rows.map((r) => [r.orderId, r.purpose, r.amount, r.idempotencyKey])).toEqual([
+      [`${b.reference}-D`, 'deposit', DEPOSIT, `checkout:${b.id}:deposit`],
+      [b.reference, 'full', TOTAL, `checkout:${b.id}`],
+    ]);
+
+    // …and back to the deposit: the original deposit row is found again, no third row.
+    await bookings.refreshPayerDetails(b.id, { customer: valid.customer, amountDueNow: DEPOSIT });
+    const again = await (await checkout(app, b)).json();
+    expect(again).toMatchObject({ amount: DEPOSIT, orderId: `${b.reference}-D` });
+    expect(await payments.findByBookingId(b.id)).toHaveLength(2);
+  });
+
+  it('a settled deposit row refuses another deposit checkout', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const b = await payLinkBooking(bookings, DEPOSIT);
+    await checkout(app, b);
+    const [row] = await payments.findByBookingId(b.id);
+    await payments.markSucceeded(row.id);
+    const res = await checkout(app, b);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_paid');
+  });
+});
+
 describe('POST /bookings/:id/checkout — status gate', () => {
   it('409s a checkout for a cancelled booking (never hand a dead booking a live charge)', async () => {
     const bookings = new InMemoryBookingRepo();

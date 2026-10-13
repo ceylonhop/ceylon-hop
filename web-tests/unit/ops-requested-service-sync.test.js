@@ -31,18 +31,42 @@ function loadFn(name, freeVars) {
   return new Function(...names, `${src}; return ${name};`)(...names.map((n) => freeVars[n]));
 }
 
-let state, calls;
+let state, calls, dates;
 const setup = () => {
   state = { requestedService: null, service: 'private', legs: [] };
   calls = { setService: [], markDirty: 0, render: 0 };
+  dates = 2; // distinct dated travel days in the itinerary
 };
+const pricedServiceFor = loadFn('pricedServiceFor', {});
 const fns = () => ({
   state,
   requestedIncludes: (dim) => state.requestedService === dim || state.requestedService === 'both',
   setService: (s) => { calls.setService.push(s); state.service = s; },
+  pricedServiceFor,
+  distinctLegDateCount: () => dates,
   markDirty: () => { calls.markDirty++; },
   render: () => { calls.render++; },
   get outputIncludeChauffeurUpsell() { return false; },
+});
+
+// Owner, 2026-10-12: "The first choice is what decides the intention of the customer. If both
+// options were chosen, the quote will be shown for both." — and the Pricing as cards stop being
+// clickable. So the priced service is a FUNCTION of what was asked for; it is never chosen.
+describe('pricedServiceFor — what the customer asked for decides how the quote is priced', () => {
+  it.each([
+    ['chauffeur', 2, 'private', 'chauffeur'],
+    ['chauffeur', 5, 'private', 'chauffeur'],
+    ['chauffeur', 1, 'private', 'private'], // a chauffeur trip needs 2+ travel days; until then, point-to-point
+    ['chauffeur', 0, 'chauffeur', 'private'],
+    ['private', 4, 'chauffeur', 'private'],
+    ['both', 4, 'chauffeur', 'private'], // both = the point-to-point price, chauffeur shown alongside
+    ['both', 0, 'private', 'private'],
+    [null, 4, 'chauffeur', 'chauffeur'], // nothing recorded yet (or a legacy quote): leave it priced as it is…
+    [null, 1, 'chauffeur', 'private'], // …but a chauffeur price still needs 2+ travel days
+    [null, 4, 'private', 'private'],
+  ])('asked %s, %i travel day(s), was %s → %s', (requested, days, current, expected) => {
+    expect(pricedServiceFor(requested, days, current)).toBe(expected);
+  });
 });
 
 describe('customer-asked-for keeps the priced service in step', () => {
@@ -52,17 +76,23 @@ describe('customer-asked-for keeps the priced service in step', () => {
     const f = fns();
     loadFn('setRequestedService', f)('chauffeur');
     expect(state.requestedService).toBe('chauffeur');
-    expect(calls.setService).toEqual(['chauffeur']);
+    expect(state.service).toBe('chauffeur');
+  });
+
+  it('picking Chauffeur-guide on a one-day itinerary prices point-to-point for now', () => {
+    dates = 1;
+    const f = fns();
+    loadFn('setRequestedService', f)('chauffeur');
+    expect(state.requestedService).toBe('chauffeur');
+    expect(state.service).toBe('private');
   });
 
   // These chips are TOGGLES: picking private while chauffeur is on means "they asked for both".
-  // Landing on a single service — from nothing, or by unticking the other — is what moves the
-  // priced service.
   it('picking Point-to-point from nothing prices the quote as private', () => {
     const f = fns();
     loadFn('setRequestedService', f)('private');
     expect(state.requestedService).toBe('private');
-    expect(calls.setService).toEqual(['private']);
+    expect(state.service).toBe('private');
   });
 
   it('unticking one half of BOTH prices the quote as the survivor', () => {
@@ -71,15 +101,16 @@ describe('customer-asked-for keeps the priced service in step', () => {
     const f = fns();
     loadFn('setRequestedService', f)('private'); // untick private, leaving chauffeur
     expect(state.requestedService).toBe('chauffeur');
-    expect(calls.setService).toEqual(['chauffeur']);
+    expect(state.service).toBe('chauffeur');
   });
 
-  it('choosing BOTH leaves the priced service alone — ops decides which one to price', () => {
-    state.requestedService = 'private';
+  it('choosing BOTH prices the quote point-to-point — the chauffeur price rides alongside', () => {
+    state.requestedService = 'chauffeur';
+    state.service = 'chauffeur';
     const f = fns();
-    loadFn('setRequestedService', f)('chauffeur');
+    loadFn('setRequestedService', f)('private');
     expect(state.requestedService).toBe('both');
-    expect(calls.setService).toEqual([]);
+    expect(state.service).toBe('private');
   });
 
   it('clearing the last pick leaves the priced service alone', () => {
@@ -88,6 +119,6 @@ describe('customer-asked-for keeps the priced service in step', () => {
     const f = fns();
     loadFn('setRequestedService', f)('chauffeur');
     expect(state.requestedService).toBe(null);
-    expect(calls.setService).toEqual([]);
+    expect(state.service).toBe('chauffeur');
   });
 });

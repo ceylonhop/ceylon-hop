@@ -75,7 +75,9 @@ test('view: exact per-km prices, margins, and a read-only deposit', async ({ pag
   await expect(pageEl).toContainText('$0.552');
   await expect(page.locator('[data-margin-for="car"]')).toHaveText('margin 15%');
   await expect(page.locator('[data-margin-for="day"]')).toHaveText('margin 15%');
-  await expect(pageEl).toContainText('optional on private & chauffeur trips from $150.00');
+  // Chauffeur only since 2026-10-12 (owner): a private transfer always pays in full.
+  await expect(pageEl).toContainText('optional on chauffeur trips from $150.00');
+  await expect(pageEl).not.toContainText('private & chauffeur');
   await expect(page.locator('[data-action="rtEdit"]')).toBeVisible();
   await expect(page.locator('[data-testid="rates-history-defaults"]')).toContainText('Code defaults');
 });
