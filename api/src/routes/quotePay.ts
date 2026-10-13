@@ -8,9 +8,13 @@ import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { linkQuoteInterests } from '../experiences/bookingInterests';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
-import { payLines } from '../quote/paySelection';
+import { legSelectionOf, payLines } from '../quote/paySelection';
+import { soldView, soldViewFor } from '../quote/quoteAlternative';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
+import { depositFor } from '../quote/extrasDeposit';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
+import { isoToday } from '../domain/dateRules';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -29,7 +33,7 @@ import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 // not on the webhook (payments.booking_id is NOT NULL, so settlement needs a booking to
 // land on). Idempotent per quote+revision, so a double tap resumes rather than duplicates.
 
-type PayState = 'paid' | 'revised' | 'payable' | 'unavailable';
+type PayState = 'balance' | 'paid' | 'revised' | 'payable' | 'unavailable';
 
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
@@ -43,9 +47,31 @@ const StartSchema = z.object({
   customer: CustomerInput,
   billing: BillingInput.optional(),
   termsAccepted: z.literal(true),
+  // The customer's choice on an eligible link (spec 2026-10-07 §5.2). Missing = full, so an older
+  // cached pay.html keeps working. Never an amount: the server recomputes the deposit.
+  payment: z.enum(['full', 'deposit']).optional(),
 }).strict();
 
+// How many times one pay link's booking may be cancelled and replaced before /start stops minting more.
+const MAX_REPLACEMENTS = 20;
+
+const BalanceSchema = z.object({ t: z.string() }).strict();
+
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+
+// The deposit a customer may pay instead of the full amount on this link, in cents; 0 = not
+// offered (spec 2026-10-07 §5.2, rev. 2026-10-08). Only a link for the WHOLE trip qualifies — a
+// part-of-trip link (a selection, or a frozen soldCents) always pays in full — and only a quote
+// the fixed rule makes eligible. ONE helper for /view and /start so the page can never offer
+// what the server would refuse, or the reverse. The rule reads the quote's own total, which is
+// what a whole-trip link charges.
+function depositOffer(quote: SavedQuote): number {
+  if (quote.payLinkSelection || quote.soldCents != null) return 0;
+  const engine = (quote.request as { engine?: { product?: string } } | null)?.engine;
+  const product = engine?.product ?? quote.product;
+  if (product !== 'private' && product !== 'chauffeur') return 0;
+  return depositFor(product, quote.totalCents);
+}
 
 // Best-effort prefill from what the quote already knows — the page asks only for the rest.
 function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; email: string; whatsapp: string; country: string } {
@@ -155,18 +181,23 @@ export function quotePayRoutes(deps: {
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
-  // State precedence per spec §4: paid → revised → payable → unavailable. Paid is checked
+  // State precedence per spec §4: balance → paid → revised → payable → unavailable. Paid is checked
   // FIRST so a customer reopening their link after paying always finds the keepsake — a
   // won quote must never read as a dead end, and a settled booking must never re-offer Pay.
+  // `balance` sits before it for the same reason: a customer who paid a deposit reopens the link
+  // they hold and must find what they still owe, not a "paid" keepsake (spec 2026-10-07 §5.3).
   async function stateFor(
     quote: SavedQuote | null,
     parsed: { revision: number; seq: number },
   ): Promise<{ state: PayState; paidVia?: { bookingId: string } }> {
     if (!quote) return { state: 'unavailable' };
     if (quote.convertedBookingId) {
-      const settled = (await deps.payments.findByBookingId(quote.convertedBookingId)).some(
-        (p) => p.status === 'succeeded',
-      );
+      const rows = await deps.payments.findByBookingId(quote.convertedBookingId);
+      const booking = await deps.bookings.get(quote.convertedBookingId);
+      if (booking && isBalanceOpen(booking, rows)) {
+        return { state: 'balance', paidVia: { bookingId: booking.id } };
+      }
+      const settled = rows.some((p) => p.status === 'succeeded');
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
       }
@@ -187,18 +218,53 @@ export function quotePayRoutes(deps: {
     const quote = await deps.quotes.get(parsed.quoteId);
     const { state, paidVia } = await stateFor(quote, parsed);
 
+    // Once a booking exists, "as sold" follows the BOOKING (soldViewFor), not the quote's current
+    // selection: the agent may have switched the link after this customer's booking was created.
+    if (state === 'balance' && quote && paidVia) {
+      const booking = await deps.bookings.get(paidVia.bookingId);
+      const sold = soldViewFor(quote, booking);
+      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
+      const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
+      const balance = booking ? balanceDueCents(booking, rows) : 0;
+      const copy = payPageCopy(sold, legSelectionOf(sold.payLinkSelection));
+      return c.json({
+        state,
+        balance: {
+          title: copy.title,
+          // The screen a deposit payer lands on is "you're booked", not an invoice (owner,
+          // 2026-10-12): it shows the trip, the reference and a name, and words the balance by
+          // product — so it gets the same copy the payable page had, plus what the keepsake gets.
+          reference: booking?.reference ?? null,
+          firstName: prefillFor(quote).firstName || null,
+          copy,
+          totalUsd: usd(booking?.total ?? sold.totalCents),
+          paidUsd: usd(paidCents(rows)),
+          // The deposit's settled day (Asia/Colombo), or null when the ledger has no timestamp.
+          paidOn: settledAt ? isoToday('Asia/Colombo', settledAt) : null,
+          balanceCents: balance,
+          balanceUsd: usd(balance),
+        },
+      });
+    }
+
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
-      const payment = paidVia
-        ? (await deps.payments.findByBookingId(paidVia.bookingId)).find((p) => p.status === 'succeeded')
-        : undefined;
-      const paidCopy = payPageCopy(quote, quote.payLinkSelection);
+      const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
+      const payment = paidRows.find((p) => p.status === 'succeeded');
+      // A deposit + balance pair is ONE sale: the keepsake states what the whole trip cost, not
+      // the first payment's $50. Any other history keeps today's first-succeeded reading.
+      const paidTotal = paidRows.some((p) => p.purpose === 'balance' && p.status === 'succeeded')
+        ? paidCents(paidRows)
+        : payment?.amount;
+      const sold = soldViewFor(quote, booking);
+      const paidCopy = payPageCopy(sold, legSelectionOf(sold.payLinkSelection));
       return c.json({
         state,
         paid: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
-          amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
+          amountUsd: paidTotal != null ? usd(paidTotal) : usd(booking?.total ?? sold.totalCents),
           // Selection-aware here too: a keepsake for a two-leg payment must not be headed
           // "Four journeys" either.
           title: paidCopy.title,
@@ -209,21 +275,32 @@ export function quotePayRoutes(deps: {
     }
     if (state !== 'payable' || !quote) return c.json({ state });
 
+    // The quote AS SOLD on this (not yet booked) link: for a link sold as the chauffeur option of a
+    // "both" quote this is the frozen chauffeur quote, so everything below prices, words and
+    // offers a deposit on that product. null (the selection has nothing valid behind it) reads like
+    // an unknown quote — fail closed.
+    const live = soldView(quote);
+    if (!live) return c.json({ state: 'unavailable' as const });
+
     // A partial link charges the frozen soldCents, not the quote total (spec §4).
-    const soldCents = quote.soldCents ?? quote.totalCents;
-    const sel = quote.payLinkSelection;
-    const partial = sel ? partialView(quote, sel) : null;
+    const soldCents = live.soldCents ?? live.totalCents;
+    const sel = legSelectionOf(live.payLinkSelection);
+    const partial = sel ? partialView(live, sel) : null;
+    const dep = depositOffer(live);
 
     return c.json({
       state,
       // The copy must know about the selection, or the page describes the whole trip while the
       // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
-      copy: payPageCopy(quote, sel),
+      copy: payPageCopy(live, sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
       // Full links only — see discountView. `sel` is the whole test: a subset link always has one.
-      ...(sel ? {} : { discount: discountView(quote) }),
-      prefill: prefillFor(quote),
+      ...(sel ? {} : { discount: discountView(live) }),
+      prefill: prefillFor(live),
       ...(partial ?? {}),
+      // Present only when the customer may choose (a whole-trip link on an eligible quote); the
+      // page is exactly today's page without it. `totals` stays the trip total.
+      ...(dep > 0 ? { deposit: { cents: dep, usd: usd(dep), balanceCents: soldCents - dep, balanceUsd: usd(soldCents - dep) } } : {}),
     });
   });
 
@@ -237,11 +314,23 @@ export function quotePayRoutes(deps: {
     }
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
-    const quote = await deps.quotes.get(parsed.quoteId);
-    const { state } = await stateFor(quote, parsed);
-    if (state === 'paid') return c.json({ error: 'already_paid' }, 409);
+    const stored = await deps.quotes.get(parsed.quoteId);
+    const { state } = await stateFor(stored, parsed);
+    if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
-    if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
+    if (state !== 'payable' || !stored) return c.json({ error: 'quote_unavailable' }, 409);
+    // The quote AS SOLD on this link — see /view. null (nothing valid behind the selection) is the
+    // same refusal an unknown quote gets.
+    const quote = soldView(stored);
+    if (!quote) return c.json({ error: 'quote_unavailable' }, 409);
+
+    // The customer's choice. A deposit is refused unless the /view rule offered it — the server
+    // recomputes it and never trusts the client for either the option or the amount.
+    const soldCents = quote.soldCents ?? quote.totalCents;
+    const wantsDeposit = body.data.payment === 'deposit';
+    const deposit = wantsDeposit ? depositOffer(quote) : 0;
+    if (wantsDeposit && deposit <= 0) return c.json({ error: 'deposit_ineligible' }, 409);
+    const dueNow = wantsDeposit ? deposit : soldCents;
 
     // Resume an earlier tap: the booking already exists, hand back a fresh checkout token.
     //
@@ -269,41 +358,58 @@ export function quotePayRoutes(deps: {
     // a different set of legs. (`Booking` does not expose its own idempotency key, so comparing
     // after the fact is not an option either.)
     const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
-    const found = await deps.bookings.findByIdempotencyKey(baseKey);
-    const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
-    if (found && chargeable) {
+    // ONE path for "an existing booking that can still be charged": the one under this selection's
+    // base key, or — after a cancellation — its replacement under the `:after:` key. Both must
+    // re-record the payer AND the deposit-or-full choice; handing the replacement back untouched
+    // charged the first tap's amount on a page that showed the second (review of #958).
+    const payer = { customer: body.data.customer, billing: body.data.billing };
+    async function resume(existing: { id: string }) {
       // Re-record the payer before handing back the booking. Everything the gateway sees — name,
       // email, phone, billing address — is read from this row, never from the request that opened
       // the payment, so resuming used to charge against whatever was typed on the FIRST attempt
       // and silently discard the corrections. A payer who mistyped their address, was declined,
       // and fixed it was re-sent the bad address; and because those fields feed the issuer's 3DS
       // risk decision, the retry was arguably worse off than the original attempt.
-      const refreshed = await deps.bookings.refreshPayerDetails(found.id, {
-        customer: body.data.customer,
-        billing: body.data.billing,
+      const refreshed = await deps.bookings.refreshPayerDetails(existing.id, {
+        ...payer,
         // /start requires termsAccepted:true on every call, so the resuming payer has just
         // agreed. Keeping the earlier submitter's timestamp would leave a refund dispute
         // holding evidence about a different person.
         termsAcceptedAt: new Date(),
+        // The choice may differ from the first tap; the repo applies it only while nothing on the
+        // booking has succeeded (spec 2026-10-07 §4).
+        amountDueNow: dueNow,
       });
       return c.json(
         { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(refreshed) },
         200,
       );
     }
-    // Derived from whatever booking already exists — this selection's dead one, or the previous
-    // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
-    // cancellation (or the same re-pick) still yields ONE new booking rather than two.
-    const prior =
-      found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
-    const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
+    const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
+    // Walk this link's chain of bookings: baseKey, then `:after:<dead booking>` for each booking that
+    // can no longer be charged. Resume the first chargeable one; otherwise create under the key the
+    // walk ended on. The chain is derived from THIS link's own bookings only — never from
+    // `convertedBookingId`, which /start moves to every booking it creates (it used to be the
+    // fallback, so on a re-minted link the derived key changed on every tap: three taps, three
+    // bookings, only the last reachable from the quote). Each cancelled booking adds one link to the
+    // chain, so a double tap after a cancellation (the Q-2J358 case) still yields ONE replacement,
+    // and a replacement that is itself cancelled is replaced in turn instead of bricking the link.
+    let key = baseKey;
+    let existing = await deps.bookings.findByIdempotencyKey(key);
+    for (let hops = 0; existing && !isChargeable(existing); hops += 1) {
+      // A link ops has cancelled this many times needs a person, not another booking.
+      if (hops >= MAX_REPLACEMENTS) return c.json({ error: 'quote_unavailable' }, 409);
+      key = `${baseKey}:after:${existing.id}`;
+      existing = await deps.bookings.findByIdempotencyKey(key);
+    }
+    if (existing) return resume(existing);
+    const idempotencyKey = key;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
     // The booking must carry ONLY the legs that were sold — otherwise the driver's itinerary and
     // the confirmation email promise legs nobody paid for (spec §8).
-    const legIndexes = quote.payLinkSelection?.legIndexes;
-    const soldCents = quote.soldCents ?? quote.totalCents;
+    const legIndexes = legSelectionOf(quote.payLinkSelection)?.legIndexes;
     const tool = (quote.request as { tool?: { passengerCount?: number; luggageCount?: number; legs?: { date?: string }[] } } | null)?.tool;
     const firstDate = (tool?.legs ?? []).map((l) => l.date).find((d) => !!d);
     let mapped;
@@ -323,9 +429,9 @@ export function quotePayRoutes(deps: {
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
-        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: soldCents,
+        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: dueNow,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() }
-        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: soldCents,
+        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: dueNow,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() };
 
     const created = await deps.bookings.create(newBooking, { idempotencyKey });
@@ -353,6 +459,25 @@ export function quotePayRoutes(deps: {
       // ga4Item: pay.html stashes it across the gateway round trip for its `purchase` (ga4Hits.ts).
       { bookingId: booking.id, checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()), ga4Item: browserItem(booking) },
       201,
+    );
+  });
+
+  // The balance of a deposit booking, on the link the customer already holds (spec §5.3). Same
+  // token as /start, no terms re-acceptance (accepted at the deposit). Only the `balance` state
+  // proceeds; the amount is never read from the client — checkout charges balanceDueCents.
+  r.post('/balance', async (c) => {
+    const body = BalanceSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
+    if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
+    // No soldView here: the balance belongs to the booking that took the deposit, so a selection
+    // that stopped validating (or was switched) afterwards must not strand a customer who has paid.
+    const quote = await deps.quotes.get(parsed.quoteId);
+    const { state, paidVia } = await stateFor(quote, parsed);
+    if (state !== 'balance' || !paidVia) return c.json({ error: 'no_balance_due' }, 409);
+    return c.json(
+      { bookingId: paidVia.bookingId, checkoutToken: signCheckoutToken(paidVia.bookingId, deps.linkSecret, checkoutNow()) },
+      200,
     );
   });
 
