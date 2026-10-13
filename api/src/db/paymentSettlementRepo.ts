@@ -5,6 +5,7 @@ import { InMemoryPaymentEventRepo } from './paymentEventRepo';
 import type { Payment } from './paymentRepo';
 import { InMemoryPaymentRepo } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
+import { SECURED_STATUSES } from '../domain/balance';
 
 export type PaymentSettlementOutcome =
   | { kind: 'settled'; payment: Payment; booking: Booking }
@@ -27,6 +28,10 @@ export type PaymentSettlementOutcome =
   // enforce order_id uniqueness): the payment row keeps that first capture's id — the one our
   // refund tool reaches — and the second exists only as a payment_events row.
   | { kind: 'double_capture'; payment: Payment; booking: Booking; firstCaptureTxnId?: string }
+  // The balance of a deposit booking (spec 2026-10-07 §5.1): a second capture that is the other
+  // half of ONE sale, not a second sale. The payment is settled; the booking is left exactly where
+  // it is (already paid / confirmed / in progress) — the deposit is what secured it.
+  | { kind: 'balance_settled'; payment: Payment; booking: Booking }
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
@@ -51,6 +56,37 @@ export function recordedCaptureId(p: {
 }): string | null {
   if (p.status !== 'succeeded' || p.settlementSource !== 'webhook') return null;
   return p.gatewayPaymentId ?? null;
+}
+
+/** A balance arriving after its deposit is the second half of one sale. True only for a
+ *  `balance` payment whose single sibling capture is the booking's `deposit`, and only while the
+ *  two together stay within the total. Anything else is still a double capture. Shared by both
+ *  repos so the in-memory fake and Postgres cannot disagree. */
+export function isBalanceAfterDeposit(
+  payment: { purpose: string; amount: number },
+  others: Array<{ purpose: string; amount: number }>,
+  bookingTotal: number,
+): boolean {
+  return (
+    payment.purpose === 'balance' &&
+    others.length === 1 &&
+    others[0]!.purpose === 'deposit' &&
+    others[0]!.amount + payment.amount <= bookingTotal
+  );
+}
+
+/** What a success that arrives beside other captures is. The pair rule alone is not enough:
+ *  payment rows stay `succeeded` after a refund, so a balance landing on a cancelled / refunded /
+ *  finished booking would read as a quiet "fully paid". Only a booking that is still going ahead
+ *  settles it; any other status is money with nowhere to go and takes the loud
+ *  `unexpected_booking_state` path, like a full payment landing there. Shared by both repos. */
+export function captureKindWithOthers(
+  payment: { purpose: string; amount: number },
+  others: Array<{ purpose: string; amount: number }>,
+  booking: { status: string; total: number },
+): 'balance_settled' | 'double_capture' | 'unexpected_booking_state' {
+  if (!isBalanceAfterDeposit(payment, others, booking.total)) return 'double_capture';
+  return SECURED_STATUSES.has(booking.status) ? 'balance_settled' : 'unexpected_booking_state';
 }
 
 export class PaymentSettlementError extends Error {
@@ -157,7 +193,7 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     }
 
     // Read before our own write, so this asks only about OTHER payments on the booking.
-    const alreadyCaptured = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).some(
+    const otherCaptures = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
       (p) => p.id !== paymentRecord.id && p.status === 'succeeded',
     );
 
@@ -171,9 +207,9 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
     });
     await this.failureHook?.('after_payment_update');
 
-    if (alreadyCaptured) {
+    if (otherCaptures.length) {
       return {
-        kind: 'double_capture',
+        kind: captureKindWithOthers(paymentRecord, otherCaptures, booking),
         payment: this.requirePayment(event.orderId),
         booking,
       };
@@ -187,6 +223,11 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
+    // The first payment that settles IS what secured the booking (customer choice, spec 2026-10-08):
+    // a customer who switched deposit -> full mid-checkout must not be told the other amount.
+    if (paymentRecord.purpose !== 'balance' && paymentRecord.amount <= booking.total) {
+      this.deps.bookings.setAmountDueNowForSettlement(booking.id, paymentRecord.amount);
+    }
     const paid = await this.deps.bookings.setStatus(booking.id, 'paid', undefined, {
       source: 'payment_webhook',
       actorType: 'provider',

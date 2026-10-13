@@ -60,7 +60,7 @@ function setup(over: { refunds?: InMemoryRefundRepo; bookings?: InMemoryBookingR
   });
   const get = async (ref: string, email: string | null = 'f@x.com') =>
     app.request(`/admin/ops/cases/${encodeURIComponent(ref)}`, email ? { headers: await as(email) } : {});
-  return { app, bookings, payments, quotes, adapter, get };
+  return { app, bookings, payments, quotes, adapter, checkoutEvents, get };
 }
 
 // A website booking taken through checkout and PayHere's (fake) notify, the way a customer's is.
@@ -116,6 +116,37 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
       });
       expect(body.timeline).toEqual([{ at: body.booking.createdAt, source: 'bookings', kind: 'created' }]);
     }
+  });
+
+  // PayHere's order id for a deposit / balance attempt is `<ref>-D` / `<ref>-B` (spec 2026-10-07 §4).
+  // Ops pastes what PayHere's dashboard shows, so it must find the booking...
+  it('finds the booking from PayHere’s deposit or balance order id', async () => {
+    const s = setup();
+    const b = await s.bookings.create(draft);
+    for (const ref of [`${b.reference}-D`, `${b.reference.toLowerCase()}-b`, ` ${b.reference}-B `]) {
+      const res = await s.get(ref);
+      expect(res.status).toBe(200);
+      expect((await res.json()).booking).toMatchObject({ id: b.id, reference: b.reference });
+    }
+  });
+
+  it('does not strip a suffix from a quote reference or invent one', async () => {
+    const s = setup();
+    expect((await s.get('Q-ABCDE-D')).status).toBe(400);
+    expect((await s.get('CH-ABCDE-X')).status).toBe(400);
+  });
+
+  // ...and the log rows keyed only by that order id (a PayHere notify carries no booking id) must
+  // be part of its timeline, not just the ones keyed by the bare reference.
+  it('includes checkout-log rows recorded under the deposit and balance order ids', async () => {
+    const s = setup();
+    const b = await s.bookings.create(draft);
+    await s.checkoutEvents.record({ action: 'gateway', outcome: 'opened', source: 'client', orderId: `${b.reference}-D` });
+    await s.checkoutEvents.record({ action: 'gateway', outcome: 'dismissed', source: 'client', orderId: `${b.reference}-B` });
+    await s.checkoutEvents.record({ action: 'gateway', outcome: 'opened', source: 'client', orderId: b.reference });
+    const body = await (await s.get(b.reference)).json();
+    const logs = body.timeline.filter((r: { source: string }) => r.source === 'booking_checkout_event');
+    expect(logs).toHaveLength(3);
   });
 
   // Route choice (spec §4.3): the Lookup names the local road the customer bought, in the words

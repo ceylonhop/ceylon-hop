@@ -261,7 +261,8 @@ export async function runWatchdog(
   let paidUnconfirmed = 0;
   for (const b of paid) {
     if (now.getTime() - Date.parse(b.createdAt) < UNCONFIRMED_PAID_MS) continue;
-    if (await log.wasSent(b.id, 'confirmation')) continue;
+    // A deposit booking's confirmation IS the deposit-received email (webhooks.ts) — spec 2026-10-07.
+    if ((await log.wasSent(b.id, 'confirmation')) || (await log.wasSent(b.id, 'deposit_received'))) continue;
     // No address means no confirmation was ever due — a fact about the customer, like the
     // manual-settlement exemption below, not a silent failure. This became load-bearing on
     // 2026-09-22: before then the webhook recorded a send for these bookings even though
