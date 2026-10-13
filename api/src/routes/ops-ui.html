@@ -8941,6 +8941,18 @@ var expLeadBusy = {};
 // The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
 var expLeadPending = {};
 async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
+// The lead once no save is out on it, for a caller that must have it to itself; null when it has gone or
+// the page has moved on. Everything queued behind one save wakes on it together, and a queued field save
+// takes the lead first — so wait again, for as long as there is a save to wait on, instead of giving up.
+async function expLeadFree(id) {
+  var seq = _expSeq, l;
+  do {
+    await expLeadIdle(id);
+    if (seq !== _expSeq) return null;
+    l = expLeadById(id);
+  } while (l && expLeadBusy[l.id] && expLeadPending[id]);
+  return l && !expLeadBusy[l.id] ? l : null;
+}
 var expLeadPayOpen = {};
 // A confirmation POST is out for this lead (set before the first await, so a quick double click can't
 // send twice), and leads whose email path answered no_email (so the WhatsApp button shows for them).
@@ -9273,9 +9285,8 @@ async function expLeadConfirm(btn) {
   // button disabled: a second click while this one waits on an earlier save, or on the POST, does nothing
   // instead of emailing the customer twice.
   var run = async function () {
-    await expLeadIdle(id);
-    var l = expLeadById(id);
-    if (!l || expLeadBusy[l.id]) return false;
+    var l = await expLeadFree(id);
+    if (!l) return false;
     var diff = {};
     Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
     if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) return true;
@@ -9312,9 +9323,8 @@ async function expLeadConfirmWhatsApp(btn) {
   var id = btn.getAttribute('data-id');
   if (expLeadConfirming[id]) return;
   var run = async function () {
-    await expLeadIdle(id);
-    var l = expLeadById(id);
-    if (!l || expLeadBusy[l.id]) return false;
+    var l = await expLeadFree(id);
+    if (!l) return false;
     var seq = _expSeq;
     expLeadBusy[l.id] = true;
     var settle, pending = new Promise(function (res) { settle = res; });
@@ -9348,7 +9358,9 @@ async function expLeadClaim(id, btn, run) {
   var repaint = false;
   try { repaint = await run(); }
   finally { if (seq === _expSeq) delete expLeadConfirming[id]; }
-  if (repaint && seq === _expSeq) renderExperiencesPage();
+  if (seq !== _expSeq) return;
+  if (repaint) renderExperiencesPage();
+  else btn.disabled = false; // run() did nothing, so nothing repaints: undo the disabling done by hand above
 }
 
 // The reference opens the thing it belongs to, through the shell: it owns the routes and the queue.
