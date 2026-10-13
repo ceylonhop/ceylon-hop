@@ -61,6 +61,17 @@ const CHAUFFEUR = {
     { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: futureIsoDate(32) },
   ],
 };
+// One driving leg + a stay day on another date, asked for as "both": self-approvable on every other
+// count, but /save freezes a chauffeur alternative, and two prices need the founder (D3, 2026-10-12).
+const BOTH_WITH_ALT = {
+  ...SIMPLE,
+  service: 'private', // what the builder sends for the point-to-point price (a stay day would otherwise derive chauffeur)
+  requestedService: 'both',
+  legs: [
+    { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: futureIsoDate(30) },
+    { category: 'stay_day', from: 'Kandy', to: '', date: futureIsoDate(31) },
+  ],
+};
 
 /** Build a quote and leave it in `pending_review`, i.e. one hop from approval. */
 async function submitted(w: Wired, body: unknown = SIMPLE, cookie = OPS): Promise<string> {
@@ -85,6 +96,7 @@ describe('ops self-approval of simple transfers', () => {
   it.each([
     ['a two-leg itinerary', TWO_LEG],
     ['a chauffeur trip', CHAUFFEUR],
+    ['a "both" quote that froze a chauffeur alternative', BOTH_WITH_ALT],
     ['the custom vehicle tier', { ...SIMPLE, vehicle: 'custom' }],
     ['a hand-set $/km', { ...SIMPLE, vehicle: 'van_14', customRatePerKmCents: 250 }],
   ])('refuses ops approval of %s', async (_label, body) => {

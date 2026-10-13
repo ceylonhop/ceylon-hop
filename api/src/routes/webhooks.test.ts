@@ -989,6 +989,71 @@ describe('settlement claims the quote (pay links)', () => {
     expect((await quotes.get(q.id))?.status).toBe('won');
   });
 
+  // Spec PR #964: a booking sold on a link for the chauffeur option of a "both" quote carries a
+  // `{ service }` selection. The confirmation reads the selection for its "2 of 4 legs" line; a
+  // throw there would leave a customer who has just paid with no confirmation at all.
+  it('a booking sold on a chauffeur link still gets its confirmation email', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ adapter, email, bookings, quotes });
+    const b = await bookAndCheckout(app);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: b.total, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } },
+      result: { totalCents: b.total, lineItems: [] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, payLinkSelection: { service: 'chauffeur' }, soldCents: b.total });
+
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+    expect(res.status).toBe(200);
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].subject.toLowerCase()).toContain('confirmed');
+    expect(email.sent[0].text).not.toMatch(/of 2 /); // no "x of 2 journeys" coverage line: it is a whole-trip sale
+  });
+
+  // Coverage ("this booking covers 1 of the 2 legs") describes a PART-OF-TRIP sale. It is decided by
+  // the BOOKING: a chauffeur booking is a whole-trip sale however the quote's selection moved since
+  // (here the agent re-minted to a part-of-trip link after the chauffeur booking was started).
+  describe('the confirmation email\'s coverage line follows the booking', () => {
+    const TWO_LEGS = { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } };
+    async function confirmed(kind: 'chauffeur' | 'private') {
+      const adapter = new FakePaymentAdapter();
+      const email = new FakeEmailAdapter();
+      const bookings = new InMemoryBookingRepo();
+      const quotes = new InMemoryQuoteRepo();
+      const app = createApp({ adapter, email, bookings, quotes });
+      const b = kind === 'private'
+        ? await bookAndCheckout(app)
+        : await (async () => {
+          const made = await (await app.request('/bookings/trip', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0], dates: [futureIsoDate(30), futureIsoDate(32)], pax: 2, vehicleType: 'car', serviceType: 'chauffeur', customer: valid.customer }),
+          })).json();
+          await app.request(`/bookings/${made.id}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${made.checkoutToken}` } });
+          return made;
+        })();
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: b.total, currency: 'USD', rateCardVersion: 'v1',
+        request: TWO_LEGS, result: { totalCents: b.total, lineItems: [] },
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id, payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 5000 });
+      const res = await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      expect(res.status).toBe(200);
+      expect(email.sent).toHaveLength(1);
+      return email.sent[0].text as string;
+    }
+
+    it('a chauffeur booking paid in full says nothing about legs even though the quote now has a part-of-trip selection', async () => {
+      expect(await confirmed('chauffeur')).not.toMatch(/of the \d+ legs/);
+    });
+
+    it('a private booking sold on a part-of-trip link still carries it (control)', async () => {
+      expect(await confirmed('private')).toMatch(/covers 1 of the 2 legs/);
+    });
+  });
+
   it('a settle on a booking with no quote behind it changes nothing and never errors', async () => {
     const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
       mode: 'sandbox', notifyUrl: 'https://example.com/webhooks/payments',

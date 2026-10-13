@@ -94,6 +94,9 @@ export function rideListToOpsRow(
     stage: stageFor(list),
     paymentStatus: paymentStatusFor(onboard),
     amount: list.seatPrice * seats,
+    // A van is charged per seat by the sweep, never as a deposit + balance.
+    paidCents: 0,
+    balanceCents: 0,
     currency: opts.currency,
     customerFirstName: name.first,
     customerName: name.full,
