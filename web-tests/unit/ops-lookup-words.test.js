@@ -232,6 +232,7 @@ describe('lookupRowLabel — every row kind', () => {
     const n = (code, extra) => ({ kind: 'notice', code, message: null, method: null, paymentId: '1', amount: 100, currency: 'USD', note: null, repeats: null, ...extra });
     expect(W.lookupRowLabel(n('2'))).toBe('PayHere: paid');
     expect(W.lookupRowLabel(n('2', { note: 'paid_again' }))).toBe('PayHere: paid again — a second payment on this order');
+    expect(W.lookupRowLabel(n('2', { note: 'balance_paid' }))).toBe('PayHere: balance paid — the other half of a deposit sale');
     expect(W.lookupRowLabel(n('-2'))).toBe('PayHere: declined');
     expect(W.lookupRowLabel(n('-1'))).toBe('PayHere: cancelled on PayHere’s page');
     expect(W.lookupRowLabel(n('0'))).toBe('PayHere: pending');
@@ -248,6 +249,7 @@ describe('lookupRowLabel — every row kind', () => {
     expect(e('payment_failed')).toBe('Email: payment didn’t go through');
     expect(e('payment_recovery')).toBe('Email: payment reminder');
     expect(e('deposit_received')).toBe('Email: deposit received');
+    expect(e('balance_received')).toBe('Email: balance received');
     expect(e('trip_reminder')).toBe('Email: trip reminder');
     expect(e('review_request')).toBe('Email: review request');
     expect(e('no_show_notice')).toBe('Email: no-show notice');

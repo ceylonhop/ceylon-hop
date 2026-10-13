@@ -578,6 +578,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       alerts,
       notificationLog,
+      payments,
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
       ...(communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
@@ -659,7 +660,7 @@ export function createApp(deps: AppDeps = {}) {
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
   app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,

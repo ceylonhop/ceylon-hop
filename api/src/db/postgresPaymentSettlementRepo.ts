@@ -5,6 +5,7 @@ import type { Db } from './client';
 import { paymentEvents, payments, bookings } from './schema';
 import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
+  captureKindWithOthers,
   PaymentSettlementError,
   recordedCaptureId,
   type PaymentSettlementOutcome,
@@ -53,7 +54,7 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       }
 
       const [booking] = await tx
-        .select({ id: bookings.id, status: bookings.status })
+        .select({ id: bookings.id, status: bookings.status, total: bookings.total })
         .from(bookings)
         .where(eq(bookings.id, payment.bookingId))
         .for('update');
@@ -124,8 +125,8 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       // payment can't slip in between this read and our write — and before our own update, so
       // this row is not its own evidence. `ne` is the whole point: an ordinary retry re-settling
       // the same payment must stay a plain settlement.
-      const [otherCapture] = await tx
-        .select({ id: payments.id })
+      const otherCaptures = await tx
+        .select({ id: payments.id, purpose: payments.purpose, amount: payments.amount })
         .from(payments)
         .where(
           and(
@@ -133,8 +134,7 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
             eq(payments.status, 'succeeded'),
             ne(payments.id, payment.id),
           ),
-        )
-        .limit(1);
+        );
 
       const [succeeded] = await tx
         .update(payments)
@@ -150,9 +150,11 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       await this.failureHook?.('after_payment_update');
 
       // Keep the capture (the money moved; the refund ceiling must reflect it) but leave the
-      // booking as the first settlement left it and hand the case to a human, loudly.
-      if (otherCapture) {
-        return { kind: 'double_capture' as const, payment: succeeded, bookingId: booking.id };
+      // booking as the first settlement left it and hand the case to a human, loudly — unless it
+      // is the balance of a deposit booking still going ahead (captureKindWithOthers), which is one sale in two parts.
+      if (otherCaptures.length) {
+        const kind = captureKindWithOthers(payment, otherCaptures, booking);
+        return { kind, payment: succeeded, bookingId: booking.id };
       }
 
       if (booking.status !== 'payment_pending') {
@@ -163,6 +165,12 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         };
       }
 
+      // The first payment that settles IS what secured the booking (customer choice, spec
+      // 2026-10-08): a customer who switched deposit -> full mid-checkout must not be told the
+      // other amount. The booking row is locked FOR UPDATE above; the CHECK keeps it <= total.
+      if (payment.purpose !== 'balance' && payment.amount <= booking.total) {
+        await tx.update(bookings).set({ amountDueNow: payment.amount }).where(eq(bookings.id, booking.id));
+      }
       await applyBookingStatusTransition(tx, {
         id: booking.id,
         to: 'paid',

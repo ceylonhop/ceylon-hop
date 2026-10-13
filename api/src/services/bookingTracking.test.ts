@@ -222,6 +222,44 @@ describe('reconcileBookingTracking', () => {
     expect(booking.id).toBeTruthy();
   });
 
+  // Deposits (spec 2026-10-07 §5.1): the deposit moves the booking to paid; the balance never does.
+  it('does not ask for a paid transition on a succeeded balance payment, but still does for a full one', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const booking = await bookings.create(draft);
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`,
+      amount: 1_000, currency: booking.currency, idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    await payments.markSucceededManually(balance.id, { reference: 'BAL-1', settledBy: 'f@x.com' });
+    const full = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: booking.total, currency: booking.currency, idempotencyKey: `checkout:${booking.id}`,
+    });
+    await payments.markSucceededManually(full.id, { reference: 'FULL-1', settledBy: 'f@x.com' });
+
+    const result = await reconcileBookingTracking(NOW, {
+      bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+    });
+
+    const missing = result.findings.filter((f) => f.kind === 'captured_payment_missing_transition');
+    expect(missing).toEqual([expect.objectContaining({ paymentId: full.id })]);
+  });
+
+  it('an abandoned pending attempt is history, not a finding', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const booking = await bookings.create(draft);
+    await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: booking.total, currency: booking.currency, idempotencyKey: `checkout:${booking.id}`,
+    }); // the full attempt the customer walked away from — stays pending
+    const result = await reconcileBookingTracking(NOW, {
+      bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+    });
+    expect(result.findings).toEqual([]);
+  });
+
   it('does not call a pre-ledger captured payment inconsistent', async () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
