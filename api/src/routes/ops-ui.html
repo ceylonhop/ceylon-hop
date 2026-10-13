@@ -6903,21 +6903,27 @@ async function openPayPartPicker() {
   }
 }
 
+/* Same _openSeq guard as mintPayLink: this is its own fetch, so a part-of-trip mint that outlives
+   its quote (confirm, leave, open another) is dropped — nothing written, copied or toasted. */
 async function confirmPayPart() {
   if (!_payPicker || _payPicker.busy) return;
+  var seq = _openSeq;
   _payPicker.busy = true; render();
   try {
     var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(_payPicker.sel),
     });
+    if (seq !== _openSeq) return;
     if (!r.ok) {
       var err = await jsonOrNull(r);
+      if (seq !== _openSeq) return;
       showToast(payLinkRefusal(err, 'That selection can\u2019t be sold on its own'), 'error');
       _payPicker.busy = false; render();
       return;
     }
     var body = await jsonOrNull(r);
+    if (seq !== _openSeq) return;
     if (!body || !body.url) { showToast('Could not create the payment link', 'error'); _payPicker.busy = false; render(); return; }
     _payLink = { url: body.url, mode: body.payhereMode || 'off' };
     _payPartial = body.coverage
@@ -6927,6 +6933,7 @@ async function confirmPayPart() {
     copyPayLink();
   } catch (e) {
     window.opsReportError && window.opsReportError('mint partial pay link', e);
+    if (seq !== _openSeq) return;
     showToast('Could not create the payment link', 'error');
     if (_payPicker) { _payPicker.busy = false; render(); }
   }

@@ -281,3 +281,31 @@ for (const [label, quoteA, press] of [
     await expect.poll(() => copied(page)).toEqual(['https://pay.example.test/q2/plain']);
   });
 }
+
+// "Part of trip…" mints through its own fetch (confirmPayPart), not mintPayLink, so it needs the
+// same guard: quote A's part-of-trip link must never be written, copied or toasted over quote B.
+test('a slow part-of-trip mint on quote A never copies or toasts once quote B is open', async ({ page }) => {
+  const { posts, release } = await openTwoQuotes(page, fullQuote({ payOptions: null }), quoteB());
+  await page.route('**/admin/quote/q1/pay-lines', (r) => r.fulfill(json({
+    lines: [{ kind: 'leg', index: 0, label: 'Colombo → Kandy', amountCents: 14900 }], selection: null,
+  })));
+  await page.locator('.ch-actionbar [data-action="openPayPart"]').click();
+  await page.locator('#pay-picker [data-action="confirmPayPart"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toEqual({ id: 'q1', data: '{"legIndexes":[0],"extraIndexes":[]}' });
+  await switchToSecond(page);
+
+  // A's response lands while B is open.
+  const landed = page.waitForResponse('**/admin/quote/q1/pay-link');
+  release();
+  await landed;
+  await page.waitForTimeout(800);
+  expect(await copied(page)).toEqual([]);
+  await expect(page.locator('#ch-toast')).not.toHaveClass(/show/);
+
+  // And B's Payment link makes its own request, for its own link — A's was never held.
+  await payBtn(page).click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1]).toEqual({ id: 'q2', data: null });
+  await expect.poll(() => copied(page)).toEqual(['https://pay.example.test/q2/plain']);
+});
