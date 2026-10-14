@@ -155,9 +155,12 @@ export function opsExperiencesRoutes(deps: {
       const outcome = await deps.email.send({ to: who.to, ...msg });
       if (!wasDelivered(outcome)) {
         // A message the adapter stopped (kill switch, allowlist) was not sent: do not record it as sent.
-        return outcome && !outcome.delivered && outcome.reason === 'no_address'
-          ? c.json({ error: 'no_email' }, 422)
-          : c.json({ error: 'send_failed' }, 502);
+        // Name the stop: on staging the allowlist refuses every address outside @ceylonhop.com, and
+        // calling that a failure told ops to "try again" (2026-10-13). 502 stays for real failures.
+        if (outcome && !outcome.delivered && outcome.reason === 'no_address') return c.json({ error: 'no_email' }, 422);
+        if (outcome && !outcome.delivered && (outcome.reason === 'suppressed_allowlist' || outcome.reason === 'suppressed_disabled'))
+          return c.json({ error: 'email_suppressed', reason: outcome.reason }, 422);
+        return c.json({ error: 'send_failed' }, 502);
       }
     } catch (err) {
       console.error(`[experiences] confirmation email failed for interest ${lead.id}:`, err);
