@@ -6,6 +6,7 @@ import {
   type CustomerShortLinkRepo,
 } from '../db/customerShortLinkRepo';
 import { signSession } from '../lib/opsAuth';
+import { futureIsoDate } from '../testSupport/dates';
 import { verifyQuotePayToken, verifyQuoteViewToken } from '../lib/bookingToken';
 
 /*
@@ -168,5 +169,39 @@ describe('mint endpoints with customer short links ON', () => {
     const quote = await mintQuote(app, id);
     expect(quote.status).toBe(200);
     expect((await quote.json()).url as string).toMatch(/^https:\/\/quote\.example\/q\?t=/);
+  });
+
+  // The alias pins the token the long URL would carry, seq included (spec 2026-10-12): a chauffeur
+  // link is a new seq, so its alias must open THAT link and the point-to-point alias must go stale.
+  it('the alias of a chauffeur link follows the new seq, and the point-to-point alias is retired by it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = on({ quotes, shortLinks: new InMemoryCustomerShortLinkRepo() });
+    const saved = await post(app, '/admin/quote/save', {
+      firstName: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: futureIsoDate(30) },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: futureIsoDate(32) },
+      ],
+    });
+    const { id } = await saved.json();
+    for (const s of ['pending_review', 'ready'] as const) await quotes.patch(id, { status: s });
+
+    const seqBehind = async (url: string) => {
+      const hop = await app.request(url);
+      expect(hop.status).toBe(302);
+      return verifyQuotePayToken(new URL(hop.headers.get('location')!).searchParams.get('t') ?? undefined, SECRET)!.seq;
+    };
+    const point = (await (await mintPay(app, id)).json()).url as string;
+    expect(await seqBehind(point)).toBe(0);
+
+    const chauffeur = (await (await mintPay(app, id, { service: 'chauffeur' })).json()).url as string;
+    expect(chauffeur).toMatch(SHORT);
+    expect(chauffeur).not.toBe(point);
+    expect(await seqBehind(chauffeur)).toBe(1);
+    // Same option again: same alias.
+    expect((await (await mintPay(app, id, { service: 'chauffeur' })).json()).url).toBe(chauffeur);
+
+    const back = (await (await mintPay(app, id, { service: 'private' })).json()).url as string;
+    expect(await seqBehind(back)).toBe(2);
   });
 });

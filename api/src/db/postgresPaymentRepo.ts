@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
-import type { PaymentRepo, NewPayment, Payment, PaymentProvenance, PaymentStatus } from './paymentRepo';
+import type { PaymentRepo, NewPayment, Payment, PaymentProvenance, PaymentPurpose, PaymentStatus } from './paymentRepo';
 
 type Row = typeof payments.$inferSelect;
 const toPayment = (r: Row): Payment => ({
@@ -13,6 +13,7 @@ const toPayment = (r: Row): Payment => ({
   currency: r.currency,
   status: r.status as PaymentStatus,
   idempotencyKey: r.idempotencyKey,
+  purpose: r.purpose as PaymentPurpose,
   attemptCount: r.attemptCount,
   lastAttemptAt: r.lastAttemptAt,
 });
@@ -25,7 +26,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
     if (existing) return existing;
     const [row] = await this.db
       .insert(payments)
-      .values({ ...p, status: 'pending' })
+      .values({ ...p, purpose: p.purpose ?? 'full', status: 'pending' })
       .returning();
     return toPayment(row);
   }

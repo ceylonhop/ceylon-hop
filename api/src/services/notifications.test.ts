@@ -7,6 +7,7 @@ import {
   sendTripReminder,
   sendReviewRequest,
   sendPaymentFailed,
+  sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
   routeText,
@@ -533,6 +534,46 @@ describe('sendDepositReceived', () => {
     expect(m.html).toContain('$150.00'); // balance
     expect(m.text).toContain('Balance due before travel: $150.00');
   });
+
+  it('says the balance can be paid any time with the same link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDepositReceived({ ...single, total: 20000, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('any time before your trip, using the same link you paid the deposit with');
+    expect(m.html).not.toContain('WhatsApp closer to the day');
+  });
+});
+
+describe('sendBalanceReceived', () => {
+  it('says fully paid with the deposit and balance actually collected, and their sum', async () => {
+    const email = new FakeEmailAdapter();
+    const booking = { ...single, total: 20000, amountDueNow: 5000 };
+    await sendBalanceReceived(booking, { depositCents: 5000, balanceCents: 15000 }, email, { manage: 'https://x/m' });
+    const sent = email.sent.at(-1)!;
+    expect(sent.subject).toBe(`You’re fully paid — ${booking.reference}`);
+    expect(sent.text).toContain('Deposit paid: $50.00');
+    expect(sent.text).toContain('Balance paid: $150.00');
+    expect(sent.text).toContain('Total paid: $200.00');
+    expect(sent.tracking?.kind).toBe('balance_received');
+  });
+
+  it('reads the amounts from the payments, not from the booking total', async () => {
+    const email = new FakeEmailAdapter();
+    // e.g. a promo trimmed the balance: 50 + 140 collected against a 200 total
+    await sendBalanceReceived({ ...single, total: 20000, amountDueNow: 5000 }, { depositCents: 5000, balanceCents: 14000 }, email);
+    const sent = email.sent.at(-1)!;
+    expect(sent.text).toContain('Balance paid: $140.00');
+    expect(sent.text).toContain('Total paid: $190.00');
+  });
+});
+
+describe('deposit and balance emails report whether they left', () => {
+  it('return the adapter outcome so the caller logs only what was delivered', async () => {
+    const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_disabled' as const }) };
+    const b = { ...single, total: 20000, amountDueNow: 5000 };
+    expect(await sendDepositReceived(b, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
+    expect(await sendBalanceReceived(b, { depositCents: 5000, balanceCents: 15000 }, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
+  });
 });
 
 describe('sendCustomerQuote', () => {
@@ -819,5 +860,49 @@ describe('promo code row', () => {
       expect(m.html).not.toContain('Promo');
       expect(m.text).not.toContain('Promo');
     }
+  });
+});
+
+// Partner experiences (spec 2026-10-06 D16): the confirmation names what the customer tapped
+// "I'm interested" on, in ITS OWN rows — never the shared factRows, which cancellation, refund and
+// reminder emails reuse.
+describe('sendBookingConfirmation — experience interests', () => {
+  const ROW = 'Ayurvedic massage (Atherya Spa), Village cooking lesson (Suwee) — not charged; our Pro team will reach out';
+  const interests = [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa' }, { name: 'Village cooking lesson', partnerName: 'Suwee' }];
+
+  it('adds an "Interested in" row to the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(email.sent[0].html).toContain('Interested in');
+    expect(email.sent[0].html).toContain(ROW);
+    expect(email.sent[0].text).toContain(`Interested in: ${ROW}`);
+  });
+
+  it('has no such row when there are no interests', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [] });
+    await sendBookingConfirmation(single, email);
+    for (const m of email.sent) {
+      expect(m.html).not.toContain('Interested in');
+      expect(m.text).not.toContain('Interested in');
+    }
+  });
+
+  it('escapes the names', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [{ name: '<b>x</b>', partnerName: 'A&B' }] });
+    expect(email.sent[0].html).not.toContain('<b>x</b>');
+    expect(email.sent[0].html).toContain('&lt;b&gt;x&lt;/b&gt; (A&amp;B)');
+  });
+
+  it('never leaks into the shared fact rows, so a cancellation email does not show it', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(factRows(single).flat().join(' ')).not.toContain('Interested');
+    await sendCancellationConfirmation(single, email);
+    const cancelled = email.sent[1];
+    expect(cancelled.subject).toContain('cancelled');
+    expect(cancelled.html).not.toContain('Interested in');
+    expect(cancelled.text).not.toContain('Interested in');
   });
 });

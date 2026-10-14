@@ -170,15 +170,16 @@ describe('ride board attempt log — the PayHere path (production)', () => {
     ]);
   });
 
-  it('records a start completed by PayHere as a start', async () => {
-    const { app, paygw, events } = payHereApp();
+  // Owner 2026-10-07: a start takes no card, so even with live PayHere it never goes there —
+  // one attempt, one 'succeeded' row, and no payment_started left behind to read as abandoned.
+  it('records a start as one success, with no PayHere step', async () => {
+    const { app, events } = payHereApp();
     const cookie = await loginCookie(app);
     const started = await app.request('/board', post(cookie, {
       from: 'Ella', to: 'Mirissa', date: futureIsoDate(40), slot: 'morning', payment: paymentDetails,
     }));
-    const orderId = (await started.json()).payment.orderId;
-    await app.request('/board/payhere/notify', notifyReq(paygw.simulatePreapprovalNotify({ orderId, customerToken: 'tok' })));
-    expect(events.all().map((e) => [e.action, e.outcome])).toEqual([['start', 'payment_started'], ['start', 'succeeded']]);
+    expect(started.status).toBe(201);
+    expect(events.all().map((e) => [e.action, e.outcome])).toEqual([['start', 'succeeded']]);
   });
 
   it('records a card PayHere declined', async () => {

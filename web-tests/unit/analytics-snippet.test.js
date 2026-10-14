@@ -148,6 +148,8 @@ describe('analytics does not load off a real host', () => {
     }
   });
 
+  // ops.staging passes THIS guard on purpose: staging is kept out of analytics downstream
+  // (build-staging.mjs and customerPages.ts strip the loader), so the snippet stays one string.
   it('still loads GTM on the real hosts', () => {
     for (const h of ['ceylonhop.com', 'www.ceylonhop.com', 'prod.ceylonhop.com',
       'pay.ceylonhop.com', 'ops.staging.ceylonhop.com', 'ceylon-hop-api.onrender.com']) {

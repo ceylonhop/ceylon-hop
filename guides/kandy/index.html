@@ -27,7 +27,7 @@ gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personali
 try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="../../analytics.js?v=72fed96a54"></script>
+<script src="../../analytics.js?v=10d3674e7f"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -281,7 +281,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </header>
 <div class="mobile-menu" data-mobile><a href="../../trip/">Routes & prices</a><a href="../../board.html">Share a ride</a><a href="../../plan.html">Plan a trip</a><a href="../../tours.html">Tours</a><a href="../../about.html">About</a></div>
 <main>
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
   document.documentElement.classList.add('js');})();</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Kandy guide","description":"What to do in Kandy — the Temple of the Tooth, the lake, Peradeniya and a dance show, the train right now, where to eat and stay, and how we drive you there.","author":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"publisher":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://ceylonhop.com/guides/kandy/"},"image":"https://ceylonhop.com/img/guides/kandy/hero-1800.jpg","inLanguage":"en"}</script>

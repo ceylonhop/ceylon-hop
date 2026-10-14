@@ -53,13 +53,59 @@ describe('computeDemand', () => {
 
   it('corridors stay directional with average km', () => {
     const rows = [
-      mk({ places: ['Kandy', 'Ella'], km: 100 }),
-      mk({ places: ['Kandy', 'Ella'], km: 140 }),
-      mk({ places: ['Ella', 'Kandy'], km: 120 }), // reverse direction — its own corridor
+      mk({ places: ['Kandy', 'Galle'], km: 100 }),
+      mk({ places: ['Kandy', 'Galle'], km: 140 }),
+      mk({ places: ['Galle', 'Kandy'], km: 120 }), // reverse direction — its own corridor
     ];
     const r = computeDemand(rows, range(28));
-    expect(r.topCorridors.find((c) => c.from === 'Kandy' && c.to === 'Ella')).toMatchObject({ count: 2, avgKm: 120 });
-    expect(r.topCorridors.find((c) => c.from === 'Ella' && c.to === 'Kandy')).toMatchObject({ count: 1, avgKm: 120 });
+    expect(r.topCorridors.find((c) => c.from === 'Hill country' && c.to === 'South coast')).toMatchObject({ count: 2, avgKm: 120 });
+    expect(r.topCorridors.find((c) => c.from === 'South coast' && c.to === 'Hill country')).toMatchObject({ count: 1, avgKm: 120 });
+  });
+
+  /* Grouping (owner, 2026-10-08). Stored places are free text, so keying on the raw string split
+     one town into a bar per hotel address — and put customers' addresses on screen. Origins and
+     destinations group by TOWN, corridors and movers by REGION (too sparse town-by-town). */
+  it('origins and destinations group addresses into their town; unknown places read "Other"', () => {
+    const rows = [
+      mk({ places: ['Colombo Airport (CMB)', 'Colombo City'] }),
+      mk({ places: ['Bandaranaike International Airport, Katunayake, Sri Lanka', 'Granbell Hotel Colombo, Marine Drive, Colombo, Sri Lanka'] }),
+      mk({ places: ['Colombo Airport (CMB)', 'Lighthouse Hotel, Colombo 03, Sri Lanka'] }),
+      mk({ places: ['12 Temple Lane, Bella Vista, Sri Lanka', 'Ella'] }),
+    ];
+    const r = computeDemand(rows, range(28));
+    expect(r.topOrigins).toEqual([
+      { place: 'Colombo Airport (CMB)', count: 3 },
+      { place: 'Other', count: 1 },
+    ]);
+    expect(r.topDestinations.map((d) => [d.place, d.count])).toEqual([['Colombo City', 3], ['Ella', 1]]);
+    const labels = [...r.topOrigins.map((o) => o.place), ...r.topDestinations.map((d) => d.place)];
+    expect(labels.some((l) => /Granbell|Lighthouse|Temple Lane/.test(l))).toBe(false);
+  });
+
+  it('a destination town is counted once per quote even when two rides end at different addresses in it', () => {
+    const row = mk({
+      request: { tool: {}, engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+        { stops: ['Colombo Airport (CMB)', '98 Acres Resort, Ella, Sri Lanka'], segmentKms: [200] },
+        { stops: ['Kandy', 'Ella'], segmentKms: [140] },
+      ] } },
+    });
+    const r = computeDemand([row], range(28));
+    expect(r.topDestinations.find((d) => d.place === 'Ella')).toMatchObject({ count: 1 });
+  });
+
+  it('corridors group by region at both ends', () => {
+    const rows = [
+      mk({ places: ['Colombo Airport (CMB)', 'Galle'], status: 'won', totalCents: 12_000 }),
+      mk({ places: ['Negombo', 'Mirissa'] }),
+      mk({ places: ['Kandy', 'Ella'] }),
+      mk({ places: ['Nuwara Eliya', 'Ella'] }),
+    ];
+    const r = computeDemand(rows, range(28));
+    expect(r.topCorridors.map((c) => [c.from, c.to, c.count])).toEqual([
+      ['Airport & Negombo', 'South coast', 2],
+      ['Hill country', 'Hill country', 2],
+    ]);
+    expect(r.topCorridors[0]).toMatchObject({ wins: 1, winRatePct: 50, bookedValueCents: { USD: 12_000 } });
   });
 
   it('separates origins from destinations and reports commercial corridor outcomes', () => {
@@ -71,7 +117,7 @@ describe('computeDemand', () => {
     const r = computeDemand(rows, range(28));
     expect(r.topOrigins[0]).toMatchObject({ place: 'Kandy', count: 2 });
     expect(r.topDestinations.find((d) => d.place === 'Ella')).toMatchObject({ count: 2 });
-    expect(r.topCorridors.find((c) => c.from === 'Kandy' && c.to === 'Ella')).toMatchObject({
+    expect(r.topCorridors.find((c) => c.from === 'Hill country' && c.to === 'Hill country')).toMatchObject({
       count: 2, wins: 1, winRatePct: 50, bookedValueCents: { USD: 30_000 },
     });
   });
@@ -97,15 +143,22 @@ describe('computeDemand', () => {
       // Galle: prior 6, recent 2 → falling
       ...[27, 26, 25, 24, 23, 22].map((d) => at(d, 'Galle')),
       ...[4, 3].map((d) => at(d, 'Galle')),
-      // Mirissa: 1 → 2 — too small, silent
-      at(20, 'Mirissa'), at(5, 'Mirissa'), at(4, 'Mirissa'),
+      // Jaffna: 1 → 2 — too small, silent
+      at(20, 'Jaffna'), at(5, 'Jaffna'), at(4, 'Jaffna'),
     ];
     const r = computeDemand(rows, range(28));
     const names = r.movers.map((m) => m.place);
-    expect(names).toContain('Ella');
-    expect(names).toContain('Galle');
-    expect(names).not.toContain('Mirissa');
-    expect(r.movers.find((m) => m.place === 'Ella')).toMatchObject({ prior: 3, recent: 6, changePct: 100 });
+    expect(names).toContain('Hill country');
+    expect(names).toContain('South coast');
+    expect(names).not.toContain('North & west');
+    expect(r.movers.find((m) => m.place === 'Hill country')).toMatchObject({ prior: 3, recent: 6, changePct: 100 });
+  });
+
+  it('movers: towns in one region add up (Galle 2→1 plus Mirissa 1→4 is a rising south coast)', () => {
+    const at = (d: number, place: string) => mk({ createdAt: daysAgo(d), places: [place, 'Colombo City'] });
+    const rows = [at(20, 'Galle'), at(18, 'Galle'), at(5, 'Galle'), at(19, 'Mirissa'), ...[6, 5, 4, 3].map((d) => at(d, 'Mirissa'))];
+    const r = computeDemand(rows, range(28));
+    expect(r.movers.find((m) => m.place === 'South coast')).toMatchObject({ prior: 3, recent: 5 });
   });
 
   /* A place with NO prior half is not rising — it is new, and there is nothing to compare it
@@ -125,8 +178,8 @@ describe('computeDemand', () => {
     ];
     const r = computeDemand(rows, range(28));
     const names = r.movers.map((m) => m.place);
-    expect(names).not.toContain('Colombo Airport (CMB)');
-    expect(names).toContain('Ella');
+    expect(names).not.toContain('Airport & Negombo');
+    expect(names).toContain('Hill country');
     // Every surviving mover must have something to compare against.
     r.movers.forEach((m) => expect(m.prior).toBeGreaterThan(0));
   });

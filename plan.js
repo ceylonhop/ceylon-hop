@@ -138,7 +138,11 @@ function requestLiveRoute(a,b,cb){
   }
   if(liveRoutePending.has(key)) return;
   liveRoutePending.add(key);
-  window.CH_MAP.routeStats([a,b]).then(stats=>{
+  // A catalogue place goes to Google as its own coordinates: by bare name Google may pick a
+  // different place ("Yala" → somewhere ~55 km from Colombo, audit 2026-10-04). Free-text picks
+  // the catalogue doesn't know still go by name.
+  const at=(name)=>{ const g=resolve(name); return (g && g.lat!=null && g.lng!=null) ? {lat:g.lat,lng:g.lng} : name; };
+  window.CH_MAP.routeStats([at(a),at(b)]).then(stats=>{
     liveRoutePending.delete(key);
     const route=stats && stats.km ? {
       distanceKm:stats.km,
@@ -1161,7 +1165,7 @@ function updateSummary(opts={}){
   setStat('st-drive', summaryRoute?routeEstimateText(summaryRoute):'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
-    seq.map(s=>`<span>${shortPlaceLabel(s.place)||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
+    seq.map(s=>`<span>${escAttr(shortPlaceLabel(s.place))||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
   routeEl.hidden = !seq.length; // an empty route rendered as a bare grey bar
 
   if(refreshMap) renderMap();

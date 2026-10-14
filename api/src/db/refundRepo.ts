@@ -53,6 +53,8 @@ export class RefundError extends Error {
       | 'payment_not_captured'
       | 'currency_mismatch'
       | 'refund_exceeds_captured'
+      | 'refund_exceeds_payment'
+      | 'payment_ambiguous'
       | 'refund_not_found'
       | 'refund_already_confirmed'
       | 'refund_not_pending'
@@ -92,6 +94,8 @@ export interface RefundRepo {
     currency: string;
     reason: string;
     requestedBy: string;
+    // Which captured payment this refund returns. Optional only while the booking has one capture.
+    paymentId?: string;
   }): Promise<Refund>;
   confirm(input: {
     bookingId: string;
@@ -133,6 +137,7 @@ export class InMemoryRefundRepo implements RefundRepo {
     currency: string;
     reason: string;
     requestedBy: string;
+    paymentId?: string;
   }): Promise<Refund> {
     return this.exclusive(async () => {
       if (!(await this.bookings.get(input.bookingId))) throw new RefundError('booking_not_found');
@@ -143,22 +148,31 @@ export class InMemoryRefundRepo implements RefundRepo {
       if (captured.some((payment) => payment.currency !== input.currency)) {
         throw new RefundError('currency_mismatch');
       }
+      // A deposit booking holds two captures (spec 2026-10-07). A refund belongs to ONE of them —
+      // it is that payment's gateway id PayHere refunds — so with several, ops must say which.
+      const target = input.paymentId
+        ? captured.find((payment) => payment.id === input.paymentId)
+        : captured.length === 1 ? captured[0] : undefined;
+      if (!target) throw new RefundError(input.paymentId ? 'payment_not_captured' : 'payment_ambiguous');
       const capturedCents = captured.reduce((sum, payment) => sum + payment.amount, 0);
-      const reserved = [...this.rows.values()]
-        .filter(
-          (refund) =>
-            refund.bookingId === input.bookingId && RESERVING_STATUSES.includes(refund.status),
-        )
-        .reduce((sum, refund) => sum + refund.amountCents, 0);
+      const reserving = [...this.rows.values()].filter(
+        (refund) =>
+          refund.bookingId === input.bookingId && RESERVING_STATUSES.includes(refund.status),
+      );
+      const reserved = reserving.reduce((sum, refund) => sum + refund.amountCents, 0);
       if (reserved + input.amountCents > capturedCents) {
         throw new RefundError('refund_exceeds_captured');
       }
+      const onTarget = reserving
+        .filter((refund) => refund.paymentId === target.id)
+        .reduce((sum, refund) => sum + refund.amountCents, 0);
+      if (onTarget + input.amountCents > target.amount) throw new RefundError('refund_exceeds_payment');
       const now = new Date();
       const row: Refund = {
         id: randomUUID(),
         bookingId: input.bookingId,
-        paymentId: captured[0].id,
-        provider: captured[0].provider,
+        paymentId: target.id,
+        provider: target.provider,
         amountCents: input.amountCents,
         currency: input.currency,
         status: 'manual_pending',

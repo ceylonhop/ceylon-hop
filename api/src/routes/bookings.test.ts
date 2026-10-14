@@ -358,6 +358,12 @@ describe('GET /bookings/view (tokenized customer view)', () => {
     expect(body.from).toBe('Colombo Airport (CMB)');
     expect(body.firstName).toBe('Maya');
     expect(body.totalCents).toBe(6000);
+    // The item manage.html's browser `purchase` carries — the server hit's item, minus price.
+    expect(body.ga4Item).toEqual({
+      item_id: 'Colombo Airport (CMB) → Kandy', item_name: 'Colombo Airport (CMB) → Kandy',
+      item_category: 'private', item_category2: 'Airport & Negombo', item_category3: 'Hill country',
+      item_category4: 'transfer',
+    });
     // Allow-list: never leak the id, channel, or contact details.
     for (const leak of [
       'id',

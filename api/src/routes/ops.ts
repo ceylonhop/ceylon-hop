@@ -3,12 +3,15 @@ import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { legSelectionOf } from '../quote/paySelection';
+import { isChauffeurBooking } from '../quote/quoteAlternative';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
 import type { RefundRepo } from '../db/refundRepo';
+import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -23,7 +26,13 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, manageUrl } from '../services/notifications';
+import { isBalanceOpen } from '../domain/balance';
+import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
+import { loadBookingInterests } from '../experiences/bookingInterests';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -56,6 +65,12 @@ export interface OpsDeps {
   // Optional so every existing ops test keeps working; absent = that source is "unavailable".
   paymentEvents?: PaymentEventRepo;
   refunds?: RefundRepo;
+  // Partner experiences (spec 2026-10-06 D15): the booking sheet's "Interested in" block. Optional;
+  // absent = the block is empty.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
+  // Phase A's append-only booking-email evidence. Optional deployments name it as unavailable.
+  customerCommunications?: CustomerCommunicationRepo;
 }
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
@@ -234,9 +249,14 @@ export function opsRoutes(deps: OpsDeps) {
     const [ops, allPayments] = await Promise.all([deps.rideOps.listByBookingIds(ids), deps.payments.findByBookingIds(ids)]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
     const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    const paymentsById = new Map<string, typeof allPayments>();
+    for (const p of allPayments) paymentsById.set(p.bookingId, [...(paymentsById.get(p.bookingId) ?? []), p]);
     const rows: OpsBookingRow[] = [];
     for (const b of all) {
-      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails });
+      const row = toOpsRow(b, {
+        rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
+        payments: paymentsById.get(b.id) ?? [],
+      });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;
@@ -272,6 +292,21 @@ export function opsRoutes(deps: OpsDeps) {
   // db/paymentRepo.ts's Payment interface — amount/status/provider/orderId only). There is
   // nothing to strip here. If cost tracking is ever added to this response, gate it behind
   // can(identity.role, 'margin:view') and add a test on both sides before shipping it.
+  r.get('/bookings/:id/tracking', requireCap('bookings:read'), async (c) => {
+    const query = z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      cursor: z.string().min(1).refine(isValidBookingTrackingCursor).optional(),
+    }).safeParse(c.req.query());
+    if (!query.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(c.req.param('id'));
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    return c.json(await loadBookingTracking(
+      { bookings: deps.bookings, communications: deps.customerCommunications },
+      booking,
+      query.data,
+    ));
+  });
+
   r.get('/bookings/:id', requireCap('bookings:read'), async (c) => {
     const b = await deps.bookings.get(c.req.param('id'));
     if (!b) return c.json({ error: 'not_found' }, 404);
@@ -289,7 +324,9 @@ export function opsRoutes(deps: OpsDeps) {
     // Partial pay link coverage (spec 2026-08-04) — ops must see what the customer sees: a
     // booking sold as 2-of-4 legs says so, because the flat stop list can't show the gap.
     const srcQuote = deps.quotes ? await deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null;
-    const sel = srcQuote?.payLinkSelection;
+    // Coverage is decided by the BOOKING: a chauffeur booking is a whole-trip sale however the
+    // quote's selection has moved since (e.g. re-minted to a part-of-trip link).
+    const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
     // Payment attempts (2026-09-24): debugging a failed payment took SQL against
@@ -310,7 +347,20 @@ export function opsRoutes(deps: OpsDeps) {
         console.error(`[ops] checkout events unavailable for ${b.id}:`, err);
       }
     }
-    return c.json({ booking: b, ops, payments, payLink, coverage, checkoutEvents });
+    // The balance of a deposit booking is paid on the SAME link the customer already holds — the
+    // source quote's pay URL (spec 2026-10-07 §5.3) — so ops resends exactly that. Only while the
+    // balance is open; a booking that did not come from a quote has no such link.
+    const balancePayLink = srcQuote && isBalanceOpen(b, payments) && deps.baseUrl && deps.linkSecret
+      ? `${deps.baseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(srcQuote.id, srcQuote.revision, deps.linkSecret, srcQuote.payLinkSeq)}`
+      : null;
+    const experienceInterests = (await loadBookingInterests(deps, b.id)).map(({ interest: i, experience: e }) => ({
+      id: i.id, experienceName: e?.name ?? i.nameSnapshot, areaLabel: e?.areaLabel ?? '', nameSnapshot: i.nameSnapshot,
+      priceCentsSnapshot: i.priceCentsSnapshot, priceUnitSnapshot: i.priceUnitSnapshot, status: i.status,
+      paymentRef: i.paymentRef, amountPaidCents: i.amountPaidCents, amountPaidCurrency: i.amountPaidCurrency, opsNote: i.opsNote,
+      scheduledDate: i.scheduledDate, scheduledTime: i.scheduledTime, meetingPoint: i.meetingPoint, confirmationSentAt: i.confirmationSentAt,
+      confirmationChannel: i.confirmationChannel,
+    }));
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by

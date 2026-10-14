@@ -1,9 +1,10 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import type { Db } from './client';
 import { customerCommunicationEvents, customerCommunications } from './schema';
 import type {
   CustomerCommunication,
   CustomerCommunicationEvent,
+  CustomerCommunicationReconciliationFinding,
   CustomerCommunicationRepo,
   PlanCustomerCommunication,
   RecordCustomerCommunicationEvent,
@@ -83,5 +84,77 @@ export class PostgresCustomerCommunicationRepo implements CustomerCommunicationR
           .orderBy(asc(customerCommunicationEvents.recordedAt), asc(customerCommunicationEvents.id))
       : await query.orderBy(asc(customerCommunicationEvents.recordedAt), asc(customerCommunicationEvents.id));
     return rows.map(event);
+  }
+
+  async listReconciliationFindings(staleBefore: Date): Promise<CustomerCommunicationReconciliationFinding[]> {
+    const relevant = await this.db.select().from(customerCommunicationEvents).where(or(
+      and(
+        eq(customerCommunicationEvents.eventType, 'send_attempted'),
+        lte(customerCommunicationEvents.occurredAt, staleBefore),
+      ),
+      isNull(customerCommunicationEvents.communicationId),
+      inArray(customerCommunicationEvents.eventType, ['provider_failed', 'bounced', 'complained']),
+    )).orderBy(asc(customerCommunicationEvents.occurredAt), asc(customerCommunicationEvents.id));
+    const communicationIds = [...new Set(
+      relevant.flatMap((row) => row.communicationId ? [row.communicationId] : []),
+    )];
+    const communicationRows = communicationIds.length
+      ? await this.db.select().from(customerCommunications)
+          .where(inArray(customerCommunications.id, communicationIds))
+      : [];
+    const byId = new Map(communicationRows.map((row) => [row.id, communication(row)]));
+    const attemptedIds = [...new Set(
+      relevant
+        .filter((row) => row.eventType === 'send_attempted' && row.communicationId)
+        .map((row) => row.communicationId as string),
+    )];
+    const terminalIds = new Set<string>();
+    if (attemptedIds.length) {
+      const terminalRows = await this.db
+        .select({ communicationId: customerCommunicationEvents.communicationId })
+        .from(customerCommunicationEvents)
+        .where(and(
+          inArray(customerCommunicationEvents.communicationId, attemptedIds),
+          inArray(customerCommunicationEvents.eventType, ['provider_accepted', 'send_failed']),
+        ));
+      for (const row of terminalRows) if (row.communicationId) terminalIds.add(row.communicationId);
+    }
+
+    const findings: CustomerCommunicationReconciliationFinding[] = [];
+    const unresolvedReported = new Set<string>();
+    for (const row of relevant) {
+      if (!row.communicationId && row.providerMessageId) {
+        findings.push({
+          kind: 'orphan_provider_event', communicationId: null, bookingId: null,
+          communicationKind: null, occurredAt: row.occurredAt,
+          providerMessageId: row.providerMessageId,
+          eventType: row.eventType as CustomerCommunicationEvent['eventType'],
+        });
+        continue;
+      }
+      if (!row.communicationId) continue;
+      const parent = byId.get(row.communicationId);
+      if (!parent) continue;
+      if (
+        row.eventType === 'send_attempted' &&
+        !terminalIds.has(row.communicationId) &&
+        !unresolvedReported.has(row.communicationId)
+      ) {
+        unresolvedReported.add(row.communicationId);
+        findings.push({
+          kind: 'communication_attempt_unresolved', communicationId: row.communicationId,
+          bookingId: parent.bookingId, communicationKind: parent.kind,
+          occurredAt: row.occurredAt, providerMessageId: null, eventType: 'send_attempted',
+        });
+      } else if (row.eventType === 'provider_failed' || row.eventType === 'bounced' || row.eventType === 'complained') {
+        findings.push({
+          kind: 'provider_communication_failure', communicationId: row.communicationId,
+          bookingId: parent.bookingId, communicationKind: parent.kind,
+          occurredAt: row.occurredAt, providerMessageId: row.providerMessageId,
+          eventType: row.eventType,
+        });
+      }
+    }
+    return findings.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   }
 }

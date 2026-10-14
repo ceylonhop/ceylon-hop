@@ -1,0 +1,645 @@
+{
+  "slug": "mirissa",
+  "name": "Mirissa",
+  "region": "South coast",
+  "placeId": "mirissa",
+  "title": "Mirissa guide — whales, Coconut Tree Hill, where to stay | Ceylon Hop",
+  "description": "Whale watching from Mirissa harbour, Coconut Tree Hill, turtles, when to come, where to eat, stay and go out — and how we drive you there.",
+  "checked": "October 2026",
+  "hero": {
+    "photo": "hero",
+    "intro": "A crescent of sand on the south coast, ringed by palms, with a fishing harbour at one end where the whale boats leave at dawn. Turtles in the shallows, a palm-topped headland for sunset, and a much slower pace after the hill country."
+  },
+  "facts": [
+    {
+      "label": "Stay",
+      "value": "2–3 nights"
+    },
+    {
+      "label": "Whale season",
+      "value": "Nov–Apr"
+    },
+    {
+      "label": "Daytime",
+      "value": "29–31",
+      "unit": "°C"
+    },
+    {
+      "label": "Between",
+      "value": "Galle & Yala"
+    }
+  ],
+  "lede": "Most people give it two or three nights near the end of their trip, coming down from Ella or Yala —",
+  "ledeEm": "a dawn on the whale boat, an evening on the headland, and plenty of time doing very little.",
+  "gettingHere": {
+    "heading": "We’ll drive you to the beach",
+    "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
+    "origins": [
+      {
+        "id": "ella",
+        "title": "From Ella",
+        "from": "173 km · about 3 h · the way most people come",
+        "sell": "Down through the Ella Gap past Ravana Falls to Wellawaya, then across the southern plains to the coast. We can stop at the falls or the Buduruwagala carvings on the way if you’d like."
+      },
+      {
+        "id": "cmb-airport",
+        "title": "Straight from the airport",
+        "from": "CMB · 176 km · about 2 h 45 · expressway most of the way",
+        "sell": "Your driver meets you at arrivals and takes the expressway round Colombo and down the coast. Coming from a hotel in Colombo instead? It’s about 2–2.5 hours, depending on the traffic."
+      },
+      {
+        "id": "yala",
+        "title": "From Yala",
+        "from": "155 km · about 3 h · after a morning safari",
+        "sell": "West from Tissamaharama past the lagoons and salt pans, then along the coast through Tangalle and Dickwella. Leave after your morning game drive and you’re on the beach for sunset."
+      }
+    ],
+    "train": "<b>Mirissa has its own station, but few trains stop there.</b> A train or two a day from Colombo Fort calls at Mirissa; more stop at Weligama, 10–15 minutes away. Allow 3–4 hours. The coastal line has had derailments and closures in the past year — November 2025 and April 2026 — so check before you rely on it. We drive it door to door, and the expressway is quicker."
+  },
+  "places": [
+    {
+      "id": "whales",
+      "name": "Whale watching",
+      "photo": "whale",
+      "text": "Mirissa is one of the best places in the world to see blue whales: the continental shelf drops away a few kilometres offshore, and from November to April the boats find blue whales, sperm whales and spinner dolphins on most mornings. It’s a long morning at sea — and the reason many people come.",
+      "spec": {
+        "from": "Mirissa Harbour · 5 min",
+        "open": "Nov–Apr · boats leave about 6:00–6:30",
+        "give": "4–5 hours, sometimes longer",
+        "level": "Easy · hard if you get seasick",
+        "ticket": "≈ USD 40–80 on a shared boat"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "Sightings are likely in season but never guaranteed. Choose an operator that keeps its distance and doesn’t chase the whales — the law says at least 100 m, engines off inside that. Take a seasickness tablet before you board, not after."
+      }
+    },
+    {
+      "id": "coconut-hill",
+      "name": "Coconut Tree Hill",
+      "photo": "coconut-hill",
+      "text": "A red-earth headland at the west end of the bay, covered in tall palms leaning out over the sea — the photo of Mirissa you’ve probably already seen. Go at sunrise for soft light and an empty hill, or at sunset with everyone else.",
+      "spec": {
+        "from": "West end of the beach · 15 min walk",
+        "open": "Sunrise or sunset",
+        "give": "45 min",
+        "ticket": "Free"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "It’s private land that the owners leave open to visitors — they briefly fenced it off in 2021. Stay on the paths and keep back from the cliff edge."
+      }
+    },
+    {
+      "id": "parrot-rock",
+      "name": "Parrot Rock & Secret Beach",
+      "photo": "parrot-rock",
+      "text": "Parrot Rock is the little islet just off the main beach, with steps up to a lookout over the whole bay — a good place for the sun going down. Secret Beach is a quieter cove about 2 km west, past the headland: a tuk-tuk up a steep lane, then a 10-minute walk down.",
+      "spec": {
+        "from": "Parrot Rock: on the beach · Secret Beach: 10 min by tuk-tuk",
+        "open": "Parrot Rock at low tide only",
+        "give": "1–2 hours",
+        "ticket": "Free"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "Only wade out to Parrot Rock at low tide. At high tide the water is waist-deep and the current pulls, especially from May to October — and the steps on the rock are uneven."
+      }
+    },
+    {
+      "id": "turtle-point",
+      "name": "Turtle Point",
+      "photo": "turtle",
+      "text": "At the foot of Coconut Tree Hill, green and hawksbill turtles graze on the algae in water you can stand in. Bring a mask, float quietly, and they’ll swim right past you.",
+      "spec": {
+        "from": "West end of the beach · 15 min walk",
+        "open": "Calm mornings",
+        "give": "1 hour",
+        "level": "Easy · shallow water",
+        "ticket": "Free · bring or hire a mask"
+      },
+      "tip": {
+        "kind": "warn",
+        "text": "Don’t feed or touch the turtles, however many people around you do — sellers on the beach offer seaweed for it. Watch from a few metres away."
+      }
+    },
+    {
+      "id": "harbour",
+      "name": "Mirissa Harbour at dawn",
+      "photo": "harbour",
+      "text": "Before the whale boats go out, the night’s fishing boats come in. From first light the catch is landed and auctioned on the quay, and it’s all over within the hour — the working side of Mirissa most visitors sleep through.",
+      "spec": {
+        "from": "East end of the bay · 5 min",
+        "open": "From first light, about 6:00",
+        "give": "30–45 min",
+        "ticket": "Free"
+      },
+      "tip": {
+        "kind": "drivers",
+        "text": "Pair it with the whale boat — they leave from the same harbour at the same hour. Keep out of the way of the crews unloading."
+      }
+    },
+    {
+      "id": "lagoon",
+      "name": "Kayaking the Garanduwa lagoon",
+      "photo": "kayak",
+      "text": "Just inland of the beach, the Garanduwa lagoon winds through the mangroves, and a slow paddle along its channels is the quietest two hours you’ll spend here. Look for kingfishers, herons and water monitors on the banks.",
+      "spec": {
+        "from": "Just inland · about 10 min by tuk-tuk",
+        "open": "Early morning",
+        "give": "About 2 hours",
+        "level": "Easy · fine for first-timers",
+        "ticket": "Varies by operator · pickup usually included"
+      },
+      "tip": {
+        "kind": "drivers",
+        "text": "Go early, when the water is still and the birds are out. Most tours collect you from your guesthouse."
+      }
+    }
+  ],
+  "furtherAfield": [
+    {
+      "time": "45 min–1 h",
+      "name": "Blue Beach Island, Nilwella",
+      "text": "A small island off Nilwella beach that you walk out to across a sandbar at low tide — check the tide times first. You can book a night’s camping on the island locally; book well ahead. Hiriketiya is next door."
+    },
+    {
+      "time": "10–15 min",
+      "name": "Weligama",
+      "text": "The long, gentle bay next door is where Sri Lanka learns to surf: soft beach-break waves and surf schools all along the sand. Better than Mirissa if you’ve never stood on a board."
+    },
+    {
+      "time": "2 h 30+",
+      "name": "Udawalawe or Yala",
+      "text": "Both parks are possible in a day, but it means a 4 AM start and five or six hours in the car. Better to spend a night near the park on your way — tell us your dates and we’ll plan the drive."
+    }
+  ],
+  "itinerary": {
+    "eyebrow": "If you have two days",
+    "heading": "A plan that works",
+    "sub": "Early starts are the point here: the lagoon and the whales are mornings, the headlands are for sunset, and the middle of the day is for the beach.",
+    "days": [
+      {
+        "title": "Day 1 · Lagoon, turtles, sunset",
+        "sub": "Paddle early, swim late, headland for the sunset",
+        "steps": [
+          {
+            "time": "6:30",
+            "title": "Kayak the Garanduwa lagoon",
+            "text": "Still water and birds out; most tours pick you up."
+          },
+          {
+            "time": "9:30",
+            "title": "Breakfast",
+            "text": "Shady Lane or Cinnamon Cafe — see where to eat below."
+          },
+          {
+            "time": "11:00",
+            "title": "Turtle Point",
+            "text": "Mask on, float quietly — and no feeding."
+          },
+          {
+            "time": "13:00",
+            "title": "Beach and shade",
+            "text": "The hottest hours. Swim near the lifeguard post."
+          },
+          {
+            "time": "17:30",
+            "title": "Sunset from Parrot Rock",
+            "text": "At low tide only — Coconut Tree Hill if the tide’s in."
+          },
+          {
+            "time": "19:30",
+            "title": "Seafood on the beach",
+            "text": "Pick your fish from the display and they grill it."
+          }
+        ]
+      },
+      {
+        "title": "Day 2 · Whales, then onward",
+        "sub": "On the water at dawn, on the road after lunch",
+        "steps": [
+          {
+            "time": "6:00",
+            "title": "Whale boat from the harbour",
+            "text": "November to April. Out of season, walk down for the fish auction instead."
+          },
+          {
+            "time": "11:30",
+            "title": "Back on land",
+            "text": "Shower, lunch and check out."
+          },
+          {
+            "time": "13:30",
+            "title": "Onward with us",
+            "text": "To the airport for an evening flight, about 2 h 45 — or on to Ella or Yala, about 3 h.",
+            "us": true
+          }
+        ],
+        "book": {
+          "stops": [
+            "Mirissa",
+            "Colombo Airport (CMB)"
+          ],
+          "nights": [
+            0,
+            0
+          ],
+          "preload": "Opens the planner with <b>Mirissa → Colombo Airport</b> already in — swap in Ella or Yala if you’re carrying on."
+        }
+      }
+    ]
+  },
+  "months": {
+    "heading": "The weather, month by month",
+    "sub": "Warm all year, 29–31° by day. What changes is the sea: calm from December to March, rough in the south-west monsoon from May to September — and October and November are the wettest months of all.",
+    "blocks": [
+      {
+        "label": "Dec – Mar",
+        "title": "Peak season",
+        "text": "Calm seas, the best odds for whales and the driest months, around 90–110 mm of rain. The busiest time to come — book your room early.",
+        "tag": "Best for whales",
+        "tone": "best"
+      },
+      {
+        "label": "Apr & Nov",
+        "title": "Shoulder months",
+        "text": "The whale boats run, but sightings are less reliable than in peak season. Showers build from mid-April, and November is one of the wettest months."
+      },
+      {
+        "label": "May – Sep",
+        "title": "South-west monsoon",
+        "text": "Rougher seas, heavy showers and red flags on the beach on many days, and the whale boats mostly stop. Quieter and cheaper — the east coast is in season instead.",
+        "tone": "wet"
+      },
+      {
+        "label": "Oct",
+        "title": "The wettest month",
+        "text": "About 300 mm of rain, the most of the year on this coast. Hotels are quiet until the season starts again in November.",
+        "tone": "wet"
+      }
+    ]
+  },
+  "eatSub": "Most places are on the main road or the beach. Bring cash for the small ones.",
+  "eat": [
+    {
+      "tier": "Budget",
+      "photo": "roti",
+      "name": "No. 1 Dewmini Roti Shop · Cinnamon Cafe",
+      "text": "Dewmini started as a roadside roti cart in 2009 and is now one of the best-loved places in town for rotis, kottu and curry — it runs a cooking class most afternoons, too. Cinnamon Cafe is a simple family café in a garden by the paddy fields, with the best cheap breakfast in Mirissa. <em>Cinnamon Cafe closes at about 5 PM.</em>",
+      "band": "$",
+      "flags": [
+        "Breakfast",
+        "Lunch"
+      ],
+      "map": "No.1 Dewmini Roti Shop Mirissa"
+    },
+    {
+      "tier": "Cafés",
+      "pick": true,
+      "photo": "cafe",
+      "name": "Shady Lane · Capybara Cafe · Milky Wave",
+      "text": "Shady Lane is the brunch everyone queues for — pancakes, eggs on sourdough and proper coffee. Capybara Cafe is a garden café across from the beach, with cakes, Italian ice cream and live music in the evening. For dessert, Milky Wave does homemade ice cream — get the coconut — in a fairy-lit courtyard. <em>Shady Lane is closed on Tuesdays.</em>",
+      "band": "$–$$",
+      "flags": [
+        "Brunch",
+        "Coffee"
+      ],
+      "map": "Shady Lane Mirissa"
+    },
+    {
+      "tier": "Dinner",
+      "photo": "seafood",
+      "name": "Seafood on the beach",
+      "text": "After dark the beach restaurants lay the day’s catch out on ice: pick your fish, agree the price before they cook it, and they grill it while you sit with your feet in the sand. <em>Ask what came in on the boats that morning.</em>",
+      "band": "$$",
+      "flags": [
+        "Dinner"
+      ]
+    }
+  ],
+  "eatCollector": {
+    "title": "Where did you eat well?",
+    "text": "Tell us your favourite place in Mirissa and we’ll check it out for the next traveller.",
+    "fine": "A photo of the menu is even better.",
+    "wa": "Hi Ceylon Hop — a place I ate well in Mirissa: "
+  },
+  "staySub": "Stay on the beach road to walk to everything, or in the lanes behind it for quiet. December to March books up early.",
+  "stay": [
+    {
+      "tier": "Boutique",
+      "photo": "pool-villa",
+      "name": "Triple O Six · Mirissa Beach Villa · Three Gables",
+      "text": "Triple O Six is a 21-room boutique hotel with a pool, close to the beach; Mirissa Beach Villa is a small villa with two pools, about 200 m from the sand; Three Gables is a boutique villa just east of town in Thalaramba. <em>The small villas fill first in peak season.</em>",
+      "band": "$$$",
+      "flags": [
+        "Couples",
+        "Pool"
+      ]
+    },
+    {
+      "tier": "Mid-range",
+      "photo": "garden-villa",
+      "name": "Celestial Inn · Resort Deepika",
+      "text": "Celestial Inn has eight rooms, a garden and a library, three minutes’ walk from the beach; Resort Deepika is a small beachfront guesthouse near the harbour, with breakfast on the roof and excellent reviews. <em>Both are small — book ahead from December.</em>",
+      "band": "$–$$",
+      "flags": [
+        "Couples",
+        "Families"
+      ]
+    },
+    {
+      "tier": "Solo",
+      "pick": true,
+      "photo": "hostel",
+      "name": "JJ’s Hostel · Hangover Hostels",
+      "text": "JJ’s is a boutique hostel with a salt-water pool and a rooftop, one of the best-rated on the coast; Hangover Hostels is the social one, across the road from the beach, with a rooftop bar. <em>Both are lively — not for early nights.</em>",
+      "band": "$",
+      "flags": [
+        "Solo",
+        "Social"
+      ]
+    }
+  ],
+  "stayCollector": {
+    "title": "Stayed somewhere great?",
+    "text": "Guesthouse, villa, hostel — tell us and we’ll add the good ones here.",
+    "wa": "Hi Ceylon Hop — a place I stayed and liked in Mirissa: "
+  },
+  "nightlife": {
+    "sub": "Mirissa’s own beach is mellow: sunset drinks and music. For a proper night out, the big parties are 15 minutes east in Madiha, on Wednesdays and Saturdays.",
+    "items": [
+      {
+        "tier": "Beach bars",
+        "photo": "beach-bar",
+        "name": "Along Mirissa beach",
+        "text": "At dusk the bars along the beach put out cushions and lanterns: a cold beer or a cocktail as the sun goes down behind the headland, then music into the night. <em>Walk the sand and pick the crowd you like.</em>",
+        "band": "$–$$",
+        "flags": [
+          "Sunset"
+        ]
+      },
+      {
+        "tier": "Party",
+        "pick": true,
+        "photo": "beach-club",
+        "name": "The Doctor’s House · Shima Guni",
+        "text": "Next door to each other on Madiha beach, about 15 minutes east by tuk-tuk, they run the biggest parties on the south coast on Wednesday and Saturday nights: The Doctor’s House from about 6 PM to midnight — rooftop tapas, pizza, DJs and live music — then everyone moves to Shima Guni until late. <em>Entry is free early, then about LKR 1,500–2,000.</em>",
+        "band": "$$",
+        "flags": [
+          "Wed & Sat"
+        ],
+        "map": "The Doctor's House Madiha"
+      },
+      {
+        "tier": "Cocktails",
+        "photo": "sunset",
+        "name": "Jungle Kade",
+        "text": "A small cocktail bar in Kamburugamuwa, just east of Mirissa, from the team behind Drunken Lankan: craft cocktails and modern Sri Lankan plates, without the party. Open until midnight.",
+        "band": "$$",
+        "flags": [
+          "Cocktails",
+          "Dinner"
+        ],
+        "map": "Jungle Kade Kamburugamuwa"
+      }
+    ],
+    "collector": {
+      "title": "Where did you go out?",
+      "text": "Tell us your favourite bar around Mirissa and we’ll check it out for the next traveller.",
+      "wa": "Hi Ceylon Hop — a bar I liked around Mirissa: "
+    }
+  },
+  "faq": [
+    {
+      "tab": "Planning",
+      "items": [
+        {
+          "q": "How many nights should I stay?",
+          "a": "<p>Two or three: a morning on the whale boat, a morning for the lagoon or the turtles, and a sunset or two on the headlands. Stay longer if you want to learn to surf in Weligama, next door.</p>"
+        },
+        {
+          "q": "When is whale season?",
+          "a": "<p>November to April, with the best odds from December to March, when the sea is calmest. From May to October the boats mostly stop. <a href=\"#when\">See the months ↓</a></p>"
+        },
+        {
+          "q": "Is Mirissa good for families?",
+          "a": "<p>Yes. The main beach is calm in season and Turtle Point is shallow. The whale boat is a long, rolling morning — better for older children than toddlers — and the steps on Parrot Rock are uneven. Keep little ones close in the water: there are rip currents near the headlands.</p>"
+        },
+        {
+          "q": "What else is there to do?",
+          "a": "<p>Night snorkelling with a guide (about USD 55–61 for 2 hours, with gear and hotel pickup), a Sri Lankan cooking class (about USD 15–30), stand-up paddleboarding, and surf lessons in Weligama, 10–15 minutes away.</p>"
+        },
+        {
+          "q": "Can I visit Yala or Udawalawe as a day trip?",
+          "a": "<p>You can, but it’s a 4 AM start and five or six hours in the car for a few hours in the park. Better to spend a night near the park on your way — Yala is about 3 hours from here. <a href=\"#next\">See the routes ↓</a></p>"
+        }
+      ]
+    },
+    {
+      "tab": "Getting here",
+      "items": [
+        {
+          "q": "What’s the easiest way to get to Mirissa?",
+          "a": "<p>By car, door to door. From the airport it’s about 2 h 45 on the expressway, from Ella about 3 hours. If you take the coast road from Galle instead, you pass the stilt fishermen at Koggala and Ahangama — we’ll stop wherever you like.</p>"
+        },
+        {
+          "q": "Can I take the train?",
+          "a": "<p>Yes, but only a train or two a day from Colombo Fort stops at Mirissa itself; more stop at Weligama, 10–15 minutes away by tuk-tuk. Allow 3–4 hours. The coastal line was disrupted by derailments in November 2025 and April 2026, so check the timetable before you go.</p>"
+        },
+        {
+          "q": "What about the bus?",
+          "a": "<p>The expressway buses from Colombo (Bastian Mawatha or Makumbura) reach Matara in about 2.5 hours; from there it’s a short tuk-tuk back to Mirissa. Ordinary buses on the Galle Road stop in Mirissa itself, but they’re slow and get very full.</p>"
+        }
+      ]
+    },
+    {
+      "tab": "Pack & wear",
+      "items": [
+        {
+          "q": "How hot does it get?",
+          "a": "<div class=\"temps\"><div><b>29–31°</b><small>Day</small></div><div><b>22–25°</b><small>Night</small></div><div><b>27–29°</b><small>Sea</small></div><div><b>Oct</b><small>Wettest</small></div></div><p>Warm and humid all year. Even in the dry months, a short shower can roll through in the afternoon.</p>"
+        },
+        {
+          "q": "What should I pack?",
+          "a": "<ul class=\"pack\"><li>Reef-safe sunscreen</li><li>A mask and snorkel</li><li>Seasickness tablets</li><li>Mosquito repellent</li></ul>"
+        },
+        {
+          "q": "What should I wear in town?",
+          "a": "<p>Swimwear on the beach; a shirt and shorts or a sarong when you walk into town. Topless sunbathing isn’t allowed anywhere in Sri Lanka.</p>"
+        }
+      ]
+    },
+    {
+      "tab": "Good to know",
+      "tips": [
+        "Swim near the lifeguard post and follow the flags. Rip currents run near the headlands, the sea is rough from May to October, and the Coast Guard has had to rescue swimmers here.",
+        "Whale sightings are likely in season but never guaranteed. A good operator keeps 100 m from the whales and doesn’t chase them.",
+        "Don’t feed or touch the turtles at Turtle Point.",
+        "Cross to Parrot Rock at low tide only.",
+        "Mirissa has surf — a reef break at the west end for intermediates, and a small section for beginners — but Weligama, 10–15 minutes away, is the better place to learn.",
+        "Coconut Tree Hill is private land left open to visitors. Be respectful, and keep back from the edge.",
+        "Poya (full-moon) days are dry: bars and shops stop selling alcohol, and the parties may not happen.",
+        "December to March is busy. Book your room early."
+      ]
+    }
+  ],
+  "next": [
+    "cmb-airport",
+    "ella",
+    "yala",
+    "galle"
+  ],
+  "ask": {
+    "eyebrow": "Real people, real answers",
+    "heading": "Not sure about something?",
+    "text": "Whether the whale boats are going out, what the sea is like this week, which party is on tonight — message us and we’ll check. That’s what we’re here for.",
+    "wa": "Hi Ceylon Hop — a question about Mirissa: "
+  },
+  "photos": {
+    "hero": {
+      "alt": "Palms, the curve of Mirissa’s beach and the headland beyond, seen from the air",
+      "credit": "Sarmat Batagov",
+      "creditUrl": "https://unsplash.com/@batag_?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/an-aerial-view-of-a-beach-with-palm-trees-4CPF_TglMDc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1012
+    },
+    "whale": {
+      "alt": "A sperm whale at the surface of deep blue water",
+      "credit": "Winston Chen",
+      "creditUrl": "https://unsplash.com/@winstonchen?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/sperm-whale-swimming-in-blue-ocean-tgwS0LsICX0?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "coconut-hill": {
+      "alt": "Tall palms leaning out over the sea on a red-earth headland",
+      "credit": "Avin CP",
+      "creditUrl": "https://unsplash.com/@avincp?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/palm-trees-on-brown-sand-beach-during-daytime-3HTmI6zjocU?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "parrot-rock": {
+      "alt": "A small rocky island topped with palms just off a calm beach, a fishing boat in front",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-boat-floats-near-an-island-on-a-sunny-day-Rzpp2YENGMA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "turtle": {
+      "alt": "A sea turtle swimming in clear, shallow water",
+      "credit": "Olga ga",
+      "creditUrl": "https://unsplash.com/@olgaga?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/brown-sea-turtle-iRgbLpf50IE?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "harbour": {
+      "alt": "Brightly painted fishing boats moored together in a harbour",
+      "credit": "Sheila C",
+      "creditUrl": "https://unsplash.com/@qld_traveller?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-bunch-of-boats-that-are-sitting-in-the-water-SWQtQw54cyo?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "kayak": {
+      "alt": "A paddler in a red kayak on a channel lined with mangroves",
+      "credit": "Amos K",
+      "creditUrl": "https://unsplash.com/@tychicus?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/person-paddling-red-kayak-through-mangroves-UwsTg7Saruk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "seafood": {
+      "alt": "A platter of grilled fish, prawns and squid with salad and chips",
+      "credit": "Matt Dany",
+      "creditUrl": "https://unsplash.com/@mattdany?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-wooden-table-topped-with-lots-of-food-vu7Dx46Mki4?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "pool-villa": {
+      "alt": "A long pool beside a colonial-style veranda and a tropical garden",
+      "credit": "Matt Dany",
+      "creditUrl": "https://unsplash.com/@mattdany?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-long-pool-with-chairs-and-an-umbrella-next-to-it-IGLIwd-Xgk8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beach-bar": {
+      "alt": "Bottles lined up on a beach bar counter, the sea behind",
+      "credit": "Norbert Braun",
+      "creditUrl": "https://unsplash.com/@medion4you?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-bar-with-bottles-of-alcohol-on-the-beach-KHK607p3TVA?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "beach-club": {
+      "alt": "Beanbags and lanterns on the sand at dusk, the sea behind",
+      "credit": "Thomas Hoang",
+      "creditUrl": "https://unsplash.com/@megatunger?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/beach-scene-at-dusk-with-beanbag-seating-WWIYl7hhVX8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "sunset": {
+      "alt": "The sun setting over the sea beyond a dark headland",
+      "credit": "Matt Dany",
+      "creditUrl": "https://unsplash.com/@mattdany?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/the-sun-is-setting-over-the-ocean-with-waves-Z64DP0otOYs?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "roti": {
+      "alt": "Coconut roti with sambol on a clay plate, dried chillies around it",
+      "credit": "Nilantha Sanjeewa",
+      "creditUrl": "https://unsplash.com/@nila1992?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/brown-round-plate-with-food-OE87GAgPG18?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "cafe": {
+      "alt": "A fruit and granola bowl served in a coconut shell",
+      "credit": "Tomi Saputra",
+      "creditUrl": "https://unsplash.com/@udatommo?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/fresh-fruit-granola-bowl-served-in-a-coconut-GGl3Gj912Kc?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
+      "w": 1800,
+      "h": 1125
+    },
+    "garden-villa": {
+      "alt": "A garden courtyard and orange tiled roofs seen through a bungalow door",
+      "credit": "Lisa van Vliet",
+      "creditUrl": "https://unsplash.com/@lisaaxv?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/tropical-courtyard-with-orange-tiled-roofs-eUX0uKyYCgk?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    },
+    "hostel": {
+      "alt": "Wooden bunk beds in a sunny hostel dorm",
+      "credit": "Zoshua Colah",
+      "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/a-room-filled-with-lots-of-bunk-beds-next-to-a-window-TzMGehZmocI?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
+      "w": 1800,
+      "h": 1125
+    }
+  }
+}
