@@ -6,6 +6,13 @@ import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 
+// Heartbeat of the daily tick (spec 2026-10-13 §4), the sibling of watchdog.ts's WATCHDOG_TICK:
+// POST /admin/jobs/notifications writes this ledger row last, with a zero cooldown, so the ops
+// Health tab can say when the tick last completed. GitHub's cron delivers it hours late and
+// nothing else records that it ran at all. Stale past 26 h: a day plus the lateness we live with.
+export const NOTIFICATIONS_TICK = { kind: 'notifications_tick', key: 'last' } as const;
+export const NOTIFICATIONS_STALE_MS = 26 * 3600_000;
+
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
 // review request once travel is this far in the past. The cron tick is idempotent via
 // the notification log, so cadence (hourly/daily) only affects timeliness, never dupes.
