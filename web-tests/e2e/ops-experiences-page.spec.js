@@ -754,3 +754,75 @@ test('a meeting point typed while the date save is in flight is saved after it, 
   await expect.poll(() => calls.leadPatch.length).toBe(2);
   expect(calls.leadPatch[1].body).toEqual({ meetingPoint: 'Hotel lobby' });
 });
+
+// Staging 2026-10-13: date, time and meeting point changed back to back, then Send confirmation. The
+// later saves queue behind the first; the press queued with them, woke with them, found the lead busy
+// with a queued save and gave up: no POST, no toast, and the button left disabled until the next repaint.
+test('Send confirmation pressed while schedule saves are queued waits for them, then sends once', async ({ page }) => {
+  const day = futureIsoDate(20);
+  const server = { ...PAID };
+  let atSend = null;
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openPaid(page, [PAID], {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held; // the date save stays on the wire while the rest queue behind it
+      Object.assign(server, body);
+      return r.fulfill(json({ lead: { ...server } }));
+    },
+    confirmLead: (r) => {
+      atSend = { ...server };
+      return r.fulfill(json({ lead: { ...server, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'email' } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  const btn = row.locator('[data-action="expLeadConfirm"]');
+  await row.locator('[data-lead-field="scheduledDate"]').fill(day);
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="scheduledTime"]').fill('09:30');
+  await row.locator('[data-lead-field="meetingPoint"]').fill('Hotel lobby');
+  await btn.click(); // blurs the meeting point (its save queues too), then presses Send
+  await expect(btn).toBeDisabled();
+  expect(calls.confirm).toEqual([]); // nothing is sent ahead of the saves
+  release();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  // the email went only once the server held everything on screen
+  expect(atSend).toMatchObject({ scheduledDate: day, scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+  await expect(page.locator('#toast')).toContainText('Confirmation sent');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmation sent ✓');
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toBeEnabled();
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toHaveText('Resend');
+  expect(calls.confirm).toHaveLength(1);
+});
+
+// The WhatsApp button shares the claim, so it shared the stuck button.
+test('Mark confirmed on WhatsApp pressed while schedule saves are queued waits for them, then records once', async ({ page }) => {
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openPaid(page, [PAID_QUOTE], {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      return r.fulfill(json({ lead: { ...PAID_QUOTE, ...body } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  const btn = row.locator('[data-testid="lead-confirm-whatsapp"]');
+  await row.locator('[data-lead-field="scheduledDate"]').fill(futureIsoDate(20));
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="scheduledTime"]').fill('09:30'); // queues behind the date save
+  await btn.click();
+  await expect(btn).toBeDisabled();
+  expect(calls.confirm).toEqual([]);
+  release();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  expect(calls.confirm[0]).toEqual({ id: PAID_QUOTE.id, body: { channel: 'whatsapp' } });
+  expect(calls.leadPatch.map((c) => c.body)).toContainEqual({ scheduledTime: '09:30' });
+  await expect(page.locator('#toast')).toContainText('Marked confirmed on WhatsApp');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
+  await expect(row.locator('[data-action="expLeadConfirm"]')).toBeEnabled();
+  expect(calls.confirm).toHaveLength(1);
+});
