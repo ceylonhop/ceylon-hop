@@ -6152,10 +6152,13 @@ async function api(path, opts) {
 async function jsonOrNull(res) {
   try { return await res.json(); } catch (e) { return null; }
 }
-// V9: build a consistent { error } from a non-ok response.
+// V9: build a consistent { error, ... } from a non-ok response. The WHOLE server body when it
+// carries an `error` (routes attach reason / message / details / detail / status beside it, and
+// callers that read them — bookErrorText(), hzSubmitZone() — never received them while this kept
+// only `{ error }`); `{ error: 'HTTP <status>' }` when the body is missing or not JSON.
 async function errPayload(res) {
   var body = await jsonOrNull(res);
-  return { error: (body && body.error) ? body.error : ('HTTP ' + res.status) };
+  return (body && typeof body === 'object' && body.error) ? body : { error: 'HTTP ' + res.status };
 }
 
 // Client-side cache of autocomplete results (each query is a billed Google round-trip;
@@ -7294,12 +7297,8 @@ async function apiBook(id, payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) {
-      // The whole refusal, not errPayload's bare { error }: bookErrorText() reads reason /
-      // message / details, and never received them — the toast said only "not_bookable".
-      var errBody = await jsonOrNull(r);
-      return (errBody && typeof errBody === 'object' && errBody.error) ? errBody : { error: 'HTTP ' + r.status };
-    }
+    // errPayload() returns the whole refusal: bookErrorText() reads reason / message / details.
+    if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Booking failed' };
   } catch (e) { return { error: 'Network error' }; }
@@ -8100,7 +8099,15 @@ async function hzSubmitZone() {
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
+    if (!r.ok) {
+      var e = await errPayload(r);
+      // /zones answers a Zod failure with `detail` (the first issue's message) — name the value
+      // that was refused, not just that one was (the client pre-checks everything but the length).
+      var bad = e.error === 'bad_request';
+      ratesToast(bad ? ('Check the values' + (e.detail ? ' — ' + e.detail : '')) : (e.error || 'Save failed'), 'error');
+      renderRatesPage();
+      return;
+    }
     hzEditId = null;
     ratesToast('Zone saved');
     await loadHotZones();
