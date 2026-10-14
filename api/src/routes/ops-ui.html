@@ -7294,7 +7294,12 @@ async function apiBook(id, payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) return await errPayload(r);
+    if (!r.ok) {
+      // The whole refusal, not errPayload's bare { error }: bookErrorText() reads reason /
+      // message / details, and never received them — the toast said only "not_bookable".
+      var errBody = await jsonOrNull(r);
+      return (errBody && typeof errBody === 'object' && errBody.error) ? errBody : { error: 'HTTP ' + r.status };
+    }
     var body = await jsonOrNull(r);
     return body || { error: 'Booking failed' };
   } catch (e) { return { error: 'Network error' }; }
