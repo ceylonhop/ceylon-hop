@@ -25,7 +25,7 @@ gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personali
 try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="../../analytics.js?v=72fed96a54"></script>
+<script src="../../analytics.js?v=10d3674e7f"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -35,7 +35,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- Live ride dates come from here (route-page.js). "?api=off" disables it and
      "?api=ORIGIN" points it elsewhere — the same contract as search.html and
      booking.html, so one local API can be driven from any of them. -->
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
      so the page never shows one price and then another. Set HERE, before first paint, and
      released HERE on a timer too — if that script never loads, the catalogue fares still appear.
@@ -534,6 +534,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>
-<script src="../../route-page.js?v=a8852b9ace"></script>
+<script src="../../route-page.js?v=6250a14ba6"></script>
 </body>
 </html>

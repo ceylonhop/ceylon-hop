@@ -19,8 +19,9 @@ describe('0062_resend_communication_events', () => {
     }
   });
 
-  it('is the latest journal entry', () => {
-    expect(journal.entries.at(-1)).toMatchObject({
+  it('is journalled at idx 62', () => {
+    const entry = journal.entries.find((e) => e.tag === '0062_resend_communication_events');
+    expect(entry).toMatchObject({
       idx: 62,
       tag: '0062_resend_communication_events',
       when: 1790899200000,

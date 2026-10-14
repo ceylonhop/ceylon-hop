@@ -47,6 +47,7 @@ export class PostgresRefundRepo implements RefundRepo {
     currency: string;
     reason: string;
     requestedBy: string;
+    paymentId?: string;
   }): Promise<Refund> {
     return this.db.transaction(async (tx) => {
       const [booking] = await tx
@@ -64,6 +65,12 @@ export class PostgresRefundRepo implements RefundRepo {
       if (captured.some((payment) => payment.currency !== input.currency)) {
         throw new RefundError('currency_mismatch');
       }
+      // A deposit booking holds two captures (spec 2026-10-07). A refund belongs to ONE of them —
+      // it is that payment's gateway id PayHere refunds — so with several, ops must say which.
+      const target = input.paymentId
+        ? captured.find((payment) => payment.id === input.paymentId)
+        : captured.length === 1 ? captured[0] : undefined;
+      if (!target) throw new RefundError(input.paymentId ? 'payment_not_captured' : 'payment_ambiguous');
       const [{ reserved }] = await tx
         .select({ reserved: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
         .from(refunds)
@@ -77,13 +84,18 @@ export class PostgresRefundRepo implements RefundRepo {
       if (reserved + input.amountCents > capturedCents) {
         throw new RefundError('refund_exceeds_captured');
       }
+      const [{ onTarget }] = await tx
+        .select({ onTarget: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
+        .from(refunds)
+        .where(and(eq(refunds.paymentId, target.id), inArray(refunds.status, [...RESERVING_STATUSES])));
+      if (onTarget + input.amountCents > target.amount) throw new RefundError('refund_exceeds_payment');
       const now = new Date();
       const [row] = await tx
         .insert(refunds)
         .values({
           bookingId: input.bookingId,
-          paymentId: captured[0].id,
-          provider: captured[0].provider,
+          paymentId: target.id,
+          provider: target.provider,
           amountCents: input.amountCents,
           currency: input.currency,
           status: 'manual_pending',

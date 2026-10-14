@@ -11,6 +11,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PostgresRideBoardEventRepo } from './db/postgresRideBoardEventRepo';
 import { PostgresBookingCheckoutEventRepo } from './db/postgresBookingCheckoutEventRepo';
+import { PostgresGa4EventLogRepo, PostgresGaIdentityRepo } from './db/postgresGa4Repo';
 import { PostgresPaymentEventRepo } from './db/postgresPaymentEventRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
@@ -25,6 +26,8 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresExperienceRepo } from './db/postgresExperienceRepo';
+import { PostgresExperienceInterestRepo } from './db/postgresExperienceInterestRepo';
 import { PostgresRateRevisionRepo } from './db/postgresRateRevisionRepo';
 import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
@@ -38,6 +41,8 @@ import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
+import { MeasurementProtocolAdapter } from './adapters/ga4';
+import { selectTripadvisor } from './adapters/tripadvisor';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -92,6 +97,15 @@ const email = config.RESEND_API_KEY
     })
   : new FakeEmailAdapter();
 
+// Server-side GA4 — dormant without the secret: ids are still captured, nothing is sent.
+const ga4Adapter = config.GA4_API_SECRET
+  ? new MeasurementProtocolAdapter(config.GA4_MEASUREMENT_ID, config.GA4_API_SECRET)
+  : undefined;
+
+// Live Tripadvisor ratings - dormant unless BOTH the key and the Tripadvisor logo URL are set (their display
+// rules require the logo beside every bubble): otherwise the null adapter is used and no rating is shown.
+const tripadvisor = selectTripadvisor({ apiKey: config.TRIPADVISOR_API_KEY, logoUrl: config.TRIPADVISOR_LOGO_URL, referer: config.TRIPADVISOR_REFERER });
+
 const { db, sql } = createDb(config.DATABASE_URL);
 
 // Distance cache (spec 2026-08-12): only wrap the REAL adapter. Keyless dev keeps the bare
@@ -145,6 +159,10 @@ const app = createApp({
   rideLists: new PostgresRideListRepo(sql),
   rideBoardEvents: new PostgresRideBoardEventRepo(db),
   checkoutEvents: new PostgresBookingCheckoutEventRepo(db),
+  gaIdentities: new PostgresGaIdentityRepo(db),
+  ga4Log: new PostgresGa4EventLogRepo(db),
+  ...(ga4Adapter ? { ga4Adapter } : {}),
+  ga4EventName: config.GA4_SERVER_EVENT_NAME,
   // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
   paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),
@@ -160,6 +178,12 @@ const app = createApp({
   quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
+  // Partner experiences (spec 2026-10-06). WITHOUT these lines app.ts falls back to empty in-memory
+  // repos: every experience ops enters and every customer interest would vanish on restart.
+  experiences: new PostgresExperienceRepo(db),
+  tripadvisor: tripadvisor.adapter,
+  ...(tripadvisor.logoUrl ? { tripadvisorLogoUrl: tripadvisor.logoUrl } : {}),
+  experienceInterests: new PostgresExperienceInterestRepo(db),
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),
@@ -174,6 +198,7 @@ const app = createApp({
   email,
   customerCommunications: new PostgresCustomerCommunicationRepo(db),
   communicationTrackingEnabled: config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED,
+  transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
   alerts,
   alertLog,
   pingDb: async () => {

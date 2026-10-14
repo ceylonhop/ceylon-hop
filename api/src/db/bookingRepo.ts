@@ -7,6 +7,7 @@ import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
+import { addOnsFor } from '../quote/quoteAlternative';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
@@ -274,6 +275,8 @@ export interface BookingRepo {
   ): Promise<Booking>;
   /** Applied transition facts, oldest first. Empty means no recorded history, not no activity. */
   listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]>;
+  /** Applied facts for a set of bookings, in one read for reconciliation. */
+  listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]>;
   /** Rows whose current status disagrees with their latest recorded applied transition. */
   listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
@@ -291,9 +294,14 @@ export interface BookingRepo {
   // `termsAcceptedAt` is optional: an ops "Mark booked" re-book carries no acceptance, because
   // nobody ticked a box — that customer agreed over WhatsApp. Absent leaves the column alone
   // rather than stamping an acceptance that never happened.
+  //
+  // `amountDueNow` is the pay link's deposit-or-full choice on a resumed /start (spec 2026-10-07
+  // §4): a customer who tried the deposit and came back for full (or the reverse) moves the same
+  // booking. Applied ONLY while no payment on the booking has succeeded — the status guard above
+  // is not enough on its own, because settlement and the status move are separate writes.
   refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking>;
 }
 
@@ -347,7 +355,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   // with none comes back as the very object stored, exactly as before.
   private async present(b: Booking): Promise<Booking> {
     const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
-    const fromQuote = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const fromQuote = q ? addOnsFor(q, b) : [];
     const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
     return addOns.length ? { ...b, addOns } : b;
   }
@@ -506,6 +514,11 @@ export class InMemoryBookingRepo implements BookingRepo {
     return this.statusEvents.filter((event) => event.bookingId === bookingId).map((event) => ({ ...event }));
   }
 
+  async listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]> {
+    const wanted = new Set(bookingIds);
+    return this.statusEvents.filter((event) => wanted.has(event.bookingId)).map((event) => ({ ...event }));
+  }
+
   async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
     const latest = new Map<string, BookingStatusEvent>();
     for (const event of this.statusEvents) latest.set(event.bookingId, event);
@@ -521,13 +534,18 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
+    // The choice is frozen the moment any payment on the booking has succeeded (see the interface).
+    const settled = this.payments
+      ? (await this.payments.findByBookingId(id)).some((p) => p.status === 'succeeded')
+      : false;
     const updated: Booking = {
       ...current,
+      ...(details.amountDueNow !== undefined && !settled ? { amountDueNow: details.amountDueNow } : {}),
       input: { ...current.input, customer: { ...details.customer } },
       // Absent billing leaves what was captured before: a payer who filled the address on the
       // first attempt and left it blank on a retry should not lose it.
@@ -588,6 +606,15 @@ export class InMemoryBookingRepo implements BookingRepo {
       }
       this.byId.set(bookingId, { ...b, promoHoldUntil: new Date(now.getTime() + PROMO_HOLD_MS).toISOString() });
     });
+  }
+
+  // Settlement only (paymentSettlementRepo): the first payment that settles IS what secured the
+  // booking, so amountDueNow becomes that payment's amount. Unguarded on purpose — the caller
+  // checks 0 <= amount <= total, as the DB CHECK does.
+  setAmountDueNowForSettlement(id: string, cents: number): void {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    this.byId.set(id, { ...current, amountDueNow: cents });
   }
 
   snapshotForSettlement(): { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] } {

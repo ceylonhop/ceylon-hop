@@ -89,3 +89,22 @@ describe('RideBoard.filterOptions(pairs, filter)', () => {
     expect(o.to).toEqual([]);
   });
 });
+
+/* The board's two place dropdowns — the "Leaving from" filter and Start a list's From/To — used
+   different orders: the filter A–Z, Start a list in corridor order (Negombo before Kandy,
+   Weligama before Mirissa). Both now use placeOrder: the airport first (where most trips start),
+   then A–Z. */
+describe('RideBoard.placeOrder(a, b)', () => {
+  it('puts the airport first, then the rest A–Z', () => {
+    const names = ['Mirissa', 'Colombo city', 'Ahangama', 'Colombo Airport (CMB)', 'Arugam Bay'];
+    expect(names.slice().sort(RB.placeOrder))
+      .toEqual(['Colombo Airport (CMB)', 'Ahangama', 'Arugam Bay', 'Colombo city', 'Mirissa']);
+  });
+
+  it('orders the filter the same way, airport first in both selects', () => {
+    const pairs = [['Ahangama', 'Colombo Airport (CMB)'], ['Colombo Airport (CMB)', 'Ella'], ['Arugam Bay', 'Ella']];
+    const o = RB.filterOptions(pairs, { from: 'all', to: 'all' });
+    expect(o.from).toEqual(['Colombo Airport (CMB)', 'Ahangama', 'Arugam Bay']);
+    expect(o.to).toEqual(['Colombo Airport (CMB)', 'Ella']);
+  });
+});

@@ -91,6 +91,9 @@ const singleFlexible: Booking = { ...single, reference: 'CH-FLEX9', input: { ...
 // and the (dormant) deposit-received email.
 const singleDeposit: Booking = { ...single, reference: 'CH-DEP22', amountDueNow: 185_000 };
 
+// The same booking once its balance has landed — exercises the fully-paid receipt.
+const singleBalancePaid: Booking = { ...single, reference: 'CH-BAL22', amountDueNow: 185_000 };
+
 // A private multi-stop trip (not chauffeur) — per-stop nights + per-leg dates, no day rate.
 const tripPrivate: Booking = {
   ...base,
@@ -155,4 +158,4 @@ export function sampleBooking(mode: SampleMode): Booking {
   return byMode[mode];
 }
 
-export const sampleVariants = { single, trip, shared, singleFlexible, singleDeposit, tripPrivate, roundTrip };
+export const sampleVariants = { single, trip, shared, singleFlexible, singleDeposit, singleBalancePaid, tripPrivate, roundTrip };

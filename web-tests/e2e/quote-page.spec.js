@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installStubs } from './_stubs.js';
+import { installStubs, TA_LOGO, TA_LOGO_SVG } from './_stubs.js';
 
 // The customer quote page (quote.html, backed by GET /quote-view) — spec 2026-08-05 D6: a
 // READ-ONLY proposal, not a payment page. There is no pay button and no link to /p anywhere on
@@ -382,4 +382,471 @@ test('a lapsed quote shows the expiry row and still renders the itinerary', asyn
   await expect(page.locator('.lapse')).toContainText('Everything below is still exactly the trip we planned');
   // Never reads as "your trip is gone" — the sailed-off dead-end art must not appear here.
   await expect(page.locator('.de-wrap')).toHaveCount(0);
+});
+
+// ── Partner experiences on the quote page (spec 2026-10-06 D12/D16/D17) ────────────────────────
+// The ONE write this page makes: an "I’m interested" tap POSTs {t, experienceId, interested} to
+// /quote-view/interest. It records a lead for ops and never touches the price or the quote.
+const xpItem = (o) => ({
+  id: '11111111-1111-4111-8111-111111111111', slug: 'placeholder-ayurvedic-massage', name: 'Ayurvedic massage',
+  partnerName: 'Atherya Spa', areaLabel: 'Sigiriya', summary: 'A 90-minute Ayurvedic massage with herbal oils.',
+  details: 'Some details.', priceCents: 3500, currency: 'USD', priceUnit: 'per_person', durationText: '90 min',
+  openWeekdays: [0, 1, 2, 3, 4, 5, 6], startTimes: ['09:00'], photos: [], aboutKm: 4, interested: false, ...o,
+});
+const XP_MASSAGE = xpItem({});
+const XP_COOKING = xpItem({
+  id: '22222222-2222-4222-8222-222222222222', slug: 'placeholder-village-cooking-lesson', name: 'Village cooking lesson',
+  partnerName: 'Suwee', summary: 'Cook a Sri Lankan village meal.', priceCents: 2500, interested: true,
+});
+const XP_STOPS = [{ place: 'Sigiriya', items: [XP_MASSAGE, XP_COOKING] }];
+const liveBody = (extra = {}, state = 'live') => ({
+  state, view: view({ options: [PRIVATE_OPT] }),
+  validUntil: new Date(Date.now() + (state === 'lapsed' ? -3 : 7) * 864e5).toISOString(), ...extra,
+});
+
+// Records every POST body and answers with `status` (200 echoes the requested state).
+async function stubInterest(page, status = 200) {
+  const posts = [];
+  await page.route('**/quote-view/interest', async (r) => {
+    const req = r.request();
+    const sent = JSON.parse(req.postData() || '{}');
+    posts.push({ method: req.method(), body: sent });
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ interested: sent.interested }) });
+  });
+  return posts;
+}
+
+test.describe('partner experiences on the quote page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('https://ceylonhop.com/img/**', (r) => r.abort());
+  });
+
+  test('renders after "Day by day" and before the change-request note, with the owner-approved copy', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+
+    const block = page.locator('#experiences-block');
+    await expect(block).toBeVisible();
+    // Header copy appears exactly once (owner, 2026-10-07), the heading names the place.
+    await expect(block.locator('.xp-kicker')).toHaveCount(1);
+    await expect(block.locator('.xp-kicker')).toHaveText('Hand-picked by the Ceylon Hop concierge');
+    await expect(block.locator('h3')).toHaveText('While you’re in Sigiriya');
+    await expect(block.locator('.xp-sub')).toHaveCount(1);
+    await expect(block.locator('.xp-sub')).toHaveText(
+      'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
+    );
+    // The old green box and the per-row reassurance are gone.
+    await expect(block.locator('.xp-note')).toHaveCount(0);
+    await expect(block.locator('.xp-after')).toHaveCount(0);
+    await expect(block).not.toContainText('Nothing to pay now');
+    await expect(block).not.toContainText('won’t be charged');
+    await expect(block).not.toContainText('Same as booking direct');
+
+    await expect(block.locator('.xp-list')).toHaveCount(1);
+    await expect(block.locator('.xp-row')).toHaveCount(2);
+    const row = block.locator('.xp-row').first();
+    await expect(row.locator('.xp-name')).toHaveText('Ayurvedic massage');
+    await expect(row.locator('.xp-meta')).toHaveText('Atherya Spa · 4 km · 90 min · Daily');
+    await expect(row.locator('.xp-price')).toHaveText('$35 pp');
+    await expect(row.locator('.xp-btn')).toHaveText('Request');
+    await expect(row.locator('.xp-more')).toContainText('Details');
+    // No rating unless /experiences/ratings answers with one (spec D22; see the ratings tests below).
+    await expect(block.locator('.xp-ta')).toHaveCount(0);
+    // No button promises "free" / "no charge".
+    for (const t of await block.locator('.xp-btn').allTextContents()) expect(t).not.toMatch(/free|no charge/i);
+
+    // DOM order: Day by day ticket, then the experiences, then the pp-note.
+    const order = await page.evaluate(() => {
+      const pos = (el) => el && Array.from(document.querySelectorAll('#app *')).indexOf(el);
+      const day = Array.from(document.querySelectorAll('.t-ref')).find((e) => e.textContent === 'Day by day');
+      return { day: pos(day), xp: pos(document.getElementById('experiences-block')), note: pos(document.querySelector('.pp-note')) };
+    });
+    expect(order.day).toBeGreaterThan(-1);
+    expect(order.xp).toBeGreaterThan(order.day);
+    expect(order.note).toBeGreaterThan(order.xp);
+  });
+
+  test('later stops repeat only the "While you’re in" heading', async ({ page }) => {
+    const second = xpItem({ id: '33333333-3333-4333-8333-333333333333', slug: 'placeholder-tea', name: 'Tea tasting', partnerName: 'Hills' });
+    await stubQuoteView(page, liveBody({ experiences: [...XP_STOPS, { place: 'Ella', items: [second] }] }));
+    await page.goto(PAGE);
+    const block = page.locator('#experiences-block');
+    await expect(block.locator('h3')).toHaveText(['While you’re in Sigiriya', 'While you’re in Ella']);
+    await expect(block.locator('.xp-kicker')).toHaveCount(1);
+    await expect(block.locator('.xp-sub')).toHaveCount(1);
+  });
+
+  test('initial state comes from item.interested', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+    const rows = page.locator('#experiences-block .xp-row');
+    await expect(rows.nth(0).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'false');
+    await expect(rows.nth(0).locator('.xp-btn')).toHaveText('Request');
+    await expect(rows.nth(1).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows.nth(1).locator('.xp-btn')).toHaveText('✓ Requested');
+    await expect(rows.nth(1)).toHaveClass(/\bon\b/);
+  });
+
+  test('a tap POSTs {t, experienceId, interested:true} and flips the row; a second tap withdraws', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const posts = await stubInterest(page);
+    await page.goto(PAGE);
+
+    const row = page.locator('#experiences-block .xp-row').first();
+    const btn = row.locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    await expect(btn).toHaveText('✓ Requested');
+    await expect(row.locator('.xp-after')).toHaveCount(0);
+    expect(posts).toEqual([{ method: 'POST', body: { t: 'test-token', experienceId: XP_MASSAGE.id, interested: true } }]);
+
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'false');
+    await expect(btn).toHaveText('Request');
+    expect(posts[1].body).toEqual({ t: 'test-token', experienceId: XP_MASSAGE.id, interested: false });
+  });
+
+  test('a selected row stays white (accent bar, not a tint)', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    await row.locator('.xp-btn').click();
+    await expect(row).toHaveClass(/\bon\b/);
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(250); // let the 150ms transition settle
+    const css = await row.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { bg: s.backgroundColor, shadow: s.boxShadow };
+    });
+    expect(css.bg).toBe('rgb(255, 255, 255)');
+    expect(css.shadow).not.toBe('none'); // the 3px accent bar on the left
+  });
+
+  test('the price on the page never moves when a row is tapped', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await page.goto(PAGE);
+    const total = page.locator('.opts .ticket').first().locator('.tot .v');
+    const before = await total.textContent();
+    await page.locator('#experiences-block .xp-btn').first().click();
+    await expect(page.locator('#experiences-block .xp-btn').first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(total).toHaveText(before);
+  });
+
+  test('a failed save reverts the row and says so; the next tap retries', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const posts = await stubInterest(page, 500);
+    await page.goto(PAGE);
+
+    const row = page.locator('#experiences-block .xp-row').first();
+    const btn = row.locator('.xp-btn');
+    await btn.click();
+    await expect(row.locator('.xp-err')).toHaveText('Couldn’t save — try again');
+    await expect(btn).toHaveAttribute('aria-pressed', 'false');
+    await expect(btn).toHaveText('Request');
+    expect(posts).toHaveLength(1);
+
+    // The next tap retries, and a success clears the line.
+    await page.unroute('**/quote-view/interest');
+    await stubInterest(page);
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    await expect(row.locator('.xp-err')).toBeHidden();
+  });
+
+  test('a failed withdraw restores the requested state', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page, 500);
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').nth(1);
+    await row.locator('.xp-btn').click();
+    await expect(row.locator('.xp-err')).toBeVisible();
+    await expect(row.locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(row.locator('.xp-btn')).toHaveText('✓ Requested');
+  });
+
+  test('the server’s answer wins: a withdraw that comes back {interested:true} stays ticked', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.route('**/quote-view/interest', (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: '{"interested":true}' }));
+    await page.goto(PAGE);
+    const btn = page.locator('#experiences-block .xp-row').nth(1).locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('experiences: [] renders nothing, and so does a missing key', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: [] }));
+    await page.goto(PAGE);
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await expect(page.locator('#experiences-block')).toHaveCount(0);
+
+    await page.unroute('**/quote-view*');
+    await stubQuoteView(page, liveBody());
+    await page.reload();
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await expect(page.locator('#experiences-block')).toHaveCount(0);
+  });
+
+  test('a lapsed quote still shows the section and still accepts a tap', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }, 'lapsed'));
+    const posts = await stubInterest(page);
+    await page.goto(PAGE);
+    await expect(page.locator('.held.warn')).toContainText('expired on');
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    const btn = page.locator('#experiences-block .xp-row').first().locator('.xp-btn');
+    await btn.click();
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    expect(posts).toHaveLength(1);
+  });
+
+  test('"Details ›" opens an inline panel', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    await expect(row.locator('.xp-panel')).toBeHidden();
+    await row.locator('.xp-more').click();
+    await expect(row.locator('.xp-panel')).toBeVisible();
+    await expect(row.locator('.xp-panel')).toContainText('Some details.');
+    await expect(row.locator('.xp-panel')).toContainText('Open: Daily');
+    await expect(row.locator('.xp-panel')).toContainText('Times: 09:00');
+    await expect(row.locator('.xp-more')).toHaveAttribute('aria-expanded', 'true');
+    await row.locator('.xp-more').click();
+    await expect(row.locator('.xp-panel')).toBeHidden();
+  });
+
+  test('a hostile name is rendered as text, not markup', async ({ page }) => {
+    const evil = xpItem({ name: `<img src=x onerror="window.__pwned=1">'"&`, partnerName: `Bob's <b>spa</b>` });
+    await stubQuoteView(page, liveBody({ experiences: [{ place: 'Sigiriya', items: [evil] }] }));
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-name')).toHaveText(evil.name);
+    await expect(page.locator('#experiences-block .xp-meta')).toContainText(evil.partnerName);
+    expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  });
+
+  test('at 375px nothing overflows sideways and names are not ellipsis-truncated', async ({ page }) => {
+    const long = xpItem({ name: 'Sunrise guided hike with a traditional village breakfast and tea', partnerName: 'A very long partner name Ltd' });
+    await page.setViewportSize({ width: 375, height: 800 });
+    await stubQuoteView(page, liveBody({ experiences: [{ place: 'Sigiriya', items: [long, XP_COOKING] }] }));
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    const m = await page.evaluate(() => {
+      const de = document.documentElement;
+      const names = Array.from(document.querySelectorAll('#experiences-block .xp-name'));
+      return {
+        overflowX: de.scrollWidth - de.clientWidth,
+        // text-overflow stays 'ellipsis' in computed style even when it cannot fire; measure what is clipped.
+        truncated: names.filter((n) => n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1).length,
+        wrapped: names.every((n) => getComputedStyle(n).whiteSpace === 'normal'),
+      };
+    });
+    expect(m.overflowX).toBeLessThanOrEqual(0);
+    expect(m.truncated).toBe(0);
+    expect(m.wrapped).toBe(true);
+  });
+
+  test('a tap is reported to analytics as source quote_page', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await page.goto(PAGE);
+    await page.locator('#experiences-block .xp-btn').first().click();
+    // Tracked on the server's confirmation, a beat after the optimistic flip.
+    await page.waitForFunction(() => window.dataLayer.some((e) => e.event === 'experience_interest'));
+    const hit = await page.evaluate(() => window.dataLayer.find((e) => e.event === 'experience_interest'));
+    expect(hit).toMatchObject({ experience_slug: 'placeholder-ayurvedic-massage', place: 'Sigiriya', source: 'quote_page', interested: true });
+  });
+});
+
+// ── Live Tripadvisor ratings on the quote page (spec 2026-10-06 D22) ─────────────────────────────
+// One GET /experiences/ratings after the rows paint; the rating is the Tripadvisor bubble image +
+// "N reviews" linked to the listing. Absent or failed = nothing, and the rows are never held up.
+const TA_IMG = 'https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/4.5-12345-5.svg';
+const TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g1-d6789012-Reviews-Spa.html';
+const taRating = (o) => ({ id: XP_MASSAGE.id, rating: 4.5, numReviews: 312, ratingImageUrl: TA_IMG, webUrl: TA_URL, ...o });
+async function stubRatings(page, answer) {
+  const asked = [];
+  await page.route('**/experiences/ratings*', async (r) => {
+    asked.push((new URL(r.request().url()).searchParams.get('ids') || '').split(','));
+    if (answer.delayMs) await new Promise((res) => setTimeout(res, answer.delayMs));
+    if (answer.status && answer.status !== 200) return r.fulfill({ status: answer.status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...((answer.ratings || []).length ? { logoUrl: answer.logoUrl === undefined ? TA_LOGO : answer.logoUrl } : {}), ratings: answer.ratings || [] }) });
+  });
+  await page.route(TA_LOGO, (r) => r.fulfill({ status: 200, contentType: 'image/svg+xml', body: TA_LOGO_SVG }));
+  await page.route('https://www.tripadvisor.com/img/**', (r) =>
+    r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="75" height="15"/>' }));
+  return asked;
+}
+
+test.describe('Tripadvisor ratings on the quote page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('https://ceylonhop.com/img/**', (r) => r.abort());
+  });
+
+  test('a rating appears under the meta line: the bubble image, "312 reviews", linked to the listing in a new tab', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    const asked = await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    const link = row.locator('a.xp-ta');
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute('href', TA_URL);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toContainText('312 reviews');
+    await expect(link.locator('img.xp-ta-bubbles')).toHaveAttribute('src', TA_IMG);
+    await expect(link.locator('img.xp-ta-bubbles')).toHaveAttribute('alt', 'Tripadvisor rating 4.5 of 5');
+    const order = await row.evaluate((r) => {
+      const y = (sel) => r.querySelector(sel).getBoundingClientRect().top;
+      return [y('.xp-meta'), y('.xp-ta'), y('.xp-more')];
+    });
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toEqual([XP_MASSAGE.id, XP_COOKING.id]);
+    await expect(page.locator('#experiences-block a.xp-ta')).toHaveCount(1);
+  });
+
+  // Tripadvisor's display rules: the logo (>= 20px tall) sits LEFT of the bubbles (>= 55px wide, on white),
+  // both inside the one link; the logo is served from the URL the API hands us.
+  test('the Tripadvisor logo sits left of the bubbles, at least 20px tall; the bubbles are at least 55px wide; one link', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    const logo = link.locator('img.xp-ta-logo');
+    await expect(logo).toHaveCount(1);
+    await expect(logo).toHaveAttribute('src', TA_LOGO);
+    await expect(logo).toHaveAttribute('alt', 'Tripadvisor');
+    await expect(link.locator('img')).toHaveCount(2);
+    await expect.poll(() => logo.evaluate((i) => i.complete && i.naturalWidth > 0)).toBe(true);
+    const m = await link.evaluate((a) => {
+      const l = a.querySelector('img.xp-ta-logo').getBoundingClientRect();
+      const b = [...a.querySelectorAll('img')].find((i) => !i.classList.contains('xp-ta-logo')).getBoundingClientRect();
+      const span = a.querySelector('span').getBoundingClientRect();
+      return { logo: { left: l.left, right: l.right, top: l.top, bottom: l.bottom, h: l.height }, bubbles: { left: b.left, w: b.width, top: b.top, bottom: b.bottom }, span: { left: span.left } };
+    });
+    expect(m.logo.h).toBeGreaterThanOrEqual(20);
+    expect(m.logo.right).toBeLessThanOrEqual(m.bubbles.left + 0.5);
+    expect(m.bubbles.left).toBeLessThanOrEqual(m.span.left);
+    expect(m.logo.top).toBeLessThan(m.bubbles.bottom);
+    expect(m.bubbles.top).toBeLessThan(m.logo.bottom);
+    expect(m.bubbles.w).toBeGreaterThanOrEqual(55);
+    const bg = await link.evaluate((a) => { for (let e = a; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)') return c; } return 'none'; });
+    expect(bg).toBe('rgb(255, 255, 255)');
+  });
+
+  test('no logo in the answer (or one that is not https) means no rating is shown at all', async ({ page }) => {
+    for (const logoUrl of [null, 'http://static.tacdn.com/x.svg', 'javascript:window.__xss=1']) {
+      await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+      await stubRatings(page, { ratings: [taRating()], logoUrl });
+      await page.goto(PAGE);
+      await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+      await page.waitForTimeout(400);
+      await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+      await page.unroute('**/experiences/ratings*');
+    }
+  });
+
+  test('at 375px the rating link is a 32px tap target and nothing overflows', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    const m = await link.evaluate((a) => {
+      const r = a.getBoundingClientRect(), row = a.closest('.xp-row').getBoundingClientRect();
+      return { h: r.height, right: r.right, rowRight: row.right, overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    expect(m.h).toBeGreaterThanOrEqual(32);
+    expect(m.h, 'logo + bubbles + count stay on one line at 375px').toBeLessThan(40);
+    expect(m.right).toBeLessThanOrEqual(m.rowRight);
+    expect(m.overflow).toBeLessThanOrEqual(0);
+  });
+
+  test('tapping Request still works with a rating on the row, and the rating stays', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubInterest(page);
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    const row = page.locator('#experiences-block .xp-row').first();
+    await expect(row.locator('a.xp-ta')).toHaveCount(1);
+    await row.locator('.xp-btn').click();
+    await expect(row.locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
+    await expect(row.locator('a.xp-ta')).toHaveCount(1);
+  });
+
+  test('a failed ratings call leaves the rows exactly as they were', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { status: 500 });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(400);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+    await expect(page.locator('#experiences-block')).not.toContainText(/tripadvisor|reviews/i);
+  });
+
+  test('a ratings answer slower than 3 seconds is dropped; the rows stay', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()], delayMs: 3600 });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(4200);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+  });
+
+  test('a hostile answer never becomes a link: javascript: link, foreign image, bad numbers', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [
+      taRating({ webUrl: 'javascript:window.__xss=1' }),
+      taRating({ id: XP_COOKING.id, numReviews: 'lots' }),
+    ] });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block .xp-row')).toHaveCount(2);
+    await page.waitForTimeout(400);
+    await expect(page.locator('#experiences-block .xp-ta')).toHaveCount(0);
+    expect(await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => /^javascript:/i.test(a.getAttribute('href') || '')))).toBe(false);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('quotes and angle brackets in the answer stay text (attributes are double-quoted)', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating({ webUrl: 'https://www.tripadvisor.com/x?a="onmouseover="window.__xss=1&b=\'<i>' })] });
+    await page.goto(PAGE);
+    const link = page.locator('#experiences-block a.xp-ta');
+    await expect(link).toHaveCount(1);
+    expect(await link.evaluate((a) => a.getAttributeNames().sort())).toEqual(['class', 'href', 'rel', 'target']);
+    expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+  });
+
+  test('no experiences, no ratings call', async ({ page }) => {
+    await stubQuoteView(page, liveBody({ experiences: [] }));
+    const asked = await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    await expect(page.locator('.pp-title')).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(asked).toHaveLength(0);
+  });
+
+  test('at 375px the Request button is a 44px target and "Details ›" a 32px one', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
+    await stubRatings(page, { ratings: [taRating()] });
+    await page.goto(PAGE);
+    await expect(page.locator('#experiences-block a.xp-ta')).toHaveCount(1);
+    const m = await page.evaluate(() => {
+      const r = document.querySelector('#experiences-block .xp-row');
+      return {
+        btnH: r.querySelector('.xp-btn').getBoundingClientRect().height,
+        moreH: r.querySelector('.xp-more').getBoundingClientRect().height,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(m.btnH).toBeGreaterThanOrEqual(44);
+    expect(m.moreH).toBeGreaterThanOrEqual(32);
+    expect(m.overflow).toBeLessThanOrEqual(0);
+  });
 });

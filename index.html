@@ -22,7 +22,7 @@
      the API; `?api=off` keeps the baked prices, `?api=<origin>` points it elsewhere (the same
      contract as search.html / booking.html). The hold keeps [data-live-price] figures blank until
      that list lands; transfers-data.js lifts it, and the timer is only the backstop. -->
-<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
+<script>(function(){var p=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('prices-pending');setTimeout(function(){d.classList.remove('prices-pending');},3000);}})();</script>
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -31,7 +31,7 @@ gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personali
 try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js?v=72fed96a54"></script>
+<script src="analytics.js?v=10d3674e7f"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -114,9 +114,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero .hero-sub{color:rgba(255,255,255,.93);max-width:46ch;font-size:1.12rem;line-height:1.6;font-weight:500;
      text-shadow:0 1px 16px rgba(0,0,0,.4);margin:0}
   .hero .hero-sub b{color:#fff;font-weight:700}
-  .hero .hero-note{display:flex;align-items:center;gap:.5rem;margin:4px 0 0;white-space:nowrap;
-     font-size:.75rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-     color:rgba(255,255,255,.82);text-shadow:0 1px 10px rgba(0,0,0,.45)}
   .hero .hero-card{grid-area:card;position:relative;z-index:2;width:100%;justify-self:end;
      background:linear-gradient(180deg, rgba(255,255,255,.99), rgba(255,253,248,.96));color:var(--ink);
      border:1px solid rgba(255,255,255,.75);border-radius:26px;padding:18px;
@@ -134,7 +131,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .hero .hero-copy{gap:14px}
     .hero .hero-title{font-size:clamp(2.05rem,9vw,2.6rem)}
     .hero .hero-sub{font-size:.98rem;line-height:1.55}
-    .hero .hero-note{font-size:.65rem;letter-spacing:.12em;white-space:normal;line-height:1.6}
     .hero .hero-card{max-width:100%;padding:14px;border-radius:22px}
   }
 
@@ -174,6 +170,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      the opaque slot it has always been. */
   .pc-photos.hs-live image-slot{opacity:0;transition:opacity .9s ease}
   .pc-photos.hs-live image-slot.hs-on{opacity:1}
+  /* A later photo fills a moment before the carousel arms. It sits on top of the first, so it
+     must already be invisible then — left opaque, it faded OUT over the .9s above and the hero
+     flashed through every photo on each page load. */
+  .pc-photos:not(.hs-live) image-slot[data-filled] ~ image-slot[data-filled]{opacity:0}
   @media(prefers-reduced-motion:reduce){.pc-photos.hs-live image-slot{transition:none}}
   .hero-dots{display:flex;gap:9px;align-items:center}
   .hero-dots[hidden]{display:none}
@@ -218,7 +218,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html.js .hero .hero-badge{animation:heroUp .6s .1s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-title{animation:heroUp .65s .18s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-sub{animation:heroUp .65s .26s cubic-bezier(.2,.7,.2,1) both}
-    html.js .hero .hero-note{animation:heroUp .6s .34s cubic-bezier(.2,.7,.2,1) both}
     html.js .hero .hero-card{animation:heroCard .7s .3s cubic-bezier(.2,.7,.2,1) both}
   }
   @keyframes heroUp{from{transform:translateY(18px)}to{transform:none}}
@@ -560,7 +559,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <a class="hero-badge" data-ta-count-label href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 31 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· <span data-ta-count>31</span> reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
-      <p class="hero-note">Fixed prices · Free cancellation from 24h before on transfers · No change fees</p>
       <!-- Carousel controls live in the copy column, not on the photo: the photo layer sits in
            the postcard figure at z-index 0, underneath the hero scrim, so anything placed there
            is unclickable no matter its own z-index. Here they are always reachable, and they
@@ -607,8 +605,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <div class="pc-photos" id="pc-photos">
             <img class="pc-base" src="img/hero-photo.jpg" alt="" width="1200" height="600">
             <image-slot id="hero-photo" shape="rect" src="img/hero-photo.jpg" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
-            <image-slot id="hero-photo-2" shape="rect" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
-            <image-slot id="hero-photo-3" shape="rect" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+            <image-slot id="hero-photo-2" shape="rect" data-src="img/hero-photo-2.jpg" placeholder="Drop a 2nd hero photo — the carousel starts as soon as this one is filled"></image-slot>
+            <image-slot id="hero-photo-3" shape="rect" data-src="img/hero-photo-3.jpg" placeholder="Drop a 3rd hero photo (optional)"></image-slot>
+            <image-slot id="hero-photo-4" shape="rect" data-src="img/hero-photo-4.jpg" placeholder="Drop a 4th hero photo (optional)"></image-slot>
           </div>
           <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
         </div>
@@ -756,7 +755,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="tours-data.js?v=4273085929"></script>
-<script src="transfers-data.js?v=7988bba57e"></script>
+<script src="transfers-data.js?v=095fe1f9cc"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-map.js?v=18772b2dd8"></script>
 <script src="image-slot.js?v=f20592da50"></script>
@@ -1063,7 +1062,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if(!wrap || !dotsEl) return;
     const slots=[...wrap.querySelectorAll('image-slot')];
     const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
-    const INTERVAL=6000;
+    const INTERVAL=5000;
     let slides=[], at=0, timer=null, paused=false;
 
     function stop(){ if(timer){ clearInterval(timer); timer=null; } }
@@ -1110,6 +1109,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     document.addEventListener('visibilitychange',function(){ if(document.hidden) stop(); else start(); });
     if(reduce.addEventListener) reduce.addEventListener('change',function(){ start(); });
     build();
+
+    // Slides 2+ carry their file in data-src so the browser doesn't fetch them with the page —
+    // the first photo, headline and booking card get the bandwidth. Once the page has loaded and
+    // gone idle, download them all, then fill them in one go: build() runs once, and a slide that
+    // failed to load is never filled, so it is never a slide. Data saver / 2G: first photo only.
+    // (onload, not img.decode(): decode() never settles while the tab is in the background.)
+    function fillLate(){
+      const late=slots.filter(function(s){ return s.dataset.src && !s.hasAttribute('src'); });
+      const c=navigator.connection;
+      if(!late.length || (c && (c.saveData || /2g/.test(c.effectiveType||'')))) return;
+      Promise.all(late.map(function(s){
+        return new Promise(function(done){
+          const im=new Image();
+          im.onload=function(){ done(s); }; im.onerror=function(){ done(null); };
+          im.src=s.dataset.src;
+        });
+      })).then(function(ok){
+        ok.forEach(function(s){ if(s) s.setAttribute('src', s.dataset.src); });
+      });
+    }
+    function whenIdle(){ if(window.requestIdleCallback) requestIdleCallback(fillLate,{timeout:2000}); else setTimeout(fillLate,200); }
+    if(document.readyState==='complete') whenIdle(); else window.addEventListener('load',whenIdle,{once:true});
   })();
 
   // hero entrance is pure CSS now (auto-playing keyframes with fill:both) — no JS

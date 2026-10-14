@@ -39,7 +39,9 @@
 
   var DAY = 86400000;
   var today = new Date(); today.setHours(0, 0, 0, 0);
-  function iso(d) { return d.toISOString().slice(0, 10); }
+  // Local Y-M-D: every date here is local midnight, and toISOString() of local midnight is
+  // the PREVIOUS day anywhere east of UTC (Sri Lanka included).
+  function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function fmt(d) {
     return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
