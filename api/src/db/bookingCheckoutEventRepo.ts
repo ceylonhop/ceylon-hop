@@ -88,6 +88,9 @@ export interface BookingCheckoutEventRepo {
   record(e: BookingCheckoutEventInput, now?: Date): Promise<void>;
   // Newest first.
   listByBookingId(bookingId: string): Promise<BookingCheckoutEvent[]>;
+  // Every event for a SET of bookings in one query, newest first — the watchdog reads each pending
+  // booking's timeline on every sweep, and asking per booking was a round trip pair each.
+  listByBookingIds(bookingIds: string[]): Promise<BookingCheckoutEvent[]>;
   // Newest first. For the ops payment lookup (spec 2026-09-26): a notify PayHere sent that we
   // rejected carries the order id but no booking id, so only this finds it. Optional because
   // tests type object-literal fakes against this interface.
@@ -164,8 +167,13 @@ export class InMemoryBookingCheckoutEventRepo implements BookingCheckoutEventRep
   }
 
   async listByBookingId(bookingId: string): Promise<BookingCheckoutEvent[]> {
+    return this.listByBookingIds([bookingId]);
+  }
+
+  async listByBookingIds(bookingIds: string[]): Promise<BookingCheckoutEvent[]> {
+    const want = new Set(bookingIds);
     return this.rows
-      .filter((r) => r.bookingId === bookingId)
+      .filter((r) => r.bookingId != null && want.has(r.bookingId))
       .sort((a, b) => b.at.getTime() - a.at.getTime())
       .map((r) => ({ ...r }));
   }
