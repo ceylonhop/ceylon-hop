@@ -38,7 +38,9 @@ const TOKEN = { bookingId: 'b-1', checkoutToken: 'ct-1' };
 
 // Load the real page with the API stubbed: /view answers at once, and whichever checkout call
 // `stall` names never answers — unless its request is aborted, in which case it rejects the way
-// a browser's fetch does. Every other call answers 200.
+// a browser's fetch does. 'checkout-body' answers the headers at once and then stalls the body
+// (aborting the request then rejects the body read, as a browser's does); 'checkout-offline'
+// fails the way a dropped connection does. Every other call answers 200.
 function load(stall) {
   const events = [];
   const dom = new JSDOM(HTML, {
@@ -53,10 +55,11 @@ function load(stall) {
       w.__timers = [];
       const realSetTimeout = w.setTimeout.bind(w);
       w.setTimeout = (fn, ms) => {
-        const entry = { fn, ms, id: realSetTimeout(() => {}, 0) };
+        const entry = { fn, ms, id: realSetTimeout(() => {}, 0), cleared: false };
         w.__timers.push(entry);
         return entry.id;
       };
+      w.clearTimeout = (id) => { w.__timers.forEach((t) => { if (t.id === id) t.cleared = true; }); };
       const reply = (body) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
       const hang = (opts) => new Promise((_, reject) => {
         const signal = opts && opts.signal;
@@ -65,7 +68,12 @@ function load(stall) {
       w.fetch = (url, opts) => {
         url = String(url);
         if (url.includes('/bookings/view/checkout-token')) return stall === 'checkout-token' ? hang(opts) : reply(TOKEN);
-        if (url.includes('/bookings/b-1/checkout')) return stall === 'checkout' ? hang(opts) : reply({});
+        if (url.includes('/bookings/b-1/checkout')) {
+          if (stall === 'checkout') return hang(opts);
+          if (stall === 'checkout-body') return Promise.resolve({ ok: true, status: 200, json: () => hang(opts) });
+          if (stall === 'checkout-offline') return Promise.reject(new TypeError('Failed to fetch'));
+          return reply({});
+        }
         if (url.includes('/bookings/view')) return reply(VIEW);
         return reply({});
       };
@@ -77,6 +85,8 @@ function load(stall) {
 const settle = () => new Promise((r) => setTimeout(r, 30));
 // The 20 s deadlines armed so far, oldest first — one per checkout call made.
 const deadlines = (w) => w.__timers.filter((t) => t.ms === DEADLINE_MS);
+// The ones still live — a cleared deadline can never fire.
+const live = (w) => deadlines(w).filter((t) => !t.cleared);
 
 async function pressPay(stall) {
   const { w, events } = load(stall);
@@ -121,5 +131,21 @@ describe('manage.html — a checkout call that never answers', () => {
     expect(armed, 'each of the two calls arms its own 20 s deadline').toHaveLength(2);
     armed[1].fn();
     await expectFailureState(w);
+  });
+
+  it('keeps the deadline running while the body is read, so headers-then-silence still ends', async () => {
+    const { w } = await pressPay('checkout-body');
+    const pending = live(w);
+    expect(pending, 'the checkout’s deadline is still armed while its body is read').toHaveLength(1);
+    pending[0].fn();
+    await expectFailureState(w);
+  });
+
+  it('a dropped connection shows the same failure state, never the browser’s “Failed to fetch”', async () => {
+    const { w } = load('checkout-offline');
+    await settle();
+    w.document.getElementById('paybtn').click();
+    await expectFailureState(w);
+    expect(w.document.getElementById('app').textContent).not.toContain('Failed to fetch');
   });
 });

@@ -399,23 +399,30 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // Both checkout calls get a deadline — the one pay.html's fetchJson gives every call, and
   // booking.js gave its checkout (#974). The hand-off screen above has no button on it, so an API
   // that accepts the connection and never answers (a saturated pool, an instance mid-restart)
-  // otherwise holds the customer on "Taking you to PayHere…" with no way out but a reload. An
-  // abort rejects into pay()'s catch — the booking view rebuilt with the error named on it and
-  // the Pay button back — in this page's own words, never the browser's abort wording.
+  // otherwise holds the customer on "Taking you to PayHere…" with no way out but a reload. The
+  // deadline runs until the BODY is read, not just the headers: a server that answers the headers
+  // and then goes quiet traps the customer just the same. Any failure — the deadline, a dropped
+  // connection, a body that won't parse — rejects into pay()'s catch in this page's own words (the
+  // booking view rebuilt with the error named on it, Pay back), never the browser's "Failed to
+  // fetch" or abort wording. The answer exposes only what pay() reads: ok and json().
   var NET_TIMEOUT_MS = 20000;
   function fetchWithDeadline(url, opts){
     opts = opts || {};
-    if (typeof AbortController === 'undefined') return fetch(url, opts);
-    var ctl = new AbortController();
-    var timer = setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS);
-    opts.signal = ctl.signal;
-    return fetch(url, opts).then(
-      function(r){ clearTimeout(timer); return r; },
-      function(e){
-        clearTimeout(timer);
-        throw (e && e.name === 'AbortError') ? new Error('We couldn’t start your payment just now — no charge was made.') : e;
-      }
-    );
+    var ctl = typeof AbortController === 'undefined' ? null : new AbortController();
+    var timer = ctl ? setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS) : null;
+    if (ctl) opts.signal = ctl.signal;
+    function failed(){
+      clearTimeout(timer);
+      return new Error('We couldn’t start your payment just now — no charge was made.');
+    }
+    return fetch(url, opts).then(function(r){
+      return {
+        ok: r.ok,
+        json: function(){
+          return r.json().then(function(x){ clearTimeout(timer); return x; }, function(){ throw failed(); });
+        },
+      };
+    }, function(){ throw failed(); });
   }
 
   function pay(v){
