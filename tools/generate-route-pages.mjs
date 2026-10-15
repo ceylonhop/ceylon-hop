@@ -1328,6 +1328,7 @@ export const SITEMAP_EXTRA = [
   'guides/arugam-bay/',
   'guides/mirissa/',
   'guides/hiriketiya/',
+  'sri-lanka-travel-faq/',
 ];
 
 // CLI: write every generated file to disk.
