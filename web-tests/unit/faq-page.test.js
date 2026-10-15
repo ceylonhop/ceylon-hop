@@ -92,6 +92,7 @@ describe('generateFaq', () => {
     expect(() => resolveFares('{fare:kandy:nowhere:private}', T)).toThrow(/nowhere/);
     expect(() => resolveFares('{fare:kandy:galle:shared}', T)).toThrow(/no shared/);
     expect(() => resolveFares('{fare:kandy:galle}', T)).toThrow(/malformed/);
+    expect(() => resolveFares('{fare:kandy:kandy:private}', T)).toThrow(/same place/);
   });
   it('offer rows reuse the guides\' .ch-row and point where the JSON says', () => {
     const around = section(html, 'around');
@@ -116,8 +117,23 @@ describe('generateFaq', () => {
   it('the band and pill are present; the band is the only generic WhatsApp prompt', () => {
     expect(html).toContain('<h2>Still wondering?</h2>');
     expect(html).toContain(`text=${encodeURIComponent(f.ask.wa)}`);
-    expect(html).toContain('<a class="pill" id="pill" href="#topics">');
+    expect(html).toContain('<a class="f-pill" id="pill" href="#topics">');
     expect(html).toContain('faq-page.js?v=');
+  });
+  it('the page style has no bare .pill selector (it would hide the footer\'s .pill-saffron Tripadvisor badge)', () => {
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    expect(css).not.toMatch(/(^|[\s,}])\.pill[\s{.:,]/);
+  });
+  it('the ambulance number is 1990 (Suwa Seriya), dated', () => {
+    const h = section(html, 'health');
+    expect(h).toContain('ambulance line is <b>1990</b>');
+    expect(h).not.toMatch(/line is <b>199<\/b>/);
+  });
+  it('every in-page #anchor points at an id on the page', () => {
+    const ids = new Set([...html.matchAll(/ id="([^"]+)"/g)].map(m => m[1]));
+    const hrefs = [...noJs(html).matchAll(/href="#([^"]+)"/g)].map(m => m[1]);
+    expect(hrefs.length).toBeGreaterThan(10);
+    for (const x of hrefs) expect(ids.has(x), `#${x}`).toBe(true);
   });
   it('every relative href/src resolves to a file in the repo', () => {
     const refs = [...html.matchAll(/\b(?:href|src)="([^"#]+)(?:#[^"]*)?"/g)].map(m => m[1])

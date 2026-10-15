@@ -13,6 +13,7 @@ test('renders with the site chrome, the first answer open and nothing else', asy
   await expect(page.locator('header.nav a', { hasText: 'Routes & prices' })).toHaveAttribute('href', '../trip/');
   await expect(page.locator('details[open]')).toHaveCount(1);
   await expect(page.locator('details#visa-how-to-get')).toHaveAttribute('open', '');
+  await expect(page.locator('footer .pill-saffron')).toBeVisible();
 });
 
 test('an index entry scrolls to its topic; a closed question opens on click', async ({ page }) => {
@@ -47,6 +48,7 @@ test('on a phone the Topics pill appears after the index scrolls off, and return
   await page.goto(URL);
   const pill = page.locator('#pill');
   await expect(pill).not.toHaveClass(/on/);
+  expect(await pill.evaluate(el => getComputedStyle(el).visibility)).toBe('hidden');
   await page.locator('#health').scrollIntoViewIfNeeded();
   await expect(pill).toHaveClass(/on/);
   await pill.click();

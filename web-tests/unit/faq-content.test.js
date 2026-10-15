@@ -67,6 +67,7 @@ describe('tools/faq/sri-lanka.json', () => {
         if (q.offer) { expect(q.offer.title && q.offer.sub && q.offer.label).toBeTruthy(); expect(!!q.offer.href !== !!q.offer.wa, 'href xor wa').toBe(true); }
       }
       if (t.checked) expect(t.checked.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (t.tip) { expect(['tip', 'know'], `${t.id} tip`).toContain(t.tip.kind); expect(t.tip.text).toBeTruthy(); }
     }
   });
   it('never types a Ceylon Hop fare by hand — fares are {fare:…} tokens', () => {

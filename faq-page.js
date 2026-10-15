@@ -38,8 +38,7 @@
   window.addEventListener('hashchange', openHash);
 
   // 3. Copy link
-  function copy(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  function copyViaTextarea(text) {
     return new Promise(function (resolve, reject) {
       var ta = document.createElement('textarea');
       ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px';
@@ -47,6 +46,12 @@
       try { document.execCommand('copy') ? resolve() : reject(new Error('copy failed')); } catch (e) { reject(e); }
       document.body.removeChild(ta);
     });
+  }
+  function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { return copyViaTextarea(text); });
+    }
+    return copyViaTextarea(text);
   }
   Array.prototype.forEach.call(document.querySelectorAll('button.cl'), function (b) {
     b.setAttribute('aria-live', 'polite');
@@ -57,7 +62,10 @@
         history.replaceState(null, '', '#' + url.split('#')[1]);
         b.classList.add('done'); label.textContent = 'Copied';
         setTimeout(function () { b.classList.remove('done'); label.textContent = 'Copy link'; }, 1500);
-      }, function () { label.textContent = 'Press ⌘C'; });
+      }, function () {
+        label.textContent = 'Copy failed';
+        setTimeout(function () { label.textContent = 'Copy link'; }, 1500);
+      });
     });
   });
 

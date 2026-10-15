@@ -3,7 +3,7 @@
   "title": "Sri Lanka travel FAQ — visas, money, trains, safaris",
   "description": "What people ask us most about Sri Lanka — visas, money, trains and buses, which safari and beach, health and etiquette — kept current by the Ceylon Hop team.",
   "updated": "2026-10-14",
-  "hero": { "photo": "hero", "alt": "Tea fields on a misty hillside near Nuwara Eliya" },
+  "hero": { "photo": "hero" },
   "lede": "The things people ask us most, answered by the people who drive here every week.",
   "ask": { "wa": "Hi Ceylon Hop, a question about Sri Lanka: " },
   "topics": [
@@ -18,8 +18,8 @@
           "a": "<p>Applying online yourself is the simplest, but there are five official channels:</p><ol><li><b>Yourself, online</b> — the standard route, straight through the official ETA portal.</li><li><b>Through a third party</b> — someone applies and pays on your behalf, usually for a slightly higher fee.</li><li><b>At a Sri Lankan overseas mission</b> — your nearest embassy or consulate.</li><li><b>At the Department of Immigration &amp; Emigration</b> head office in Colombo.</li><li><b>On arrival</b> — a limited facility at Bandaranaike International Airport (BIA), with an extra fee and no guarantee. A backup, not a plan.</li></ol>",
           "checked": { "what": "Channels", "date": "2026-10-09" } },
         { "id": "cost", "q": "How much does the ETA cost, and how long does it take?",
-          "a": "<ul><li><b>Processing:</b> a few minutes to a few hours for a standard online application.</li><li><b>Cost:</b> roughly USD 20 for most nationalities. Free for travellers from around 40 eligible countries under a recent policy update.</li><li><b>Where:</b> only the official <a href=\"https://www.eta.gov.lk/\" rel=\"noopener\">www.eta.gov.lk</a>. Third-party websites often charge more for the same service.</li></ul>",
-          "checked": { "what": "Fees", "date": "2026-10-09" } },
+          "a": "<ul><li><b>Processing:</b> a few minutes to a few hours for a standard online application.</li><li><b>Cost:</b> free for travellers from around 40 countries under the policy introduced in May 2026 — you still have to apply — and a fee for everyone else. The official site shows the current list and amount.</li><li><b>Where:</b> only the official <a href=\"https://www.eta.gov.lk/\" rel=\"noopener\">www.eta.gov.lk</a>. Third-party websites often charge more for the same service.</li></ul>",
+          "checked": { "what": "Fees", "date": "2026-10-15" } },
         { "id": "extend", "q": "How do I extend a tourist visa?",
           "a": "<p>Apply online through the Department of Immigration's eServices portal, or in person at the head office in Battaramulla, Colombo.</p>",
           "tip": { "kind": "tip", "text": "Apply at least a week before your current ETA expires. Extension fees vary by nationality — check the current rate on the official site, or ask us and we'll point you in the right direction." },
@@ -44,7 +44,7 @@
       "id": "money", "name": "Money", "sub": "Rupees, cards, ATMs, tipping — and what a day actually costs.", "shape": "qa",
       "items": [
         { "id": "exchange-rate", "q": "What's the exchange rate?",
-          "a": "<p>The local currency is the Sri Lankan Rupee (LKR). As of October 2026, USD 1 is roughly LKR 331 to 335, though the rate moves daily — check a live rate before you travel rather than relying on a fixed number.</p>",
+          "a": "<p>The local currency is the Sri Lankan Rupee (LKR). USD 1 is roughly LKR 331 to 335, though the rate moves daily — check a live rate before you travel rather than relying on a fixed number.</p>",
           "checked": { "what": "Rate", "date": "2026-10-09" } },
         { "id": "where-to-exchange", "q": "Where's the best place to change money?",
           "a": "<p>You'll generally get a better rate changing cash once you're in Sri Lanka than before you leave home. Don't change your whole trip budget at the airport — the rate there is usually weaker than in the city.</p>" },
@@ -60,7 +60,7 @@
         { "id": "bargaining", "q": "Is bargaining normal?",
           "a": "<p>Prices are fixed in shops, malls and restaurants. Bargaining is expected at markets and for unmetered tuk tuks — agree the price before you get in, or before you buy.</p>" },
         { "id": "daily-budget", "q": "What does a day cost?",
-          "a": "<p>It depends on your style — where you sleep, what you eat, and how often you move between places. Per person, per day, as a rough guide:</p><ul><li><b>Budget — around USD 25 to 50.</b> Budget rooms, local food, buses and trains. Public transport is cheap but crowded; on selected routes our shared taxi gives you a seat at a fixed price — Colombo Airport to Sigiriya is {fare:cmb-airport:sigiriya:shared} a seat, Ella to Yala {fare:ella:yala:shared}.</li><li><b>Mid-range — around USD 60 to 100.</b> Comfortable guesthouses or boutique hotels, a mix of local and tourist restaurants, activities, and convenient transport. Our private transfers start around {fare:galle:mirissa:private} for a short hop like Galle to Mirissa; the price is per car, so it goes a long way split between friends or family.</li><li><b>Luxury — USD 150 to 300 and up.</b> Higher-end hotels, a wider choice of restaurants, private transport or a chauffeur for the whole trip.</li></ul><p>These are approximate. Entrance fees, safaris and travel days push a day up; a day spent in one place pulls it down. <a href=\"../trip/\">All our routes and prices →</a></p>",
+          "a": "<p>It depends on your style — where you sleep, what you eat, and how often you move between places. Per person, per day, as a rough guide:</p><ul><li><b>Budget — around USD 25 to 50.</b> Budget rooms, local food, buses and trains. Public transport is cheap but crowded; on selected routes our shared taxi runs on set days and gives you a seat at a fixed price — Colombo Airport to Sigiriya is {fare:cmb-airport:sigiriya:shared} a seat, Ella to Yala {fare:ella:yala:shared}.</li><li><b>Mid-range — around USD 60 to 100.</b> Comfortable guesthouses or boutique hotels, a mix of local and tourist restaurants, activities, and convenient transport. Our private transfers start around {fare:galle:mirissa:private} for a short hop like Galle to Mirissa; the price is per car, so it goes a long way split between friends or family.</li><li><b>Luxury — USD 150 to 300 and up.</b> Higher-end hotels, a wider choice of restaurants, private transport or a chauffeur for the whole trip.</li></ul><p>These are approximate. Entrance fees, safaris and travel days push a day up; a day spent in one place pulls it down. <a href=\"../trip/\">All our routes and prices →</a></p>",
           "offer": { "title": "Fixed prices for every route", "sub": "Private car or a shared seat — see what each leg costs before you commit", "href": "../trip/", "label": "See routes & prices" } }
       ]
     },
@@ -114,7 +114,7 @@
         { "label": "Based on the south coast, little time", "text": "Yala or Udawalawe — about two hours apart." } ] },
       "cards": [
         { "name": "Yala", "bestFor": "leopards, and the widest variety — elephants, sloth bears, crocodiles, birds.",
-          "spec": { "crowds": "Busiest by far — roughly twice the visits of the next park in 2025. Block 1, where most of the leopards are, gets the heaviest traffic: dozens of jeeps at one sighting.", "season": "Roughly February to July. The main blocks close for about six weeks from mid September to mid October.", "go": "Morning — cooler, animals more active. Pick-ups around 4:30 AM for a 6 AM gate; expect a queue either slot." },
+          "spec": { "crowds": "Busiest by far — roughly twice the visits of the next park in 2025. Block 1, where most of the leopards are, gets the heaviest traffic: dozens of jeeps at one sighting.", "season": "Roughly February to July. The main blocks close for several weeks each year around September and October — check the dates before you book.", "go": "Morning — cooler, animals more active. Pick-ups around 4:30 AM for a 6 AM gate; expect a queue either slot." },
           "link": { "text": "Transfers to Yala →", "href": "trip/ella-to-yala/" } },
         { "name": "Udawalawe", "bestFor": "elephants, reliably, all year. Open grassland makes animals easy to spot, even at midday.",
           "spec": { "crowds": "Moderate — about half of Yala's numbers. Calmer, not empty.", "season": "Open year round; the dry season, roughly May to September, is best, when animals gather at the waterholes.", "go": "Morning or late afternoon." } },
@@ -199,7 +199,8 @@
         { "id": "pharmacies", "q": "Can I buy medicine without a prescription?",
           "a": "<p>Pharmacies are everywhere, and many common medicines are sold without a prescription. If you take regular medication, bring enough for the whole trip, plus a copy of the prescription.</p>" },
         { "id": "hospital", "q": "When should I go to a hospital instead?",
-          "a": "<p>For anything serious — chest pain, a bad injury, a high fever with vomiting, breathing problems — skip the dispensary and go straight to a hospital. The national ambulance line is <b>199</b>.</p>" },
+          "a": "<p>For anything serious — chest pain, a bad injury, a high fever with vomiting, breathing problems — skip the dispensary and go straight to a hospital. The national ambulance line is <b>1990</b>.</p>",
+          "checked": { "what": "Number", "date": "2026-10-15" } },
         { "id": "colombo-hospitals", "q": "Which private hospitals in Colombo should I know?",
           "a": "<p>All of these run 24-hour emergency departments and have international patient support:</p><ul><li><b>Lanka Hospitals</b> — 578 Elvitigala Mawatha, Colombo 5. A flagship private hospital, with a helipad for transfers from outside the city.</li><li><b>Asiri Central Hospital</b> — 114 Norris Canal Road, Colombo 10. Part of the country's largest private hospital group; often recommended for efficient emergency care.</li><li><b>Durdans Hospital</b> — 3 Alfred Place, Colombo 3. JCI-accredited, with an international patient care service.</li><li><b>Nawaloka Hospital</b> — 23 Deshamanya H K Dharmadasa Mawatha, Colombo 2. Long-established, with a dedicated international patient team.</li><li><b>Asiri Surgical Hospital</b> — 21 Kirimandala Mawatha, Colombo 5. A good option for surgical and specialist care.</li></ul>",
           "tip": { "kind": "tip", "text": "If you're unsure where to go, message us on WhatsApp and we'll point you to the nearest option for wherever you're staying." },

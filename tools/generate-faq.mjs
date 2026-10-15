@@ -34,6 +34,7 @@ const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
     content error, not a rendering choice. */
 export function resolveFares(html, T) {
   const out = String(html).replace(/\{fare:([a-z0-9-]+):([a-z0-9-]+):(shared|private)\}/g, (_, from, to, service) => {
+    if (from === to) throw new Error(`faq: {fare:${from}:${to}:${service}} — same place twice`);
     for (const id of [from, to]) if (!T.byId[id]) throw new Error(`faq: {fare:${from}:${to}:${service}} — unknown place "${id}"`);
     if (service === 'shared') {
       const s = T.sharedOption(from, to);
@@ -161,7 +162,7 @@ ${jsonLd(f, url)}
   </div></div>
   ${askBand(f)}
   ${credits(f, p)}
-  <a class="pill" id="pill" href="#topics">${CHEV}Topics</a>
+  <a class="f-pill" id="pill" href="#topics">${CHEV}Topics</a>
 <script src="${p}${assetV('faq-page.js')}"></script>`;
   return renderStandalone({
     title: f.title, description: f.description, canonicalPath: `/${FAQ_PATH}`, depth: 1, active: 'blog.html',
@@ -256,9 +257,9 @@ const FAQ_STYLE = `
   .wa i{width:22px;height:22px;border-radius:50%;background:#0B7A44;display:inline-block}
   .credits{padding:20px 0 30px;font-size:.74rem;color:var(--ink-soft)}
   .credits .wrap{display:flex;flex-wrap:wrap;gap:6px 14px}
-  .pill{position:fixed;left:50%;bottom:18px;transform:translate(-50%,24px);opacity:0;pointer-events:none;z-index:40;display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:#fff;border-radius:999px;padding:9px 16px;font-size:.82rem;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:opacity .25s,transform .25s}
-  .pill svg{width:12px;height:12px;transform:rotate(-90deg)}
-  .pill.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .f-pill{visibility:hidden;position:fixed;left:50%;bottom:18px;transform:translate(-50%,24px);opacity:0;pointer-events:none;z-index:40;display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:#fff;border-radius:999px;padding:9px 16px;font-size:.82rem;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:opacity .25s,transform .25s}
+  .f-pill svg{width:12px;height:12px;transform:rotate(-90deg)}
+  .f-pill.on{visibility:visible;opacity:1;transform:translate(-50%,0);pointer-events:auto}
   @media(min-width:900px){
     .f-cols .wrap{display:grid;grid-template-columns:250px minmax(0,1fr);gap:56px;align-items:start}
     .f-index{position:sticky;top:90px}
@@ -268,11 +269,11 @@ const FAQ_STYLE = `
     .idx li.on a::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--saffron);margin-right:-4px}
     .f-main{max-width:46rem}
     .cmp{grid-template-columns:1fr 1fr}
-    .pill{display:none}
+    .f-pill{display:none}
   }
   @media(prefers-reduced-motion:reduce){
     html.js .reveal{opacity:1;transform:none;transition:none}
-    .dc,.pill,.topic summary::after,.ch-row{transition:none}
+    .dc,.f-pill,.topic summary::after,.ch-row{transition:none}
   }`;
 
 if (import.meta.url === `file://${process.argv[1]}`) {
