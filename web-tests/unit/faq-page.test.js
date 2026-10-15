@@ -141,4 +141,11 @@ describe('generateFaq', () => {
     expect(h).not.toContain('<section class="topic" id="before"');
     expect(h).not.toContain('href="#before"');
   });
+  it('blog.html links the FAQ in static HTML (crawlable without JS), above the destination guides', () => {
+    const blog = readFileSync(path.join(ROOT, 'blog.html'), 'utf8').replace(/<script[\s\S]*?<\/script>/g, '');
+    expect(blog).toContain('href="sri-lanka-travel-faq/"');
+    expect(blog).toContain('src="img/faq/hero-900.jpg"');
+    expect(blog).toContain('Know before you go');
+    expect(blog.indexOf('id="know"')).toBeLessThan(blog.indexOf('id="guides"'));
+  });
 });
