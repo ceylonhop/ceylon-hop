@@ -731,6 +731,30 @@ test('a failed send says so and can be tried again', async ({ page }) => {
   await expect.poll(() => calls.confirm.length).toBe(2);
 });
 
+// Staging 2026-10-13: the email allowlist stopped the message and the page said "try again". A
+// suppressed send is not a failure to retry — say what happened and offer the WhatsApp path instead.
+test('a send the environment suppressed says so and offers Mark confirmed on WhatsApp', async ({ page }) => {
+  let n = 0;
+  const calls = await openPaid(page, [{ ...PAID, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: (r) => {
+      n++;
+      return n === 1
+        ? r.fulfill(json({ error: 'email_suppressed', reason: 'suppressed_allowlist' }, 422))
+        : r.fulfill(json({ lead: { ...PAID, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'whatsapp' } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  await expect(row.locator('[data-testid="lead-confirm-whatsapp"]')).toHaveCount(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect(page.locator('#toast')).toContainText('Email to this address is switched off on this environment — confirm on WhatsApp instead');
+  await expect(page.locator('#toast')).not.toContainText('try again');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toHaveCount(0);
+  await row.locator('[data-testid="lead-confirm-whatsapp"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(2);
+  expect(calls.confirm[1].body).toEqual({ channel: 'whatsapp' });
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
+});
+
 // The same in-flight idiom as the note: a schedule typed while the date save is still on the wire is
 // saved after it, not dropped.
 test('a meeting point typed while the date save is in flight is saved after it, not dropped', async ({ page }) => {

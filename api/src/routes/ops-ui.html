@@ -9333,6 +9333,8 @@ async function expLeadConfirm(btn) {
       if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); delete expLeadNoEmail[l.id]; ratesToast('Confirmation sent'); }
       else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
       else if (d && d.error === 'no_email') { expLeadNoEmail[l.id] = true; ratesToast('No email on file — confirm on WhatsApp', 'error'); }
+      // The environment stopped the email (staging allowlist, kill switch): not a failure to retry.
+      else if (d && d.error === 'email_suppressed') { expLeadNoEmail[l.id] = true; ratesToast('Email to this address is switched off on this environment — confirm on WhatsApp instead', 'error'); }
       else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
     } catch (e) {
       if (seq !== _expSeq) return false;
