@@ -32,7 +32,7 @@ const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 /** {fare:<from>:<to>:shared} → the seat price; {fare:<from>:<to>:private} → the car price. Throws
     rather than ship a wrong number: an unknown place or a corridor with no shared product is a
     content error, not a rendering choice. */
-export function resolveFares(html, T) {
+export function resolveFares(html, T, { live = true } = {}) {
   const out = String(html).replace(/\{fare:([a-z0-9-]+):([a-z0-9-]+):(shared|private)\}/g, (_, from, to, service) => {
     if (from === to) throw new Error(`faq: {fare:${from}:${to}:${service}} — same place twice`);
     for (const id of [from, to]) if (!T.byId[id]) throw new Error(`faq: {fare:${from}:${to}:${service}} — unknown place "${id}"`);
@@ -41,7 +41,10 @@ export function resolveFares(html, T) {
       if (!s) throw new Error(`faq: {fare:${from}:${to}:shared} — no shared product on that leg`);
       return `$${price(s.seat)}`;
     }
-    return `$${price(T.privateQuote(from, to).car)}`;
+    // The guides' live-fare hook: route-list-fares.js swaps in the engine price (hot zones included) at load.
+    // `live: false` (the JSON-LD, which has no DOM to refresh) keeps the bare catalogue figure.
+    if (!live) return `$${price(T.privateQuote(from, to).car)}`;
+    return `<b data-list-fare data-from-name="${esc(T.byId[from].name)}" data-to-name="${esc(T.byId[to].name)}">$${price(T.privateQuote(from, to).car)}</b>`;
   });
   if (/\{fare:/.test(out)) throw new Error('faq: malformed {fare:…} token left in output');
   return out;
@@ -150,8 +153,12 @@ export function renderFaq(f, T) {
   const p = '../';
   const url = `${ORIGIN}/${FAQ_PATH}`;
   const topics = live(f).map((t, i) => t.shape === 'qa' ? qaTopic(t, i, p, i === 0) : compareTopic(t, i, p, f)).join('\n\n      ');
-  const body = `<script>document.documentElement.classList.add('js');</script>
-${jsonLd(f, url)}
+  // Runs before anything below it paints: the API origin ("?api=off" / "?api=ORIGIN", the same
+  // contract as the guides) and the fare hold that route-list-fares.js releases.
+  const body = `<script>(function(){var q=(/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$|\\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+  if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
+  document.documentElement.classList.add('js');})();</script>
+${resolveFares(jsonLd(f, url), T, { live: false })}
   ${banner(f, p)}
   ${lede(f)}
   <div class="f-cols"><div class="wrap">
@@ -163,6 +170,7 @@ ${jsonLd(f, url)}
   ${askBand(f)}
   ${credits(f, p)}
   <a class="f-pill" id="pill" href="#topics">${CHEV}Topics</a>
+<script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('faq-page.js')}"></script>`;
   return renderStandalone({
     title: f.title, description: f.description, canonicalPath: `/${FAQ_PATH}`, depth: 1, active: 'blog.html',
@@ -216,6 +224,10 @@ const FAQ_STYLE = `
   .ans p,.ans ul,.ans ol{margin:0 0 12px;font-size:.97rem;line-height:1.65;color:var(--ink-soft)}
   .ans ul,.ans ol{padding-left:20px}.ans li{margin-bottom:4px}
   .ans b{color:var(--ink);font-weight:600}
+  .ans [data-list-fare]{font-weight:600;color:var(--ink)}
+  .list-fares-pending [data-list-fare]{color:transparent}
+  .live{display:inline-flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft)}
+  .live i{width:9px;height:9px;border-radius:50%;background:var(--teal)}
   .ans a{color:var(--accent-deep)}
   .tip{margin:4px 0 12px;background:var(--pc-saffron);border-radius:14px;padding:12px 14px 12px 18px;font-size:.95rem;line-height:1.6;position:relative;color:var(--ink)}
   .tip::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:4px;border-radius:4px;background:var(--saffron)}

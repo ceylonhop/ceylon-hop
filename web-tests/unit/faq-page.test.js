@@ -88,7 +88,11 @@ describe('generateFaq', () => {
     expect(html).not.toContain('{fare:');
     const shared = T.sharedOption('cmb-airport', 'sigiriya').seat;
     expect(section(html, 'money')).toContain(`Colombo Airport to Sigiriya is $${shared.toFixed(2)} a seat`);
-    expect(section(html, 'money')).toContain(`start around $${T.privateQuote('galle', 'mirissa').car}`);
+    expect(section(html, 'money')).toContain(`<b data-list-fare data-from-name="Galle" data-to-name="Mirissa">$${T.privateQuote('galle', 'mirissa').car}</b>`);
+    // Private fares refresh live (hot zones); shared seats stay plain text — the batch endpoint prices cars only.
+    expect(section(html, 'money')).not.toMatch(new RegExp(`data-list-fare[^>]*>\\$${shared.toFixed(2).replace('.', '\\.')}`));
+    expect(html).toContain('route-list-fares.js?v=');
+    expect(html).toContain('list-fares-pending');
     expect(() => resolveFares('{fare:kandy:nowhere:private}', T)).toThrow(/nowhere/);
     expect(() => resolveFares('{fare:kandy:galle:shared}', T)).toThrow(/no shared/);
     expect(() => resolveFares('{fare:kandy:galle}', T)).toThrow(/malformed/);
@@ -100,6 +104,10 @@ describe('generateFaq', () => {
     expect(around).toContain('<span class="arr">See price &amp; book →</span>');
     const start = section(html, 'start');
     expect(start).toMatch(/<a class="ch-row" href="https:\/\/wa\.me\/94779669662\?text=[^"]*limited%20mobility/);
+    // One Ceylon Hop moment per topic (spec §2): Getting around and Where to start carry exactly one.
+    expect(around.match(/<a class="ch-row"/g)).toHaveLength(1);
+    expect(around).not.toContain('wa.me');
+    expect(start.match(/<a class="ch-row"/g)).toHaveLength(1);
     expect(html.match(/<a class="ch-row"/g).length).toBe(f.topics.flatMap(t => (t.items || []).filter(q => q.offer)).length);
   });
   it('comparison topics are answer-first: photo, pick box, then text-only cards', () => {

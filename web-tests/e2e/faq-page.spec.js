@@ -14,6 +14,12 @@ test('renders with the site chrome, the first answer open and nothing else', asy
   await expect(page.locator('details[open]')).toHaveCount(1);
   await expect(page.locator('details#visa-how-to-get')).toHaveAttribute('open', '');
   await expect(page.locator('footer .pill-saffron')).toBeVisible();
+  // Offline the batch endpoint 404s, so the catalogue fare stays — and the pending hold is released by its timer.
+  await page.locator('details#money-daily-budget summary').click();
+  const fare = page.locator('#money-daily-budget [data-list-fare]').first();
+  await expect(fare).toHaveText(/^\$\d/);
+  await expect(fare).toBeVisible();
+  await expect.poll(() => fare.evaluate(el => getComputedStyle(el).color), { timeout: 6000 }).not.toBe('rgba(0, 0, 0, 0)');
 });
 
 test('an index entry scrolls to its topic; a closed question opens on click', async ({ page }) => {
