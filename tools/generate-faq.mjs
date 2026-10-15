@@ -18,7 +18,7 @@ export const FAQ_PATH = 'sri-lanka-travel-faq/';
 export function loadFaq() { return JSON.parse(readFileSync(FAQ_FILE, 'utf8')); }
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const stripTags = s => String(s).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+const stripTags = s => String(s).replace(/<\/(?:p|li|ul|ol|div|h[1-6])>|<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const price = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
 const wa = text => `${WA}?text=${encodeURIComponent(text)}`;
 const pad = n => String(n).padStart(2, '0');
@@ -33,7 +33,7 @@ const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
     rather than ship a wrong number: an unknown place or a corridor with no shared product is a
     content error, not a rendering choice. */
 export function resolveFares(html, T) {
-  return String(html).replace(/\{fare:([a-z0-9-]+):([a-z0-9-]+):(shared|private)\}/g, (_, from, to, service) => {
+  const out = String(html).replace(/\{fare:([a-z0-9-]+):([a-z0-9-]+):(shared|private)\}/g, (_, from, to, service) => {
     for (const id of [from, to]) if (!T.byId[id]) throw new Error(`faq: {fare:${from}:${to}:${service}} — unknown place "${id}"`);
     if (service === 'shared') {
       const s = T.sharedOption(from, to);
@@ -42,6 +42,8 @@ export function resolveFares(html, T) {
     }
     return `$${price(T.privateQuote(from, to).car)}`;
   });
+  if (/\{fare:/.test(out)) throw new Error('faq: malformed {fare:…} token left in output');
+  return out;
 }
 
 /** A page photo at both sizes. `key` is a stem in img/faq/; meta comes from f.photos. */
@@ -200,7 +202,7 @@ const FAQ_STYLE = `
   .th .n{font-family:var(--display);font-weight:700;font-size:1rem;color:var(--accent-deep)}
   .th h2{margin:0 0 4px;line-height:1.15}
   .th p{margin:0;color:var(--ink-soft);font-size:.92rem}
-  .topic details{border-top:1px solid var(--line)}
+  .topic details{border-top:1px solid var(--line);scroll-margin-top:84px}
   .topic details:last-of-type{border-bottom:1px solid var(--line)}
   .topic summary{cursor:pointer;list-style:none;font-weight:600;font-size:1rem;line-height:1.45;padding:15px 34px 15px 0;position:relative}
   .topic summary::-webkit-details-marker{display:none}
@@ -270,7 +272,7 @@ const FAQ_STYLE = `
   }
   @media(prefers-reduced-motion:reduce){
     html.js .reveal{opacity:1;transform:none;transition:none}
-    .dc,.pill{transition:none}
+    .dc,.pill,.topic summary::after,.ch-row{transition:none}
   }`;
 
 if (import.meta.url === `file://${process.argv[1]}`) {

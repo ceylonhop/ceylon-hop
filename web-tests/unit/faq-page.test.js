@@ -35,6 +35,8 @@ describe('generateFaq', () => {
     expect(ld('FAQPage').mainEntity).toHaveLength(qa + cmp);
     expect(ld('FAQPage').mainEntity.map(q => q.name)).toContain('Which safari park should you pick?');
     expect(ld('FAQPage').mainEntity.every(q => q.acceptedAnswer.text.length > 20)).toBe(true);
+    const apply = ld('FAQPage').mainEntity.find(q => q.name === 'What are the official ways to apply?');
+    expect(apply.acceptedAnswer.text).toContain('channels: Yourself, online');
   });
   it('ships the site chrome without JavaScript (header, footer, route index link)', () => {
     const h = noJs(html);
@@ -67,6 +69,8 @@ describe('generateFaq', () => {
     }
     const ids = [...html.matchAll(/ id="([^"]+)"/g)].map(m => m[1]);
     expect(new Set(ids).size).toBe(ids.length);
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    expect(css).toMatch(/\.topic details\{[^}]*scroll-margin-top:84px/);
   });
   it('callouts use only the two kinds, with the guides\' labels', () => {
     expect(html).toContain('<div class="tip warn"><b>Good to know</b>');
@@ -87,6 +91,7 @@ describe('generateFaq', () => {
     expect(section(html, 'money')).toContain(`start around $${T.privateQuote('galle', 'mirissa').car}`);
     expect(() => resolveFares('{fare:kandy:nowhere:private}', T)).toThrow(/nowhere/);
     expect(() => resolveFares('{fare:kandy:galle:shared}', T)).toThrow(/no shared/);
+    expect(() => resolveFares('{fare:kandy:galle}', T)).toThrow(/malformed/);
   });
   it('offer rows reuse the guides\' .ch-row and point where the JSON says', () => {
     const around = section(html, 'around');
