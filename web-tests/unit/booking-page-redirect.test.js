@@ -26,6 +26,16 @@ const html = strip(HTML);
 const js = strip(BOOKING_SRC);
 
 describe('booking page uses a top-level redirect, not the PayHere iframe SDK', () => {
+  it('does not present PayHere as a fake second control; the red CTA is the payment action', () => {
+    const dom = new JSDOM(HTML);
+    const payButton = dom.window.document.querySelector('#pay-btn');
+
+    expect(dom.window.document.querySelector('.pay-methods, .pay-provider, .pm')).toBeNull();
+    expect(payButton.tagName).toBe('BUTTON');
+    expect(payButton.textContent).toContain('Continue to secure payment');
+    expect(html).toContain('taken to our secure PayHere checkout');
+  });
+
   it('does not load PayHere’s JavaScript SDK', () => {
     expect(html).not.toMatch(/payhere\.lk\/lib\/payhere\.js/);
   });
