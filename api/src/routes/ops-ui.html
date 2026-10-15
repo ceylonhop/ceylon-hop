@@ -6152,10 +6152,13 @@ async function api(path, opts) {
 async function jsonOrNull(res) {
   try { return await res.json(); } catch (e) { return null; }
 }
-// V9: build a consistent { error } from a non-ok response.
+// V9: build a consistent { error, ... } from a non-ok response. The WHOLE server body when it
+// carries an `error` (routes attach reason / message / details / detail / status beside it, and
+// callers that read them — bookErrorText(), hzSubmitZone() — never received them while this kept
+// only `{ error }`); `{ error: 'HTTP <status>' }` when the body is missing or not JSON.
 async function errPayload(res) {
   var body = await jsonOrNull(res);
-  return { error: (body && body.error) ? body.error : ('HTTP ' + res.status) };
+  return (body && typeof body === 'object' && body.error) ? body : { error: 'HTTP ' + res.status };
 }
 
 // Client-side cache of autocomplete results (each query is a billed Google round-trip;
@@ -7294,6 +7297,7 @@ async function apiBook(id, payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    // errPayload() returns the whole refusal: bookErrorText() reads reason / message / details.
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Booking failed' };
@@ -8095,7 +8099,15 @@ async function hzSubmitZone() {
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
+    if (!r.ok) {
+      var e = await errPayload(r);
+      // /zones answers a Zod failure with `detail` (the first issue's message) — name the value
+      // that was refused, not just that one was (the client pre-checks everything but the length).
+      var bad = e.error === 'bad_request';
+      ratesToast(bad ? ('Check the values' + (e.detail ? ' — ' + e.detail : '')) : (e.error || 'Save failed'), 'error');
+      renderRatesPage();
+      return;
+    }
     hzEditId = null;
     ratesToast('Zone saved');
     await loadHotZones();
@@ -8941,6 +8953,18 @@ var expLeadBusy = {};
 // The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
 var expLeadPending = {};
 async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
+// The lead once no save is out on it, for a caller that must have it to itself; null when it has gone or
+// the page has moved on. Everything queued behind one save wakes on it together, and a queued field save
+// takes the lead first — so wait again, for as long as there is a save to wait on, instead of giving up.
+async function expLeadFree(id) {
+  var seq = _expSeq, l;
+  do {
+    await expLeadIdle(id);
+    if (seq !== _expSeq) return null;
+    l = expLeadById(id);
+  } while (l && expLeadBusy[l.id] && expLeadPending[id]);
+  return l && !expLeadBusy[l.id] ? l : null;
+}
 var expLeadPayOpen = {};
 // A confirmation POST is out for this lead (set before the first await, so a quick double click can't
 // send twice), and leads whose email path answered no_email (so the WhatsApp button shows for them).
@@ -9273,9 +9297,8 @@ async function expLeadConfirm(btn) {
   // button disabled: a second click while this one waits on an earlier save, or on the POST, does nothing
   // instead of emailing the customer twice.
   var run = async function () {
-    await expLeadIdle(id);
-    var l = expLeadById(id);
-    if (!l || expLeadBusy[l.id]) return false;
+    var l = await expLeadFree(id);
+    if (!l) return false;
     var diff = {};
     Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
     if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) return true;
@@ -9291,6 +9314,8 @@ async function expLeadConfirm(btn) {
       if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); delete expLeadNoEmail[l.id]; ratesToast('Confirmation sent'); }
       else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
       else if (d && d.error === 'no_email') { expLeadNoEmail[l.id] = true; ratesToast('No email on file — confirm on WhatsApp', 'error'); }
+      // The environment stopped the email (staging allowlist, kill switch): not a failure to retry.
+      else if (d && d.error === 'email_suppressed') { expLeadNoEmail[l.id] = true; ratesToast('Email to this address is switched off on this environment — confirm on WhatsApp instead', 'error'); }
       else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
     } catch (e) {
       if (seq !== _expSeq) return false;
@@ -9312,9 +9337,8 @@ async function expLeadConfirmWhatsApp(btn) {
   var id = btn.getAttribute('data-id');
   if (expLeadConfirming[id]) return;
   var run = async function () {
-    await expLeadIdle(id);
-    var l = expLeadById(id);
-    if (!l || expLeadBusy[l.id]) return false;
+    var l = await expLeadFree(id);
+    if (!l) return false;
     var seq = _expSeq;
     expLeadBusy[l.id] = true;
     var settle, pending = new Promise(function (res) { settle = res; });
@@ -9348,7 +9372,9 @@ async function expLeadClaim(id, btn, run) {
   var repaint = false;
   try { repaint = await run(); }
   finally { if (seq === _expSeq) delete expLeadConfirming[id]; }
-  if (repaint && seq === _expSeq) renderExperiencesPage();
+  if (seq !== _expSeq) return;
+  if (repaint) renderExperiencesPage();
+  else btn.disabled = false; // run() did nothing, so nothing repaints: undo the disabling done by hand above
 }
 
 // The reference opens the thing it belongs to, through the shell: it owns the routes and the queue.
@@ -12673,12 +12699,63 @@ var OPS_MAPS_KEY = '{{MAPS_KEY}}';
 try { if (window.OPS_MAPS_KEY != null) OPS_MAPS_KEY = window.OPS_MAPS_KEY; } catch (e) {}
 if (typeof OPS_MAPS_KEY !== 'string' || OPS_MAPS_KEY.indexOf('{{') === 0) OPS_MAPS_KEY = '';
 
+/* Google Maps is OFF on test sites (local, LAN, staging) unless the tab opts in with ?maps=1 or
+   the pill below — every map load bills the live key, and the e2e suite was ~75% of September
+   2026's $122 Maps bill. Live ops is untouched. A google.maps already on the page (a test stub)
+   is used as-is. DELIBERATE SECOND COPY of isTestHost() in ch-map.js (this shell cannot import
+   it); web-tests/unit/maps-test-hosts.test.js asserts the two agree. */
+function isTestHost(host) {
+  host = String(host || '').toLowerCase();
+  if (host === '' || host === 'localhost' || host === '0.0.0.0' || host === '[::1]' || /\.localhost$/.test(host)) return true;
+  if (/^(127|10)\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host) || /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)) return true;
+  return /(^|[.-])staging([.-]|$)/.test(host);
+}
+var MAPS_LIVE_FLAG = 'ch_maps_live';
+var MAPS_TEST_HOST = isTestHost(location.hostname);
+var MAPS_LIVE_ON = (function () {
+  if (!MAPS_TEST_HOST) return true;
+  try {
+    var q = new URLSearchParams(location.search).get('maps');
+    if (q === '1') sessionStorage.setItem(MAPS_LIVE_FLAG, '1');
+    else if (q === '0') sessionStorage.removeItem(MAPS_LIVE_FLAG);
+    return sessionStorage.getItem(MAPS_LIVE_FLAG) === '1';
+  } catch (e) { return false; }
+})();
+// The on/off pill, for a PERSON on a test site with a key — automation never sees it.
+function mountMapsLiveToggle() {
+  if (!MAPS_TEST_HOST || !OPS_MAPS_KEY || navigator.webdriver || document.getElementById('ch-maps-live')) return;
+  var bar = document.createElement('div');
+  bar.id = 'ch-maps-live';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', 'Google Maps on this test site');
+  bar.style.cssText = 'position:fixed;right:8px;top:8px;z-index:2147483000;display:flex;align-items:center;' +
+    'gap:8px;padding:3px 3px 3px 10px;border-radius:999px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;' +
+    'box-shadow:0 2px 10px rgba(0,0,0,.25);background:' + (MAPS_LIVE_ON ? '#9a3412' : '#1f2d2a');
+  var label = document.createElement('span');
+  label.textContent = MAPS_LIVE_ON ? 'Google Maps on · billed' : 'Google Maps off';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = MAPS_LIVE_ON ? 'Turn off' : 'Turn on';
+  btn.style.cssText = 'border:0;border-radius:999px;padding:3px 9px;background:#fff;color:#1f2d2a;font:inherit;cursor:pointer';
+  btn.addEventListener('click', function () {
+    try { if (MAPS_LIVE_ON) sessionStorage.removeItem(MAPS_LIVE_FLAG); else sessionStorage.setItem(MAPS_LIVE_FLAG, '1'); } catch (e) {}
+    var u = new URL(location.href);
+    u.searchParams.set('maps', MAPS_LIVE_ON ? '0' : '1');
+    location.replace(u.toString());
+  });
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountMapsLiveToggle);
+else mountMapsLiveToggle();
+
 var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
 var _mapsJsPromise = null;
 function loadMapsJs() {
   if (_mapsJsPromise) return _mapsJsPromise;
   if (window.google && window.google.maps && window.google.maps.importLibrary) { _mapsJsPromise = Promise.resolve(true); return _mapsJsPromise; }
-  if (!OPS_MAPS_KEY) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
+  if (!OPS_MAPS_KEY || !MAPS_LIVE_ON) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
   _mapsJsPromise = new Promise(function (resolve) {
     // loading=async is Google's recommended pattern (a console warning fires without it);
     // the API signals readiness via the callback, then classes load via importLibrary.
@@ -12910,7 +12987,7 @@ function syncRouteModalMap() {
 async function drawRouteModalRoutes(hostEl, from, to, sel) {
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
-  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">Map preview needs the live Google key.</div>'; _rcMapMap = null; return; }
+  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">' + (MAPS_LIVE_ON ? 'Map preview needs the live Google key.' : 'Google map is off on test sites — turn it on with the pill (top right).') + '</div>'; _rcMapMap = null; return; }
   if (!_rcMapMap || _rcMapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
     _rcMapMap = new libs.Map(hostEl, { center: { lat: 7.6, lng: 80.9 }, zoom: 7, disableDefaultUI: true, gestureHandling: 'none', clickableIcons: false });
@@ -12944,7 +13021,7 @@ async function drawItinRoute(hostEl, runs) {
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
   if (reqId !== _mapReqSeq) return; // superseded while the Maps libs loaded — let the newer request win
-  if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
+  if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">' + (MAPS_LIVE_ON ? 'Route map could not load.' : 'Google map is off on test sites — turn it on with the pill (top right).') + '</div>'; _mapMap = null; return; }
   if (!_mapMap || _mapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
     _mapMap = new libs.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
