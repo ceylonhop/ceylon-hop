@@ -95,8 +95,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .xp-chev{display:inline-block;transition:transform .15s}
     .xp-more[aria-expanded="true"] .xp-chev{transform:rotate(90deg)}
     .xp-buy{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-    .xp-price{font-size:.88rem;font-weight:700;color:var(--ink);white-space:nowrap}
-    .xp-price small{font-size:.7rem;font-weight:400;color:var(--ink-soft)}
+    /* the small print under the button: a request costs nothing (owner, 2026-10-14) */
+    .xp-free{font-size:.68rem;line-height:1.3;color:var(--ink-soft);white-space:nowrap}
     .xp-btn{appearance:none;-webkit-appearance:none;font:inherit;font-weight:600;font-size:.8rem;min-height:36px;padding:0 16px;border-radius:999px;border:1.5px solid var(--btn-accent);background:var(--white);color:var(--btn-accent);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
     .xp-btn:hover{background:rgba(var(--accent-rgb),.12)}
     .xp-btn[aria-pressed="true"]{background:var(--btn-accent);color:#fff}
@@ -109,12 +109,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .xp-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
     .xp-photos img{width:100%;height:112px;object-fit:cover;border-radius:8px;display:block;background:var(--pc-sky)}
     @media(max-width:640px){
-      /* the price and the button drop under the meta line so the name gets the full width */
+      /* the button and its small print drop under the meta line so the name gets the full width */
       .xp-row{grid-template-columns:64px minmax(0,1fr);align-items:start}
       .xp-row.nophoto{grid-template-columns:minmax(0,1fr)}
       .xp-photo{width:64px;height:64px;grid-row:1/3}
       .xp-name{white-space:normal;overflow-wrap:anywhere}
-      .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+      .xp-buy{flex-direction:column;align-items:flex-start;gap:4px;margin-top:8px}
+      .xp-free{white-space:normal}
       /* a full 44px touch target on phones (reviewer note); desktop keeps the compact 36px pill */
       .xp-btn{min-height:44px}
     }
@@ -461,27 +462,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
     return runs.join(', ');
   }
-  function xpPrice(it){
-    var c = Number(it.priceCents);
-    if (!(c > 0)) return '';
-    return '$' + (c / 100).toFixed(c % 100 ? 2 : 0) + (it.priceUnit === 'per_group' ? ' per group' : ' pp');
-  }
   function xpCardHtml(it, n){
     var on = !!it.interested;
     var photos = Array.isArray(it.photos) ? it.photos.filter(function(p){ return p && typeof p.small === 'string' && typeof p.large === 'string'; }) : [];
-    var km = Number(it.aboutKm), days = xpDays(it.openWeekdays), price = xpPrice(it);
+    var km = Number(it.aboutKm), days = xpDays(it.openWeekdays);
     var times = Array.isArray(it.startTimes) ? it.startTimes.filter(function(t){ return typeof t === 'string'; }) : [];
     var details = String(it.details || '').split(/\n+/).map(function(t){ return t.trim(); }).filter(Boolean);
     var meta = [it.partnerName, km > 0 ? Math.round(km) + ' km' : '', it.durationText, days].filter(Boolean).map(function(t){ return esc(t); }).join(' · ');
-    var cut = price.indexOf(' ');
     var panelId = 'xp-panel-' + n, id = esc(it.id);
     // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
     return '<article class="xp-row' + (photos.length ? '' : ' nophoto') + (on ? ' on' : '') + '" data-id="' + id + '">'
       + (photos.length ? '<img class="xp-photo" src="' + esc(photos[0].small) + '" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility=\'hidden\'">' : '')
       + '<div class="xp-main"><b class="xp-name">' + esc(it.name) + '</b><span class="xp-meta">' + meta + '</span>'
       + '<button type="button" class="xp-more" aria-expanded="false" aria-controls="' + panelId + '">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>'
-      + '<div class="xp-buy">' + (price ? '<span class="xp-price"><b>' + esc(price.slice(0, cut)) + '</b> <small>' + esc(price.slice(cut + 1)) + '</small></span>' : '')
-      + '<button type="button" class="xp-btn" data-id="' + id + '" aria-pressed="' + on + '">' + (on ? '✓ Requested' : 'Request') + '</button></div>'
+      // No price on the card (owner, 2026-10-14): a request is for information; the tiny line says it costs nothing.
+      + '<div class="xp-buy"><button type="button" class="xp-btn" data-id="' + id + '" aria-pressed="' + on + '">' + (on ? '✓ Info requested' : 'Request info') + '</button>'
+      + '<small class="xp-free">No charge for requesting info</small></div>'
       + '<p class="xp-err" role="alert" hidden>Couldn’t save — try again</p>'
       + '<div class="xp-panel" id="' + panelId + '" hidden>' + details.map(function(t){ return '<p>' + esc(t) + '</p>'; }).join('')
       + '<p class="xp-facts">' + (days ? 'Open: ' + esc(days) : '') + (days && times.length ? '<br>' : '') + (times.length ? 'Times: ' + esc(times.join(' · ')) : '') + '</p>'
@@ -514,7 +510,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function xpPaint(card, on){
     var btn = card.querySelector('.xp-btn');
     btn.setAttribute('aria-pressed', String(on));
-    btn.textContent = on ? '✓ Requested' : 'Request';
+    btn.textContent = on ? '✓ Info requested' : 'Request info';
     card.classList.toggle('on', on);
   }
   function xpPost(id, interested){

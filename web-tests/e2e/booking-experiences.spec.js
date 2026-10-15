@@ -4,8 +4,9 @@ import { futureIsoDate } from '../dates.js';
 
 // Partner experiences on booking.html step 3 (spec 2026-10-06 D9/D10/D16/D17). The page asks
 // GET /experiences/near for what is close to the drop-off, shows compact rows (owner-approved
-// Option B, 2026-10-07), and a "Request" tap only records an id: it never touches the price, and
-// never blocks the booking. Live Tripadvisor ratings (spec D22) fill in under the meta line after the rows render.
+// Option B, 2026-10-07), and a "Request info" tap only records an id: it never touches the price, and
+// never blocks the booking. The card shows no price (owner, 2026-10-14): the button reads
+// "Request info" and a tiny line under it says requesting costs nothing. Live Tripadvisor ratings (spec D22) fill in under the meta line after the rows render.
 
 const photo = (stem) => ({
   small: `https://ceylonhop.com/img/${stem}-900.jpg`,
@@ -65,6 +66,7 @@ test.describe('the experiences block on step 3', () => {
       'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
     );
     // The owner: don't repeat yourself - no per-row "won’t be charged" note, and "free" appears once.
+    // (The tiny "No charge for requesting info" line under each button is the owner's 2026-10-14 call.)
     await expect(block(page).locator('.xp-after')).toHaveCount(0);
     const all = await block(page).innerText();
     expect(all).not.toMatch(/won’t be charged/i);
@@ -76,10 +78,13 @@ test.describe('the experiences block on step 3', () => {
     const row = block(page).locator('.xp-row').first();
     await expect(row.locator('.xp-name')).toHaveText('Ayurvedic massage');
     await expect(row.locator('.xp-meta')).toHaveText('Atherya Spa · 4 km · 90 min · Daily');
-    await expect(row.locator('.xp-price')).toHaveText('$35 pp');
-    await expect(row.locator('.xp-btn')).toHaveText('Request');
+    // No price on the customer card (owner, 2026-10-14); the API/ops still carry it.
+    await expect(block(page).locator('.xp-price')).toHaveCount(0);
+    expect(all).not.toMatch(/\$35|\$45|per group|\bpp\b/);
+    await expect(row.locator('.xp-btn')).toHaveText('Request info');
+    await expect(row.locator('.xp-buy .xp-free')).toHaveText('No charge for requesting info');
+    await expect(block(page).locator('.xp-free')).toHaveCount(3);
     await expect(block(page).locator('.xp-row').nth(1).locator('.xp-meta')).toContainText('Mon–Sat');
-    await expect(block(page).locator('.xp-row').nth(2).locator('.xp-price')).toHaveText('$45 per group');
     await expect(row.locator('.xp-photo')).toHaveCount(1);
   });
 
@@ -108,7 +113,7 @@ test.describe('the experiences block on step 3', () => {
     await expect(card.locator('.xp-panel')).toBeHidden();
   });
 
-  test('tapping "Request" flips the button, marks the row, fills the summary line, and never moves the Total', async ({ page }) => {
+  test('tapping "Request info" flips the button, marks the row, fills the summary line, and never moves the Total', async ({ page }) => {
     await gotoBooking(page, { query: PRIVATE, experiences: { stops: [SIGIRIYA] } });
     await goStep3(page);
     const total = page.locator('#sum-total');
@@ -117,12 +122,12 @@ test.describe('the experiences block on step 3', () => {
 
     const row = block(page).locator('.xp-row').first();
     const btn = row.locator('.xp-btn');
-    await expect(btn).toHaveText('Request');
+    await expect(btn).toHaveText('Request info');
     await expect(btn).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('#sum-experiences')).toBeHidden();
 
     await btn.click();
-    await expect(btn).toHaveText('✓ Requested');
+    await expect(btn).toHaveText('✓ Info requested');
     await expect(btn).toHaveAttribute('aria-pressed', 'true');
     await expect(row).toHaveClass(/\bon\b/);
     await expect(block(page).locator('.xp-after')).toHaveCount(0);
@@ -151,7 +156,7 @@ test.describe('the experiences block on step 3', () => {
 
     // A tap takes it back.
     await btn.click();
-    await expect(btn).toHaveText('Request');
+    await expect(btn).toHaveText('Request info');
     await expect(row).not.toHaveClass(/\bon\b/);
     await expect(sum).toContainText('1 requested · no charge');
     await block(page).locator('.xp-row').nth(2).locator('.xp-btn').click();
