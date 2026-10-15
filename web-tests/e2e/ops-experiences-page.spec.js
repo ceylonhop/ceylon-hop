@@ -850,3 +850,110 @@ test('Mark confirmed on WhatsApp pressed while schedule saves are queued waits f
   await expect(row.locator('[data-action="expLeadConfirm"]')).toBeEnabled();
   expect(calls.confirm).toHaveLength(1);
 });
+
+// Two schedule fields changed while the date save was out woke together and PATCHed at once; the
+// slower answer, the server's row from before the other write, then overwrote the page's copy of the
+// lead — which is what the next repaint shows.
+test('schedule saves queued behind one in-flight save go out one at a time, and the row keeps every value', async ({ page }) => {
+  const day = futureIsoDate(20);
+  const server = { ...PAID, scheduledDate: null, scheduledTime: null, meetingPoint: null }; // the API's row carries every column
+  const gates = []; // the first two PATCH answers wait for the test
+  let n = 0;
+  const calls = await openPaid(page, [PAID], {
+    patchLead: async (r, body) => {
+      const i = n++;
+      Object.assign(server, body);
+      const row = { ...server }; // the server answers with its row as of this write
+      if (i < 2) await new Promise((res) => { gates[i] = res; });
+      return r.fulfill(json({ lead: row }));
+    },
+    confirmLead: (r) => r.fulfill(json({ lead: { ...server, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'email' } })),
+  });
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-lead-field="scheduledDate"]').fill(day);
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="scheduledTime"]').fill('09:30'); // queues behind the date save
+  const meet = row.locator('[data-lead-field="meetingPoint"]');
+  await meet.fill('Hotel lobby');
+  await meet.blur(); // queues too
+  gates[0]();
+  await expect.poll(() => calls.leadPatch.length).toBeGreaterThanOrEqual(2);
+  await page.waitForTimeout(150);
+  expect(calls.leadPatch).toHaveLength(2); // the meeting point waits for the time save, not alongside it
+  expect(calls.leadPatch[1].body).toEqual({ scheduledTime: '09:30' });
+  const timeAnswered = page.waitForResponse((res) => res.request().method() === 'PATCH' && (res.request().postData() || '').includes('scheduledTime'));
+  gates[1]();
+  await expect.poll(() => calls.leadPatch.length).toBe(3);
+  await timeAnswered;
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
+  const last = {};
+  calls.leadPatch.forEach((c) => Object.keys(c.body).forEach((k) => { last[k] = c.body[k]; }));
+  expect(last).toEqual({ scheduledDate: day, scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+  expect(server).toMatchObject(last);
+  // So does the page's copy of the lead. Send confirmation saves whatever that copy lacks before the email;
+  // a copy the slower answer did not take the meeting point back out of has nothing to save: one POST, no
+  // further PATCH.
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  expect(calls.leadPatch).toHaveLength(3);
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmation sent ✓');
+  await expect(row.locator('[data-lead-field="meetingPoint"]')).toHaveValue('Hotel lobby');
+  await expect(row.locator('[data-lead-field="scheduledTime"]')).toHaveValue('09:30');
+  await expect(row.locator('[data-lead-field="scheduledDate"]')).toHaveValue(day);
+});
+
+// A status picked while a save was out was put straight back by the busy guard: the pick was lost
+// without a word.
+test('a status picked while a save is in flight is applied after it, not put back', async ({ page }) => {
+  const server = { ...LEADS[1] };
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openLeads(page, OPS, {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      Object.assign(server, body);
+      return r.fulfill(json({ lead: { ...server } }));
+    },
+  });
+  const row = leadRows(page).nth(1);
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  const sel = row.locator('[data-action="expLeadStatus"]');
+  await sel.selectOption('contacted'); // the note PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ status: 'contacted' });
+  await expect(sel).toHaveValue('contacted');
+});
+
+// Save payment had the same guard: pressed during a save, it did nothing.
+test('Save payment pressed while a save is in flight is applied after it, not dropped', async ({ page }) => {
+  const server = { ...LEADS[1] };
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openLeads(page, OPS, {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      Object.assign(server, body);
+      return r.fulfill(json({ lead: { ...server } }));
+    },
+  });
+  const row = leadRows(page).nth(1);
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="paymentRef"]').fill('PH-88');
+  await row.locator('[data-action="expLeadSavePay"]').click(); // the note PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ paymentRef: 'PH-88' });
+  await expect(page.locator('#toast')).toContainText('Saved');
+  await expect(row.locator('[data-lead-field="paymentRef"]')).toHaveValue('PH-88');
+});
