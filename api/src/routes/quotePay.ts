@@ -5,7 +5,10 @@ import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { linkQuoteInterests } from '../experiences/bookingInterests';
+import { offeredForQuote, publicOffered } from '../experiences/offeredForQuote';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { legSelectionOf, payLines } from '../quote/paySelection';
@@ -56,6 +59,9 @@ const StartSchema = z.object({
 const MAX_REPLACEMENTS = 20;
 
 const BalanceSchema = z.object({ t: z.string() }).strict();
+
+// A "Request info" tap on the paid confirmation (owner, 2026-10-15). Same limits the quote page's had.
+const InterestSchema = z.object({ t: z.string().max(2000), experienceId: z.string().uuid(), interested: z.boolean() }).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
@@ -156,6 +162,10 @@ export function quotePayRoutes(deps: {
   // (spec 2026-08-08 §4.4, as revised). Optional: absent = the guard is simply off.
   opsUsers?: string;
   experienceInterests?: ExperienceInterestRepo;
+  // Partner experiences on the paid / balance screens (owner, 2026-10-15). Optional: without them
+  // those screens simply carry none.
+  experiences?: ExperienceRepo;
+  placeResolutions?: PlaceResolutionRepo;
 }) {
   // Four live bookings were recorded under the owner's name because a pay link was opened in a
   // staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
@@ -212,6 +222,23 @@ export function quotePayRoutes(deps: {
     return { state: 'unavailable' };
   }
 
+  // Partner experiences near the trip AS SOLD, for a customer who has paid (owner, 2026-10-15): on
+  // the `paid` keepsake and the `balance` "you're booked" screen, never before payment. `interested`
+  // reads the BOOKING's interests — a tick the quote carried in arrives there at /start. A courtesy:
+  // whatever goes wrong costs the customer nothing but the section (spec D17).
+  async function experiencesFor(sold: SavedQuote, bookingId: string | undefined): Promise<unknown[]> {
+    if (!bookingId || !deps.experienceInterests) return [];
+    try {
+      const matched = await offeredForQuote(sold.request, deps);
+      if (!matched.length) return [];
+      const ticked = new Set((await deps.experienceInterests.listForBooking(bookingId)).map((i) => i.experienceId));
+      return publicOffered(matched, ticked);
+    } catch (err) {
+      console.error(`[experiences] pay-view could not list experiences for booking ${bookingId}:`, err);
+      return [];
+    }
+  }
+
   r.get('/view', async (c) => {
     const parsed = verifyQuotePayToken(c.req.query('t'), deps.linkSecret);
     if (!parsed) return c.json({ state: 'unavailable' as const }, 200); // soft — no detail leak
@@ -245,6 +272,7 @@ export function quotePayRoutes(deps: {
           balanceCents: balance,
           balanceUsd: usd(balance),
         },
+        experiences: await experiencesFor(sold, paidVia.bookingId),
       });
     }
 
@@ -271,6 +299,7 @@ export function quotePayRoutes(deps: {
           // The add-ons it bought, on the keepsake pass too. Absent when there are none.
           ...(paidCopy.addOns ? { addOns: paidCopy.addOns } : {}),
         },
+        experiences: await experiencesFor(sold, paidVia?.bookingId),
       });
     }
     if (state !== 'payable' || !quote) return c.json({ state });
@@ -479,6 +508,37 @@ export function quotePayRoutes(deps: {
       { bookingId: paidVia.bookingId, checkoutToken: signCheckoutToken(paidVia.bookingId, deps.linkSecret, checkoutNow()) },
       200,
     );
+  });
+
+  // "Request info" on the paid confirmation (owner, 2026-10-15, option B). Recorded on the BOOKING
+  // with source 'pay_page', so — the booking being paid — it is an ops lead at once (Experiences →
+  // Leads, and the booking pane's "Interested in"). It records a lead and nothing else: no money, no
+  // change to the booking. Only a link in the paid / balance state may write, and only for an
+  // experience this trip is actually offered (the same computation /view lists from).
+  r.post('/interest', async (c) => {
+    const body = InterestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
+    if (!parsed || !deps.experienceInterests) return c.json({ error: 'quote_unavailable' }, 409);
+    const quote = await deps.quotes.get(parsed.quoteId);
+    const { state, paidVia } = await stateFor(quote, parsed);
+    if (!quote || state === 'unavailable') return c.json({ error: 'quote_unavailable' }, 409);
+    if ((state !== 'paid' && state !== 'balance') || !paidVia) return c.json({ error: 'not_paid' }, 409);
+    const bookingId = paidVia.bookingId;
+
+    const sold = soldViewFor(quote, await deps.bookings.get(bookingId));
+    const offered = (await offeredForQuote(sold.request, deps)).flatMap((s) => s.items)
+      .find((m) => m.experience.id === body.data.experienceId);
+    if (!offered) return c.json({ error: 'not_offered' }, 422);
+
+    if (body.data.interested) {
+      await deps.experienceInterests.record({ experience: offered.experience, source: 'pay_page', bookingId });
+      return c.json({ interested: true });
+    }
+    // Withdraw only while ops has not touched it; otherwise report what is really stored.
+    await deps.experienceInterests.withdrawFromBooking(offered.experience.id, bookingId);
+    const stillThere = (await deps.experienceInterests.listForBooking(bookingId)).some((i) => i.experienceId === offered.experience.id);
+    return c.json({ interested: stillThere });
   });
 
   return r;
