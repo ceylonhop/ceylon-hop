@@ -63,14 +63,15 @@ test.describe('the experiences block on step 3', () => {
     await expect(block(page).locator('.xp-note')).toHaveCount(0);
     await expect(block(page).locator('.xp-sub')).toHaveCount(1);
     await expect(block(page).locator('.xp-sub')).toHaveText(
-      'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
+      'Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.',
     );
-    // The owner: don't repeat yourself - no per-row "won’t be charged" note, and "free" appears once.
+    // The owner: don't repeat yourself - no per-row "won’t be charged" note. And no "free" at all
+    // (owner, 2026-10-15): it made the EXPERIENCES sound free; only the request costs nothing.
     // (The tiny "No charge for requesting info" line under each button is the owner's 2026-10-14 call.)
     await expect(block(page).locator('.xp-after')).toHaveCount(0);
     const all = await block(page).innerText();
     expect(all).not.toMatch(/won’t be charged/i);
-    expect(all.match(/\bfree\b/gi)).toHaveLength(1);
+    expect(all).not.toMatch(/\bfree\b/i);
     // No ratings yet.
     expect(all).not.toMatch(/tripadvisor/i);
     await expect(block(page).locator('.xp-rate')).toHaveCount(0);

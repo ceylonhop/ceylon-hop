@@ -1501,7 +1501,7 @@ function showExperiences(stops){
     html+=`<section class="xp-stop">`
       + (i===0 ? `<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>` : '')
       + `<h3>While you’re in ${acEsc(s.place)}</h3>`
-      + (i===0 ? `<p class="xp-sub">Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.</p>` : '')
+      + (i===0 ? `<p class="xp-sub">Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.</p>` : '')
       + `<div class="xp-list">`;
     s.items.forEach(it=>{
       if(!expUi.meta.has(it.id)) expUi.meta.set(it.id,{ name:it.name, partnerName:String(it.partnerName||''), slug:String(it.slug||''), place:s.place });
