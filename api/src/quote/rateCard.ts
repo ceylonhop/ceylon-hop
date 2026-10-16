@@ -63,7 +63,7 @@ export const RATE_CARD = {
   fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   // Extras are FINAL prices with NO markup (owner 2026-07-11).
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
-  shared: { colomboPickupCents: 300, extraBagCents: 1000 },
+  shared: { extraBagCents: 1000 },
 } as const;
 
 // Structural shape of a rate card, so the engine can price against a LOCKED snapshot (a plain
@@ -85,7 +85,7 @@ export type RateCard = {
   priceFinishing?: { maxReductionBps: number; roundToCents: number };
   fxUsdToLkr: number;
   extras: Record<string, number>;
-  shared: { colomboPickupCents: number; extraBagCents: number };
+  shared: { extraBagCents: number };
   // Active hot zones, composed onto the live card per request (zonesRepo.activeZones()) and frozen
   // into a locked quote's snapshot. Optional for back-compat: a snapshot created before hot zones
   // (or with none active) has no field ⇒ no boost = pre-hot-zones behaviour. The compiled RATE_CARD
