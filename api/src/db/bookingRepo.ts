@@ -303,6 +303,11 @@ export interface BookingRepo {
     id: string,
     details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking>;
+  // Ops "Mark paid" settles the whole total by hand, so what was "due now" (possibly a deposit an
+  // abandoned PayHere attempt left behind) becomes the total, keeping every reader of
+  // amountDueNow (balance, manage page, pay view, receipts) in agreement. Applies ONLY while the
+  // booking is payment_pending, decided in the write itself; otherwise returns it unchanged.
+  setAmountDueNowToTotal(id: string): Promise<Booking>;
 }
 
 // A booking's payer may only be rewritten while it is still awaiting money.
@@ -555,6 +560,15 @@ export class InMemoryBookingRepo implements BookingRepo {
       // timestamp would leave a refund dispute holding evidence about the wrong person.
       termsAcceptedAt: details.termsAcceptedAt ? details.termsAcceptedAt.toISOString() : current.termsAcceptedAt,
     } as Booking;
+    this.byId.set(id, updated);
+    return this.present(updated);
+  }
+
+  async setAmountDueNowToTotal(id: string): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    if (current.status !== 'payment_pending') return this.present(current);
+    const updated: Booking = { ...current, amountDueNow: current.total };
     this.byId.set(id, updated);
     return this.present(updated);
   }

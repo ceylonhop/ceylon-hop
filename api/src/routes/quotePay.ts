@@ -7,6 +7,7 @@ import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
+import { cancelSupersededBooking } from '../services/supersededPayLink';
 import { linkQuoteInterests } from '../experiences/bookingInterests';
 import { offeredForQuote, publicOffered } from '../experiences/offeredForQuote';
 import { payPageCopy } from '../quote/payPageCopy';
@@ -481,6 +482,17 @@ export function quotePayRoutes(deps: {
     }
     // Link the quote to its booking — STATUS DELIBERATELY UNTOUCHED. Awaiting payment is
     // not business won; settlement (webhook/mark-paid → claimWonQuote) does the flip.
+    // The booking the quote pointed at BEFORE this tap belongs to an older, now-retired link (the
+    // chain walk above only reaches this line when THIS link had no chargeable booking). Close it so it
+    // stops reading as a live "awaiting payment" booking. Best-effort: never fails the customer's pay.
+    const supersededId = stored.convertedBookingId;
+    if (supersededId && supersededId !== booking.id) {
+      try {
+        await cancelSupersededBooking(supersededId, { bookings: deps.bookings, payments: deps.payments, quoteId: quote.id, requestId: c.get('requestId') });
+      } catch (err) {
+        console.error(`superseded booking ${supersededId} could not be cancelled for quote ${quote.id}:`, err);
+      }
+    }
     await deps.quotes.patch(quote.id, { convertedBookingId: booking.id });
     await linkQuoteInterests(deps.experienceInterests, quote.id, booking.id);
 

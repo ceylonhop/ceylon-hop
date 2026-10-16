@@ -172,6 +172,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .scroll::-webkit-scrollbar{width:11px}.scroll::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
   /* quote view — own scoped scroller, sibling of #view (the .app is 100vh/overflow:hidden) */
   #quoteRoot{height:100%;overflow-y:auto;position:relative;z-index:1}
+  /* A modal open in the builder is position:fixed INSIDE this z-index:1 stacking context, so its own
+     z-index can't rise above the side rail (z-index:2) — the rail painted over the dialog's left edge
+     at narrow widths. While one is open, lift the whole pane above the rail instead. */
+  #quoteRoot:has(.ch-modal){z-index:95}
   #quoteRoot::-webkit-scrollbar{width:11px}#quoteRoot::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
   /* [hidden] must win over .topbar{display:flex} etc. when routes swap panels */
   #topbar[hidden],#view[hidden],#quoteRoot[hidden]{display:none}
@@ -5083,7 +5087,7 @@ var bookOpen = false;     // "Mark booked" → create-a-booking confirmation mod
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
-var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
+var _payPicker = null;    // { lines, sel, totalCents, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
 var _payChooser = false;  // the "which option is this link for" chooser is open (a "both" quote)
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
@@ -7001,9 +7005,11 @@ function togglePayLine(state, lines, line) {
   }
   return { legIndexes: legs, extraIndexes: extras };
 }
-/* Mirrors selectionAmountCents/gapAfterLeg in api/src/quote/paySelection.ts — the server is
-   authoritative for the charged amount; this is the running total the operator watches. */
-function paySelectionSummary(state, lines) {
+/* Mirrors selectionAmountCents/gapAfterLeg/isFullSelection in api/src/quote/paySelection.ts — the
+   server is authoritative for the charged amount; this is the running total the operator watches.
+   With EVERY line ticked the server skips the subset sum and charges quote.totalCents (the lines
+   sum to the pre-finishing subtotal, a few dollars off the headline total), so show that figure. */
+function paySelectionSummary(state, lines, totalCents) {
   var ticked = function (l) {
     return l.kind === 'leg' ? state.legIndexes.indexOf(l.index) >= 0 : state.extraIndexes.indexOf(l.index) >= 0;
   };
@@ -7017,10 +7023,13 @@ function paySelectionSummary(state, lines) {
       break;
     }
   }
+  var all = lines.every(ticked);
   return {
     soldLegs: state.legIndexes.length,
     totalLegs: lines.filter(function (l) { return l.kind === 'leg'; }).length,
-    amountCents: lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
+    amountCents: all && typeof totalCents === 'number'
+      ? totalCents
+      : lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
     gapAfter: gapAfter,
   };
 }
@@ -7035,7 +7044,7 @@ async function openPayPartPicker() {
     var sel = body.selection
       ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
       : paySelectionState(body.lines);
-    _payPicker = { lines: body.lines, sel: sel, busy: false };
+    _payPicker = { lines: body.lines, sel: sel, totalCents: body.totalCents, busy: false };
     _payChooser = false;
     render();
   } catch (e) {
@@ -7082,7 +7091,7 @@ async function confirmPayPart() {
 
 function renderPayPicker() {
   if (!_payPicker) return '';
-  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines);
+  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines, _payPicker.totalCents);
   var rows = _payPicker.lines.map(function (l) {
     var on = l.kind === 'leg'
       ? _payPicker.sel.legIndexes.indexOf(l.index) >= 0
