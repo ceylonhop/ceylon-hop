@@ -434,12 +434,15 @@ test.describe('partner experiences on the quote page', () => {
     await expect(block.locator('h3')).toHaveText('While you’re in Sigiriya');
     await expect(block.locator('.xp-sub')).toHaveCount(1);
     await expect(block.locator('.xp-sub')).toHaveText(
-      'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
+      'Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.',
     );
-    // The old green box and the per-row reassurance are gone.
+    // The old green box and the per-row "won’t be charged" reassurance are gone; what each row has
+    // instead is the tiny "No charge for requesting info" line under its button (owner, 2026-10-14).
     await expect(block.locator('.xp-note')).toHaveCount(0);
     await expect(block.locator('.xp-after')).toHaveCount(0);
     await expect(block).not.toContainText('Nothing to pay now');
+    // No "free" (owner, 2026-10-15): it made the experiences sound free; only the request costs nothing.
+    expect(await block.innerText()).not.toMatch(/\bfree\b/i);
     await expect(block).not.toContainText('won’t be charged');
     await expect(block).not.toContainText('Same as booking direct');
 
@@ -448,8 +451,12 @@ test.describe('partner experiences on the quote page', () => {
     const row = block.locator('.xp-row').first();
     await expect(row.locator('.xp-name')).toHaveText('Ayurvedic massage');
     await expect(row.locator('.xp-meta')).toHaveText('Atherya Spa · 4 km · 90 min · Daily');
-    await expect(row.locator('.xp-price')).toHaveText('$35 pp');
-    await expect(row.locator('.xp-btn')).toHaveText('Request');
+    // No price on the customer card (owner, 2026-10-14); the API/ops still carry it.
+    await expect(block.locator('.xp-price')).toHaveCount(0);
+    await expect(block).not.toContainText('$35');
+    await expect(row.locator('.xp-btn')).toHaveText('Request info');
+    await expect(row.locator('.xp-buy .xp-free')).toHaveText('No charge for requesting info');
+    await expect(block.locator('.xp-free')).toHaveCount(2);
     await expect(row.locator('.xp-more')).toContainText('Details');
     // No rating unless /experiences/ratings answers with one (spec D22; see the ratings tests below).
     await expect(block.locator('.xp-ta')).toHaveCount(0);
@@ -482,9 +489,9 @@ test.describe('partner experiences on the quote page', () => {
     await page.goto(PAGE);
     const rows = page.locator('#experiences-block .xp-row');
     await expect(rows.nth(0).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'false');
-    await expect(rows.nth(0).locator('.xp-btn')).toHaveText('Request');
+    await expect(rows.nth(0).locator('.xp-btn')).toHaveText('Request info');
     await expect(rows.nth(1).locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
-    await expect(rows.nth(1).locator('.xp-btn')).toHaveText('✓ Requested');
+    await expect(rows.nth(1).locator('.xp-btn')).toHaveText('✓ Info requested');
     await expect(rows.nth(1)).toHaveClass(/\bon\b/);
   });
 
@@ -497,13 +504,13 @@ test.describe('partner experiences on the quote page', () => {
     const btn = row.locator('.xp-btn');
     await btn.click();
     await expect(btn).toHaveAttribute('aria-pressed', 'true');
-    await expect(btn).toHaveText('✓ Requested');
+    await expect(btn).toHaveText('✓ Info requested');
     await expect(row.locator('.xp-after')).toHaveCount(0);
     expect(posts).toEqual([{ method: 'POST', body: { t: 'test-token', experienceId: XP_MASSAGE.id, interested: true } }]);
 
     await btn.click();
     await expect(btn).toHaveAttribute('aria-pressed', 'false');
-    await expect(btn).toHaveText('Request');
+    await expect(btn).toHaveText('Request info');
     expect(posts[1].body).toEqual({ t: 'test-token', experienceId: XP_MASSAGE.id, interested: false });
   });
 
@@ -545,7 +552,7 @@ test.describe('partner experiences on the quote page', () => {
     await btn.click();
     await expect(row.locator('.xp-err')).toHaveText('Couldn’t save — try again');
     await expect(btn).toHaveAttribute('aria-pressed', 'false');
-    await expect(btn).toHaveText('Request');
+    await expect(btn).toHaveText('Request info');
     expect(posts).toHaveLength(1);
 
     // The next tap retries, and a success clears the line.
@@ -564,7 +571,7 @@ test.describe('partner experiences on the quote page', () => {
     await row.locator('.xp-btn').click();
     await expect(row.locator('.xp-err')).toBeVisible();
     await expect(row.locator('.xp-btn')).toHaveAttribute('aria-pressed', 'true');
-    await expect(row.locator('.xp-btn')).toHaveText('✓ Requested');
+    await expect(row.locator('.xp-btn')).toHaveText('✓ Info requested');
   });
 
   test('the server’s answer wins: a withdraw that comes back {interested:true} stays ticked', async ({ page }) => {
@@ -831,7 +838,7 @@ test.describe('Tripadvisor ratings on the quote page', () => {
     expect(asked).toHaveLength(0);
   });
 
-  test('at 375px the Request button is a 44px target and "Details ›" a 32px one', async ({ page }) => {
+  test('at 375px the Request info button is a 44px target and "Details ›" a 32px one', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await stubQuoteView(page, liveBody({ experiences: XP_STOPS }));
     await stubRatings(page, { ratings: [taRating()] });
