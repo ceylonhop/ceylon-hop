@@ -1073,6 +1073,63 @@ describe('settlement claims the quote (pay links)', () => {
     expect((await quotes.get(q.id))?.status).toBe('won');
   });
 
+  // A pay link re-minted while the customer sat on PayHere: /start cancels the older link's booking,
+  // and the customer then completes payment on the window they already had open. The money must be
+  // RECORDED (payment row succeeded, so the refund ceiling is right) and ops told loudly; the
+  // cancelled booking is not resurrected and the quote is not won through it.
+  it('a payment landing on a booking superseded by a newer pay link is recorded and alerted, not lost', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const alerts = new FakeAlertAdapter();
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+    const app = createApp({ quotes, bookings, payments, adapter, alerts, bookingLinkSecret: 'test-link-secret' });
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: futureIsoDate(30) }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+      result: {},
+    });
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    await quotes.patch(q.id, { status: 'sent' });
+    const customer = { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' };
+    const startOn = async (seq: number) => {
+      const fresh = (await quotes.get(q.id))!;
+      return (await (await app.request('/quotes/pay/start', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ t: signQuotePayToken(q.id, fresh.revision, 'test-link-secret', seq), customer, termsAccepted: true }),
+      })).json()) as { bookingId: string; checkoutToken: string };
+    };
+    const seq1 = (await quotes.get(q.id))!.payLinkSeq;
+    const first = await startOn(seq1);
+    await app.request(`/bookings/${first.bookingId}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${first.checkoutToken}` } }); // PayHere opens
+    await quotes.patch(q.id, { payLinkSeq: seq1 + 1 }); // ops re-mints
+    const second = await startOn(seq1 + 1);
+    expect(second.bookingId).not.toBe(first.bookingId);
+    expect((await bookings.get(first.bookingId))!.status).toBe('cancelled');
+
+    const old = (await bookings.get(first.bookingId))!;
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: adapter.simulateNotify({ orderId: old.reference, amount: 21900, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(first.bookingId))!.status).toBe('cancelled'); // not resurrected
+    expect((await payments.findByBookingId(first.bookingId)).some((p) => p.status === 'succeeded')).toBe(true); // money recorded
+    const alert = alerts.sent.find((a) => a.kind === 'paid_in_unexpected_status');
+    expect(alert?.severity).toBe('critical');
+    expect(alert?.body).toContain("status 'cancelled'");
+    expect((await quotes.get(q.id))?.status).toBe('sent'); // the cancelled booking did not win the quote
+  });
+
   // Spec PR #964: a booking sold on a link for the chauffeur option of a "both" quote carries a
   // `{ service }` selection. The confirmation reads the selection for its "2 of 4 legs" line; a
   // throw there would leave a customer who has just paid with no confirmation at all.
