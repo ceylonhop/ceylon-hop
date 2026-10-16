@@ -1521,11 +1521,75 @@ describe('POST /quotes/pay/start — a re-minted link', () => {
   it('KNOWN: the earlier link’s booking, paid after a newer link was started, does not claim the quote', async () => {
     const { quotes, bookings, app, quote, earlier, token, token2 } = await remintedPartial();
     await start(app, token2);
-    expect((await bookings.get(earlier))!.status).toBe('payment_pending');
+    expect((await bookings.get(earlier))!.status).toBe('cancelled'); // superseded: the newer link closed it
     expect(await claimWonQuote(earlier, { quotes })).toBe(false);
     expect((await quotes.get(quote.id))!.status).not.toBe('won');
     expect((await (await view(app, token2)).json()).state).toBe('payable'); // the newer link is still open
     expect((await (await view(app, token)).json()).state).toBe('revised'); // the old link's holder sees "revised"
+  });
+});
+
+// ── A re-minted link retires the booking the OLD link started (staging 2026-10-13: CH-MYUBP + CH-D67Z9) ──
+describe('POST /quotes/pay/start — a newer link supersedes the older link\'s unpaid booking', () => {
+  async function twoLinks() {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t1 = signQuotePayToken(q.id, q.revision, SECRET, q.payLinkSeq);
+    const a = (await (await start(app, t1)).json()).bookingId as string;
+    // Ops re-mints (switch option / re-send / part-of-trip): the seq moves, the old link is retired.
+    const remint = async () => {
+      const q2 = (await quotes.patch(q.id, { payLinkSeq: q.payLinkSeq + 1 }))!;
+      return signQuotePayToken(q.id, q2.revision, SECRET, q2.payLinkSeq);
+    };
+    return { quotes, bookings, payments, app, q, a, t1, remint };
+  }
+
+  it('the booking the old link started is cancelled when the new link creates its own', async () => {
+    const { quotes, bookings, app, q, a, t1, remint } = await twoLinks();
+    expect((await bookings.get(a))!.status).toBe('payment_pending');
+    const t2 = await remint();
+    const res = await start(app, t2);
+    expect(res.status).toBe(201);
+    const b = (await res.json()).bookingId as string;
+    expect(b).not.toBe(a);
+    const older = (await bookings.get(a))!;
+    expect(older.status).toBe('cancelled');
+    expect(older.cancellationReason).toBe('superseded by a newer pay link');
+    expect((await bookings.get(b))!.status).toBe('payment_pending');
+    expect((await quotes.get(q.id))!.convertedBookingId).toBe(b);
+    // The old link is still retired, and the new one is still payable.
+    expect((await start(app, t1)).status).toBe(409);
+  });
+
+  it('resuming the SAME link (a double tap) cancels nothing', async () => {
+    const { bookings, app, a, t1 } = await twoLinks();
+    const again = await start(app, t1);
+    expect(again.status).toBe(200);
+    expect((await again.json()).bookingId).toBe(a);
+    expect((await bookings.get(a))!.status).toBe('payment_pending');
+  });
+
+  it('three taps on the new link cancel the old booking once and leave the new one live', async () => {
+    const { bookings, app, a, remint } = await twoLinks();
+    const t2 = await remint();
+    const ids = [] as string[];
+    for (let i = 0; i < 3; i += 1) ids.push((await (await start(app, t2)).json()).bookingId);
+    expect(new Set(ids).size).toBe(1);
+    expect((await bookings.get(a))!.status).toBe('cancelled');
+    expect((await bookings.get(ids[0]))!.status).toBe('payment_pending');
+  });
+
+  it('never cancels an older booking that already has a succeeded payment', async () => {
+    const { bookings, payments, app, a, remint } = await twoLinks();
+    const t2 = await remint();
+    const p = await payments.create({ bookingId: a, provider: 'payhere', orderId: 'CH-OLD-1', amount: 21900, currency: 'USD', idempotencyKey: 'pay-old' });
+    await payments.markSucceeded(p.id);
+    // (the quote now reads as paid, so /start refuses before it creates anything — the guard holds either way)
+    await start(app, t2);
+    expect((await bookings.get(a))!.status).toBe('payment_pending');
   });
 });
 
