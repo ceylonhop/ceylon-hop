@@ -434,13 +434,15 @@ test.describe('partner experiences on the quote page', () => {
     await expect(block.locator('h3')).toHaveText('While you’re in Sigiriya');
     await expect(block.locator('.xp-sub')).toHaveCount(1);
     await expect(block.locator('.xp-sub')).toHaveText(
-      'Request any of these free. Our concierge messages you to arrange it — you only pay if you go ahead.',
+      'Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.',
     );
     // The old green box and the per-row "won’t be charged" reassurance are gone; what each row has
     // instead is the tiny "No charge for requesting info" line under its button (owner, 2026-10-14).
     await expect(block.locator('.xp-note')).toHaveCount(0);
     await expect(block.locator('.xp-after')).toHaveCount(0);
     await expect(block).not.toContainText('Nothing to pay now');
+    // No "free" (owner, 2026-10-15): it made the experiences sound free; only the request costs nothing.
+    expect(await block.innerText()).not.toMatch(/\bfree\b/i);
     await expect(block).not.toContainText('won’t be charged');
     await expect(block).not.toContainText('Same as booking direct');
 
