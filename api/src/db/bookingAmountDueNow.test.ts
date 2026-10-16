@@ -77,6 +77,24 @@ export function amountDueNowContract(name: string, make: () => Promise<AmountDue
       expect((await env.bookings.refreshPayerDetails(booking.id, details(TOTAL))).amountDueNow).toBe(TOTAL);
     });
 
+    // Ops "Mark paid" (admin.ts): the booking is settled for its full total by hand, so what was
+    // "due now" becomes the total.
+    it('setAmountDueNowToTotal lifts a payment_pending booking to its total', async () => {
+      const { env, booking } = await setup();
+      await env.bookings.setStatus(booking.id, 'payment_pending');
+      const out = await env.bookings.setAmountDueNowToTotal(booking.id);
+      expect(out.amountDueNow).toBe(TOTAL);
+      expect((await env.bookings.get(booking.id))!.amountDueNow).toBe(TOTAL);
+    });
+
+    it('setAmountDueNowToTotal leaves a booking that is not payment_pending alone', async () => {
+      const { env, booking } = await setup();
+      expect((await env.bookings.setAmountDueNowToTotal(booking.id)).amountDueNow).toBe(DEPOSIT); // draft
+      await env.bookings.setStatus(booking.id, 'payment_pending');
+      await env.bookings.setStatus(booking.id, 'paid');
+      expect((await env.bookings.setAmountDueNowToTotal(booking.id)).amountDueNow).toBe(DEPOSIT);
+    });
+
     it('does not rewrite it on a booking past payment_pending', async () => {
       const { env, booking, details } = await setup();
       await env.bookings.setStatus(booking.id, 'payment_pending');

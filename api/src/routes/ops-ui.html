@@ -5087,7 +5087,7 @@ var bookOpen = false;     // "Mark booked" → create-a-booking confirmation mod
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
-var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
+var _payPicker = null;    // { lines, sel, totalCents, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
 var _payChooser = false;  // the "which option is this link for" chooser is open (a "both" quote)
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
@@ -7005,9 +7005,11 @@ function togglePayLine(state, lines, line) {
   }
   return { legIndexes: legs, extraIndexes: extras };
 }
-/* Mirrors selectionAmountCents/gapAfterLeg in api/src/quote/paySelection.ts — the server is
-   authoritative for the charged amount; this is the running total the operator watches. */
-function paySelectionSummary(state, lines) {
+/* Mirrors selectionAmountCents/gapAfterLeg/isFullSelection in api/src/quote/paySelection.ts — the
+   server is authoritative for the charged amount; this is the running total the operator watches.
+   With EVERY line ticked the server skips the subset sum and charges quote.totalCents (the lines
+   sum to the pre-finishing subtotal, a few dollars off the headline total), so show that figure. */
+function paySelectionSummary(state, lines, totalCents) {
   var ticked = function (l) {
     return l.kind === 'leg' ? state.legIndexes.indexOf(l.index) >= 0 : state.extraIndexes.indexOf(l.index) >= 0;
   };
@@ -7021,10 +7023,13 @@ function paySelectionSummary(state, lines) {
       break;
     }
   }
+  var all = lines.every(ticked);
   return {
     soldLegs: state.legIndexes.length,
     totalLegs: lines.filter(function (l) { return l.kind === 'leg'; }).length,
-    amountCents: lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
+    amountCents: all && typeof totalCents === 'number'
+      ? totalCents
+      : lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
     gapAfter: gapAfter,
   };
 }
@@ -7039,7 +7044,7 @@ async function openPayPartPicker() {
     var sel = body.selection
       ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
       : paySelectionState(body.lines);
-    _payPicker = { lines: body.lines, sel: sel, busy: false };
+    _payPicker = { lines: body.lines, sel: sel, totalCents: body.totalCents, busy: false };
     _payChooser = false;
     render();
   } catch (e) {
@@ -7086,7 +7091,7 @@ async function confirmPayPart() {
 
 function renderPayPicker() {
   if (!_payPicker) return '';
-  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines);
+  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines, _payPicker.totalCents);
   var rows = _payPicker.lines.map(function (l) {
     var on = l.kind === 'leg'
       ? _payPicker.sel.legIndexes.indexOf(l.index) >= 0
