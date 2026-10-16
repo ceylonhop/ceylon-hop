@@ -6152,10 +6152,13 @@ async function api(path, opts) {
 async function jsonOrNull(res) {
   try { return await res.json(); } catch (e) { return null; }
 }
-// V9: build a consistent { error } from a non-ok response.
+// V9: build a consistent { error, ... } from a non-ok response. The WHOLE server body when it
+// carries an `error` (routes attach reason / message / details / detail / status beside it, and
+// callers that read them — bookErrorText(), hzSubmitZone() — never received them while this kept
+// only `{ error }`); `{ error: 'HTTP <status>' }` when the body is missing or not JSON.
 async function errPayload(res) {
   var body = await jsonOrNull(res);
-  return { error: (body && body.error) ? body.error : ('HTTP ' + res.status) };
+  return (body && typeof body === 'object' && body.error) ? body : { error: 'HTTP ' + res.status };
 }
 
 // Client-side cache of autocomplete results (each query is a billed Google round-trip;
@@ -7294,12 +7297,8 @@ async function apiBook(id, payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) {
-      // The whole refusal, not errPayload's bare { error }: bookErrorText() reads reason /
-      // message / details, and never received them — the toast said only "not_bookable".
-      var errBody = await jsonOrNull(r);
-      return (errBody && typeof errBody === 'object' && errBody.error) ? errBody : { error: 'HTTP ' + r.status };
-    }
+    // errPayload() returns the whole refusal: bookErrorText() reads reason / message / details.
+    if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Booking failed' };
   } catch (e) { return { error: 'Network error' }; }
@@ -8100,7 +8099,15 @@ async function hzSubmitZone() {
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
+    if (!r.ok) {
+      var e = await errPayload(r);
+      // /zones answers a Zod failure with `detail` (the first issue's message) — name the value
+      // that was refused, not just that one was (the client pre-checks everything but the length).
+      var bad = e.error === 'bad_request';
+      ratesToast(bad ? ('Check the values' + (e.detail ? ' — ' + e.detail : '')) : (e.error || 'Save failed'), 'error');
+      renderRatesPage();
+      return;
+    }
     hzEditId = null;
     ratesToast('Zone saved');
     await loadHotZones();
@@ -8943,9 +8950,25 @@ var expTab = 'catalogue';  // 'catalogue' | 'leads'
 var expLeads = null;       // Lead[] from GET /admin/experiences/leads; null until loaded
 var expLeadsFailed = false;
 var expLeadBusy = {};
-// The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
+// The in-flight write per lead, so a later edit waits for it instead of being dropped.
 var expLeadPending = {};
 async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
+// Every write on a lead takes the lead through here: it waits for the write already out, then holds
+// the lead until the returned release() runs. The wait and the take are one turn (no await between
+// them), so writers woken together by one settle() take it one at a time — two never overlap, and a
+// slow answer can't overwrite a newer value the page holds.
+async function expLeadHold(id) {
+  while (expLeadPending[id]) await expLeadPending[id];
+  var seq = _expSeq;
+  expLeadBusy[id] = true;
+  var settle, pending = new Promise(function (res) { settle = res; });
+  expLeadPending[id] = pending;
+  return function () {
+    if (seq === _expSeq) delete expLeadBusy[id];
+    if (expLeadPending[id] === pending) delete expLeadPending[id];
+    settle();
+  };
+}
 // The lead once no save is out on it, for a caller that must have it to itself; null when it has gone or
 // the page has moved on. Everything queued behind one save wakes on it together, and a queued field save
 // takes the lead first — so wait again, for as long as there is a save to wait on, instead of giving up.
@@ -9196,12 +9219,12 @@ function expLeadPayFields(l, rowEl) {
 }
 
 // One PATCH for a lead. true = saved (the lead is updated in place); false = refused or failed, with
-// the operator already told why. The caller repaints, which puts a refused <select> back.
+// the operator already told why. The caller repaints, which puts a refused <select> back. It waits its
+// turn (expLeadHold), so a save queued behind another goes out after it, never alongside it.
 async function expLeadPatch(l, body) {
   var seq = _expSeq;
-  expLeadBusy[l.id] = true;
-  var settle, pending = new Promise(function (res) { settle = res; });
-  expLeadPending[l.id] = pending;
+  var release = await expLeadHold(l.id);
+  if (seq !== _expSeq) { release(); return false; }
   try {
     var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (seq !== _expSeq) return false;
@@ -9217,18 +9240,19 @@ async function expLeadPatch(l, body) {
     ratesToast('Couldn’t save — try again.', 'error');
     return false;
   } finally {
-    if (seq === _expSeq) delete expLeadBusy[l.id];
-    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-    settle();
+    release();
   }
 }
 
 async function expLeadStatusChange(sel) {
-  var l = expLeadById(sel.getAttribute('data-id'));
-  if (!l) return;
+  var id = sel.getAttribute('data-id');
   var want = sel.value;
+  // A pick made while a save is out waits for it — it used to be put straight back, silently.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
   var back = function () { sel.value = l.status; renderExperiencesPage(); };
-  if (want === l.status || expLeadBusy[l.id]) return back();
+  if (want === l.status) return back();
   var pay = expLeadPayFields(l, sel.closest('.ch-lead-row'));
   if (pay.error) { ratesToast(pay.error, 'error'); return back(); }
   var body = Object.assign({ status: want }, pay.fields);
@@ -9240,8 +9264,11 @@ async function expLeadStatusChange(sel) {
 }
 
 async function expLeadSavePay(btn) {
-  var l = expLeadById(btn.getAttribute('data-id'));
-  if (!l || expLeadBusy[l.id]) return;
+  var id = btn.getAttribute('data-id');
+  // Pressed while a save is out: wait for it — it used to do nothing.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
   var pay = expLeadPayFields(l, btn.closest('.ch-lead-row'));
   if (pay.error) { ratesToast(pay.error, 'error'); return; }
   if (!Object.keys(pay.fields).length) return;
@@ -9296,9 +9323,8 @@ async function expLeadConfirm(btn) {
     Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
     if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) return true;
     var seq = _expSeq;
-    expLeadBusy[l.id] = true;
-    var settle, pending = new Promise(function (res) { settle = res; });
-    expLeadPending[l.id] = pending;
+    var release = await expLeadHold(l.id);
+    if (seq !== _expSeq) { release(); return false; }
     try {
       var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       if (seq !== _expSeq) return false;
@@ -9307,15 +9333,15 @@ async function expLeadConfirm(btn) {
       if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); delete expLeadNoEmail[l.id]; ratesToast('Confirmation sent'); }
       else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
       else if (d && d.error === 'no_email') { expLeadNoEmail[l.id] = true; ratesToast('No email on file — confirm on WhatsApp', 'error'); }
+      // The environment stopped the email (staging allowlist, kill switch): not a failure to retry.
+      else if (d && d.error === 'email_suppressed') { expLeadNoEmail[l.id] = true; ratesToast('Email to this address is switched off on this environment — confirm on WhatsApp instead', 'error'); }
       else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
     } catch (e) {
       if (seq !== _expSeq) return false;
       window.opsReportError && window.opsReportError('experience confirmation send', e);
       ratesToast('Couldn’t send — try again.', 'error');
     } finally {
-      if (seq === _expSeq) delete expLeadBusy[l.id];
-      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-      settle();
+      release();
     }
     return true;
   };
@@ -9331,9 +9357,8 @@ async function expLeadConfirmWhatsApp(btn) {
     var l = await expLeadFree(id);
     if (!l) return false;
     var seq = _expSeq;
-    expLeadBusy[l.id] = true;
-    var settle, pending = new Promise(function (res) { settle = res; });
-    expLeadPending[l.id] = pending;
+    var release = await expLeadHold(l.id);
+    if (seq !== _expSeq) { release(); return false; }
     try {
       var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'whatsapp' }) });
       if (seq !== _expSeq) return false;
@@ -9346,9 +9371,7 @@ async function expLeadConfirmWhatsApp(btn) {
       window.opsReportError && window.opsReportError('experience whatsapp confirmation', e);
       ratesToast('Couldn’t save — try again.', 'error');
     } finally {
-      if (seq === _expSeq) delete expLeadBusy[l.id];
-      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-      settle();
+      release();
     }
     return true;
   };
