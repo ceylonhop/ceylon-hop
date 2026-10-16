@@ -2890,6 +2890,25 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     expect(after!.payLinkSeq).toBe(2); // monotonic — never reset
   });
 
+  // The ops picker once read "Covers 2 of 2 legs — $106.67" for a $106.00 quote (staging, Q-29EYR).
+  // The leg lines sum to the pre-finishing subtotal; the customer is charged the finished total.
+  // This proves the SERVER side of that: ticking everything charges the quote total, not the sum.
+  it('an all-ticked selection charges the finished quote total, not the sum of the lines', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const stored = (await quotes.get(id))!;
+    const app = createApp({ quotes });
+    const lines = (await (await authedGet(app, `/admin/quote/${id}/pay-lines`)).json()).lines as { amountCents: number }[];
+    const lineSum = lines.reduce((s, l) => s + l.amountCents, 0);
+    // Guard the premise: the fixture really does finish to something other than the line sum.
+    expect(lineSum).not.toBe(stored.totalCents);
+
+    const body = await (await mintSel(app, id, { legIndexes: [0, 1, 2], extraIndexes: [0] })).json();
+    expect(body.amountCents).toBe(stored.totalCents);
+    expect(body.amountCents).not.toBe(lineSum);
+    expect((await quotes.get(id))!.soldCents).toBeNull(); // the pay page falls back to totalCents
+  });
+
   it('a bodyless mint still produces the full-total link', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await priced(quotes);
