@@ -23,16 +23,17 @@ describe('0070_experience_pay_page_source', () => {
     expect(sql).not.toMatch(/alter\s+table\s+"(?!experience_interests")/i);
   });
   // drizzle applies by `when`, and SKIPS a migration whose `when` is older than the last one applied.
-  // PR #976 (0069_usage_counters) is journalled at 1791936000000 from another branch, so 0070 sits a
-  // day after it — #976 must merge first (or move its `when` above this one).
-  it('is journalled at idx 70 with when 1792022400000, after 0068 and after #976’s 0069 (1791936000000)', () => {
+  // PR #976 (0069_usage_counters, still open) is journalled at 1791936000000. 0070 sits BETWEEN 0068 and
+  // that, so this PR can ship first (owner, 2026-10-16: promote without waiting for #976) and #976 still
+  // applies after it — #976's journal entry then goes after 0070's, with its higher `when`.
+  it('is journalled at idx 70 with when 1791849600000: after 0068, and before #976’s 0069 (1791936000000)', () => {
     const e = journal.entries.find((x) => x.tag === '0070_experience_pay_page_source');
     const prev = journal.entries.find((x) => x.tag === '0068_experience_tripadvisor');
     expect(e, 'journal entry for 0070').toBeDefined();
     expect(e!.idx).toBe(70);
-    expect(e!.when).toBe(1792022400000);
+    expect(e!.when).toBe(1791849600000);
     expect(e!.when).toBeGreaterThan(prev!.when);
-    expect(e!.when).toBeGreaterThan(1791936000000);
+    expect(e!.when).toBeLessThan(1791936000000);
   });
 });
 
