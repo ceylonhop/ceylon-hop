@@ -15,7 +15,7 @@ export type PricingPayload = {
   chauffeurDayFee: number;
   chauffeurIdleMinKm: { car: number; van: number }; // idle-day min km/day (km, not USD)
   depositPct: number; // fraction, e.g. 0.10
-  depositCap: number; // whole USD
+  depositMin: number; // whole USD — the floor
   extras: Record<string, number>; // USD per extra code
   corridorSeat: Record<string, number>; // corridorId -> whole-USD seat price
   // Seat-price inputs in CENTS, so the front-end reproduces seatPriceForDistance() exactly.
@@ -55,7 +55,7 @@ export function buildPricingPayload(card: RateCard = RATE_CARD): PricingPayload 
     chauffeurDayFee: usd(card.chauffeur.dayRateCents),
     chauffeurIdleMinKm: { car: card.chauffeur.idleMinKm.car, van: card.chauffeur.idleMinKm.van },
     depositPct: card.deposit.pct / 100,
-    depositCap: usd(card.deposit.capCents),
+    depositMin: usd(card.deposit.minCents),
     extras,
     corridorSeat,
     seatPricing: {

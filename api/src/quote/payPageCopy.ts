@@ -195,7 +195,7 @@ export function payPageCopy(quote: {
       subtitle: subtitleBits.join(' · '),
       facts: [
         { k: 'Trip', v: fallbackTitle, sub: 'full day-by-day plan in your quote' },
-        { k: 'Days', v: span != null ? `${span} with your driver` : 'with your driver', sub: 'including your free days' },
+        { k: 'Days', v: span != null ? `${span} with your driver` : 'with your driver', sub: 'your driver stays with you throughout' },
         { k: 'Travellers', v: paxLabel ? `${paxLabel} · ${veh}` : veh },
         { k: 'Starts', v: first ? shortDate(first) : '—' },
       ],

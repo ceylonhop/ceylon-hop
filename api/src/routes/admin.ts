@@ -24,6 +24,7 @@ import { runWatchdog, checkWatchdogLiveness } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
@@ -60,6 +61,8 @@ export function adminRoutes(deps: {
   teamEmails?: ReadonlySet<string>;
   // Checkout attempt log (migration 0055) — the digest's payments line; omitted without it.
   checkoutEvents?: BookingCheckoutEventRepo;
+  // Present only once both Phase A ledgers are enabled; the watchdog then reconciles them.
+  customerCommunications?: Pick<CustomerCommunicationRepo, 'listReconciliationFindings'>;
   // Server-side GA4: refunds, mark-paid settlements, and the sweep that retries failed sends.
   ga4?: Ga4Reporter;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
@@ -206,6 +209,7 @@ export function adminRoutes(deps: {
       amountCents: z.number().int().positive(),
       currency: z.string().length(3),
       reason: z.string().trim().min(1).max(500),
+      paymentId: z.string().uuid().optional(),
     })
     .strict();
   const RefundConfirm = z.object({ gatewayRef: z.string().trim().min(1).max(200) }).strict();
@@ -724,6 +728,7 @@ export function adminRoutes(deps: {
       bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget,
       alertLog: deps.alertLog, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents,
       rideLists: deps.rideLists,
+      customerCommunications: deps.customerCommunications,
       correlation,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it

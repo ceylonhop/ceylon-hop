@@ -1,5 +1,10 @@
 import { futureIsoDate } from '../dates.js';
 
+// Tripadvisor's logo comes from config (TRIPADVISOR_LOGO_URL) via GET /experiences/ratings's `logoUrl`; the
+// pages show a bubble rating only together with it. 30x20 is an Ollie-ish box, so layout checks are real.
+export const TA_LOGO = 'https://static.tacdn.com/img2/brand_refresh/ollie-e2e.svg';
+export const TA_LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20" viewBox="0 0 30 20"><rect width="30" height="20" fill="#34e0a1"/></svg>';
+
 // Shared e2e harness: stubs Google Maps in the page, and the PayHere gateway and the API on the wire,
 // so the booking journeys are deterministic and run fully offline.
 
@@ -166,6 +171,14 @@ export async function installEstimateStub(page, opts = {}) {
  *   settlementStatuses - server payment states GET /bookings/pay-return answers with, in order
  *                  (the last repeats), on the way back from the gateway
  *   checkoutDelayMs - hold POST /bookings/:id/checkout this long before answering
+ *   experiences  - what GET /experiences/near answers: {status = 200, stops = [], delayMs = 0}. Default
+ *                  is no experiences, so the booking page's experiences block stays hidden
+ *
+ *   ratings      - what GET /experiences/ratings answers (live Tripadvisor ratings, spec D22):
+ *                  {status = 200, ratings = [], logoUrl = TA_LOGO, delayMs = 0, body}. Default is no ratings, so no row shows one
+ *
+ * Also returns `nearRequests`: each GET /experiences/near's `at` values, in order, and
+ * `ratingRequests`: each GET /experiences/ratings's `ids` (split on commas), in order.
  *
  * Returns handles for the real-gateway round trip (`checkout: 'payhere'`):
  *   gateway      - every request the PayHere stub received: {method, url, postData}
@@ -189,6 +202,8 @@ export async function gotoBooking(page, opts = {}) {
     estimate = null,                 // installEstimateStub opts: switches this spec into the engine-priced world
     settlementStatuses = ['paid'],   // webhook-owned state polled on the way back from PayHere
     checkoutDelayMs = 0,
+    experiences = {},                // GET /experiences/near: {status, stops, delayMs}
+    ratings = {},                    // GET /experiences/ratings: {status, ratings, delayMs, body}
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -229,6 +244,30 @@ export async function gotoBooking(page, opts = {}) {
   await page.route('**/www.googletagmanager.com/**', (r) => r.abort());
   await page.route('**/*.clarity.ms/**', (r) => r.abort());
   await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
+
+  // Partner experiences near the drop-off (booking.js syncExperiences). Always answered here — the
+  // page asks on step 3 for every booking, and the offline suite must not reach the real API.
+  const nearRequests = [];
+  await page.route('**/experiences/near*', async (r) => {
+    nearRequests.push(new URL(r.request().url()).searchParams.getAll('at'));
+    if (experiences.delayMs) await new Promise((res) => setTimeout(res, experiences.delayMs));
+    const status = experiences.status ?? 200;
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill(json({ stops: experiences.stops ?? [] }));
+  });
+
+  // Live Tripadvisor ratings for the rows above (booking.js). Always answered: the offline suite must not
+  // reach the real API, and a rating must stay optional.
+  const ratingRequests = [];
+  await page.route('**/experiences/ratings*', async (r) => {
+    ratingRequests.push((new URL(r.request().url()).searchParams.get('ids') || '').split(','));
+    if (ratings.delayMs) await new Promise((res) => setTimeout(res, ratings.delayMs));
+    const status = ratings.status ?? 200;
+    if (status !== 200) return r.fulfill({ status, contentType: 'application/json', body: '{"error":"boom"}' });
+    return r.fulfill(ratings.body !== undefined
+      ? { status: 200, contentType: 'application/json', body: ratings.body }
+      : json({ ...((ratings.ratings ?? []).length ? { logoUrl: ratings.logoUrl === undefined ? TA_LOGO : ratings.logoUrl } : {}), ratings: ratings.ratings ?? [] }));
+  });
 
   // booking creation
   await page.route('**/bookings/single', (r) => {
@@ -309,7 +348,7 @@ export async function gotoBooking(page, opts = {}) {
   }
 
   await page.goto(`${path}?${query}`);
-  return { gateway, sdk, checkoutBodies, fields, viewTokens };
+  return { gateway, sdk, checkoutBodies, fields, viewTokens, nearRequests, ratingRequests };
 }
 
 // What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the

@@ -7,6 +7,8 @@ import {
 } from '../db/quoteConversionRepo';
 import { WebQuoteIntentSchema } from '../quote/webQuoteV2';
 import { signCheckoutToken } from '../lib/bookingToken';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 
 const RequestSchema = z
   .object({
@@ -28,6 +30,7 @@ export function quoteConversionRoutes(deps: {
   enabled: boolean;
   linkSecret: string;
   checkoutNow?: () => number;
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const r = new Hono();
   r.post('/from-quote-v2', async (c) => {
@@ -43,6 +46,8 @@ export function quoteConversionRoutes(deps: {
     }
     try {
       const outcome = await deps.conversions.convert({ ...parsed.data, accessToken });
+      // After the quote is welded to its booking; idempotent, so a replay re-links harmlessly.
+      await linkQuoteInterests(deps.experienceInterests, parsed.data.quoteId, outcome.booking.id);
       return c.json(
         {
           ...outcome.booking,

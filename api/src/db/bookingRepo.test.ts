@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryBookingRepo, type NewBooking, personKeyFor } from './bookingRepo';
 import type { BookingTransitionContext } from '../domain/trackingContract';
+import { InMemoryQuoteRepo } from './quoteRepo';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -173,6 +174,48 @@ describe('InMemoryBookingRepo', () => {
 // transfer_request/trip_request store places and dates but no name. Merging two rows rewrites
 // the traveller on whichever booking wrote first. So we LINK instead: person_key groups them
 // (generated in Postgres by migration 0032) and every booking keeps its own snapshot.
+// A booking names the add-ons its quote charged. Which add-ons is decided by the BOOKING, not by
+// the quote's current selection (spec PR #964): a chauffeur booking bought none of the private
+// quote's lines, while a private booking keeps its own even after the link was switched.
+describe('InMemoryBookingRepo — add-ons from the linked quote', () => {
+  const chauffeurBooking: NewBooking = {
+      mode: 'trip' as const,
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+        vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 30000, amountDueNow: 30000, currency: 'USD',
+    };
+  async function linked(selection: object | null, booking: NewBooking) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    bookings.attachQuotes(quotes);
+    const b = await bookings.create(booking);
+    const engine = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }], extras: [{ code: 'waiting', legIndex: 0 }] };
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 20000, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine },
+      result: { totalCents: 20000, lineItems: [{ label: 'Kandy → Ella (car)', amountCents: 18000 }, { label: 'Waiting fee — Kandy → Ella', amountCents: 2000 }] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, ...(selection ? { payLinkSelection: selection as never, soldCents: 30000 } : {}) });
+    return bookings.get(b.id);
+  }
+
+  it('names them for a whole-trip private sale', async () => {
+    expect((await linked(null, sample))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
+  it('a PRIVATE booking keeps its add-ons after the link was switched to the chauffeur option', async () => {
+    expect((await linked({ service: 'chauffeur' }, sample))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
+  it('a CHAUFFEUR booking names none, with or without the selection still in place', async () => {
+    expect((await linked({ service: 'chauffeur' }, chauffeurBooking))?.addOns).toBeUndefined();
+    expect((await linked(null, chauffeurBooking))?.addOns).toBeUndefined();
+  });
+});
+
 describe('personKeyFor — grouping people without merging rows', () => {
   it('matches the same human across casing and stray whitespace', () => {
     expect(personKeyFor('Roshen@CeylonHop.com')).toBe('roshen@ceylonhop.com');
