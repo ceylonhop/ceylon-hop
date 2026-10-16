@@ -222,7 +222,7 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
 
 describe('priceShared (engine-agnostic — the corridor DB price is already authoritative)', () => {
   it('prices seats × the corridor seat price, all due now', () => {
-    expect(priceShared(3, 2100)).toEqual({ currency: 'USD', totalCents: 6300, amountDueNowCents: 6300, priced: true });
+    expect(priceShared(3, 2100)).toMatchObject({ currency: 'USD', totalCents: 6300, amountDueNowCents: 6300, priced: true });
   });
 });
 

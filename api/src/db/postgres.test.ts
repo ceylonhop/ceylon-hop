@@ -11,7 +11,8 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import { personKeyFor, websitePricingSnapshot, type NewBooking } from './bookingRepo';
+import { personKeyFor, websitePricingSnapshot, sharedPricingSnapshot, type NewBooking } from './bookingRepo';
+import { priceShared } from '../services/pricing';
 import { quote } from '../quote/engine';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest } from '../quote/types';
@@ -486,6 +487,29 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     if (got?.mode !== 'shared') throw new Error('expected a shared booking');
     expect(got.input.corridorId).toBe('hill-line');
     expect(got.input.seats).toBe(2);
+  });
+
+  // Owner 2026-10-16: a shared seat's hotel pick-up & drop-off is recorded as an `extra` line in
+  // pricing_snapshot_json, the same record a website private transfer's add-ons live in.
+  it('a shared booking names the hotel pick-up & drop-off it was priced with', async () => {
+    const priced = priceShared(2, 3500, 0, ['hotel-transfer']);
+    const shared: NewBooking = {
+      mode: 'shared',
+      input: {
+        corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: priced.totalCents, amountDueNow: priced.amountDueNowCents, currency: 'USD',
+    };
+    const snapshot = sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priced, RATE_CARD.version);
+    const b = await bookings.create(shared, { pricingSnapshot: snapshot });
+    expect(b.total).toBe(7500);
+    expect(b.addOns).toEqual(['Hotel pick-up & drop-off']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Hotel pick-up & drop-off']);
+    const plain = await bookings.create({ ...shared, total: 7000, amountDueNow: 7000 }, {
+      pricingSnapshot: sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priceShared(2, 3500), RATE_CARD.version),
+    });
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
   it('holds seats atomically under real DB concurrency (no oversell)', async () => {

@@ -241,6 +241,8 @@ export function factRows(booking: Booking): [string, string][] {
       const extra = Math.max(0, bags - booking.input.seats);
       rows.push(['Luggage', `${bags} bag${bags > 1 ? 's' : ''}${extra > 0 ? ` · ${extra} over the free allowance` : ''}`]);
     }
+    const addOns = addOnsLabel(booking);
+    if (addOns) rows.push(['Extras', addOns]);
     return rows;
   }
   const rows: [string, string][] = [
