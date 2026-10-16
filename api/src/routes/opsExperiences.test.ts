@@ -408,7 +408,20 @@ describe('lead schedule and confirmation email', () => {
       expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
     });
 
-    it('502 send_failed when the adapter reports the message was not delivered (kill switch)', async () => {
+    // Staging 2026-10-13: the allowlist stops every address outside @ceylonhop.com, and the page answered
+    // "try again" — the one thing that cannot help. A suppression is an operator setting, not a failure.
+    it('422 email_suppressed (with the adapter reason) when the allowlist stops the message; nothing stamped', async () => {
+      const allowlisted: EmailAdapter = { send: async () => ({ delivered: false, reason: 'suppressed_allowlist' }) };
+      const s = await confirmSetup({ email: allowlisted });
+      const i = await s.interests.record({ experience: s.exp, source: 'booking_page', bookingId: (await s.paidBooking()).id });
+      await s.paid(i.id, s.SCHEDULE);
+      const res = await s.send('POST', conf(i.id), {});
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: 'email_suppressed', reason: 'suppressed_allowlist' });
+      expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
+    });
+
+    it('422 email_suppressed when the kill switch stops the message; nothing stamped', async () => {
       const s = await confirmSetup();
       const i = await s.interests.record({ experience: s.exp, source: 'booking_page', bookingId: (await s.paidBooking()).id });
       await s.paid(i.id, s.SCHEDULE);
@@ -417,7 +430,9 @@ describe('lead schedule and confirmation email', () => {
         email: s.fake, emailPolicy: { enabled: false },
       });
       const res = await off.request(conf(i.id), { method: 'POST', headers: { cookie: OPS, 'content-type': 'application/json' }, body: '{}' });
-      expect(res.status).toBe(502);
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: 'email_suppressed', reason: 'suppressed_disabled' });
+      expect(s.fake.sent).toHaveLength(0);
       expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
     });
 
