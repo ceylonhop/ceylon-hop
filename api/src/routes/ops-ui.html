@@ -5675,6 +5675,14 @@ function armAutosave() {
   if (_autoTimer) clearTimeout(_autoTimer);
   _autoTimer = setTimeout(fireAutosave, 2500);
 }
+// A driving leg still missing an end with no km typed to fall back on: /save has nothing to
+// measure and answers 400 "couldn't find the distance". That is a quote part-way through being
+// built, not a failure, so autosave waits for the leg instead of reporting it red.
+function hasUnfinishedDrivingLeg() {
+  return (state.legs || []).some(function (leg) {
+    return legDrives(leg) && (!legFrom(leg) || !legTo(leg)) && legKm(leg) <= 0;
+  });
+}
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
@@ -5701,6 +5709,9 @@ async function fireAutosave() {
     return;
   }
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  // Nothing is re-armed: finishing the leg is an edit, and every edit arms autosave itself. The
+  // chip keeps saying "Unsaved"/"Edits pending" meanwhile, which is the truth.
+  if (hasUnfinishedDrivingLeg()) return;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok;
