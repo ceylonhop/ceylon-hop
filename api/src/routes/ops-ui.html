@@ -9656,6 +9656,7 @@ document.addEventListener('click', function (e) {
     expTab = el.getAttribute('data-tab') === 'leads' ? 'leads' : 'catalogue';
     renderExperiencesPage();
     if (expTab === 'leads') loadExpLeads(); // fresh on every visit: leads arrive while the page is open
+    else loadExperiences(); // and the Catalogue's "N interested · N paid" moves with the leads (loadExperiences is seq-guarded)
   }
   else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
   else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
