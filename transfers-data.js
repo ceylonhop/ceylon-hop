@@ -12,7 +12,7 @@
   let CHAUFFEUR_DAY_FEE = 31.05;
   const CHAUFFEUR_IDLE_MIN_KM = {"car":50,"van":100};
   const DEPOSIT_PCT = 0.1;
-  const DEPOSIT_CAP = 50;
+  const DEPOSIT_MIN = 50;
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
   const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30};
   const SEAT_PRICING = {"perKmCentsVan":54.05,"floorCentsVan":4999,"seatsCoveringVan":3};
@@ -461,7 +461,7 @@
     if(routedKm <= billableKm(anchorKm)) return { action:'hold', price: currentUnit };
     return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
   }
-  // chauffeur-guide day fee (a driver-guide + car per day) plus deposit %/cap live in the
+  // chauffeur-guide day fee (a driver-guide + car per day) plus deposit %/min live in the
   // generated pricing block at the top of this IIFE (sourced from api/src/quote/rateCard.ts).
 
   // full multi-stop quote: an array of typed stop names + vehicle
@@ -486,7 +486,7 @@
     roadKm, durationText, privateQuote, sharedOption, corridorFor, boardSeatPrice,
     resolvePlace, placeAliasId, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
-    PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_CAP,
+    PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_MIN,
     place: id => byId[id] || null
   };
 

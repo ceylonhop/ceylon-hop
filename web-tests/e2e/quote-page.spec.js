@@ -383,3 +383,32 @@ test('a lapsed quote shows the expiry row and still renders the itinerary', asyn
   // Never reads as "your trip is gone" — the sailed-off dead-end art must not appear here.
   await expect(page.locator('.de-wrap')).toHaveCount(0);
 });
+
+// ── No partner experiences on the quote page (owner, 2026-10-15: "it's a distraction") ───────────
+// They moved to the pay-link confirmation, after the customer has paid — pay-page-experiences.spec.js
+// carries the rows' behaviour and Tripadvisor ratings. The quote API no longer sends `experiences`;
+// even a body that still did (an API one deploy behind) must draw nothing, ask for no ratings and
+// post nothing.
+const XP_STOPS = [{ place: 'Sigiriya', items: [{
+  id: '11111111-1111-4111-8111-111111111111', slug: 'placeholder-ayurvedic-massage', name: 'Ayurvedic massage',
+  partnerName: 'Atherya Spa', areaLabel: 'Sigiriya', summary: 's', details: 'd', priceCents: 3500, currency: 'USD',
+  priceUnit: 'per_person', durationText: '90 min', openWeekdays: [1], startTimes: [], photos: [], aboutKm: 4, interested: false,
+}] }];
+
+test('the quote page shows no experiences block, asks for no ratings and posts no interest', async ({ page }) => {
+  const calls = [];
+  page.on('request', (req) => { if (/\/experiences\/|\/interest\b/.test(req.url())) calls.push(req.url()); });
+  await stubQuoteView(page, {
+    state: 'live', view: view({ options: [PRIVATE_OPT] }),
+    validUntil: new Date(Date.now() + 7 * 864e5).toISOString(), experiences: XP_STOPS,
+  });
+  await page.goto(PAGE);
+  await expect(page.locator('.pp-title')).toBeVisible();
+  await expect(page.locator('.pp-note')).toBeVisible();
+  await expect(page.locator('#experiences-block')).toHaveCount(0);
+  await expect(page.locator('.xp-row, .xp-btn')).toHaveCount(0);
+  await expect(page.locator('#app')).not.toContainText('While you’re in');
+  await expect(page.locator('#app')).not.toContainText('Request info');
+  await page.waitForTimeout(300);
+  expect(calls).toEqual([]);
+});

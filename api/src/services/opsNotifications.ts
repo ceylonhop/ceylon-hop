@@ -339,8 +339,18 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
 
 const channelLabel = (b: Booking) => (b.channel === 'whatsapp' ? 'WhatsApp' : 'Website');
 
-export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
-  const f = bookingFacts(b);
+export interface TeamInterest { name: string; partnerName?: string; status: string }
+
+// "Ayurvedic massage (Atherya Spa) — new lead": a plain-words status, so a glance reads as a to-do.
+const interestRow = (i: TeamInterest): [string, string] => [
+  'Interested in',
+  `${i.name}${i.partnerName ? ` (${i.partnerName})` : ''} — ${i.status === 'new' ? 'new lead' : i.status.replace('_', ' ')}`,
+];
+
+export function teamPaidEmail(b: Booking, opsBaseUrl: string, interests: TeamInterest[] = []): { subject: string; html: string; text: string } {
+  const facts = bookingFacts(b);
+  // Only this email carries the row, so it joins this email's own copy of the facts.
+  const f = { ...facts, tripRows: [...facts.tripRows, ...interests.map(interestRow)] };
   const balance = b.total - f.paidNow;
   const paid = money(f.paidNow, b.currency);
   const subject = `Paid: ${f.subjectRoute}, ${f.when} — ${f.people} — ${paid}`;
@@ -354,6 +364,28 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   return {
     subject,
     ...teamBookingBody(b, f, { pill: ['PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Paid'] }, opsBaseUrl),
+  };
+}
+
+// The balance of a deposit booking landing is money landing too, so it keeps the "Paid: " subject
+// prefix the owner's Gmail forward filters on (every money-landed mail MUST start "Paid: ").
+// The subject says it is the balance and the amount just paid; the body shows the whole split.
+export function teamBalancePaidEmail(
+  b: Booking,
+  paid: { depositCents: number; balanceCents: number },
+  opsBaseUrl: string,
+): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const subject = `Paid: ${f.subjectRoute}, ${f.when} — balance ${money(paid.balanceCents, b.currency)}`;
+  const moneyRows: [string, string][] = [
+    ['Total', money(b.total, b.currency)],
+    ['Deposit paid', money(paid.depositCents, b.currency)],
+    ['Balance paid', money(paid.balanceCents, b.currency)],
+    ['Channel', channelLabel(b)],
+  ];
+  return {
+    subject,
+    ...teamBookingBody(b, f, { pill: ['BALANCE PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Balance paid'] }, opsBaseUrl),
   };
 }
 

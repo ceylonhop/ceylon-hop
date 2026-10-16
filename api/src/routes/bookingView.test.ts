@@ -102,6 +102,7 @@ describe('projectBooking names the local road the customer chose', () => {
     for (const b of [singleBooking, tripBooking, fastest]) expect(projectBooking(b)).not.toHaveProperty('road');
     expect(Object.keys(projectBooking(singleBooking))).toEqual([
       'reference', 'status', 'mode', 'firstName', 'currency', 'totalCents', 'amountDueNowCents', 'balanceDueCents',
+      'paidCents', 'balancePayable',
       'from', 'to', 'date', 'time', 'stops', 'legDates', 'endDate', 'travellers', 'bags', 'vehicleType',
     ]);
     expect(JSON.stringify(projectBooking(fastest))).toBe(JSON.stringify(projectBooking(singleBooking)));

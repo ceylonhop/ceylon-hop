@@ -6,11 +6,15 @@ import { customerQuoteView } from '../quote/customerQuoteView';
 import { rateCardFor } from '../quote/rateLock';
 import { quote as priceQuote } from '../quote/engine';
 import { drives } from '../quote/legCategory';
+import { alternativeOf, soldViewFor } from '../quote/quoteAlternative';
 import type { QuoteRequest, PrivateLeg, Ride, ChauffeurTravelDay, ChauffeurRideDay } from '../quote/types';
 import type { RateCard } from '../quote/rateCard';
 
-// The customer half of quote links (spec 2026-08-05). ONE route, and it READS — this module has
-// no POST and touches no repo mutation, which is what makes a forwarded quote link harmless.
+// The customer half of quote links (spec 2026-08-05). The page is a READ — a forwarded quote link
+// can never start a payment or change the quote. Partner experiences (spec 2026-10-06 D12) were
+// shown here with a POST /interest tick until the owner moved them to the pay-link confirmation
+// (2026-10-15: "it's a distraction" before the customer has paid — see quotePay.ts). The POST is
+// kept only to answer 410 to a quote page cached from before; this module writes nothing again.
 // Two invariants dominate the file:
 //
 //   1. MARGIN NEVER REACHES THE WIRE. The stored quote carries marginCents, the locked rate card
@@ -131,9 +135,12 @@ function servicesFor(quote: SavedQuote, now: Date): {
   };
 
   if (engine.product === 'private') {
+    // The chauffeur price frozen at /save wins over a recompute, so the page shows what was
+    // approved (spec PR #964). No stored alternative (legacy, discounted, single-day) → recompute.
+    const stored = alternativeOf(quote);
     return {
       pointToPoint: price(engine),
-      chauffeur: price(chauffeurFromPrivate(engine, req?.tool?.legs)),
+      chauffeur: stored ? { totalCents: stored.result.totalCents } : price(chauffeurFromPrivate(engine, req?.tool?.legs)),
     };
   }
   return {
@@ -170,12 +177,16 @@ export function quoteViewRoutes(deps: {
       const booking = quote.convertedBookingId && deps.bookings
         ? await deps.bookings.get(quote.convertedBookingId)
         : null;
+      // Named for what was SOLD, which the BOOKING decides once there is one: a quote won on a
+      // chauffeur link is a chauffeur trip, a private booking stays point-to-point even if the link
+      // was switched after it was started. Never a dead end for a won quote.
+      const sold = soldViewFor(quote, booking);
       return send({
         state: 'booked' as ViewState,
         booked: {
           reference: booking?.reference ?? null,
           firstName: (quote.customerName ?? '').trim().split(/\s+/)[0] || null,
-          title: customerQuoteView(quote, servicesFor(quote, now)).title,
+          title: customerQuoteView(sold, servicesFor(sold, now)).title,
           // The keepsake hands the customer to where their booking actually lives.
           manageUrl: booking && deps.appBaseUrl
             ? `${deps.appBaseUrl.replace(/\/$/, '')}/manage.html?t=${signBookingToken(booking.id, deps.linkSecret)}`
@@ -195,6 +206,11 @@ export function quoteViewRoutes(deps: {
       validUntil: quote.offerValidUntil ? quote.offerValidUntil.toISOString() : null,
     });
   });
+
+  // Retired 2026-10-15 with the quote page's experiences section. A page cached from before may still
+  // post its "Request info" tap here: it gets a plain 410 (and shows its own "Couldn't save" line),
+  // and nothing is recorded. The tap now lives on the paid pay link (POST /quotes/pay/interest).
+  r.post('/interest', (c) => c.json({ error: 'gone' }, 410));
 
   return r;
 }
