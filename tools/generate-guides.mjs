@@ -53,7 +53,7 @@ function hero(g, p) {
       <h1>${esc(g.name)}</h1>
       <p class="sub">${g.hero.intro}</p>
     </div>
-    <span class="credit">Photo: ${esc(g.photos[g.hero.photo].credit)} / Unsplash</span>
+    <span class="credit">Photo: ${heroCredit(g.photos[g.hero.photo])}</span>
   </div>`;
 }
 
@@ -152,7 +152,7 @@ function onTheWay(g, p) {
 
 function placeRow(g, items, collector, p, withMap) {
   const cards = items.map(e => `<article class="pl reveal">
-          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}
+          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}${g.photos[e.photo].caption ? `<span class="cap" style="display:block;padding:8px 18px 0;font-size:.72rem;line-height:1.4;color:var(--ink-soft)">${esc(g.photos[e.photo].caption)}</span>` : ''}
           <span class="tier">${esc(e.tier)}</span>${e.pick ? '<span class="pick">Our pick</span>' : ''}
           <div class="bd"><h3>${esc(e.name)}</h3><p class="why">${e.text}</p><button class="tg" type="button" aria-expanded="false">More</button>
             <div class="m"><span class="pb">${esc(e.band)}</span>${(e.flags || []).map(f => `<span>${esc(f)}</span>`).join('')}${(e.warn || []).map(f => `<span class="warn">${esc(f)}</span>`).join('')}</div>
@@ -246,9 +246,22 @@ function askBand(g) {
   </div></section>`;
 }
 
+// Wikimedia Commons photos (source: 'commons') are CC BY / CC BY-SA: the licence is named and linked
+// beside the photographer. Everything else is Unsplash, credited exactly as before.
+const isCommons = ph => ph.source === 'commons';
+const heroCredit = ph => isCommons(ph) ? `${esc(ph.credit)} / Wikimedia Commons (${esc(ph.license)})` : `${esc(ph.credit)} / Unsplash`;
+
 function credits(g, p) {
-  const names = [...new Set(Object.values(g.photos).map(x => x.credit))];
-  return `<div class="credits"><div class="wrap"><span>Photos:</span>${names.map(n => `<span>${esc(n)}</span>`).join('')}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  const all = Object.values(g.photos);
+  const names = [...new Set(all.filter(x => !isCommons(x)).map(x => x.credit))];
+  const commons = [...new Map(all.filter(isCommons).map(x => [x.credit + x.license, x])).values()];
+  const nameHtml = names.map(n => `<span>${esc(n)}</span>`).join('');
+  if (!commons.length) {
+    return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  }
+  const commonsHtml = commons.map(x =>
+    `<span>${esc(x.credit)} (<a href="${esc(x.licenseUrl)}">${esc(x.license)}</a>, Wikimedia Commons)</span>`).join('');
+  return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash</span>${commonsHtml}<span>· <a href="${p}credits.html">all credits</a></span></div></div>`;
 }
 
 function jsonLd(g, url) {
