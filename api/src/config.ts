@@ -164,6 +164,10 @@ const Env = z.object({
   // bookings newly eligible all at once. 25 is far above any legitimate tick at current
   // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
   NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
+  // Resend plan caps (spec 2026-10-13 §6): the ops Health tab shows sends against them and the
+  // watchdog pages at 70 % of the daily one. Free plan defaults; raise both on upgrade.
+  EMAIL_DAILY_LIMIT: z.coerce.number().int().positive().default(100),
+  EMAIL_MONTHLY_LIMIT: z.coerce.number().int().positive().default(3000),
   // Outbound mail guard (same spec, R3). Both default to "off" so production is unchanged.
   // EMAIL_ALLOWLIST: when set, ONLY these recipients can be mailed — entries are exact
   // addresses or an `@domain` suffix, comma-separated. STAGING SETS THIS (`@ceylonhop.com`),

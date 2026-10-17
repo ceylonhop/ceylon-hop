@@ -20,7 +20,9 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache } from './schema';
+import { bookings as bookingRows, distanceCache, usageCounters } from './schema';
+import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
+import { usageCounterRepoContract } from './usageCounterRepo.test';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
@@ -1558,6 +1560,13 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     distanceCacheRepoContract(async () => {
       await db.delete(distanceCache);
       return new PostgresDistanceCacheRepo(db);
+    });
+  });
+
+  describe('PostgresUsageCounterRepo', () => {
+    usageCounterRepoContract(async () => {
+      await db.delete(usageCounters);
+      return new PostgresUsageCounterRepo(db);
     });
   });
 });

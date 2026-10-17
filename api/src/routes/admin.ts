@@ -11,7 +11,7 @@ import {
   sendRefundConfirmation,
   sendNoShowNotice,
 } from '../services/notifications';
-import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds, NOTIFICATIONS_TICK } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
@@ -20,7 +20,7 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
-import { runWatchdog, checkWatchdogLiveness } from '../services/watchdog';
+import { runWatchdog, checkWatchdogLiveness, type WatchdogEmailQuota } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
@@ -85,6 +85,8 @@ export function adminRoutes(deps: {
   // ONE tick may send before it stops and pages. Optional so existing callers/tests keep
   // their uncapped behaviour; the production mount always passes config.NOTIFY_MAX_PER_RUN.
   notifyMaxPerRun?: number;
+  // Resend daily-cap early warning for the watchdog (spec 2026-10-13 §6); absent without counters.
+  emailQuota?: WatchdogEmailQuota;
   // Relevance window + epoch (R6). Both optional; unset means unbounded, as before.
   notifyMaxTripAgeDays?: number;
   notifyEpoch?: Date;
@@ -702,6 +704,9 @@ export function adminRoutes(deps: {
         console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
       }
     }
+    // Footprint, last (spec 2026-10-13 §4) — the watchdog's WATCHDOG_TICK for this tick, so the
+    // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
+    await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
       { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
       200,
@@ -737,6 +742,7 @@ export function adminRoutes(deps: {
       rideLists: deps.rideLists,
       customerCommunications: deps.customerCommunications,
       correlation,
+      emailQuota: deps.emailQuota,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it
     // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).
