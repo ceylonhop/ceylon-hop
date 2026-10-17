@@ -18,8 +18,9 @@
    Layout: a strip fixed to the bottom, so it cannot shift the page (no CLS). It reserves its
    height as body margin so the end of the page is still reachable, and flags <html> with
    .ch-consent-open + --ch-consent-h so the fixed bottom controls (WhatsApp button, the
-   board's Start bar and toast) move up clear of it rather than being covered. z-index sits
-   above those (80–90 is theirs) but below overlays, pickers and lightboxes (100+).
+   board's Start bar and toast, the route pages' book bar) move up clear of it rather than
+   being covered. z-index sits above those (40–90 is theirs) but below overlays, pickers and
+   lightboxes (100+).
 
    Self-contained: its styles are injected here rather than added to the shared site.css. */
 (function (window, document) {
@@ -39,7 +40,8 @@
     'padding:6px 16px;border:1px solid var(--ink,#3A3739);background:#fff;color:var(--ink,#3A3739)}' +
     '.ch-consent-btn:focus-visible{outline:3px solid rgba(36,117,138,.45);outline-offset:2px}' +
     'html.ch-consent-open body{margin-bottom:var(--ch-consent-h)}' +
-    'html.ch-consent-open .wa-fab,html.ch-consent-open .start-bar,html.ch-consent-open .toast' +
+    'html.ch-consent-open .wa-fab,html.ch-consent-open .start-bar,html.ch-consent-open .toast,' +
+    'html.ch-consent-open .trip-bookbar' +
     '{margin-bottom:var(--ch-consent-h)}';
 
   function gtag() {

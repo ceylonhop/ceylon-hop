@@ -94,6 +94,18 @@ test.describe('a visitor on a European clock', () => {
       expect(bar.bottom, 'Start bar overlaps the strip').toBeLessThanOrEqual(strip.top);
     });
 
+    // The route pages' sticky "Choose date & book" bar (z-index 40) sat entirely under the
+    // strip (95), so a tap meant for the bar landed on Reject/Accept.
+    test("a route page's book bar stays tappable above the strip", async ({ page }) => {
+      await page.goto('/trip/kandy-to-ella/?api=off');
+      await expect(page.locator('#ch-consent')).toBeVisible();
+      await page.evaluate(() => document.querySelector('.faq').scrollIntoView({ behavior: 'instant' }));
+      await expect(page.locator('.trip-bookbar')).toBeVisible();
+      const strip = await box(page, '#ch-consent');
+      const bar = await box(page, '.trip-bookbar');
+      expect(bar.bottom, 'book bar overlaps the strip').toBeLessThanOrEqual(strip.top);
+    });
+
     test('the page end is still reachable: the footer scrolls clear of the strip', async ({ page }) => {
       await page.goto('/index.html');
       await expect(page.locator('#ch-consent')).toBeVisible();
