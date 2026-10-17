@@ -28,11 +28,6 @@ const BASE = 15600;
 const WITH_EXTRA = 16600; // BASE + the $10 sightseeing extra
 
 const sightseeing = (page) => page.locator('[data-addon="sightseeing"]');
-const rowAmounts = async (page) => ({
-  base: await page.locator('#sum-adamt').textContent(),
-  total: await page.locator('#sum-total').textContent(),
-  addons: await page.locator('#sum-addons').textContent(),
-});
 
 test('ticking a priced extra updates the total instead of demanding acknowledgement', async ({ page }) => {
   await gotoBooking(page, {
@@ -54,10 +49,13 @@ test('ticking a priced extra updates the total instead of demanding acknowledgem
   await expect(page.locator('#engine-reprice-note')).toHaveCount(0);
 
   // ...and the vehicle line did NOT fall by the price of the thing they just added.
-  const rows = await rowAmounts(page);
-  expect(rows.base).toBe('$156');
-  expect(rows.addons).toContain('$10');
-  expect(rows.total).toBe('$166');
+  // Retrying assertions, never one-shot reads: the total above swaps straight from "Calculating…"
+  // to $166 (a change of shape, so setNum doesn't count it), but the vehicle row COUNTS from $146
+  // back up to $156 starting in that same render. The total settling is the moment the row starts
+  // moving, so a single textContent() read here caught it mid-count ($147–$155) under CPU load.
+  await expect(page.locator('#sum-adamt')).toHaveText('$156');
+  await expect(page.locator('#sum-addons')).toContainText('$10');
+  await expect(page.locator('#sum-total')).toHaveText('$166');
 
   // Continue is not gated behind an acknowledgement that no longer exists.
   await expect(page.locator('#n1')).toBeEnabled();
