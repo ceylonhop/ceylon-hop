@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExperienceInputSchema, aboutKm, toPublicExperience, type Experience } from './experience';
+import { ExperienceInputSchema, aboutKm, photoUrls, toPublicExperience, type Experience } from './experience';
 
 const valid = {
   slug: 'atherya-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
@@ -58,5 +58,35 @@ describe('aboutKm', () => {
   it('road-adjusts straight-line km with the codebase’s own 1.35 factor (maps.ts fallback)', () => {
     expect(aboutKm(3)).toBe(4);
     expect(aboutKm(25)).toBe(34);
+  });
+});
+
+const UP = 'https://img.ceylonhop.com/experiences/5f0c2a3e-7b1d-4c2e-9a6f-0d1e2f3a4b5c';
+
+describe('uploaded photos (spec 2026-10-17 P2)', () => {
+  it('accepts an upload address on either image host', () => {
+    for (const p of [UP, UP.replace('img.', 'img-staging.')]) {
+      expect(ExperienceInputSchema.safeParse({ ...valid, photos: [p] }).success).toBe(true);
+    }
+  });
+
+  it('refuses an address that is not exactly ours', () => {
+    for (const p of [
+      UP.replace('https:', 'http:'),
+      UP.replace('img.ceylonhop.com', 'img.ceylonhop.com.evil.example'),
+      UP + '-900.jpg',
+      'https://img.ceylonhop.com/experiences/not-a-uuid',
+      'https://evil.example/experiences/5f0c2a3e-7b1d-4c2e-9a6f-0d1e2f3a4b5c',
+    ]) {
+      expect(ExperienceInputSchema.safeParse({ ...valid, photos: [p] }).success, p).toBe(false);
+    }
+  });
+
+  it('photoUrls adds the size suffix to an upload address and keeps repo paths on the site', () => {
+    expect(photoUrls(UP)).toEqual({ small: UP + '-900.jpg', large: UP + '-1800.jpg' });
+    expect(photoUrls('guides/sigiriya/ayurveda')).toEqual({
+      small: 'https://ceylonhop.com/img/guides/sigiriya/ayurveda-900.jpg',
+      large: 'https://ceylonhop.com/img/guides/sigiriya/ayurveda-1800.jpg',
+    });
   });
 });
