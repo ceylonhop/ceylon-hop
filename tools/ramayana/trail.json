@@ -1,0 +1,131 @@
+{
+  "title": "Ramayana Tour in Sri Lanka: Private-Car Trail, Itineraries & Prices",
+  "description": "The Ramayana places in Sri Lanka — Ashok Vatika, Ramboda Hanuman, Munneswaram, Ravana Falls — with timings, steps, dress code and two private-car trips.",
+  "updated": "2026-10-17",
+  "hero": {
+    "photo": "hero",
+    "eyebrow": "Ceylon Hop guide · The Ramayana Trail",
+    "sub": "Ashok Vatika, Hanuman’s hill, the temples where Rama prayed. Thirteen places across the island that tradition ties to the epic, and how to visit them at a gentle pace in your own car.",
+    "credit": "Sri Sivasubramaniya Swamy Kovil, Colombo"
+  },
+  "facts": [
+    { "label": "Places", "value": "13 on the trail" },
+    { "label": "Trip length", "value": "6 or 8 days" },
+    { "label": "Pace", "value": "2–3 places a day" }
+  ],
+  "lede": "Six days covers the heart of the trail:",
+  "ledeEm": "Chilaw’s temples, Ramboda’s Hanuman, then two nights in the hills around Ashok Vatika.",
+  "ledeTail": "Eight days takes you south with the story, to Ella, Kataragama and Galle.",
+  "sitesSub": "In the order we’d visit them, with timings, steps and our honest tip. These are places of tradition and belief, not proven history, and in Sri Lanka Ravana is also respected as a great king, so we tell both sides of the story.",
+  "sites": [
+    { "id": "seetha-amman", "photo": "seetha", "feature": true,
+      "name": "Seetha Amman Kovil · Ashok Vatika",
+      "text": "Tradition holds that this is Ashok Vatika, the garden where Ravana kept Sita and where Hanuman found her and gave her Rama’s ring. Today it is a living Hindu temple beside a stream at Seetha Eliya, on the road from Nuwara Eliya to Hakgala. The temple was re-consecrated in May 2024 with water brought from the Sarayu at Ayodhya.",
+      "spec": [["Where", "Seetha Eliya · 5–8 km from Nuwara Eliya"], ["Open", "8 am–1 pm · 2–6:30 pm"], ["Entry", "Free · puja about LKR 100–200"], ["Steps", "Short, flat walk"]],
+      "tip": "Come for the morning puja, before the coaches. The floor is cold at 1,800 m, so bring thick socks for after you take your shoes off. Skip the boulders by the stream with older parents." },
+    { "id": "ramboda", "photo": "ramboda",
+      "name": "Shri Bhakta Hanuman Temple, Ramboda",
+      "text": "Tradition holds that Hanuman passed through these hills searching for Sita. The Chinmaya Mission temple (2002) has an 18-foot Hanuman looking out over the tea, and a vegetarian restaurant.",
+      "spec": [["Where", "On the A5, Kandy → Nuwara Eliya"], ["Open", "7 am–1 pm · 3:30–6:30 pm"], ["Steps", "About 60, with seats"], ["Photos", "Not of the idol"]],
+      "tip": "Arrive before 1 pm and have lunch here. The temple restaurant is a good vegetarian lunch stop." },
+    { "id": "chilaw", "photo": "chilaw",
+      "name": "Munneswaram & Manavari, Chilaw",
+      "text": "Tradition holds that Rama installed a lingam at Manavari and worshipped Shiva at Munneswaram after the war, to atone for killing Ravana. Both are active temples. Munneswaram’s month-long festival in August–September draws Hindu, Buddhist, Catholic and Muslim pilgrims.",
+      "spec": [["Where", "Chilaw · about 1–1½ h from the airport"], ["Entry", "Free"], ["Steps", "Roadside, flat"], ["Good for", "Day 1, straight off the flight"]] },
+    { "id": "divurumpola", "photo": "divurumpola",
+      "name": "Divurumpola, near Welimada",
+      "text": "Tradition holds that Sita took her agni pariksha, the trial by fire, here. Today it is a <b>Buddhist temple</b>, with a Bo tree, stupas and statues of Rama, Sita and Hanuman. Offerings follow Buddhist custom.",
+      "spec": [["Where", "About 4 km off the Nuwara Eliya–Welimada road"], ["Steps", "Flat, with benches"]] },
+    { "id": "ravana-falls", "photo": "ravana",
+      "name": "Ravana Falls, Ella",
+      "text": "Tradition holds that Sita was hidden in caves behind the falls. You see it from the roadside on the Ella–Wellawaya road, so it’s an easy stop for everyone.",
+      "spec": [["Where", "6 km below Ella"], ["Entry", "Free"]] }
+  ],
+  "more": [
+    { "n": 6, "where": "Nuwara Eliya", "name": "Hakgala Botanical Garden", "text": "The other place claimed as Ashok Vatika, on the same road as Seetha Amman, so visiting both settles the question. Shady, easy paths; foreign adult entry LKR 3,540." },
+    { "n": 7, "where": "Nuwara Eliya", "name": "Gayathri Peedam", "text": "Where tradition places Indrajit’s ritual before battle. Active shrine 3 km from town, about 80 steps." },
+    { "n": 8, "where": "Colombo", "name": "Kelaniya Temple", "text": "Where Vibhishana is said to have been crowned. A <b>Buddhist temple</b> with coronation murals, 10 km from the city. About 50 steps." },
+    { "n": 9, "where": "Colombo", "name": "Panchamuga Anjaneyar", "text": "Five-faced Hanuman at Kalubowila. A devotional stop, not a legend site. Good for your last morning." },
+    { "n": 10, "where": "Deep south", "name": "Kataragama", "text": "Where Skanda is said to have helped Rama. Hindu, Buddhist and Muslim pilgrims share the evening puja." },
+    { "n": 11, "where": "Ambalantota", "name": "Ussangoda", "text": "Red earth said to be scorched by Hanuman’s burning tail. A national park on an open plateau by the sea." },
+    { "n": 12, "where": "Unawatuna", "name": "Rumassala", "text": "A fragment of the Sanjeevani mountain Hanuman carried. A coastal hill 20 min from Galle Fort." }
+  ],
+  "cave": { "title": "Ravana Cave, Ella: fit travellers only", "text": "The cave tradition says Sita was hidden in is up 500–800 steep, often slippery steps, and it’s dark with bats inside. Your driver will wait while the younger ones climb; we don’t put it in the plan for elders." },
+  "factsNote": "Timings and fees from public sources, October 2026. They change, so we check them again before your trip.",
+  "plansSub": "One price for the whole car, split however many of you there are. Two or three places a day, temples in the morning puja window, a sit-down lunch and a rest in the afternoon.",
+  "trips": [
+    { "id": "gentle", "name": "Gentle Ramayana Yatra", "days": 6, "tag": "6 days · paced for parents",
+      "teaser": "Chilaw · Ramboda · Ashok Vatika · Colombo",
+      "sub": "Airport to airport · good for parents and grandparents",
+      "description": "Six-day private-car Ramayana trail from Colombo airport: Chilaw, Ramboda, Ashok Vatika (Seetha Eliya) and Colombo, paced for families.",
+      "price": { "car": 445, "van": 495 },
+      "plan": [
+        ["Day 1", "Airport → Chilaw → Negombo", "We meet you at arrivals. Manavari and Munneswaram, then an easy first night.", true],
+        ["Day 2", "Negombo → Kandy", "About 3 h. Rest; the Temple of the Tooth in the evening if you’d like."],
+        ["Day 3", "Kandy → Ramboda → Nuwara Eliya", "2 h 45 up the hairpins. Hanuman temple and lunch at Ramboda."],
+        ["Day 4", "Ashok Vatika day", "Seetha Amman for morning puja, Hakgala, Gayathri Peedam. Under an hour of driving."],
+        ["Day 5", "Nuwara Eliya → Colombo", "The one long day, about 5 h with stops. Kelaniya on the way in."],
+        ["Day 6", "Colombo → airport", "Panchamuga Anjaneyar if your flight allows.", true]
+      ],
+      "stops": [["Manavari Temple", "Chilaw"], ["Munneswaram Temple", "Chilaw"], ["Shri Bhakta Hanuman Temple", "Ramboda"], ["Seetha Amman Kovil", "Seetha Eliya"], ["Hakgala Botanical Garden", "Nuwara Eliya"], ["Gayathri Peedam", "Nuwara Eliya"], ["Kelaniya Raja Maha Viharaya", "Kelaniya"], ["Panchamuga Anjaneyar Temple", "Colombo"]],
+      "note": "Hotels, entry fees and puja offerings aren’t included. Tell us your budget and we’ll suggest hotels near the temples.",
+      "wa": "Hi Ceylon Hop — we're interested in the 6-day Gentle Ramayana Yatra. Dates:  Travellers: " },
+    { "id": "full", "name": "Full Ramayana Trail", "days": 8, "tag": "8 days · follows the story south",
+      "teaser": "Adds Divurumpola · Ella · Kataragama · Galle",
+      "sub": "Follows the story south · hills, then the coast",
+      "description": "Eight-day private-car Ramayana trail through the hill country and the deep south, from Chilaw to Ella, Kataragama and Galle.",
+      "price": { "car": 618, "van": 689 },
+      "plan": [
+        ["1–4", "As the 6-day trip", "Chilaw, Kandy, Ramboda, two nights at Nuwara Eliya.", true],
+        ["Day 5", "Nuwara Eliya → Divurumpola → Ella", "The fire-trial temple, then Ravana Falls in the afternoon."],
+        ["Day 6", "Ella → Kataragama", "About 3 h 20. Evening puja, night in Tissamaharama."],
+        ["Day 7", "Ussangoda → Rumassala → Galle", "About 3½ h. Hanuman’s red earth, the Sanjeevani hill, sunset on the Fort walls."],
+        ["Day 8", "Galle → Kelaniya → airport", "2 h 15 plus the Kelaniya stop.", true]
+      ],
+      "stops": [["Manavari Temple", "Chilaw"], ["Munneswaram Temple", "Chilaw"], ["Shri Bhakta Hanuman Temple", "Ramboda"], ["Seetha Amman Kovil", "Seetha Eliya"], ["Hakgala Botanical Garden", "Nuwara Eliya"], ["Gayathri Peedam", "Nuwara Eliya"], ["Divurumpola Temple", "Welimada"], ["Ravana Falls", "Ella"], ["Kataragama", "Kataragama"], ["Ussangoda", "Ambalantota"], ["Rumassala", "Unawatuna"], ["Kelaniya Raja Maha Viharaya", "Kelaniya"]],
+      "note": "Want Trincomalee’s Koneswaram as well? Ask us and we’ll quote the extra days.",
+      "wa": "Hi Ceylon Hop — we're interested in the 8-day Full Ramayana Trail. Dates:  Travellers: " }
+  ],
+  "priceNote": "Prices from our quote tool for December 2026 dates. Your quote confirms the price for your dates and stops.",
+  "months": [
+    { "when": "Dec – Apr", "title": "Dry in the hills & south", "text": "Clear mornings at Seetha Eliya, calm sea at Galle. The easiest time for the whole trail.", "tag": "Best overall", "kind": "best" },
+    { "when": "15 Apr 2027", "title": "Ram Navami", "text": "Expect crowds at the temples. Sinhala & Tamil New Year falls the same week, so book early.", "tag": "Festival", "kind": "best" },
+    { "when": "May – Sep", "title": "Rain in the hills", "text": "Wetter in Nuwara Eliya, but Trincomalee and Koneswaram are at their best. Munneswaram’s festival runs Aug–Sep.", "tag": "East coast season" },
+    { "when": "Oct – Nov", "title": "Showers everywhere", "text": "Afternoon rain across the island. Plan temples for the morning; Diwali falls in this window.", "kind": "wet" }
+  ],
+  "tips": [
+    "<b>Dress:</b> shoulders and knees covered, shoes off at every temple. Some shrines have their own customs, so follow what others do or ask.",
+    "<b>Food:</b> tell us vegetarian, Jain or no onion-garlic and we’ll suggest lunch stops that fit.",
+    "<b>Cold floors:</b> Nuwara Eliya is at 1,868 m. Pack shawls and thick socks.",
+    "<b>Hairpins:</b> the Kandy–Nuwara Eliya road is winding. Carsick-prone? Your driver will stop whenever you need.",
+    "<b>Buddhist sites:</b> Divurumpola and Kelaniya are Buddhist temples. Dress modestly, take off shoes and hats, and ask at the temple how offerings are made."
+  ],
+  "faq": [
+    { "tab": "Planning", "items": [
+      { "q": "Is Ashok Vatika real?", "a": "Tradition places it at Seetha Eliya, where the Seetha Amman temple stands today; some say Hakgala gardens next door. They’re on the same road, so we take you to both." },
+      { "q": "How far is Ashok Vatika from Colombo and Kandy?", "a": "About 2 h 45 from Kandy by road, and about 5 h from Colombo or the airport. That’s why we break the journey in Kandy." },
+      { "q": "Can we travel from India by Ram Setu?", "a": "No. There’s no road or ferry across it. Fly to Colombo, or take the Nagapattinam–Kankesanthurai ferry to Jaffna. You can see where Ram Setu begins from Talaimannar, in Mannar." },
+      { "q": "Is it suitable for elderly parents?", "a": "Yes, that’s who the 6-day trip is built for. Most sites are flat or under 80 steps. We leave Ravana Cave and Sigiriya out for elders and keep every day short." }
+    ]},
+    { "tab": "At the temples", "items": [
+      { "q": "What are Seetha Amman temple timings?", "a": "8 am–1 pm and 2–6:30 pm. Entry is free; a puja is about LKR 100–200." },
+      { "q": "Can you arrange a puja?", "a": "Tell us when you ask for a quote and we’ll check what each temple offers for your dates." },
+      { "q": "Can we take photos?", "a": "Outside, yes. Not of the Hanuman idol at Ramboda, and ask before photographing inside any shrine." }
+    ]},
+    { "tab": "Price & booking", "items": [
+      { "q": "What does the price include?", "a": "Your own air-conditioned car or van and a driver for every day of the trip, with fuel, tolls and parking. Hotels, entry fees, meals and offerings are paid separately, so you only pay for what you choose." },
+      { "q": "Can we change the plan?", "a": "Yes. Add a day or drop a stop and we’ll requote." },
+      { "q": "How do we pay?", "a": "A secure card link in USD. A small deposit holds your dates and the rest is due before you travel." }
+    ]}
+  ],
+  "legs": [["cmb-airport", "kandy"], ["kandy", "nuwara-eliya"], ["nuwara-eliya", "ella"], ["ella", "galle"]],
+  "ask": { "heading": "Planning a yatra for your family?", "text": "Tell us your dates, how many of you, and any food or mobility needs. We’ll send back a day-by-day plan and one price for the car.", "wa": "Hi Ceylon Hop — a question about the Ramayana Trail: " },
+  "photos": {
+    "hero":        { "alt": "The painted gopuram of a Hindu kovil in Colombo, covered in carved deities", "credit": "Zoshua Colah", "creditUrl": "https://unsplash.com/@zoshuacolah?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-grand-and-colorful-hindu-temple-ir4cydYU0cI?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 30%", "w": 1800, "h": 1013 },
+    "seetha":      { "alt": "Rows of small oil lamps lit for puja", "credit": "Thilina Alagiyawanna", "creditUrl": "https://unsplash.com/@thilinaalagiyawanna?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/many-small-oil-lamps-with-flickering-flames-in-the-dark-SC5gagv4gaA?utm_source=ceylon_hop&utm_medium=referral", "illustrative": true, "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "ramboda":     { "alt": "A waterfall in the hills near Nuwara Eliya", "credit": "Heshan Weeramanthri", "creditUrl": "https://unsplash.com/@kolithaheshan?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/waterfalls-in-the-middle-of-green-grass-field-ytNk5s_4Wys?utm_source=ceylon_hop&utm_medium=referral", "illustrative": true, "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "chilaw":      { "alt": "Carved and painted deities on a kovil gopuram", "credit": "Rowan Heuvel", "creditUrl": "https://unsplash.com/@insolitus?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/man-in-blue-shirt-standing-in-front-of-brown-concrete-building-X8tYkScUi4s?utm_source=ceylon_hop&utm_medium=referral", "illustrative": true, "focal": "50% 40%", "w": 1800, "h": 1125 },
+    "divurumpola": { "alt": "A devotee lighting a tall brass oil lamp at a Buddhist ceremony in Sri Lanka", "credit": "Roshan Kumara", "creditUrl": "https://unsplash.com/@roshansl1998?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-person-lighting-a-traditional-oil-lamp-ixWchmlx5Mw?utm_source=ceylon_hop&utm_medium=referral", "illustrative": true, "focal": "50% 50%", "w": 1800, "h": 1125 },
+    "ravana":      { "alt": "Ravana Falls tumbling over dark rock beside the roadside railing", "credit": "The ILP", "creditUrl": "https://unsplash.com/@theilp?utm_source=ceylon_hop&utm_medium=referral", "photoUrl": "https://unsplash.com/photos/a-small-waterfall-in-the-middle-of-a-forest-lpVHWNSCqAA?utm_source=ceylon_hop&utm_medium=referral", "focal": "50% 50%", "w": 1800, "h": 1125 }
+  }
+}

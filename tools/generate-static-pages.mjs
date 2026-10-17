@@ -4,6 +4,7 @@ import { renderStandalone, ORIGIN } from './render-page.mjs';
 import { ROOT } from './generate-route-pages.mjs';
 import { generateGuides } from './generate-guides.mjs';
 import { generateFaq } from './generate-faq.mjs';
+import { generateRamayana } from './generate-ramayana.mjs';
 
 const legalStyle = `
   .legal-hero{background:linear-gradient(160deg,#1E6273,#24758A 60%,#277F97);color:#fff;padding:104px 0 40px;margin-top:-74px}
@@ -356,6 +357,8 @@ export function generateStaticPages() {
   for (const [rel, html] of generateGuides()) out.set(rel, html);
   // The Sri Lanka travel FAQ (tools/faq/sri-lanka.json → sri-lanka-travel-faq/index.html).
   for (const [rel, html] of generateFaq()) out.set(rel, html);
+  // The Ramayana trail page (tools/ramayana/trail.json → ramayana-trail-sri-lanka/index.html).
+  for (const [rel, html] of generateRamayana()) out.set(rel, html);
   return out;
 }
 
