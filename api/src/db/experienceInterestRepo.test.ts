@@ -104,6 +104,33 @@ function contract(name: string, make: () => Promise<Env>) {
       expect(await env.interests.get(again.id)).not.toBeNull();
     });
 
+    // The pay-link confirmation (owner, 2026-10-15): a paid customer's tap lands on the booking.
+    it('records a pay_page interest on a booking, idempotently', async () => {
+      const e = await experience();
+      const b = await booking('paid');
+      const i = await env.interests.record({ experience: e, source: 'pay_page', bookingId: b.id });
+      expect(i).toMatchObject({ experienceId: e.id, bookingId: b.id, quoteId: null, source: 'pay_page', status: 'new' });
+      expect((await env.interests.record({ experience: e, source: 'pay_page', bookingId: b.id })).id).toBe(i.id);
+      expect((await env.interests.listLeads(500)).some((l) => l.id === i.id && l.ownerKind === 'booking')).toBe(true);
+    });
+
+    it('withdrawFromBooking deletes a new row, keeps one ops has acted on, and leaves other bookings alone', async () => {
+      const e = await experience();
+      const b = await booking('paid');
+      const other = await booking('paid');
+      const i = await record(e, { bookingId: b.id });
+      const keep = await record(e, { bookingId: other.id });
+      expect(await env.interests.withdrawFromBooking(e.id, b.id)).toBe(true);
+      expect(await env.interests.get(i.id)).toBeNull();
+      expect(await env.interests.withdrawFromBooking(e.id, b.id)).toBe(false);
+      expect(await env.interests.get(keep.id)).not.toBeNull();
+
+      const again = await record(e, { bookingId: b.id });
+      await env.interests.patch(again.id, { status: 'contacted', updatedBy: 'ops@x.com' });
+      expect(await env.interests.withdrawFromBooking(e.id, b.id)).toBe(false);
+      expect(await env.interests.get(again.id)).not.toBeNull();
+    });
+
     it('linkQuoteToBooking sets bookingId once, and is a no-op the second time', async () => {
       const e1 = await experience();
       const e2 = await experience();

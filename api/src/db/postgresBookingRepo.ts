@@ -681,6 +681,17 @@ export class PostgresBookingRepo implements BookingRepo {
     return fresh;
   }
 
+  async setAmountDueNowToTotal(id: string): Promise<Booking> {
+    // The status guard is part of the UPDATE, not a read-then-write (see refreshPayerDetails).
+    await this.db
+      .update(bookings)
+      .set({ amountDueNow: sql`${bookings.total}` })
+      .where(and(eq(bookings.id, id), eq(bookings.status, 'payment_pending')));
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
+  }
+
   async setStatus(
     id: string,
     to: BookingStatus,

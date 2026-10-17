@@ -526,6 +526,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .terms-consent:has(input:checked){border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .terms-consent input:focus-visible{box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35);outline:none}
   .terms-consent > span:last-child{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
+  /* site.css paints every <a> like its text (a{color:inherit;text-decoration:none}): the terms link
+     must read as one (owner, 2026-10-15). Same treatment as .pay-pol a / pay.html's .dt-terms a. */
+  .terms-consent a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
 
   /* steppers / addons */
   .stepper{display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:12px}
