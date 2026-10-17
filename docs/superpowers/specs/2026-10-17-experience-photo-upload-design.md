@@ -65,13 +65,16 @@ migration**. An uploaded photo is saved as its address without the size suffix:
 
 ### P3 — The browser shrinks the photo; the API checks it
 - **Browser (ops form):** `createImageBitmap(file, { imageOrientation: 'from-image' })` → canvas →
-  JPEG at quality 0.82, longest edge **1800** and **900** px, the same sizes the guides use. A
-  smaller original is never enlarged. Drawing onto a canvas **drops the camera data, including the
-  GPS location**. No new library.
+  JPEG, longest edge **1800** and **900** px, the same sizes the guides use. A smaller original is
+  never enlarged. Quality starts at 0.82 and steps down (0.72, 0.62, 0.5) until the file fits its
+  cap. Drawing onto a canvas **drops the camera data, including the GPS location**. No new library.
 - **API:** `POST /admin/experiences/photos`, multipart, two files, `large` and `small`. Same CSRF
   rule and `experiences:manage` capability as the catalogue writes (`opsExperiences.ts:71`). It
-  refuses: a body over 4 MB (Hono's built-in `bodyLimit`; `hono` 4.13.0 ships it, verified), a file
-  that does not start with the JPEG bytes `FF D8 FF`, `small` over 600 KB, `large` over 2.5 MB.
+  refuses a file that does not start with the JPEG bytes `FF D8 FF`, `large` over **700 KB** and
+  `small` over **250 KB**. Those caps keep the whole request under the **app-wide 1 MB body limit**
+  (`api/src/app.ts:465-469`, #844), which answers `413 payload_too_large` before the route runs.
+  (Revised 2026-10-17 during the build: the first draft's 4 MB route limit could never apply under
+  that guard, and loosening an app-wide protection for this wasn't worth the risk.)
 - It stores `experiences/<uuid>-1800.jpg` and `experiences/<uuid>-900.jpg` with
   `Content-Type: image/jpeg` and `Cache-Control: public, max-age=31536000, immutable` (a uuid is
   never reused, so it can be cached for ever), then answers `{ stem }` (P2).
@@ -136,8 +139,8 @@ Cloudflare dashboard (menu names from memory: **unverified**, the plan's Task 7 
 - **API (Vitest):** signer against the AWS example; R2 store sends a signed PUT with the right
   headers (stubbed `fetch`); config accepts only the two origins; schema accepts repo paths and
   upload addresses and refuses others; `photoUrls` for both; endpoint: 401/403, cross-site 403,
-  `503 uploads_off` with no store, 400 for non-JPEG / oversize / missing file, 413 over 4 MB,
-  201 + two puts with the right keys and headers.
+  `503 uploads_off` with no store, 400 for non-JPEG / oversize / missing file, 413 over 1 MB,
+  201 + two puts with the right keys and headers (both files at their caps still fit).
 - **Ops UI (Playwright, offline):** Upload hidden when `uploads: false`; an upload posts two JPEGs,
   fills the slot with the returned address, shows the preview, no "Not live yet" note; a failed
   upload shows an error and leaves the slot as it was.

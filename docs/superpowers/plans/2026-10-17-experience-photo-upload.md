@@ -19,7 +19,7 @@
 - **Image hosts, exactly:** `https://img.ceylonhop.com` (prod) and `https://img-staging.ceylonhop.com` (staging). They are fixed in code, not a setting.
 - **Stored upload address:** `<origin>/experiences/<lowercase uuid v4 text>`, with no size suffix.
 - **Object keys:** `experiences/<uuid>-1800.jpg` and `experiences/<uuid>-900.jpg`. `Content-Type: image/jpeg`. `Cache-Control: public, max-age=31536000, immutable`.
-- **Limits:** request body ≤ 4 MB (413 `too_large`); each file must start with `FF D8 FF`; `small` ≤ 600 000 bytes; `large` ≤ 2 500 000 bytes.
+- **Limits (revised in the build):** each file must start with `FF D8 FF`; `large` ≤ 700 000 bytes; `small` ≤ 250 000 bytes, so the request fits the **app-wide 1 MB body limit** (`app.ts:465-469`, #844 → 413 `payload_too_large`). The route adds no `bodyLimit` of its own, and the browser steps JPEG quality down (0.82 → 0.72 → 0.62 → 0.5) to fit. Task 5/6 code below shows the first draft's numbers; PR C has the built version.
 - **Browser resize:** longest edge 1800 and 900, never enlarged, JPEG quality 0.82, white background.
 - **ops-ui.html copy:** never put a plain `'` inside a JS string. Use `’` (a stray `'` breaks the whole ops page).
 - **Gate before every commit:** `cd api && npm run check` (needs `DATABASE_URL_TEST`) and the web-tests suite (`npm --prefix "$PWD/web-tests" run test:all` from the repo root). Never commit red. Stage files by path, never `git add -A`.
