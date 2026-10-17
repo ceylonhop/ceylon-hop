@@ -1,6 +1,7 @@
 -- Route report (2026-10-03): paid bookings by known town → known town, and by region.
 -- Read-only. Run in the Supabase SQL editor. Same place rule as
--- api/src/services/analytics/knownPlace.ts (the alias table below is parity-tested against it).
+-- api/src/services/analytics/knownPlace.ts (the alias table below is parity-tested against it, and
+-- the tok → matched → place CTEs are run against it on Postgres; 2026-10-07 added the word pass).
 -- Excludes the owner's test bookings, cancelled and refunded ones, and anything never paid.
 -- `collected_usd` = money taken online; `booked_value_usd` = booking totals. The gap is
 -- deposits still owed (`deposit_bookings`), which GA4 also never sees as revenue.
@@ -9,12 +10,18 @@ with alias(alias, town, region) as (values
   ('ahangama', 'Ahangama', 'South coast'),
   ('anuradhapura', 'Anuradhapura', 'Cultural triangle'),
   ('arugam bay', 'Arugam Bay', 'East coast'),
+  ('batticaloa', 'Batticaloa', 'East coast'),
+  ('belihuloya', 'Belihuloya', 'Hill country'),
+  ('beliatta', 'Tangalle', 'South coast'),
   ('bentota', 'Bentota', 'South coast'),
+  ('beragala', 'Haputale', 'Hill country'),
   ('colombo airport (cmb)', 'Colombo Airport (CMB)', 'Airport & Negombo'),
   ('colombo airport', 'Colombo Airport (CMB)', 'Airport & Negombo'),
   ('colombo city', 'Colombo City', 'Colombo'),
   ('colombo', 'Colombo City', 'Colombo'),
   ('dambulla', 'Dambulla', 'Cultural triangle'),
+  ('dehiwala', 'Colombo City', 'Colombo'),
+  ('dikwella', 'Hiriketiya', 'South coast'),
   ('ella', 'Ella', 'Hill country'),
   ('galle', 'Galle', 'South coast'),
   ('habarana', 'Habarana', 'Cultural triangle'),
@@ -25,9 +32,12 @@ with alias(alias, town, region) as (values
   ('horton plains', 'Horton Plains', 'Hill country'),
   ('jaffna', 'Jaffna', 'North & west'),
   ('kalpitiya', 'Kalpitiya', 'North & west'),
+  ('kalutara', 'Kalutara', 'South coast'),
+  ('kandapola', 'Nuwara Eliya', 'Hill country'),
   ('kandy', 'Kandy', 'Hill country'),
   ('kitulgala', 'Kitulgala', 'Hill country'),
   ('mirissa', 'Mirissa', 'South coast'),
+  ('mount lavinia', 'Colombo City', 'Colombo'),
   ('nanu oya', 'Nanu Oya', 'Hill country'),
   ('negombo', 'Negombo', 'Airport & Negombo'),
   ('nilaveli beach', 'Nilaveli Beach', 'East coast'),
@@ -37,12 +47,15 @@ with alias(alias, town, region) as (values
   ('polonnaruwa', 'Polonnaruwa', 'Cultural triangle'),
   ('sigiriya / dambulla', 'Sigiriya / Dambulla', 'Cultural triangle'),
   ('sigiriya', 'Sigiriya / Dambulla', 'Cultural triangle'),
+  ('sigirya', 'Sigiriya / Dambulla', 'Cultural triangle'),
   ('tangalle', 'Tangalle', 'South coast'),
   ('thanthirimale', 'Thanthirimale', 'Cultural triangle'),
   ('tissamaharama', 'Tissamaharama', 'Safari south'),
   ('trincomalee', 'Trincomalee', 'East coast'),
+  ('udawalawa', 'Udawalawe', 'Safari south'),
   ('udawalawe', 'Udawalawe', 'Safari south'),
   ('unawatuna', 'Unawatuna', 'South coast'),
+  ('uppuveli', 'Trincomalee', 'East coast'),
   ('weligama', 'Weligama', 'South coast'),
   ('wilpattu', 'Wilpattu', 'North & west'),
   ('yala', 'Yala', 'Safari south')
@@ -89,10 +102,23 @@ tok as (   -- knownPlace.ts token(): whole string (priority highest), then comma
     select x.p, x.ord::int from regexp_split_to_table(e.place, ',') with ordinality as x(p, ord)
   ) s
 ),
-matched as (
-  select distinct on (t.id, t.side) t.id, t.side, a.town, a.region, t.whole
-  from tok t join alias a on a.alias = t.token
-  order by t.id, t.side, t.prio desc
+matched as (   -- knownPlace(): an exact alias first (whole string, then parts from the end); only
+               -- then a known name as WHOLE WORDS inside a part (anything but a–z splits words;
+               -- longest name first, ties in byte order), skipping one followed by a street word
+               -- ("Galle Road", "Galle Face"). Run against knownPlace on Postgres by knownPlace.test.ts.
+  select distinct on (id, side) id, side, town, region
+  from (
+    select t.id, t.side, a.town, a.region, 1 as pass, t.prio, 0 as len, '' as w
+    from tok t join alias a on a.alias = t.token
+    union all
+    select t.id, t.side, a.town, a.region, 2, t.prio, length(a.w), a.w
+    from tok t
+    join (select town, region, btrim(regexp_replace(alias, '[^a-z]+', ' ', 'g')) as w from alias) a
+      on ' ' || btrim(regexp_replace(t.token, '[^a-z]+', ' ', 'g')) || ' '
+         ~ (' ' || a.w || ' (?!(road|rd|street|st|mawatha|lane|face) )')
+    where not t.whole
+  ) m
+  order by id, side, pass, prio desc, len desc, w collate "C"
 ),
 place as (
   select e.id, e.side,
