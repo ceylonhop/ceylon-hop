@@ -330,6 +330,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-mover{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 8px 8px 0;font-size:.84rem;font-weight:700}
   .an-mover.up{color:var(--ok)} .an-mover.down{color:var(--alert)}
   .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
+  /* Health tab (spec 2026-10-13 §7): usage against a cap. Green until 70 %, amber to the cap, red past it. */
+  .hl-bar{height:6px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:8px}
+  .hl-bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+  .hl-bar.warn i{background:var(--wait)}
+  .hl-bar.bad i{background:var(--red)}
+  .hl-stale{color:var(--red);font-weight:700}
+  .hl-list{list-style:none;margin:0;padding:0;font-size:.88rem}
+  .hl-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--line-soft)}
+  .hl-list li:first-child{border-top:0}
+  .hl-list .an-n{font-size:1rem}
+  .hl-links a{display:block;padding:6px 0;border-top:1px solid var(--line-soft);font-size:.88rem;text-decoration:none;color:var(--ink)}
+  .hl-links a:first-child{border-top:0}
+  .hl-links a:hover{text-decoration:underline}
   .an-section-label{font-size:.69rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:20px 2px 9px}
   .an-data-note{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;color:var(--ink-soft);font-size:.78rem;background:rgba(255,255,255,.45)}
   .an-funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:stretch}
@@ -2337,6 +2350,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Health (spec 2026-10-13 §7): founder-only system page, gated exactly like Analytics. */
+  if(url.hash==='#health'&&state.caps&&state.caps.includes('analytics:view'))return { route:'health', routeQuoteId:null, routeBookingId:null };
   /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
   if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   /* Experiences (spec 2026-10-06 D14): the partner catalogue, founder + ops (experiences:manage). */
@@ -2351,6 +2366,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
+  else if(route==='health')url.hash='#health';
   else if(route==='lookup')url.hash='#lookup';
   else if(route==='rates')url.hash='#rates';
   else if(route==='experiences')url.hash='#experiences';
@@ -2485,6 +2501,7 @@ function collapseRail(){
    Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
    Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
+  health:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
@@ -2513,6 +2530,7 @@ function setNav(){
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canAnalytics?`<button data-route="health" data-testid="health-nav" class="${state.route==='health'?'active':''}" title="Health">${NAV_ICONS.health}<span class="nav-txt">Health</span></button>`:'')+
     (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'')+
     (canExperiences?`<button data-route="experiences" data-testid="experiences-nav" class="${state.route==='experiences'?'active':''}" title="Experiences">${NAV_ICONS.experiences}<span class="nav-txt">Experiences</span></button>`:'');
 }
@@ -3235,6 +3253,104 @@ document.addEventListener('click',e=>{
   if(age){queueFilter='sent';quoteQuery='';setShellRoute('quotes',{});return;} /* v1: status-filter only */
   const booking=e.target.closest('#view [data-anbooking]');
   if(booking){openDetail(booking.dataset.anbooking);return;}
+});
+
+/* ── Health (spec 2026-10-13 §7): what only our process and database know ──
+   Heartbeats, alert kinds, abandoned carts and usage against the free-tier caps, read once per
+   entry from GET /admin/ops/health (never cached; Refresh re-fetches). Outage detection and vendor
+   metrics live in the vendor consoles — linked at the bottom — so this is the place to start from. */
+const HL_DB_FREE_BYTES=500e6; /* Supabase free plan — display only; the API reports bytes */
+function hlAgo(iso){
+  if(!iso)return 'never';
+  const s=Math.max(0,Math.round((Date.now()-Date.parse(iso))/1000));
+  if(s<60)return s+' s ago';
+  const m=Math.round(s/60); if(m<60)return m+' min ago';
+  const h=Math.round(m/60); if(h<48)return h+' h ago';
+  return Math.round(h/24)+' d ago';
+}
+function hlBytes(b){
+  if(b==null)return '—';
+  if(b<1e6)return Math.round(b/1e3)+' KB';
+  if(b<1e9)return (b/1e6).toFixed(b<1e8?1:0).replace(/\.0$/,'')+' MB';
+  return (b/1e9).toFixed(2)+' GB';
+}
+function hlBar(n,limit){
+  const pct=limit?Math.min(100,Math.round(100*n/limit)):0;
+  const cls=pct>=100?' bad':pct>=70?' warn':'';
+  return `<div class="hl-bar${cls}" role="img" aria-label="${pct}% of limit"><i style="width:${pct}%"></i></div>`;
+}
+function hlTile(label,value,sub,extra){
+  return anTile(label,value,(sub?`<div class="an-sub">${sub}</div>`:'')+(extra||''));
+}
+function hlBeat(label,beat){
+  if(!beat)return hlTile(label,'—','no ledger wired');
+  const when=beat.lastRunAt?hlAgo(beat.lastRunAt):'never';
+  return hlTile(label,beat.stale?`<span class="hl-stale">${when}</span>`:when,beat.stale?'STALE — check the cron':'running');
+}
+function hlKindList(rows,empty){
+  if(!rows||!rows.length)return `<div class="an-empty">${empty}</div>`;
+  return `<ul class="hl-list">${rows.map(r=>`<li><span>${esc(r.kind)}</span><span class="an-n">${r.keys}</span></li>`).join('')}</ul>`;
+}
+function hlHtml(h){
+  const e=h.email, m=h.maps, rl=h.rateLimit, c=h.carts;
+  const mapsRows=Object.keys(m.month.byKey).sort().map(k=>`<li><span>${esc(k.replace(/^maps\./,''))}</span><span class="an-n">${m.today.byKey[k]||0} <span class="an-sub">today</span> · ${m.month.byKey[k]} <span class="an-sub">month</span></span></li>`).join('');
+  return `
+    <div class="an-tiles">
+      ${hlTile('API build',h.build.commit?esc(h.build.commit):'local','up '+hlAgo(h.build.startedAt).replace(' ago',''))}
+      ${hlTile('Database',hlBytes(h.db.sizeBytes),h.db.sizeBytes==null?'not on Postgres':'of '+hlBytes(HL_DB_FREE_BYTES)+' free plan',h.db.sizeBytes==null?'':hlBar(h.db.sizeBytes,HL_DB_FREE_BYTES))}
+      ${hlBeat('Payments watchdog',h.jobs&&h.jobs.watchdog)}
+      ${hlBeat('Daily tick',h.jobs&&h.jobs.notificationsTick)}
+    </div>
+    <div class="an-section-label">Email · Resend plan</div>
+    <div class="an-tiles">
+      ${hlTile('Sent today',e.today.sent+' <span class="an-sub">/ '+e.dailyLimit+'</span>','daily cap · pages at 70 %',hlBar(e.today.sent,e.dailyLimit))}
+      ${hlTile('Sent this month',e.month.sent+' <span class="an-sub">/ '+e.monthlyLimit+'</span>','monthly cap',hlBar(e.month.sent,e.monthlyLimit))}
+      ${hlTile('Failed today',e.today.failed,'provider refused or timed out')}
+      ${hlTile('Suppressed today',e.today.suppressed,'stopped by the guard / allowlist')}
+    </div>
+    <div class="an-section-label">Google Maps · live calls (cache hits are free)</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">10,000 free events per SKU per month on Google's current pricing — set the hard quota caps in the Cloud console.</p>
+        <div class="an-tiles">${hlTile('Today',m.today.total,'all methods')}${hlTile('This month',m.month.total,'all methods')}</div>
+        ${mapsRows?`<ul class="hl-list">${mapsRows}</ul>`:'<div class="an-empty">No live Google calls counted this month.</div>'}
+      </div>
+      <div class="an-card"><p class="an-cap">Traffic turned away and carts left open.</p>
+        <div class="an-tiles">
+          ${hlTile('429s today',rl.refusedToday,'per-IP write limit hit')}
+          ${hlTile('429s this month',rl.refusedMonth,'')}
+          ${hlTile('Pending carts',c.paymentPending,c.paymentPendingLast24h+' started in the last 24 h')}
+          ${hlTile('Drafts',c.drafts,'never reached checkout')}
+        </div>
+      </div>
+    </div>
+    <div class="an-section-label">Alerts · distinct problems in the ledger</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">Last 24 hours</p>${h.alerts?hlKindList(h.alerts.last24h,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+      <div class="an-card"><p class="an-cap">Last 7 days</p>${h.alerts?hlKindList(h.alerts.last7d,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+    </div>
+    <div class="an-section-label">Vendor dashboards</div>
+    <div class="an-card hl-links">${(h.links||[]).map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join('')}</div>`;
+}
+function viewHealth(){
+  $('#topbar').innerHTML='';
+  const head=`<div class="qhead pagehead"><h1>Health</h1></div>
+    <p class="pagesub"><b>System health</b> · jobs, alerts, carts and usage against the free-tier caps · days are UTC <span class="an-updated"></span></p>
+    <div class="an-controls"><button type="button" class="qfilter" data-hlrefresh>Refresh</button></div>`;
+  const view=$('#view');
+  view.innerHTML=head+'<div class="an-tiles"><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div></div>';
+  api.get('/health').then(h=>{
+    if(state.route!=='health')return; /* stale response — view moved on */
+    view.innerHTML=head+hlHtml(h);
+    const updated=view.querySelector('.an-updated');
+    if(updated)updated.textContent=' · Updated '+fmtDateTime(h.generatedAt);
+  }).catch(()=>{
+    if(state.route!=='health')return;
+    view.innerHTML=head+'<div class="an-empty">Couldn’t load system health — check the connection and try again.</div>';
+  });
+}
+document.addEventListener('click',e=>{
+  if(state.route!=='health')return;
+  if(e.target.closest('#view [data-hlrefresh]'))viewHealth();
 });
 
 function openOpsQuote(id){
@@ -4305,6 +4421,7 @@ function playRouteIn(){
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
+  if(state.route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
   if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))state.route='tickets'; /* founder + ops; the same silent bounce */
@@ -4343,6 +4460,15 @@ function render(){
     if(entering){
       playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='health'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewHealth();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="health"]');
       if(navBtn)navBtn.focus();
     }
   }else if(state.route==='lookup'){
@@ -4420,6 +4546,7 @@ document.addEventListener('click',e=>{
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
+  if(route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
   if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   if(route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))route='tickets';
@@ -4850,7 +4977,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='health'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }

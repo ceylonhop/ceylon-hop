@@ -32,6 +32,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { opsAnalyticsRoutes } from './routes/opsAnalytics';
+import { opsHealthRoutes } from './routes/opsHealth';
 import { opsUiRoutes } from './routes/opsUi';
 import { customerPagesRoutes } from './routes/customerPages';
 import { quoteRoutes } from './routes/quote';
@@ -52,6 +53,8 @@ import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDis
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
+import type { UsageCounterRepo } from './db/usageCounterRepo';
+import type { UsageMeter } from './services/usageMeter';
 import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
@@ -174,6 +177,14 @@ export interface AppDeps {
   pingDb?: () => Promise<void>;
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
+  // Usage counters (spec 2026-10-13): the meter server.ts already wrapped the raw email and Maps
+  // adapters with, plus its repo, so the Health tab and the watchdog's quota rule read the same
+  // numbers. Absent in keyless dev and most tests — nothing is counted, the tab shows zeros.
+  usageCounters?: UsageCounterRepo;
+  usageMeter?: UsageMeter;
+  dbSize?: () => Promise<number | null>; // pg_database_size, null off Postgres
+  emailDailyLimit?: number;
+  emailMonthlyLimit?: number;
   digestTo?: string;
   // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
   // Reaches the ops queue rows (isTest) and the daily digest's status counts.
@@ -283,7 +294,12 @@ export function createApp(deps: AppDeps = {}) {
   };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
-  const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
+  // Every limiter below spreads `rl`, so the 429 counter rides along to all of them.
+  const usage = deps.usageMeter && deps.usageCounters ? { meter: deps.usageMeter, repo: deps.usageCounters } : undefined;
+  const rl = {
+    ...(deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS }),
+    onLimited: () => usage?.meter.bump('ratelimit.refused'),
+  };
   const quoteV2Enabled = deps.quoteV2Enabled ?? config.QUOTE_V2_ENABLED;
   const quoteConversions =
     deps.quoteConversions ??
@@ -611,6 +627,19 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
+  // Founder system health (spec 2026-10-13): heartbeats, alert kinds, carts, usage vs the free-tier
+  // caps. Same gate as Analytics. Mounted before opsRoutes so '/admin/ops/*' can't shadow it.
+  app.route('/admin/ops/health', opsHealthRoutes({
+    auth: opsAuthCfg,
+    bookings,
+    alertLog: deps.alertLog,
+    usage,
+    dbSize: deps.dbSize,
+    limits: {
+      emailDaily: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT,
+      emailMonthly: deps.emailMonthlyLimit ?? config.EMAIL_MONTHLY_LIMIT,
+    },
+  }));
   app.route('/admin/ops/analytics', opsAnalyticsRoutes({
     quotes, auth: opsAuthCfg, data: deps.analyticsData,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
@@ -715,6 +744,7 @@ export function createApp(deps: AppDeps = {}) {
       ridePaygw: paygw,
       refunds,
       notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
+      ...(usage ? { emailQuota: { usage, dailyLimit: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT } } : {}),
       notifyMaxTripAgeDays: deps.notifyMaxTripAgeDays ?? config.NOTIFY_MAX_TRIP_AGE_DAYS,
       notifyEpoch: deps.notifyEpoch ?? (config.NOTIFY_EPOCH ? new Date(config.NOTIFY_EPOCH) : undefined),
       // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.

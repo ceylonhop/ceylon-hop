@@ -816,3 +816,37 @@ describe('runWatchdog: Ride Board lists left open past their cutoff', () => {
     expect(alerts.sent.map((a) => a.kind)).not.toContain('ride_list_overdue');
   });
 });
+
+// Spec 2026-10-13 §6: the one usage rule the watchdog carries — warn at 70 % of the Resend daily
+// cap, so the owner upgrades before the cap bites and takes the alert channel with it.
+describe('runWatchdog — email quota', () => {
+  const quota = async (sentToday: number) => {
+    const { InMemoryUsageCounterRepo } = await import('../db/usageCounterRepo');
+    const { UsageMeter } = await import('./usageMeter');
+    const repo = new InMemoryUsageCounterRepo();
+    const meter = new UsageMeter(repo, { flushMs: 0 });
+    if (sentToday) meter.bump('email.sent', sentToday);
+    return { usage: { meter, repo }, dailyLimit: 100 };
+  };
+
+  it('stays quiet below the threshold', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(69),
+    });
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('email_quota_near');
+  });
+
+  it('raises email_quota_near at 70 % of the daily limit', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(70),
+    });
+    const a = alerts.sent.find((x) => x.kind === 'email_quota_near');
+    expect(a).toBeDefined();
+    expect(a!.severity).toBe('critical');
+    expect(a!.title).toContain('70 of 100');
+  });
+});
