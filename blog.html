@@ -58,6 +58,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .bcard a.more{color:var(--accent-deep);font-weight:600;font-size:.88rem;display:inline-flex;align-items:center;gap:.3rem}
   .bcard a.more svg,.bcard .more svg{width:16px;height:16px;flex:none}
   .cats{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+  /* Phones: the stacked cards made this page ~6,000px tall. Guides become a swipe row (the
+     guide pages' Where-next pattern, next card peeking); posts become compact rows — thumbnail,
+     kicker/date, title — with the dek and "Read more" dropped (the whole row is the link).
+     --bleed tracks .wrap's side padding so the swipe row runs edge to edge. */
+  @media(max-width:620px){
+    #guides{--bleed:24px}
+    #guides .grid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 var(--bleed);gap:14px;margin:0 calc(-1*var(--bleed));padding:4px var(--bleed) 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    #guides .grid::-webkit-scrollbar{display:none}
+    #guides .bcard{flex:0 0 78%;scroll-snap-align:start}
+    #posts{gap:0}
+    #posts .bcard{display:grid;grid-template-columns:120px 1fr;column-gap:14px;align-content:start;padding:14px 0;border-top:1px solid var(--line)}
+    #posts .bcard:hover{transform:none}
+    #posts .bcard>*{grid-column:2}
+    #posts .bcard image-slot{grid-column:1;grid-row:1/span 2}
+    #posts .bcard .meta{margin-top:0!important;font-size:.7rem}
+    #posts .bcard h3{font-size:1rem;margin:.25rem 0 0}
+    #posts .bcard p,#posts .bcard .more{display:none}
+  }
+  @media(max-width:600px){#guides{--bleed:20px}}
+  @media(max-width:430px){#guides{--bleed:18px}}
 </style>
 </head>
 <body>
