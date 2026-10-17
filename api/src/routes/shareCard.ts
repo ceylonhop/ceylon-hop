@@ -11,7 +11,9 @@ import { cardModel, cardSvg } from './shareCardImage';
    Its own path on purpose: /board/:code already answers JSON to board.js, and
    deciding between JSON and HTML off an Accept header is a coin-flip with
    crawlers. Everything a crawler needs is in the HTML head — they do not run
-   JavaScript — and a human is bounced on to the board page.
+   JavaScript — and a human is bounced on to the board page by script alone.
+   Never a <meta http-equiv="refresh">: Facebook follows it as a redirect and
+   unfurls wherever it lands, i.e. the generic board.
 
    The deadline is always written as a fixed date, never "closes in 6h":
    WhatsApp and Facebook fetch a preview once and cache it against the URL for
@@ -135,7 +137,6 @@ function page(opts: {
 <meta name="twitter:title" content="${t}">
 <meta name="twitter:description" content="${d}">
 <meta name="twitter:image" content="${esc(opts.image)}">
-<meta http-equiv="refresh" content="0; url=${esc(opts.landing)}">
 </head>
 <body style="font-family:system-ui,sans-serif;padding:40px;text-align:center">
 <p>Taking you to the ride board…</p>
