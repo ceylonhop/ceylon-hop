@@ -70,7 +70,7 @@ test('founder: Rates closes the side menu and opens the rate card with hot zones
   await expect(nav).toBeVisible();
   await expect(nav).toHaveAttribute('title', 'Rates');
   expect(await page.locator('#nav button').evaluateAll((bs) => bs.map((b) => b.dataset.route)))
-    .toEqual(['tickets', 'quotes', 'lookup', 'analytics', 'rates']);
+    .toEqual(['tickets', 'quotes', 'lookup', 'analytics', 'health', 'rates']); // Health: spec 2026-10-13
 
   await nav.click();
   await expect(page.locator('#view h1')).toHaveText('Rates');

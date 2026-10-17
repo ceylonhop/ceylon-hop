@@ -957,3 +957,46 @@ test('Save payment pressed while a save is in flight is applied after it, not dr
   await expect(page.locator('#toast')).toContainText('Saved');
   await expect(row.locator('[data-lead-field="paymentRef"]')).toHaveValue('PH-88');
 });
+
+// ── Catalogue counts follow the Leads tab ────────────────────────────────────
+// "N interested · N paid" on a Catalogue row is read once on arrival. Setting a lead to Paid and
+// coming back to the Catalogue still showed the old count until the page was left and re-entered.
+// The stub's stats move with the lead write, as the server's would.
+const jeep = EXPERIENCES[2];
+const statsFor = (n) => [{ experienceId: jeep.id, interested: 1, paid: n, paidCents: { USD: 4500 * n, LKR: 0 } }];
+
+test('switching back to the Catalogue shows counts changed in the Leads tab', async ({ page }) => {
+  let paid = 0;
+  const calls = await openLeads(page, OPS, {
+    list: (r, db) => r.fulfill(json({ experiences: db, stats: statsFor(paid) })),
+    patchLead: (r, body) => { if (body.status === 'paid') paid = 1; return r.fulfill(json({ lead: { ...LEADS[1], ...body } })); },
+  });
+  await leadRows(page).nth(1).locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await expPage(page).locator('[data-action="expTab"][data-tab="catalogue"]').click();
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+  await expect(rows(page).nth(2)).not.toContainText('0 paid');
+});
+
+test('a slow Catalogue reload that lands after a newer one cannot put the old counts back', async ({ page }) => {
+  let paid = 0, getN = 0, releaseSlow;
+  const slow = new Promise((res) => { releaseSlow = res; });
+  const calls = await openLeads(page, OPS, {
+    list: async (r, db) => {
+      const n = ++getN, snapshot = paid; // the counts as they stood when this request arrived
+      if (n === 2) await slow;           // the first Catalogue revisit answers late
+      return r.fulfill(json({ experiences: db, stats: statsFor(snapshot) }));
+    },
+    patchLead: (r, body) => { if (body.status === 'paid') paid = 1; return r.fulfill(json({ lead: { ...LEADS[1], ...body } })); },
+  });
+  const catalogue = expPage(page).locator('[data-action="expTab"][data-tab="catalogue"]');
+  await catalogue.click();                                                            // GET #2: held, still the old counts
+  await expPage(page).locator('[data-action="expTab"][data-tab="leads"]').click();
+  await leadRows(page).nth(1).locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await catalogue.click();                                                            // GET #3: fresh counts
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+  releaseSlow();
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+});

@@ -1604,3 +1604,17 @@ describe('founder manual discount control', () => {
     expect(body).toContain("action === 'removeDiscount'");
   });
 });
+
+// Spec 2026-10-13 §7: the Health tab sits beside Analytics, gated and bounced exactly like it.
+describe('ops UI — Health tab', () => {
+  it('ships a founder-gated Health nav, #health route and a view that reads /admin/ops/health', async () => {
+    const app = createApp();
+    const body = await (await app.request('/ops')).text();
+    expect(body).toContain('data-route="health"');
+    expect(body).toContain("url.hash==='#health'&&state.caps&&state.caps.includes('analytics:view')");
+    expect(body).toContain("if(state.route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'");
+    expect(body).toContain('function viewHealth(');
+    expect(body).toContain("api.get('/health')");
+    expect(body).toContain('data-hlrefresh'); // the Refresh control — the page is never cached
+  });
+});
