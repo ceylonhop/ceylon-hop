@@ -184,8 +184,7 @@ export async function priceTrip(
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
-// already server-authoritative, so no engine call and no unpriced arm. (The engine's
-// Colombo-pickup surcharge is not in the public payload; don't invent it.)
+// already server-authoritative, so no engine call and no unpriced arm.
 export function priceShared(seats: number, seatPriceCents: number, bags = 0, rateCard: RateCard = RATE_CARD): Extract<PriceOutcome, { priced: true }> {
   // One free bag per seat; each extra bag is the rate card's shared extra-bag fee. This
   // mirrors the front-end quote so what the customer is shown is what actually gets charged.
