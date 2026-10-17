@@ -106,12 +106,12 @@ function sites(r, p) {
   </div></section>`;
 }
 
-function trips(r) {
+function trips(r, p) {
   const days = r.trips.map(t => {
     const tl = t.plan.map(([d, title, text, us]) => `<li${us ? ' class="us"' : ''}><time>${esc(d)}</time><div><b>${esc(title)}</b><span>${esc(text)}</span></div></li>`).join('\n        ');
     return `<div class="day reveal"><h3>${esc(t.name)} · ${t.days} days</h3><p class="sub">${esc(t.sub)}</p><ul class="tl">
         ${tl}
-      </ul><div class="dayfoot"><div class="pricebox"><small>Private car · driver for all ${t.days} days</small><b>$${t.price.car} per car</b><span>That’s $${perPerson(t.price.car, 2)} each for 2 · $${perPerson(t.price.car, 3)} each for 3 · Van for up to 6: $${t.price.van} ($${perPerson(t.price.van, 6)} each for 6)</span></div><div class="preload">${esc(t.note)}</div><a class="btn btn-cta" href="${wa(t.wa)}">Ask for this trip on WhatsApp</a></div></div>`;
+      </ul><div class="dayfoot"><div class="pricebox"><small>Private car · driver for all ${t.days} days</small><b>$${t.price.car} per car</b><span>That’s $${perPerson(t.price.car, 2)} each for 2 · $${perPerson(t.price.car, 3)} each for 3 · Van for up to 6: $${t.price.van} ($${perPerson(t.price.van, 6)} each for 6)</span></div><div class="preload">${esc(t.note)}</div><a class="btn btn-cta" href="${wa(t.wa)}">Ask for this trip on WhatsApp</a>${t.tour ? `<a class="r-tour" href="${p}tour.html?id=${esc(t.tour)}">Or plan it day by day in our trip planner →</a>` : ''}</div></div>`;
   }).join('\n      ');
   return `<section class="section" id="plan"><div class="wrap">
     ${sh('Two ways to do it', 'Six days or eight, in your own car', r.plansSub)}
@@ -216,7 +216,7 @@ ${jsonLd(r, url)}
   ${jumpNav()}
   ${intro(r, p)}
   ${sites(r, p)}
-  ${trips(r)}
+  ${trips(r, p)}
   ${when(r)}
   ${etiquette(r)}
   ${faq(r)}
@@ -256,6 +256,7 @@ const RAMAYANA_STYLE = `
   .pricebox b{display:block;font-family:var(--display);font-size:1.6rem;line-height:1.2;margin:.15rem 0}
   .pricebox span{font-size:.86rem;color:var(--ink-soft)}
   .tips li b{font-weight:600}
+  .r-tour{justify-self:start;font-size:.86rem;font-weight:600;color:var(--accent-deep);text-decoration:none}
   @media(prefers-reduced-motion:reduce){.tz{transition:none}}`;
 
 if (import.meta.url === `file://${process.argv[1]}`) {
