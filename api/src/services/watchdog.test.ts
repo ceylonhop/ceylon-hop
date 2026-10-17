@@ -356,6 +356,26 @@ describe('stuck payment eligibility follows the latest gateway attempt', () => {
     expect(alerts.sent).toHaveLength(1);
     expect(alerts.sent[0].kind).toBe('watchdog_stuck_pending');
   });
+
+  // The attempt log is best-effort by contract: a read failure falls back to the payment row
+  // rather than taking the sweep down with it.
+  it('falls back to the payment row when the checkout log cannot be read', async () => {
+    const { bookings, payments, at } = await seededGatewayPayment();
+    const down = () => Promise.reject(new Error('log is down'));
+    const checkoutEvents = { listByBookingId: down, listByBookingIds: down };
+    const alerts = new FakeAlertAdapter();
+
+    const result = await runWatchdog(at(45), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+    });
+
+    expect(result.stuckPending).toBe(1);
+    expect(alerts.sent.map((a) => a.kind)).toEqual(['watchdog_stuck_pending']);
+  });
 });
 
 // ── Burst cap (notification safety rails, slice 1) ─────────────────────────
