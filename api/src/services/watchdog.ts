@@ -19,6 +19,14 @@ import type { RideListRepo } from '../db/rideListRepo';
 import { cutoffAt, isSeedMember, type Slot } from '../domain/rideList';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { reconcileBookingTracking, type BookingTrackingFinding } from './bookingTracking';
+import { emailQuotaAlert, emailSentToday, type UsageSource } from './emailQuota';
+import { utcDay } from './usageMeter';
+
+// Spec 2026-10-13 §6 — what the quota rule below needs: the shared usage counters and the plan's cap.
+export interface WatchdogEmailQuota {
+  usage: UsageSource;
+  dailyLimit: number;
+}
 
 // Heartbeat row in the alert ledger (CH-V43ZU, 2026-09-24). Written with a zero cooldown at
 // the end of every sweep, so its last_sent_at is simply "when the watchdog last ran". Nothing
@@ -150,6 +158,9 @@ export async function runWatchdog(
     // Phase A correlation seam. The HTTP job route supplies one request id + one run id; later
     // communication tracking persists them without changing this service boundary again.
     correlation?: TrackingCorrelation;
+    // Resend daily-cap early warning (spec 2026-10-13 §6). Optional like the rest; without the
+    // usage counters wired (keyless dev) there is nothing to count.
+    emailQuota?: WatchdogEmailQuota;
   },
 ): Promise<{
   stuckPending: number;
@@ -337,6 +348,14 @@ export async function runWatchdog(
   // Footprint. Last, so a sweep that threw halfway leaves no heartbeat — a crashing cron is
   // not a live one, and the liveness alert's wording covers both readings.
   const overdueRideLists = deps.rideLists ? await sweepOverdueRideLists(now, deps.rideLists, alerts) : 0;
+
+  // Resend daily cap: page at 70 % so the owner upgrades before sends — these alerts included —
+  // start failing. Deduped per UTC day by the alert's own key.
+  if (deps.emailQuota) {
+    const sent = await emailSentToday(now, deps.emailQuota.usage);
+    const quota = emailQuotaAlert(utcDay(now), sent, deps.emailQuota.dailyLimit);
+    if (quota) await alerts.send(quota);
+  }
 
   await alertLog?.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, now);
 

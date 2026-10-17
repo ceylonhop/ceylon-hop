@@ -15,7 +15,9 @@ function clientKey(c: Context): string {
   return env?.incoming?.socket?.remoteAddress ?? 'unknown';
 }
 
-export function rateLimit(opts: { windowMs: number; max: number; methods?: string[] }) {
+// `onLimited` is told about every 429 served (spec 2026-10-13: the Health tab's
+// `ratelimit.refused`), so how often ordinary browsing is being turned away is visible.
+export function rateLimit(opts: { windowMs: number; max: number; methods?: string[]; onLimited?: () => void }) {
   const hits = new Map<string, number[]>();
   const methods = opts.methods ?? ['POST'];
 
@@ -27,6 +29,7 @@ export function rateLimit(opts: { windowMs: number; max: number; methods?: strin
 
     const recent = (hits.get(ip) ?? []).filter((t) => now - t < opts.windowMs);
     if (recent.length >= opts.max) {
+      opts.onLimited?.();
       const retrySec = Math.ceil((opts.windowMs - (now - recent[0])) / 1000);
       c.header('Retry-After', String(retrySec));
       return c.json({ error: 'rate_limited', message: 'Too many requests — please slow down.' }, 429);

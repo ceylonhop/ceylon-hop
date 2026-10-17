@@ -1142,3 +1142,18 @@ describe('POST /admin/jobs/notifications — watchdog liveness', () => {
     expect(alerts.sent.map((a) => a.kind)).not.toContain('watchdog_stale');
   });
 });
+
+// Spec 2026-10-13 §4: the daily tick leaves the same footprint the watchdog does, so the ops
+// Health tab can say when it last ran — GitHub's cron delivers it hours late and nothing else
+// records that it happened at all.
+describe('POST /admin/jobs/notifications — heartbeat', () => {
+  it('writes notifications_tick/last to the alert ledger when the tick completes', async () => {
+    const { NOTIFICATIONS_TICK } = await import('../services/scheduler');
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, auth, alertLog });
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).toBeNull();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).not.toBeNull();
+  });
+});
