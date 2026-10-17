@@ -9,7 +9,8 @@ import type { Experience, PriceUnit } from '../experiences/experience';
 // (D13): payment_ref + amount are the only record of it.
 export type InterestStatus = 'new' | 'contacted' | 'link_sent' | 'paid' | 'declined';
 export type ConfirmationChannel = 'email' | 'whatsapp';
-export type InterestSource = 'booking_page' | 'quote_page';
+// pay_page: a tap on the paid pay-link confirmation, recorded on the booking (owner, 2026-10-15; migration 0070).
+export type InterestSource = 'booking_page' | 'quote_page' | 'pay_page';
 export const OPEN_STATUSES: InterestStatus[] = ['new', 'contacted', 'link_sent'];
 // The post-payment booking states (api/src/domain/status.ts): a draft booking is an abandoned
 // checkout, so its interests are stored but never worked (spec D10, D15).
@@ -81,6 +82,8 @@ export interface ExperienceInterestRepo {
   get(id: string): Promise<ExperienceInterest | null>;
   /** Deletes only while the interest is still 'new'; true when a row was removed. */
   withdrawFromQuote(experienceId: string, quoteId: string): Promise<boolean>;
+  /** The same, for a booking's interest (the pay-link confirmation's "Request info"). */
+  withdrawFromBooking(experienceId: string, bookingId: string): Promise<boolean>;
   /** Sets booking_id on the quote's unlinked interests; returns how many moved. */
   linkQuoteToBooking(quoteId: string, bookingId: string): Promise<number>;
   listForBooking(bookingId: string): Promise<ExperienceInterest[]>;
@@ -144,6 +147,16 @@ export class InMemoryExperienceInterestRepo implements ExperienceInterestRepo {
   async withdrawFromQuote(experienceId: string, quoteId: string): Promise<boolean> {
     for (const r of this.rows.values()) {
       if (r.experienceId === experienceId && r.quoteId === quoteId && r.status === 'new') {
+        this.rows.delete(r.id);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async withdrawFromBooking(experienceId: string, bookingId: string): Promise<boolean> {
+    for (const r of this.rows.values()) {
+      if (r.experienceId === experienceId && r.bookingId === bookingId && r.status === 'new') {
         this.rows.delete(r.id);
         return true;
       }

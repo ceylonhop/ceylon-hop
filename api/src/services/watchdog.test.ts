@@ -356,6 +356,26 @@ describe('stuck payment eligibility follows the latest gateway attempt', () => {
     expect(alerts.sent).toHaveLength(1);
     expect(alerts.sent[0].kind).toBe('watchdog_stuck_pending');
   });
+
+  // The attempt log is best-effort by contract: a read failure falls back to the payment row
+  // rather than taking the sweep down with it.
+  it('falls back to the payment row when the checkout log cannot be read', async () => {
+    const { bookings, payments, at } = await seededGatewayPayment();
+    const down = () => Promise.reject(new Error('log is down'));
+    const checkoutEvents = { listByBookingId: down, listByBookingIds: down };
+    const alerts = new FakeAlertAdapter();
+
+    const result = await runWatchdog(at(45), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+    });
+
+    expect(result.stuckPending).toBe(1);
+    expect(alerts.sent.map((a) => a.kind)).toEqual(['watchdog_stuck_pending']);
+  });
 });
 
 // ── Burst cap (notification safety rails, slice 1) ─────────────────────────
@@ -814,5 +834,39 @@ describe('runWatchdog: Ride Board lists left open past their cutoff', () => {
     await runWatchdog(now, { ...base(), alerts, rideLists });
 
     expect(alerts.sent.map((a) => a.kind)).not.toContain('ride_list_overdue');
+  });
+});
+
+// Spec 2026-10-13 §6: the one usage rule the watchdog carries — warn at 70 % of the Resend daily
+// cap, so the owner upgrades before the cap bites and takes the alert channel with it.
+describe('runWatchdog — email quota', () => {
+  const quota = async (sentToday: number) => {
+    const { InMemoryUsageCounterRepo } = await import('../db/usageCounterRepo');
+    const { UsageMeter } = await import('./usageMeter');
+    const repo = new InMemoryUsageCounterRepo();
+    const meter = new UsageMeter(repo, { flushMs: 0 });
+    if (sentToday) meter.bump('email.sent', sentToday);
+    return { usage: { meter, repo }, dailyLimit: 100 };
+  };
+
+  it('stays quiet below the threshold', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(69),
+    });
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('email_quota_near');
+  });
+
+  it('raises email_quota_near at 70 % of the daily limit', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(70),
+    });
+    const a = alerts.sent.find((x) => x.kind === 'email_quota_near');
+    expect(a).toBeDefined();
+    expect(a!.severity).toBe('critical');
+    expect(a!.title).toContain('70 of 100');
   });
 });

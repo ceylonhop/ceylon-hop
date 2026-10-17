@@ -172,6 +172,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .scroll::-webkit-scrollbar{width:11px}.scroll::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
   /* quote view — own scoped scroller, sibling of #view (the .app is 100vh/overflow:hidden) */
   #quoteRoot{height:100%;overflow-y:auto;position:relative;z-index:1}
+  /* A modal open in the builder is position:fixed INSIDE this z-index:1 stacking context, so its own
+     z-index can't rise above the side rail (z-index:2) — the rail painted over the dialog's left edge
+     at narrow widths. While one is open, lift the whole pane above the rail instead. */
+  #quoteRoot:has(.ch-modal){z-index:95}
   #quoteRoot::-webkit-scrollbar{width:11px}#quoteRoot::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
   /* [hidden] must win over .topbar{display:flex} etc. when routes swap panels */
   #topbar[hidden],#view[hidden],#quoteRoot[hidden]{display:none}
@@ -326,6 +330,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-mover{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 8px 8px 0;font-size:.84rem;font-weight:700}
   .an-mover.up{color:var(--ok)} .an-mover.down{color:var(--alert)}
   .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
+  /* Health tab (spec 2026-10-13 §7): usage against a cap. Green until 70 %, amber to the cap, red past it. */
+  .hl-bar{height:6px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:8px}
+  .hl-bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+  .hl-bar.warn i{background:var(--wait)}
+  .hl-bar.bad i{background:var(--red)}
+  .hl-stale{color:var(--red);font-weight:700}
+  .hl-list{list-style:none;margin:0;padding:0;font-size:.88rem}
+  .hl-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--line-soft)}
+  .hl-list li:first-child{border-top:0}
+  .hl-list .an-n{font-size:1rem}
+  .hl-links a{display:block;padding:6px 0;border-top:1px solid var(--line-soft);font-size:.88rem;text-decoration:none;color:var(--ink)}
+  .hl-links a:first-child{border-top:0}
+  .hl-links a:hover{text-decoration:underline}
   .an-section-label{font-size:.69rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:20px 2px 9px}
   .an-data-note{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;color:var(--ink-soft);font-size:.78rem;background:rgba(255,255,255,.45)}
   .an-funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:stretch}
@@ -2333,6 +2350,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Health (spec 2026-10-13 §7): founder-only system page, gated exactly like Analytics. */
+  if(url.hash==='#health'&&state.caps&&state.caps.includes('analytics:view'))return { route:'health', routeQuoteId:null, routeBookingId:null };
   /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
   if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   /* Experiences (spec 2026-10-06 D14): the partner catalogue, founder + ops (experiences:manage). */
@@ -2347,6 +2366,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
+  else if(route==='health')url.hash='#health';
   else if(route==='lookup')url.hash='#lookup';
   else if(route==='rates')url.hash='#rates';
   else if(route==='experiences')url.hash='#experiences';
@@ -2481,6 +2501,7 @@ function collapseRail(){
    Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
    Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
+  health:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
@@ -2509,6 +2530,7 @@ function setNav(){
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canAnalytics?`<button data-route="health" data-testid="health-nav" class="${state.route==='health'?'active':''}" title="Health">${NAV_ICONS.health}<span class="nav-txt">Health</span></button>`:'')+
     (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'')+
     (canExperiences?`<button data-route="experiences" data-testid="experiences-nav" class="${state.route==='experiences'?'active':''}" title="Experiences">${NAV_ICONS.experiences}<span class="nav-txt">Experiences</span></button>`:'');
 }
@@ -3231,6 +3253,104 @@ document.addEventListener('click',e=>{
   if(age){queueFilter='sent';quoteQuery='';setShellRoute('quotes',{});return;} /* v1: status-filter only */
   const booking=e.target.closest('#view [data-anbooking]');
   if(booking){openDetail(booking.dataset.anbooking);return;}
+});
+
+/* ── Health (spec 2026-10-13 §7): what only our process and database know ──
+   Heartbeats, alert kinds, abandoned carts and usage against the free-tier caps, read once per
+   entry from GET /admin/ops/health (never cached; Refresh re-fetches). Outage detection and vendor
+   metrics live in the vendor consoles — linked at the bottom — so this is the place to start from. */
+const HL_DB_FREE_BYTES=500e6; /* Supabase free plan — display only; the API reports bytes */
+function hlAgo(iso){
+  if(!iso)return 'never';
+  const s=Math.max(0,Math.round((Date.now()-Date.parse(iso))/1000));
+  if(s<60)return s+' s ago';
+  const m=Math.round(s/60); if(m<60)return m+' min ago';
+  const h=Math.round(m/60); if(h<48)return h+' h ago';
+  return Math.round(h/24)+' d ago';
+}
+function hlBytes(b){
+  if(b==null)return '—';
+  if(b<1e6)return Math.round(b/1e3)+' KB';
+  if(b<1e9)return (b/1e6).toFixed(b<1e8?1:0).replace(/\.0$/,'')+' MB';
+  return (b/1e9).toFixed(2)+' GB';
+}
+function hlBar(n,limit){
+  const pct=limit?Math.min(100,Math.round(100*n/limit)):0;
+  const cls=pct>=100?' bad':pct>=70?' warn':'';
+  return `<div class="hl-bar${cls}" role="img" aria-label="${pct}% of limit"><i style="width:${pct}%"></i></div>`;
+}
+function hlTile(label,value,sub,extra){
+  return anTile(label,value,(sub?`<div class="an-sub">${sub}</div>`:'')+(extra||''));
+}
+function hlBeat(label,beat){
+  if(!beat)return hlTile(label,'—','no ledger wired');
+  const when=beat.lastRunAt?hlAgo(beat.lastRunAt):'never';
+  return hlTile(label,beat.stale?`<span class="hl-stale">${when}</span>`:when,beat.stale?'STALE — check the cron':'running');
+}
+function hlKindList(rows,empty){
+  if(!rows||!rows.length)return `<div class="an-empty">${empty}</div>`;
+  return `<ul class="hl-list">${rows.map(r=>`<li><span>${esc(r.kind)}</span><span class="an-n">${r.keys}</span></li>`).join('')}</ul>`;
+}
+function hlHtml(h){
+  const e=h.email, m=h.maps, rl=h.rateLimit, c=h.carts;
+  const mapsRows=Object.keys(m.month.byKey).sort().map(k=>`<li><span>${esc(k.replace(/^maps\./,''))}</span><span class="an-n">${m.today.byKey[k]||0} <span class="an-sub">today</span> · ${m.month.byKey[k]} <span class="an-sub">month</span></span></li>`).join('');
+  return `
+    <div class="an-tiles">
+      ${hlTile('API build',h.build.commit?esc(h.build.commit):'local','up '+hlAgo(h.build.startedAt).replace(' ago',''))}
+      ${hlTile('Database',hlBytes(h.db.sizeBytes),h.db.sizeBytes==null?'not on Postgres':'of '+hlBytes(HL_DB_FREE_BYTES)+' free plan',h.db.sizeBytes==null?'':hlBar(h.db.sizeBytes,HL_DB_FREE_BYTES))}
+      ${hlBeat('Payments watchdog',h.jobs&&h.jobs.watchdog)}
+      ${hlBeat('Daily tick',h.jobs&&h.jobs.notificationsTick)}
+    </div>
+    <div class="an-section-label">Email · Resend plan</div>
+    <div class="an-tiles">
+      ${hlTile('Sent today',e.today.sent+' <span class="an-sub">/ '+e.dailyLimit+'</span>','daily cap · pages at 70 %',hlBar(e.today.sent,e.dailyLimit))}
+      ${hlTile('Sent this month',e.month.sent+' <span class="an-sub">/ '+e.monthlyLimit+'</span>','monthly cap',hlBar(e.month.sent,e.monthlyLimit))}
+      ${hlTile('Failed today',e.today.failed,'provider refused or timed out')}
+      ${hlTile('Suppressed today',e.today.suppressed,'stopped by the guard / allowlist')}
+    </div>
+    <div class="an-section-label">Google Maps · live calls (cache hits are free)</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">10,000 free events per SKU per month on Google's current pricing — set the hard quota caps in the Cloud console.</p>
+        <div class="an-tiles">${hlTile('Today',m.today.total,'all methods')}${hlTile('This month',m.month.total,'all methods')}</div>
+        ${mapsRows?`<ul class="hl-list">${mapsRows}</ul>`:'<div class="an-empty">No live Google calls counted this month.</div>'}
+      </div>
+      <div class="an-card"><p class="an-cap">Traffic turned away and carts left open.</p>
+        <div class="an-tiles">
+          ${hlTile('429s today',rl.refusedToday,'per-IP write limit hit')}
+          ${hlTile('429s this month',rl.refusedMonth,'')}
+          ${hlTile('Pending carts',c.paymentPending,c.paymentPendingLast24h+' started in the last 24 h')}
+          ${hlTile('Drafts',c.drafts,'never reached checkout')}
+        </div>
+      </div>
+    </div>
+    <div class="an-section-label">Alerts · distinct problems in the ledger</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">Last 24 hours</p>${h.alerts?hlKindList(h.alerts.last24h,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+      <div class="an-card"><p class="an-cap">Last 7 days</p>${h.alerts?hlKindList(h.alerts.last7d,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+    </div>
+    <div class="an-section-label">Vendor dashboards</div>
+    <div class="an-card hl-links">${(h.links||[]).map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join('')}</div>`;
+}
+function viewHealth(){
+  $('#topbar').innerHTML='';
+  const head=`<div class="qhead pagehead"><h1>Health</h1></div>
+    <p class="pagesub"><b>System health</b> · jobs, alerts, carts and usage against the free-tier caps · days are UTC <span class="an-updated"></span></p>
+    <div class="an-controls"><button type="button" class="qfilter" data-hlrefresh>Refresh</button></div>`;
+  const view=$('#view');
+  view.innerHTML=head+'<div class="an-tiles"><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div></div>';
+  api.get('/health').then(h=>{
+    if(state.route!=='health')return; /* stale response — view moved on */
+    view.innerHTML=head+hlHtml(h);
+    const updated=view.querySelector('.an-updated');
+    if(updated)updated.textContent=' · Updated '+fmtDateTime(h.generatedAt);
+  }).catch(()=>{
+    if(state.route!=='health')return;
+    view.innerHTML=head+'<div class="an-empty">Couldn’t load system health — check the connection and try again.</div>';
+  });
+}
+document.addEventListener('click',e=>{
+  if(state.route!=='health')return;
+  if(e.target.closest('#view [data-hlrefresh]'))viewHealth();
 });
 
 function openOpsQuote(id){
@@ -4301,6 +4421,7 @@ function playRouteIn(){
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
+  if(state.route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
   if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))state.route='tickets'; /* founder + ops; the same silent bounce */
@@ -4339,6 +4460,15 @@ function render(){
     if(entering){
       playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='health'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewHealth();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="health"]');
       if(navBtn)navBtn.focus();
     }
   }else if(state.route==='lookup'){
@@ -4416,6 +4546,7 @@ document.addEventListener('click',e=>{
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
+  if(route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
   if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   if(route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))route='tickets';
@@ -4846,7 +4977,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='health'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -5083,7 +5214,7 @@ var bookOpen = false;     // "Mark booked" → create-a-booking confirmation mod
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
-var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
+var _payPicker = null;    // { lines, sel, totalCents, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
 var _payChooser = false;  // the "which option is this link for" chooser is open (a "both" quote)
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
@@ -5675,6 +5806,14 @@ function armAutosave() {
   if (_autoTimer) clearTimeout(_autoTimer);
   _autoTimer = setTimeout(fireAutosave, 2500);
 }
+// A driving leg still missing an end with no km typed to fall back on: /save has nothing to
+// measure and answers 400 "couldn't find the distance". That is a quote part-way through being
+// built, not a failure, so autosave waits for the leg instead of reporting it red.
+function hasUnfinishedDrivingLeg() {
+  return (state.legs || []).some(function (leg) {
+    return legDrives(leg) && (!legFrom(leg) || !legTo(leg)) && legKm(leg) <= 0;
+  });
+}
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
@@ -5701,6 +5840,9 @@ async function fireAutosave() {
     return;
   }
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  // Nothing is re-armed: finishing the leg is an edit, and every edit arms autosave itself. The
+  // chip keeps saying "Unsaved"/"Edits pending" meanwhile, which is the truth.
+  if (hasUnfinishedDrivingLeg()) return;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok;
@@ -6152,10 +6294,13 @@ async function api(path, opts) {
 async function jsonOrNull(res) {
   try { return await res.json(); } catch (e) { return null; }
 }
-// V9: build a consistent { error } from a non-ok response.
+// V9: build a consistent { error, ... } from a non-ok response. The WHOLE server body when it
+// carries an `error` (routes attach reason / message / details / detail / status beside it, and
+// callers that read them — bookErrorText(), hzSubmitZone() — never received them while this kept
+// only `{ error }`); `{ error: 'HTTP <status>' }` when the body is missing or not JSON.
 async function errPayload(res) {
   var body = await jsonOrNull(res);
-  return { error: (body && body.error) ? body.error : ('HTTP ' + res.status) };
+  return (body && typeof body === 'object' && body.error) ? body : { error: 'HTTP ' + res.status };
 }
 
 // Client-side cache of autocomplete results (each query is a billed Google round-trip;
@@ -6998,9 +7143,11 @@ function togglePayLine(state, lines, line) {
   }
   return { legIndexes: legs, extraIndexes: extras };
 }
-/* Mirrors selectionAmountCents/gapAfterLeg in api/src/quote/paySelection.ts — the server is
-   authoritative for the charged amount; this is the running total the operator watches. */
-function paySelectionSummary(state, lines) {
+/* Mirrors selectionAmountCents/gapAfterLeg/isFullSelection in api/src/quote/paySelection.ts — the
+   server is authoritative for the charged amount; this is the running total the operator watches.
+   With EVERY line ticked the server skips the subset sum and charges quote.totalCents (the lines
+   sum to the pre-finishing subtotal, a few dollars off the headline total), so show that figure. */
+function paySelectionSummary(state, lines, totalCents) {
   var ticked = function (l) {
     return l.kind === 'leg' ? state.legIndexes.indexOf(l.index) >= 0 : state.extraIndexes.indexOf(l.index) >= 0;
   };
@@ -7014,10 +7161,13 @@ function paySelectionSummary(state, lines) {
       break;
     }
   }
+  var all = lines.every(ticked);
   return {
     soldLegs: state.legIndexes.length,
     totalLegs: lines.filter(function (l) { return l.kind === 'leg'; }).length,
-    amountCents: lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
+    amountCents: all && typeof totalCents === 'number'
+      ? totalCents
+      : lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
     gapAfter: gapAfter,
   };
 }
@@ -7032,7 +7182,7 @@ async function openPayPartPicker() {
     var sel = body.selection
       ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
       : paySelectionState(body.lines);
-    _payPicker = { lines: body.lines, sel: sel, busy: false };
+    _payPicker = { lines: body.lines, sel: sel, totalCents: body.totalCents, busy: false };
     _payChooser = false;
     render();
   } catch (e) {
@@ -7079,7 +7229,7 @@ async function confirmPayPart() {
 
 function renderPayPicker() {
   if (!_payPicker) return '';
-  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines);
+  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines, _payPicker.totalCents);
   var rows = _payPicker.lines.map(function (l) {
     var on = l.kind === 'leg'
       ? _payPicker.sel.legIndexes.indexOf(l.index) >= 0
@@ -7294,12 +7444,8 @@ async function apiBook(id, payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) {
-      // The whole refusal, not errPayload's bare { error }: bookErrorText() reads reason /
-      // message / details, and never received them — the toast said only "not_bookable".
-      var errBody = await jsonOrNull(r);
-      return (errBody && typeof errBody === 'object' && errBody.error) ? errBody : { error: 'HTTP ' + r.status };
-    }
+    // errPayload() returns the whole refusal: bookErrorText() reads reason / message / details.
+    if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Booking failed' };
   } catch (e) { return { error: 'Network error' }; }
@@ -8100,7 +8246,15 @@ async function hzSubmitZone() {
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); ratesToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); renderRatesPage(); return; }
+    if (!r.ok) {
+      var e = await errPayload(r);
+      // /zones answers a Zod failure with `detail` (the first issue's message) — name the value
+      // that was refused, not just that one was (the client pre-checks everything but the length).
+      var bad = e.error === 'bad_request';
+      ratesToast(bad ? ('Check the values' + (e.detail ? ' — ' + e.detail : '')) : (e.error || 'Save failed'), 'error');
+      renderRatesPage();
+      return;
+    }
     hzEditId = null;
     ratesToast('Zone saved');
     await loadHotZones();
@@ -8943,9 +9097,25 @@ var expTab = 'catalogue';  // 'catalogue' | 'leads'
 var expLeads = null;       // Lead[] from GET /admin/experiences/leads; null until loaded
 var expLeadsFailed = false;
 var expLeadBusy = {};
-// The in-flight PATCH per lead, so a later edit waits for it instead of being dropped.
+// The in-flight write per lead, so a later edit waits for it instead of being dropped.
 var expLeadPending = {};
 async function expLeadIdle(id) { while (expLeadPending[id]) await expLeadPending[id]; }
+// Every write on a lead takes the lead through here: it waits for the write already out, then holds
+// the lead until the returned release() runs. The wait and the take are one turn (no await between
+// them), so writers woken together by one settle() take it one at a time — two never overlap, and a
+// slow answer can't overwrite a newer value the page holds.
+async function expLeadHold(id) {
+  while (expLeadPending[id]) await expLeadPending[id];
+  var seq = _expSeq;
+  expLeadBusy[id] = true;
+  var settle, pending = new Promise(function (res) { settle = res; });
+  expLeadPending[id] = pending;
+  return function () {
+    if (seq === _expSeq) delete expLeadBusy[id];
+    if (expLeadPending[id] === pending) delete expLeadPending[id];
+    settle();
+  };
+}
 // The lead once no save is out on it, for a caller that must have it to itself; null when it has gone or
 // the page has moved on. Everything queued behind one save wakes on it together, and a queued field save
 // takes the lead first — so wait again, for as long as there is a save to wait on, instead of giving up.
@@ -9196,12 +9366,12 @@ function expLeadPayFields(l, rowEl) {
 }
 
 // One PATCH for a lead. true = saved (the lead is updated in place); false = refused or failed, with
-// the operator already told why. The caller repaints, which puts a refused <select> back.
+// the operator already told why. The caller repaints, which puts a refused <select> back. It waits its
+// turn (expLeadHold), so a save queued behind another goes out after it, never alongside it.
 async function expLeadPatch(l, body) {
   var seq = _expSeq;
-  expLeadBusy[l.id] = true;
-  var settle, pending = new Promise(function (res) { settle = res; });
-  expLeadPending[l.id] = pending;
+  var release = await expLeadHold(l.id);
+  if (seq !== _expSeq) { release(); return false; }
   try {
     var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (seq !== _expSeq) return false;
@@ -9217,18 +9387,19 @@ async function expLeadPatch(l, body) {
     ratesToast('Couldn’t save — try again.', 'error');
     return false;
   } finally {
-    if (seq === _expSeq) delete expLeadBusy[l.id];
-    if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-    settle();
+    release();
   }
 }
 
 async function expLeadStatusChange(sel) {
-  var l = expLeadById(sel.getAttribute('data-id'));
-  if (!l) return;
+  var id = sel.getAttribute('data-id');
   var want = sel.value;
+  // A pick made while a save is out waits for it — it used to be put straight back, silently.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
   var back = function () { sel.value = l.status; renderExperiencesPage(); };
-  if (want === l.status || expLeadBusy[l.id]) return back();
+  if (want === l.status) return back();
   var pay = expLeadPayFields(l, sel.closest('.ch-lead-row'));
   if (pay.error) { ratesToast(pay.error, 'error'); return back(); }
   var body = Object.assign({ status: want }, pay.fields);
@@ -9240,8 +9411,11 @@ async function expLeadStatusChange(sel) {
 }
 
 async function expLeadSavePay(btn) {
-  var l = expLeadById(btn.getAttribute('data-id'));
-  if (!l || expLeadBusy[l.id]) return;
+  var id = btn.getAttribute('data-id');
+  // Pressed while a save is out: wait for it — it used to do nothing.
+  await expLeadIdle(id);
+  var l = expLeadById(id);
+  if (!l) return;
   var pay = expLeadPayFields(l, btn.closest('.ch-lead-row'));
   if (pay.error) { ratesToast(pay.error, 'error'); return; }
   if (!Object.keys(pay.fields).length) return;
@@ -9296,9 +9470,8 @@ async function expLeadConfirm(btn) {
     Object.keys(want).forEach(function (k) { if (want[k] !== (l[k] || null)) diff[k] = want[k]; });
     if (Object.keys(diff).length && !(await expLeadPatch(l, diff))) return true;
     var seq = _expSeq;
-    expLeadBusy[l.id] = true;
-    var settle, pending = new Promise(function (res) { settle = res; });
-    expLeadPending[l.id] = pending;
+    var release = await expLeadHold(l.id);
+    if (seq !== _expSeq) { release(); return false; }
     try {
       var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       if (seq !== _expSeq) return false;
@@ -9307,15 +9480,15 @@ async function expLeadConfirm(btn) {
       if (r.ok) { if (d && d.lead) Object.assign(l, d.lead); delete expLeadNoEmail[l.id]; ratesToast('Confirmation sent'); }
       else if (d && d.error === 'schedule_required') ratesToast('Add the date and time first', 'error');
       else if (d && d.error === 'no_email') { expLeadNoEmail[l.id] = true; ratesToast('No email on file — confirm on WhatsApp', 'error'); }
+      // The environment stopped the email (staging allowlist, kill switch): not a failure to retry.
+      else if (d && d.error === 'email_suppressed') { expLeadNoEmail[l.id] = true; ratesToast('Email to this address is switched off on this environment — confirm on WhatsApp instead', 'error'); }
       else if (r.status !== 401 && r.status !== 403) ratesToast('Couldn’t send — try again.', 'error');
     } catch (e) {
       if (seq !== _expSeq) return false;
       window.opsReportError && window.opsReportError('experience confirmation send', e);
       ratesToast('Couldn’t send — try again.', 'error');
     } finally {
-      if (seq === _expSeq) delete expLeadBusy[l.id];
-      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-      settle();
+      release();
     }
     return true;
   };
@@ -9331,9 +9504,8 @@ async function expLeadConfirmWhatsApp(btn) {
     var l = await expLeadFree(id);
     if (!l) return false;
     var seq = _expSeq;
-    expLeadBusy[l.id] = true;
-    var settle, pending = new Promise(function (res) { settle = res; });
-    expLeadPending[l.id] = pending;
+    var release = await expLeadHold(l.id);
+    if (seq !== _expSeq) { release(); return false; }
     try {
       var r = await api('/admin/experiences/leads/' + encodeURIComponent(l.id) + '/confirmation', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'whatsapp' }) });
       if (seq !== _expSeq) return false;
@@ -9346,9 +9518,7 @@ async function expLeadConfirmWhatsApp(btn) {
       window.opsReportError && window.opsReportError('experience whatsapp confirmation', e);
       ratesToast('Couldn’t save — try again.', 'error');
     } finally {
-      if (seq === _expSeq) delete expLeadBusy[l.id];
-      if (expLeadPending[l.id] === pending) delete expLeadPending[l.id];
-      settle();
+      release();
     }
     return true;
   };
@@ -9633,6 +9803,7 @@ document.addEventListener('click', function (e) {
     expTab = el.getAttribute('data-tab') === 'leads' ? 'leads' : 'catalogue';
     renderExperiencesPage();
     if (expTab === 'leads') loadExpLeads(); // fresh on every visit: leads arrive while the page is open
+    else loadExperiences(); // and the Catalogue's "N interested · N paid" moves with the leads (loadExperiences is seq-guarded)
   }
   else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
   else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
@@ -12690,12 +12861,63 @@ var OPS_MAPS_KEY = '{{MAPS_KEY}}';
 try { if (window.OPS_MAPS_KEY != null) OPS_MAPS_KEY = window.OPS_MAPS_KEY; } catch (e) {}
 if (typeof OPS_MAPS_KEY !== 'string' || OPS_MAPS_KEY.indexOf('{{') === 0) OPS_MAPS_KEY = '';
 
+/* Google Maps is OFF on test sites (local, LAN, staging) unless the tab opts in with ?maps=1 or
+   the pill below — every map load bills the live key, and the e2e suite was ~75% of September
+   2026's $122 Maps bill. Live ops is untouched. A google.maps already on the page (a test stub)
+   is used as-is. DELIBERATE SECOND COPY of isTestHost() in ch-map.js (this shell cannot import
+   it); web-tests/unit/maps-test-hosts.test.js asserts the two agree. */
+function isTestHost(host) {
+  host = String(host || '').toLowerCase();
+  if (host === '' || host === 'localhost' || host === '0.0.0.0' || host === '[::1]' || /\.localhost$/.test(host)) return true;
+  if (/^(127|10)\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host) || /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)) return true;
+  return /(^|[.-])staging([.-]|$)/.test(host);
+}
+var MAPS_LIVE_FLAG = 'ch_maps_live';
+var MAPS_TEST_HOST = isTestHost(location.hostname);
+var MAPS_LIVE_ON = (function () {
+  if (!MAPS_TEST_HOST) return true;
+  try {
+    var q = new URLSearchParams(location.search).get('maps');
+    if (q === '1') sessionStorage.setItem(MAPS_LIVE_FLAG, '1');
+    else if (q === '0') sessionStorage.removeItem(MAPS_LIVE_FLAG);
+    return sessionStorage.getItem(MAPS_LIVE_FLAG) === '1';
+  } catch (e) { return false; }
+})();
+// The on/off pill, for a PERSON on a test site with a key — automation never sees it.
+function mountMapsLiveToggle() {
+  if (!MAPS_TEST_HOST || !OPS_MAPS_KEY || navigator.webdriver || document.getElementById('ch-maps-live')) return;
+  var bar = document.createElement('div');
+  bar.id = 'ch-maps-live';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', 'Google Maps on this test site');
+  bar.style.cssText = 'position:fixed;right:8px;top:8px;z-index:2147483000;display:flex;align-items:center;' +
+    'gap:8px;padding:3px 3px 3px 10px;border-radius:999px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;' +
+    'box-shadow:0 2px 10px rgba(0,0,0,.25);background:' + (MAPS_LIVE_ON ? '#9a3412' : '#1f2d2a');
+  var label = document.createElement('span');
+  label.textContent = MAPS_LIVE_ON ? 'Google Maps on · billed' : 'Google Maps off';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = MAPS_LIVE_ON ? 'Turn off' : 'Turn on';
+  btn.style.cssText = 'border:0;border-radius:999px;padding:3px 9px;background:#fff;color:#1f2d2a;font:inherit;cursor:pointer';
+  btn.addEventListener('click', function () {
+    try { if (MAPS_LIVE_ON) sessionStorage.removeItem(MAPS_LIVE_FLAG); else sessionStorage.setItem(MAPS_LIVE_FLAG, '1'); } catch (e) {}
+    var u = new URL(location.href);
+    u.searchParams.set('maps', MAPS_LIVE_ON ? '0' : '1');
+    location.replace(u.toString());
+  });
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountMapsLiveToggle);
+else mountMapsLiveToggle();
+
 var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
 var _mapsJsPromise = null;
 function loadMapsJs() {
   if (_mapsJsPromise) return _mapsJsPromise;
   if (window.google && window.google.maps && window.google.maps.importLibrary) { _mapsJsPromise = Promise.resolve(true); return _mapsJsPromise; }
-  if (!OPS_MAPS_KEY) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
+  if (!OPS_MAPS_KEY || !MAPS_LIVE_ON) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
   _mapsJsPromise = new Promise(function (resolve) {
     // loading=async is Google's recommended pattern (a console warning fires without it);
     // the API signals readiness via the callback, then classes load via importLibrary.
@@ -12927,7 +13149,7 @@ function syncRouteModalMap() {
 async function drawRouteModalRoutes(hostEl, from, to, sel) {
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
-  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">Map preview needs the live Google key.</div>'; _rcMapMap = null; return; }
+  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">' + (MAPS_LIVE_ON ? 'Map preview needs the live Google key.' : 'Google map is off on test sites — turn it on with the pill (top right).') + '</div>'; _rcMapMap = null; return; }
   if (!_rcMapMap || _rcMapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
     _rcMapMap = new libs.Map(hostEl, { center: { lat: 7.6, lng: 80.9 }, zoom: 7, disableDefaultUI: true, gestureHandling: 'none', clickableIcons: false });
@@ -12961,7 +13183,7 @@ async function drawItinRoute(hostEl, runs) {
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
   if (reqId !== _mapReqSeq) return; // superseded while the Maps libs loaded — let the newer request win
-  if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
+  if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">' + (MAPS_LIVE_ON ? 'Route map could not load.' : 'Google map is off on test sites — turn it on with the pill (top right).') + '</div>'; _mapMap = null; return; }
   if (!_mapMap || _mapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
     _mapMap = new libs.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });

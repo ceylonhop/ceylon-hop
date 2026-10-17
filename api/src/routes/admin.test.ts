@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from '../app';
+import { balanceDueCents, isBalanceOpen } from '../domain/balance';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
@@ -724,6 +725,45 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect(email.sent).toHaveLength(0);
   });
 
+  // The owner decision: Mark paid records what the ops dialog shows ("Record <total> received"),
+  // not whatever a customer's abandoned PayHere deposit attempt left in amountDueNow.
+  it('records the FULL total, and resets amountDueNow, when an abandoned deposit left it below the total', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const DEPOSIT = Math.round(b.total / 4);
+    expect(DEPOSIT).toBeGreaterThan(0);
+    expect(DEPOSIT).toBeLessThan(b.total);
+    bookings.setAmountDueNowForSettlement(b.id, DEPOSIT); // /quotes/pay/start payment:'deposit', never paid
+    expect((await bookings.get(b.id))!.amountDueNow).toBe(DEPOSIT);
+
+    expect((await markPaid(app, b.id, { method: 'bank_transfer', reference: 'BOC-1' })).status).toBe(200);
+
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(b.total);
+    expect(rows[0].purpose).toBe('full');
+    const after = (await bookings.get(b.id))!;
+    expect(after.status).toBe('paid');
+    expect(after.amountDueNow).toBe(b.total);
+    // Every reader agrees nothing is owed: no phantom balance the customer cannot pay.
+    expect(balanceDueCents(after, rows)).toBe(0);
+    expect(isBalanceOpen(after, rows)).toBe(false);
+  });
+
+  it('records the total for an ordinary booking (amountDueNow already equals it)', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect(b.amountDueNow).toBe(b.total);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(b.total);
+    expect(rows[0].purpose).toBe('full');
+    const after = (await bookings.get(b.id))!;
+    expect(after.amountDueNow).toBe(b.total);
+    expect(balanceDueCents(after, rows)).toBe(0);
+  });
+
   it('records the staff member, method and payment behind a manual settlement', async () => {
     const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const payments = new InMemoryPaymentRepo();
@@ -1100,5 +1140,20 @@ describe('POST /admin/jobs/notifications — watchdog liveness', () => {
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect((await res.json()).watchdogStale).toBe(false);
     expect(alerts.sent.map((a) => a.kind)).not.toContain('watchdog_stale');
+  });
+});
+
+// Spec 2026-10-13 §4: the daily tick leaves the same footprint the watchdog does, so the ops
+// Health tab can say when it last ran — GitHub's cron delivers it hours late and nothing else
+// records that it happened at all.
+describe('POST /admin/jobs/notifications — heartbeat', () => {
+  it('writes notifications_tick/last to the alert ledger when the tick completes', async () => {
+    const { NOTIFICATIONS_TICK } = await import('../services/scheduler');
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, auth, alertLog });
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).toBeNull();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).not.toBeNull();
   });
 });

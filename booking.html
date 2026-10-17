@@ -526,6 +526,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .terms-consent:has(input:checked){border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .terms-consent input:focus-visible{box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35);outline:none}
   .terms-consent > span:last-child{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
+  /* site.css paints every <a> like its text (a{color:inherit;text-decoration:none}): the terms link
+     must read as one (owner, 2026-10-15). Same treatment as .pay-pol a / pay.html's .dt-terms a. */
+  .terms-consent a{color:var(--accent-deep);font-weight:600;text-decoration:underline}
 
   /* steppers / addons */
   .stepper{display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:12px}
@@ -575,8 +578,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .xp-chev{display:inline-block;transition:transform .15s}
   .xp-more[aria-expanded="true"] .xp-chev{transform:rotate(90deg)}
   .xp-buy{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  .xp-price{font-size:.88rem;font-weight:700;color:var(--ink);white-space:nowrap}
-  .xp-price small{font-size:.7rem;font-weight:400;color:var(--ink-soft)}
+  /* the small print under the button: a request costs nothing (owner, 2026-10-14) */
+  .xp-free{font-size:.68rem;line-height:1.3;color:var(--ink-soft);white-space:nowrap}
   .xp-btn{appearance:none;-webkit-appearance:none;font:inherit;font-weight:600;font-size:.8rem;min-height:36px;padding:0 16px;border-radius:999px;border:1.5px solid var(--btn-accent);background:var(--white);color:var(--btn-accent);cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
   .xp-btn:hover{background:rgba(var(--accent-rgb),.12)}
   .xp-btn[aria-pressed="true"]{background:var(--btn-accent);color:#fff}
@@ -593,12 +596,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .s-xp .s-row>span:first-child{color:var(--ink)}
   .s-xp-names{margin-top:3px;font-size:.76rem;line-height:1.45;color:var(--ink-soft);overflow-wrap:anywhere}
   @media(max-width:640px){
-    /* the price and the button drop under the meta line so the name gets the full width */
+    /* the button and its small print drop under the meta line so the name gets the full width */
     .xp-row{grid-template-columns:64px minmax(0,1fr);align-items:start}
     .xp-row.nophoto{grid-template-columns:minmax(0,1fr)}
     .xp-photo{width:64px;height:64px;grid-row:1/3}
     .xp-name{white-space:normal;overflow-wrap:anywhere}
-    .xp-buy{flex-direction:row;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+    .xp-buy{flex-direction:column;align-items:flex-start;gap:4px;margin-top:8px}
+    .xp-free{white-space:normal}
     /* a full 44px touch target on phones (reviewer note); desktop keeps the compact 36px pill */
     .xp-btn{min-height:44px}
   }
@@ -1241,11 +1245,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with manage.html. -->
 <script src="checkout-handoff.js?v=13d6bf1c9f"></script>
-<script src="ch-map.js?v=9ccbce517b"></script>
+<script src="ch-map.js?v=18772b2dd8"></script>
 <script src="ch-pricing.js?v=74a30546ee"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=b16d055c38"></script>
+<script src="booking.js?v=fe7a16b9d2"></script>
 </body>
 </html>

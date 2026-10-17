@@ -66,6 +66,8 @@ export interface PaymentRepo {
   // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
   // silently failed to confirm. A predicate rather than a row read: no caller wants the rows.
   hasManualSettlement(bookingId: string): Promise<boolean>;
+  // hasManualSettlement for a SET of bookings in one query: the ids among `bookingIds` with one.
+  manualSettlementAmong(bookingIds: string[]): Promise<Set<string>>;
   // The GATEWAY's own payment id, which the PayHere Refund API takes as `payment_id`. Same
   // reasoning as hasManualSettlement: the narrow Payment shape drops it on purpose, and the
   // refund path wants exactly this one field rather than the whole provenance record.
@@ -188,6 +190,15 @@ export class InMemoryPaymentRepo implements PaymentRepo {
   async hasManualSettlement(bookingId: string): Promise<boolean> {
     return [...this.byId.values()].some(
       (p) => p.bookingId === bookingId && p.status === 'succeeded' && p.settlementSource === 'manual',
+    );
+  }
+
+  async manualSettlementAmong(bookingIds: string[]): Promise<Set<string>> {
+    const want = new Set(bookingIds);
+    return new Set(
+      [...this.byId.values()]
+        .filter((p) => want.has(p.bookingId) && p.status === 'succeeded' && p.settlementSource === 'manual')
+        .map((p) => p.bookingId),
     );
   }
 
