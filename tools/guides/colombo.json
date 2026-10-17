@@ -262,6 +262,40 @@
     "text": "Guesthouse, hostel, homestay — tell us and we’ll add the good ones here.",
     "wa": "Hi Ceylon Hop — a place I stayed and liked in Colombo: "
   },
+  "nightlife": {
+    "sub": "Colombo leans to rooftop bars and lounges more than big clubs. Book the rooftops at weekends, and remember bars stop serving on Poya (full-moon) days. Want a quieter night? A hotel lounge bar beats the clubs near Galle Face.",
+    "items": [
+      {
+        "tier": "Rooftops",
+        "pick": true,
+        "photo": "night-rooftop",
+        "name": "ON14",
+        "text": "Fourteen floors up at the Radisson in Bambalapitiya (the old OZO), with the city and the sea spread out below — the spot for a sunset drink that turns into the evening. <em>Book a table at weekends.</em>",
+        "band": "$$–$$$",
+        "flags": ["Sunset", "Cocktails"],
+        "map": "ON14 Rooftop Lounge Colombo"
+      },
+      {
+        "tier": "Bars & live music",
+        "photo": "night-music",
+        "name": "Park Street Mews · Taphouse by RnR",
+        "text": "Park Street Mews is a lane of restaurants and bars in old warehouses that lights up after dark — good for hopping between, with live music most nights. Taphouse by RnR, in the Old Dutch Hospital, pours craft beer with live bands from Wednesday to Saturday. <em>Taphouse is closed on Poya days.</em>",
+        "band": "$$",
+        "flags": ["Live music", "Bar-hopping"],
+        "map": "Park Street Mews Colombo"
+      },
+      {
+        "tier": "Relaxed",
+        "photo": "night-pub",
+        "name": "The Chiller Room · Irish Bar & Grill",
+        "text": "The Chiller Room in Colombo 3 is a relaxed, welcoming bar with an easygoing, inclusive crowd. On Park Street, the Irish Bar & Grill does hearty pub food, cold beer and the football on the screens.",
+        "band": "$–$$",
+        "flags": ["Casual", "Sport"],
+        "map": "Irish Bar and Grill Park Street Colombo"
+      }
+    ],
+    "collector": {"title": "Where did you go out?", "text": "Tell us your favourite bar in Colombo and we’ll check it out for the next traveller.", "wa": "Hi Ceylon Hop — a bar I liked in Colombo: "}
+  },
   "faq": [
     {
       "tab": "Planning",
@@ -281,10 +315,6 @@
         {
           "q": "Do I need a guide?",
           "a": "<p>In Pettah and the Fort, a guide earns the fee: the lanes start to make sense and the touts leave you alone. Walks run from tip-based to about USD 128 for a four-hour premium walk. Galle Face, the temples and the tower are easy on your own.</p>"
-        },
-        {
-          "q": "Where do I go out at night?",
-          "a": "<p>Colombo leans to rooftop bars and lounges more than big clubs. <b>ON14</b>, on the 14th floor of the Radisson (the old OZO), for the view; <b>Park Street Mews</b> for restaurants and bars with live music, good for hopping between; <b>Taphouse by RnR</b> in the Dutch Hospital for craft beer and bands; <b>The Chiller Room</b> for a relaxed, welcoming crowd; the <b>Irish Bar &amp; Grill</b> on Park Street for pub food and the football. Book the rooftops at weekends. Want it quieter? A hotel lounge bar beats the clubs near Galle Face.</p>"
         },
         {
           "q": "What closes on Poya days?",
@@ -524,6 +554,33 @@
       "creditUrl": "https://unsplash.com/@thevindu_19?utm_source=ceylon_hop&utm_medium=referral",
       "photoUrl": "https://unsplash.com/photos/a-path-in-the-middle-of-a-lush-green-field-zzRvDfDmano?utm_source=ceylon_hop&utm_medium=referral",
       "focal": "50% 58%",
+      "w": 1800,
+      "h": 1125
+    },
+    "night-rooftop": {
+      "alt": "Colombo’s lit-up towers along the coast at dusk, seen from high above under an orange sky",
+      "credit": "Thilina Alagiyawanna",
+      "creditUrl": "https://unsplash.com/@thilinaalagiyawanna?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/illuminated-skyscrapers-in-colombo-at-night-sr-cK6RYRYQ?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 60%",
+      "w": 1800,
+      "h": 1125
+    },
+    "night-music": {
+      "alt": "A band plays keys and trumpet under a wood-panelled ceiling in a small, warmly lit bar",
+      "credit": "Juan Ordonez",
+      "creditUrl": "https://unsplash.com/@juzu_me?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/band-performing-music-in-a-dimly-lit-venue-SE39NxigWC8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 55%",
+      "w": 1800,
+      "h": 1125
+    },
+    "night-pub": {
+      "alt": "Beer taps on a wooden bar counter, with bottle shelves and amber lamps against a brick wall",
+      "credit": "Lens Fables",
+      "creditUrl": "https://unsplash.com/@lensfables?utm_source=ceylon_hop&utm_medium=referral",
+      "photoUrl": "https://unsplash.com/photos/beer-taps-and-bottles-on-a-bar-counter-eUtlNSVqcV8?utm_source=ceylon_hop&utm_medium=referral",
+      "focal": "50% 50%",
       "w": 1800,
       "h": 1125
     }
