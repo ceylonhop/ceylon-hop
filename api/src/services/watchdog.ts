@@ -1,7 +1,7 @@
 import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
-import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { BookingCheckoutEvent, BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
@@ -74,41 +74,37 @@ const isGatewayPayment = (p: Payment): boolean => p.provider === 'payhere' || p.
 // money. A retry can happen hours later and reuses the same payment row, whose status can still be
 // `failed` from the previous attempt. The append-only checkout log is therefore the authority for
 // whether the latest attempt is unanswered or already received a terminal PayHere response.
-async function pendingWatchStartedAt(
+//
+// `events` is this booking's slice of one batched read (runWatchdog), or undefined when no log is
+// wired or the read failed — then the payment row decides, as it did before the log existed.
+function pendingWatchStartedAt(
   booking: Booking,
   rows: Payment[] | null,
-  checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingId'>,
-): Promise<Date | null> {
+  events: BookingCheckoutEvent[] | undefined,
+): Date | null {
   if (rows === null) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
 
   const gateway = rows.filter(isGatewayPayment);
   if (!gateway.length) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
   if (gateway.some((p) => p.status === 'succeeded')) return null;
 
-  if (checkoutEvents && gateway.length) {
-    try {
-      const events = await checkoutEvents.listByBookingId(booking.id);
-      const latestCheckout = events
-        .filter((e) => e.action === 'checkout' && e.outcome === 'succeeded')
-        .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
-      const latestTerminal = events
-        .filter(
-          (e) =>
-            (e.action === 'webhook' || e.action === 'return') &&
-            (e.outcome === 'failed' || e.outcome === 'dismissed' || e.outcome === 'settled'),
-        )
-        .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
+  if (events) {
+    const latestCheckout = events
+      .filter((e) => e.action === 'checkout' && e.outcome === 'succeeded')
+      .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
+    const latestTerminal = events
+      .filter(
+        (e) =>
+          (e.action === 'webhook' || e.action === 'return') &&
+          (e.outcome === 'failed' || e.outcome === 'dismissed' || e.outcome === 'settled'),
+      )
+      .reduce<Date | null>((latest, e) => !latest || e.at > latest ? e.at : latest, null);
 
-      if (latestCheckout) {
-        // A terminal answer at/after the newest checkout closed that attempt. A newer checkout
-        // means the customer retried, even though the reused payment row may still say `failed`.
-        if (latestTerminal && latestTerminal >= latestCheckout) return null;
-        return latestCheckout;
-      }
-    } catch (err) {
-      // Instrumentation is best-effort by contract. Fall back to the payment row so a logging
-      // outage cannot take down the watchdog itself.
-      console.error(`watchdog checkout timeline read failed for ${booking.reference}:`, err);
+    if (latestCheckout) {
+      // A terminal answer at/after the newest checkout closed that attempt. A newer checkout
+      // means the customer retried, even though the reused payment row may still say `failed`.
+      if (latestTerminal && latestTerminal >= latestCheckout) return null;
+      return latestCheckout;
     }
   }
 
@@ -118,6 +114,27 @@ async function pendingWatchStartedAt(
     (latest, p) => !p.lastAttemptAt || (latest && p.lastAttemptAt <= latest) ? latest : p.lastAttemptAt,
     null,
   ) ?? new Date(booking.createdAt);
+}
+
+// One read for every pending booking's checkout log, grouped by booking. Undefined when no log is
+// wired, or when the read fails: instrumentation is best-effort by contract, so a logging outage
+// falls back to the payment rows instead of taking down the watchdog itself.
+async function checkoutTimelines(
+  pending: Booking[],
+  checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingIds'>,
+): Promise<Map<string, BookingCheckoutEvent[]> | undefined> {
+  if (!checkoutEvents || pending.length === 0) return undefined;
+  try {
+    const byBooking = new Map<string, BookingCheckoutEvent[]>();
+    for (const e of await checkoutEvents.listByBookingIds(pending.map((b) => b.id))) {
+      if (!e.bookingId) continue;
+      byBooking.set(e.bookingId, [...(byBooking.get(e.bookingId) ?? []), e]);
+    }
+    return byBooking;
+  } catch (err) {
+    console.error('watchdog checkout timeline read failed:', err);
+    return undefined;
+  }
 }
 
 export async function runWatchdog(
@@ -147,7 +164,7 @@ export async function runWatchdog(
     // Deep link in the stuck-pending alert. '' without OPS_BASE_URL, as everywhere else.
     opsBaseUrl?: string;
     // Attempt timeline distinguishes a finished decline from a retry on the reused payment row.
-    checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingId'>;
+    checkoutEvents?: Pick<BookingCheckoutEventRepo, 'listByBookingIds'>;
     // The team's own addresses (config.TEAM_EMAILS, services/testBookings.ts). A stuck booking
     // made under one is a test checkout: no recovery email, no page. Optional; empty = no-op.
     teamEmails?: ReadonlySet<string>;
@@ -182,15 +199,18 @@ export async function runWatchdog(
       paymentRows.set(payment.bookingId, rows);
     }
   }
+  // Every pending booking's attempt timeline in ONE read. Per booking it was two round trips each
+  // from Render to the Mumbai pooler, on every ~15-min sweep (2026-10-14).
+  const eventsByBooking = await checkoutTimelines(pending, deps.checkoutEvents);
   const stuck: typeof pending = [];
   for (const b of pending) {
     // The owner's and team's own test bookings (#764): the ops queue and the digest already leave
     // them out; chasing them mailed the owner and paged the founder about their own test.
     if (isTeamEmail(b.input.customer.email, teamEmails)) continue;
-    const watchFrom = await pendingWatchStartedAt(
+    const watchFrom = pendingWatchStartedAt(
       b,
       payments ? paymentRows.get(b.id) ?? [] : null,
-      deps.checkoutEvents,
+      eventsByBooking && (eventsByBooking.get(b.id) ?? []),
     );
     if (!watchFrom) continue;
     const age = now.getTime() - watchFrom.getTime();
@@ -270,10 +290,18 @@ export async function runWatchdog(
 
   const paid = await bookings.list({ status: 'paid' });
   let paidUnconfirmed = 0;
-  for (const b of paid) {
-    if (now.getTime() - Date.parse(b.createdAt) < UNCONFIRMED_PAID_MS) continue;
-    // A deposit booking's confirmation IS the deposit-received email (webhooks.ts) — spec 2026-10-07.
-    if ((await log.wasSent(b.id, 'confirmation')) || (await log.wasSent(b.id, 'deposit_received'))) continue;
+  // Paid bookings never leave 'paid', so this set only grows — read its ledger rows and manual
+  // settlements in one query each, never per booking (2026-10-14: 71 % of an 18 s sweep).
+  const due = paid.filter((b) => now.getTime() - Date.parse(b.createdAt) >= UNCONFIRMED_PAID_MS);
+  // A deposit booking's confirmation IS the deposit-received email (webhooks.ts) — spec 2026-10-07.
+  const confirmed = due.length
+    ? await log.sentAmong(due.map((b) => b.id), ['confirmation', 'deposit_received'])
+    : new Set<string>();
+  const unconfirmed = due.filter((b) => !confirmed.has(b.id));
+  const manual = payments && unconfirmed.length
+    ? await payments.manualSettlementAmong(unconfirmed.map((b) => b.id))
+    : new Set<string>();
+  for (const b of unconfirmed) {
     // No address means no confirmation was ever due — a fact about the customer, like the
     // manual-settlement exemption below, not a silent failure. This became load-bearing on
     // 2026-09-22: before then the webhook recorded a send for these bookings even though
@@ -290,7 +318,7 @@ export async function runWatchdog(
     // founder every sweep until departure and drown the alerts that mean something.
     // Deliberately NOT keyed on the notification log: writing a fake 'confirmation' entry would
     // assert an email that never went out, and the same key gates the real send later.
-    if (payments && (await payments.hasManualSettlement(b.id))) continue;
+    if (manual.has(b.id)) continue;
     paidUnconfirmed += 1;
     await alerts.send({
       severity: 'critical',
