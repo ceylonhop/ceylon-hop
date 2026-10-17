@@ -202,9 +202,9 @@ describe('reconcileBookingTracking', () => {
       'booking_status_mismatch',
       'captured_payment_missing_transition',
       'communication_attempt_unresolved',
-      'orphan_provider_event',
       'provider_communication_failure',
     ]);
+    // The unlinked bounce stays out: the Resend webhook alerted it once, on arrival.
     expect(findings.findings).not.toContainEqual(expect.objectContaining({ kind: 'delivery_missing' }));
   });
 
