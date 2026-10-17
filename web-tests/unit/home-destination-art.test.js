@@ -7,7 +7,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (file) => readFileSync(path.join(root, file), 'utf8');
 
 const destinations = [
-  ['sigiriya', 'img/section-art/sigiriya-watercolor.webp'],
   ['hiriketiya', 'img/section-art/hiriketiya-cove-watercolor.webp'],
   ['hill-country-rail', 'img/section-art/hill-country-rail-watercolor.webp'],
   ['mirissa-whale', 'img/section-art/mirissa-whale-watercolor.webp'],
