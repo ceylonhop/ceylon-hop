@@ -334,7 +334,7 @@ export function generateGuides() {
 // ── styles ────────────────────────────────────────────────────────────────────────────────
 // Tokens (--blue, --paper, --display, …) come from site.css. Phone rules at 759px match the
 // site's own breakpoints; the mockup used container queries only to preview both widths.
-const GUIDE_STYLE = `
+export const GUIDE_STYLE = `
   .g-hero{position:relative;min-height:560px;display:flex;align-items:flex-end;color:#fff;isolation:isolate;overflow:hidden;margin-top:-74px}
   .g-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;transform:scale(1.06);animation:g-kb 9s cubic-bezier(.2,.7,.2,1) forwards}
   @keyframes g-kb{to{transform:scale(1)}}
