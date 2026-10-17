@@ -54,7 +54,7 @@
   "factsNote": "Timings and fees from public sources, October 2026. They change, so we check them again before your trip.",
   "plansSub": "One price for the whole car, split however many of you there are. Two or three places a day, temples in the morning puja window, a sit-down lunch and a rest in the afternoon.",
   "trips": [
-    { "id": "gentle", "name": "Gentle Ramayana Yatra", "days": 6, "tag": "6 days · paced for parents",
+    { "id": "gentle", "tour": "ramayana-yatra", "name": "Gentle Ramayana Yatra", "days": 6, "tag": "6 days · paced for parents",
       "teaser": "Chilaw · Ramboda · Ashok Vatika · Colombo",
       "sub": "Airport to airport · good for parents and grandparents",
       "description": "Six-day private-car Ramayana trail from Colombo airport: Chilaw, Ramboda, Ashok Vatika (Seetha Eliya) and Colombo, paced for families.",
@@ -70,7 +70,7 @@
       "stops": [["Manavari Temple", "Chilaw"], ["Munneswaram Temple", "Chilaw"], ["Shri Bhakta Hanuman Temple", "Ramboda"], ["Seetha Amman Kovil", "Seetha Eliya"], ["Hakgala Botanical Garden", "Nuwara Eliya"], ["Gayathri Peedam", "Nuwara Eliya"], ["Kelaniya Raja Maha Viharaya", "Kelaniya"], ["Panchamuga Anjaneyar Temple", "Colombo"]],
       "note": "Hotels, entry fees and puja offerings aren’t included. Tell us your budget and we’ll suggest hotels near the temples.",
       "wa": "Hi Ceylon Hop — we're interested in the 6-day Gentle Ramayana Yatra. Dates:  Travellers: " },
-    { "id": "full", "name": "Full Ramayana Trail", "days": 8, "tag": "8 days · follows the story south",
+    { "id": "full", "tour": "ramayana-trail", "name": "Full Ramayana Trail", "days": 8, "tag": "8 days · follows the story south",
       "teaser": "Adds Divurumpola · Ella · Kataragama · Galle",
       "sub": "Follows the story south · hills, then the coast",
       "description": "Eight-day private-car Ramayana trail through the hill country and the deep south, from Chilaw to Ella, Kataragama and Galle.",
