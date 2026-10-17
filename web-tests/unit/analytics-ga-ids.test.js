@@ -8,11 +8,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(path.join(__dirname, '..', '..', 'analytics.js'), 'utf8');
 
-function load(cookie, stored = null) {
+// On booking.html, where checkout reads these ids — and where the cookie strip never opens,
+// whatever the clock says.
+function load(cookie, stored = null, timeZone = 'Asia/Colombo') {
   const win = {
-    location: { hostname: 'ceylonhop.com', pathname: '/' },
+    location: { hostname: 'ceylonhop.com', pathname: '/booking.html' },
     document: { addEventListener() {}, readyState: 'complete', cookie },
     localStorage: { getItem: (k) => (k === 'ceylonhop_cookie_choice' ? stored : null) },
+    Intl: { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone }) }) },
   };
   new Function('window', 'document', 'location', src)(win, win.document, win.location);
   return win;
@@ -30,6 +33,21 @@ describe('chGaIds', () => {
   it('passes on the stored ad-consent choice', () => {
     expect(load('', 'denied').chGaIds().adConsent).toBe('denied');
     expect(load('', 'granted').chGaIds().adConsent).toBe('granted');
+  });
+  // The head snippet denies ads by region (EEA/UK/CH) until the strip is answered, so the
+  // server's purchase must not read silence there as a grant. It used to send 'unknown', and the
+  // server fell back to the TYPED country: a London visitor who wrote "Sri Lanka" went out GRANTED.
+  it('a European clock with no answer is denied, matching the head snippet', () => {
+    expect(load('', null, 'Europe/London').chGaIds().adConsent).toBe('denied');
+    expect(load('', null, 'Atlantic/Canary').chGaIds().adConsent).toBe('denied');
+  });
+  it('an explicit answer still wins on a European clock', () => {
+    expect(load('', 'granted', 'Europe/Berlin').chGaIds().adConsent).toBe('granted');
+  });
+  it('elsewhere, or with no clock to read, silence stays unknown for the server to judge', () => {
+    expect(load('', null, 'Asia/Colombo').chGaIds().adConsent).toBe('unknown');
+    expect(load('', null, 'America/New_York').chGaIds().adConsent).toBe('unknown');
+    expect(load('', null, undefined).chGaIds().adConsent).toBe('unknown');
   });
   it('no GA cookies (blocked, or first paint) → nulls, and checkout bodies stay unchanged', () => {
     const w = load('other=1');
