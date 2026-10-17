@@ -24,7 +24,7 @@ are self-explanatory); any change to how alerts are delivered.
 ### 1. Usage counters (the only new storage)
 
 `usage_counters(day date, key text, n integer, primary key (day, key))` — one row per UTC day and
-counter key, RLS enabled like every table since 0048. Migration `0069_usage_counters`.
+counter key, RLS enabled like every table since 0048. Migration `0071_usage_counters`.
 
 Keys (all `text`, dotted):
 

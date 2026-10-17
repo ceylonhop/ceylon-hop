@@ -1043,7 +1043,7 @@ export const experienceInterests = pgTable('experience_interests', {
 
 // Usage counters (spec 2026-10-13 §1): one row per UTC day and counter key — provider email sends
 // against the Resend caps, live Google calls per method, 429s served. Written by UsageMeter as
-// coalesced upserts that ADD; read only by the ops Health tab. Migration 0069.
+// coalesced upserts that ADD; read only by the ops Health tab. migration 0071.
 export const usageCounters = pgTable(
   'usage_counters',
   {

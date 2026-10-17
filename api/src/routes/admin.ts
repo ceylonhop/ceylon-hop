@@ -527,7 +527,9 @@ export function adminRoutes(deps: {
         // and order_id is unique — a booking once handed a PayHere form must still be settleable
         // in cash.
         orderId: `${booking.reference}-MANUAL`,
-        amount: booking.amountDueNow ?? booking.total,
+        // What the ops confirm dialog shows ("Record <total> received"): the whole total, never
+        // amountDueNow — an abandoned PayHere deposit attempt leaves that below the total.
+        amount: booking.total,
         currency: booking.currency,
         idempotencyKey,
       });
@@ -536,6 +538,11 @@ export function adminRoutes(deps: {
       await deps.payments.markSucceededManually(payment.id, { reference, settledBy: c.get('identity').email });
       transitionPaymentId = payment.id;
     }
+
+    // The booking is now settled for its whole total, so what was "due now" is the total too —
+    // otherwise balanceDueCents reads the abandoned deposit as a balance nobody can pay. Runs on the
+    // repair path as well (idempotent), and before the status move, which closes its payment_pending guard.
+    await bookings.setAmountDueNowToTotal(booking.id);
 
     let paid: Booking;
     try {
