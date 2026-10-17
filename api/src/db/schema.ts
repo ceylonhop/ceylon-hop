@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check, primaryKey } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -1040,3 +1040,16 @@ export const experienceInterests = pgTable('experience_interests', {
   uniqueIndex('experience_interests_quote_uq').on(t.experienceId, t.quoteId).where(sql`${t.quoteId} IS NOT NULL`),
   index('experience_interests_status_idx').on(t.status),
 ]);
+
+// Usage counters (spec 2026-10-13 §1): one row per UTC day and counter key — provider email sends
+// against the Resend caps, live Google calls per method, 429s served. Written by UsageMeter as
+// coalesced upserts that ADD; read only by the ops Health tab. migration 0071.
+export const usageCounters = pgTable(
+  'usage_counters',
+  {
+    day: date('day').notNull(),
+    key: text('key').notNull(),
+    n: integer('n').notNull().default(0),
+  },
+  (t) => [primaryKey({ name: 'usage_counters_pkey', columns: [t.day, t.key] })],
+);
