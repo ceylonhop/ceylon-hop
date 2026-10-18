@@ -449,3 +449,71 @@ describe('runScheduledNotifications — dry run', () => {
     expect(r.reminders).toBe(2);
   });
 });
+
+describe('details reminders (dateless capture Phase 2)', () => {
+  const EPOCH = new Date('2026-06-01T00:00:00Z');
+  const at = (days: number) => new Date(NOW.getTime() - days * 24 * 3600_000);
+
+  async function undatedPaid(bookings: InMemoryBookingRepo) {
+    const b = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    return b;
+  }
+
+  function deps(bookings: InMemoryBookingRepo, log: InMemoryNotificationLogRepo, email: FakeEmailAdapter, paidDaysAgo: number, paused = false) {
+    return {
+      bookings, log, email, baseUrl: 'https://ceylonhop.com', linkSecret: 's',
+      payments: { findByBookingId: async () => [{ status: 'succeeded', settledAt: at(paidDaysAgo) }] },
+      rideOps: { get: async () => ({ customerUpdated: paused }) },
+      detailsReminderEpoch: EPOCH,
+    };
+  }
+
+  it('sends reminder 1 at two days, once, and nothing to a booking with full details', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const b = await undatedPaid(bookings);
+    await paidSingle(bookings, '2026-07-10', '09:00'); // complete details: never reminded
+    const r1 = await runScheduledNotifications(NOW, deps(bookings, log, email, 2));
+    expect(r1.detailsReminders).toBe(1);
+    expect(email.sent.map((m) => m.tracking?.kind)).toEqual(['details_reminder_1']);
+    expect(await log.wasSent(b.id, 'details_reminder_1')).toBe(true);
+    const r2 = await runScheduledNotifications(NOW, deps(bookings, log, email, 2));
+    expect(r2.detailsReminders).toBe(0);
+  });
+
+  it('stays quiet while ops has marked the customer contacted', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, deps(bookings, log, email, 3, true));
+    expect(r.detailsReminders).toBe(0);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('plans but does not send on a dry run', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const b = await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, { ...deps(bookings, log, email, 3), dryRun: true });
+    expect(r.plan).toEqual([{ reference: b.reference, kind: 'details_reminder_1' }]);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('does nothing without the payments dep (callers that have not opted in)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, { bookings, log, email, baseUrl: 'x', linkSecret: 's' });
+    expect(r.detailsReminders).toBe(0);
+  });
+});
