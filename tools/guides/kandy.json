@@ -22,7 +22,7 @@
     "heading": "We’ll bring you to Kandy",
     "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
     "origins": [
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 120 km · about 3 h · most people arrive this way", "sell": "Your driver meets you at arrivals and you’re in the hills by the afternoon. Ask and we’ll come up the Kadugannawa Pass and stop at the Dawson Tower lookout on the way."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 120 km · about 3 h · most people arrive this way", "sell": "Airport pickup included, and you’re in the hills by the afternoon. Ask and we’ll come up the Kadugannawa Pass and stop at the Dawson Tower lookout on the way."},
       {"id": "ella", "title": "From Ella", "from": "135 km · about 3 h 45 · a full day’s scenery", "sell": "Down through the tea country via Nuwara Eliya — waterfalls, tea estates and hairpins most of the way. We’ll stop at Ramboda Falls, for lunch, and wherever you want a photo."},
       {"id": "sigiriya", "title": "From Sigiriya & Dambulla", "from": "90 km · about 2 h 30 · through the spice country", "sell": "South through Matale, where cinnamon, pepper and cardamom grow by the road. We can stop at a spice garden if you’d like — and you never have to buy anything at the end."}
     ],
