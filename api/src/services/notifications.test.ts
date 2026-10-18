@@ -402,9 +402,11 @@ describe('sendDetailsNeeded — flexible booking follow-up', () => {
 });
 
 describe('needsDetails', () => {
-  it('true for a single transfer with no date, false once a date is set', () => {
-    expect(needsDetails(single)).toBe(true); // fixture has no date
-    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(false);
+  it('true for a single transfer missing its date or its time, false once both are set', () => {
+    expect(needsDetails(single)).toBe(true); // fixture has neither
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(true); // no time
+    expect(needsDetails({ ...single, input: { ...single.input, time: '09:00' } } as Booking)).toBe(true); // no date
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01', time: '09:00' } } as Booking)).toBe(false);
   });
   it('true for a trip with no dates, false when a date exists', () => {
     const noDates: Booking = {

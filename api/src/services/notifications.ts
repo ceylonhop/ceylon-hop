@@ -308,13 +308,14 @@ const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c
 const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fff6e8', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
-// True when a paid booking still has an open detail we must confirm (a flexible/"to
-// confirm" date). Drives the "we still need your details" follow-up. The exact pickup
-// is always captured as an area (input.from is required), so date is the open field.
+// True when a paid booking still has an open detail we must confirm. A single transfer needs
+// BOTH a date and a pickup time — "Decide later" can leave either blank (booking.js), and a
+// driver can't be sent with only one. A trip needs at least one date. Shared rides always book
+// a fixed departure. Drives the "we still need your details" email and its reminders.
 export function needsDetails(booking: Booking): boolean {
-  if (booking.mode === 'shared') return false; // shared always books a fixed departure
+  if (booking.mode === 'shared') return false;
   if (booking.mode === 'trip') return !booking.input.dates?.some(Boolean);
-  return !booking.input.date;
+  return !booking.input.date || !booking.input.time;
 }
 
 // Header lockup: a teal monogram + serif wordmark on the warm card (no heavy band —
