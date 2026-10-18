@@ -216,6 +216,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
   .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tk-meta .tk-paid.late{color:var(--wait);font-weight:700}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
@@ -226,6 +227,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
+  .tk-right .when .tk-tbc{color:var(--wait);font-weight:700}
   /* Quotes tab list rows — same card language as .tk, simpler single-line grid */
   .qlist{margin-top:6px}
   .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
@@ -591,6 +593,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
+  /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
+  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input:focus{outline:none;border-color:var(--teal)}
+  .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
+  .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
+  .sched .btn-go{margin-top:10px}
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
@@ -985,7 +993,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-exp-tile-acts { display: flex; gap: 6px; margin-top: 6px; }
 .qv .ch-exp-tile-acts .ch-btn { flex: 1; justify-content: center; padding-left: 0; padding-right: 0; }
 .qv .ch-exp-tile-add { width: 150px; height: 100px; justify-content: center; }
+.qv .ch-exp-biz-results { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.qv .ch-exp-biz-results:empty { display: none; }
+.qv .ch-exp-biz-result { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.qv .ch-exp-biz-result span { font-size: 12px; color: var(--muted); }
+.qv .ch-exp-biz-result:hover { border-color: var(--teal); }
 .qv .ch-exp-photo-link { display: block; text-align: left; background: none; border: 0; padding: 0; margin-top: 10px; color: var(--teal); font: inherit; font-size: 12.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qv .ch-exp-photo-link[hidden] { display: none; }
 .qv .ch-exp-err:empty { display: none; }
 .qv .ch-lead-row .ch-input-wrap { width: 150px; }
 .qv .ch-lead-row .ch-lead-amt { width: 90px; }
@@ -2171,11 +2185,16 @@ const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylo
 const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed'];
 
 /* attention logic — what an ops agent must act on */
+/* Founder = may move money. The "Refunds waiting" pile is theirs alone. */
+const isFounderUi=()=>!!(state.caps&&state.caps.includes('payments:reverse'));
 const reason=t=>{
   /* Ride-board vans carry no ops overlay — there are no flags to tick and no
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
+  /* Before the closed-stage return on purpose: cancel-then-refund is the common case, and a
+     cancelled booking with money waiting to go back is exactly what a founder must act on. */
+  if(t.refundWaiting>0&&isFounderUi())return 'Refund waiting for your approval';
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
@@ -2191,6 +2210,8 @@ const isAttn=t=>!!reason(t);
 
 const GROUPS=[
   {id:'all',label:'All open',c:'#241f1d'},
+  /* Founder only, and it includes closed bookings (spec 2026-10-17 §4). */
+  {id:'refunds',label:'Refunds waiting',c:'#b4232c',founder:true},
   {id:'pay',label:'Awaiting payment',c:'#c7841f'},
   {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
   {id:'ready',label:'Ready',c:'#0a8f86'},
@@ -2207,6 +2228,7 @@ const inGroup=(t,g)=>{
      their own chips below, so a row that has fallen out of the future appears in exactly one
      place rather than nagging from the middle of the timeline. */
   if(g==='all')return !CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t);
+  if(g==='refunds')return t.refundWaiting>0;
   /* The stage chips answer "what do I do next", so they are scoped to live rows too: a trip
      whose date is gone needs closing, not a vehicle; an unpaid cart past its date cannot be
      chased for money. 11 of 16 unpaid rows in prod were exactly that — dead, and listed. */
@@ -2302,9 +2324,23 @@ function rowToTicket(row){
     /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
     test:!!row.isTest,
     created:row.createdAt||null, serviceType:row.serviceType||null,
+    paidAt:row.paidAt||null,
+    /* Σ refund requests waiting for a founder (spec 2026-10-17 §4). */
+    refundWaiting:row.refundWaitingCents||0,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
+/* Dateless capture Phase 3 (spec 2026-10-17 §5). How long an undated booking has waited since
+   the money landed, in calendar days; amber from 7, when the spec's later reminder is due. */
+const paidAgo=t=>{
+  if(!t.paid||!t.paidAt)return null;
+  const days=Math.round((Date.parse(TODAY+'T12:00:00')-Date.parse(isoOf(new Date(t.paidAt))+'T12:00:00'))/864e5);
+  if(!(days>=0))return null;
+  return {txt:days===0?'paid today':`paid ${days} day${days===1?'':'s'} ago`,late:days>=7};
+};
+/* A private transfer with its date set but the pickup time left for later. Trips never carry a
+   time and shared seats always do, so only transfers; past and closed rows have nothing to confirm. */
+const timeTbc=t=>!isBoard(t)&&t.mode==='single'&&!!t.date&&t.date>=TODAY&&!t.time&&!CLOSED.includes(t.stage);
 /* A confirmed van is mapped onto the 'paid' STAGE so it groups under "Needs
    vehicle" with real bookings — but it must not inherit the word "Paid", which
    would contradict the money block whenever a card is merely held or has failed.
@@ -2535,7 +2571,9 @@ function setNav(){
      shows, or it points at a list that does not contain them. Counting every ticket made it
      read ~60 against a queue whose forward book was 10. Badge only when there's something to
      act on — a red "0" is noise. */
-  const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;
+  /* A founder's badge also counts refunds waiting on them — including closed bookings, which
+     "All open" leaves out. Each row counts once. */
+  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
@@ -2549,6 +2587,7 @@ function setNav(){
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
   const board=isBoard(t);
+  const pa=state.view==='date'&&dayGroup(t)==='No date yet'?paidAgo(t):null;
   /* A board row is one VAN, not one customer — say so on the row itself, and use
      the van glyph instead of the booking-channel icon. */
   const lead=board
@@ -2556,7 +2595,7 @@ function ticketRow(t,i){
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
@@ -2575,7 +2614,7 @@ function ticketRow(t,i){
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
       ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
 }
@@ -2633,7 +2672,7 @@ function viewTickets(){
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
     <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · ${recent?'newest first, every stage':'paid &amp; upcoming, website &amp; WhatsApp in one timeline'} · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
-    ${recent?'':`<div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
+    ${recent?'':`<div class="filterbar">${GROUPS.filter(g=>!g.founder||isFounderUi()).map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
   if(recent)html+=list.sort(byRecent).map(ticketRow).join('');
   else DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
@@ -3753,6 +3792,8 @@ function buildActivity(t,d){
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
+  (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }
@@ -3816,6 +3857,26 @@ function refundTargets(d){
     remaining:Math.max(0,p.amount-live.filter(r=>r.paymentId===p.id).reduce((n,r)=>n+r.amountCents,0)),
   }));
 }
+/* A typed refund amount → integer cents, or null when it is not a usable amount (spec 2026-10-17
+   §5). Read from the decimal STRING, never parseFloat: "19.99" must be 1999, not 1998.99…
+   Accepts "25", "25.5", "25.50", "$1,200.10"; refuses 0, negatives, >2 decimals, anything else.
+   Commas are THOUSANDS separators only (1,200 — groups of three): "12,50" is refused, not read as
+   1250, because a comma used as a decimal point would otherwise overpay by 100x.
+   Empty is the caller's business — it means "the full remaining amount". */
+function parseRefundCents(raw){
+  const s=String(raw==null?'':raw).trim().replace(/^\$/,'');
+  const m=s.match(/^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/);
+  if(!m)return null;
+  const cents=Number(m[1].replace(/,/g,''))*100+Number((m[2]||'').padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents>0?cents:null;
+}
+/* Filed less than 24h before the trip starts, or after. Display only — mirrors isLateRequest() in
+   domain/reversalWindow.ts. A booking with no trip date is never late. */
+function refundIsLate(t, r){
+  const at=tripStartMs(t),req=Date.parse((r&&r.requestedAt)||'');
+  if(at===null||!Number.isFinite(req))return false;
+  return req>=at-REFUND_CUTOFF_MS;
+}
 /* How an operator tells captures apart: a deposit and a balance by kind, anything else by how the
    money was taken (card through PayHere, or cash / bank transfer recorded by hand). */
 function refundPaymentName(p){
@@ -3868,17 +3929,16 @@ function opsGraceOpen(d, now){
   return age < REFUND_CUTOFF_MS;
 }
 
-/* Owner rule 2026-08-02: an ops agent may cancel/refund up to 24 hours before the trip starts
-   and must give a reason; a founder may at any time. Mirrors mayReverse() on the server. */
+/* Owner rule 2026-08-02: an ops agent may CANCEL up to 24 hours before the trip starts and must
+   give a reason; a founder may at any time. Mirrors mayReverse() on the server. Refund requests
+   are not held to it (owner, 2026-10-17) — this guards cancelling only. */
 function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('payments:reverse')) return true; // founder, unlimited
   const detail = d || state.detailData;
   if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
   return false;
 }
-/* Who may reverse, and whether the ops time window has closed on them. Shared by the refund
-   request form and the cancel block, which were one block until 2026-08-07 and must keep
-   answering this identically — a cancel offered where a refund is refused would be incoherent. */
+/* Who may CANCEL, and whether the ops time window has closed on them. Refund requests are not held to it (owner, 2026-10-17). */
 function reverseGate(t, d){
   const founder = !!(state.caps && state.caps.includes('payments:reverse'));
   const opsAgent = !founder && !!(state.caps && state.caps.includes('bookings:operate'));
@@ -3889,52 +3949,37 @@ function reverseGate(t, d){
        the rule that a founder is never time-limited. */
     blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),
     why: tripStartMs(t) === null
-      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
-      : 'The trip starts in under 24 hours — only a founder can cancel or refund from here',
+      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still cancel it'
+      : 'The trip starts in under 24 hours — only a founder can cancel from here',
   };
 }
 
-/* The refund entry point. Lives INSIDE the Refunds block (2026-08-07) rather than at the foot of
-   the sheet: it used to sit in "Cancel & refund" while everything that completes a refund sat two
-   blocks above, and requesting one HIDES this button — a full-amount pending row reserves the
-   balance, so `remaining` drops to 0. Press it and the control vanishes while its follow-up
-   actions are off-screen upward, which reads exactly like a broken button. Owner lost an hour to
-   that on CH-MCF8D. Request and completion now sit in one block, in reading order. */
+/* The refund request form (spec 2026-10-17 §5). Founder and ops may ask for any amount up to what
+   is left; only a founder's press also moves the money. Not held to the 24-hour rule — a founder
+   approves every request, and late ones are flagged on the row instead. Lives INSIDE the Refunds
+   block, above the ledger, so a request and its follow-up actions sit in reading order (2026-08-07). */
 function refundRequestFor(t, d){
-  const g = reverseGate(t, d);
-  if(!g.allowed) return '';
-  const s = refundSummary(d);
-  if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
-  /* Whether THIS operator can move money decides what the button is called and what it does — an
-     operator without payments:reverse can only file the request. Same capability the pending-row
-     controls gate on, read here because this is a different function. */
-  const mayFire = !!(state.caps && state.caps.includes('payments:reverse'));
-  /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
-     NOT do: it files an intent and moves no money, and the control that moves money is a separate
-     press on the row it creates. The owner read it as done three times in one evening — twice
-     while actively debugging the refund flow, which is about as fair a test as a label can get.
-     Moving the controls closer (this change) helps; a label that stops over-promising helps more.
-     "Request" is also the word the rest of the flow already uses — the row it creates is a refund
-     request, and its sibling control is "Cancel request". */
-  if(g.blocked){
-    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
-      <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
-  }
+  const founder=!!(state.caps&&state.caps.includes('payments:reverse'));
+  const opsAgent=!founder&&!!(state.caps&&state.caps.includes('bookings:operate'));
+  if((!founder&&!opsAgent)||isBoard(t))return '';
+  const s=refundSummary(d);
+  if(s.remaining<=0)return '';            // nothing left to ask for; the ledger below says why
+  const verb=founder?'Refund':'Request refund';
+  const tip=founder?'Refunds through PayHere immediately — there is no undo':'Files a refund request — a founder approves it before any money moves';
   const targets=refundTargets(d);
-  if(targets.length>1){
-    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
-    return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions">${buttons}</div>`;
-  }
-  /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
-     reason typed for a cancellation then left behind would be silently attached to a refund —
-     both are written to permanent audit records. One extra id is cheap insurance. */
-  return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${mayFire?'Refunds through PayHere immediately — there is no undo':'Files a FULL refund request for someone who can move the money'}">${mayFire?'Refund':'Request refund'} ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
+  const several=targets.length>1;
+  const amountBox=`<label class="reverse-reason">Amount <span class="muted">empty = the full remaining amount</span>
+      <input id="refundamount" inputmode="decimal" autocomplete="off" placeholder="${several?'Full remaining of the payment you pick':esc(money({amount:s.remaining,currency:s.currency}))}">
+    </label>`;
+  /* Its own reason field, not one shared with Cancel booking: a reason typed for a cancellation
+     and left behind would be silently attached to a refund — both are permanent audit records. */
+  const reasonBox=`<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer dropped the Kandy → Ella leg">
+    </label>`;
+  const buttons=several
+    ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
+    : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${tip}">${verb}</button>`;
+  return `${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
 }
 
 function reverseActionsFor(t, d){
@@ -3968,10 +4013,11 @@ function settledByHand(d) {
 }
 
 function refundHtmlFor(t,d){
-  if(!state.caps||!state.caps.includes('payments:act'))return '';
+  if(!state.caps||!state.caps.includes('bookings:read'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
 
   const mayFire=state.caps.includes('payments:reverse');
+  const mayRequest=state.caps.includes('bookings:operate');
   const byHand=settledByHand(d);
   const rows=refunds.slice().reverse().map(r=>{
     /* Fall back to the raw status rather than a label. The old ternary ended in :'Cancelled',
@@ -3988,7 +4034,19 @@ function refundHtmlFor(t,d){
        retried from here — the money may already have moved. Mirrors the refund_api_indeterminate
        alert, which says the same thing in the same words. */
     const stuck=r.status==='api_processing'
-      ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`:'';
+      ?(mayFire
+        ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`
+        :`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. A founder must resolve it; do not request it again.</p>`):'';
+    /* Full or partial at a glance (spec 2026-10-17 §5): an empty amount box means "everything",
+       and a founder approving quickly must see which one this is. */
+    const scope=r.status==='manual_pending'
+      ?`<p class="refund-meta">${r.amountCents>=s.captured?'Full refund':`Partial — ${money({amount:r.amountCents,currency:r.currency})} of ${money({amount:s.captured,currency:s.currency})} paid`}</p>`:'';
+    /* Display only: the driver may already be committed (spec §3). */
+    const late=r.status==='manual_pending'&&refundIsLate(t,r)?'<p class="refund-warning">Late — trip starts in under 24h</p>':'';
+    /* Ops filed it (or can see it) but cannot move money: say who acts next, and let them withdraw it. */
+    const waiting=r.status==='manual_pending'&&!mayFire&&mayRequest?`
+      <p class="refund-meta">Waiting for a founder to approve</p>
+      <div class="refund-confirm"><button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button></div>`:'';
     /* A booking paid by hand has no gateway payment to reverse, so the API button is not offered
        — pressing it could only fail — and the copy asks how the money actually went back. */
     const pendingActions=r.status==='manual_pending'&&mayFire?`
@@ -4009,14 +4067,10 @@ function refundHtmlFor(t,d){
     return `<div class="refund-row refund-status-${esc(r.status)}">
       <div class="refund-row-head"><span>${label}</span><span>${money({amount:r.amountCents,currency:r.currency})}</span></div>
       <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
-      ${why}${stuck}${pendingActions}</div>`;
+      ${why}${stuck}${scope}${late}${pendingActions}${waiting}</div>`;
   }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
-  /* No amount box: our PayHere setup cannot do partial refunds, so offering a field that
-     invites one only creates records the gateway can't honour (owner, 2026-08-02). The button
-     always requests the full refundable remainder. The API still accepts a partial amount — a
-     manual part-refund can be recorded there — the dashboard is simply opinionated.
-     The button came BACK here on 2026-08-07 (it had moved to the sheet foot next to Cancel):
-     see refundRequestFor for why splitting request from completion was the defect. */
+  /* An amount box since 2026-10-17: our PayHere plan now does partial refunds, and a founder
+     approves every request. See refundRequestFor. */
   const request=refundRequestFor(t,d);
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
@@ -4165,6 +4219,22 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
+   send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+/* `expected` rides along with the save so a change someone else made meanwhile comes back as a
+   conflict, not a silent overwrite. */
+function scheduleFormHtml(t,d){
+  const inp=d.booking.input||{};
+  const driverHasIt=STAGES.indexOf(t.stage)>=STAGES.indexOf('vehicle_confirmed');
+  return `<div class="sched" data-testid="sched-form">
+    <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
+    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
+    ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
+    <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
+  </div>`;
+}
 function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
@@ -4189,6 +4259,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  const canSchedule=d?.booking?.mode==='single'&&['paid','confirmed'].includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4258,7 +4329,8 @@ function renderSheet(){
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
         ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
+        ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
@@ -4322,8 +4394,10 @@ async function openDetail(id, opts){
   if(String(id).indexOf('board:')===0)return;
   try{
     const detail=await api.get('/bookings/'+id);
-    if(state.caps&&state.caps.includes('payments:act')){
-      try{detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');}
+    /* Everyone who works bookings reads the ledger since 2026-10-17. Keep only a list: a mock
+       catch-all (or an odd answer) of {} would otherwise reach refundSummary's .filter and throw. */
+    if(state.caps&&state.caps.includes('bookings:read')){
+      try{const got=await adminApi.get('/bookings/'+id+'/refunds');detail.refunds=Array.isArray(got)?got:[];}
       catch(refundErr){
         if(refundErr.message==='auth')throw refundErr;
         detail.refunds=[];
@@ -4364,7 +4438,9 @@ async function fireRefund(bookingId, refundId){
     return true;
   }catch(err){
     if(err.message==='auth')return false;
-    await reloadRefundDetail(bookingId);
+    /* refreshRow too: a failure before PayHere claims the row leaves it manual_pending, i.e. a new
+       waiting refund — the founder's chip and queue row read that from the list, not the sheet. */
+    await reloadRefundDetail(bookingId);await refreshRow(bookingId);
     if(err.message==='refund_outcome_unknown'){toast('PayHere did not answer — check PayHere before retrying','error');}
     else if(err.message==='refund_declined'){toast('PayHere declined the refund — see the reason on the row','error');}
     else if(err.message==='refund_api_unavailable'){toast('PayHere Refund API not configured — complete it on the row below','error');}
@@ -4375,7 +4451,8 @@ async function fireRefund(bookingId, refundId){
 
 async function reloadRefundDetail(id){
   const detail=await api.get('/bookings/'+id);
-  detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
+  const got=await adminApi.get('/bookings/'+id+'/refunds');
+  detail.refunds=Array.isArray(got)?got:[];
   if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
@@ -4689,13 +4766,13 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;
   /* Same in-flight guard the quote action bar got (runAction). Each of these is a booking
      mutation that used to run with no visible sign and no re-entry guard — a double press on
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -4737,6 +4814,22 @@ document.addEventListener('click',async e=>{
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
        has to be emptied by the code that consumed it. Without it the note stays in the box
        after being saved and reads as "not saved" — an invitation to add it twice. */
+    case 'schedopen':{state.schedOpen=state.schedOpen===id?null:id;renderSheet();break;}
+    case 'schedsave':{
+      const inp=state.detailData?.booking?.input||{};
+      const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
+      if(!date){toast('Pick a date','error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked};
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
+        state.schedOpen=null;
+        toast(res.driverNotified?'Saved — send the new time to the driver':res.emailed?'Saved — customer emailed':'Saved');
+        await refreshDetail(id);await refreshRow(id);
+      }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
+      break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
@@ -4794,19 +4887,25 @@ document.addEventListener('click',async e=>{
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
     case 'lookup':{if(!state.caps||!state.caps.includes('payments:act'))break;setShellRoute('lookup',{caseRef:el.dataset.ref});break;}
     case 'refundrequest':{
-      if(!mayReverseNow(t,state.detailData))break;
+      /* Founder or ops; never held to the 24-hour rule (spec 2026-10-17). The server enforces the
+         same: request is bookings:operate, sending is payments:reverse. */
+      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
+      if(!willFire&&!(state.caps&&state.caps.includes('bookings:operate')))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
-      /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
-         amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
-      /* A button that names a payment refunds that payment's remainder (deposit bookings, several
-         captures); the plain button refunds the whole booking's remainder as before. */
+      /* A button that names a payment refunds against that payment (deposit bookings); the plain
+         button against the booking's single capture. */
       const paymentId=el.dataset.paymentId||'';
       const target=paymentId?refundTargets(state.detailData).find(p=>p.id===paymentId):null;
-      const amountCents=target?target.remaining:s.remaining;
+      const remaining=target?target.remaining:s.remaining;
+      const amountEl=$('#refundamount');
+      const typed=((amountEl&&amountEl.value)||'').trim();
+      const amountCents=typed?parseRefundCents(typed):remaining;
       const reasonEl=$('#refundreason');
       const reason=((reasonEl&&reasonEl.value)||'').trim();
-      if(!amountCents){toast('Nothing left to refund','error');break;}
+      if(!remaining){toast('Nothing left to refund','error');break;}
+      if(amountCents===null){toast('Enter an amount like 25 or 25.50','error');if(amountEl)amountEl.focus();break;}
+      if(amountCents>remaining){toast('That is more than the '+money({amount:remaining,currency:s.currency})+' left to refund','error');if(amountEl)amountEl.focus();break;}
       if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
       /* Says "below" because it now IS below: the completion controls appear on the pending row
          in this same block. The old wording ("you still have to make the refund in PayHere")
@@ -4819,17 +4918,16 @@ document.addEventListener('click',async e=>{
          Without payments:reverse the operator cannot fire the API at all, so for them the button
          keeps its old meaning — file the request for someone who can. The confirm says which of
          the two is about to happen, in the words that matter: money moves now, or it doesn't. */
-      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
       const amountLabel=money({amount:amountCents,currency:s.currency});
       const ask=willFire
         ?`Refund ${amountLabel} now?\n\nThis sends the money back through PayHere immediately. There is no undo.`
-        :`Request a refund of ${amountLabel}?\n\nYou cannot move money yourself — this files the request for someone who can.`;
+        :`Request a refund of ${amountLabel}?\n\nA founder has to approve it before any money moves.`;
       if(!confirm(ask))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{
         const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason,...(paymentId?{paymentId}:{})});
-        clearInput(reasonEl);
-        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — no money has moved yet');break;}
+        clearInput(reasonEl);clearInput(amountEl);
+        if(!willFire){await reloadRefundDetail(id);await refreshRow(id);toast('Refund requested — waiting for a founder');break;}
         /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the
            manual route below still works — i.e. a failure lands exactly where the old two-step
            flow left you, never somewhere new. */
@@ -4880,12 +4978,12 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'refundcancel':{
-      if(!state.caps||!state.caps.includes('payments:reverse'))break;
+      if(!state.caps||!state.caps.includes('bookings:operate'))break; // releases a reservation; moves no money
       const refundId=el.dataset.refundId;
       const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
       if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);await refreshRow(id);toast('Refund request cancelled');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
@@ -9213,7 +9311,7 @@ async function loadExperiences() {
     var d = r.ok ? await jsonOrNull(r) : null;
     if (seq !== _expSeq || ls !== _expListSeq) return;
     if (d && Array.isArray(d.experiences)) {
-      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true };
+      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true, businessSearch: d.businessSearch === true };
       expLoadFailed = false;
     } else expLoadFailed = true;
   } catch (e) {
@@ -9589,10 +9687,19 @@ function renderExpForm(e) {
       + '<button type="button" class="ch-exp-photo-link" data-action="expPhotoPaths" data-testid="exp-photo-paths">Use a photo already on the site</button>'
       + '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
   }
+  // "Find the business on Google" (2026-10-18): with a server key, a search at the top fills partner, area,
+  // pin and contact, and the lat/lng box moves behind "Enter the location by hand".
+  var biz = !!(expData && expData.businessSearch);
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
     + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
     + '<div class="ch-exp-grid">'
+    + (biz ? expField('biz', 'Find the business on Google', '<div style="display:flex;gap:6px;align-items:center">'
+        + '<div class="ch-input-wrap" style="flex:1"><input id="exp-biz-q" class="ch-input" autocomplete="off" placeholder="Business name and town, e.g. Atherya Ayurveda Sigiriya"></div>'
+        + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expBizSearch">Search</button></div>'
+        + '<div id="exp-biz-msg" class="ch-exp-meta" data-testid="exp-biz-msg"></div>'
+        + '<div id="exp-biz-results" class="ch-exp-biz-results"></div>'
+        + '<div id="exp-biz-picked" class="ch-exp-meta" data-testid="exp-biz-picked"></div>', 'ch-exp-wide') : '')
     + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
     + expInput('name', 'Name', d.name)
     + expInput('partner', 'Partner', d.partnerName)
@@ -9605,8 +9712,11 @@ function renderExpForm(e) {
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
     + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
-    + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
-      + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
+    + expField('loc', biz ? 'Location' : 'Location (paste "lat, lng" or a Google Maps link)', '<div id="exp-loc-wrap"' + (biz ? ' hidden' : '') + '>'
+      + '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" placeholder="7.977, 80.76 — or a Google Maps link" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div></div>'
+      + '<div id="exp-loc-out" class="ch-exp-meta"></div>'
+      + (biz ? '<button type="button" class="ch-exp-photo-link" data-action="expLocManual" data-testid="exp-loc-manual">Enter the location by hand</button>' : '')
+      + '<input type="hidden" id="exp-gplace" value="' + esc(d.googlePlaceId || '') + '">', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
     + expInput('contact', 'Partner contact (ops only)', d.partnerContact || '')
     + expField('ta', 'Tripadvisor listing (paste its web address, or just the number)', '<div class="ch-input-wrap"><input id="exp-ta" class="ch-input" autocomplete="off" placeholder="https://www.tripadvisor.com/…-d6789012-Reviews-…" value="' + esc(d.tripadvisorLocationId || '') + '"></div>'
@@ -9624,7 +9734,10 @@ function renderExpForm(e) {
 function expLocUpdate() {
   var box = document.getElementById('exp-loc'), out = document.getElementById('exp-loc-out');
   if (!box || !out) return null;
-  if (!box.value.trim()) { out.innerHTML = ''; return null; }
+  if (!box.value.trim()) {
+    out.innerHTML = expData && expData.businessSearch ? 'No pin yet — find the business on Google above, or enter the location by hand.' : '';
+    return null;
+  }
   var p = parseLatLng(box.value);
   if (!p) {
     out.innerHTML = '<div class="ch-exp-err" data-testid="exp-loc-error">Couldn’t read a location — paste “lat, lng” (for example 7.977, 80.76) or a Google Maps link.</div>';
@@ -9638,6 +9751,79 @@ function expLocUpdate() {
     + '<a data-testid="exp-loc-check" href="https://www.google.com/maps?q=' + esc(p.lat + ',' + p.lng) + '" target="_blank" rel="noopener">Open in Google Maps</a>';
   return p;
 }
+
+// "Find the business on Google" (2026-10-18): search, then a pick fills partner, area, pin and contact and
+// keeps Google's place id. Only fields Google answered are touched; everything stays editable. A newer search
+// or pick wins over a slower older answer (_expBizSeq).
+var _expBizSeq = 0;
+var EXP_BIZ_OFF = 'Google search isn’t available right now — enter the details by hand.';
+async function expBizSearch() {
+  var q = document.getElementById('exp-biz-q'), msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results');
+  if (!q || !msg || !list) return;
+  var text = q.value.trim();
+  list.innerHTML = '';
+  if (text.length < 2) { msg.textContent = 'Type the business name and town.'; return; }
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Searching Google…';
+  try {
+    var r = await api('/admin/experiences/business-search?q=' + encodeURIComponent(text));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    if (!r.ok || !d || !Array.isArray(d.candidates)) { msg.textContent = EXP_BIZ_OFF; return; }
+    if (!d.candidates.length) { msg.textContent = 'No match on Google — try the business name and town, or enter the details by hand.'; return; }
+    msg.textContent = '';
+    list.innerHTML = d.candidates.map(function (c) {
+      return '<button type="button" class="ch-exp-biz-result" data-action="expBizPick" data-place="' + esc(c.placeId) + '" data-testid="exp-biz-result">'
+        + '<strong>' + esc(c.name) + '</strong><span>' + esc(c.address) + '</span></button>';
+    }).join('');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+async function expBizPick(placeId) {
+  var msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results'), picked = document.getElementById('exp-biz-picked');
+  if (!msg || !list || !picked) return;
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Getting the details from Google…';
+  try {
+    var r = await api('/admin/experiences/business/' + encodeURIComponent(placeId));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    var b = r.ok && d && d.business;
+    if (!b) { msg.textContent = EXP_BIZ_OFF; return; }
+    var fill = function (k, val) {
+      var el = document.getElementById('exp-' + k);
+      if (!el || !val) return;
+      el.value = val;
+      var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('[data-err]');
+      if (err) err.textContent = '';
+    };
+    fill('partner', b.name);
+    fill('area', b.area);
+    fill('loc', b.lat + ', ' + b.lng);
+    fill('contact', [b.phone, b.website].filter(Boolean).join(' · ').slice(0, 200));
+    fill('gplace', b.placeId);
+    expLocUpdate();
+    list.innerHTML = '';
+    msg.textContent = '';
+    picked.innerHTML = '✓ Filled from Google: <strong>' + esc(b.name) + '</strong>'
+      + (b.mapsUrl ? ' · <a href="' + esc(b.mapsUrl) + '" target="_blank" rel="noopener">View on Google Maps</a>' : '');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+function expLocManual() {
+  var wrap = document.getElementById('exp-loc-wrap'), link = expEl && expEl.querySelector('[data-action="expLocManual"]');
+  if (wrap) wrap.hidden = false;
+  if (link) link.hidden = true;
+  var box = document.getElementById('exp-loc');
+  if (box) box.focus();
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || !e.target || e.target.id !== 'exp-biz-q') return;
+  e.preventDefault();
+  expBizSearch();
+});
 
 // The check line under the Tripadvisor box: the id that will be saved and a link to look at the listing,
 // or why the box isn't usable. Returns { id } (id null = empty box, fine) or null when unreadable.
@@ -9825,7 +10011,9 @@ function expReadForm() {
   if (!isFinite(radius) || radius <= 0) errors.radius = 'Enter the reach in km, for example 5.';
   var ta = expTaUpdate(); // an unreadable box already shows its own message
   var p = expLocUpdate();
-  if (!p && !v('loc')) errors.loc = 'Paste the pin: “lat, lng” or a Google Maps link.'; // a bad pin already shows its own message
+  if (!p && !v('loc')) errors.loc = expData && expData.businessSearch // a bad pin already shows its own message
+    ? 'Find the business on Google above, or enter the location by hand.'
+    : 'Paste the pin: “lat, lng” or a Google Maps link.';
   if (!ta || !p || Object.keys(errors).length) return { errors: errors };
   var days = [], photos = [];
   for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
@@ -9835,7 +10023,7 @@ function expReadForm() {
     slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
     details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
     durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
-    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id,
+    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id, googlePlaceId: v('gplace') || null,
     active: document.getElementById('exp-active').checked,
   } };
 }
@@ -9940,6 +10128,9 @@ document.addEventListener('click', function (e) {
   else if (action === 'expPhotoPick') expPhotoPick(Number(el.getAttribute('data-slot')));
   else if (action === 'expPhotoRemove') expPhotoRemove(Number(el.getAttribute('data-slot')));
   else if (action === 'expPhotoPaths') expPhotoPathsToggle();
+  else if (action === 'expBizSearch') expBizSearch();
+  else if (action === 'expBizPick') expBizPick(el.getAttribute('data-place'));
+  else if (action === 'expLocManual') expLocManual();
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
   else if (action === 'expTab') {

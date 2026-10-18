@@ -607,6 +607,28 @@ export const bookingStatusEvents = pgTable(
   ],
 );
 
+// Every pickup date/time change made AFTER booking (spec 2026-10-17 §4, migration 0072). The
+// change overwrites transfer_request + booking_legs in place, so this is the only record of what
+// it was before and who moved it. Written only by BookingRepo.setSchedule, inside the same write.
+export const bookingScheduleEvents = pgTable(
+  'booking_schedule_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    fromDate: text('from_date'),
+    fromTime: text('from_time'),
+    toDate: text('to_date').notNull(),
+    toTime: text('to_time'),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('booking_schedule_events_actor_type_valid', sql`${t.actorType} in ('staff', 'customer')`),
+    index('booking_schedule_events_booking_created_idx').on(t.bookingId, t.createdAt),
+  ],
+);
+
 // M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
 // never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
 export const customerCommunications = pgTable(
@@ -633,7 +655,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
@@ -1002,6 +1024,8 @@ export const experiences = pgTable('experiences', {
   partnerContact: text('partner_contact'),
   // Tripadvisor listing id (D22) - the only Tripadvisor datum we may store; ratings are fetched live.
   tripadvisorLocationId: text('tripadvisor_location_id'),
+  // Google place id the experience was filled from ("Find the business on Google"); refreshes the pin later.
+  googlePlaceId: text('google_place_id'),
   active: boolean('active').notNull().default(true),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),

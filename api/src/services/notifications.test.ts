@@ -315,6 +315,8 @@ import {
   sendBookingConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
+  sendScheduleSet,
+  sendDetailsReminder,
   needsDetails,
 } from './notifications';
 
@@ -401,9 +403,11 @@ describe('sendDetailsNeeded — flexible booking follow-up', () => {
 });
 
 describe('needsDetails', () => {
-  it('true for a single transfer with no date, false once a date is set', () => {
-    expect(needsDetails(single)).toBe(true); // fixture has no date
-    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(false);
+  it('true for a single transfer missing its date or its time, false once both are set', () => {
+    expect(needsDetails(single)).toBe(true); // fixture has neither
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(true); // no time
+    expect(needsDetails({ ...single, input: { ...single.input, time: '09:00' } } as Booking)).toBe(true); // no date
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01', time: '09:00' } } as Booking)).toBe(false);
   });
   it('true for a trip with no dates, false when a date exists', () => {
     const noDates: Booking = {
@@ -904,5 +908,58 @@ describe('sendBookingConfirmation — experience interests', () => {
     expect(cancelled.subject).toContain('cancelled');
     expect(cancelled.html).not.toContain('Interested in');
     expect(cancelled.text).not.toContain('Interested in');
+  });
+});
+
+describe('sendScheduleSet — pickup set after booking', () => {
+  const scheduled = { ...single, status: 'paid', input: { ...single.input, date: '2026-11-04', time: '09:00' } } as Booking;
+
+  it('states the weekday, date and Sri Lanka time, and offers WhatsApp for corrections', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(scheduled, email, { manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.subject).toBe('Your pickup is set — CH-ABC12');
+    expect(m.html).toMatch(/Wed,? 4 Nov 2026/); // ICU builds differ on the comma
+    expect(m.html).toContain('09:00');
+    expect(m.html).toContain('Sri Lanka time');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html).toContain('manage.html?t=abc');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('schedule_set');
+  });
+
+  it('says the time is still to confirm when only the date is set', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, time: undefined } } as Booking, email);
+    expect(email.sent[0].html).toContain('pickup time to confirm');
+  });
+
+  it('sends nothing for a booking without a date', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(single, email);
+    expect(email.sent).toHaveLength(0);
+  });
+});
+
+describe('sendDetailsReminder — still need the pickup date/time', () => {
+  it('asks on WhatsApp with the reference already typed, and says to ignore it if they already told us', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    expect(m.subject).toBe('Reminder: your pickup date and time — CH-ABC12');
+    expect(m.html).toContain('wa.me/94779669662?text=');
+    expect(m.html).toContain(encodeURIComponent('CH-ABC12'));
+    expect(m.html.toLowerCase()).toContain('already told us');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('details_reminder_1');
+  });
+
+  it('names only what is missing', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, date: '2026-11-04' } } as Booking, email, { nth: 2 });
+    expect(email.sent[0].html).toContain('pickup time');
+    expect(email.sent[0].html).not.toContain('pickup date and time');
+    expect(email.sent[0].tracking?.kind).toBe('details_reminder_2');
   });
 });

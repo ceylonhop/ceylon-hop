@@ -330,4 +330,14 @@ export class PostgresRefundRepo implements RefundRepo {
       .orderBy(refunds.createdAt);
     return rows.map(toRefund);
   }
+
+  async pendingCentsByBookingIds(bookingIds: string[]): Promise<Map<string, number>> {
+    if (bookingIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ bookingId: refunds.bookingId, cents: dsql<number>`sum(${refunds.amountCents})::int` })
+      .from(refunds)
+      .where(and(inArray(refunds.bookingId, bookingIds), eq(refunds.status, 'manual_pending')))
+      .groupBy(refunds.bookingId);
+    return new Map(rows.map((row) => [row.bookingId, Number(row.cents)]));
+  }
 }

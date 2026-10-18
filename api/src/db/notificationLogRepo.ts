@@ -11,7 +11,9 @@ export type NotificationKind =
   | 'deposit_received'
   | 'balance_received'
   | 'booking_confirmed'
-  | 'no_show_notice';
+  | 'no_show_notice'
+  | 'details_reminder_1'
+  | 'details_reminder_2';
 
 export interface NotificationLogRepo {
   wasSent(bookingId: string, kind: NotificationKind): Promise<boolean>;

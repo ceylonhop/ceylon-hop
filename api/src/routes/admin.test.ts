@@ -279,20 +279,30 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(400);
   });
 
-  it('the ops time window applies to refunds too, not just cancellation', async () => {
-    const { app } = makeApp();
+  it('refund requests are not held to the ops time window — the ledger decides; cancel still is', async () => {
+    const { app, bookings } = makeApp();
     const near = await bookOn(app, imminent().date, imminent().time);
     const far = await bookOn(app, futureIsoDate(30));
+    // Age the imminent booking past the 24h fresh-booking grace (same idiom as the stale-hold test
+    // below). Without this the grace lets ops through on BOTH routes and the test cannot tell a
+    // working cancel gate from a deleted one.
+    (await bookings.get(near.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
     const refund = (id: string, who: string) => cookie(who).then((ck) =>
       app.request(`/admin/bookings/${id}/refunds`, {
         method: 'POST',
         headers: { cookie: ck, 'content-type': 'application/json' },
         body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
       }));
-    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
-    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
-    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
-    expect((await refund(near.id, 'op@x.com')).status).toBe(409);
+    // The cancel route is the one place the 24-hour rule still applies: stale booking + imminent trip.
+    const cancel = await cancelAs(app, near.id, 'op@x.com');
+    expect(cancel.status).toBe(403);
+    expect((await cancel.json()).error).toBe('within_24h_founder_only');
+    expect((await bookings.get(near.id))!.status).not.toBe('cancelled');
+    // Since 2026-10-17 a refund REQUEST skips the 24-hour rule (a founder approves every one), so
+    // ops reaches the ledger on the same booking and it applies its own check: 409, nothing captured.
+    const nearRefund = await refund(near.id, 'op@x.com');
+    expect(nearRefund.status).not.toBe(403);
+    expect(nearRefund.status).toBe(409);
     expect((await refund(far.id, 'op@x.com')).status).toBe(409);
     // finance has no bookings:operate, so it never reaches the ledger at all.
     expect((await refund(far.id, 'fin@x.com')).status).toBe(403);
