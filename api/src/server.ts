@@ -48,6 +48,7 @@ import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunic
 import { MeasurementProtocolAdapter } from './adapters/ga4';
 import { selectTripadvisor } from './adapters/tripadvisor';
 import { selectImageStore } from './adapters/imageStore';
+import { selectBusinessPlaces } from './adapters/businessPlaces';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -120,6 +121,8 @@ const { db, sql } = createDb(config.DATABASE_URL);
 // writes coalesced — never a database await on a hot path.
 const usageCounters = new PostgresUsageCounterRepo(db);
 const usageMeter = new UsageMeter(usageCounters);
+// "Find the business on Google" (2026-10-18): the quote tool's server key; off without one. Metered like maps.
+const businessPlaces = selectBusinessPlaces(config.GOOGLE_MAPS_API_KEY, usageMeter);
 // Below the guard app.ts adds, so the ops alerts and the digest — which bypass it — count too.
 const email = new MeteredEmailAdapter(rawEmail, usageMeter);
 
@@ -208,6 +211,7 @@ const app = createApp({
   ...(tripadvisor.logoUrl ? { tripadvisorLogoUrl: tripadvisor.logoUrl } : {}),
   experienceInterests: new PostgresExperienceInterestRepo(db),
   photoStore,
+  businessPlaces,
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),

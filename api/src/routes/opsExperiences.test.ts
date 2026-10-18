@@ -7,6 +7,7 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { signSession } from '../lib/opsAuth';
 import { FakeImageStore } from '../adapters/imageStore';
+import { FakeBusinessPlaces } from '../adapters/businessPlaces';
 
 const AUTH = { opsUsers: 'f@x.com:founder,op@x.com:ops,fin@x.com:finance', googleClientId: 'cid', opsSessionSecret: 'sek' };
 const cookie = (email: string) => `ch_ops=${signSession({ email, exp: Date.now() + 60_000 }, AUTH.opsSessionSecret)}`;
@@ -535,5 +536,70 @@ describe('POST /admin/experiences/photos (spec 2026-10-17)', () => {
     expect((await (await on.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(true);
     const off = setupPhotos(null);
     expect((await (await off.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(false);
+  });
+});
+
+// "Find the business on Google" (2026-10-18).
+const ATHERYA = {
+  placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
+  lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+};
+function setupBusiness(fake: FakeBusinessPlaces | null = new FakeBusinessPlaces([ATHERYA])) {
+  const a = realCreateApp({
+    auth: AUTH, adminApiKey: 'k', experiences: new InMemoryExperienceRepo(), experienceInterests: new InMemoryExperienceInterestRepo(),
+    businessPlaces: fake,
+  });
+  const get = (path: string, ck: string | null = OPS) => a.request(path, { headers: ck ? { cookie: ck } : {} });
+  return { a, fake, get };
+}
+
+describe('GET /admin/experiences/business-search + /business/:placeId', () => {
+  it('401 without a session, 403 for finance', async () => {
+    const { get } = setupBusiness();
+    expect((await get('/admin/experiences/business-search?q=ath', null)).status).toBe(401);
+    expect((await get('/admin/experiences/business-search?q=ath', FINANCE)).status).toBe(403);
+    expect((await get(`/admin/experiences/business/${ATHERYA.placeId}`, FINANCE)).status).toBe(403);
+  });
+
+  it('503 business_off without a Google key; the catalogue GET says whether search is on', async () => {
+    const off = setupBusiness(null);
+    expect((await off.get('/admin/experiences/business-search?q=ath')).status).toBe(503);
+    expect((await (await off.get('/admin/experiences')).json()).businessSearch).toBe(false);
+    const on = setupBusiness();
+    expect((await (await on.get('/admin/experiences')).json()).businessSearch).toBe(true);
+  });
+
+  it('search passes the trimmed query and returns candidates', async () => {
+    const { get, fake } = setupBusiness();
+    const res = await get('/admin/experiences/business-search?q=%20Atherya%20');
+    expect(res.status).toBe(200);
+    expect((await res.json()).candidates).toEqual([{ placeId: ATHERYA.placeId, name: ATHERYA.name, address: ATHERYA.address, lat: 7.9571, lng: 80.7601 }]);
+    expect(fake!.calls).toEqual(['search:Atherya']);
+  });
+
+  it('search refuses an over-long query without calling Google', async () => {
+    const { get, fake } = setupBusiness();
+    expect((await get('/admin/experiences/business-search?q=' + 'x'.repeat(101))).status).toBe(400);
+    expect(fake!.calls).toEqual([]);
+  });
+
+  it('details returns the business; a malformed id is 404 without a call; an unknown id is 404', async () => {
+    const { get, fake } = setupBusiness();
+    const ok = await get(`/admin/experiences/business/${ATHERYA.placeId}`);
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).business).toEqual(ATHERYA);
+    expect((await get('/admin/experiences/business/not%20an%20id')).status).toBe(404);
+    expect((await get('/admin/experiences/business/ChIJunknown000000000000')).status).toBe(404);
+    expect(fake!.calls).toEqual([`details:${ATHERYA.placeId}`, 'details:ChIJunknown000000000000']);
+  });
+
+  it('an experience saved from a pick keeps the place id (ops-only)', async () => {
+    const { a } = setupBusiness();
+    const res = await a.request('/admin/experiences', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: OPS },
+      body: JSON.stringify({ ...BODY, slug: 'atherya', googlePlaceId: ATHERYA.placeId }),
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).experience.googlePlaceId).toBe(ATHERYA.placeId);
   });
 });
