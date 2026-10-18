@@ -653,6 +653,42 @@ describe('founder approval (spec 2026-10-17)', () => {
     }
   });
 
+  it('alerts the founders when ops files a request, says partial, and stays quiet for a founder', async () => {
+    const { app, alerts, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const sent = alerts.sent.filter((a) => a.kind === 'refund_requested');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ severity: 'info', dedupeKey: refund.id });
+    expect(sent[0].title).toBe(`Refund requested: ${booking.reference} · 25.00 USD (partial)`);
+    expect(sent[0].body).toContain('ops@test');
+    expect(sent[0].body).toContain('Customer request');
+    expect(sent[0].body).toContain(`of ${(booking.total / 100).toFixed(2)} USD paid`);
+
+    await requestRefund(app, booking.id, 100, 'founder@test');
+    expect(alerts.sent.filter((a) => a.kind === 'refund_requested')).toHaveLength(1);
+  });
+
+  it('marks a full request on a trip starting within 24 hours as full and LATE', async () => {
+    const { app, alerts, bookings, payments } = await fixture();
+    // Today's date in Sri Lanka (fixed UTC+05:30), 23:59: the trip is inside its last day — or,
+    // run late at night, just past — late either way.
+    const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single', total: 10000, amountDueNow: 10000, currency: 'USD',
+      input: {
+        from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: today, time: '23:59',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+94770000000', country: 'Sri Lanka' },
+      },
+    });
+    const p = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: b.reference, amount: 10000, currency: 'USD', idempotencyKey: `late:${b.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    expect((await requestRefund(app, b.id, 10000, 'ops@test')).status).toBe(201);
+    const sent = alerts.sent.filter((a) => a.kind === 'refund_requested');
+    expect(sent.at(-1)!.title).toBe(`Refund requested: ${b.reference} · 100.00 USD (full) · LATE`);
+  });
+
   it('finance still may not request', async () => {
     const { app, booking } = await fixture();
     expect((await requestRefund(app, booking.id, 2500, 'finance@test')).status).toBe(403);

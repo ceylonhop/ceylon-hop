@@ -14,7 +14,7 @@ import {
 import { runScheduledNotifications, sweepStaleSharedHolds, NOTIFICATIONS_TICK } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
-import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
+import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
@@ -32,7 +32,8 @@ import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
-import { mayReverse } from '../domain/reversalWindow';
+import { mayReverse, isLateRequest } from '../domain/reversalWindow';
+import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
@@ -173,7 +174,7 @@ export function adminRoutes(deps: {
   // grant applied by reversalGate() below so the rule is readable in one place.
   const CancelRequest = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
-  // Shared by all four reversal routes. Returns a Response to send, or null to proceed.
+  // Guards booking cancellation only (the refund routes left it on 2026-10-17). Returns a Response to send, or null to proceed.
   const reversalGate = async (c: Context, bookingId: string): Promise<Response | null> => {
     const booking = await bookings.get(bookingId);
     if (!booking) return c.json({ error: 'booking_not_found' }, 404);
@@ -243,6 +244,34 @@ export function adminRoutes(deps: {
         currency: parsed.data.currency.toUpperCase(),
         requestedBy: c.get('identity').email,
       });
+      // Founders hear about every request someone else files (spec 2026-10-17 §2). A founder's
+      // own request is about to be fired, so it needs no email. Best-effort: never fails the request.
+      const identity = c.get('identity');
+      if (!can(identity.role, 'payments:reverse')) {
+        const booking = await bookings.get(refund.bookingId);
+        if (booking) {
+          const capturedCents = (await deps.payments.findByBookingId(booking.id))
+            .filter((p) => p.status === 'succeeded')
+            .reduce((sum, p) => sum + p.amount, 0);
+          // Full/partial on the title: an empty amount box means "everything" (spec §2).
+          const scope = refund.amountCents >= capturedCents ? 'full' : 'partial';
+          const late = isLateRequest(booking, refund.requestedAt);
+          const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${refund.currency}`;
+          const link = bookingDeepLink(booking.id, deps.opsBaseUrl ?? '');
+          void alerts.send({
+            severity: 'info',
+            kind: 'refund_requested',
+            title: `Refund requested: ${booking.reference} · ${fmt(refund.amountCents)} (${scope})${late ? ' · LATE' : ''}`,
+            body:
+              `${identity.email} asked for a refund of ${fmt(refund.amountCents)} of ${fmt(capturedCents)} paid ` +
+              `on ${booking.reference}.\n\n` +
+              `Reason: ${refund.reason}\n` +
+              (late ? '\nLate — the trip starts in under 24 hours; the driver may already be committed.\n' : '') +
+              `\nNo money has moved. Approve or cancel it in the ops tool${link ? `:\n${link}` : '.'}`,
+            dedupeKey: refund.id,
+          });
+        }
+      }
       return c.json(refund, 201);
     } catch (error) {
       return refundError(c, error);
