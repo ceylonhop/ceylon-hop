@@ -130,6 +130,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35)}
   .cal-day:disabled{cursor:default}
   .when-blocked{margin:0 0 10px;font-size:.88rem;color:var(--ink-soft)}
+  /* The note is inserted between Back and Continue; give it its own line above both, or it
+     squeezes "← Back" onto two lines (every undated private transfer sees it now, not just shared). */
+  .nav-btns:has(> .when-blocked){flex-wrap:wrap}
+  .nav-btns > .when-blocked{order:-1;flex-basis:100%}
   .rate-lock-note{margin:8px 0 0;font-size:.86rem;color:var(--teal-deep);display:flex;align-items:center;gap:6px}
 
   /* STEP 1 — date stacked above its departures, so time slots get full width */
@@ -1251,6 +1255,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=fe7a16b9d2"></script>
+<script src="booking.js?v=70354338f9"></script>
 </body>
 </html>
