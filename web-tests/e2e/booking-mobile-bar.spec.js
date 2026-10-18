@@ -31,8 +31,11 @@ test.describe('mobile sticky bar', () => {
   });
 
   test('bar CTA proxies the active panel button and advances the step', async ({ page }) => {
-    await gotoMobile(page); // When step: #n2 "Continue" is enabled for private
+    await gotoMobile(page); // When step: no date yet, so #n2 "Continue" is shut until one is chosen
     await expect(page.locator('.panel.active[data-panel="1"]')).toBeVisible();
+    await expect(page.locator('#mbar-cta')).toBeDisabled();
+    await page.check('#flex-date'); // "Decide later" — the explicit way to go undated
+    await expect(page.locator('#mbar-cta')).toBeEnabled();
     await page.locator('#mbar-cta').click();
     await expect(page.locator('.panel.active[data-panel="2"]')).toBeVisible();
   });

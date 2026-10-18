@@ -993,7 +993,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-exp-tile-acts { display: flex; gap: 6px; margin-top: 6px; }
 .qv .ch-exp-tile-acts .ch-btn { flex: 1; justify-content: center; padding-left: 0; padding-right: 0; }
 .qv .ch-exp-tile-add { width: 150px; height: 100px; justify-content: center; }
+.qv .ch-exp-biz-results { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.qv .ch-exp-biz-results:empty { display: none; }
+.qv .ch-exp-biz-result { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.qv .ch-exp-biz-result span { font-size: 12px; color: var(--muted); }
+.qv .ch-exp-biz-result:hover { border-color: var(--teal); }
 .qv .ch-exp-photo-link { display: block; text-align: left; background: none; border: 0; padding: 0; margin-top: 10px; color: var(--teal); font: inherit; font-size: 12.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qv .ch-exp-photo-link[hidden] { display: none; }
 .qv .ch-exp-err:empty { display: none; }
 .qv .ch-lead-row .ch-input-wrap { width: 150px; }
 .qv .ch-lead-row .ch-lead-amt { width: 90px; }
@@ -9305,7 +9311,7 @@ async function loadExperiences() {
     var d = r.ok ? await jsonOrNull(r) : null;
     if (seq !== _expSeq || ls !== _expListSeq) return;
     if (d && Array.isArray(d.experiences)) {
-      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true };
+      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true, businessSearch: d.businessSearch === true };
       expLoadFailed = false;
     } else expLoadFailed = true;
   } catch (e) {
@@ -9681,10 +9687,19 @@ function renderExpForm(e) {
       + '<button type="button" class="ch-exp-photo-link" data-action="expPhotoPaths" data-testid="exp-photo-paths">Use a photo already on the site</button>'
       + '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
   }
+  // "Find the business on Google" (2026-10-18): with a server key, a search at the top fills partner, area,
+  // pin and contact, and the lat/lng box moves behind "Enter the location by hand".
+  var biz = !!(expData && expData.businessSearch);
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
     + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
     + '<div class="ch-exp-grid">'
+    + (biz ? expField('biz', 'Find the business on Google', '<div style="display:flex;gap:6px;align-items:center">'
+        + '<div class="ch-input-wrap" style="flex:1"><input id="exp-biz-q" class="ch-input" autocomplete="off" placeholder="Business name and town, e.g. Atherya Ayurveda Sigiriya"></div>'
+        + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expBizSearch">Search</button></div>'
+        + '<div id="exp-biz-msg" class="ch-exp-meta" data-testid="exp-biz-msg"></div>'
+        + '<div id="exp-biz-results" class="ch-exp-biz-results"></div>'
+        + '<div id="exp-biz-picked" class="ch-exp-meta" data-testid="exp-biz-picked"></div>', 'ch-exp-wide') : '')
     + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
     + expInput('name', 'Name', d.name)
     + expInput('partner', 'Partner', d.partnerName)
@@ -9697,8 +9712,11 @@ function renderExpForm(e) {
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
     + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
-    + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
-      + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
+    + expField('loc', biz ? 'Location' : 'Location (paste "lat, lng" or a Google Maps link)', '<div id="exp-loc-wrap"' + (biz ? ' hidden' : '') + '>'
+      + '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" placeholder="7.977, 80.76 — or a Google Maps link" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div></div>'
+      + '<div id="exp-loc-out" class="ch-exp-meta"></div>'
+      + (biz ? '<button type="button" class="ch-exp-photo-link" data-action="expLocManual" data-testid="exp-loc-manual">Enter the location by hand</button>' : '')
+      + '<input type="hidden" id="exp-gplace" value="' + esc(d.googlePlaceId || '') + '">', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
     + expInput('contact', 'Partner contact (ops only)', d.partnerContact || '')
     + expField('ta', 'Tripadvisor listing (paste its web address, or just the number)', '<div class="ch-input-wrap"><input id="exp-ta" class="ch-input" autocomplete="off" placeholder="https://www.tripadvisor.com/…-d6789012-Reviews-…" value="' + esc(d.tripadvisorLocationId || '') + '"></div>'
@@ -9716,7 +9734,10 @@ function renderExpForm(e) {
 function expLocUpdate() {
   var box = document.getElementById('exp-loc'), out = document.getElementById('exp-loc-out');
   if (!box || !out) return null;
-  if (!box.value.trim()) { out.innerHTML = ''; return null; }
+  if (!box.value.trim()) {
+    out.innerHTML = expData && expData.businessSearch ? 'No pin yet — find the business on Google above, or enter the location by hand.' : '';
+    return null;
+  }
   var p = parseLatLng(box.value);
   if (!p) {
     out.innerHTML = '<div class="ch-exp-err" data-testid="exp-loc-error">Couldn’t read a location — paste “lat, lng” (for example 7.977, 80.76) or a Google Maps link.</div>';
@@ -9730,6 +9751,79 @@ function expLocUpdate() {
     + '<a data-testid="exp-loc-check" href="https://www.google.com/maps?q=' + esc(p.lat + ',' + p.lng) + '" target="_blank" rel="noopener">Open in Google Maps</a>';
   return p;
 }
+
+// "Find the business on Google" (2026-10-18): search, then a pick fills partner, area, pin and contact and
+// keeps Google's place id. Only fields Google answered are touched; everything stays editable. A newer search
+// or pick wins over a slower older answer (_expBizSeq).
+var _expBizSeq = 0;
+var EXP_BIZ_OFF = 'Google search isn’t available right now — enter the details by hand.';
+async function expBizSearch() {
+  var q = document.getElementById('exp-biz-q'), msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results');
+  if (!q || !msg || !list) return;
+  var text = q.value.trim();
+  list.innerHTML = '';
+  if (text.length < 2) { msg.textContent = 'Type the business name and town.'; return; }
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Searching Google…';
+  try {
+    var r = await api('/admin/experiences/business-search?q=' + encodeURIComponent(text));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    if (!r.ok || !d || !Array.isArray(d.candidates)) { msg.textContent = EXP_BIZ_OFF; return; }
+    if (!d.candidates.length) { msg.textContent = 'No match on Google — try the business name and town, or enter the details by hand.'; return; }
+    msg.textContent = '';
+    list.innerHTML = d.candidates.map(function (c) {
+      return '<button type="button" class="ch-exp-biz-result" data-action="expBizPick" data-place="' + esc(c.placeId) + '" data-testid="exp-biz-result">'
+        + '<strong>' + esc(c.name) + '</strong><span>' + esc(c.address) + '</span></button>';
+    }).join('');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+async function expBizPick(placeId) {
+  var msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results'), picked = document.getElementById('exp-biz-picked');
+  if (!msg || !list || !picked) return;
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Getting the details from Google…';
+  try {
+    var r = await api('/admin/experiences/business/' + encodeURIComponent(placeId));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    var b = r.ok && d && d.business;
+    if (!b) { msg.textContent = EXP_BIZ_OFF; return; }
+    var fill = function (k, val) {
+      var el = document.getElementById('exp-' + k);
+      if (!el || !val) return;
+      el.value = val;
+      var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('[data-err]');
+      if (err) err.textContent = '';
+    };
+    fill('partner', b.name);
+    fill('area', b.area);
+    fill('loc', b.lat + ', ' + b.lng);
+    fill('contact', [b.phone, b.website].filter(Boolean).join(' · ').slice(0, 200));
+    fill('gplace', b.placeId);
+    expLocUpdate();
+    list.innerHTML = '';
+    msg.textContent = '';
+    picked.innerHTML = '✓ Filled from Google: <strong>' + esc(b.name) + '</strong>'
+      + (b.mapsUrl ? ' · <a href="' + esc(b.mapsUrl) + '" target="_blank" rel="noopener">View on Google Maps</a>' : '');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+function expLocManual() {
+  var wrap = document.getElementById('exp-loc-wrap'), link = expEl && expEl.querySelector('[data-action="expLocManual"]');
+  if (wrap) wrap.hidden = false;
+  if (link) link.hidden = true;
+  var box = document.getElementById('exp-loc');
+  if (box) box.focus();
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || !e.target || e.target.id !== 'exp-biz-q') return;
+  e.preventDefault();
+  expBizSearch();
+});
 
 // The check line under the Tripadvisor box: the id that will be saved and a link to look at the listing,
 // or why the box isn't usable. Returns { id } (id null = empty box, fine) or null when unreadable.
@@ -9917,7 +10011,9 @@ function expReadForm() {
   if (!isFinite(radius) || radius <= 0) errors.radius = 'Enter the reach in km, for example 5.';
   var ta = expTaUpdate(); // an unreadable box already shows its own message
   var p = expLocUpdate();
-  if (!p && !v('loc')) errors.loc = 'Paste the pin: “lat, lng” or a Google Maps link.'; // a bad pin already shows its own message
+  if (!p && !v('loc')) errors.loc = expData && expData.businessSearch // a bad pin already shows its own message
+    ? 'Find the business on Google above, or enter the location by hand.'
+    : 'Paste the pin: “lat, lng” or a Google Maps link.';
   if (!ta || !p || Object.keys(errors).length) return { errors: errors };
   var days = [], photos = [];
   for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
@@ -9927,7 +10023,7 @@ function expReadForm() {
     slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
     details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
     durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
-    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id,
+    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id, googlePlaceId: v('gplace') || null,
     active: document.getElementById('exp-active').checked,
   } };
 }
@@ -10032,6 +10128,9 @@ document.addEventListener('click', function (e) {
   else if (action === 'expPhotoPick') expPhotoPick(Number(el.getAttribute('data-slot')));
   else if (action === 'expPhotoRemove') expPhotoRemove(Number(el.getAttribute('data-slot')));
   else if (action === 'expPhotoPaths') expPhotoPathsToggle();
+  else if (action === 'expBizSearch') expBizSearch();
+  else if (action === 'expBizPick') expBizPick(el.getAttribute('data-place'));
+  else if (action === 'expLocManual') expLocManual();
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
   else if (action === 'expTab') {

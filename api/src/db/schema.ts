@@ -1024,6 +1024,8 @@ export const experiences = pgTable('experiences', {
   partnerContact: text('partner_contact'),
   // Tripadvisor listing id (D22) - the only Tripadvisor datum we may store; ratings are fetched live.
   tripadvisorLocationId: text('tripadvisor_location_id'),
+  // Google place id the experience was filled from ("Find the business on Google"); refreshes the pin later.
+  googlePlaceId: text('google_place_id'),
   active: boolean('active').notNull().default(true),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),
