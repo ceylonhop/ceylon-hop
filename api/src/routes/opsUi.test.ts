@@ -1453,13 +1453,13 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
   it('never tells the operator a requested refund has been paid', async () => {
     const body = await uiBody();
     // One template, both wordings, chosen by the capability that decides which actually happens.
-    expect(body).toContain("${mayFire?'Refund':'Request refund'}");
-    expect(body).toContain("const mayFire = !!(state.caps && state.caps.includes('payments:reverse'))");
+    expect(body).toContain("const verb=founder?'Refund':'Request refund'");
+    expect(body).toContain("const founder=!!(state.caps&&state.caps.includes('payments:reverse'))");
     expect(body).not.toContain('in full</button>');          // the old over-promising label
     expect(body).not.toContain('complete it in PayHere');    // predated the Refund API button
     // The request-only path still says so, in the confirm and in the toast.
-    expect(body).toContain('no money has moved yet');
-    expect(body).toContain('files the request for someone who can');
+    expect(body).toContain('Refund requested — waiting for a founder');
+    expect(body).toContain('A founder has to approve it before any money moves.');
     // …and the old wording, which claimed nothing had moved when now it has, is gone.
     expect(body).not.toContain('This records the request — no money moves yet');
     // A one-press refund must warn that it is final.

@@ -3838,6 +3838,24 @@ function refundTargets(d){
     remaining:Math.max(0,p.amount-live.filter(r=>r.paymentId===p.id).reduce((n,r)=>n+r.amountCents,0)),
   }));
 }
+/* A typed refund amount → integer cents, or null when it is not a usable amount (spec 2026-10-17
+   §5). Read from the decimal STRING, never parseFloat: "19.99" must be 1999, not 1998.99…
+   Accepts "25", "25.5", "25.50", "$1,200.10"; refuses 0, negatives, >2 decimals, anything else.
+   Empty is the caller's business — it means "the full remaining amount". */
+function parseRefundCents(raw){
+  const s=String(raw==null?'':raw).trim().replace(/^\$/,'').replace(/,/g,'');
+  const m=s.match(/^(\d+)(?:\.(\d{1,2}))?$/);
+  if(!m)return null;
+  const cents=Number(m[1])*100+Number((m[2]||'').padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents>0?cents:null;
+}
+/* Filed less than 24h before the trip starts, or after. Display only — mirrors isLateRequest() in
+   domain/reversalWindow.ts. A booking with no trip date is never late. */
+function refundIsLate(t, r){
+  const at=tripStartMs(t),req=Date.parse((r&&r.requestedAt)||'');
+  if(at===null||!Number.isFinite(req))return false;
+  return req>=at-REFUND_CUTOFF_MS;
+}
 /* How an operator tells captures apart: a deposit and a balance by kind, anything else by how the
    money was taken (card through PayHere, or cash / bank transfer recorded by hand). */
 function refundPaymentName(p){
@@ -3898,9 +3916,7 @@ function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
   return false;
 }
-/* Who may reverse, and whether the ops time window has closed on them. Shared by the refund
-   request form and the cancel block, which were one block until 2026-08-07 and must keep
-   answering this identically — a cancel offered where a refund is refused would be incoherent. */
+/* Who may CANCEL, and whether the ops time window has closed on them. Refund requests are not held to it (owner, 2026-10-17). */
 function reverseGate(t, d){
   const founder = !!(state.caps && state.caps.includes('payments:reverse'));
   const opsAgent = !founder && !!(state.caps && state.caps.includes('bookings:operate'));
@@ -3911,52 +3927,37 @@ function reverseGate(t, d){
        the rule that a founder is never time-limited. */
     blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),
     why: tripStartMs(t) === null
-      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
-      : 'The trip starts in under 24 hours — only a founder can cancel or refund from here',
+      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still cancel it'
+      : 'The trip starts in under 24 hours — only a founder can cancel from here',
   };
 }
 
-/* The refund entry point. Lives INSIDE the Refunds block (2026-08-07) rather than at the foot of
-   the sheet: it used to sit in "Cancel & refund" while everything that completes a refund sat two
-   blocks above, and requesting one HIDES this button — a full-amount pending row reserves the
-   balance, so `remaining` drops to 0. Press it and the control vanishes while its follow-up
-   actions are off-screen upward, which reads exactly like a broken button. Owner lost an hour to
-   that on CH-MCF8D. Request and completion now sit in one block, in reading order. */
+/* The refund request form (spec 2026-10-17 §5). Founder and ops may ask for any amount up to what
+   is left; only a founder's press also moves the money. Not held to the 24-hour rule — a founder
+   approves every request, and late ones are flagged on the row instead. Lives INSIDE the Refunds
+   block, above the ledger, so a request and its follow-up actions sit in reading order (2026-08-07). */
 function refundRequestFor(t, d){
-  const g = reverseGate(t, d);
-  if(!g.allowed) return '';
-  const s = refundSummary(d);
-  if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
-  /* Whether THIS operator can move money decides what the button is called and what it does — an
-     operator without payments:reverse can only file the request. Same capability the pending-row
-     controls gate on, read here because this is a different function. */
-  const mayFire = !!(state.caps && state.caps.includes('payments:reverse'));
-  /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
-     NOT do: it files an intent and moves no money, and the control that moves money is a separate
-     press on the row it creates. The owner read it as done three times in one evening — twice
-     while actively debugging the refund flow, which is about as fair a test as a label can get.
-     Moving the controls closer (this change) helps; a label that stops over-promising helps more.
-     "Request" is also the word the rest of the flow already uses — the row it creates is a refund
-     request, and its sibling control is "Cancel request". */
-  if(g.blocked){
-    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
-      <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
-  }
+  const founder=!!(state.caps&&state.caps.includes('payments:reverse'));
+  const opsAgent=!founder&&!!(state.caps&&state.caps.includes('bookings:operate'));
+  if((!founder&&!opsAgent)||isBoard(t))return '';
+  const s=refundSummary(d);
+  if(s.remaining<=0)return '';            // nothing left to ask for; the ledger below says why
+  const verb=founder?'Refund':'Request refund';
+  const tip=founder?'Refunds through PayHere immediately — there is no undo':'Files a refund request — a founder approves it before any money moves';
   const targets=refundTargets(d);
-  if(targets.length>1){
-    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
-    return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions">${buttons}</div>`;
-  }
-  /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
-     reason typed for a cancellation then left behind would be silently attached to a refund —
-     both are written to permanent audit records. One extra id is cheap insurance. */
-  return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${mayFire?'Refunds through PayHere immediately — there is no undo':'Files a FULL refund request for someone who can move the money'}">${mayFire?'Refund':'Request refund'} ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
+  const several=targets.length>1;
+  const amountBox=`<label class="reverse-reason">Amount <span class="muted">empty = the full remaining amount</span>
+      <input id="refundamount" inputmode="decimal" autocomplete="off" placeholder="${several?'Full remaining of the payment you pick':esc(money({amount:s.remaining,currency:s.currency}))}">
+    </label>`;
+  /* Its own reason field, not one shared with Cancel booking: a reason typed for a cancellation
+     and left behind would be silently attached to a refund — both are permanent audit records. */
+  const reasonBox=`<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer dropped the Kandy → Ella leg">
+    </label>`;
+  const buttons=several
+    ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
+    : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${tip}">${verb}</button>`;
+  return `${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
 }
 
 function reverseActionsFor(t, d){
@@ -3990,7 +3991,7 @@ function settledByHand(d) {
 }
 
 function refundHtmlFor(t,d){
-  if(!state.caps||!state.caps.includes('payments:act'))return '';
+  if(!state.caps||!state.caps.includes('bookings:read'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
 
   const mayFire=state.caps.includes('payments:reverse');
@@ -4033,12 +4034,8 @@ function refundHtmlFor(t,d){
       <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
       ${why}${stuck}${pendingActions}</div>`;
   }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
-  /* No amount box: our PayHere setup cannot do partial refunds, so offering a field that
-     invites one only creates records the gateway can't honour (owner, 2026-08-02). The button
-     always requests the full refundable remainder. The API still accepts a partial amount — a
-     manual part-refund can be recorded there — the dashboard is simply opinionated.
-     The button came BACK here on 2026-08-07 (it had moved to the sheet foot next to Cancel):
-     see refundRequestFor for why splitting request from completion was the defect. */
+  /* An amount box since 2026-10-17: our PayHere plan now does partial refunds, and a founder
+     approves every request. See refundRequestFor. */
   const request=refundRequestFor(t,d);
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
@@ -4362,8 +4359,10 @@ async function openDetail(id, opts){
   if(String(id).indexOf('board:')===0)return;
   try{
     const detail=await api.get('/bookings/'+id);
-    if(state.caps&&state.caps.includes('payments:act')){
-      try{detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');}
+    /* Everyone who works bookings reads the ledger since 2026-10-17. Keep only a list: a mock
+       catch-all (or an odd answer) of {} would otherwise reach refundSummary's .filter and throw. */
+    if(state.caps&&state.caps.includes('bookings:read')){
+      try{const got=await adminApi.get('/bookings/'+id+'/refunds');detail.refunds=Array.isArray(got)?got:[];}
       catch(refundErr){
         if(refundErr.message==='auth')throw refundErr;
         detail.refunds=[];
@@ -4415,7 +4414,8 @@ async function fireRefund(bookingId, refundId){
 
 async function reloadRefundDetail(id){
   const detail=await api.get('/bookings/'+id);
-  detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
+  const got=await adminApi.get('/bookings/'+id+'/refunds');
+  detail.refunds=Array.isArray(got)?got:[];
   if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
@@ -4850,19 +4850,25 @@ document.addEventListener('click',async e=>{
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
     case 'lookup':{if(!state.caps||!state.caps.includes('payments:act'))break;setShellRoute('lookup',{caseRef:el.dataset.ref});break;}
     case 'refundrequest':{
-      if(!mayReverseNow(t,state.detailData))break;
+      /* Founder or ops; never held to the 24-hour rule (spec 2026-10-17). The server enforces the
+         same: request is bookings:operate, sending is payments:reverse. */
+      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
+      if(!willFire&&!(state.caps&&state.caps.includes('bookings:operate')))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
-      /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
-         amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
-      /* A button that names a payment refunds that payment's remainder (deposit bookings, several
-         captures); the plain button refunds the whole booking's remainder as before. */
+      /* A button that names a payment refunds against that payment (deposit bookings); the plain
+         button against the booking's single capture. */
       const paymentId=el.dataset.paymentId||'';
       const target=paymentId?refundTargets(state.detailData).find(p=>p.id===paymentId):null;
-      const amountCents=target?target.remaining:s.remaining;
+      const remaining=target?target.remaining:s.remaining;
+      const amountEl=$('#refundamount');
+      const typed=((amountEl&&amountEl.value)||'').trim();
+      const amountCents=typed?parseRefundCents(typed):remaining;
       const reasonEl=$('#refundreason');
       const reason=((reasonEl&&reasonEl.value)||'').trim();
-      if(!amountCents){toast('Nothing left to refund','error');break;}
+      if(!remaining){toast('Nothing left to refund','error');break;}
+      if(amountCents===null){toast('Enter an amount like 25 or 25.50','error');if(amountEl)amountEl.focus();break;}
+      if(amountCents>remaining){toast('That is more than the '+money({amount:remaining,currency:s.currency})+' left to refund','error');if(amountEl)amountEl.focus();break;}
       if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
       /* Says "below" because it now IS below: the completion controls appear on the pending row
          in this same block. The old wording ("you still have to make the refund in PayHere")
@@ -4875,17 +4881,16 @@ document.addEventListener('click',async e=>{
          Without payments:reverse the operator cannot fire the API at all, so for them the button
          keeps its old meaning — file the request for someone who can. The confirm says which of
          the two is about to happen, in the words that matter: money moves now, or it doesn't. */
-      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
       const amountLabel=money({amount:amountCents,currency:s.currency});
       const ask=willFire
         ?`Refund ${amountLabel} now?\n\nThis sends the money back through PayHere immediately. There is no undo.`
-        :`Request a refund of ${amountLabel}?\n\nYou cannot move money yourself — this files the request for someone who can.`;
+        :`Request a refund of ${amountLabel}?\n\nA founder has to approve it before any money moves.`;
       if(!confirm(ask))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{
         const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason,...(paymentId?{paymentId}:{})});
-        clearInput(reasonEl);
-        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — no money has moved yet');break;}
+        clearInput(reasonEl);clearInput(amountEl);
+        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — waiting for a founder');break;}
         /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the
            manual route below still works — i.e. a failure lands exactly where the old two-step
            flow left you, never somewhere new. */
