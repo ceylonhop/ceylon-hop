@@ -30,6 +30,7 @@ function toPayment(row: PaymentRow): Payment {
     purpose: row.purpose as PaymentPurpose,
     attemptCount: row.attemptCount,
     lastAttemptAt: row.lastAttemptAt,
+    settledAt: row.settledAt,
   };
 }
 
