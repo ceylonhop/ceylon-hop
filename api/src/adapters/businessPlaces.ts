@@ -25,7 +25,7 @@ const BASE = 'https://maps.googleapis.com/maps/api/place';
 const TIMEOUT_MS = 4000;
 const MAX_RESULTS = 5;
 // The shape migration 0074 checks; the id is spliced into a URL, so nothing else gets through.
-export const PLACE_ID = /^[A-Za-z0-9_-]{10,300}$/;
+export const PLACE_ID = /^[A-Za-z0-9_-]{10,255}$/;
 const DETAIL_FIELDS = 'place_id,name,formatted_address,geometry/location,address_component,international_phone_number,website,url';
 
 // Sri Lanka's bounding box, the same one ExperienceInputSchema enforces for lat/lng.

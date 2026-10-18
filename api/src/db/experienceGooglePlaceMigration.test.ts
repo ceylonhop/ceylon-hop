@@ -17,8 +17,8 @@ describe('0074_experience_google_place_id', () => {
     expect(sql).toMatch(/alter table "experiences" add column "google_place_id" text(?!\s+not null)/i);
     expect(sql).not.toMatch(/not null|default/i);
   });
-  it('checks the id is 10-300 URL-safe characters (or null)', () => {
-    expect(sql).toMatch(/"google_place_id" is null or "google_place_id" ~ '\^\[A-Za-z0-9_-\]\{10,300\}\$'/);
+  it('checks the id is 10-255 URL-safe characters (or null) — 255 is Postgres’s regex repetition cap', () => {
+    expect(sql).toMatch(/"google_place_id" is null or "google_place_id" ~ '\^\[A-Za-z0-9_-\]\{10,255\}\$'/);
   });
   it('only adds the column: no DML, no drops, no other table', () => {
     expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+|create\s+table)\b/i);
@@ -48,13 +48,14 @@ describe.skipIf(!TEST_URL)('experiences.google_place_id on a migrated database',
     INSERT INTO experiences (slug, name, partner_name, area_label, summary, price_cents, price_unit, lat, lng, google_place_id)
     VALUES (${slug}, 'x', 'y', 'Sigiriya', 'z', 100, 'per_person', 7.95, 80.76, ${id})`;
 
-  it('accepts null and a real-shaped place id', async () => {
+  it('accepts null, a real-shaped place id and a 255-character one', async () => {
     await insert('mig-gp-null-' + Date.now(), null);
     await insert('mig-gp-ok-' + Date.now(), 'ChIJN1t_tDeuEmsRUsoyG83frY4');
+    await insert('mig-gp-255-' + Date.now(), 'a'.repeat(255));
   });
   it('refuses a URL, a short string, an empty string and spaces', async () => {
     const t = Date.now();
-    for (const [i, bad] of ['https://maps.google.com/x', 'short', '', 'ChIJ with spaces'].entries()) {
+    for (const [i, bad] of ['https://maps.google.com/x', 'short', '', 'ChIJ with spaces', 'a'.repeat(256)].entries()) {
       await expect(insert(`mig-gp-bad-${t}-${i}`, bad)).rejects.toThrow(/experiences_google_place_id_shape/);
     }
   });

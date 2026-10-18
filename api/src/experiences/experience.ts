@@ -42,7 +42,7 @@ export const ExperienceInputSchema = z.object({
   tripadvisorLocationId: z.string().regex(/^[0-9]{1,15}$/, 'digits only, e.g. 6789012').nullable().default(null),
   // Google place id from "Find the business on Google" (2026-10-18). Ops-only; spliced into a Places API path,
   // so the same shape the DB checks (migration 0074).
-  googlePlaceId: z.string().regex(/^[A-Za-z0-9_-]{10,300}$/, 'not a Google place id').nullable().default(null),
+  googlePlaceId: z.string().regex(/^[A-Za-z0-9_-]{10,255}$/, 'not a Google place id').nullable().default(null),
   active: z.boolean().default(true),
 }).strict();
 

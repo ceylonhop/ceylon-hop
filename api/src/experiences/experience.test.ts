@@ -97,7 +97,8 @@ describe('Google place id (2026-10-18)', () => {
     expect(ExperienceInputSchema.parse({ ...valid, googlePlaceId: 'ChIJN1t_tDeuEmsRUsoyG83frY4' }).googlePlaceId).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
   });
   it('refuses a URL, a short string and spaces (it is spliced into a Google API path)', () => {
-    for (const bad of ['https://maps.google.com/?cid=1', 'short', 'ChIJ with spaces']) {
+    expect(ExperienceInputSchema.safeParse({ ...valid, googlePlaceId: 'a'.repeat(255) }).success).toBe(true);
+    for (const bad of ['https://maps.google.com/?cid=1', 'short', 'ChIJ with spaces', 'a'.repeat(256)]) {
       expect(ExperienceInputSchema.safeParse({ ...valid, googlePlaceId: bad }).success, bad).toBe(false);
     }
   });
