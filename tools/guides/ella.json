@@ -5,7 +5,7 @@
   "placeId": "ella",
   "title": "Ella guide — Nine Arch Bridge, Ella Rock, where to stay | Ceylon Hop",
   "description": "What to do in Ella — Nine Arch Bridge, Little Adam’s Peak and Ella Rock, the train right now, where to eat and stay, and how we drive you there.",
-  "checked": "September 2026",
+  "checked": "October 2026",
   "hero": {
     "photo": "hero",
     "intro": "A village in a gap in the mountains, 1,041 m up, with the whole southern plain falling away below it. Tea on every slope, a railway bridge everyone’s seen a photo of, two peaks to climb and a main street full of cafés."
@@ -24,9 +24,9 @@
     "origins": [
       {"id": "nuwara-eliya", "title": "From Nuwara Eliya", "from": "55 km · about 1 h 45 · the prettiest short drive in the hills", "sell": "Past Hakgala gardens and the Seetha Amman temple, then down through Welimada’s vegetable terraces and Bandarawela. We can stop at the gardens on the way if you’d like."},
       {"id": "kandy", "title": "From Kandy", "from": "135 km · about 3 h 45 · a full day’s scenery", "sell": "Up through the tea country via Nuwara Eliya — waterfalls, tea estates and hairpins most of the way. We’ll stop for lunch and wherever you want a photo."},
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 335 km · about 5 h with a lunch stop", "sell": "Your driver meets you at arrivals and you wake up in the hills. The easiest way to start a trip if you want the cool air first and the beaches last."}
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 335 km · about 5 h with a lunch stop", "sell": "Airport pickup included, and you wake up in the hills. The easiest way to start a trip if you want the cool air first and the beaches last."}
     ],
-    "train": "<b>Right now the famous Kandy → Ella train doesn’t run.</b> Cyclone Ditwah damaged the line in late 2025; trains from Colombo and Kandy stop short of the hills, and the railway is aiming to reopen the whole line at the end of 2026 or early 2027.</p><p>The best bit is running again, though: <b>Nanu Oya → Ella has been back since June 2026</b>, a couple of trains each way a day, about 2 h 30–3 h. Sit on the <b>left</b>. Shorter hops work too — Haputale, Bandarawela or Demodara to Ella. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk (you need every passenger’s passport number). Message us and we’ll check seats for your date — and we can drive you to Nanu Oya for it."
+    "train": "<b>Right now the famous Kandy → Ella train doesn’t run.</b> Cyclone Ditwah damaged the line in late 2025. Since 2 October 2026, trains from Colombo run to Peradeniya and Gampola, but not into Kandy station (a bridge there is still being repaired), and Kandy → Nanu Oya is still closed. The railway is aiming to reopen the whole line at the end of 2026 or early 2027.</p><p>The best bit is running again, though: <b>Nanu Oya → Ella has been back since June 2026</b>, a couple of trains each way a day, about 2 h 15–2 h 30. Sit on the <b>left</b>. Shorter hops work too — Haputale, Bandarawela or Demodara to Ella. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk (you need every passenger’s passport number). Message us and we’ll check seats for your date — and we can drive you to Nanu Oya for it."
   },
   "places": [
     {
@@ -57,7 +57,7 @@
       "id": "ravana-falls",
       "name": "Ravana Falls",
       "photo": "ravana",
-      "text": "A 25 m waterfall right beside the road down to the plains, tied to the Ramayana: the demon king Ravana is said to have hidden Sita in the caves behind it. Ravana Cave, up a few hundred steps from the temple nearer town, has been lived in for tens of thousands of years.",
+      "text": "A 25 m waterfall right beside the road down to the plains, tied to the Ramayana: tradition holds that King Ravana hid Sita in the caves behind it. Ravana Cave, up a few hundred steps from the temple nearer town, has been lived in for tens of thousands of years.",
       "spec": {"from": "6 km · 15 min by tuk-tuk, on the Wellawaya road", "open": "Free · daylight", "give": "30–45 min", "level": "Easy"},
       "tip": {"kind": "warn", "text": "The rocks are slippery — admire it from the path. It’s at its best after rain and just a trickle in the driest weeks. Stalls and monkeys at the roadside: keep food in your bag."}
     },
@@ -99,7 +99,7 @@
       "text": "The old provincial town at the end of the railway, with a lively market, the ancient Muthiyangana temple and, just outside, Dunhinda Falls — a wide curtain of spray at the end of a short forest path."
     },
     {
-      "time": "3 h",
+      "time": "3 h 15",
       "name": "Yala, on the way south",
       "text": "Better as a stop than a day trip: head south via Tissamaharama, do an afternoon jeep safari for leopards and elephants, then carry on to the beaches the next day. Tell us your days and we’ll plan the route."
     }
@@ -220,7 +220,7 @@
         {"q": "Can I take the train from Kandy to Ella?", "a": "<p>Not at the moment. The line between Kandy and Nanu Oya was badly damaged in the late-2025 cyclone and is still being rebuilt; the railway is aiming for the end of 2026 or early 2027. We drive you from Kandy in about 3 h 45. <a href=\"#here\">See how we get you here ↑</a></p>"},
         {"q": "So which trains are running?", "a": "<p>Nanu Oya → Ella → Badulla has run again since June 2026, with a couple of trains each way a day on a special timetable. That’s the prettiest part of the line anyway. Times change, so check before you plan around one.</p>"},
         {"q": "Which side should I sit on?", "a": "<p>From Nanu Oya to Ella, sit on the <b>left</b> for the best of the valleys. (When the Kandy section reopens, the right side is better for that stretch.)</p>"},
-        {"q": "Which class should I book?", "a": "<ul><li><b>Second class reserved</b> is the sweet spot: windows open, you can stand in the doorway, and your seat is guaranteed.</li><li><b>First class air-conditioned</b> is comfier, but the windows don’t open — you’re looking through glass.</li><li><b>Observation car</b>, on some trains, faces backwards with big windows. It sells out first.</li><li><b>Unreserved</b> is cheapest and bought at the station on the day. Crowded in season, and an experience of its own.</li></ul>"},
+        {"q": "Which class should I book?", "a": "<ul><li><b>Second class reserved</b> is the sweet spot: windows open, and your seat is guaranteed.</li><li><b>First class air-conditioned</b> is comfier, but the windows don’t open — you’re looking through glass.</li><li><b>Observation car</b>, on some trains, faces backwards with big windows. It sells out first.</li><li><b>Unreserved</b> is cheapest and bought at the station on the day. Crowded in season, and an experience of its own.</li></ul><p><b>Don’t lean out or stand in the open doorway.</b> Tourists have been killed or badly hurt falling from this line, in 2025 and again in July 2026.</p>"},
         {"q": "How do I get tickets?", "a": "<p>Reserved seats go on sale 30 days ahead on the railway’s own site, seatreservation.railway.gov.lk — the only official one. You need every passenger’s passport number, and seats sell out weeks ahead in season. Don’t buy from resellers at stations or online. Message us on WhatsApp and we’ll help you check what’s left.</p>"},
         {"q": "What if the train is delayed or cancelled?", "a": "<p>It happens, especially in heavy rain. Don’t plan anything tight on the same day. If your plans change, message us and we’ll get you there by road.</p>"}
       ]
