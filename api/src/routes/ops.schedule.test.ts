@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 
 const auth = { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
@@ -100,5 +101,13 @@ describe('POST /admin/ops/bookings/:id/schedule', () => {
   it('refuses a cross-site request (CSRF)', async () => {
     const res = await post({ date: inDays(10), time: null, expected: blank, notifyCustomer: false }, { 'sec-fetch-site': 'cross-site' });
     expect(res.status).toBe(403);
+  });
+
+  it('shows which details reminders went out', async () => {
+    const log = new InMemoryNotificationLogRepo();
+    app = createApp({ bookings, rideOps, email, notificationLog: log, auth, adminApiKey: 'adminkey' });
+    await log.markSent(bid, 'details_reminder_1');
+    const detail = await (await app.request(`/admin/ops/bookings/${bid}`, { headers: await hdr() })).json();
+    expect(detail.reminders.map((r: { kind: string }) => r.kind)).toEqual(['details_reminder_1']);
   });
 });

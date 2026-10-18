@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildDigest } from './digest';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingCheckoutEventRepo, type CheckoutSummary } from '../db/bookingCheckoutEventRepo';
 
 const booking: NewBooking = {
@@ -138,5 +139,34 @@ describe('buildDigest — payments (24h)', () => {
     expect(d.text).not.toContain('Payments (24h)');
     expect(d.text).not.toContain('Checkouts started');
     expect(d.html).not.toContain('Payments (24h)');
+  });
+});
+
+describe('chase on WhatsApp (dateless capture Phase 2)', () => {
+  it('lists paid single transfers still missing details after both reminders, unless ops paused them', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const mk = async () => {
+      const b = await bookings.create({
+        mode: 'single', total: 5000, amountDueNow: 5000, currency: 'USD',
+        input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0,
+          customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'ES' } },
+      });
+      await bookings.setStatus(b.id, 'payment_pending');
+      await bookings.setStatus(b.id, 'paid');
+      return b;
+    };
+    const chase = await mk();
+    const paused = await mk();
+    const early = await mk();
+    for (const b of [chase, paused]) await log.markSent(b.id, 'details_reminder_2');
+    await log.markSent(early.id, 'details_reminder_1');
+    const rideOps = { get: async (id: string) => ({ customerUpdated: id === paused.id }) };
+    const d = await buildDigest(new Date(), { bookings, notificationLog: log, rideOps, opsBaseUrl: 'https://ops.example' });
+    expect(d.text).toContain('Chase on WhatsApp (1)');
+    expect(d.text).toContain(chase.reference);
+    expect(d.text).not.toContain(paused.reference);
+    expect(d.text).not.toContain(early.reference);
+    expect(d.html).toContain(`/ops?booking=${chase.id}`);
   });
 });
