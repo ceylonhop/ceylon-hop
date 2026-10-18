@@ -19,10 +19,10 @@ const refundIsLate = new Function('tripStartMs', 'REFUND_CUTOFF_MS',
 )((t) => (t.date ? Date.parse(`${t.date}T${t.time || '00:00'}:00+05:30`) : null), 24 * 3600 * 1000);
 
 describe('parseRefundCents — a typed amount to integer cents, no floating point', () => {
-  it.each([['25', 2500], ['25.5', 2550], ['25.50', 2550], ['19.99', 1999], [' $1,200.10 ', 120010], ['0.01', 1]])(
+  it.each([['25', 2500], ['25.5', 2550], ['25.50', 2550], ['19.99', 1999], [' $1,200.10 ', 120010], ['0.01', 1], ['1,000', 100000]])(
     '%s → %d', (raw, cents) => expect(parseRefundCents(raw)).toBe(cents),
   );
-  it.each(['', '0', '0.00', '-5', '1.234', 'abc', '1e3', '.5'])('rejects %j', (raw) => {
+  it.each(['', '0', '0.00', '-5', '1.234', 'abc', '1e3', '.5', '12,50', '1,5', '1,2,0', '1,0000', ',100'])('rejects %j', (raw) => {
     expect(parseRefundCents(raw)).toBeNull();
   });
 });

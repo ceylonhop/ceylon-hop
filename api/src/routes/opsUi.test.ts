@@ -1466,14 +1466,18 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain('There is no undo.');
   });
 
-  // Both blocks answer the same question about who may reverse and whether the ops window has
-  // closed. They were one function until the split; a divergence would offer a cancel where a
-  // refund is refused, or vice versa.
-  it('gates the split refund and cancel blocks through one shared reversal test', async () => {
+  // The 24-hour rule guards CANCEL only. Since 2026-10-17 refund requests are not held to it (a
+  // founder approves every one), so refundRequestFor must never read reverseGate again.
+  it('gates the cancel block through reverseGate and keeps refund requests off the 24h rule', async () => {
     const body = await uiBody();
     expect(body).toContain('function reverseGate(');
-    // both call sites read the same helper rather than re-deriving the rule
-    expect(body.match(/reverseGate\(t, ?d\)/g)?.length).toBeGreaterThanOrEqual(2);
+    const fnBody = (name: string): string => {
+      const start = body.indexOf(`function ${name}(`);
+      expect(start).toBeGreaterThan(-1);
+      return body.slice(start, body.indexOf('\nfunction ', start + 1));
+    };
+    expect(fnBody('reverseActionsFor')).toMatch(/reverseGate\(t, ?d\)/);
+    expect(fnBody('refundRequestFor')).not.toContain('reverseGate');
   });
 
   // A refund that settles flips the BOOKING to refunded. reloadRefundDetail repaints only the
