@@ -1013,6 +1013,17 @@ Expected: FAIL, with "SCHED_ERR not found in the ops shell" and missing `data-ac
 
 - [ ] **Step 3: Add the constant and the form**
 
+Add the form's styles after `.notebox input:focus{...}` (`.muted` and `.warn` don't fit inside a `.kv` row):
+
+```css
+  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input:focus{outline:none;border-color:var(--teal)}
+  .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
+  .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
+  .sched .btn-go{margin-top:10px}
+```
+
+
 Above `function renderSheet(){`:
 
 ```js
@@ -1024,11 +1035,11 @@ const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 h
 function scheduleFormHtml(t,d){
   const inp=d.booking.input||{};
   const driverHasIt=STAGES.indexOf(t.stage)>=STAGES.indexOf('vehicle_confirmed');
-  return `<div class="block sched" data-testid="sched-form">
+  return `<div class="sched" data-testid="sched-form">
     <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
-    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"> <span class="muted">Sri Lanka time · blank if not known yet</span></span></div>
+    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
     <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
-    ${driverHasIt?`<p class="warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
+    ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
     <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
   </div>`;
 }
