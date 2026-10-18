@@ -683,7 +683,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents, notificationLog, rideOps: deps.rideOps });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {
