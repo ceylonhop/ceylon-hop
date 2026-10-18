@@ -1453,33 +1453,40 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
   it('never tells the operator a requested refund has been paid', async () => {
     const body = await uiBody();
     // One template, both wordings, chosen by the capability that decides which actually happens.
-    expect(body).toContain("${mayFire?'Refund':'Request refund'}");
-    expect(body).toContain("const mayFire = !!(state.caps && state.caps.includes('payments:reverse'))");
+    expect(body).toContain("const verb=founder?'Refund':'Request refund'");
+    expect(body).toContain("const founder=!!(state.caps&&state.caps.includes('payments:reverse'))");
     expect(body).not.toContain('in full</button>');          // the old over-promising label
     expect(body).not.toContain('complete it in PayHere');    // predated the Refund API button
     // The request-only path still says so, in the confirm and in the toast.
-    expect(body).toContain('no money has moved yet');
-    expect(body).toContain('files the request for someone who can');
+    expect(body).toContain('Refund requested — waiting for a founder');
+    expect(body).toContain('A founder has to approve it before any money moves.');
     // …and the old wording, which claimed nothing had moved when now it has, is gone.
     expect(body).not.toContain('This records the request — no money moves yet');
     // A one-press refund must warn that it is final.
     expect(body).toContain('There is no undo.');
   });
 
-  // Both blocks answer the same question about who may reverse and whether the ops window has
-  // closed. They were one function until the split; a divergence would offer a cancel where a
-  // refund is refused, or vice versa.
-  it('gates the split refund and cancel blocks through one shared reversal test', async () => {
+  // The 24-hour rule guards CANCEL only. Since 2026-10-17 refund requests are not held to it (a
+  // founder approves every one), so refundRequestFor must never read reverseGate again.
+  it('gates the cancel block through reverseGate and keeps refund requests off the 24h rule', async () => {
     const body = await uiBody();
     expect(body).toContain('function reverseGate(');
-    // both call sites read the same helper rather than re-deriving the rule
-    expect(body.match(/reverseGate\(t, ?d\)/g)?.length).toBeGreaterThanOrEqual(2);
+    const fnBody = (name: string): string => {
+      const start = body.indexOf(`function ${name}(`);
+      expect(start).toBeGreaterThan(-1);
+      return body.slice(start, body.indexOf('\nfunction ', start + 1));
+    };
+    expect(fnBody('reverseActionsFor')).toMatch(/reverseGate\(t, ?d\)/);
+    expect(fnBody('refundRequestFor')).not.toContain('reverseGate');
   });
 
   // A refund that settles flips the BOOKING to refunded. reloadRefundDetail repaints only the
   // sheet's detail payload, so without refreshRow the header chip and queue row keep reading
   // "Paid" after the money went back — which reads as a refund that failed (owner, 2026-08-07).
-  it('refreshes the queue row on the refund actions that change booking status', async () => {
+  // The same goes for the founder's queue: refundWaitingCents feeds the "Refunds waiting" chip, the
+  // row reason and the nav badge, so every action that adds, withdraws or fails to settle a pending
+  // request must refresh the queue row too.
+  it('refreshes the queue row on every refund action that changes booking status or the waiting refund', async () => {
     const body = await uiBody();
     // Bounded to ONE case block: split on the label, then cut at the next one. Without the second
     // cut the slice runs to the end of the file, so an assertion about refundconfirm would be
@@ -1495,7 +1502,22 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(fire).toContain('await refreshRow(bookingId)');
     expect(handler('refundexecute')).toContain('fireRefund(id,refundId)');
     expect(handler('refundrequest')).toContain('fireRefund(id,refund&&refund.id)');
+    // Withdrawing a request removes it from the founder's queue.
+    // refundcancel is the LAST case in the switch, so the label split alone runs to the end of the
+    // file; cut at the block's closing brace or the assertion is satisfied by unrelated code.
+    const cancel = handler('refundcancel').split('\n    }\n')[0];
+    expect(cancel).toContain('await refreshRow(id)');
+    // An ops request ADDS a pending refund (the !willFire branch), so the founder's chip must move.
+    const opsBranch = (handler('refundrequest').match(/if\(!willFire\)\{[^}]*\}/) ?? [''])[0];
+    expect(opsBranch).toContain('await reloadRefundDetail(id)');
+    expect(opsBranch).toContain('await refreshRow(id)');
+    // A founder's one-press request that fails before PayHere claims the row leaves it manual_pending
+    // — a new waiting refund — so fireRefund's FAILURE path refreshes the queue as well.
+    const fireFailure = fire.slice(fire.indexOf('catch(err)'));
+    expect(fire.indexOf('catch(err)')).toBeGreaterThan(-1);
+    expect(fireFailure).toContain('await refreshRow(bookingId)');
     // Guard the guard: each slice must be a plausible single handler, not the rest of the file.
+    expect(cancel.length).toBeLessThan(3000);
     expect(handler('refundconfirm').length).toBeLessThan(3000);
     expect(handler('refundexecute').length).toBeLessThan(3000);
     expect(fire.length).toBeLessThan(3000);
