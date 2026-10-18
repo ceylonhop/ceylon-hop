@@ -22,7 +22,7 @@
     "heading": "We’ll bring you into Colombo",
     "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
     "origins": [
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 35 km · about 50 min · most of it on the expressway", "sell": "Your driver meets you at arrivals and takes the airport expressway into the city. Rush hour can stretch it to an hour or more, so tell us your flight and we’ll plan around it."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 35 km · about 50 min · most of it on the expressway", "sell": "Airport pickup included, then the airport expressway into the city. Rush hour can stretch it to an hour or more, so tell us your flight and we’ll plan around it."},
       {"id": "kandy", "title": "From Kandy", "from": "125 km · about 3 h 30 · down from the hills", "sell": "Down the old Kandy road through the low country, past the cashew sellers of Cadjugama. The new expressway won’t be finished before 2028, so this is still the way. We can stop for cashews if you’d like."},
       {"id": "galle", "title": "From Galle", "from": "135 km · about 2 h 15 · up the Southern Expressway", "sell": "Most of the way on the expressway, through paddy and rubber country. Want the sea instead? The old coast road takes about 3 hours and passes Kalutara’s white temple — just ask."}
     ],
@@ -221,7 +221,7 @@
         {"q": "How long is the drive to the airport?", "a": "<p>About 50 minutes from the city on the expressway, and an hour or more at rush hour. Aim to be at the terminal about three hours before an international flight — tell us your flight time and we’ll set the pickup.</p>"},
         {"q": "Can I check in early?", "a": "<p>Bandaranaike International has started letting passengers check in up to four hours before departure, and has self-service kiosks and bag drop. Useful if your hotel checkout is at noon and your flight is in the evening.</p>"},
         {"q": "Where do I get a SIM card?", "a": "<p>At the mobile-network counters in the arrivals hall. Sort it before you leave the terminal, so the app and the maps work from the start.</p>"},
-        {"q": "Can I use ride-hailing apps?", "a": "<p>PickMe is the main app, for cars and tuk-tuks; Uber works mostly in Colombo. At the airport, check the plate and the driver match the app before you get in. Or book with us, and your driver meets you at arrivals.</p>"},
+        {"q": "Can I use ride-hailing apps?", "a": "<p>PickMe is the main app, for cars and tuk-tuks; Uber works mostly in Colombo. At the airport, check the plate and the driver match the app before you get in. Or book with us: airport pickup is included.</p>"},
         {"q": "Is there a bus from the airport?", "a": "<p>Yes — route 187, an air-conditioned bus along the expressway to the Colombo Fort bus stand. It leaves from the outer porch of the departure terminal.</p>"}
       ]
     },

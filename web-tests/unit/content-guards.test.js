@@ -26,9 +26,12 @@ describe('content guards (guides + FAQ sources)', () => {
       expect(text, 'no arrivals meet-and-greet').not.toMatch(/meet you at arrivals/i);
     });
   }
-  it('mirissa.json promises an airport pickup, not a driver who meets you', () => {
-    const mirissa = sources.find(s => s.name.endsWith('mirissa.json')).text;
-    expect(mirissa).not.toMatch(/meets? you/i);
+  it('guides and trip-page copy promise an airport pickup, not a driver who meets you', () => {
+    const copy = [
+      ...sources.filter(s => s.name.startsWith('tools/guides/')),
+      { name: 'tools/route-content.json', text: readFileSync(path.join(ROOT, 'tools/route-content.json'), 'utf8') },
+    ];
+    for (const { name, text } of copy) expect(text, name).not.toMatch(/meets? you/i);
   });
   it('nuwara-eliya.json does not put Seetha Amman in a Ramboda stop', () => {
     const ne = JSON.parse(sources.find(s => s.name.endsWith('nuwara-eliya.json')).text);
