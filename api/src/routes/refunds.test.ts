@@ -689,6 +689,31 @@ describe('founder approval (spec 2026-10-17)', () => {
     expect(sent.at(-1)!.title).toBe(`Refund requested: ${b.reference} · 100.00 USD (full) · LATE`);
   });
 
+  it('a failing alert lookup never fails the request', async () => {
+    const { app, payments, booking } = await fixture();
+    // The refund repo reads the captured payments first (that call must work); the alert's own
+    // lookup is the second call, and that is the one that fails.
+    const realFind = payments.findByBookingId.bind(payments);
+    let calls = 0;
+    vi.spyOn(payments, 'findByBookingId').mockImplementation(async (id) => {
+      if (++calls > 1) throw new Error('db down');
+      return realFind(id);
+    });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await requestRefund(app, booking.id, 2500, 'ops@test');
+      expect(res.status).toBe(201);
+      const ledger = await (
+        await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { cookie: await cookie('founder@test') } })
+      ).json();
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ status: 'manual_pending', amountCents: 2500 });
+      expect(errorLog).toHaveBeenCalled();
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   it('finance still may not request', async () => {
     const { app, booking } = await fixture();
     expect((await requestRefund(app, booking.id, 2500, 'finance@test')).status).toBe(403);

@@ -247,30 +247,34 @@ export function adminRoutes(deps: {
       // Founders hear about every request someone else files (spec 2026-10-17 §2). A founder's
       // own request is about to be fired, so it needs no email. Best-effort: never fails the request.
       const identity = c.get('identity');
-      if (!can(identity.role, 'payments:reverse')) {
-        const booking = await bookings.get(refund.bookingId);
-        if (booking) {
-          const capturedCents = (await deps.payments.findByBookingId(booking.id))
-            .filter((p) => p.status === 'succeeded')
-            .reduce((sum, p) => sum + p.amount, 0);
-          // Full/partial on the title: an empty amount box means "everything" (spec §2).
-          const scope = refund.amountCents >= capturedCents ? 'full' : 'partial';
-          const late = isLateRequest(booking, refund.requestedAt);
-          const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${refund.currency}`;
-          const link = bookingDeepLink(booking.id, deps.opsBaseUrl ?? '');
-          void alerts.send({
-            severity: 'info',
-            kind: 'refund_requested',
-            title: `Refund requested: ${booking.reference} · ${fmt(refund.amountCents)} (${scope})${late ? ' · LATE' : ''}`,
-            body:
-              `${identity.email} asked for a refund of ${fmt(refund.amountCents)} of ${fmt(capturedCents)} paid ` +
-              `on ${booking.reference}.\n\n` +
-              `Reason: ${refund.reason}\n` +
-              (late ? '\nLate — the trip starts in under 24 hours; the driver may already be committed.\n' : '') +
-              `\nNo money has moved. Approve or cancel it in the ops tool${link ? `:\n${link}` : '.'}`,
-            dedupeKey: refund.id,
-          });
+      try {
+        if (!can(identity.role, 'payments:reverse')) {
+          const booking = await bookings.get(refund.bookingId);
+          if (booking) {
+            const capturedCents = (await deps.payments.findByBookingId(booking.id))
+              .filter((p) => p.status === 'succeeded')
+              .reduce((sum, p) => sum + p.amount, 0);
+            // Full/partial on the title: an empty amount box means "everything" (spec §2).
+            const scope = refund.amountCents >= capturedCents ? 'full' : 'partial';
+            const late = isLateRequest(booking, refund.requestedAt);
+            const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${refund.currency}`;
+            const link = bookingDeepLink(booking.id, deps.opsBaseUrl ?? '');
+            void alerts.send({
+              severity: 'info',
+              kind: 'refund_requested',
+              title: `Refund requested: ${booking.reference} · ${fmt(refund.amountCents)} (${scope})${late ? ' · LATE' : ''}`,
+              body:
+                `${identity.email} asked for a refund of ${fmt(refund.amountCents)} of ${fmt(capturedCents)} paid ` +
+                `on ${booking.reference}.\n\n` +
+                `Reason: ${refund.reason}\n` +
+                (late ? '\nLate — the trip starts in under 24 hours; the driver may already be committed.\n' : '') +
+                `\nNo money has moved. Approve or cancel it in the ops tool${link ? `:\n${link}` : '.'}`,
+              dedupeKey: refund.id,
+            }).catch((error) => console.error(`refund_requested alert failed for ${refund.id}:`, error));
+          }
         }
+      } catch (error) {
+        console.error(`refund_requested alert failed for ${refund.id}:`, error);
       }
       return c.json(refund, 201);
     } catch (error) {
