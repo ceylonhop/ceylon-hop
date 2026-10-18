@@ -38,9 +38,9 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import { createJobCorrelation } from '../lib/correlation';
 
-// Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
-// session with payments:act (founder or finance) — the machine key (system) does NOT
-// have payments:act, so a leaked x-admin-key can no longer issue refunds (spec D6).
+// Capability-gated staff API. Refunds (owner, 2026-10-17): founder and ops may REQUEST any
+// amount; only a founder (payments:reverse) sends or confirms one. Cancelling a booking keeps
+// the 24-hour rule (domain/reversalWindow.ts). The machine key (system) holds none of these.
 // Cron/watchdog endpoints stay machine-driven via admin:jobs (system or founder).
 export function adminRoutes(deps: {
   bookings: BookingRepo;
@@ -224,16 +224,16 @@ export function adminRoutes(deps: {
     return c.json({ error: error.code }, 409);
   };
 
-  // Reading refund history stays on payments:act — finance must be able to reconcile the books
-  // without being able to move money. Only the four REVERSAL routes below are founder-only.
-  r.get('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+  // Everyone who works bookings reads the ledger — ops needs to see its own requests waiting.
+  // Moving money is gated on the routes below, never here.
+  r.get('/bookings/:id/refunds', requireCap('bookings:read'), async (c) => {
     if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
     return c.json(await deps.refunds.list(c.req.param('id')), 200);
   });
 
+  // A request moves no money and a founder decides every one, so it is not held to the 24-hour
+  // rule (owner, 2026-10-17). It still reserves the amount, so requests never exceed the capture.
   r.post('/bookings/:id/refunds', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
     try {
@@ -311,12 +311,7 @@ export function adminRoutes(deps: {
     }
   };
 
-  // Confirm and cancel-request carry the SAME gate as the request. The money actually moves at
-  // confirm, so the protected last day has to be protected there too; if ops runs out of window
-  // mid-flow a founder finishes it, and nothing is stranded.
-  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:reverse'), async (c) => {
     const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
     const before = await bookings.get(c.req.param('id'));
@@ -336,8 +331,8 @@ export function adminRoutes(deps: {
     }
   });
 
-  // Refund through PayHere's API instead of by hand. Same gate as confirm — this is the moment
-  // money moves, so the protected last day is protected here too.
+  // Refund through PayHere's API instead of by hand. Same gate as confirm: founder only — this is the
+  // moment money moves.
   //
   // The order below is the entire safety design and must not be rearranged:
   //   1. beginApi() claims the row as api_processing and commits, BEFORE any HTTP call
@@ -345,9 +340,7 @@ export function adminRoutes(deps: {
   //   3. only a DEFINITE answer settles the row
   // An indefinite answer leaves it in api_processing on purpose. PayHere's Refund API has no
   // idempotency key, so a retry against an unknown outcome is how a customer is refunded twice.
-  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('payments:reverse'), async (c) => {
     const adapter = deps.paymentAdapter;
     if (!adapter?.refund) return c.json({ error: 'refund_api_unavailable' }, 409);
     const before = await bookings.get(c.req.param('id'));
@@ -432,9 +425,8 @@ export function adminRoutes(deps: {
     }
   });
 
+  // Cancelling a pending request releases the reservation and moves no money: ops may do it.
   r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     try {
       return c.json(
         await deps.refunds.cancel({

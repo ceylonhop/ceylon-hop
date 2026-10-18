@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -596,5 +596,65 @@ describe('refunding one payment of a deposit + balance pair', () => {
     const named = await post(app, booking.id, { amountCents: 100, paymentId: payment.id });
     expect(named.status).toBe(201);
     expect((await named.json()).paymentId).toBe(payment.id);
+  });
+});
+
+describe('founder approval (spec 2026-10-17)', () => {
+  const post = async (app: ReturnType<typeof createApp>, path: string, actor: string, body: unknown = {}) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie(actor) },
+      body: JSON.stringify(body),
+    });
+
+  it('ops may request a partial amount, but only a founder may confirm it', async () => {
+    const { app, booking } = await fixture();
+    const res = await requestRefund(app, booking.id, 2500, 'ops@test');
+    expect(res.status).toBe(201);
+    const refund = await res.json();
+    expect(refund).toMatchObject({ amountCents: 2500, status: 'manual_pending', requestedBy: 'ops@test' });
+
+    const base = `/admin/bookings/${booking.id}/refunds/${refund.id}`;
+    expect((await post(app, `${base}/confirm`, 'ops@test', { gatewayRef: 'PH-1' })).status).toBe(403);
+    expect((await post(app, `${base}/confirm`, 'founder@test', { gatewayRef: 'PH-1' })).status).toBe(200);
+  });
+
+  it('ops may never send a refund through PayHere', async () => {
+    const { app, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const res = await post(app, `/admin/bookings/${booking.id}/refunds/${refund.id}/execute`, 'ops@test');
+    expect(res.status).toBe(403);
+  });
+
+  it('ops may cancel a pending request', async () => {
+    const { app, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const res = await post(app, `/admin/bookings/${booking.id}/refunds/${refund.id}/cancel`, 'ops@test');
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('cancelled');
+  });
+
+  it('ops reads the ledger; the machine key still cannot', async () => {
+    const { app, booking } = await fixture();
+    const asOps = await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { cookie: await cookie('ops@test') } });
+    expect(asOps.status).toBe(200);
+    const asKey = await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { 'x-admin-key': KEY } });
+    expect(asKey.status).toBe(403);
+  });
+
+  it('ops may request on an old booking with no trip date — the 24-hour rule no longer applies to refunds', async () => {
+    const { app, booking } = await fixture(); // no date: mayReverse would say trip_start_unknown
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 48 * 3600_000); // past the fresh-booking grace
+      expect((await requestRefund(app, booking.id, 2500, 'ops@test')).status).toBe(201);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('finance still may not request', async () => {
+    const { app, booking } = await fixture();
+    expect((await requestRefund(app, booking.id, 2500, 'finance@test')).status).toBe(403);
   });
 });

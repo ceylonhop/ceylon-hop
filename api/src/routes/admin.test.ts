@@ -279,7 +279,7 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(400);
   });
 
-  it('the ops time window applies to refunds too, not just cancellation', async () => {
+  it('refund requests are not held to the ops time window — the ledger decides', async () => {
     const { app } = makeApp();
     const near = await bookOn(app, imminent().date, imminent().time);
     const far = await bookOn(app, futureIsoDate(30));
@@ -289,9 +289,8 @@ describe('POST /admin/bookings/:id/cancel', () => {
         headers: { cookie: ck, 'content-type': 'application/json' },
         body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
       }));
-    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
-    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
-    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
+    // Since 2026-10-17 a refund REQUEST skips the 24-hour rule (a founder approves every one), so
+    // ops reaches the ledger on both and it applies its own check: 409, nothing was captured.
     expect((await refund(near.id, 'op@x.com')).status).toBe(409);
     expect((await refund(far.id, 'op@x.com')).status).toBe(409);
     // finance has no bookings:operate, so it never reaches the ledger at all.
