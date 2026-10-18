@@ -137,6 +137,38 @@ export interface StatusAudit {
   at?: Date;
 }
 
+// Pickup date/time set or changed after booking (spec 2026-10-17 §4). Single transfers only, and
+// only once the booking is paid: before that the customer can still change it on the booking page.
+export const SCHEDULE_EDITABLE_STATUSES = ['paid', 'confirmed'] as const;
+
+export interface ScheduleValue { date: string | null; time: string | null }
+
+export interface ScheduleChange {
+  date: string;
+  time: string | null;
+  // What the editor was looking at. A mismatch means someone else changed it meanwhile — the
+  // write is refused rather than silently winning.
+  expected: ScheduleValue;
+  actor: { type: 'staff' | 'customer'; id: string };
+}
+
+export type SetScheduleResult =
+  | { ok: true; booking: Booking }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'not_editable' | 'conflict'; booking: Booking };
+
+export interface BookingScheduleEvent {
+  id: string;
+  bookingId: string;
+  fromDate: string | null;
+  fromTime: string | null;
+  toDate: string;
+  toTime: string | null;
+  actorType: 'staff' | 'customer';
+  actorId: string;
+  createdAt: string; // ISO
+}
+
 /** One applied booking status fact. Legacy bookings deliberately have no synthetic baseline. */
 export interface BookingStatusEvent {
   id: string;
@@ -308,6 +340,12 @@ export interface BookingRepo {
   // amountDueNow (balance, manage page, pay view, receipts) in agreement. Applies ONLY while the
   // booking is payment_pending, decided in the write itself; otherwise returns it unchanged.
   setAmountDueNowToTotal(id: string): Promise<Booking>;
+  // Set a single transfer's pickup date/time after booking. Implementations MUST make the
+  // expected-value check part of the write and update BOTH stores of the date (transfer_request
+  // and booking_legs) plus the history row in one transaction.
+  setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult>;
+  /** Every applied schedule change for one booking, oldest first. */
+  listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]>;
 }
 
 // A booking's payer may only be rewritten while it is still awaiting money.
@@ -339,6 +377,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   // awaits, so without it two concurrent bookings could both see the last use as free.
   private promoLocks = new Map<string, Promise<void>>();
   private statusEvents: BookingStatusEvent[] = [];
+  private scheduleEvents: BookingScheduleEvent[] = [];
 
   constructor(private readonly options: InMemoryBookingRepoOptions = {}) {}
 
@@ -571,6 +610,30 @@ export class InMemoryBookingRepo implements BookingRepo {
     const updated: Booking = { ...current, amountDueNow: current.total };
     this.byId.set(id, updated);
     return this.present(updated);
+  }
+
+  async setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult> {
+    const current = this.byId.get(id);
+    if (!current) return { ok: false, reason: 'not_found' };
+    if (current.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(current.status)) {
+      return { ok: false, reason: 'not_editable', booking: await this.present(current) };
+    }
+    const from: ScheduleValue = { date: current.input.date ?? null, time: current.input.time ?? null };
+    if (from.date !== change.expected.date || from.time !== change.expected.time) {
+      return { ok: false, reason: 'conflict', booking: await this.present(current) };
+    }
+    const updated = { ...current, input: { ...current.input, date: change.date, time: change.time ?? undefined } } as Booking;
+    this.byId.set(id, updated);
+    this.scheduleEvents.push({
+      id: randomUUID(), bookingId: id,
+      fromDate: from.date, fromTime: from.time, toDate: change.date, toTime: change.time,
+      actorType: change.actor.type, actorId: change.actor.id, createdAt: new Date().toISOString(),
+    });
+    return { ok: true, booking: await this.present(updated) };
+  }
+
+  async listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]> {
+    return this.scheduleEvents.filter((e) => e.bookingId === bookingId).map((e) => ({ ...e }));
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {

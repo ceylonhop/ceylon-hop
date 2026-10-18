@@ -591,6 +591,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
+  /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
+  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input:focus{outline:none;border-color:var(--teal)}
+  .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
+  .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
+  .sched .btn-go{margin-top:10px}
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
@@ -3742,6 +3748,7 @@ function buildActivity(t,d){
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }
@@ -4154,6 +4161,22 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
+   send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+/* `expected` rides along with the save so a change someone else made meanwhile comes back as a
+   conflict, not a silent overwrite. */
+function scheduleFormHtml(t,d){
+  const inp=d.booking.input||{};
+  const driverHasIt=STAGES.indexOf(t.stage)>=STAGES.indexOf('vehicle_confirmed');
+  return `<div class="sched" data-testid="sched-form">
+    <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
+    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
+    ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
+    <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
+  </div>`;
+}
 function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
@@ -4178,6 +4201,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  const canSchedule=d?.booking?.mode==='single'&&['paid','confirmed'].includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4247,7 +4271,8 @@ function renderSheet(){
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
         ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
+        ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
@@ -4678,13 +4703,13 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;
   /* Same in-flight guard the quote action bar got (runAction). Each of these is a booking
      mutation that used to run with no visible sign and no re-entry guard — a double press on
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -4726,6 +4751,22 @@ document.addEventListener('click',async e=>{
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
        has to be emptied by the code that consumed it. Without it the note stays in the box
        after being saved and reads as "not saved" — an invitation to add it twice. */
+    case 'schedopen':{state.schedOpen=state.schedOpen===id?null:id;renderSheet();break;}
+    case 'schedsave':{
+      const inp=state.detailData?.booking?.input||{};
+      const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
+      if(!date){toast('Pick a date','error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked};
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
+        state.schedOpen=null;
+        toast(res.driverNotified?'Saved — send the new time to the driver':res.emailed?'Saved — customer emailed':'Saved');
+        await refreshDetail(id);await refreshRow(id);
+      }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
+      break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
