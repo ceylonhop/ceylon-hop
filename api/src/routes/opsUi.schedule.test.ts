@@ -41,6 +41,11 @@ describe('ops sheet — set pickup date/time', () => {
     expect(body).toContain('data-testid="sched-driver-warn"');
   });
 
+  it('lists details reminders in the activity feed (Phase 2)', () => {
+    expect(body).toContain('(d?.reminders||[]).forEach(');
+    expect(body).toContain('still need pickup date/time');
+  });
+
   it('guards the save against a double press', () => {
     expect(lift('MUTATES')).toContain("'schedsave'");
   });
