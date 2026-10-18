@@ -9664,7 +9664,10 @@ function renderExpForm(e) {
         + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expBizSearch">Search</button></div>'
         + '<div id="exp-biz-msg" class="ch-exp-meta" data-testid="exp-biz-msg"></div>'
         + '<div id="exp-biz-results" class="ch-exp-biz-results"></div>'
-        + '<div id="exp-biz-picked" class="ch-exp-meta" data-testid="exp-biz-picked"></div>', 'ch-exp-wide') : '')
+        + '<div id="exp-biz-picked" class="ch-exp-meta" data-testid="exp-biz-picked"></div>'
+        // Google's partner details are a starting point: ops checks them with the partner (Places content
+        // isn't ours to keep as-is), so a Google fill asks for this tick before Save.
+        + '<div id="exp-biz-confirm-row" hidden style="margin-top:6px"><label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-biz-confirm"> I’ve checked the partner name, phone and website with the partner</label></div>', 'ch-exp-wide') : '')
     + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
     + expInput('name', 'Name', d.name)
     + expInput('partner', 'Partner', d.partnerName)
@@ -9676,7 +9679,9 @@ function renderExpForm(e) {
     + expInput('duration', 'Duration', d.durationText || '', ' placeholder="90 min"')
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
-    + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
+    + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos
+      // Google's photos can't be copied to our servers (Places terms), so the business's own Google photos are a link.
+      + '<div id="exp-google-photos-row" class="ch-exp-meta" style="margin-top:8px" hidden><a id="exp-google-photos" data-testid="exp-google-photos" target="_blank" rel="noopener">See their photos on Google Maps</a></div>', 'ch-exp-wide')
     + expField('loc', biz ? 'Location' : 'Location (paste "lat, lng" or a Google Maps link)', '<div id="exp-loc-wrap"' + (biz ? ' hidden' : '') + '>'
       + '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" placeholder="7.977, 80.76 — or a Google Maps link" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div></div>'
       + '<div id="exp-loc-out" class="ch-exp-meta"></div>'
@@ -9768,6 +9773,16 @@ async function expBizPick(placeId) {
     fill('loc', b.lat + ', ' + b.lng);
     fill('contact', [b.phone, b.website].filter(Boolean).join(' · ').slice(0, 200));
     fill('gplace', b.placeId);
+    // Suggestions only where ops hasn't typed yet; Open on follows Google's hours when Google has them.
+    if (!document.getElementById('exp-name').value.trim()) fill('name', b.name);
+    if (!document.getElementById('exp-slug').value.trim()) fill('slug', expSlugify(b.name));
+    if (Array.isArray(b.openWeekdays) && b.openWeekdays.length) {
+      for (var dd = 0; dd < 7; dd++) { var day = document.getElementById('exp-day-' + dd); if (day) day.checked = b.openWeekdays.indexOf(dd) >= 0; }
+    }
+    var confirmRow = document.getElementById('exp-biz-confirm-row'), confirmBox = document.getElementById('exp-biz-confirm');
+    if (confirmRow) confirmRow.hidden = false;
+    if (confirmBox) confirmBox.checked = false;
+    expGooglePhotosLink();
     expLocUpdate();
     list.innerHTML = '';
     msg.textContent = '';
@@ -9776,6 +9791,21 @@ async function expBizPick(placeId) {
   } catch (x) {
     if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
   }
+}
+// A slug suggestion from the business name: lower-case ASCII words joined by dashes (the slug rule is
+// [a-z0-9-]{3,60}); '' when nothing usable is left, so the box stays empty.
+function expSlugify(name) {
+  var t = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return t.length >= 3 ? t : '';
+}
+// "See their photos on Google Maps" for an experience that knows its Google place id.
+function expGooglePhotosLink() {
+  var row = document.getElementById('exp-google-photos-row'), a = document.getElementById('exp-google-photos'), id = document.getElementById('exp-gplace');
+  if (!row || !a || !id) return;
+  var pid = id.value.trim();
+  row.hidden = !pid;
+  if (pid) a.href = 'https://www.google.com/maps/place/?q=place_id:' + encodeURIComponent(pid);
 }
 function expLocManual() {
   var wrap = document.getElementById('exp-loc-wrap'), link = expEl && expEl.querySelector('[data-action="expLocManual"]');
@@ -9946,6 +9976,7 @@ function expOpenForm(id) {
   expTaUpdate();
   for (var i = 0; i < 6; i++) expPhotoPreview(i);
   expRenderPhotoTiles();
+  expGooglePhotosLink();
   var first = document.getElementById('exp-slug');
   if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
   if (first) first.focus({ preventScroll: true });
@@ -9979,6 +10010,9 @@ function expReadForm() {
   if (!p && !v('loc')) errors.loc = expData && expData.businessSearch // a bad pin already shows its own message
     ? 'Find the business on Google above, or enter the location by hand.'
     : 'Paste the pin: “lat, lng” or a Google Maps link.';
+  var bizRow = document.getElementById('exp-biz-confirm-row');
+  if (bizRow && !bizRow.hidden && !document.getElementById('exp-biz-confirm').checked)
+    errors.biz = 'Check the partner name, phone and website with the partner, then tick the box.';
   if (!ta || !p || Object.keys(errors).length) return { errors: errors };
   var days = [], photos = [];
   for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
