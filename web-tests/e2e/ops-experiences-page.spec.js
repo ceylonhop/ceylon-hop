@@ -1113,6 +1113,7 @@ test('tiles: with uploads off the form keeps the plain path boxes', async ({ pag
 const BIZ = {
   placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
   lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+  openWeekdays: [1, 2, 3, 4, 5, 6],
 };
 const withBusiness = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, businessSearch: true })) };
 
@@ -1165,6 +1166,7 @@ test('business: picking a Google result fills partner, area, pin and contact, an
   await page.locator('#exp-name').fill('Ayurvedic massage');
   await page.locator('#exp-summary').fill('A 90-minute massage.');
   await page.locator('#exp-price').fill('35');
+  await page.locator('#exp-biz-confirm').check();
   await page.locator('[data-action="expSave"]').click();
   await expect.poll(() => calls.post.length).toBe(1);
   expect(calls.post[0]).toMatchObject({
@@ -1213,4 +1215,66 @@ test('business: with no Google key the form has no search and keeps the lat/lng 
   await openNew(page);
   await expect(page.locator('#exp-biz-q')).toHaveCount(0);
   await expect(page.locator('#exp-loc')).toBeVisible();
+});
+
+// Fuller fill (2026-10-18): slug + name suggested from the business, open days from Google's hours, ops
+// confirms Google's partner details before saving, and Google's photos are a link, never copied.
+async function pickBusiness(page) {
+  await page.locator('#exp-biz-q').fill('atherya');
+  await page.locator('#exp-biz-q').press('Enter');
+  await page.locator('[data-testid="exp-biz-result"]').click();
+  await expect(page.locator('#exp-partner')).toHaveValue(BIZ.name);
+}
+
+test('fill: slug, name and open days come from the pick; days follow Google’s hours', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await pickBusiness(page);
+  await expect(page.locator('#exp-slug')).toHaveValue('atherya-ayurveda-spa');
+  await expect(page.locator('#exp-name')).toHaveValue('Atherya Ayurveda Spa');
+  await expect(page.locator('#exp-day-0')).not.toBeChecked();
+  for (const d of [1, 2, 3, 4, 5, 6]) await expect(page.locator('#exp-day-' + d)).toBeChecked();
+});
+
+test('fill: never overwrites a slug or name ops already typed', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await page.locator('#exp-slug').fill('ayurvedic-massage');
+  await page.locator('#exp-name').fill('Ayurvedic massage');
+  await pickBusiness(page);
+  await expect(page.locator('#exp-slug')).toHaveValue('ayurvedic-massage');
+  await expect(page.locator('#exp-name')).toHaveValue('Ayurvedic massage');
+});
+
+test('fill: Save waits until ops confirms Google’s partner details', async ({ page }) => {
+  const calls = await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await pickBusiness(page);
+  await page.locator('#exp-summary').fill('A 90-minute massage.');
+  await page.locator('#exp-price').fill('35');
+  await page.locator('[data-action="expSave"]').click();
+  await expect(page.locator('[data-err="biz"]')).toHaveText('Check the partner name, phone and website with the partner, then tick the box.');
+  expect(calls.post).toHaveLength(0);
+  await page.locator('#exp-biz-confirm').check();
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.post.length).toBe(1);
+});
+
+test('fill: Google’s photos are a link to Google Maps, for a pick and for a saved experience', async ({ page }) => {
+  await boot(page, OPS, { list: (r, db) => r.fulfill(json({ experiences: db.map((e, i) => (i === 0 ? { ...e, googlePlaceId: BIZ.placeId } : e)), stats: STATS, businessSearch: true })) });
+  await stubBusiness(page);
+  const href = 'https://www.google.com/maps/place/?q=place_id:' + BIZ.placeId;
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveAttribute('href', href);
+  await page.locator('[data-action="expCancel"]').click();
+  await rows(page).nth(1).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toBeHidden();
+  await pickBusiness(page);
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveAttribute('href', href);
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveText('See their photos on Google Maps');
 });

@@ -543,6 +543,7 @@ describe('POST /admin/experiences/photos (spec 2026-10-17)', () => {
 const ATHERYA = {
   placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
   lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+  openWeekdays: [1, 2, 3, 4, 5, 6] as number[] | null,
 };
 function setupBusiness(fake: FakeBusinessPlaces | null = new FakeBusinessPlaces([ATHERYA])) {
   const a = realCreateApp({
@@ -601,5 +602,15 @@ describe('GET /admin/experiences/business-search + /business/:placeId', () => {
     });
     expect(res.status).toBe(201);
     expect((await res.json()).experience.googlePlaceId).toBe(ATHERYA.placeId);
+  });
+});
+
+describe('business details: Area is our nearest catalogue town (2026-10-18)', () => {
+  it('replaces Google’s sub-area with the town travellers know, and keeps Google’s when no town is near', async () => {
+    const near = { ...ATHERYA, area: 'Kimbissa' };
+    const far = { ...ATHERYA, placeId: 'ChIJFarAway00000000000000', area: 'Bibile', lat: 7.3, lng: 81.4 };
+    const { get } = setupBusiness(new FakeBusinessPlaces([near, far]));
+    expect((await (await get(`/admin/experiences/business/${near.placeId}`)).json()).business.area).toBe('Sigiriya');
+    expect((await (await get(`/admin/experiences/business/${far.placeId}`)).json()).business.area).toBe('Bibile');
   });
 });

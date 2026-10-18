@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { refreshExperiencePins } from '../experiences/pinRefresh';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { BusinessPlacesAdapter } from '../adapters/businessPlaces';
 import { z } from 'zod';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
@@ -56,6 +59,8 @@ export function adminRoutes(deps: {
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  /** Daily re-fetch of Google-sourced experience pins (Places lat/lng may be kept 30 days). Absent = no Google key. */
+  experiencePins?: { experiences: ExperienceRepo; business: BusinessPlacesAdapter };
   // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
   // Test bookings (2026-09-24): config.TEAM_EMAILS, left out of the digest's status counts.
@@ -731,11 +736,24 @@ export function adminRoutes(deps: {
         console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
       }
     }
+    // Experience pins from Google ride the same tick, once per ~day however often the cron POSTs (20h
+    // cooldown on the alert ledger, as the digest), best-effort like every rider here.
+    let experiencePins: Awaited<ReturnType<typeof refreshExperiencePins>> | null = null;
+    if (deps.experiencePins) {
+      const due = !deps.alertLog || (await deps.alertLog.shouldSend('experience_pin_refresh', 'daily', 20 * 3600_000, new Date()));
+      if (due) {
+        try {
+          experiencePins = await refreshExperiencePins(deps.experiencePins);
+        } catch (err) {
+          console.error('experience pin refresh failed:', err);
+        }
+      }
+    }
     // Footprint, last (spec 2026-10-13 §4) — the watchdog's WATCHDOG_TICK for this tick, so the
     // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
     await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });

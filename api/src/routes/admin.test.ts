@@ -10,6 +10,9 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryRideListRepo } from '../db/rideListRepo';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
+import { InMemoryExperienceRepo } from '../db/experienceRepo';
+import { FakeBusinessPlaces } from '../adapters/businessPlaces';
+import { ExperienceInputSchema } from '../experiences/experience';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday, futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
@@ -1165,5 +1168,32 @@ describe('POST /admin/jobs/notifications — heartbeat', () => {
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(res.status).toBe(200);
     expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).not.toBeNull();
+  });
+});
+
+// Places lat/lng may be kept for 30 days (Service Specific Terms §14.3): the daily tick re-fetches every
+// Google-sourced experience pin by place id, once per day however often the cron POSTs (2026-10-18).
+describe('POST /admin/jobs/notifications — experience pin refresh', () => {
+  const ID = 'ChIJAtherya0000000000000';
+  it('moves a pin Google moved, and runs once per ~day', async () => {
+    const experiences = new InMemoryExperienceRepo();
+    const e = await experiences.create(ExperienceInputSchema.parse({
+      slug: 'athreya', name: 'Massage', partnerName: 'Athreya', areaLabel: 'Sigiriya', summary: 's', priceCents: 3500,
+      priceUnit: 'per_person', openWeekdays: [1], startTimes: [], lat: 7.95, lng: 80.76, googlePlaceId: ID,
+    }));
+    const fake = new FakeBusinessPlaces([{ placeId: ID, name: 'Athreya', address: '', lat: 7.9572, lng: 80.7602, area: null, phone: null, website: null, mapsUrl: null, openWeekdays: null }]);
+    const app = createApp({ adminApiKey: KEY, auth, alertLog: new InMemoryAlertLogRepo(), experiences, businessPlaces: fake });
+    const first = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(first.experiencePins).toEqual({ checked: 1, moved: 1, failed: 0 });
+    expect(await experiences.get(e.id)).toMatchObject({ lat: 7.9572, lng: 80.7602 });
+    const second = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(second.experiencePins).toBeNull();
+    expect(fake.calls).toEqual([`location:${ID}`]);
+  });
+
+  it('is skipped (null) without a Google key', async () => {
+    const app = createApp({ adminApiKey: KEY, auth, alertLog: new InMemoryAlertLogRepo(), experiences: new InMemoryExperienceRepo() });
+    const res = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(res.experiencePins).toBeNull();
   });
 });
