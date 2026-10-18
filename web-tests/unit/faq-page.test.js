@@ -50,7 +50,7 @@ describe('generateFaq', () => {
     expect(html).toContain('<span class="bc-cur" aria-current="page">Travel FAQ</span>');
     const qa = f.topics.filter(t => t.shape === 'qa').reduce((n, t) => n + t.items.length, 0);
     const cmp = f.topics.filter(t => t.shape === 'compare').length;
-    expect(html).toContain(`${qa + cmp} answers · Updated 14 October 2026`);
+    expect(html).toContain(`${qa + cmp} answers · Updated 17 October 2026`);
   });
   it('index lists every topic in order with a count, and every entry targets a section', () => {
     const idx = html.slice(html.indexOf('<aside class="f-index" id="topics"'), html.indexOf('</aside>'));

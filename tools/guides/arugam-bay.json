@@ -12,7 +12,7 @@
   },
   "facts": [
     {"label": "Stay", "value": "2–3 nights"},
-    {"label": "Surf season", "value": "Apr–Sep"},
+    {"label": "Surf season", "value": "Apr–Oct"},
     {"label": "Daytime", "value": "30–35", "unit": "°C"},
     {"label": "Between", "value": "Ella & Kumana"}
   ],
@@ -23,7 +23,7 @@
     "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
     "origins": [
       {"id": "ella", "title": "From Ella", "from": "135 km · about 3 h · the way most people come", "sell": "Down from the hills to Wellawaya, across Monaragala’s paddy and rubber country, then past the tanks at Lahugala, where wild elephants graze near the road. We can stop at the Buduruwagala carvings on the way if you’d like."},
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 420 km · about 6 h 30 · right across the island", "sell": "Your driver meets you at arrivals and takes you coast to coast in one go. It’s a long day — many people break it with a couple of nights in Ella, and we can plan that with you."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 420 km · about 6 h 30 · right across the island", "sell": "Airport pickup included, then we take you coast to coast in one go. It’s a long day — many people break it with a couple of nights in Ella, and we can plan that with you."},
       {"id": "yala", "title": "From Yala", "from": "190 km · about 4 h 30 · after a morning safari", "sell": "The road goes inland, round the parks rather than through them: north via Wellawaya and Monaragala, then east through Lahugala. Leave after your morning game drive and you’re at the beach by late afternoon, before the elephants come out onto the road."}
     ],
     "train": "There’s no railway anywhere near Arugam Bay. The nearest stations are <b>Ella, about 130 km away</b>, and Batticaloa, about 115 km up the coast — so you’d still need a long drive at the end. We drive it door to door. If you want a train ride for the scenery, the Nanu Oya → Ella stretch is running again: ride that, spend a night or two in Ella, and we’ll bring you on from there."
@@ -34,7 +34,7 @@
       "name": "Main Point & Baby Point",
       "photo": "main-point",
       "text": "The reason people come: a long right-hand point break right in town, with rides of 50–150 m and 400 m or more on the best days, at its best on a south-easterly swell. Baby Point is its inside section — soft, slow waves where the surf schools take first-timers. Not surfing? Watch from the sand at dawn.",
-      "spec": {"from": "In town", "open": "Apr–Sep · best at dawn", "give": "2 hours a session", "level": "Baby: beginner · Main: intermediate–advanced", "ticket": "Free · lessons ≈ USD 20–40"},
+      "spec": {"from": "In town", "open": "Apr–Oct · best at dawn", "give": "2 hours a session", "level": "Baby: beginner · Main: intermediate–advanced", "ticket": "Free · lessons ≈ USD 20–40"},
       "tip": {"kind": "drivers", "text": "First time? Stay on Baby Point and leave Main to the confident surfers — it breaks over a reef shelf and it’s crowded, especially June to August. Paddle out at dawn, before the wind gets up."}
     },
     {
@@ -42,7 +42,7 @@
       "name": "Whiskey Point",
       "photo": "whiskey",
       "text": "A right-hander 10–15 minutes north of town towards Pottuvil, and the most consistent wave in the area: punchy but forgiving, with rides of 100–200 m. The step up once you can catch a wave and turn — and a quieter stretch of beach to stay on.",
-      "spec": {"from": "10–15 min north by tuk-tuk", "open": "Apr–Sep · mornings", "give": "A morning", "level": "Intermediate", "ticket": "Free"},
+      "spec": {"from": "10–15 min north by tuk-tuk", "open": "Apr–Oct · mornings", "give": "A morning", "level": "Intermediate", "ticket": "Free"},
       "tip": {"kind": "warn", "text": "Rocks and boulders on the inside — reef booties help. Friday night is party night at Sababa here, so it’s less quiet at the end of the week."}
     },
     {
@@ -115,7 +115,7 @@
   },
   "months": {
     "heading": "The weather, month by month",
-    "sub": "The east coast runs the opposite way to the south: dry with surf from about April to September, then the north-east monsoon brings the rain from November to March, when many places close.",
+    "sub": "The east coast runs the opposite way to the south: dry with surf from about April to October, then the north-east monsoon brings the rain from November to March, when many places close.",
     "blocks": [
       {"label": "Apr – May", "title": "Season opens", "text": "The swell arrives and the rains are over — May averages under 50 mm. Fewer people than mid-year: a good time to learn.", "tag": "Quieter start", "tone": "best"},
       {"label": "Jun – Aug", "title": "Peak season", "text": "The driest months (under 20 mm of rain a month) and the hottest, up to 35°. Main Point and Peanut Farm are at their busiest and the beach parties run. Book your room early.", "tag": "Best for surf", "tone": "best"},
@@ -209,7 +209,7 @@
       "tab": "Planning",
       "items": [
         {"q": "How many nights should I stay?", "a": "<p>Two or three for the beach, the lagoon and a lesson or two. If you came to surf, give it a week — the surf camps here sell four-day, week-long and longer packages.</p>"},
-        {"q": "When is the season?", "a": "<p>April to September, with June to August the peak — the driest and busiest months. September and October are quieter and cheaper. From November to March it’s the rainy season on this coast: most breaks don’t work and many places close. <a href=\"#when\">See the months ↓</a></p>"},
+        {"q": "When is the season?", "a": "<p>April to October, with June to August the peak — the driest and busiest months. September and October are quieter and cheaper. From November to March it’s the rainy season on this coast: most breaks don’t work and many places close. <a href=\"#when\">See the months ↓</a></p>"},
         {"q": "Is November to March worth it?", "a": "<p>Only if you want an empty beach and some wildlife. The surf is mostly flat, lots of cafés and guesthouses shut, and the parties stop. Check that your guesthouse is open before you book — and for beaches at that time of year, the south coast is the one in season.</p>"},
         {"q": "Can I visit as a day trip?", "a": "<p>Not really. Ella is 3 hours each way and the airport more than 6, and the best of the day here is dawn and sunset. Stay at least two nights.</p>"},
         {"q": "Is Arugam Bay good for families?", "a": "<p>Yes, with care. The waves can be big and the current strong for children, there’s very little shade on the beaches (bring a beach tent), and crocodiles live in the lagoons — keep little ones away from the lagoon edges. The lagoon safari and Kumana are easy days out. Crocodile Rock is a lovely sunset spot, but it drops off quickly: hold hands.</p>"},
@@ -220,7 +220,7 @@
       "tab": "Surf",
       "items": [
         {"q": "Can a total beginner learn here?", "a": "<p>Yes. Baby Point (the inside of Main Point) and Elephant Rock are soft, slow waves where the surf schools teach. A lesson is usually 1.5–2 hours with board and rash vest included, about USD 20–40 at a certified (ISA) school in 2026.</p>"},
-        {"q": "Which surf point is best for me?", "a": "<ul><li><b>First time:</b> Baby Point or Elephant Rock, then the inside of Peanut Farm once you’re standing.</li><li><b>Linking turns:</b> Whiskey Point — the most consistent wave around.</li><li><b>Confident on a reef:</b> Main Point, or Pottuvil Point north of Pottuvil town, a long right over boulders.</li><li><b>Want it empty:</b> Okanda at dawn, or Lighthouse near Komari.</li></ul><p>Every point works roughly April to September; June to August is the busiest. <a href=\"#see\">See the points ↑</a></p>"},
+        {"q": "Which surf point is best for me?", "a": "<ul><li><b>First time:</b> Baby Point or Elephant Rock, then the inside of Peanut Farm once you’re standing.</li><li><b>Linking turns:</b> Whiskey Point — the most consistent wave around.</li><li><b>Confident on a reef:</b> Main Point, or Pottuvil Point north of Pottuvil town, a long right over boulders.</li><li><b>Want it empty:</b> Okanda at dawn, or Lighthouse near Komari.</li></ul><p>Every point works roughly April to October; June to August is the busiest. <a href=\"#see\">See the points ↑</a></p>"},
         {"q": "How much is board hire?", "a": "<p>It varies a lot by shop and board — anything from about Rs 400–800 to USD 5–8 a day. Places like Arne’s Place rent boards to guests and walk-ins.</p>"},
         {"q": "Is it safe to swim?", "a": "<p>Mostly, with care. Watch for rips, especially by the headland at Okanda. Crocodiles live in the lagoon behind Elephant Rock and around Pottuvil Point (more of them from October to March), and are reported at Peanut Farm — swim on the sea side, never in the lagoons. Swim where a surf school or lifeguard says it’s safe.</p>"},
         {"q": "Do I need a surf guide?", "a": "<p>Not for the points around the bay. For Okanda or Lighthouse, a guided surf trip with one of the schools takes care of the transport and the local knowledge.</p>"},
