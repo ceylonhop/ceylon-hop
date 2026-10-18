@@ -23,6 +23,9 @@ export interface Payment extends Omit<NewPayment, 'purpose'> {
   // reuses the row (idempotent per booking), so before this the count was invisible.
   attemptCount: number;
   lastAttemptAt: Date | null;
+  // When the money landed (0 or 1 per row; null until it settles). The ops queue counts "paid
+  // N days ago" from it. Only the time — how and by whom it settled stays in the provenance readers.
+  settledAt: Date | null;
 }
 
 export interface PaymentSettlementEvidence {
@@ -149,7 +152,9 @@ export class InMemoryPaymentRepo implements PaymentRepo {
   async markSucceeded(id: string): Promise<Payment> {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
-    const updated: InternalPaymentRecord = { ...p, status: 'succeeded', updatedAt: new Date() };
+    // Stamps settledAt as the Postgres repo does (its CHECK requires one on a succeeded row).
+    const now = new Date();
+    const updated: InternalPaymentRecord = { ...p, status: 'succeeded', settledAt: p.settledAt ?? now, updatedAt: now };
     this.byId.set(id, updated);
     return this.toPayment(updated);
   }
@@ -274,6 +279,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       purpose: payment.purpose,
       attemptCount: payment.attemptCount,
       lastAttemptAt: payment.lastAttemptAt ? new Date(payment.lastAttemptAt) : null,
+      settledAt: payment.settledAt ? new Date(payment.settledAt) : null,
     };
   }
 }

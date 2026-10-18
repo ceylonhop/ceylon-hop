@@ -16,6 +16,7 @@ const toPayment = (r: Row): Payment => ({
   purpose: r.purpose as PaymentPurpose,
   attemptCount: r.attemptCount,
   lastAttemptAt: r.lastAttemptAt,
+  settledAt: r.settledAt,
 });
 
 export class PostgresPaymentRepo implements PaymentRepo {

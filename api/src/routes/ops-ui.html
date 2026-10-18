@@ -216,6 +216,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
   .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tk-meta .tk-paid.late{color:var(--wait);font-weight:700}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
@@ -226,6 +227,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
+  .tk-right .when .tk-tbc{color:var(--wait);font-weight:700}
   /* Quotes tab list rows — same card language as .tk, simpler single-line grid */
   .qlist{margin-top:6px}
   .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
@@ -2297,9 +2299,21 @@ function rowToTicket(row){
     /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
     test:!!row.isTest,
     created:row.createdAt||null, serviceType:row.serviceType||null,
+    paidAt:row.paidAt||null,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
+/* Dateless capture Phase 3 (spec 2026-10-17 §5). How long an undated booking has waited since
+   the money landed, in calendar days; amber from 7, when the spec's later reminder is due. */
+const paidAgo=t=>{
+  if(!t.paid||!t.paidAt)return null;
+  const days=Math.round((Date.parse(TODAY+'T12:00:00')-Date.parse(isoOf(new Date(t.paidAt))+'T12:00:00'))/864e5);
+  if(!(days>=0))return null;
+  return {txt:days===0?'paid today':`paid ${days} day${days===1?'':'s'} ago`,late:days>=7};
+};
+/* A private transfer with its date set but the pickup time left for later. Trips never carry a
+   time and shared seats always do, so only transfers; past and closed rows have nothing to confirm. */
+const timeTbc=t=>!isBoard(t)&&t.mode==='single'&&!!t.date&&t.date>=TODAY&&!t.time&&!CLOSED.includes(t.stage);
 /* A confirmed van is mapped onto the 'paid' STAGE so it groups under "Needs
    vehicle" with real bookings — but it must not inherit the word "Paid", which
    would contradict the money block whenever a card is merely held or has failed.
@@ -2544,6 +2558,7 @@ function setNav(){
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
   const board=isBoard(t);
+  const pa=state.view==='date'&&dayGroup(t)==='No date yet'?paidAgo(t):null;
   /* A board row is one VAN, not one customer — say so on the row itself, and use
      the van glyph instead of the booking-channel icon. */
   const lead=board
@@ -2551,7 +2566,7 @@ function ticketRow(t,i){
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
@@ -2570,7 +2585,7 @@ function ticketRow(t,i){
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
       ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
 }
