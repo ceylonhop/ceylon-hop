@@ -1483,7 +1483,10 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
   // A refund that settles flips the BOOKING to refunded. reloadRefundDetail repaints only the
   // sheet's detail payload, so without refreshRow the header chip and queue row keep reading
   // "Paid" after the money went back — which reads as a refund that failed (owner, 2026-08-07).
-  it('refreshes the queue row on the refund actions that change booking status', async () => {
+  // The same goes for the founder's queue: refundWaitingCents feeds the "Refunds waiting" chip, the
+  // row reason and the nav badge, so every action that adds, withdraws or fails to settle a pending
+  // request must refresh the queue row too.
+  it('refreshes the queue row on every refund action that changes booking status or the waiting refund', async () => {
     const body = await uiBody();
     // Bounded to ONE case block: split on the label, then cut at the next one. Without the second
     // cut the slice runs to the end of the file, so an assertion about refundconfirm would be
@@ -1499,7 +1502,22 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(fire).toContain('await refreshRow(bookingId)');
     expect(handler('refundexecute')).toContain('fireRefund(id,refundId)');
     expect(handler('refundrequest')).toContain('fireRefund(id,refund&&refund.id)');
+    // Withdrawing a request removes it from the founder's queue.
+    // refundcancel is the LAST case in the switch, so the label split alone runs to the end of the
+    // file; cut at the block's closing brace or the assertion is satisfied by unrelated code.
+    const cancel = handler('refundcancel').split('\n    }\n')[0];
+    expect(cancel).toContain('await refreshRow(id)');
+    // An ops request ADDS a pending refund (the !willFire branch), so the founder's chip must move.
+    const opsBranch = (handler('refundrequest').match(/if\(!willFire\)\{[^}]*\}/) ?? [''])[0];
+    expect(opsBranch).toContain('await reloadRefundDetail(id)');
+    expect(opsBranch).toContain('await refreshRow(id)');
+    // A founder's one-press request that fails before PayHere claims the row leaves it manual_pending
+    // — a new waiting refund — so fireRefund's FAILURE path refreshes the queue as well.
+    const fireFailure = fire.slice(fire.indexOf('catch(err)'));
+    expect(fire.indexOf('catch(err)')).toBeGreaterThan(-1);
+    expect(fireFailure).toContain('await refreshRow(bookingId)');
     // Guard the guard: each slice must be a plausible single handler, not the rest of the file.
+    expect(cancel.length).toBeLessThan(3000);
     expect(handler('refundconfirm').length).toBeLessThan(3000);
     expect(handler('refundexecute').length).toBeLessThan(3000);
     expect(fire.length).toBeLessThan(3000);

@@ -98,7 +98,7 @@ describe('manual refund ledger API', () => {
     expect(
       (
         await fin.app.request(`/admin/bookings/${fin.booking.id}/refunds`, {
-          headers: { cookie: await cookie('founder@test') },
+          headers: { cookie: await cookie('finance@test') },
         })
       ).status,
     ).toBe(200);
@@ -664,7 +664,7 @@ describe('founder approval (spec 2026-10-17)', () => {
     expect(sent[0].body).toContain('Customer request');
     expect(sent[0].body).toContain(`of ${(booking.total / 100).toFixed(2)} USD paid`);
 
-    await requestRefund(app, booking.id, 100, 'founder@test');
+    expect((await requestRefund(app, booking.id, 100, 'founder@test')).status).toBe(201);
     expect(alerts.sent.filter((a) => a.kind === 'refund_requested')).toHaveLength(1);
   });
 

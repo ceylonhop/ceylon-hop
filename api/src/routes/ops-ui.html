@@ -3922,8 +3922,9 @@ function opsGraceOpen(d, now){
   return age < REFUND_CUTOFF_MS;
 }
 
-/* Owner rule 2026-08-02: an ops agent may cancel/refund up to 24 hours before the trip starts
-   and must give a reason; a founder may at any time. Mirrors mayReverse() on the server. */
+/* Owner rule 2026-08-02: an ops agent may CANCEL up to 24 hours before the trip starts and must
+   give a reason; a founder may at any time. Mirrors mayReverse() on the server. Refund requests
+   are not held to it (owner, 2026-10-17) — this guards cancelling only. */
 function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('payments:reverse')) return true; // founder, unlimited
   const detail = d || state.detailData;
@@ -4026,7 +4027,9 @@ function refundHtmlFor(t,d){
        retried from here — the money may already have moved. Mirrors the refund_api_indeterminate
        alert, which says the same thing in the same words. */
     const stuck=r.status==='api_processing'
-      ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`:'';
+      ?(mayFire
+        ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`
+        :`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. A founder must resolve it; do not request it again.</p>`):'';
     /* Full or partial at a glance (spec 2026-10-17 §5): an empty amount box means "everything",
        and a founder approving quickly must see which one this is. */
     const scope=r.status==='manual_pending'
@@ -4428,7 +4431,9 @@ async function fireRefund(bookingId, refundId){
     return true;
   }catch(err){
     if(err.message==='auth')return false;
-    await reloadRefundDetail(bookingId);
+    /* refreshRow too: a failure before PayHere claims the row leaves it manual_pending, i.e. a new
+       waiting refund — the founder's chip and queue row read that from the list, not the sheet. */
+    await reloadRefundDetail(bookingId);await refreshRow(bookingId);
     if(err.message==='refund_outcome_unknown'){toast('PayHere did not answer — check PayHere before retrying','error');}
     else if(err.message==='refund_declined'){toast('PayHere declined the refund — see the reason on the row','error');}
     else if(err.message==='refund_api_unavailable'){toast('PayHere Refund API not configured — complete it on the row below','error');}
@@ -4915,7 +4920,7 @@ document.addEventListener('click',async e=>{
       try{
         const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason,...(paymentId?{paymentId}:{})});
         clearInput(reasonEl);clearInput(amountEl);
-        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — waiting for a founder');break;}
+        if(!willFire){await reloadRefundDetail(id);await refreshRow(id);toast('Refund requested — waiting for a founder');break;}
         /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the
            manual route below still works — i.e. a failure lands exactly where the old two-step
            flow left you, never somewhere new. */
@@ -4971,7 +4976,7 @@ document.addEventListener('click',async e=>{
       const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
       if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);await refreshRow(id);toast('Refund request cancelled');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
