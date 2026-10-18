@@ -48,6 +48,7 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
   deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
   balance_received: { templateKey: 'balance-received', source: 'payment_webhook', actorType: 'provider' },
+  schedule_set: { templateKey: 'booking-schedule-set', source: 'ops', actorType: 'staff' },
 };
 
 function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
@@ -1107,6 +1108,42 @@ export async function sendDetailsNeeded(
     html,
     text,
     tracking: emailTracking(booking, 'details_needed'),
+  });
+}
+
+// ── Your pickup is set (date/time filled or changed after booking) ─────────
+// Spec 2026-10-17 §4. The reader is often abroad, so the time is labelled Sri Lanka time and the
+// weekday is spelled out — this is where a wrong date is easiest to catch.
+export async function sendScheduleSet(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  if (booking.mode !== 'single' || !booking.input.date) return;
+  const first = esc(booking.input.customer.firstName);
+  const when = booking.input.time
+    ? `${fmtDate(booking.input.date)} · ${booking.input.time} (Sri Lanka time)`
+    : `${fmtDate(booking.input.date)} · pickup time to confirm`;
+  const html = page(
+    brandHeader() +
+      introBlock('Pickup set', TEAL_DEEP, `Your pickup is set, ${first}`, `${esc(when)}. Please check it now.`) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('Something not right?', 'Message us on WhatsApp with your booking reference and we will fix it.') +
+      footer(),
+  );
+  const text = textShell('your pickup is set', `${when}. Please check it now.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Something not right? Message us on WhatsApp with your booking reference.',
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your pickup is set — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'schedule_set'),
   });
 }
 
