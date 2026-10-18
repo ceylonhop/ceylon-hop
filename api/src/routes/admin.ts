@@ -612,12 +612,14 @@ export function adminRoutes(deps: {
     if (c.req.query('dryRun')) {
       const preview = await runScheduledNotifications(new Date(), {
         bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true, correlation,
+        payments: deps.payments, rideOps: deps.rideOps,
       });
       return c.json({ ...preview, dryRun: true }, 200);
     }
 
     const result = await runScheduledNotifications(new Date(), {
       bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, correlation,
+      payments: deps.payments, rideOps: deps.rideOps,
     });
     let staleSharedHolds = 0;
     try {
