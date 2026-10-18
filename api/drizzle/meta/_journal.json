@@ -498,6 +498,13 @@
       "when": 1791936000000,
       "tag": "0071_usage_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0072_booking_schedule_events",
+      "breakpoints": true
     }
   ]
 }
