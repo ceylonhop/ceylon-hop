@@ -749,7 +749,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
     expect(stuck).toHaveLength(1);
     expect(stuck[0].severity).toBe('warning');
     expect(stuck[0].title).toContain('CH-Y5RXW');
-    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX, cancel this duplicate.');
+    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX. Leave this one: cancelling it from ops emails the customer a cancellation for the trip they paid for.');
   });
 
   it('counts any later lifecycle status as paid (confirmed, in progress, completed)', async () => {
@@ -777,7 +777,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       expect(email.sent).toHaveLength(1);
       const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
       expect(stuck[0].severity).toBe('critical');
-      expect(stuck[0].body).not.toContain('cancel this duplicate');
+      expect(stuck[0].body).not.toContain('Customer paid for the same trip');
     });
   }
 
@@ -816,7 +816,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
       expect(stuck).toHaveLength(1);
       expect(stuck[0].severity).toBe('warning');
-      expect(stuck[0].body).toContain('Customer paid for the same trip on CH-SK8U8, cancel this duplicate.');
+      expect(stuck[0].body).toContain('Customer paid for the same trip on CH-SK8U8. Leave this one');
     });
   }
 
@@ -835,7 +835,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       expect(email.sent).toHaveLength(1);
       const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
       expect(stuck[0].severity).toBe('critical');
-      expect(stuck[0].body).not.toContain('cancel this duplicate');
+      expect(stuck[0].body).not.toContain('Customer paid for the same trip');
     });
   }
 });

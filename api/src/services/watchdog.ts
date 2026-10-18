@@ -14,7 +14,7 @@ import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl, roadLines, routeText, travelWhenText } from './notifications';
 import { bookingDeepLink } from './opsNotifications';
 import { isTeamEmail } from './testBookings';
-import { personKey, sameTrip } from './duplicateBookings';
+import { personKey, sameTripOrUndatedRetry } from './duplicateBookings';
 import type { RideListRepo } from '../db/rideListRepo';
 import { cutoffAt, isSeedMember, type Slot } from '../domain/rideList';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
@@ -225,14 +225,16 @@ export async function runWatchdog(
     const paidOn = paidDuplicateOf(b, settled);
     if (paidOn) {
       // Nothing to chase — the money came in on the other booking. Still tell ops, but as a
-      // chore (cancel the leftover), not an incident; and never email the customer about it.
+      // warning, not an incident; and never email the customer about it.
       const gateway = payments ? paymentRows.get(b.id) ?? [] : null;
       await alerts.send({
         severity: 'warning',
         kind: 'watchdog_stuck_pending',
         title: `Booking ${b.reference} stuck in payment_pending — the customer paid on ${paidOn.reference}`,
         body:
-          `Customer paid for the same trip on ${paidOn.reference}, cancel this duplicate.\n` +
+          // The settle path should already have closed it quietly. The ops Cancel button emails the
+          // customer "Your booking is cancelled" (admin.ts), so never steer ops to it here.
+          `Customer paid for the same trip on ${paidOn.reference}. Leave this one: cancelling it from ops emails the customer a cancellation for the trip they paid for.\n` +
           stuckPendingBody(b, now, gateway, `not sent — the customer already paid on ${paidOn.reference}`, opsBaseUrl ?? ''),
         dedupeKey: b.id,
       });
@@ -465,7 +467,7 @@ async function sweepOverdueRideLists(now: Date, rideLists: RideListRepo, alerts:
 // A booking is money in once it reaches any of these (the lifecycle only moves forward from paid).
 const PAID_OR_LATER = ['paid', 'confirmed', 'in_progress', 'completed'] as const;
 
-// personKey / sameTrip live in ./duplicateBookings — the settle path closes the same duplicates.
+// personKey / sameTripOrUndatedRetry live in ./duplicateBookings — the settle path closes the same duplicates.
 
 // A paid booking by the same person for the same trip, made AFTER this stuck one — i.e. they came
 // back and paid again rather than finishing this checkout. Null when there is none.
@@ -474,21 +476,8 @@ function paidDuplicateOf(b: Booking, settled: Booking[]): Booking | null {
   if (!who) return null;
   const since = Date.parse(b.createdAt);
   return (
-    settled.find(
-      (p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && (sameTrip(b, p) || sameRouteOneUndated(b, p)),
-    ) ?? null
+    settled.find((p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && sameTripOrUndatedRetry(b, p)) ?? null
   );
-}
-
-// sameTrip matches no undated booking, so a customer who retried a private transfer with "Decide
-// later" and paid that one was chased for the dated checkout they abandoned (CH-7EWG7 → CH-SK8U8,
-// 2026-10-18). Watchdog only, on purpose: here a match just stops the chase and downgrades the page,
-// while the settle path's closeOlderDuplicates CANCELS on a match, and that keeps the strict rule.
-function sameRouteOneUndated(a: Booking, b: Booking): boolean {
-  if (a.mode !== 'single' || b.mode !== 'single') return false;
-  if (a.input.date && b.input.date) return false;
-  const norm = (s: string | undefined) => String(s ?? '').trim().toLowerCase();
-  return norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
 }
 
 // Everything the reader used to have to open three tables for (CH-V43ZU). The one fact
