@@ -474,8 +474,21 @@ function paidDuplicateOf(b: Booking, settled: Booking[]): Booking | null {
   if (!who) return null;
   const since = Date.parse(b.createdAt);
   return (
-    settled.find((p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && sameTrip(b, p)) ?? null
+    settled.find(
+      (p) => p.id !== b.id && personKey(p) === who && Date.parse(p.createdAt) > since && (sameTrip(b, p) || sameRouteOneUndated(b, p)),
+    ) ?? null
   );
+}
+
+// sameTrip matches no undated booking, so a customer who retried a private transfer with "Decide
+// later" and paid that one was chased for the dated checkout they abandoned (CH-7EWG7 → CH-SK8U8,
+// 2026-10-18). Watchdog only, on purpose: here a match just stops the chase and downgrades the page,
+// while the settle path's closeOlderDuplicates CANCELS on a match, and that keeps the strict rule.
+function sameRouteOneUndated(a: Booking, b: Booking): boolean {
+  if (a.mode !== 'single' || b.mode !== 'single') return false;
+  if (a.input.date && b.input.date) return false;
+  const norm = (s: string | undefined) => String(s ?? '').trim().toLowerCase();
+  return norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
 }
 
 // Everything the reader used to have to open three tables for (CH-V43ZU). The one fact

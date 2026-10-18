@@ -713,7 +713,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       time: over.time ?? '09:00', seats: 1, bags: 1, customer: { ...customer, email: over.email ?? customer.email },
     },
   });
-  function mk(reference: string, status: string, createdAt: string, trip: ReturnType<typeof shared>) {
+  function mk(reference: string, status: string, createdAt: string, trip: { mode: string; input: object }) {
     return {
       id: `id-${reference}`, reference, status, createdAt, channel: 'website', currency: 'USD', total: 5498, amountDueNow: 5498,
       ...trip,
@@ -774,6 +774,64 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       const alerts = new FakeAlertAdapter();
       const email = new FakeEmailAdapter();
       await runWatchdog(new Date(T0 + 180 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail });
+      expect(email.sent).toHaveLength(1);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck[0].severity).toBe('critical');
+      expect(stuck[0].body).not.toContain('cancel this duplicate');
+    });
+  }
+
+  // CH-7EWG7 / CH-SK8U8 (2026-10-18): the customer checked out a private transfer for 19 Oct 09:00,
+  // then 42 s later retried the same route with "Decide later" and PAID that one. sameTrip() matches
+  // no undated booking, so the watchdog paged CRITICAL every 30 min and emailed the paying customer
+  // to finish paying. Here (and only here — the settle path's auto-cancel keeps the strict rule) an
+  // undated side counts as the same transfer when the person and the route match.
+  const single = (over: Partial<{ from: string; to: string; date: string | undefined; time: string | undefined }> = {}) => ({
+    mode: 'single' as const,
+    input: {
+      from: over.from ?? 'C1 Colombo Fort, Mudalige Mawatha, Colombo, Sri Lanka',
+      to: over.to ?? 'Sigiri Aliya Tree house, Sigiriya, Sri Lanka',
+      date: 'date' in over ? over.date : TRAVEL, time: 'time' in over ? over.time : '09:00',
+      vehicleType: 'van', adults: 2, children: 1, bags: 3, customer,
+    },
+  });
+  const undated = () => single({ date: undefined, time: undefined });
+
+  for (const [what, stuckTrip, paidTrip] of [
+    ['a dated checkout, then the same route paid with "Decide later"', single(), undated()],
+    ['a "Decide later" checkout, then the same route paid with a date', undated(), single()],
+    ['both undated', undated(), undated()],
+  ] as const) {
+    it(`private transfer, ${what}: no recovery email, a WARNING naming the paid booking`, async () => {
+      const bookings = repo([
+        mk('CH-7EWG7', 'payment_pending', at(0), stuckTrip),
+        mk('CH-SK8U8', 'paid', at(1), paidTrip),
+      ]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      const log = new InMemoryNotificationLogRepo();
+      await runWatchdog(new Date(T0 + 36 * MIN), { bookings, log, alerts, email, ...mail });
+      expect(email.sent).toHaveLength(0);
+      expect(await log.wasSent('id-CH-7EWG7', 'payment_recovery')).toBe(false);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck).toHaveLength(1);
+      expect(stuck[0].severity).toBe('warning');
+      expect(stuck[0].body).toContain('Customer paid for the same trip on CH-SK8U8, cancel this duplicate.');
+    });
+  }
+
+  // A missing date waives only the date: route, person and order still have to match.
+  for (const [what, paid] of [
+    ['a different pickup', () => mk('CH-SK8U8', 'paid', at(1), single({ from: 'Negombo', date: undefined, time: undefined }))],
+    ['a different drop-off', () => mk('CH-SK8U8', 'paid', at(1), single({ to: 'Kandy', date: undefined, time: undefined }))],
+    ['a paid undated booking made BEFORE the stuck one', () => mk('CH-SK8U8', 'paid', at(-20), undated())],
+    ['two different dates', () => mk('CH-SK8U8', 'paid', at(1), single({ date: futureIsoDate(8) }))],
+  ] as const) {
+    it(`private transfer, ${what}: the usual recovery email and critical page`, async () => {
+      const bookings = repo([mk('CH-7EWG7', 'payment_pending', at(0), single()), paid()]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 36 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail });
       expect(email.sent).toHaveLength(1);
       const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
       expect(stuck[0].severity).toBe('critical');
