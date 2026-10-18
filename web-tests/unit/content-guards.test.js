@@ -24,6 +24,8 @@ describe('content guards (guides + FAQ sources)', () => {
       expect(text, 'never call Ravana a "demon"').not.toMatch(/demon/i);
       expect(text, 'trains run to Peradeniya/Gampola since 2 Oct 2026').not.toMatch(/Rambukkana/i);
       expect(text, 'no arrivals meet-and-greet').not.toMatch(/meet you at arrivals/i);
+      expect(text, 'no derailment history (owner, 2026-10-17)').not.toMatch(/derail/i);
+      expect(text, 'no hill-line reopening date: the railway has not given one').not.toMatch(/reopen[^.]*202[6-9]|aiming for the end of/i);
     });
   }
   it('guides and trip-page copy promise an airport pickup, not a driver who meets you', () => {
