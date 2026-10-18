@@ -541,6 +541,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .addon.on .box{background:var(--accent);border-color:var(--accent)}
   .addon .box svg{width:13px;height:13px;opacity:0}.addon.on .box svg{opacity:1}
   .addon b{display:block;font-size:.95rem}.addon small{color:var(--ink-soft)}
+  .addon .addon-note{display:block;margin-top:4px;color:var(--ink);font-weight:600}
   .addon .pr{margin-left:auto;font-weight:600;white-space:nowrap}
 
   /* ── Partner experiences (step 3 block + summary line). Owner-approved compact rows (Option B,
@@ -1014,7 +1015,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="cap-note" id="cap-note"></div>
       <div id="extras-block">
         <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
-        <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></span><span class="pr">+$10</span></button>
+        <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small><small class="addon-note">Stops must be on your route — no detours off it.</small></span><span class="pr">+$10</span></button>
       </div>
       <!-- Partner experiences near the drop-off (spec docs/superpowers/specs/2026-10-06-partner-experiences-design.md).
            Hidden until booking.js syncExperiences() gets a non-empty answer from GET /experiences/near; an
