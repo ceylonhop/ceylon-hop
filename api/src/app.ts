@@ -14,6 +14,7 @@ import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import type { Ga4Adapter } from './adapters/ga4';
 import type { TripadvisorAdapter } from './adapters/tripadvisor';
+import type { ImageStore } from './adapters/imageStore';
 import { createGa4Reporter } from './services/analytics/ga4Reporter';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
@@ -122,6 +123,8 @@ export interface AppDeps {
   tripadvisor?: TripadvisorAdapter;
   /** Tripadvisor's logo, shown beside every bubble rating (their display rules). No logo = no ratings. */
   tripadvisorLogoUrl?: string;
+  /** Experience photo uploads (spec 2026-10-17). Absent/null = uploads off. */
+  photoStore?: { store: ImageStore; publicOrigin: string } | null;
   experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
@@ -701,7 +704,7 @@ export function createApp(deps: AppDeps = {}) {
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
-  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, auth: opsAuthCfg, allowedOrigins }));
+  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, photos: deps.photoStore, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions, experienceInterests,
     auth: opsAuthCfg,

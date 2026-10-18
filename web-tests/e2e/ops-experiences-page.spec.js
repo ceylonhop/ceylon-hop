@@ -1000,3 +1000,60 @@ test('a slow Catalogue reload that lands after a newer one cannot put the old co
   await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
   await expect(rows(page).nth(2)).toContainText('1 paid');
 });
+
+// Photo upload (spec 2026-10-17 P6).
+const UPLOADED = 'https://img-staging.ceylonhop.com/experiences/5f0c2a3e-7b1d-4c2e-9a6f-0d1e2f3a4b5c';
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const withUploads = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, uploads: true })) };
+
+async function stubUpload(page, reply) {
+  const posts = [];
+  // Registered after boot's '**/admin/experiences/*' route: Playwright prefers the last match.
+  await page.route('**/admin/experiences/photos', (r) => { posts.push(r.request().postDataBuffer()); return reply(r); });
+  await page.route('https://img-staging.ceylonhop.com/**', (r) => r.fulfill({ status: 200, contentType: 'image/gif', body: GIF }));
+  return posts;
+}
+
+async function pickPhoto(page, slot) {
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('[data-testid="exp-photo-upload-' + slot + '"]').click();
+  await (await chooser).setFiles({ name: 'p.png', mimeType: 'image/png', buffer: PNG });
+}
+
+test('upload: a picked photo is shrunk to two JPEGs, fills the slot and previews at once', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  const posts = await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await pickPhoto(page, 0);
+  await expect(page.locator('#exp-photo-0')).toHaveValue(UPLOADED);
+  await expect(page.locator('#exp-photo-0-prev img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
+  await expect(page.locator('#exp-photo-0-prev [data-testid="exp-photo-note"]')).toHaveCount(0);
+  expect(posts).toHaveLength(1);
+  const body = posts[0].toString('latin1');
+  expect(body).toContain('name="large"');
+  expect(body).toContain('name="small"');
+  expect(body.split('\xff\xd8\xff').length - 1).toBe(2); // two JPEGs, even from a PNG
+});
+
+test('upload: no Upload buttons when the server has uploads off', async ({ page }) => {
+  await boot(page, OPS);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await expect(page.locator('#exp-photo-0')).toBeVisible();
+  await expect(page.locator('[data-testid^="exp-photo-upload-"]')).toHaveCount(0);
+});
+
+test('upload: a failed upload says so and leaves the slot as it was', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await stubUpload(page, (r) => r.fulfill(json({ error: 'upload_failed' }, 502)));
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await pickPhoto(page, 2);
+  await expect(page.locator('[data-err="photos"]')).toHaveText('Upload failed — try again.');
+  await expect(page.locator('#exp-photo-2')).toHaveValue('');
+  await expect(page.locator('[data-testid="exp-photo-upload-2"]')).toHaveText('Upload');
+});
