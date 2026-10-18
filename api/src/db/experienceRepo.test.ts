@@ -52,6 +52,15 @@ function contract(name: string, make: () => Promise<ExperienceRepo>, slugPrefix:
       expect((await repo.patch(made.id, { tripadvisorLocationId: null }))!.tripadvisorLocationId).toBeNull();
     });
 
+    it('the Google place id round-trips, defaults to null and can be set and cleared by patch', async () => {
+      const plain = await repo.create(input(s('gp-none')));
+      expect(plain.googlePlaceId).toBeNull();
+      const made = await repo.create(input(s('gp'), { googlePlaceId: 'ChIJN1t_tDeuEmsRUsoyG83frY4' }));
+      expect((await repo.get(made.id))!.googlePlaceId).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
+      expect((await repo.patch(made.id, { active: false }))!.googlePlaceId).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
+      expect((await repo.patch(made.id, { googlePlaceId: null }))!.googlePlaceId).toBeNull();
+    });
+
     it('get of an unknown id is null', async () => {
       expect(await repo.get('00000000-0000-4000-8000-000000000000')).toBeNull();
     });

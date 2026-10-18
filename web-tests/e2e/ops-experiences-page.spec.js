@@ -196,7 +196,7 @@ test('create: the POST carries cents, weekdays, times and photos, and the row ap
     slug: 'test-sunrise-hike', name: 'Sunrise hike', partnerName: 'Hill Guides', areaLabel: 'Ella',
     summary: 'Walk up for the sunrise.', details: '', priceCents: 3550, priceUnit: 'per_group', durationText: '2 hrs',
     openWeekdays: [1, 2, 3], startTimes: ['06:00', '14:30'], lat: 7.977, lng: 80.76, radiusKm: 8,
-    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, active: true,
+    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, googlePlaceId: null, active: true,
   }]);
   await expect(page.locator('#exp-form')).toHaveCount(0);
 });
@@ -1107,4 +1107,110 @@ test('tiles: with uploads off the form keeps the plain path boxes', async ({ pag
   await expect(tiles(page)).toHaveCount(0);
   await expect(page.locator('[data-testid="exp-photo-add"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="exp-photo-paths"]')).toHaveCount(0);
+});
+
+// "Find the business on Google" (2026-10-18). Search on = the catalogue GET says businessSearch: true.
+const BIZ = {
+  placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
+  lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+};
+const withBusiness = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, businessSearch: true })) };
+
+// Registered after boot's '**/admin/experiences/*' route: Playwright prefers the last match.
+async function stubBusiness(page, { search, details } = {}) {
+  const calls = { search: [], details: [] };
+  await page.route('**/admin/experiences/business-search**', (r) => {
+    const q = new URL(r.request().url()).searchParams.get('q');
+    calls.search.push(q);
+    if (search) return search(r, q);
+    const { placeId, name, address, lat, lng } = BIZ;
+    return r.fulfill(json({ candidates: [{ placeId, name, address, lat, lng }] }));
+  });
+  await page.route('**/admin/experiences/business/*', (r) => {
+    const id = r.request().url().split('/').pop();
+    calls.details.push(id);
+    if (details) return details(r, id);
+    return r.fulfill(json({ business: BIZ }));
+  });
+  return calls;
+}
+
+async function openNew(page) {
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+}
+
+test('business: picking a Google result fills partner, area, pin and contact, and Save keeps the place id', async ({ page }) => {
+  const calls = await boot(page, OPS, withBusiness);
+  const biz = await stubBusiness(page);
+  await openNew(page);
+  await expect(page.locator('#exp-loc')).toBeHidden(); // the pin comes from Google; the box is behind a link
+  await page.locator('#exp-biz-q').fill('atherya sigiriya');
+  await page.locator('#exp-biz-q').press('Enter');
+  const pick = page.locator('[data-testid="exp-biz-result"]');
+  await expect(pick).toHaveCount(1);
+  await expect(pick).toContainText('Atherya Ayurveda Spa');
+  await expect(pick).toContainText('Kibissa, Sigiriya 21120, Sri Lanka');
+  await pick.click();
+  await expect(page.locator('#exp-partner')).toHaveValue('Atherya Ayurveda Spa');
+  await expect(page.locator('#exp-area')).toHaveValue('Sigiriya');
+  await expect(page.locator('#exp-contact')).toHaveValue('+94 77 123 4567 · https://atherya.lk/');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.9571 · Lng 80.7601');
+  await expect(page.locator('[data-testid="exp-biz-picked"]')).toContainText('Atherya Ayurveda Spa');
+  expect(biz.search).toEqual(['atherya sigiriya']);
+  expect(biz.details).toEqual([BIZ.placeId]);
+
+  await page.locator('#exp-slug').fill('ayurvedic-massage');
+  await page.locator('#exp-name').fill('Ayurvedic massage');
+  await page.locator('#exp-summary').fill('A 90-minute massage.');
+  await page.locator('#exp-price').fill('35');
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.post.length).toBe(1);
+  expect(calls.post[0]).toMatchObject({
+    partnerName: 'Atherya Ayurveda Spa', areaLabel: 'Sigiriya', lat: 7.9571, lng: 80.7601,
+    partnerContact: '+94 77 123 4567 · https://atherya.lk/', googlePlaceId: BIZ.placeId,
+  });
+});
+
+test('business: "Enter the location by hand" shows the lat/lng box', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await page.locator('[data-action="expLocManual"]').click();
+  await expect(page.locator('#exp-loc')).toBeVisible();
+  await expect(page.locator('[data-action="expLocManual"]')).toBeHidden();
+  await page.locator('#exp-loc').fill('7.977, 80.76');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.977 · Lng 80.76');
+});
+
+test('business: no match, and Google unavailable, each say so and leave the form alone', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  let off = false;
+  await stubBusiness(page, { search: (r) => (off ? r.fulfill(json({ error: 'business_off' }, 503)) : r.fulfill(json({ candidates: [] }))) });
+  await openNew(page);
+  await page.locator('#exp-biz-q').fill('nothing here');
+  await page.locator('[data-action="expBizSearch"]').click();
+  await expect(page.locator('[data-testid="exp-biz-msg"]')).toHaveText('No match on Google — try the business name and town, or enter the details by hand.');
+  off = true;
+  await page.locator('[data-action="expBizSearch"]').click();
+  await expect(page.locator('[data-testid="exp-biz-msg"]')).toHaveText('Google search isn’t available right now — enter the details by hand.');
+  await expect(page.locator('#exp-partner')).toHaveValue('');
+});
+
+test('business: editing an experience shows its pin, not an empty box', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('#exp-loc')).toBeHidden();
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.977 · Lng 80.76');
+});
+
+test('business: with no Google key the form has no search and keeps the lat/lng box', async ({ page }) => {
+  await boot(page, OPS);
+  await openNew(page);
+  await expect(page.locator('#exp-biz-q')).toHaveCount(0);
+  await expect(page.locator('#exp-loc')).toBeVisible();
 });

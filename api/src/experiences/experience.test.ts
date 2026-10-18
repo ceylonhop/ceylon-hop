@@ -90,3 +90,21 @@ describe('uploaded photos (spec 2026-10-17 P2)', () => {
     });
   });
 });
+
+describe('Google place id (2026-10-18)', () => {
+  it('defaults to null and accepts a real-shaped id', () => {
+    expect(ExperienceInputSchema.parse(valid).googlePlaceId).toBeNull();
+    expect(ExperienceInputSchema.parse({ ...valid, googlePlaceId: 'ChIJN1t_tDeuEmsRUsoyG83frY4' }).googlePlaceId).toBe('ChIJN1t_tDeuEmsRUsoyG83frY4');
+  });
+  it('refuses a URL, a short string and spaces (it is spliced into a Google API path)', () => {
+    expect(ExperienceInputSchema.safeParse({ ...valid, googlePlaceId: 'a'.repeat(255) }).success).toBe(true);
+    for (const bad of ['https://maps.google.com/?cid=1', 'short', 'ChIJ with spaces', 'a'.repeat(256)]) {
+      expect(ExperienceInputSchema.safeParse({ ...valid, googlePlaceId: bad }).success, bad).toBe(false);
+    }
+  });
+  it('is ops-only: never on the public shape', () => {
+    const e: Experience = { ...ExperienceInputSchema.parse({ ...valid, googlePlaceId: 'ChIJN1t_tDeuEmsRUsoyG83frY4' }), id: 'x', currency: 'USD',
+      createdBy: null, updatedBy: null, createdAt: new Date(), updatedAt: new Date() };
+    expect(JSON.stringify(toPublicExperience(e))).not.toContain('ChIJ');
+  });
+});
