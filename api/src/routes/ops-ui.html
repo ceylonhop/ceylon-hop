@@ -3787,6 +3787,7 @@ function buildActivity(t,d){
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
   (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
+  (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }

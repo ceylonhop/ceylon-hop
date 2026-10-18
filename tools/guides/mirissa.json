@@ -54,7 +54,7 @@
         "sell": "West from Tissamaharama past the lagoons and salt pans, then along the coast through Tangalle and Dickwella. Leave after your morning game drive and you’re on the beach for sunset."
       }
     ],
-    "train": "<b>Mirissa has its own station, but few trains stop there.</b> A train or two a day from Colombo Fort calls at Mirissa; more stop at Weligama, 10–15 minutes away. Allow 3–4 hours. The coastal line has had derailments and closures in the past year — November 2025 and April 2026 — so check before you rely on it. We drive it door to door, and the expressway is quicker."
+    "train": "<b>Mirissa has its own station, but few trains stop there.</b> A train or two a day from Colombo Fort calls at Mirissa; more stop at Weligama, 10–15 minutes away. Allow 3–4 hours. We drive it door to door, and the expressway is quicker."
   },
   "places": [
     {
@@ -445,7 +445,7 @@
         },
         {
           "q": "Can I take the train?",
-          "a": "<p>Yes, but only a train or two a day from Colombo Fort stops at Mirissa itself; more stop at Weligama, 10–15 minutes away by tuk-tuk. Allow 3–4 hours. The coastal line was disrupted by derailments in November 2025 and April 2026, so check the timetable before you go.</p>"
+          "a": "<p>Yes, but only a train or two a day from Colombo Fort stops at Mirissa itself; more stop at Weligama, 10–15 minutes away by tuk-tuk. Allow 3–4 hours. Check the timetable before you go.</p>"
         },
         {
           "q": "What about the bus?",

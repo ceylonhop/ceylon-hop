@@ -381,7 +381,12 @@ export function opsRoutes(deps: OpsDeps) {
       confirmationChannel: i.confirmationChannel,
     }));
     const scheduleEvents = await deps.bookings.listScheduleEvents(b.id);
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests, scheduleEvents });
+    // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
+    const reminders = deps.notificationLog
+      ? (await deps.notificationLog.listByBookingId(b.id).catch(() => []))
+          .filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2')
+      : [];
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests, scheduleEvents, reminders });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
