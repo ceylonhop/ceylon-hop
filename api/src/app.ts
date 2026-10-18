@@ -653,7 +653,7 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
-    experiences, experienceInterests,
+    experiences, experienceInterests, allowedOrigins,
     ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
     ...(communicationTrackingEnabled ? { customerCommunications } : {}),
   }));
