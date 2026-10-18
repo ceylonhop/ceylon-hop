@@ -975,6 +975,17 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-exp-prev { display: flex; align-items: center; gap: 8px; }
 .qv .ch-exp-prev .ch-exp-img { width: 72px; height: 48px; border-radius: 4px; margin-top: 6px; }
 .qv .ch-exp-note, .qv .ch-exp-err { font-size: 11.5px; color: var(--red); line-height: 1.35; }
+/* Photo tiles (uploads on): a thumbnail per photo with Replace / Remove, then an "Add photo" tile. */
+.qv .ch-exp-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+.qv .ch-exp-tiles[hidden] { display: none; }
+.qv .ch-exp-tile { width: 150px; }
+.qv .ch-exp-tile-img { width: 150px; height: 100px; border-radius: var(--r-sm); background: var(--cream); overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; }
+.qv .ch-exp-tile-img .ch-exp-img { width: 100%; height: 100%; }
+.qv .ch-exp-tile-img .ch-exp-note { padding: 0 8px; }
+.qv .ch-exp-tile-acts { display: flex; gap: 6px; margin-top: 6px; }
+.qv .ch-exp-tile-acts .ch-btn { flex: 1; justify-content: center; padding-left: 0; padding-right: 0; }
+.qv .ch-exp-tile-add { width: 150px; height: 100px; justify-content: center; }
+.qv .ch-exp-photo-link { display: block; text-align: left; background: none; border: 0; padding: 0; margin-top: 10px; color: var(--teal); font: inherit; font-size: 12.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .qv .ch-exp-err:empty { display: none; }
 .qv .ch-lead-row .ch-input-wrap { width: 150px; }
 .qv .ch-lead-row .ch-lead-amt { width: 90px; }
@@ -9565,15 +9576,19 @@ function renderExpForm(e) {
     return '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-day-' + i + '"' + (d.openWeekdays.indexOf(i) >= 0 ? ' checked' : '') + '> ' + n + '</label>';
   }).join('');
   var up = !!(expData && expData.uploads);
+  // The six path inputs are the source of truth (expSave reads them). With uploads on they hide behind
+  // "Use a photo already on the site" and ops works with tiles (expRenderPhotoTiles) instead.
   var photos = '';
   for (var i = 0; i < 6; i++) {
-    photos += '<div style="display:flex;gap:6px;align-items:center;margin-top:' + (i ? 6 : 0) + 'px">'
-      + '<div class="ch-input-wrap" style="flex:1"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1') + '" value="' + esc(d.photos[i] || '') + '"></div>'
-      + (up ? '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoPick" data-slot="' + i + '" data-testid="exp-photo-upload-' + i + '">Upload</button>' : '')
-      + '</div>'
+    photos += '<div class="ch-input-wrap" style="margin-top:' + (i ? 6 : 0) + 'px"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="' + (up ? 'guides/sigiriya/ayurveda' : 'experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1')) + '" value="' + esc(d.photos[i] || '') + '"></div>'
       + '<div class="ch-exp-prev" id="exp-photo-' + i + '-prev"></div>';
   }
-  if (up) photos += '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
+  if (up) {
+    photos = '<div class="ch-exp-tiles" id="exp-photo-tiles"></div>'
+      + '<div id="exp-photo-paths" hidden><div class="ch-exp-meta" style="margin-bottom:6px">A photo already on the site: its path under img/, without -900/-1800.</div>' + photos + '</div>'
+      + '<button type="button" class="ch-exp-photo-link" data-action="expPhotoPaths" data-testid="exp-photo-paths">Use a photo already on the site</button>'
+      + '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
+  }
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
     + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
@@ -9589,7 +9604,7 @@ function renderExpForm(e) {
     + expInput('duration', 'Duration', d.durationText || '', ' placeholder="90 min"')
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
-    + expField('photos', up ? 'Photos (up to 6 — upload one, or type a path under img/ without -900/-1800)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
+    + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
     + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
       + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
@@ -9657,6 +9672,46 @@ function expPhotoPreview(i) {
       : '';
 }
 
+// Photo tiles (uploads on): a thumbnail per filled slot with Replace / Remove, then one "Add photo" tile
+// for the first empty slot. Rebuilt from the path inputs after every change.
+function expRenderPhotoTiles() {
+  var host = document.getElementById('exp-photo-tiles');
+  if (!host) return;
+  var html = '', free = -1;
+  for (var i = 0; i < 6; i++) {
+    var inp = document.getElementById('exp-photo-' + i), stem = inp ? inp.value.trim() : '';
+    if (!stem) { if (free < 0) free = i; continue; }
+    var uploaded = EXP_PHOTO_UPLOADED.test(stem), ok = uploaded || EXP_PHOTO_STEM.test(stem);
+    html += '<div class="ch-exp-tile" data-testid="exp-photo-tile-' + i + '"><div class="ch-exp-tile-img">'
+      + (ok ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '">' : '')
+      + (uploaded ? '' : '<span class="ch-exp-note" data-testid="exp-photo-note"' + (ok ? ' hidden' : '') + '>' + (ok ? EXP_NOT_LIVE : 'Not a photo path') + '</span>')
+      + '</div><div class="ch-exp-tile-acts">'
+      + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoPick" data-slot="' + i + '" data-testid="exp-photo-replace-' + i + '">Replace</button>'
+      + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoRemove" data-slot="' + i + '" data-testid="exp-photo-remove-' + i + '">Remove</button>'
+      + '</div></div>';
+  }
+  if (free >= 0) html += '<button type="button" class="ch-btn ch-btn-dashed ch-exp-tile-add" data-action="expPhotoPick" data-slot="' + free + '" data-testid="exp-photo-add">+ Add photo</button>';
+  host.innerHTML = html;
+}
+function expPhotoRemove(slot) {
+  var inp = document.getElementById('exp-photo-' + slot);
+  if (!inp) return;
+  inp.value = '';
+  expPhotoPreview(slot);
+  expRenderPhotoTiles();
+}
+// Swaps between the tiles and the raw path boxes; coming back rebuilds the tiles from what was typed.
+function expPhotoPathsToggle() {
+  var paths = document.getElementById('exp-photo-paths'), tiles = document.getElementById('exp-photo-tiles');
+  var link = expEl && expEl.querySelector('[data-action="expPhotoPaths"]');
+  if (!paths || !tiles) return;
+  var open = paths.hidden;
+  paths.hidden = !open;
+  tiles.hidden = open;
+  if (link) link.textContent = open ? 'Back to photo tiles' : 'Use a photo already on the site';
+  if (!open) expRenderPhotoTiles();
+}
+
 // Photo upload (spec 2026-10-17 P3/P6): shrink in the browser to the guides' two sizes (drawing on a canvas
 // also drops the camera data, GPS included), post both, put the returned address in the slot. Nothing is
 // saved until ops presses Save.
@@ -9703,6 +9758,7 @@ async function expShrink(file, edge, maxBytes) {
 async function expPhotoUpload(slot, file) {
   var btn = expEl && expEl.querySelector('[data-action="expPhotoPick"][data-slot="' + slot + '"]');
   var err = expEl && expEl.querySelector('[data-err="photos"]');
+  var label = btn ? btn.textContent : '';
   if (err) err.textContent = '';
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
   try {
@@ -9720,11 +9776,11 @@ async function expPhotoUpload(slot, file) {
       return;
     }
     var inp = document.getElementById('exp-photo-' + slot);
-    if (inp) { inp.value = j.stem; expPhotoPreview(slot); }
+    if (inp) { inp.value = j.stem; expPhotoPreview(slot); expRenderPhotoTiles(); }
   } catch (x) {
     if (err) err.textContent = 'Upload failed — try again.';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Upload'; }
+    if (btn) { btn.disabled = false; btn.textContent = label; }
   }
 }
 
@@ -9738,6 +9794,7 @@ function expOpenForm(id) {
   expLocUpdate();
   expTaUpdate();
   for (var i = 0; i < 6; i++) expPhotoPreview(i);
+  expRenderPhotoTiles();
   var first = document.getElementById('exp-slug');
   if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
   if (first) first.focus({ preventScroll: true });
@@ -9881,6 +9938,8 @@ document.addEventListener('click', function (e) {
   else if (action === 'expCancel') expCloseForm();
   else if (action === 'expSave') expSave();
   else if (action === 'expPhotoPick') expPhotoPick(Number(el.getAttribute('data-slot')));
+  else if (action === 'expPhotoRemove') expPhotoRemove(Number(el.getAttribute('data-slot')));
+  else if (action === 'expPhotoPaths') expPhotoPathsToggle();
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
   else if (action === 'expTab') {

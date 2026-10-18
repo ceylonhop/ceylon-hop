@@ -1001,10 +1001,12 @@ test('a slow Catalogue reload that lands after a newer one cannot put the old co
   await expect(rows(page).nth(2)).toContainText('1 paid');
 });
 
-// Photo upload (spec 2026-10-17 P6).
+// Photo tiles (2026-10-18). With uploads on, photos are thumbnails with Add / Replace / Remove, and the
+// raw path boxes sit behind "Use a photo already on the site" (spec 2026-10-17 P6, revised).
 const UPLOADED = 'https://img-staging.ceylonhop.com/experiences/5f0c2a3e-7b1d-4c2e-9a6f-0d1e2f3a4b5c';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const withUploads = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, uploads: true })) };
+const tiles = (page) => page.locator('[data-testid^="exp-photo-tile-"]');
 
 async function stubUpload(page, reply) {
   const posts = [];
@@ -1014,46 +1016,95 @@ async function stubUpload(page, reply) {
   return posts;
 }
 
-async function pickPhoto(page, slot) {
+async function choosePhoto(page, testid) {
   const chooser = page.waitForEvent('filechooser');
-  await page.locator('[data-testid="exp-photo-upload-' + slot + '"]').click();
+  await page.locator('[data-testid="' + testid + '"]').click();
   await (await chooser).setFiles({ name: 'p.png', mimeType: 'image/png', buffer: PNG });
 }
 
-test('upload: a picked photo is shrunk to two JPEGs, fills the slot and previews at once', async ({ page }) => {
-  await boot(page, OPS, withUploads);
-  const posts = await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+async function openEdit(page, i) {
   await page.goto(OPS_FILE + '#experiences');
   await ready(page);
-  await page.locator('[data-testid="exp-new"]').click();
-  await pickPhoto(page, 0);
-  await expect(page.locator('#exp-photo-0')).toHaveValue(UPLOADED);
-  await expect(page.locator('#exp-photo-0-prev img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
-  await expect(page.locator('#exp-photo-0-prev [data-testid="exp-photo-note"]')).toHaveCount(0);
+  await rows(page).nth(i).locator('[data-action="expEdit"]').click();
+}
+
+test('tiles: an experience\'s photos show as thumbnails, with no path boxes or URLs', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await openEdit(page, 1); // Village cooking lesson: two Sigiriya guide photos
+  await expect(tiles(page)).toHaveCount(2);
+  await expect(tiles(page).nth(0).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/family-food-900.jpg');
+  await expect(tiles(page).nth(1).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/village-900.jpg');
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toBeVisible();
+  await expect(page.locator('#exp-photo-0')).toBeHidden();
+  await expect(page.locator('#exp-form')).not.toContainText('slug/photo');
+});
+
+test('tiles: Add uploads two JPEGs and Save sends the new photo after the existing ones', async ({ page }) => {
+  const calls = await boot(page, OPS, withUploads);
+  const posts = await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+  await openEdit(page, 1);
+  await choosePhoto(page, 'exp-photo-add');
+  await expect(tiles(page)).toHaveCount(3);
+  await expect(tiles(page).nth(2).locator('img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
+  await expect(tiles(page).nth(2).locator('[data-testid="exp-photo-note"]')).toHaveCount(0);
   expect(posts).toHaveLength(1);
   const body = posts[0].toString('latin1');
   expect(body).toContain('name="large"');
   expect(body).toContain('name="small"');
   expect(body.split('\xff\xd8\xff').length - 1).toBe(2); // two JPEGs, even from a PNG
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body.photos).toEqual(['guides/sigiriya/family-food', 'guides/sigiriya/village', UPLOADED]);
 });
 
-test('upload: no Upload buttons when the server has uploads off', async ({ page }) => {
-  await boot(page, OPS);
-  await page.goto(OPS_FILE + '#experiences');
-  await ready(page);
-  await page.locator('[data-testid="exp-new"]').click();
-  await expect(page.locator('#exp-photo-0')).toBeVisible();
-  await expect(page.locator('[data-testid^="exp-photo-upload-"]')).toHaveCount(0);
+test('tiles: Replace swaps a photo in place and Remove takes one out', async ({ page }) => {
+  const calls = await boot(page, OPS, withUploads);
+  await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+  await openEdit(page, 1);
+  await choosePhoto(page, 'exp-photo-replace-0');
+  await expect(tiles(page).nth(0).locator('img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
+  await page.locator('[data-testid="exp-photo-remove-1"]').click();
+  await expect(tiles(page)).toHaveCount(1);
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body.photos).toEqual([UPLOADED]);
 });
 
-test('upload: a failed upload says so and leaves the slot as it was', async ({ page }) => {
+test('tiles: "Use a photo already on the site" opens the path boxes; a typed path comes back as a tile', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await openEdit(page, 0); // Ayurvedic massage: one photo
+  const link = page.locator('[data-testid="exp-photo-paths"]');
+  await expect(link).toHaveText('Use a photo already on the site');
+  await link.click();
+  await expect(page.locator('#exp-photo-1')).toBeVisible();
+  await expect(tiles(page).first()).toBeHidden();
+  await page.locator('#exp-photo-1').fill('guides/sigiriya/live-lion-rock');
+  await expect(link).toHaveText('Back to photo tiles');
+  await link.click();
+  await expect(page.locator('#exp-photo-1')).toBeHidden();
+  await expect(tiles(page)).toHaveCount(2);
+  await expect(tiles(page).nth(1).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/live-lion-rock-900.jpg');
+});
+
+test('tiles: a failed upload says so and adds nothing', async ({ page }) => {
   await boot(page, OPS, withUploads);
   await stubUpload(page, (r) => r.fulfill(json({ error: 'upload_failed' }, 502)));
   await page.goto(OPS_FILE + '#experiences');
   await ready(page);
   await page.locator('[data-testid="exp-new"]').click();
-  await pickPhoto(page, 2);
+  await choosePhoto(page, 'exp-photo-add');
   await expect(page.locator('[data-err="photos"]')).toHaveText('Upload failed — try again.');
-  await expect(page.locator('#exp-photo-2')).toHaveValue('');
-  await expect(page.locator('[data-testid="exp-photo-upload-2"]')).toHaveText('Upload');
+  await expect(tiles(page)).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toHaveText('+ Add photo');
+});
+
+test('tiles: with uploads off the form keeps the plain path boxes', async ({ page }) => {
+  await boot(page, OPS);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await expect(page.locator('#exp-photo-0')).toBeVisible();
+  await expect(tiles(page)).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-paths"]')).toHaveCount(0);
 });
