@@ -3,7 +3,9 @@ import type { DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo, NotificationKind } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
-import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
+import { sendTripReminder, sendReviewRequest, sendDetailsReminder, needsDetails, manageUrl } from './notifications';
+import { detailsReminderDue, DETAILS_REMINDER_EPOCH } from '../domain/detailsReminder';
+import { isoToday } from '../domain/dateRules';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // Heartbeat of the daily tick (spec 2026-10-13 §4), the sibling of watchdog.ts's WATCHDOG_TICK:
@@ -79,12 +81,20 @@ export async function runScheduledNotifications(
     // Phase A correlation seam. Production job routes always provide it; persistence lands in
     // later slices. Optional so pure service callers and existing tests remain source-compatible.
     correlation?: TrackingCorrelation;
+    // Dateless capture Phase 2: both are needed to send details reminders; without them the
+    // tick behaves exactly as before. payments gives the settle time (the reminder clock),
+    // rideOps the "Customer contacted · pickup confirmed" pause.
+    payments?: { findByBookingId(id: string): Promise<Array<{ status: string; settledAt: Date | null }>> };
+    rideOps?: { get(id: string): Promise<{ customerUpdated: boolean } | null> };
+    // Test seam; production uses the code constant.
+    detailsReminderEpoch?: Date;
   },
-): Promise<{ reminders: number; reviews: number; plan?: PlannedSend[] }> {
+): Promise<{ reminders: number; reviews: number; detailsReminders: number; plan?: PlannedSend[] }> {
   const { bookings, log, email, baseUrl, linkSecret, budget, maxTripAgeDays, epoch, dryRun } = deps;
   const all = await bookings.list();
   let reminders = 0;
   let reviews = 0;
+  let detailsReminders = 0;
   const plan: PlannedSend[] = [];
 
   // The one place a send is authorised. Everything upstream decides WHETHER a booking is
@@ -122,6 +132,33 @@ export async function runScheduledNotifications(
     // Taken before we started notifying at all — fence it off whatever its dates say.
     if (epoch && Date.parse(b.createdAt) < epoch.getTime()) continue;
 
+    // Details reminders run BEFORE the trip-window guard below, which skips every undated
+    // booking. Single transfers only; the rule itself lives in domain/detailsReminder.ts.
+    if (deps.payments && deps.rideOps && b.mode === 'single' && needsDetails(b)) {
+      const succeeded = (await deps.payments.findByBookingId(b.id))
+        .filter((p) => p.status === 'succeeded' && p.settledAt)
+        .map((p) => p.settledAt!.getTime());
+      const sentAt = new Map((await log.listByBookingId(b.id)).map((r) => [r.kind, r.sentAt]));
+      const kind = detailsReminderDue(
+        {
+          missing: true,
+          active: b.status === 'paid' || b.status === 'confirmed',
+          datePassed: !!b.input.date && b.input.date < isoToday('Asia/Colombo', now),
+          paused: (await deps.rideOps.get(b.id))?.customerUpdated ?? false,
+          paidAt: succeeded.length ? new Date(Math.min(...succeeded)) : null,
+          firstSentAt: sentAt.get('details_reminder_1') ?? null,
+          secondSentAt: sentAt.get('details_reminder_2') ?? null,
+        },
+        now,
+        deps.detailsReminderEpoch ?? DETAILS_REMINDER_EPOCH,
+      );
+      if (kind && await dispatch(b, kind, () => sendDetailsReminder(b, email, {
+        nth: kind === 'details_reminder_1' ? 1 : 2, manage: manageUrl(b, baseUrl, linkSecret),
+      }))) {
+        detailsReminders++;
+      }
+    }
+
     const { start, end } = tripWindow(b);
     if (!start || !end) continue;
 
@@ -149,7 +186,7 @@ export async function runScheduledNotifications(
     }
   }
 
-  return { reminders, reviews, ...(dryRun ? { plan } : {}) };
+  return { reminders, reviews, detailsReminders, ...(dryRun ? { plan } : {}) };
 }
 
 // GL-3 — an abandoned shared checkout holds real seats. After this long unpaid, the draft
