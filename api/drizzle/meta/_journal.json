@@ -500,6 +500,13 @@
       "breakpoints": true
     },
     {
+      "idx": 74,
+      "version": "7",
+      "when": 1791979200000,
+      "tag": "0074_experience_google_place_id",
+      "breakpoints": true
+    },
+    {
       "idx": 72,
       "version": "7",
       "when": 1792022400000,
@@ -511,13 +518,6 @@
       "version": "7",
       "when": 1792108800000,
       "tag": "0073_details_reminder_kinds",
-      "breakpoints": true
-    },
-    {
-      "idx": 74,
-      "version": "7",
-      "when": 1791979200000,
-      "tag": "0074_experience_google_place_id",
       "breakpoints": true
     }
   ]
