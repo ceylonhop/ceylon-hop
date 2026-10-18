@@ -315,6 +315,7 @@ import {
   sendBookingConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
+  sendScheduleSet,
   needsDetails,
 } from './notifications';
 
@@ -904,5 +905,36 @@ describe('sendBookingConfirmation — experience interests', () => {
     expect(cancelled.subject).toContain('cancelled');
     expect(cancelled.html).not.toContain('Interested in');
     expect(cancelled.text).not.toContain('Interested in');
+  });
+});
+
+describe('sendScheduleSet — pickup set after booking', () => {
+  const scheduled = { ...single, status: 'paid', input: { ...single.input, date: '2026-11-04', time: '09:00' } } as Booking;
+
+  it('states the weekday, date and Sri Lanka time, and offers WhatsApp for corrections', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(scheduled, email, { manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.subject).toBe('Your pickup is set — CH-ABC12');
+    expect(m.html).toMatch(/Wed,? 4 Nov 2026/); // ICU builds differ on the comma
+    expect(m.html).toContain('09:00');
+    expect(m.html).toContain('Sri Lanka time');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html).toContain('manage.html?t=abc');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('schedule_set');
+  });
+
+  it('says the time is still to confirm when only the date is set', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, time: undefined } } as Booking, email);
+    expect(email.sent[0].html).toContain('pickup time to confirm');
+  });
+
+  it('sends nothing for a booking without a date', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(single, email);
+    expect(email.sent).toHaveLength(0);
   });
 });
