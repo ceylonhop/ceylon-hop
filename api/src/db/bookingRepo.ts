@@ -294,6 +294,9 @@ export interface BookingRepo {
   // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
   // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
   findByReference(reference: string): Promise<Booking | null>;
+  // A website booking's own priced lines (bookings.pricing_snapshot_json), for the ops refund
+  // picker. Null for any booking without one — a quote booking's lines live on its quote.
+  websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null>;
   // Every booking by one person — customers.person_key, i.e. personKeyFor(email) — newest first,
   // at most `limit`. The lookup's "this customer's bookings" (spec 2026-09-26 §15).
   listByPersonKey(personKey: string, limit: number): Promise<Booking[]>;
@@ -501,6 +504,11 @@ export class InMemoryBookingRepo implements BookingRepo {
   async findByReference(reference: string): Promise<Booking | null> {
     for (const b of this.byId.values()) if (b.reference === reference) return this.present(b);
     return null;
+  }
+
+  async websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null> {
+    const s = this.websitePricing.get(bookingId);
+    return s ? structuredClone(s) : null;
   }
 
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {

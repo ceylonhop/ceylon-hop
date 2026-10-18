@@ -560,6 +560,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .reverse-reason{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft);margin-bottom:10px}
 .reverse-reason .req{font-weight:600;color:var(--alert);text-transform:none;letter-spacing:0}
 .reverse-reason input{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+.refund-lines{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px;font-size:.78rem}
+.refund-lines legend{font-size:.72rem;font-weight:700;color:var(--ink-soft);padding:0 4px}
+.refund-lines label{display:flex;gap:8px;align-items:baseline;padding:3px 0;cursor:pointer}
+.refund-lines label .muted{margin-left:auto;white-space:nowrap}
+.refund-lines-note{margin:6px 0 0}
 .reverse-reason input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(var(--blue-rgb),.11)}
 .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
   @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
@@ -3979,8 +3984,50 @@ function refundRequestFor(t, d){
   const buttons=several
     ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
     : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${tip}">${verb}</button>`;
-  return `${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
+  return `${several?'':refundLinesHtml(d)}${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
 }
+
+/* The leg picker (refund approvals phase 2): tick legs/extras and the Amount box fills from the
+   booking's frozen line prices — each already its share of what was charged, worked out by the
+   API (refundLinesFor). Ticking every line empties the box, which means the full remaining amount.
+   A convenience only: the amount stays editable and a founder approves every request. Not offered
+   when the booking has several payments to refund against (deposit + balance). */
+function refundLinesHtml(d){
+  const rl=d&&d.refundLines,lines=rl&&rl.lines;
+  if(!Array.isArray(lines)||lines.length<2)return '';
+  return `<fieldset class="refund-lines"><legend>Refund part of the trip <span class="muted">ticks fill the amount</span></legend>
+    ${lines.map((l,i)=>`<label><input type="checkbox" data-refund-line="${i}"><span>${esc(l.label)}</span><span class="muted">${money({amount:l.amountCents,currency:rl.currency})}</span></label>`).join('')}
+    <p class="refund-lines-note muted" hidden></p></fieldset>`;
+}
+/* A tick re-adds the ticked lines into #refundamount and names them after whatever reason was
+   typed; the part it wrote last time (data-auto) is swapped, never what the operator typed. */
+document.addEventListener('change',e=>{
+  if(!e.target.matches||!e.target.matches('[data-refund-line]'))return;
+  const d=state.detailData,lines=(d&&d.refundLines&&d.refundLines.lines)||[];
+  const picked=[...document.querySelectorAll('[data-refund-line]')].filter(b=>b.checked).map(b=>lines[Number(b.dataset.refundLine)]).filter(Boolean);
+  const s=refundSummary(d),cur={currency:s.currency};
+  const all=picked.length===lines.length;
+  const sum=picked.reduce((n,l)=>n+l.amountCents,0);
+  const capped=!all&&sum>s.remaining;
+  const amountEl=$('#refundamount');
+  if(amountEl)amountEl.value=all||!picked.length?'':((capped?s.remaining:sum)/100).toFixed(2);
+  const note=document.querySelector('.refund-lines-note');
+  if(note){
+    note.textContent=all?'Every line ticked — the full remaining amount.'
+      :capped?`Ticked lines come to ${money({...cur,amount:sum})}, but only ${money({...cur,amount:s.remaining})} is left — filled that.`:'';
+    note.hidden=!note.textContent;
+  }
+  const reasonEl=$('#refundreason');
+  if(reasonEl){
+    const prev=reasonEl.dataset.auto||'';
+    let typed=reasonEl.value;
+    if(prev&&typed.endsWith(prev))typed=typed.slice(0,-prev.length);
+    typed=typed.replace(/\s+$/,'');
+    const auto=picked.length?(typed?' — ':'')+'Refunding: '+picked.map(l=>l.label).join('; '):'';
+    reasonEl.value=(typed+auto).slice(0,500);
+    reasonEl.dataset.auto=reasonEl.value.endsWith(auto)?auto:'';
+  }
+});
 
 function reverseActionsFor(t, d){
   const g = reverseGate(t, d);
