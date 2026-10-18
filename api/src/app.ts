@@ -547,6 +547,8 @@ export function createApp(deps: AppDeps = {}) {
       ...(ga4 ? { ga4 } : {}),
       experiences,
       experienceInterests,
+      alerts,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     }),
   );
   app.route(

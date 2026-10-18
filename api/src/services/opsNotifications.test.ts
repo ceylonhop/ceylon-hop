@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, type AssignedQuote } from './opsNotifications';
 import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -444,5 +444,36 @@ describe('teamRescueEmail', () => {
     const m = teamRescueEmail(noPhone, PAY, 'https://ops.example');
     expect(waHref(m.html)).toBeNull();
     for (const part of [m.html, m.text]) expect(part).toContain('No WhatsApp number on this booking');
+  });
+});
+
+// CH-E7EE8 (2026-10-18): an unpriced booking only raised a quiet ops task. This is the team's
+// email for it. Not "Paid:": that prefix is the owner's Gmail forward anchor.
+describe('teamUnpricedEmail', () => {
+  const REASON = 'distance unresolved: EKHO Sigiriya → Casa Selvita';
+
+  it('names the booking, the trip and that it needs a price in the subject, never "Paid:"', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    expect(m.subject.startsWith('Unpriced: CH-7QK2P')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('set a price before Priya can pay');
+    expect(m.subject.startsWith('Paid:')).toBe(false);
+  });
+
+  it('carries the server’s reason, says nothing was charged, and links the booking in ops', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain(REASON);
+      expect(part).toContain('Nothing was charged');
+      expect(part).toContain('send a pay link');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  it('shows no money figure: an unpriced total is a placeholder, not a price', () => {
+    const b = sampleBooking('single');
+    const m = teamUnpricedEmail(b, REASON, 'https://ops.example');
+    expect(m.subject).not.toContain('18500');
+    expect(m.text).toContain('No price yet');
   });
 });

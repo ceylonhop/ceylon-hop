@@ -448,6 +448,38 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
 }
 
 // ---------------------------------------------------------------------------
+// Unpriced (CH-E7EE8, 2026-10-18). The server couldn't price a leg, so the booking was saved
+// with a placeholder total and checkout refuses it (`awaiting_price`): the customer was told
+// we'd confirm the price and message them. This used to raise only a quiet ops task, and three
+// sat open for up to a month. No money figure: the placeholder is not a price.
+// ---------------------------------------------------------------------------
+
+export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const c = b.input.customer;
+  const subject = `Unpriced: ${b.reference} — ${f.subjectRoute}, ${f.when} — set a price before ${c.firstName} can pay`;
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['PRICE NEEDED', '#8a3b12', '#fbe9dc'],
+        lead: 'saved without a price',
+        keys: bookingKeys(f, b),
+        note:
+          `We couldn’t price this trip (${reason}), so ${c.firstName} was told at checkout that we’d confirm ` +
+          'the price and message them. Nothing was charged. Set the price on the booking, then send a pay link.',
+        moneyTitle: 'Payment',
+        moneyRows: [['Price', 'No price yet'], ['Channel', channelLabel(b)]],
+        strong: ['Price'],
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cancelled / Refunded (owner, 2026-09-23). Both used to reach only the customer. Subjects
 // start "Cancelled: " / "Refunded: " — deliberately NOT "Paid:", which the owner forwards on.
 // ---------------------------------------------------------------------------
