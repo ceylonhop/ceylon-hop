@@ -6,6 +6,7 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { signSession } from '../lib/opsAuth';
+import { FakeImageStore } from '../adapters/imageStore';
 
 const AUTH = { opsUsers: 'f@x.com:founder,op@x.com:ops,fin@x.com:finance', googleClientId: 'cid', opsSessionSecret: 'sek' };
 const cookie = (email: string) => `ch_ops=${signSession({ email, exp: Date.now() + 60_000 }, AUTH.opsSessionSecret)}`;
@@ -447,5 +448,92 @@ describe('lead schedule and confirmation email', () => {
       expect(await cross.json()).toEqual({ error: 'bad_origin' });
       expect(s.fake.sent).toHaveLength(0);
     });
+  });
+});
+
+const jpeg = (n: number) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff, 0xe0]); return b; };
+function photoForm(large: Uint8Array<ArrayBuffer> | null = jpeg(2000), small: Uint8Array<ArrayBuffer> | null = jpeg(1000)) {
+  const f = new FormData();
+  if (large) f.set('large', new File([large], 'large.jpg', { type: 'image/jpeg' }));
+  if (small) f.set('small', new File([small], 'small.jpg', { type: 'image/jpeg' }));
+  return f;
+}
+function setupPhotos(store: FakeImageStore | null = new FakeImageStore()) {
+  const experiences = new InMemoryExperienceRepo();
+  const a = realCreateApp({
+    auth: AUTH, adminApiKey: 'k', experiences, experienceInterests: new InMemoryExperienceInterestRepo(),
+    photoStore: store ? { store, publicOrigin: 'https://img-staging.ceylonhop.com' } : null,
+  });
+  const upload = (body: FormData, ck: string | null = OPS, extra: Record<string, string> = {}) =>
+    a.request('/admin/experiences/photos', { method: 'POST', headers: { ...(ck ? { cookie: ck } : {}), ...extra }, body });
+  return { a, store, upload };
+}
+
+describe('POST /admin/experiences/photos (spec 2026-10-17)', () => {
+  it('401 without a session, 403 for finance, 403 cross-site', async () => {
+    const { upload } = setupPhotos();
+    expect((await upload(photoForm(), null)).status).toBe(401);
+    expect((await upload(photoForm(), FINANCE)).status).toBe(403);
+    expect((await upload(photoForm(), OPS, { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+  });
+
+  it('503 uploads_off when no store is configured', async () => {
+    const { upload } = setupPhotos(null);
+    const res = await upload(photoForm());
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'uploads_off' });
+  });
+
+  it('stores both sizes under one new uuid and answers an address the catalogue accepts', async () => {
+    const { a, store, upload } = setupPhotos();
+    // Both files at their caps still fit under the app-wide 1 MB limit.
+    const large = jpeg(700_000), small = jpeg(250_000);
+    const res = await upload(photoForm(large, small));
+    expect(res.status).toBe(201);
+    const { stem } = await res.json();
+    expect(stem).toMatch(/^https:\/\/img-staging\.ceylonhop\.com\/experiences\/[0-9a-f-]{36}$/);
+    const id = stem.split('/').pop();
+    expect(store!.puts.map((p) => p.key)).toEqual([`experiences/${id}-1800.jpg`, `experiences/${id}-900.jpg`]);
+    expect(store!.puts[0]).toMatchObject({ contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' });
+    expect(Array.from(store!.puts[0]!.body)).toEqual(Array.from(large));
+    expect(Array.from(store!.puts[1]!.body)).toEqual(Array.from(small));
+    // Round trip: the returned address is a valid photo for a new experience.
+    const created = await a.request('/admin/experiences', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: OPS }, body: JSON.stringify({ ...BODY, photos: [stem] }),
+    });
+    expect(created.status).toBe(201);
+  });
+
+  it('400 for a missing file, a non-JPEG, or an oversize file', async () => {
+    const { store, upload } = setupPhotos();
+    expect(await (await upload(photoForm(jpeg(2000), null))).json()).toEqual({ error: 'bad_request', field: 'small' });
+    expect(await (await upload(photoForm(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), jpeg(10)))).json()).toEqual({ error: 'not_jpeg', field: 'large' });
+    expect(await (await upload(photoForm(jpeg(700_001), jpeg(1000)))).json()).toEqual({ error: 'too_large', field: 'large' });
+    expect(await (await upload(photoForm(jpeg(2000), jpeg(250_001)))).json()).toEqual({ error: 'too_large', field: 'small' });
+    expect(store!.puts).toHaveLength(0);
+  });
+
+  it('413 from the app-wide 1 MB body limit, before the route reads anything', async () => {
+    const { store, upload } = setupPhotos();
+    const res = await upload(photoForm(jpeg(1_100_000), jpeg(1000)));
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(store!.puts).toHaveLength(0);
+  });
+
+  it('502 upload_failed when the store fails', async () => {
+    const store = new FakeImageStore();
+    store.fail = true;
+    const { upload } = setupPhotos(store);
+    const res = await upload(photoForm());
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upload_failed' });
+  });
+
+  it('the catalogue GET says whether uploads are on', async () => {
+    const on = setupPhotos();
+    expect((await (await on.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(true);
+    const off = setupPhotos(null);
+    expect((await (await off.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(false);
   });
 });

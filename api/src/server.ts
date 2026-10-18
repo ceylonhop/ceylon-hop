@@ -47,6 +47,7 @@ import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 import { MeasurementProtocolAdapter } from './adapters/ga4';
 import { selectTripadvisor } from './adapters/tripadvisor';
+import { selectImageStore } from './adapters/imageStore';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -109,6 +110,8 @@ const ga4Adapter = config.GA4_API_SECRET
 // Live Tripadvisor ratings - dormant unless BOTH the key and the Tripadvisor logo URL are set (their display
 // rules require the logo beside every bubble): otherwise the null adapter is used and no rating is shown.
 const tripadvisor = selectTripadvisor({ apiKey: config.TRIPADVISOR_API_KEY, logoUrl: config.TRIPADVISOR_LOGO_URL, referer: config.TRIPADVISOR_REFERER });
+// Experience photo uploads (spec 2026-10-17) - R2 only when all five settings are present; otherwise off.
+const photoStore = selectImageStore(config);
 
 const { db, sql } = createDb(config.DATABASE_URL);
 
@@ -204,6 +207,7 @@ const app = createApp({
   tripadvisor: tripadvisor.adapter,
   ...(tripadvisor.logoUrl ? { tripadvisorLogoUrl: tripadvisor.logoUrl } : {}),
   experienceInterests: new PostgresExperienceInterestRepo(db),
+  photoStore,
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),

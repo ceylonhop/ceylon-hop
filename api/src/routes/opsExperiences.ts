@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { randomUUID } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
@@ -8,6 +9,7 @@ import type { ExperienceInterest, ExperienceInterestRepo } from '../db/experienc
 import type { BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { wasDelivered, type EmailAdapter } from '../adapters/email';
+import type { ImageStore } from '../adapters/imageStore';
 import { experienceConfirmedEmail } from '../services/notifications';
 
 // Ops Experiences page (spec 2026-10-06 D14/D15). Catalogue writes need experiences:manage
@@ -46,6 +48,8 @@ export function opsExperiencesRoutes(deps: {
   bookings: BookingRepo;
   quotes: QuoteRepo;
   email: EmailAdapter;
+  /** Photo uploads (spec 2026-10-17). Absent/null = uploads off: the form hides the Upload buttons. */
+  photos?: { store: ImageStore; publicOrigin: string } | null;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
 }) {
@@ -65,7 +69,7 @@ export function opsExperiencesRoutes(deps: {
 
   r.get('/', requireCap('experiences:manage'), async (c) => {
     const [list, stats] = await Promise.all([deps.experiences.list(), deps.interests.stats()]);
-    return c.json({ experiences: list.map(serialize), stats });
+    return c.json({ experiences: list.map(serialize), stats, uploads: !!deps.photos });
   });
 
   r.post('/', csrf, requireCap('experiences:manage'), async (c) => {
@@ -93,6 +97,36 @@ export function opsExperiencesRoutes(deps: {
       throw err;
     }
   });
+
+  // Photo upload (spec 2026-10-17 P3). The browser has already shrunk the photo to two JPEGs; this checks
+  // they ARE JPEGs of a sane size and stores both under one new uuid. Saving the experience is a separate
+  // POST/PATCH, so a failed upload changes nothing. The caps keep both files plus the multipart framing
+  // under the app-wide 1 MB body limit (app.ts, #844), which answers 413 payload_too_large before this runs.
+  const PHOTO_MAX = { large: 700_000, small: 250_000 } as const;
+  const isJpeg = (b: Uint8Array) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  r.post('/photos', csrf, requireCap('experiences:manage'), async (c) => {
+      if (!deps.photos) return c.json({ error: 'uploads_off' }, 503);
+      const form = await c.req.parseBody().catch(() => null);
+      const files = {} as Record<'large' | 'small', Uint8Array<ArrayBuffer>>;
+      for (const k of ['large', 'small'] as const) {
+        const f = form?.[k];
+        if (!(f instanceof File)) return c.json({ error: 'bad_request', field: k }, 400);
+        const b = new Uint8Array(await f.arrayBuffer());
+        if (!isJpeg(b)) return c.json({ error: 'not_jpeg', field: k }, 400);
+        if (b.length > PHOTO_MAX[k]) return c.json({ error: 'too_large', field: k }, 400);
+        files[k] = b;
+      }
+      const id = randomUUID();
+      const meta = { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' };
+      try {
+        await deps.photos.store.put(`experiences/${id}-1800.jpg`, files.large, meta);
+        await deps.photos.store.put(`experiences/${id}-900.jpg`, files.small, meta);
+      } catch (err) {
+        console.error('[experiences] photo upload failed:', err);
+        return c.json({ error: 'upload_failed' }, 502);
+      }
+      return c.json({ stem: `${deps.photos.publicOrigin}/experiences/${id}` }, 201);
+    });
 
   r.get('/leads', requireCap('experiences:manage'), async (c) => {
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || 200, 1), 500);
