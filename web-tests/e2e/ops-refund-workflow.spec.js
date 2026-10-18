@@ -194,11 +194,11 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   await boot(page, { role: 'founder', store });
 
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
-  // No amount box: the refund is always the FULL remainder, because our PayHere setup cannot
-  // do partials (owner, 2026-08-02). Double-press still yields exactly one POST.
-  await expect(page.locator('#refundamount')).toHaveCount(0);
+  // Empty amount box = the FULL remainder (shown as its placeholder). Double-press still yields
+  // exactly one POST.
+  await expect(page.locator('#refundamount')).toHaveAttribute('placeholder', '$100');
   const request = page.locator('[data-act="refundrequest"]');
-  await expect(request).toContainText('$100');
+  await expect(request).toHaveText('Refund');
   // A reason is required for both reversal actions now (owner rule 2026-08-02) and is stored
   // against the refund — without it the request is refused client-side and never POSTs.
   await page.locator('#refundreason').fill('Customer cancelled — airline strike');
@@ -240,9 +240,9 @@ test('founder can cancel a pending request and the balance becomes available aga
   await page.locator('[data-act="refundcancel"]').click();
   await expect(page.locator('.refund-status-cancelled')).toContainText('Duplicate charge');
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
-  // The balance is available again, so the full-amount button comes back — no amount box.
-  await expect(page.locator('[data-act="refundrequest"]')).toContainText('$100');
-  await expect(page.locator('#refundamount')).toHaveCount(0);
+  // The balance is available again, so the request form comes back with the full remainder.
+  await expect(page.locator('[data-act="refundrequest"]')).toHaveText('Refund');
+  await expect(page.locator('#refundamount')).toHaveAttribute('placeholder', '$100');
 });
 
 test('finance can read the refund ledger but cannot start or confirm a refund', async ({ page }) => {
@@ -253,17 +253,15 @@ test('finance can read the refund ledger but cannot start or confirm a refund', 
   await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
 });
 
-// Owner rule 2026-08-02: ops MAY cancel/refund up to 24h before the trip. This fixture travels
-// in 2030, so ops is well outside the window and the actions are live for them.
-test('ops may reverse a far-off trip, but still cannot read the refund ledger', async ({ page }) => {
+// Since 2026-10-17 ops reads the ledger (to see its own requests waiting) and may still cancel a
+// far-off trip; only a founder moves money.
+test('ops may cancel a far-off trip, and reads the refund ledger', async ({ page }) => {
   const store = { refunds: [] };
   await boot(page, { role: 'ops', store });
-
   await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
-  // The LEDGER is payments:act — reading refund history is a finance/founder concern, and ops
-  // must not even fetch it.
-  await expect(page.getByText('Refundable remaining')).toHaveCount(0);
-  expect(store.refundReads).toBe(0);
+  await expect(page.getByText('Refundable remaining')).toBeVisible();
+  expect(store.refundReads).toBeGreaterThan(0);
+  await expect(page.locator('[data-act="refundrequest"]')).toHaveText('Request refund');
 });
 
 /* ── the PayHere Refund API path ────────────────────────────────────────────────────────────
@@ -349,18 +347,14 @@ test('finance can see an API refund but cannot fire one', async ({ page }) => {
   await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(0);
 });
 
-test('ops is locked out once the trip is inside 24 hours', async ({ page }) => {
+test('inside 24 hours ops cannot cancel, but may still request a refund', async ({ page }) => {
   const store = { refunds: [] };
   const today = new Date().toISOString().slice(0, 10);
   await boot(page, { role: 'ops', store, travelDate: today });
-
-  // The button is shown but inert, with the reason why — not silently absent.
   await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
-  await expect(page.getByText('only a founder can cancel or refund')).toBeVisible();
-  // Neither reason field: since the 2026-08-07 split there is one per block, and a blocked
-  // ops agent gets neither action, so neither input.
-  await expect(page.locator('#refundreason')).toHaveCount(0);
+  await expect(page.getByText('only a founder can cancel from here')).toBeVisible();
   await expect(page.locator('#cancelreason')).toHaveCount(0);
+  await expect(page.locator('#refundreason')).toBeVisible();
 });
 
 
@@ -410,8 +404,8 @@ test('a deposit + balance booking shows one refund button per payment and posts 
 
   const deposit = page.locator('[data-act="refundrequest"][data-payment-id="payment-d"]');
   const balance = page.locator('[data-act="refundrequest"][data-payment-id="payment-b"]');
-  await expect(deposit).toContainText('Refund deposit — $20 remaining');
-  await expect(balance).toContainText('Refund balance — $80 remaining');
+  await expect(deposit).toContainText('Refund: deposit — $20 remaining');
+  await expect(balance).toContainText('Refund: balance — $80 remaining');
 
   await page.locator('#refundreason').fill('Customer cancelled');
   await balance.dispatchEvent('click');
@@ -429,6 +423,6 @@ test('several captures that are not a deposit pair are labelled by how they were
     { id: 'payment-h', bookingId: row.id, provider: 'cash', orderId: `${row.reference}-MANUAL`, amount: 4000, currency: 'USD', status: 'succeeded', purpose: 'full' },
   ];
   await boot(page, { role: 'founder', store, payments: mixed });
-  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-c"]')).toContainText('Refund card payment — $60 remaining');
-  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-h"]')).toContainText('Refund cash payment — $40 remaining');
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-c"]')).toContainText('Refund: card payment — $60 remaining');
+  await expect(page.locator('[data-act="refundrequest"][data-payment-id="payment-h"]')).toContainText('Refund: cash payment — $40 remaining');
 });

@@ -89,9 +89,8 @@ describe('fireRefund — the one place money moves', () => {
 
 describe('the refund button', () => {
   it('promises a refund only to operators who can actually move money', () => {
-    // Both wordings live in the same template literal; the capability picks between them.
-    expect(html).toMatch(/mayFire\?'Refund':'Request refund'/);
-    expect(html).toMatch(/const mayFire = !!\(state\.caps && state\.caps\.includes\('payments:reverse'\)\)/);
+    expect(html).toMatch(/const verb=founder\?'Refund':'Request refund'/);
+    expect(html).toMatch(/const founder=!!\(state\.caps&&state\.caps\.includes\('payments:reverse'\)\)/);
   });
 
   it('no longer tells the operator that no money has moved when it has', () => {
