@@ -743,6 +743,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+      ...(deps.businessPlaces ? { experiencePins: { experiences, business: deps.businessPlaces } } : {}),
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
