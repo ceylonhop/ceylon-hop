@@ -10,6 +10,7 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { ImageStore } from '../adapters/imageStore';
+import { PLACE_ID, type BusinessPlacesAdapter } from '../adapters/businessPlaces';
 import { experienceConfirmedEmail } from '../services/notifications';
 
 // Ops Experiences page (spec 2026-10-06 D14/D15). Catalogue writes need experiences:manage
@@ -50,6 +51,8 @@ export function opsExperiencesRoutes(deps: {
   email: EmailAdapter;
   /** Photo uploads (spec 2026-10-17). Absent/null = uploads off: the form hides the Upload buttons. */
   photos?: { store: ImageStore; publicOrigin: string } | null;
+  /** "Find the business on Google" (2026-10-18). Absent/null = no Google key: the form hides the search. */
+  business?: BusinessPlacesAdapter | null;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
 }) {
@@ -69,7 +72,7 @@ export function opsExperiencesRoutes(deps: {
 
   r.get('/', requireCap('experiences:manage'), async (c) => {
     const [list, stats] = await Promise.all([deps.experiences.list(), deps.interests.stats()]);
-    return c.json({ experiences: list.map(serialize), stats, uploads: !!deps.photos });
+    return c.json({ experiences: list.map(serialize), stats, uploads: !!deps.photos, businessSearch: !!deps.business });
   });
 
   r.post('/', csrf, requireCap('experiences:manage'), async (c) => {
@@ -127,6 +130,23 @@ export function opsExperiencesRoutes(deps: {
       }
       return c.json({ stem: `${deps.photos.publicOrigin}/experiences/${id}` }, 201);
     });
+
+  // "Find the business on Google" (2026-10-18): ops searches for the partner and the form fills partner,
+  // area, pin and contact from the pick. Reads only, but billed per call, so app.ts rate-limits these GETs.
+  r.get('/business-search', requireCap('experiences:manage'), async (c) => {
+    if (!deps.business) return c.json({ error: 'business_off' }, 503);
+    const q = (c.req.query('q') || '').trim();
+    if (q.length > 100) return c.json({ error: 'bad_request' }, 400);
+    return c.json({ candidates: await deps.business.search(q) });
+  });
+
+  r.get('/business/:placeId', requireCap('experiences:manage'), async (c) => {
+    if (!deps.business) return c.json({ error: 'business_off' }, 503);
+    const id = c.req.param('placeId');
+    if (!PLACE_ID.test(id)) return c.json({ error: 'not_found' }, 404);
+    const business = await deps.business.details(id);
+    return business ? c.json({ business }) : c.json({ error: 'not_found' }, 404);
+  });
 
   r.get('/leads', requireCap('experiences:manage'), async (c) => {
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || 200, 1), 500);

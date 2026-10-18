@@ -15,6 +15,7 @@ import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import type { Ga4Adapter } from './adapters/ga4';
 import type { TripadvisorAdapter } from './adapters/tripadvisor';
 import type { ImageStore } from './adapters/imageStore';
+import type { BusinessPlacesAdapter } from './adapters/businessPlaces';
 import { createGa4Reporter } from './services/analytics/ga4Reporter';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
@@ -125,6 +126,8 @@ export interface AppDeps {
   tripadvisorLogoUrl?: string;
   /** Experience photo uploads (spec 2026-10-17). Absent/null = uploads off. */
   photoStore?: { store: ImageStore; publicOrigin: string } | null;
+  /** "Find the business on Google" on the Experiences form (2026-10-18). Absent/null = off. */
+  businessPlaces?: BusinessPlacesAdapter | null;
   experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
@@ -432,6 +435,9 @@ export function createApp(deps: AppDeps = {}) {
   // Partner experiences near a drop-off (spec 2026-10-06 D7): a public, cacheable READ, so — like /s/* —
   // it must opt in to GET+HEAD; the default limiter counts POST only (lib/rateLimit.ts).
   app.use('/experiences/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
+  // The ops business search is session-gated, but every GET is a billed Google call (2026-10-18).
+  app.use('/admin/experiences/business-search', rateLimit({ ...rl, methods: ['GET'] }));
+  app.use('/admin/experiences/business/*', rateLimit({ ...rl, methods: ['GET'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -704,7 +710,7 @@ export function createApp(deps: AppDeps = {}) {
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
   // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
-  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, photos: deps.photoStore, auth: opsAuthCfg, allowedOrigins }));
+  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, photos: deps.photoStore, business: deps.businessPlaces, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions, experienceInterests,
     auth: opsAuthCfg,
