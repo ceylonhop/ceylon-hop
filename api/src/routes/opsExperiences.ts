@@ -11,6 +11,7 @@ import type { QuoteRepo } from '../db/quoteRepo';
 import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { ImageStore } from '../adapters/imageStore';
 import { PLACE_ID, type BusinessPlacesAdapter } from '../adapters/businessPlaces';
+import { nearestCatalogTown } from '../experiences/nearestTown';
 import { experienceConfirmedEmail } from '../services/notifications';
 
 // Ops Experiences page (spec 2026-10-06 D14/D15). Catalogue writes need experiences:manage
@@ -145,7 +146,9 @@ export function opsExperiencesRoutes(deps: {
     const id = c.req.param('placeId');
     if (!PLACE_ID.test(id)) return c.json({ error: 'not_found' }, 404);
     const business = await deps.business.details(id);
-    return business ? c.json({ business }) : c.json({ error: 'not_found' }, 404);
+    if (!business) return c.json({ error: 'not_found' }, 404);
+    // Area = our nearest catalogue town (Google's locality is often a hamlet, e.g. "Kimbissa" for Sigiriya).
+    return c.json({ business: { ...business, area: nearestCatalogTown(business.lat, business.lng) ?? business.area } });
   });
 
   r.get('/leads', requireCap('experiences:manage'), async (c) => {

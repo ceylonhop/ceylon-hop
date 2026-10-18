@@ -77,11 +77,11 @@ describe('GoogleBusinessPlaces.details', () => {
     expect(u.origin + u.pathname).toBe('https://maps.googleapis.com/maps/api/place/details/json');
     expect(u.searchParams.get('place_id')).toBe(ATHERYA.place_id);
     expect(u.searchParams.get('fields')!.split(',').sort()).toEqual(
-      ['address_component', 'formatted_address', 'geometry/location', 'international_phone_number', 'name', 'place_id', 'url', 'website'].sort());
+      ['address_component', 'formatted_address', 'geometry/location', 'international_phone_number', 'name', 'opening_hours', 'place_id', 'url', 'website'].sort());
     expect(out).toEqual({
       placeId: ATHERYA.place_id, name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
       lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/',
-      mapsUrl: 'https://maps.google.com/?cid=123',
+      mapsUrl: 'https://maps.google.com/?cid=123', openWeekdays: null,
     });
     expect(m.keys).toEqual(['maps.business_details']);
   });
@@ -106,7 +106,7 @@ describe('GoogleBusinessPlaces.details', () => {
 describe('FakeBusinessPlaces / selectBusinessPlaces', () => {
   it('the fake answers what it was given and records the calls', async () => {
     const fake = new FakeBusinessPlaces([{ placeId: ATHERYA.place_id, name: 'Atherya', address: 'Sigiriya', lat: 7.95, lng: 80.76,
-      area: 'Sigiriya', phone: null, website: null, mapsUrl: null }]);
+      area: 'Sigiriya', phone: null, website: null, mapsUrl: null, openWeekdays: null }]);
     expect((await fake.search('ath')).map((c) => c.name)).toEqual(['Atherya']);
     expect((await fake.details(ATHERYA.place_id))?.area).toBe('Sigiriya');
     expect(await fake.details('ChIJunknown000000000000')).toBeNull();
@@ -116,5 +116,43 @@ describe('FakeBusinessPlaces / selectBusinessPlaces', () => {
     expect(selectBusinessPlaces('KEY')).toBeInstanceOf(GoogleBusinessPlaces);
     expect(selectBusinessPlaces(undefined)).toBeNull();
     expect(selectBusinessPlaces('')).toBeNull();
+  });
+});
+
+describe('GoogleBusinessPlaces.details — open days from opening hours (2026-10-18)', () => {
+  const base = { ...ATHERYA, address_components: [] };
+  const run = async (opening_hours: unknown) =>
+    (await new GoogleBusinessPlaces('KEY', stub({ status: 'OK', result: { ...base, opening_hours } }).f).details(ATHERYA.place_id))!.openWeekdays;
+  it('the days that have an opening, sorted (Google: 0 = Sunday, same as ours)', async () => {
+    expect(await run({ periods: [{ open: { day: 1, time: '0900' } }, { open: { day: 3, time: '0900' } }, { open: { day: 1, time: '1500' } }] })).toEqual([1, 3]);
+  });
+  it('open 24/7 (one period, open day 0 at 0000, no close) is every day', async () => {
+    expect(await run({ periods: [{ open: { day: 0, time: '0000' } }] })).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+  it('null when Google has no hours', async () => {
+    expect(await run(undefined)).toBeNull();
+    expect(await run({ periods: [] })).toBeNull();
+  });
+});
+
+describe('GoogleBusinessPlaces.location — coordinates only, for the daily pin refresh', () => {
+  it('asks only for place_id and the location, and is metered on its own key', async () => {
+    const { f, urls } = stub({ status: 'OK', result: { place_id: ATHERYA.place_id, geometry: { location: { lat: 7.9572, lng: 80.7602 } } } });
+    const m = meter();
+    expect(await new GoogleBusinessPlaces('KEY', f, m).location(ATHERYA.place_id)).toEqual({ lat: 7.9572, lng: 80.7602 });
+    expect(new URL(urls[0]!).searchParams.get('fields')).toBe('place_id,geometry/location');
+    expect(m.keys).toEqual(['maps.business_location']);
+  });
+  it('null for a malformed id (no call), outside Sri Lanka, or a non-OK answer', async () => {
+    const s = stub({});
+    expect(await new GoogleBusinessPlaces('KEY', s.f).location('../x')).toBeNull();
+    expect(s.urls).toHaveLength(0);
+    expect(await new GoogleBusinessPlaces('KEY', stub({ status: 'OK', result: { geometry: { location: { lat: 51.5, lng: -0.1 } } } }).f).location(ATHERYA.place_id)).toBeNull();
+    expect(await new GoogleBusinessPlaces('KEY', stub({ status: 'NOT_FOUND' }).f).location(ATHERYA.place_id)).toBeNull();
+  });
+  it('the fake answers the stored pin', async () => {
+    const fake = new FakeBusinessPlaces([{ placeId: ATHERYA.place_id, name: 'A', address: '', lat: 7.95, lng: 80.76, area: null, phone: null, website: null, mapsUrl: null, openWeekdays: null }]);
+    expect(await fake.location(ATHERYA.place_id)).toEqual({ lat: 7.95, lng: 80.76 });
+    expect(await fake.location('ChIJunknown000000000000')).toBeNull();
   });
 });
