@@ -15,7 +15,7 @@
 - Work in a worktree off `origin/main`, never the shared tree; stage files by path, never `git add -A`.
 - Only `mode = 'single'` bookings with status `paid` or `confirmed` are editable.
 - `date` must be a real `YYYY-MM-DD`. `time` must be `HH:MM` (00:00–23:59) or `null`.
-- Reject past dates (Asia/Colombo), anything `isTooSoonPrivate` rejects (12 h notice), and anything more than 12 months ahead.
+- Reject past dates (Asia/Colombo) and anything more than 12 months ahead. The 12 h notice rule (`isTooSoonPrivate`) applies to **customers** (Phase 4); **ops may set short notice** (a same-day fix after a WhatsApp call), via `allowShortNotice`.
 - Every write carries `expected: { date, time }`. A mismatch is a `409 { error: 'conflict', current }`.
 - Every applied change inserts one `booking_schedule_events` row.
 - The customer email is best-effort and never fails the write.
@@ -57,7 +57,7 @@
 
 **Interfaces:**
 - Consumes: `isoToday`, `isTooSoonPrivate` from `api/src/domain/dateRules.ts`
-- Produces: `SCHEDULE_PROBLEMS` (readonly tuple), `type ScheduleProblem`, `scheduleProblem(date: string, time: string | null, now?: Date): ScheduleProblem | null`
+- Produces: `SCHEDULE_PROBLEMS` (readonly tuple), `type ScheduleProblem`, `scheduleProblem(date: string, time: string | null, now?: Date, opts?: { allowShortNotice?: boolean }): ScheduleProblem | null`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -89,6 +89,11 @@ describe('scheduleProblem', () => {
   it('applies the 12-hour notice rule, and refuses today without a time', () => {
     expect(scheduleProblem('2026-10-17', '20:00', NOW)).toBe('too_soon'); // 8.5 h away
     expect(scheduleProblem('2026-10-17', null, NOW)).toBe('too_soon');
+  });
+
+  it('lets ops waive the notice rule, but never accept a past date', () => {
+    expect(scheduleProblem('2026-10-17', '20:00', NOW, { allowShortNotice: true })).toBeNull();
+    expect(scheduleProblem('2026-10-16', '09:00', NOW, { allowShortNotice: true })).toBe('past');
   });
 
   it('allows up to 12 months ahead and no further (booking.js maxBookDate)', () => {
@@ -129,12 +134,19 @@ function isRealDate(v: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
-export function scheduleProblem(date: string, time: string | null, now: Date = new Date()): ScheduleProblem | null {
+// `allowShortNotice`: ops, fixing a pickup on the phone, may set one inside the 12 h window — the
+// notice rule protects us from a customer booking what we can't staff, not from our own staff.
+export function scheduleProblem(
+  date: string,
+  time: string | null,
+  now: Date = new Date(),
+  opts: { allowShortNotice?: boolean } = {},
+): ScheduleProblem | null {
   if (!isRealDate(date)) return 'bad_date';
   if (time !== null && !HHMM.test(time)) return 'bad_time';
   const today = isoToday('Asia/Colombo', now);
   if (date < today) return 'past';
-  if (isTooSoonPrivate(date, time, now)) return 'too_soon';
+  if (!opts.allowShortNotice && isTooSoonPrivate(date, time, now)) return 'too_soon';
   // Same calendar day next year; ISO strings compare correctly as text.
   const lastBookable = `${Number(today.slice(0, 4)) + 1}${today.slice(4)}`;
   if (date > lastBookable) return 'too_far';
@@ -145,7 +157,7 @@ export function scheduleProblem(date: string, time: string | null, now: Date = n
 - [ ] **Step 4: Run it and watch it pass**
 
 Run: `cd api && npx vitest run src/domain/bookingSchedule.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -165,6 +177,7 @@ git commit -m "feat(schedule): validate a pickup date/time set after booking"
 - Modify: `api/src/db/bookingRepo.ts` (types near `StatusAudit`; interface `BookingRepo`; class `InMemoryBookingRepo`)
 - Modify: `api/src/db/postgresBookingRepo.ts`
 - Test: `api/src/db/bookingSchedule.test.ts`
+- Test: `api/src/db/bookingScheduleMigration.test.ts` (same shape as `depositPaymentsMigration.test.ts`)
 
 **Interfaces:**
 - Produces, in `bookingRepo.ts`:
@@ -264,12 +277,13 @@ contract('InMemoryBookingRepo schedule', async () => new InMemoryBookingRepo());
 
 describe.skipIf(!TEST_URL)('PostgresBookingRepo schedule', () => {
   let db: Db;
-  contract('PostgresBookingRepo schedule contract', async () => {
+  // Outer beforeAll runs before the contract's own, so every test below sees a migrated db.
+  beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
     db = conn.db;
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return new PostgresBookingRepo(conn.db);
   });
+  contract('PostgresBookingRepo schedule contract', async () => new PostgresBookingRepo(db));
 
   // The date lives twice for a single transfer (spec §2); the driver-facing legs must move too.
   it('moves the booking leg with the request, in the same write', async () => {
@@ -284,9 +298,46 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo schedule', () => {
 });
 ```
 
+Also write the migration test (it reads the SQL file, so it runs without a database):
+
+```ts
+// api/src/db/bookingScheduleMigration.test.ts
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const TAG = '0072_booking_schedule_events';
+const migration = readFileSync(new URL(`../../drizzle/${TAG}.sql`, import.meta.url), 'utf8');
+const journal = JSON.parse(readFileSync(new URL('../../drizzle/meta/_journal.json', import.meta.url), 'utf8')) as {
+  entries: Array<{ idx: number; when: number; tag: string }>;
+};
+const sql = migration.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+
+describe(TAG, () => {
+  it('creates the history table with RLS on', () => {
+    expect(sql).toMatch(/create table "booking_schedule_events"/i);
+    expect(sql).toMatch(/alter table "booking_schedule_events" enable row level security/i);
+  });
+  it('keeps every existing email kind and adds schedule_set', () => {
+    for (const k of ['confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice',
+      'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set']) {
+      expect(sql).toContain(`'${k}'`);
+    }
+  });
+  it('changes no rows', () => {
+    expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+table)\b/i);
+    expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
+  });
+  it('is journalled after every earlier entry (drizzle skips an older `when`)', () => {
+    const i = journal.entries.findIndex((e) => e.tag === TAG);
+    expect(i).toBeGreaterThan(0);
+    expect(journal.entries[i].when).toBeGreaterThan(journal.entries[i - 1].when);
+  });
+});
+```
+
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `cd api && npx vitest run src/db/bookingSchedule.test.ts`
+Run: `cd api && npx vitest run src/db/bookingSchedule.test.ts src/db/bookingScheduleMigration.test.ts`
 Expected: FAIL at compile time, because `setSchedule` / `listScheduleEvents` don't exist on `BookingRepo`. With `DATABASE_URL_TEST` set, the Postgres block fails the same way.
 
 - [ ] **Step 3: Write the migration**
@@ -296,8 +347,8 @@ Expected: FAIL at compile time, because `setSchedule` / `listScheduleEvents` don
 -- Dateless booking capture, Phase 1 (spec 2026-10-17 §4). Hand-written: drizzle-kit generate needs a TTY.
 -- Every pickup date/time change made AFTER booking — from → to, staff or customer, who, when —
 -- because the change overwrites transfer_request/booking_legs in place. Also widens the
--- customer_communications kind check for the 'schedule_set' email. Rollback: drop the table and
--- restore the previous kind list.
+-- customer_communications kind check for the 'schedule_set' email. Changes no rows. Rollback: drop
+-- the table; restoring the old kind list first needs any 'schedule_set' rows deleted, or the check fails.
 CREATE TABLE "booking_schedule_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"booking_id" uuid NOT NULL,
@@ -317,7 +368,7 @@ CREATE INDEX "booking_schedule_events_booking_created_idx" ON "booking_schedule_
 -- Migration 0048 protected every table that existed then; later tables protect themselves.
 ALTER TABLE "booking_schedule_events" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
-ALTER TABLE "customer_communications" DROP CONSTRAINT "customer_communications_kind_valid";
+ALTER TABLE "customer_communications" DROP CONSTRAINT IF EXISTS "customer_communications_kind_valid";
 --> statement-breakpoint
 ALTER TABLE "customer_communications" ADD CONSTRAINT "customer_communications_kind_valid" CHECK ("kind" in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set'));
 ```
@@ -522,7 +573,7 @@ Expected: exit 0. If an existing migration or schema test pins the old kind list
 - [ ] **Step 10: Commit**
 
 ```bash
-git add api/drizzle/0072_booking_schedule_events.sql api/drizzle/meta/_journal.json api/src/db/schema.ts api/src/db/bookingRepo.ts api/src/db/postgresBookingRepo.ts api/src/db/bookingSchedule.test.ts
+git add api/drizzle/0072_booking_schedule_events.sql api/drizzle/meta/_journal.json api/src/db/schema.ts api/src/db/bookingRepo.ts api/src/db/postgresBookingRepo.ts api/src/db/bookingSchedule.test.ts api/src/db/bookingScheduleMigration.test.ts
 git commit -m "feat(schedule): guarded pickup date/time write with history (migration 0072)"
 ```
 
@@ -554,7 +605,7 @@ describe('sendScheduleSet — pickup set after booking', () => {
     expect(email.sent).toHaveLength(1);
     const m = email.sent[0];
     expect(m.subject).toBe('Your pickup is set — CH-ABC12');
-    expect(m.html).toContain('Wed 4 Nov 2026');
+    expect(m.html).toMatch(/Wed,? 4 Nov 2026/); // ICU builds differ on the comma
     expect(m.html).toContain('09:00');
     expect(m.html).toContain('Sri Lanka time');
     expect(m.html.toLowerCase()).toContain('whatsapp');
@@ -639,13 +690,13 @@ export async function sendScheduleSet(
 In `devEmails.ts`, add `sendScheduleSet` to the `../services/notifications` import, and add this after the `details-needed` entry:
 
 ```ts
-  { name: 'schedule-set', label: 'Pickup set (after booking)', run: (b, e) => sendScheduleSet({ ...b, input: { ...b.input, date: '2026-11-04', time: '09:00' } } as typeof b, e, { manage: LINKS.manage }) },
+  { name: 'schedule-set', label: 'Pickup set (after booking)', run: (b, e) => sendScheduleSet(b.mode === 'single' ? ({ ...b, input: { ...b.input, date: '2026-11-04', time: '09:00' } } as Booking) : b, e, { manage: LINKS.manage }) },
 ```
 
 - [ ] **Step 5: Run it and watch it pass**
 
 Run: `cd api && npx vitest run src/services/notifications.test.ts src/domain/trackingContract.test.ts`
-Expected: PASS. If `fmtDate` renders `Wed, 4 Nov 2026` with a comma on this Node build, change the expectation to match the real output, because the test pins our own formatter.
+Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -837,7 +888,7 @@ In `ops.ts`:
     }).safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     const { date, time, expected, notifyCustomer } = body.data;
-    const problem = scheduleProblem(date, time);
+    const problem = scheduleProblem(date, time, new Date(), { allowShortNotice: true });
     if (problem) return c.json({ error: problem }, 400);
 
     const result = await deps.bookings.setSchedule(id, {
@@ -948,6 +999,10 @@ describe('ops sheet — set pickup date/time', () => {
   it('warns before saving when a driver already has the job', () => {
     expect(body).toContain('data-testid="sched-driver-warn"');
   });
+
+  it('guards the save against a double press', () => {
+    expect(lift('MUTATES')).toContain("'schedsave'");
+  });
 });
 ```
 
@@ -999,6 +1054,15 @@ and add this line next to `const isPending=...` in `renderSheet`:
 ```
 
 - [ ] **Step 4: Add the actions and activity lines**
+
+In the click handler, add `'schedsave'` to both lists that precede the `switch`. It joins the `isBoard(t)&&[...]` list, because a ride-board van has no booking behind it. It also joins `MUTATES`, so a double press can't send two writes and the button shows the spinner:
+
+```js
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;
+```
+```js
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
+```
 
 In the action `switch`, next to `case 'addnote'`:
 

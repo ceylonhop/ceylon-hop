@@ -43,8 +43,9 @@ Any edit writes **both in one transaction**. Pricing does not read date or time 
 ## 4. Rules every write path shares
 
 - **Valid value:** `date` is a real `YYYY-MM-DD`; `time` is `HH:MM` (00–23:00–59) or null.
-- **Not past, not too soon:** reject a date before today in Asia/Colombo, and anything
-  `isTooSoonPrivate` (`dateRules.ts:61`) rejects — 12 h notice with a time, after-today without.
+- **Not past:** reject a date before today in Asia/Colombo — for everyone.
+- **Not too soon (customers only):** the 12 h notice rule (`isTooSoonPrivate`, `dateRules.ts:61`) binds
+  the customer (Phase 4). Ops may set short notice — a same-day fix after a WhatsApp call is real work.
 - **Not too far:** no later than 12 months ahead (the website's own `maxBookDate`, `booking.js:952`).
 - **Editable bookings only:** `mode = 'single'` and status `paid` or `confirmed`.
 - **No lost updates:** every write carries the value it expects to replace; a mismatch is a
