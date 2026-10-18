@@ -116,6 +116,8 @@ export function rideListToOpsRow(
     // A van row is a projection of many travellers, not one customer email.
     isTest: false,
     createdAt: list.createdAt.toISOString(),
+    // Seats are charged per member by the sweep; the van row has no single payment time.
+    paidAt: null,
     serviceType: null,
     board: {
       code: list.code,

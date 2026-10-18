@@ -70,6 +70,16 @@ describe('ops list — paid so far and balance', () => {
     const [row] = await w.list();
     expect(row).toMatchObject({ paidCents: 21900, balanceCents: 0 });
   });
+
+  // Dateless capture Phase 3: "paid N days ago" counts from the first money, not the last.
+  it('carries paidAt — the deposit’s settle time, kept after the balance lands', async () => {
+    const w = await world();
+    const [first] = await w.list();
+    expect(Date.parse(first.paidAt)).not.toBeNaN();
+    await w.settleBalance();
+    const [row] = await w.list();
+    expect(row.paidAt).toBe(first.paidAt);
+  });
 });
 
 describe('ops booking detail — balancePayLink', () => {
