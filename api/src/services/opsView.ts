@@ -69,6 +69,9 @@ export interface OpsBookingRow {
   /** When the booking was made (ISO) — the ride list's creation time on a board row. Drives the
    *  queue's "Recently booked" view. */
   createdAt: string;
+  /** When the money first landed (ISO): the earliest settled payment. Null when nothing has
+   *  settled, and on a board row. The "No date yet" queue counts days since payment from it. */
+  paidAt: string | null;
   /** A trip's service: a private car or a chauffeur guide. Null on every other mode. */
   serviceType: 'private' | 'chauffeur' | null;
 }
@@ -109,9 +112,10 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string }> },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }> },
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
+  const settled = ledger.flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
   const t = travel(b);
   const c = b.input.customer;
   return {
@@ -128,6 +132,7 @@ export function toOpsRow(
     source: 'booking',
     isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),
     createdAt: b.createdAt,
+    paidAt: settled.length ? new Date(Math.min(...settled)).toISOString() : null,
     serviceType: b.mode === 'trip' ? b.input.serviceType : null,
   };
 }
