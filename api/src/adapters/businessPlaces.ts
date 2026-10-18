@@ -15,10 +15,14 @@ export interface BusinessDetails extends BusinessCandidate {
   phone: string | null;
   website: string | null;
   mapsUrl: string | null;
+  /** Days with an opening in Google's hours (0 = Sunday, as ours); null when Google has no hours. */
+  openWeekdays: number[] | null;
 }
 export interface BusinessPlacesAdapter {
   search(query: string): Promise<BusinessCandidate[]>;
   details(placeId: string): Promise<BusinessDetails | null>;
+  /** Coordinates only — the daily pin refresh (Places lat/lng may be kept 30 days, Service Specific Terms §14.3). */
+  location(placeId: string): Promise<{ lat: number; lng: number } | null>;
 }
 
 const BASE = 'https://maps.googleapis.com/maps/api/place';
@@ -26,7 +30,8 @@ const TIMEOUT_MS = 4000;
 const MAX_RESULTS = 5;
 // The shape migration 0074 checks; the id is spliced into a URL, so nothing else gets through.
 export const PLACE_ID = /^[A-Za-z0-9_-]{10,255}$/;
-const DETAIL_FIELDS = 'place_id,name,formatted_address,geometry/location,address_component,international_phone_number,website,url';
+const DETAIL_FIELDS = 'place_id,name,formatted_address,geometry/location,address_component,international_phone_number,website,url,opening_hours';
+const LOCATION_FIELDS = 'place_id,geometry/location';
 
 // Sri Lanka's bounding box, the same one ExperienceInputSchema enforces for lat/lng.
 const inSriLanka = (lat: number, lng: number) => lat >= 5.8 && lat <= 10.0 && lng >= 79.4 && lng <= 82.0;
@@ -41,7 +46,18 @@ type GoogleResult = {
   geometry?: { location?: { lat?: unknown; lng?: unknown } };
   address_components?: Array<{ long_name?: unknown; types?: unknown }>;
   international_phone_number?: unknown; website?: unknown; url?: unknown;
+  opening_hours?: { periods?: Array<{ open?: { day?: unknown; time?: unknown }; close?: unknown }> };
 };
+
+// Google's periods use 0 = Sunday, the same numbering as openWeekdays. Open 24/7 is one period that opens
+// on day 0 at 0000 with no close.
+function openDaysOf(r: GoogleResult): number[] | null {
+  const periods = r.opening_hours && Array.isArray(r.opening_hours.periods) ? r.opening_hours.periods : [];
+  if (!periods.length) return null;
+  if (periods.length === 1 && periods[0]!.open?.day === 0 && periods[0]!.open?.time === '0000' && !periods[0]!.close) return [0, 1, 2, 3, 4, 5, 6];
+  const days = periods.map((p) => p.open?.day).filter((d): d is number => typeof d === 'number' && Number.isInteger(d) && d >= 0 && d <= 6);
+  return days.length ? [...new Set(days)].sort((a, b) => a - b) : null;
+}
 
 function toCandidate(r: GoogleResult): BusinessCandidate | null {
   const placeId = typeof r.place_id === 'string' && PLACE_ID.test(r.place_id) ? r.place_id : null;
@@ -86,7 +102,16 @@ export class GoogleBusinessPlaces implements BusinessPlacesAdapter {
     const r = data.result as GoogleResult;
     const c = toCandidate(r);
     if (!c) return null;
-    return { ...c, area: areaOf(r), phone: str(r.international_phone_number, 40), website: httpUrl(r.website), mapsUrl: httpUrl(r.url) };
+    return { ...c, area: areaOf(r), phone: str(r.international_phone_number, 40), website: httpUrl(r.website), mapsUrl: httpUrl(r.url), openWeekdays: openDaysOf(r) };
+  }
+
+  async location(placeId: string): Promise<{ lat: number; lng: number } | null> {
+    if (!PLACE_ID.test(placeId)) return null;
+    const url = `${BASE}/details/json?place_id=${encodeURIComponent(placeId)}&fields=${encodeURIComponent(LOCATION_FIELDS)}&key=${encodeURIComponent(this.apiKey)}`;
+    const data = await this.get(url, 'maps.business_location');
+    const loc = data && data.status === 'OK' ? (data.result as GoogleResult | undefined)?.geometry?.location : undefined;
+    const lat = loc?.lat, lng = loc?.lng;
+    return typeof lat === 'number' && typeof lng === 'number' && inSriLanka(lat, lng) ? { lat, lng } : null;
   }
 
   // Counted before the call, like MeteredMapsAdapter: a call that fails was still billed.
@@ -118,6 +143,11 @@ export class FakeBusinessPlaces implements BusinessPlacesAdapter {
     this.calls.push(`details:${placeId}`);
     const hit = this.places.find((p) => p.placeId === placeId);
     return hit ? { ...hit } : null;
+  }
+  async location(placeId: string): Promise<{ lat: number; lng: number } | null> {
+    this.calls.push(`location:${placeId}`);
+    const hit = this.places.find((p) => p.placeId === placeId);
+    return hit ? { lat: hit.lat, lng: hit.lng } : null;
   }
 }
 
