@@ -25,13 +25,24 @@ describe('0074_experience_google_place_id', () => {
     expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
     expect(sql).not.toMatch(/alter\s+table\s+"(?!experiences")/i);
   });
-  it('is journalled at idx 74 with a `when` after 0073’s (1792108800000)', () => {
+  // Re-stamped 2026-10-18 to sit BETWEEN 0071 and 0072. drizzle applies only entries whose `when` is newer
+  // than the newest one a database has recorded (pg-core/dialect.js), and prod had 0071 but not 0072/0073
+  // (other branches' work). Promoted with the original stamp, 0074 would have made prod skip 0072 and 0073
+  // forever. Looked up by tag: 0072/0073 aren't on every branch this file is cherry-picked onto.
+  it('is journalled at idx 74, stamped after 0071 and before 0072', () => {
     const e = journal.entries.find((x) => x.tag === '0074_experience_google_place_id');
-    const prev = journal.entries.find((x) => x.tag === '0073_details_reminder_kinds');
+    const after = journal.entries.find((x) => x.tag === '0071_usage_counters');
+    const before = journal.entries.find((x) => x.tag === '0072_booking_schedule_events');
     expect(e, 'journal entry for 0074').toBeDefined();
     expect(e!.idx).toBe(74);
-    expect(e!.when).toBe(1792195200000);
-    expect(e!.when).toBeGreaterThan(prev!.when);
+    expect(e!.when).toBe(1791979200000);
+    expect(e!.when).toBeGreaterThan(after!.when);
+    if (before) expect(e!.when).toBeLessThan(before.when);
+  });
+  // Staging (and any local DB) ran 0074 under its FIRST stamp, 1792195200000, and keeps that as its newest
+  // applied `when`. A later migration stamped at or below it would be skipped there, silently.
+  it('every later migration is stamped above 0074’s first stamp (1792195200000)', () => {
+    for (const x of journal.entries.filter((y) => y.idx > 74)) expect(x.when, x.tag).toBeGreaterThan(1792195200000);
   });
 });
 
