@@ -101,3 +101,34 @@ test('the ops sheet survives a refund history that is not a list', async ({ page
   await expect(page.getByText('Refundable remaining')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('ops sees its request waiting for a founder, partial, and may withdraw it', async ({ page }) => {
+  const store = { refunds: [] };
+  page.on('dialog', (d) => d.accept());
+  await boot(page, { role: 'ops', store });
+  await openSheet(page);
+  await page.locator('#refundamount').fill('25.50');
+  await page.locator('#refundreason').fill('Customer dropped the Kandy leg');
+  await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
+  const row = page.locator('.refund-row');
+  await expect(row).toContainText('Partial — $25.50 of $100 paid');
+  await expect(row).toContainText('Waiting for a founder to approve');
+  await expect(row).not.toContainText('Late');
+  await row.locator('[data-act="refundcancel"]').dispatchEvent('click');
+  await expect(row).toContainText('Cancelled');
+  expect(store.cancelled).toBe(1);
+});
+
+test('a request inside the last 24 hours is flagged Late, and an empty amount is a full refund', async ({ page }) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const store = { refunds: [], requestedAt: new Date().toISOString() };
+  page.on('dialog', (d) => d.accept());
+  await boot(page, { role: 'ops', store, row: { ...baseRow, travelDate: today, travelTime: '23:59' } });
+  await openSheet(page);
+  await page.locator('#refundreason').fill('Flight cancelled');
+  await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
+  const row = page.locator('.refund-row');
+  await expect(row).toContainText('Late — trip starts in under 24h');
+  await expect(row).toContainText('Full refund');
+  expect(store.posts[0].amountCents).toBe(10000);
+});
