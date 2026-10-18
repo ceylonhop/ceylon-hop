@@ -119,6 +119,7 @@ export function rideListToOpsRow(
     // Seats are charged per member by the sweep; the van row has no single payment time.
     paidAt: null,
     serviceType: null,
+    refundWaitingCents: 0,
     board: {
       code: list.code,
       listStatus: list.status,

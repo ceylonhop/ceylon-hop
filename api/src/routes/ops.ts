@@ -261,7 +261,12 @@ export function opsRoutes(deps: OpsDeps) {
     // queue booking, closed ones included. A payments query per booking, awaited in sequence,
     // was a ~100 ms round-trip per row from Render to the database (2026-09-22) — the whole
     // reason the page took many seconds to paint its first row.
-    const [ops, allPayments] = await Promise.all([deps.rideOps.listByBookingIds(ids), deps.payments.findByBookingIds(ids)]);
+    const [ops, allPayments, waiting] = await Promise.all([
+      deps.rideOps.listByBookingIds(ids),
+      deps.payments.findByBookingIds(ids),
+      // Batched with the two above for the same reason: one read for the whole queue.
+      deps.refunds ? deps.refunds.pendingCentsByBookingIds(ids) : Promise.resolve(new Map<string, number>()),
+    ]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
     const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const paymentsById = new Map<string, typeof allPayments>();
@@ -270,7 +275,7 @@ export function opsRoutes(deps: OpsDeps) {
     for (const b of all) {
       const row = toOpsRow(b, {
         rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
-        payments: paymentsById.get(b.id) ?? [],
+        payments: paymentsById.get(b.id) ?? [], refundWaitingCents: waiting.get(b.id) ?? 0,
       });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;

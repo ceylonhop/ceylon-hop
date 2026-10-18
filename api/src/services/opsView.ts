@@ -74,6 +74,9 @@ export interface OpsBookingRow {
   paidAt: string | null;
   /** A trip's service: a private car or a chauffeur guide. Null on every other mode. */
   serviceType: 'private' | 'chauffeur' | null;
+  /** Σ refund requests waiting for a founder (manual_pending), 0 when none. Drives the founder's
+   *  "Refunds waiting" queue chip (spec 2026-10-17 §4). Always 0 on a ride-board row. */
+  refundWaitingCents: number;
 }
 
 const NO_TEAM: ReadonlySet<string> = new Set();
@@ -112,7 +115,7 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }> },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number },
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
   const settled = ledger.flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
@@ -134,5 +137,6 @@ export function toOpsRow(
     createdAt: b.createdAt,
     paidAt: settled.length ? new Date(Math.min(...settled)).toISOString() : null,
     serviceType: b.mode === 'trip' ? b.input.serviceType : null,
+    refundWaitingCents: opts.refundWaitingCents ?? 0,
   };
 }
