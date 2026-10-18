@@ -2,7 +2,8 @@
 
 **Date:** 2026-10-17 · **Owner decision:** go (conversation of the same day)
 **Scope:** one PR — `api/src/routes/admin.ts`, `api/src/routes/ops.ts`, `api/src/services/opsView.ts`,
-`api/src/db/refundRepo.ts` + `postgresRefundRepo.ts`, `api/src/routes/ops-ui.html`, and their tests.
+`api/src/db/refundRepo.ts` + `postgresRefundRepo.ts`, `api/src/domain/reversalWindow.ts`,
+`api/src/routes/ops-ui.html`, and their tests.
 **No migration, no pricing change, no config change.**
 
 ## Why
@@ -87,9 +88,12 @@ alert through the existing `alerts` adapter (best-effort; a failed alert never f
 
 - `severity: 'info'`, `kind: 'refund_requested'`, `dedupeKey: <refund id>` (each request is its own
   email; the cooldown cannot swallow a second request on the same booking).
-- Title: `Refund requested: <reference> · <amount>` plus ` · LATE` when §3 says so.
-- Body: amount and currency, who asked, their reason, the late note when it applies, and
-  `bookingDeepLink(booking.id, opsBaseUrl)` (`services/opsNotifications.ts:235`).
+- Title: `Refund requested: <reference> · <amount> (full)` or `… (partial)`, plus ` · LATE` when
+  §3 says so. **Full** means the request is for at least everything captured on the booking (Σ
+  succeeded payments); anything less is **partial**. The word is there because an empty amount
+  field means "everything" (§5): a founder approving at a glance must see which one it is.
+- Body: amount and currency, `of <captured> paid`, who asked, their reason, the late note when it
+  applies, and `bookingDeepLink(booking.id, opsBaseUrl)` (`services/opsNotifications.ts:235`).
 
 A founder's own request sends nothing — they are about to fire it.
 
@@ -123,6 +127,12 @@ only — it changes no permission.
 
 - **Who sees it:** anyone with `bookings:read` (founder, finance, ops). The refund-history fetch
   in the sheet loader uses the same gate.
+- **Both refund-history reads keep only a list.** The sheet loader and `reloadRefundDetail()` store
+  the response as `detail.refunds` only when it is an array, otherwise `[]`. Today only founder and
+  finance fetch it; once ops does, every ops-screen e2e whose catch-all mock answers `{}` would hand
+  `refundSummary()` an object and throw on `.filter` (verified: `ops-balance.spec.js` opens a sheet
+  with ops permissions, no refunds mock and a `{}` catch-all). The guard also protects the real
+  screen from an unexpected answer.
 - **Request form** (founder and ops; never on ride-board rows), above the ledger as today:
   - **Amount** field, optional. Empty means "the full remaining amount" of the target payment;
     placeholder shows that figure. Parsed from the typed decimal string to integer cents with no
@@ -139,6 +149,8 @@ only — it changes no permission.
   - **No 24-hour block** on this form for anyone. The cancel-booking block keeps `reverseGate()`
     exactly as it is.
 - **Pending rows:**
+  - Everyone: a line saying **"Full refund"** or **"Partial — <amount> of <captured> paid"**,
+    using the same full/partial rule as §2 (`captured` from `refundSummary(d)`).
   - Founder: unchanged actions (Refund through PayHere now / record manual refund / Cancel
     request), plus the Late tag.
   - Ops: the text **"Waiting for a founder to approve"**, a **Cancel request** button, and the Late
@@ -146,7 +158,17 @@ only — it changes no permission.
   - Finance: read-only, unchanged.
 - The stale "our PayHere setup cannot do partial refunds" comments are rewritten.
 
-### 6. What stays the same
+### 6. The 24-hour rule's wording now covers cancelling only
+
+`domain/reversalWindow.ts` keeps its logic. Its header (which says the grant lives "at the four
+reversal routes") and its two refusal messages are reworded for cancelling only:
+- `This booking has no trip date, so the 24-hour rule cannot be checked. A founder can still cancel it.`
+- `The trip starts in under 24 hours — only a founder can cancel from here.`
+
+The ops UI's `reverseGate()` messages say the same (§5). Nothing in the API tests asserts the old
+text; two e2e specs do and are updated (Testing).
+
+### 7. What stays the same
 
 - Customer refund email already states the actual amount (`services/notifications.ts:694-701`).
 - Team "Refunded:" email already says partial vs full (`opsNotifications.ts:520`).
@@ -173,8 +195,9 @@ only — it changes no permission.
 - **API (vitest, `api/src/routes/refunds.test.ts`, `admin.test.ts`):** the permission table in §1
   row by row for founder / ops / finance / machine key / anonymous; ops may request inside 24h and
   with no trip date; ops gets 403 on execute and confirm; ops may cancel a request; the
-  `refund_requested` alert fires for ops (with LATE when late) and not for a founder; a partial
-  amount is passed to the gateway. `admin.test.ts:282` ("the ops time window applies to refunds
+  `refund_requested` alert fires for ops and not for a founder, says `(partial)` or `(full)`, and
+  ends in `· LATE` for a booking dated inside 24 hours (a route test, not only the pure helper,
+  so wrong wiring cannot pass); a partial amount is passed to the gateway. `admin.test.ts:282` ("the ops time window applies to refunds
   too") is rewritten to assert the window no longer applies to refund requests but still applies to
   cancel.
 - **Repo:** `pendingCentsByBookingIds` for InMemory and Postgres (sums only `manual_pending`,
@@ -186,7 +209,10 @@ only — it changes no permission.
   `ops-refund-workflow.spec.js:258` (ops now reads the ledger) and `:352` (ops may now request
   inside 24h, flagged Late); `ops-cancel-refund.spec.js:104-126` keep asserting the 24-hour rule
   for **Cancel** only.
-- Gate: `cd api && npm run check` and `npm --prefix <abs>/web-tests run test:all` green.
+- Gate, before **every** commit (CLAUDE.md maintenance rule 4): `cd api && npm run check` and
+  `npm --prefix <abs>/web-tests run test:all` green, read from the runners' own exit codes.
+- Evidence: each "see it fail" run is saved to a file, and the PR pastes the red and green
+  summary lines per task (CLAUDE.md hard rule 2).
 
 ## Release
 
