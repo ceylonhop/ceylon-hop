@@ -157,6 +157,8 @@ describe('bookings queue filter chips', () => {
   // The nav badge has to count the same rows the list shows, or it points somewhere the reader
   // cannot get to. Against the real queue the unscoped version read ~60 for a forward book of 10.
   it('scopes the nav badge to open work', () => {
-    expect(html).toContain("const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;");
+    // A founder's badge also adds the refunds waiting on them (closed bookings included); the
+    // open-work half is still scoped to "All open", so the count never reaches back into old rows.
+    expect(html).toContain("const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;");
   });
 });

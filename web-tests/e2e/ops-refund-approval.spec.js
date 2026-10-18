@@ -132,3 +132,20 @@ test('a request inside the last 24 hours is flagged Late, and an empty amount is
   await expect(row).toContainText('Full refund');
   expect(store.posts[0].amountCents).toBe(10000);
 });
+
+test('a founder sees Refunds waiting, including a cancelled booking', async ({ page }) => {
+  const waitingRow = { ...baseRow, stage: 'cancelled', refundWaitingCents: 5000 };
+  await boot(page, { role: 'founder', store: { refunds: [] }, row: waitingRow });
+  const chip = page.locator('.fchip[data-g="refunds"]');
+  await expect(chip).toContainText('Refunds waiting');
+  await expect(chip.locator('.fc')).toHaveText('1');
+  await expect(page.locator('#nav-attn')).toHaveText('1');
+  await chip.dispatchEvent('click');
+  await expect(page.locator('[data-act="open"][data-id="booking-1"]')).toBeVisible();
+  await expect(page.locator('#view')).toContainText('Refund waiting for your approval');
+});
+
+test('ops gets no Refunds waiting chip', async ({ page }) => {
+  await boot(page, { role: 'ops', store: { refunds: [] }, row: { ...baseRow, refundWaitingCents: 5000 } });
+  await expect(page.locator('.fchip[data-g="refunds"]')).toHaveCount(0);
+});
