@@ -22,6 +22,7 @@ describe('Phase A tracking contract', () => {
       'payment_failed',
       'deposit_received',
       'balance_received',
+      'schedule_set',
     ]);
   });
 

@@ -5,7 +5,7 @@
   "placeId": "kandy",
   "title": "Kandy guide — Temple of the Tooth, lake, where to stay | Ceylon Hop",
   "description": "What to do in Kandy — the Temple of the Tooth, the lake, Peradeniya and a dance show, the train right now, where to eat and stay, and how we drive you there.",
-  "checked": "September 2026",
+  "checked": "October 2026",
   "hero": {
     "photo": "hero",
     "intro": "Sri Lanka’s last royal capital, wrapped around a lake 500 m up in the hills. The Temple of the Tooth stands on its shore, and the whole city has been a UNESCO World Heritage Site since 1988."
@@ -22,11 +22,11 @@
     "heading": "We’ll bring you to Kandy",
     "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
     "origins": [
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 120 km · about 3 h · most people arrive this way", "sell": "Your driver meets you at arrivals and you’re in the hills by the afternoon. Ask and we’ll come up the Kadugannawa Pass and stop at the Dawson Tower lookout on the way."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 120 km · about 3 h · most people arrive this way", "sell": "Airport pickup included, and you’re in the hills by the afternoon. Ask and we’ll come up the Kadugannawa Pass and stop at the Dawson Tower lookout on the way."},
       {"id": "ella", "title": "From Ella", "from": "135 km · about 3 h 45 · a full day’s scenery", "sell": "Down through the tea country via Nuwara Eliya — waterfalls, tea estates and hairpins most of the way. We’ll stop at Ramboda Falls, for lunch, and wherever you want a photo."},
       {"id": "sigiriya", "title": "From Sigiriya & Dambulla", "from": "90 km · about 2 h 30 · through the spice country", "sell": "South through Matale, where cinnamon, pepper and cardamom grow by the road. We can stop at a spice garden if you’d like — and you never have to buy anything at the end."}
     ],
-    "train": "<b>Right now no train reaches Kandy.</b> Cyclone Ditwah cut the main line in late 2025, and trains from Colombo currently turn back at Rambukkana, well short of the hills. The railway says Colombo–Kandy trains are expected back in October 2026, but there’s no timetable yet and a bridge just outside Kandy is still being repaired — so check before you plan around one. Kandy → Nanu Oya, the start of the famous ride to Ella, is still suspended.</p><p>Until it’s back, we drive it: about 3 h from the airport, 3 h 45 to Ella. When the line reopens, sit on the <b>right</b> out of Colombo, and on the right from Kandy as far as Nanu Oya. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk. Message us and we’ll tell you what’s running on your date."
+    "train": "<b>Right now no train reaches Kandy station.</b> Cyclone Ditwah cut the main line in late 2025. Since 2 October 2026, trains from Colombo run as far as Peradeniya and Gampola, but not into Kandy: the bridge between Peradeniya and Kandy is still being repaired, and there’s no reopening date yet — so check before you plan around one. Kandy → Nanu Oya, the start of the famous ride to Ella, is still suspended.</p><p>Until it’s back, we drive it: about 3 h from the airport, 3 h 45 to Ella. When the line reopens, sit on the <b>right</b> out of Colombo, and on the right from Kandy as far as Nanu Oya. Reserved seats go on sale 30 days ahead, only on seatreservation.railway.gov.lk. Message us and we’ll tell you what’s running on your date."
   },
   "places": [
     {
@@ -34,7 +34,7 @@
       "name": "Temple of the Sacred Tooth Relic",
       "photo": "temple",
       "text": "Sri Dalada Maligawa keeps Sri Lanka’s most precious relic, a tooth of the Buddha, in a golden casket behind the doors of an inner chamber. It’s a working temple first: pilgrims dressed in white, and drums at the services. One ticket also covers three museums and the royal elephant stable in the same grounds.",
-      "spec": {"from": "In the centre, on the lake’s north shore", "open": "5:30 AM–8 PM daily · services at 5:30, 9:30 & 6:30 PM", "give": "1–1.5 hours", "level": "Easy", "ticket": "Rs 3,000 non-SAARC · Rs 2,500 SAARC · from the machines only"},
+      "spec": {"from": "In the centre, on the lake’s north shore", "open": "5:30 AM–8 PM daily · services 5:30–7 AM, 9:30–11 AM & 6:30–8 PM", "give": "1–1.5 hours", "level": "Easy", "ticket": "Rs 3,000 non-SAARC · Rs 2,500 SAARC · from the machines only"},
       "tip": {"kind": "drivers", "text": "Come for the 6:30 PM service: drums, oil lamps, and the chamber doors open — you see the golden casket, not the tooth itself. Go at 5:30 AM if you want it quiet. Buy only from the ticket machines; anyone selling a ‘special ticket’ to see the relic is running a scam. The audio guide is free, in 8 languages."},
       "offer": {"title": "Evening at the temple with Ceylon Hop", "sub": "From your hotel to the 6:30 service, and back after", "wa": "Hi Ceylon Hop — I’m reading your Kandy guide. Could you give me a price for a ride from my hotel to the evening service at the Temple of the Tooth, with the wait and the drive back?"}
     },
@@ -214,7 +214,7 @@
       "tab": "Planning",
       "items": [
         {"q": "How many nights should I stay?", "a": "<p>One or two. One full day covers the gardens, the lake, a dance show and the evening service at the temple. A second lets you add the Tea Museum, a forest walk or Ambuluwawa without rushing.</p>"},
-        {"q": "Is there a train to Kandy?", "a": "<p>Not right now. Cyclone Ditwah cut the line in late 2025. Colombo–Kandy trains are expected back from October 2026, but nothing is timetabled yet and Kandy → Nanu Oya is still suspended — so check before you plan. We drive it: about 3 h from the airport, 3 h 45 to Ella. <a href=\"#here\">See how we get you here ↑</a></p>"},
+        {"q": "Is there a train to Kandy?", "a": "<p>Not into Kandy itself. Cyclone Ditwah cut the line in late 2025. Since 2 October 2026, trains from Colombo run to Peradeniya and Gampola, but Kandy station stays closed until a bridge is repaired, with no date yet, and Kandy → Nanu Oya is still suspended — so check before you plan. We drive it: about 3 h from the airport, 3 h 45 to Ella. <a href=\"#here\">See how we get you here ↑</a></p>"},
         {"q": "When is the Esala Perahera?", "a": "<p>Usually in July or August. The temple sets the dates each year by the lunar calendar and auspicious times; 2026’s ran 18–28 August, and 2027’s haven’t been announced yet. The centre is reported to close to traffic on procession evenings, so plan to reach your hotel by mid-afternoon — and book your room early.</p>"},
         {"q": "Which viewpoint or short hike is for me?", "a": "<p>Short on time: Arthur’s Seat, a tuk-tuk ride up for the lake-and-temple view. The landmark: the Bahirawakanda Buddha. Shade and birds: Udawattakele. A real hike: the Hanthana hills — trails of one to three hours through tea. The thrill: Ambuluwawa’s spiral tower, an hour away. <a href=\"#see\">See them ↑</a></p>"},
         {"q": "Is there any nightlife?", "a": "<p>A little, and it’s low-key. Slightly Chilled Lounge has a rooftop, pool tables and fruit bats over the terrace at dusk; The Pub on Dalada Veediya has sport on the screens; Tavern 29 does cocktails on a rooftop. Alcohol isn’t sold on full-moon (Poya) days.</p>"},

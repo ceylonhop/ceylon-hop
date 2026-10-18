@@ -22,7 +22,7 @@
     "heading": "We’ll drive you to the rock",
     "sub": "Hotel to hotel, fixed price, one driver who knows the road. From wherever you are.",
     "origins": [
-      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 150 km · about 3 h 15 · most people arrive this way", "sell": "Your driver meets you at arrivals and you’re in the dry zone by the afternoon. The easiest way to start a trip: do the big climb early, then unwind in the hills and on the coast."},
+      {"id": "cmb-airport", "title": "Straight from the airport", "from": "CMB · 150 km · about 3 h 15 · most people arrive this way", "sell": "Airport pickup included, and you’re in the dry zone by the afternoon. The easiest way to start a trip: do the big climb early, then unwind in the hills and on the coast."},
       {"id": "kandy", "title": "From Kandy", "from": "90 km · about 2 h 30 · through the spice country", "sell": "North through Matale, where cinnamon, pepper and cardamom grow by the road, past the Aluvihare cave temple and Dambulla. We can stop at a spice garden on the way if you’d like."},
       {"id": "negombo", "title": "From Negombo", "from": "150 km · about 3 h 15 · after a night by the beach", "sell": "The same road as the airport run, so your first night can be by the sea near the airport. Leave after breakfast and you’ll be at Dambulla in time for the caves before they close."}
     ],
@@ -83,7 +83,7 @@
       "id": "village",
       "name": "A village day",
       "photo": "village",
-      "text": "Get off the tourist track for a few hours: a bullock-cart ride, a catamaran across the village lake, a walk through the paddy and vegetable plots, then a cooking demonstration and a family lunch cooked over firewood — often a dozen curries in clay pots. The slower, more human side of the area, and good for children.",
+      "text": "Get off the tourist track for a few hours: a bullock-cart ride, a catamaran across the village lake, a walk through the paddy and vegetable plots, then a family lunch cooked over firewood while you watch, or help — often a dozen curries in clay pots. The slower, more human side of the area, and good for children.",
       "spec": {"from": "Around Sigiriya & Habarana", "open": "Mornings, or late afternoon", "give": "2–3 hours", "ticket": "≈ USD 25–90 per person, by what’s included"}
     },
     {
@@ -109,7 +109,7 @@
       "text": "The medieval royal capital: palaces, dagobas and the four great Buddhas carved into one granite wall at Gal Vihara. Flat and spread out — hire a bicycle at the gate. CCF ticket ≈ USD 30."
     },
     {
-      "time": "1 h 45",
+      "time": "1 h 30",
       "name": "Anuradhapura",
       "text": "The first great capital, over 2,000 years old: giant white dagobas and the sacred Bodhi tree, grown from a cutting of the one the Buddha sat under. A long, hot, unforgettable day. CCF ticket ≈ USD 30."
     },

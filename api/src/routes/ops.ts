@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
@@ -25,7 +25,8 @@ import { boardRowsForOps } from '../services/opsBoardView';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
-import { sendNoShowNotice, manageUrl } from '../services/notifications';
+import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
+import { scheduleProblem } from '../domain/bookingSchedule';
 import { isBalanceOpen } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
@@ -71,6 +72,8 @@ export interface OpsDeps {
   experienceInterests?: ExperienceInterestRepo;
   // Phase A's append-only booking-email evidence. Optional deployments name it as unavailable.
   customerCommunications?: CustomerCommunicationRepo;
+  // CSRF allow-list for mutation routes that need it (spec 2026-10-17 §6) — same list as /admin/rates.
+  allowedOrigins?: string[];
 }
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
@@ -149,6 +152,18 @@ async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string):
 
 export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
+
+  // Same CSRF rule as /admin/rates and /admin/quote: the ch_ops cookie is ambient browser state.
+  const csrf: MiddlewareHandler = async (c, next) => {
+    const site = c.req.header('sec-fetch-site');
+    if (site) {
+      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
+      return next();
+    }
+    const origin = c.req.header('origin');
+    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
+    return next();
+  };
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
 
@@ -360,7 +375,8 @@ export function opsRoutes(deps: OpsDeps) {
       scheduledDate: i.scheduledDate, scheduledTime: i.scheduledTime, meetingPoint: i.meetingPoint, confirmationSentAt: i.confirmationSentAt,
       confirmationChannel: i.confirmationChannel,
     }));
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests });
+    const scheduleEvents = await deps.bookings.listScheduleEvents(b.id);
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests, scheduleEvents });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
@@ -408,6 +424,51 @@ export function opsRoutes(deps: OpsDeps) {
     }).safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     return c.json(await deps.rideOps.setFlags(c.req.param('id'), body.data));
+  });
+
+  // Set or change a single transfer's pickup date/time after booking (spec 2026-10-17 §4).
+  // `expected` is what the operator was looking at: if it changed meanwhile (another operator,
+  // later the customer) the write is refused with the current value instead of silently winning.
+  r.post('/bookings/:id/schedule', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const Value = z.string().nullable();
+    const body = z.object({
+      date: z.string(),
+      time: z.string().nullable(),
+      expected: z.object({ date: Value, time: Value }),
+      notifyCustomer: z.boolean(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const { date, time, expected, notifyCustomer } = body.data;
+    const problem = scheduleProblem(date, time, new Date(), { allowShortNotice: true });
+    if (problem) return c.json({ error: problem }, 400);
+
+    const result = await deps.bookings.setSchedule(id, {
+      date, time, expected, actor: { type: 'staff', id: c.get('identity').email },
+    });
+    if (!result.ok) {
+      if (result.reason === 'not_found') return c.json({ error: 'not_found' }, 404);
+      const b = result.booking;
+      const current = b.mode === 'single' ? { date: b.input.date ?? null, time: b.input.time ?? null } : null;
+      return c.json({ error: result.reason, current }, 409);
+    }
+
+    // A driver who already has the job is holding the OLD time — the sheet tells the operator.
+    const ride = await deps.rideOps.get(id);
+    const driverNotified = !!ride && ride.fulfilmentStatus !== 'paid';
+    // Best-effort, like the stage emails: a mail failure must not undo a change ops just made.
+    let emailed = false;
+    if (notifyCustomer && deps.email) {
+      try {
+        const links = deps.baseUrl && deps.linkSecret ? { manage: manageUrl(result.booking, deps.baseUrl, deps.linkSecret) } : {};
+        await sendScheduleSet(result.booking, deps.email, links);
+        emailed = true;
+      } catch (err) {
+        console.error(`[ops] schedule_set email failed for ${result.booking.reference}:`, err);
+      }
+    }
+    return c.json({ date, time, emailed, driverNotified });
   });
 
   return r;

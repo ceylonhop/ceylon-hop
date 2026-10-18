@@ -591,6 +591,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
+  /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
+  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input:focus{outline:none;border-color:var(--teal)}
+  .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
+  .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
+  .sched .btn-go{margin-top:10px}
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
@@ -3742,6 +3748,7 @@ function buildActivity(t,d){
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }
@@ -4154,6 +4161,22 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
+   send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+/* `expected` rides along with the save so a change someone else made meanwhile comes back as a
+   conflict, not a silent overwrite. */
+function scheduleFormHtml(t,d){
+  const inp=d.booking.input||{};
+  const driverHasIt=STAGES.indexOf(t.stage)>=STAGES.indexOf('vehicle_confirmed');
+  return `<div class="sched" data-testid="sched-form">
+    <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
+    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
+    ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
+    <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
+  </div>`;
+}
 function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
@@ -4178,6 +4201,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  const canSchedule=d?.booking?.mode==='single'&&['paid','confirmed'].includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4247,7 +4271,8 @@ function renderSheet(){
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
         ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
+        ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
@@ -4678,13 +4703,13 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;
   /* Same in-flight guard the quote action bar got (runAction). Each of these is a booking
      mutation that used to run with no visible sign and no re-entry guard — a double press on
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -4726,6 +4751,22 @@ document.addEventListener('click',async e=>{
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
        has to be emptied by the code that consumed it. Without it the note stays in the box
        after being saved and reads as "not saved" — an invitation to add it twice. */
+    case 'schedopen':{state.schedOpen=state.schedOpen===id?null:id;renderSheet();break;}
+    case 'schedsave':{
+      const inp=state.detailData?.booking?.input||{};
+      const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
+      if(!date){toast('Pick a date','error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked};
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
+        state.schedOpen=null;
+        toast(res.driverNotified?'Saved — send the new time to the driver':res.emailed?'Saved — customer emailed':'Saved');
+        await refreshDetail(id);await refreshRow(id);
+      }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
+      break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
@@ -9139,6 +9180,10 @@ var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent
 var EXP_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = the API's weekday number
 var EXP_PHOTO_STEM = /^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/;           // mirrors PHOTO_STEM in experience.ts
 var EXP_PHOTO_ORIGIN = 'https://ceylonhop.com';
+// An uploaded photo's address (spec 2026-10-17 P2) — mirrors UPLOADED_PHOTO in experience.ts.
+var EXP_PHOTO_UPLOADED = /^https:\/\/img(-staging)?\.ceylonhop\.com\/experiences\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The server's per-file caps (opsExperiences.ts PHOTO_MAX), which keep an upload under the app-wide 1 MB body limit.
+var EXP_PHOTO_MAX = { large: 700000, small: 250000 };
 var EXP_NOT_LIVE = 'Not live yet — photos appear after the site promote';
 // Server field → the form's data-err key (the rest map to themselves).
 var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
@@ -9189,7 +9234,7 @@ function expStatsLine(s) {
   if (s.paidCents.LKR > 0) paid.push('LKR ' + Math.round(s.paidCents.LKR / 100).toLocaleString('en-US'));
   return s.interested + ' interested · ' + s.paid + ' paid' + (paid.length ? ' · ' + paid.join(' + ') : '');
 }
-function expPhotoUrl(stem) { return EXP_PHOTO_ORIGIN + '/img/' + stem + '-900.jpg'; } // photoUrls(stem).small
+function expPhotoUrl(stem) { return (EXP_PHOTO_UPLOADED.test(stem) ? stem : EXP_PHOTO_ORIGIN + '/img/' + stem) + '-900.jpg'; } // photoUrls(stem).small
 
 async function loadExperiences() {
   var seq = _expSeq, ls = ++_expListSeq;
@@ -9198,7 +9243,7 @@ async function loadExperiences() {
     var d = r.ok ? await jsonOrNull(r) : null;
     if (seq !== _expSeq || ls !== _expListSeq) return;
     if (d && Array.isArray(d.experiences)) {
-      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [] };
+      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true };
       expLoadFailed = false;
     } else expLoadFailed = true;
   } catch (e) {
@@ -9560,11 +9605,16 @@ function renderExpForm(e) {
   var days = EXP_DAYS.map(function (n, i) {
     return '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-day-' + i + '"' + (d.openWeekdays.indexOf(i) >= 0 ? ' checked' : '') + '> ' + n + '</label>';
   }).join('');
+  var up = !!(expData && expData.uploads);
   var photos = '';
   for (var i = 0; i < 6; i++) {
-    photos += '<div class="ch-input-wrap" style="margin-top:' + (i ? 6 : 0) + 'px"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1') + '" value="' + esc(d.photos[i] || '') + '"></div>'
+    photos += '<div style="display:flex;gap:6px;align-items:center;margin-top:' + (i ? 6 : 0) + 'px">'
+      + '<div class="ch-input-wrap" style="flex:1"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1') + '" value="' + esc(d.photos[i] || '') + '"></div>'
+      + (up ? '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoPick" data-slot="' + i + '" data-testid="exp-photo-upload-' + i + '">Upload</button>' : '')
+      + '</div>'
       + '<div class="ch-exp-prev" id="exp-photo-' + i + '-prev"></div>';
   }
+  if (up) photos += '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
     + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
@@ -9580,7 +9630,7 @@ function renderExpForm(e) {
     + expInput('duration', 'Duration', d.durationText || '', ' placeholder="90 min"')
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
-    + expField('photos', 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
+    + expField('photos', up ? 'Photos (up to 6 — upload one, or type a path under img/ without -900/-1800)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
     + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
       + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
@@ -9640,9 +9690,83 @@ function expPhotoPreview(i) {
   var inp = document.getElementById('exp-photo-' + i), out = document.getElementById('exp-photo-' + i + '-prev');
   if (!inp || !out) return;
   var stem = inp.value.trim();
-  out.innerHTML = EXP_PHOTO_STEM.test(stem)
-    ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '"><span class="ch-exp-note" data-testid="exp-photo-note" hidden>' + EXP_NOT_LIVE + '</span>'
-    : '';
+  // An uploaded photo is live the moment the upload succeeds, so it never gets the "Not live yet" note.
+  out.innerHTML = EXP_PHOTO_UPLOADED.test(stem)
+    ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '">'
+    : EXP_PHOTO_STEM.test(stem)
+      ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '"><span class="ch-exp-note" data-testid="exp-photo-note" hidden>' + EXP_NOT_LIVE + '</span>'
+      : '';
+}
+
+// Photo upload (spec 2026-10-17 P3/P6): shrink in the browser to the guides' two sizes (drawing on a canvas
+// also drops the camera data, GPS included), post both, put the returned address in the slot. Nothing is
+// saved until ops presses Save.
+var _expPhotoSlot = -1;
+var EXP_UPLOAD_ERR = {
+  too_large: 'This photo is too big even after shrinking — try a smaller one.',
+  payload_too_large: 'This photo is too big even after shrinking — try a smaller one.',
+  not_jpeg: 'Couldn’t read this photo — save it as JPEG and try again.',
+  uploads_off: 'Uploads are off on this server.',
+};
+function expPhotoPick(slot) {
+  var f = document.getElementById('exp-photo-file');
+  if (!f) return;
+  _expPhotoSlot = slot;
+  f.value = '';
+  f.click();
+}
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t || t.id !== 'exp-photo-file' || !t.files || !t.files[0] || _expPhotoSlot < 0) return;
+  expPhotoUpload(_expPhotoSlot, t.files[0]);
+});
+// One JPEG, longest edge `edge` (never enlarged), under `maxBytes`: quality steps down until it fits.
+// Resolves null when even the lowest step is too big.
+async function expShrink(file, edge, maxBytes) {
+  var bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  var s = Math.min(1, edge / Math.max(bmp.width, bmp.height));
+  var c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * s));
+  c.height = Math.max(1, Math.round(bmp.height * s));
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; // a transparent PNG would otherwise turn black as a JPEG
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  var steps = [0.82, 0.72, 0.62, 0.5];
+  for (var i = 0; i < steps.length; i++) {
+    var blob = await new Promise(function (res, rej) {
+      c.toBlob(function (b) { b ? res(b) : rej(new Error('encode failed')); }, 'image/jpeg', steps[i]);
+    });
+    if (blob.size <= maxBytes) return blob;
+  }
+  return null;
+}
+async function expPhotoUpload(slot, file) {
+  var btn = expEl && expEl.querySelector('[data-action="expPhotoPick"][data-slot="' + slot + '"]');
+  var err = expEl && expEl.querySelector('[data-err="photos"]');
+  if (err) err.textContent = '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+  try {
+    var large, small;
+    try { large = await expShrink(file, 1800, EXP_PHOTO_MAX.large); small = await expShrink(file, 900, EXP_PHOTO_MAX.small); }
+    catch (x) { if (err) err.textContent = EXP_UPLOAD_ERR.not_jpeg; return; }
+    if (!large || !small) { if (err) err.textContent = EXP_UPLOAD_ERR.too_large; return; }
+    var fd = new FormData();
+    fd.append('large', large, 'large.jpg');
+    fd.append('small', small, 'small.jpg');
+    var res = await api('/admin/experiences/photos', { method: 'POST', body: fd });
+    var j = await jsonOrNull(res);
+    if (!res.ok || !j || typeof j.stem !== 'string') {
+      if (err) err.textContent = (j && EXP_UPLOAD_ERR[j.error]) || 'Upload failed — try again.';
+      return;
+    }
+    var inp = document.getElementById('exp-photo-' + slot);
+    if (inp) { inp.value = j.stem; expPhotoPreview(slot); }
+  } catch (x) {
+    if (err) err.textContent = 'Upload failed — try again.';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Upload'; }
+  }
 }
 
 function expOpenForm(id) {
@@ -9797,6 +9921,7 @@ document.addEventListener('click', function (e) {
   else if (action === 'expEdit') expOpenForm(el.getAttribute('data-id'));
   else if (action === 'expCancel') expCloseForm();
   else if (action === 'expSave') expSave();
+  else if (action === 'expPhotoPick') expPhotoPick(Number(el.getAttribute('data-slot')));
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
   else if (action === 'expTab') {
