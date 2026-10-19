@@ -499,7 +499,8 @@ function attachAC(input, menu, which){
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
-      if(geo && geo.name) input.value=geo.name;
+      // Keep Google's full text in the field (set from d.label above): the bare main text is a
+      // name the server often can't place, and the booking lands unpriced (2026-10-18).
       markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
