@@ -11,8 +11,13 @@ export const ROAD_FACTOR = 1.35;
 
 const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'use HH:MM');
 // A path under img/ without the -900/-1800 suffix: experiences/<slug>/<name>, or an existing live photo
-// such as guides/sigiriya/ayurveda (spec D8, D20).
-const PHOTO_STEM = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/, 'use a path under img/, e.g. experiences/slug/name');
+// such as guides/sigiriya/ayurveda (spec D8, D20). Or an uploaded photo (spec 2026-10-17 P2): its address
+// on one of our two image domains (an R2 bucket each), also without the suffix.
+export const PHOTO_UPLOAD_ORIGINS = ['https://img.ceylonhop.com', 'https://img-staging.ceylonhop.com'] as const;
+const REPO_PHOTO = /^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/;
+const UPLOADED_PHOTO = /^https:\/\/img(-staging)?\.ceylonhop\.com\/experiences\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PHOTO_STEM = z.string().refine((s) => REPO_PHOTO.test(s) || UPLOADED_PHOTO.test(s),
+  'use a path under img/, e.g. experiences/slug/name, or upload a photo');
 
 export const ExperienceInputSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]{3,60}$/, 'lowercase letters, digits and dashes'),
@@ -35,6 +40,9 @@ export const ExperienceInputSchema = z.object({
   partnerContact: z.string().trim().max(200).nullable().default(null),
   // The Tripadvisor listing id (spec D22): digits only, because it is spliced into an API path. Ops-only; never public.
   tripadvisorLocationId: z.string().regex(/^[0-9]{1,15}$/, 'digits only, e.g. 6789012').nullable().default(null),
+  // Google place id from "Find the business on Google" (2026-10-18). Ops-only; spliced into a Places API path,
+  // so the same shape the DB checks (migration 0074).
+  googlePlaceId: z.string().regex(/^[A-Za-z0-9_-]{10,255}$/, 'not a Google place id').nullable().default(null),
   active: z.boolean().default(true),
 }).strict();
 
@@ -56,7 +64,7 @@ export interface PublicExperience {
 }
 
 export function photoUrls(stem: string): { small: string; large: string } {
-  const base = `${PHOTO_ORIGIN}/img/${stem}`;
+  const base = UPLOADED_PHOTO.test(stem) ? stem : `${PHOTO_ORIGIN}/img/${stem}`;
   return { small: `${base}-900.jpg`, large: `${base}-1800.jpg` };
 }
 

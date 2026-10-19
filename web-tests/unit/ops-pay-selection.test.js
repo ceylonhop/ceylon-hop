@@ -18,7 +18,7 @@ function loadFn(signature) {
 }
 const paySelectionState = loadFn('paySelectionState(lines)');
 const togglePayLine = loadFn('togglePayLine(state, lines, line)');
-const paySelectionSummary = loadFn('paySelectionSummary(state, lines)');
+const paySelectionSummary = loadFn('paySelectionSummary(state, lines, totalCents)');
 
 const lines = [
   { kind: 'leg', index: 0, label: 'Colombo → Kandy (car)', amountCents: 5000 },
@@ -57,6 +57,25 @@ describe('pay selection picker', () => {
     expect(paySelectionSummary(s, lines)).toEqual({
       soldLegs: 1, totalLegs: 2, amountCents: 5000, gapAfter: null,
     });
+  });
+
+  // Staging Q-29EYR: legs summed to $106.67 but the finished quote (and the link) is $106.00.
+  // When nothing is unticked the server charges quote.totalCents, so the picker must show that.
+  it('shows the finished quote total when every line is ticked', () => {
+    const total = 11300; // lines sum to 11500: the finishing adjustment took $2 off
+    expect(paySelectionSummary(paySelectionState(lines), lines, total)).toEqual({
+      soldLegs: 2, totalLegs: 2, amountCents: 11300, gapAfter: null,
+    });
+  });
+
+  it('shows the line sum for a genuine subset, whatever the total is', () => {
+    const total = 11300;
+    // Every leg but the extra dropped IS a subset (the server only falls back to the total when
+    // nothing at all is unticked).
+    const noExtra = togglePayLine(paySelectionState(lines), lines, { kind: 'extra', index: 0 });
+    expect(paySelectionSummary(noExtra, lines, total).amountCents).toBe(11000);
+    const oneLeg = togglePayLine(paySelectionState(lines), lines, { kind: 'leg', index: 1 });
+    expect(paySelectionSummary(oneLeg, lines, total).amountCents).toBe(5000);
   });
 
   it('names the gap when a middle leg is dropped', () => {

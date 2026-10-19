@@ -41,7 +41,7 @@ export function can(role: OpsRole, action: OpsAction): boolean {
 
 // Every action the matrix grants to somebody — DERIVED from it, never hand-listed. /admin/ops/whoami
 // filters this by role to tell the client what it may offer, and ops-ui.html gates its actions on the
-// resulting strings (refund confirm/cancel read caps.includes('payments:reverse')). A hand-maintained
+// resulting strings (refund confirm and execute read caps.includes('payments:reverse'); cancelling a request reads 'bookings:operate'). A hand-maintained
 // copy of this list is a silent-failure machine: omitting an action there does not fail a request or
 // a type check, it just makes the client hide a button from the role that holds it. That is precisely
 // what happened to payments:reverse — dead refund confirmation for the founder, the only role with it.

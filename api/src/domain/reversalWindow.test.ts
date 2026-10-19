@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tripStartAt, mayReverse, REVERSAL_WINDOW_HOURS, FRESH_BOOKING_GRACE_HOURS } from './reversalWindow';
+import { tripStartAt, mayReverse, isLateRequest, REVERSAL_WINDOW_HOURS, FRESH_BOOKING_GRACE_HOURS } from './reversalWindow';
 import type { Booking } from '../db/bookingRepo';
 
 // Owner rule, 2026-08-02: an ops agent may cancel or refund up to 24 hours before the trip
@@ -153,5 +153,37 @@ describe('mayReverse', () => {
   it('exposes both windows so the numbers are testable rather than buried', () => {
     expect(REVERSAL_WINDOW_HOURS).toBe(24);
     expect(FRESH_BOOKING_GRACE_HOURS).toBe(24);
+  });
+});
+
+describe('isLateRequest — filed inside the last day before the trip (display only)', () => {
+  // 2026-09-16 08:00 +05:30 = 02:30Z; the 24h line is 2026-09-15T02:30Z.
+  const b = single('2026-09-16', '08:00');
+  it('is not late more than 24 hours out', () => {
+    expect(isLateRequest(b, at('2026-09-15T02:29:59Z'))).toBe(false);
+  });
+  it('is late from the 24-hour line on, and after the trip started', () => {
+    expect(isLateRequest(b, at('2026-09-15T02:30:00Z'))).toBe(true);
+    expect(isLateRequest(b, at('2026-09-17T00:00:00Z'))).toBe(true);
+  });
+  it('is never late without a trip date', () => {
+    expect(isLateRequest(single(), at('2026-09-15T02:30:00Z'))).toBe(false);
+  });
+});
+
+describe('mayReverse messages speak of cancelling only (refund requests left the rule 2026-10-17)', () => {
+  it('inside the last day', () => {
+    const v = mayReverse('ops', single('2026-09-16', '08:00'), at('2026-09-16T00:00:00Z'));
+    expect(v).toEqual({
+      ok: false, code: 'within_24h_founder_only',
+      message: 'The trip starts in under 24 hours — only a founder can cancel from here.',
+    });
+  });
+  it('with no trip date', () => {
+    const v = mayReverse('ops', single(), at('2026-09-16T00:00:00Z'));
+    expect(v).toEqual({
+      ok: false, code: 'trip_start_unknown',
+      message: 'This booking has no trip date, so the 24-hour rule cannot be checked. A founder can still cancel it.',
+    });
   });
 });

@@ -6,6 +6,8 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeEmailAdapter, type EmailAdapter } from '../adapters/email';
 import { signSession } from '../lib/opsAuth';
+import { FakeImageStore } from '../adapters/imageStore';
+import { FakeBusinessPlaces } from '../adapters/businessPlaces';
 
 const AUTH = { opsUsers: 'f@x.com:founder,op@x.com:ops,fin@x.com:finance', googleClientId: 'cid', opsSessionSecret: 'sek' };
 const cookie = (email: string) => `ch_ops=${signSession({ email, exp: Date.now() + 60_000 }, AUTH.opsSessionSecret)}`;
@@ -408,7 +410,20 @@ describe('lead schedule and confirmation email', () => {
       expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
     });
 
-    it('502 send_failed when the adapter reports the message was not delivered (kill switch)', async () => {
+    // Staging 2026-10-13: the allowlist stops every address outside @ceylonhop.com, and the page answered
+    // "try again" — the one thing that cannot help. A suppression is an operator setting, not a failure.
+    it('422 email_suppressed (with the adapter reason) when the allowlist stops the message; nothing stamped', async () => {
+      const allowlisted: EmailAdapter = { send: async () => ({ delivered: false, reason: 'suppressed_allowlist' }) };
+      const s = await confirmSetup({ email: allowlisted });
+      const i = await s.interests.record({ experience: s.exp, source: 'booking_page', bookingId: (await s.paidBooking()).id });
+      await s.paid(i.id, s.SCHEDULE);
+      const res = await s.send('POST', conf(i.id), {});
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: 'email_suppressed', reason: 'suppressed_allowlist' });
+      expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
+    });
+
+    it('422 email_suppressed when the kill switch stops the message; nothing stamped', async () => {
       const s = await confirmSetup();
       const i = await s.interests.record({ experience: s.exp, source: 'booking_page', bookingId: (await s.paidBooking()).id });
       await s.paid(i.id, s.SCHEDULE);
@@ -417,7 +432,9 @@ describe('lead schedule and confirmation email', () => {
         email: s.fake, emailPolicy: { enabled: false },
       });
       const res = await off.request(conf(i.id), { method: 'POST', headers: { cookie: OPS, 'content-type': 'application/json' }, body: '{}' });
-      expect(res.status).toBe(502);
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: 'email_suppressed', reason: 'suppressed_disabled' });
+      expect(s.fake.sent).toHaveLength(0);
       expect((await s.interests.get(i.id))!.confirmationSentAt).toBeNull();
     });
 
@@ -432,5 +449,168 @@ describe('lead schedule and confirmation email', () => {
       expect(await cross.json()).toEqual({ error: 'bad_origin' });
       expect(s.fake.sent).toHaveLength(0);
     });
+  });
+});
+
+const jpeg = (n: number) => { const b = new Uint8Array(n); b.set([0xff, 0xd8, 0xff, 0xe0]); return b; };
+function photoForm(large: Uint8Array<ArrayBuffer> | null = jpeg(2000), small: Uint8Array<ArrayBuffer> | null = jpeg(1000)) {
+  const f = new FormData();
+  if (large) f.set('large', new File([large], 'large.jpg', { type: 'image/jpeg' }));
+  if (small) f.set('small', new File([small], 'small.jpg', { type: 'image/jpeg' }));
+  return f;
+}
+function setupPhotos(store: FakeImageStore | null = new FakeImageStore()) {
+  const experiences = new InMemoryExperienceRepo();
+  const a = realCreateApp({
+    auth: AUTH, adminApiKey: 'k', experiences, experienceInterests: new InMemoryExperienceInterestRepo(),
+    photoStore: store ? { store, publicOrigin: 'https://img-staging.ceylonhop.com' } : null,
+  });
+  const upload = (body: FormData, ck: string | null = OPS, extra: Record<string, string> = {}) =>
+    a.request('/admin/experiences/photos', { method: 'POST', headers: { ...(ck ? { cookie: ck } : {}), ...extra }, body });
+  return { a, store, upload };
+}
+
+describe('POST /admin/experiences/photos (spec 2026-10-17)', () => {
+  it('401 without a session, 403 for finance, 403 cross-site', async () => {
+    const { upload } = setupPhotos();
+    expect((await upload(photoForm(), null)).status).toBe(401);
+    expect((await upload(photoForm(), FINANCE)).status).toBe(403);
+    expect((await upload(photoForm(), OPS, { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+  });
+
+  it('503 uploads_off when no store is configured', async () => {
+    const { upload } = setupPhotos(null);
+    const res = await upload(photoForm());
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'uploads_off' });
+  });
+
+  it('stores both sizes under one new uuid and answers an address the catalogue accepts', async () => {
+    const { a, store, upload } = setupPhotos();
+    // Both files at their caps still fit under the app-wide 1 MB limit.
+    const large = jpeg(700_000), small = jpeg(250_000);
+    const res = await upload(photoForm(large, small));
+    expect(res.status).toBe(201);
+    const { stem } = await res.json();
+    expect(stem).toMatch(/^https:\/\/img-staging\.ceylonhop\.com\/experiences\/[0-9a-f-]{36}$/);
+    const id = stem.split('/').pop();
+    expect(store!.puts.map((p) => p.key)).toEqual([`experiences/${id}-1800.jpg`, `experiences/${id}-900.jpg`]);
+    expect(store!.puts[0]).toMatchObject({ contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' });
+    expect(Array.from(store!.puts[0]!.body)).toEqual(Array.from(large));
+    expect(Array.from(store!.puts[1]!.body)).toEqual(Array.from(small));
+    // Round trip: the returned address is a valid photo for a new experience.
+    const created = await a.request('/admin/experiences', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: OPS }, body: JSON.stringify({ ...BODY, photos: [stem] }),
+    });
+    expect(created.status).toBe(201);
+  });
+
+  it('400 for a missing file, a non-JPEG, or an oversize file', async () => {
+    const { store, upload } = setupPhotos();
+    expect(await (await upload(photoForm(jpeg(2000), null))).json()).toEqual({ error: 'bad_request', field: 'small' });
+    expect(await (await upload(photoForm(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), jpeg(10)))).json()).toEqual({ error: 'not_jpeg', field: 'large' });
+    expect(await (await upload(photoForm(jpeg(700_001), jpeg(1000)))).json()).toEqual({ error: 'too_large', field: 'large' });
+    expect(await (await upload(photoForm(jpeg(2000), jpeg(250_001)))).json()).toEqual({ error: 'too_large', field: 'small' });
+    expect(store!.puts).toHaveLength(0);
+  });
+
+  it('413 from the app-wide 1 MB body limit, before the route reads anything', async () => {
+    const { store, upload } = setupPhotos();
+    const res = await upload(photoForm(jpeg(1_100_000), jpeg(1000)));
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large' });
+    expect(store!.puts).toHaveLength(0);
+  });
+
+  it('502 upload_failed when the store fails', async () => {
+    const store = new FakeImageStore();
+    store.fail = true;
+    const { upload } = setupPhotos(store);
+    const res = await upload(photoForm());
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upload_failed' });
+  });
+
+  it('the catalogue GET says whether uploads are on', async () => {
+    const on = setupPhotos();
+    expect((await (await on.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(true);
+    const off = setupPhotos(null);
+    expect((await (await off.a.request('/admin/experiences', { headers: { cookie: OPS } })).json()).uploads).toBe(false);
+  });
+});
+
+// "Find the business on Google" (2026-10-18).
+const ATHERYA = {
+  placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
+  lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+  openWeekdays: [1, 2, 3, 4, 5, 6] as number[] | null,
+};
+function setupBusiness(fake: FakeBusinessPlaces | null = new FakeBusinessPlaces([ATHERYA])) {
+  const a = realCreateApp({
+    auth: AUTH, adminApiKey: 'k', experiences: new InMemoryExperienceRepo(), experienceInterests: new InMemoryExperienceInterestRepo(),
+    businessPlaces: fake,
+  });
+  const get = (path: string, ck: string | null = OPS) => a.request(path, { headers: ck ? { cookie: ck } : {} });
+  return { a, fake, get };
+}
+
+describe('GET /admin/experiences/business-search + /business/:placeId', () => {
+  it('401 without a session, 403 for finance', async () => {
+    const { get } = setupBusiness();
+    expect((await get('/admin/experiences/business-search?q=ath', null)).status).toBe(401);
+    expect((await get('/admin/experiences/business-search?q=ath', FINANCE)).status).toBe(403);
+    expect((await get(`/admin/experiences/business/${ATHERYA.placeId}`, FINANCE)).status).toBe(403);
+  });
+
+  it('503 business_off without a Google key; the catalogue GET says whether search is on', async () => {
+    const off = setupBusiness(null);
+    expect((await off.get('/admin/experiences/business-search?q=ath')).status).toBe(503);
+    expect((await (await off.get('/admin/experiences')).json()).businessSearch).toBe(false);
+    const on = setupBusiness();
+    expect((await (await on.get('/admin/experiences')).json()).businessSearch).toBe(true);
+  });
+
+  it('search passes the trimmed query and returns candidates', async () => {
+    const { get, fake } = setupBusiness();
+    const res = await get('/admin/experiences/business-search?q=%20Atherya%20');
+    expect(res.status).toBe(200);
+    expect((await res.json()).candidates).toEqual([{ placeId: ATHERYA.placeId, name: ATHERYA.name, address: ATHERYA.address, lat: 7.9571, lng: 80.7601 }]);
+    expect(fake!.calls).toEqual(['search:Atherya']);
+  });
+
+  it('search refuses an over-long query without calling Google', async () => {
+    const { get, fake } = setupBusiness();
+    expect((await get('/admin/experiences/business-search?q=' + 'x'.repeat(101))).status).toBe(400);
+    expect(fake!.calls).toEqual([]);
+  });
+
+  it('details returns the business; a malformed id is 404 without a call; an unknown id is 404', async () => {
+    const { get, fake } = setupBusiness();
+    const ok = await get(`/admin/experiences/business/${ATHERYA.placeId}`);
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).business).toEqual(ATHERYA);
+    expect((await get('/admin/experiences/business/not%20an%20id')).status).toBe(404);
+    expect((await get('/admin/experiences/business/ChIJunknown000000000000')).status).toBe(404);
+    expect(fake!.calls).toEqual([`details:${ATHERYA.placeId}`, 'details:ChIJunknown000000000000']);
+  });
+
+  it('an experience saved from a pick keeps the place id (ops-only)', async () => {
+    const { a } = setupBusiness();
+    const res = await a.request('/admin/experiences', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: OPS },
+      body: JSON.stringify({ ...BODY, slug: 'atherya', googlePlaceId: ATHERYA.placeId }),
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).experience.googlePlaceId).toBe(ATHERYA.placeId);
+  });
+});
+
+describe('business details: Area is our nearest catalogue town (2026-10-18)', () => {
+  it('replaces Google’s sub-area with the town travellers know, and keeps Google’s when no town is near', async () => {
+    const near = { ...ATHERYA, area: 'Kimbissa' };
+    const far = { ...ATHERYA, placeId: 'ChIJFarAway00000000000000', area: 'Bibile', lat: 7.3, lng: 81.4 };
+    const { get } = setupBusiness(new FakeBusinessPlaces([near, far]));
+    expect((await (await get(`/admin/experiences/business/${near.placeId}`)).json()).business.area).toBe('Sigiriya');
+    expect((await (await get(`/admin/experiences/business/${far.placeId}`)).json()).business.area).toBe('Bibile');
   });
 });

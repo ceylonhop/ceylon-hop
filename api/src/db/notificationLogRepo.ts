@@ -11,10 +11,16 @@ export type NotificationKind =
   | 'deposit_received'
   | 'balance_received'
   | 'booking_confirmed'
-  | 'no_show_notice';
+  | 'no_show_notice'
+  | 'details_reminder_1'
+  | 'details_reminder_2';
 
 export interface NotificationLogRepo {
   wasSent(bookingId: string, kind: NotificationKind): Promise<boolean>;
+  // wasSent for a SET of bookings in one query: the ids among `bookingIds` with a row of any of
+  // `kinds`. The watchdog asks this of every paid booking on each ~15-min sweep; asking per
+  // booking was two round trips each and the sweep's whole growth (2026-10-14).
+  sentAmong(bookingIds: string[], kinds: NotificationKind[]): Promise<Set<string>>;
   markSent(bookingId: string, kind: NotificationKind): Promise<void>;
   /**
    * Reserve the right to send, atomically. True means this caller owns the send; false
@@ -57,6 +63,9 @@ export class InMemoryNotificationLogRepo implements NotificationLogRepo {
   }
   async wasSent(bookingId: string, kind: NotificationKind): Promise<boolean> {
     return this.sent.has(this.key(bookingId, kind));
+  }
+  async sentAmong(bookingIds: string[], kinds: NotificationKind[]): Promise<Set<string>> {
+    return new Set(bookingIds.filter((id) => kinds.some((kind) => this.sent.has(this.key(id, kind)))));
   }
   async markSent(bookingId: string, kind: NotificationKind): Promise<void> {
     const k = this.key(bookingId, kind);

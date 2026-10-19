@@ -261,3 +261,32 @@ describe('config - TRIPADVISOR_LOGO_URL', () => {
     warn.mockRestore();
   });
 });
+
+describe('config - PHOTO_PUBLIC_ORIGIN (spec 2026-10-17 P5)', () => {
+  it('keeps the two image hosts, a trailing slash trimmed', () => {
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: 'https://img.ceylonhop.com' }).PHOTO_PUBLIC_ORIGIN).toBe('https://img.ceylonhop.com');
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: 'https://img-staging.ceylonhop.com/' }).PHOTO_PUBLIC_ORIGIN).toBe('https://img-staging.ceylonhop.com');
+  });
+
+  it('drops any other value, with a warning (uploads stay off)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const v of ['http://img.ceylonhop.com', 'https://evil.example', 'https://img.ceylonhop.com.evil.example', 'https://ceylonhop.com']) {
+      expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: v }).PHOTO_PUBLIC_ORIGIN, v).toBeUndefined();
+    }
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('is unset by default and when empty, without a warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(buildConfig({}).PHOTO_PUBLIC_ORIGIN).toBeUndefined();
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: '' }).PHOTO_PUBLIC_ORIGIN).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('passes the four R2 settings through', () => {
+    const c = buildConfig({ R2_ACCOUNT_ID: 'acct', R2_ACCESS_KEY_ID: 'AK', R2_SECRET_ACCESS_KEY: 'SK', R2_BUCKET: 'ceylonhop-photos-staging' });
+    expect([c.R2_ACCOUNT_ID, c.R2_ACCESS_KEY_ID, c.R2_SECRET_ACCESS_KEY, c.R2_BUCKET]).toEqual(['acct', 'AK', 'SK', 'ceylonhop-photos-staging']);
+  });
+});

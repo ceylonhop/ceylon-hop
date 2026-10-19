@@ -196,7 +196,7 @@ test('create: the POST carries cents, weekdays, times and photos, and the row ap
     slug: 'test-sunrise-hike', name: 'Sunrise hike', partnerName: 'Hill Guides', areaLabel: 'Ella',
     summary: 'Walk up for the sunrise.', details: '', priceCents: 3550, priceUnit: 'per_group', durationText: '2 hrs',
     openWeekdays: [1, 2, 3], startTimes: ['06:00', '14:30'], lat: 7.977, lng: 80.76, radiusKm: 8,
-    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, active: true,
+    photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, googlePlaceId: null, active: true,
   }]);
   await expect(page.locator('#exp-form')).toHaveCount(0);
 });
@@ -731,6 +731,30 @@ test('a failed send says so and can be tried again', async ({ page }) => {
   await expect.poll(() => calls.confirm.length).toBe(2);
 });
 
+// Staging 2026-10-13: the email allowlist stopped the message and the page said "try again". A
+// suppressed send is not a failure to retry — say what happened and offer the WhatsApp path instead.
+test('a send the environment suppressed says so and offers Mark confirmed on WhatsApp', async ({ page }) => {
+  let n = 0;
+  const calls = await openPaid(page, [{ ...PAID, scheduledDate: futureIsoDate(20), scheduledTime: '10:00' }], {
+    confirmLead: (r) => {
+      n++;
+      return n === 1
+        ? r.fulfill(json({ error: 'email_suppressed', reason: 'suppressed_allowlist' }, 422))
+        : r.fulfill(json({ lead: { ...PAID, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'whatsapp' } }));
+    },
+  });
+  const row = leadRows(page).nth(0);
+  await expect(row.locator('[data-testid="lead-confirm-whatsapp"]')).toHaveCount(0);
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect(page.locator('#toast')).toContainText('Email to this address is switched off on this environment — confirm on WhatsApp instead');
+  await expect(page.locator('#toast')).not.toContainText('try again');
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toHaveCount(0);
+  await row.locator('[data-testid="lead-confirm-whatsapp"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(2);
+  expect(calls.confirm[1].body).toEqual({ channel: 'whatsapp' });
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
+});
+
 // The same in-flight idiom as the note: a schedule typed while the date save is still on the wire is
 // saved after it, not dropped.
 test('a meeting point typed while the date save is in flight is saved after it, not dropped', async ({ page }) => {
@@ -825,4 +849,432 @@ test('Mark confirmed on WhatsApp pressed while schedule saves are queued waits f
   await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmed on WhatsApp ✓');
   await expect(row.locator('[data-action="expLeadConfirm"]')).toBeEnabled();
   expect(calls.confirm).toHaveLength(1);
+});
+
+// Two schedule fields changed while the date save was out woke together and PATCHed at once; the
+// slower answer, the server's row from before the other write, then overwrote the page's copy of the
+// lead — which is what the next repaint shows.
+test('schedule saves queued behind one in-flight save go out one at a time, and the row keeps every value', async ({ page }) => {
+  const day = futureIsoDate(20);
+  const server = { ...PAID, scheduledDate: null, scheduledTime: null, meetingPoint: null }; // the API's row carries every column
+  const gates = []; // the first two PATCH answers wait for the test
+  let n = 0;
+  const calls = await openPaid(page, [PAID], {
+    patchLead: async (r, body) => {
+      const i = n++;
+      Object.assign(server, body);
+      const row = { ...server }; // the server answers with its row as of this write
+      if (i < 2) await new Promise((res) => { gates[i] = res; });
+      return r.fulfill(json({ lead: row }));
+    },
+    confirmLead: (r) => r.fulfill(json({ lead: { ...server, confirmationSentAt: '2026-10-07T04:15:00.000Z', confirmationChannel: 'email' } })),
+  });
+  const row = leadRows(page).nth(0);
+  await row.locator('[data-lead-field="scheduledDate"]').fill(day);
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="scheduledTime"]').fill('09:30'); // queues behind the date save
+  const meet = row.locator('[data-lead-field="meetingPoint"]');
+  await meet.fill('Hotel lobby');
+  await meet.blur(); // queues too
+  gates[0]();
+  await expect.poll(() => calls.leadPatch.length).toBeGreaterThanOrEqual(2);
+  await page.waitForTimeout(150);
+  expect(calls.leadPatch).toHaveLength(2); // the meeting point waits for the time save, not alongside it
+  expect(calls.leadPatch[1].body).toEqual({ scheduledTime: '09:30' });
+  const timeAnswered = page.waitForResponse((res) => res.request().method() === 'PATCH' && (res.request().postData() || '').includes('scheduledTime'));
+  gates[1]();
+  await expect.poll(() => calls.leadPatch.length).toBe(3);
+  await timeAnswered;
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
+  const last = {};
+  calls.leadPatch.forEach((c) => Object.keys(c.body).forEach((k) => { last[k] = c.body[k]; }));
+  expect(last).toEqual({ scheduledDate: day, scheduledTime: '09:30', meetingPoint: 'Hotel lobby' });
+  expect(server).toMatchObject(last);
+  // So does the page's copy of the lead. Send confirmation saves whatever that copy lacks before the email;
+  // a copy the slower answer did not take the meeting point back out of has nothing to save: one POST, no
+  // further PATCH.
+  await row.locator('[data-action="expLeadConfirm"]').click();
+  await expect.poll(() => calls.confirm.length).toBe(1);
+  expect(calls.leadPatch).toHaveLength(3);
+  await expect(row.locator('[data-testid="lead-confirmation-sent"]')).toContainText('Confirmation sent ✓');
+  await expect(row.locator('[data-lead-field="meetingPoint"]')).toHaveValue('Hotel lobby');
+  await expect(row.locator('[data-lead-field="scheduledTime"]')).toHaveValue('09:30');
+  await expect(row.locator('[data-lead-field="scheduledDate"]')).toHaveValue(day);
+});
+
+// A status picked while a save was out was put straight back by the busy guard: the pick was lost
+// without a word.
+test('a status picked while a save is in flight is applied after it, not put back', async ({ page }) => {
+  const server = { ...LEADS[1] };
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openLeads(page, OPS, {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      Object.assign(server, body);
+      return r.fulfill(json({ lead: { ...server } }));
+    },
+  });
+  const row = leadRows(page).nth(1);
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  const sel = row.locator('[data-action="expLeadStatus"]');
+  await sel.selectOption('contacted'); // the note PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ status: 'contacted' });
+  await expect(sel).toHaveValue('contacted');
+});
+
+// Save payment had the same guard: pressed during a save, it did nothing.
+test('Save payment pressed while a save is in flight is applied after it, not dropped', async ({ page }) => {
+  const server = { ...LEADS[1] };
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let n = 0;
+  const calls = await openLeads(page, OPS, {
+    patchLead: async (r, body) => {
+      n++;
+      if (n === 1) await held;
+      Object.assign(server, body);
+      return r.fulfill(json({ lead: { ...server } }));
+    },
+  });
+  const row = leadRows(page).nth(1);
+  const note = row.locator('[data-lead-field="opsNote"]');
+  await note.fill('Sent on WhatsApp');
+  await note.blur();
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await row.locator('[data-lead-field="paymentRef"]').fill('PH-88');
+  await row.locator('[data-action="expLeadSavePay"]').click(); // the note PATCH has not answered yet
+  release();
+  await expect.poll(() => calls.leadPatch.length).toBe(2);
+  expect(calls.leadPatch[1].body).toEqual({ paymentRef: 'PH-88' });
+  await expect(page.locator('#toast')).toContainText('Saved');
+  await expect(row.locator('[data-lead-field="paymentRef"]')).toHaveValue('PH-88');
+});
+
+// ── Catalogue counts follow the Leads tab ────────────────────────────────────
+// "N interested · N paid" on a Catalogue row is read once on arrival. Setting a lead to Paid and
+// coming back to the Catalogue still showed the old count until the page was left and re-entered.
+// The stub's stats move with the lead write, as the server's would.
+const jeep = EXPERIENCES[2];
+const statsFor = (n) => [{ experienceId: jeep.id, interested: 1, paid: n, paidCents: { USD: 4500 * n, LKR: 0 } }];
+
+test('switching back to the Catalogue shows counts changed in the Leads tab', async ({ page }) => {
+  let paid = 0;
+  const calls = await openLeads(page, OPS, {
+    list: (r, db) => r.fulfill(json({ experiences: db, stats: statsFor(paid) })),
+    patchLead: (r, body) => { if (body.status === 'paid') paid = 1; return r.fulfill(json({ lead: { ...LEADS[1], ...body } })); },
+  });
+  await leadRows(page).nth(1).locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await expPage(page).locator('[data-action="expTab"][data-tab="catalogue"]').click();
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+  await expect(rows(page).nth(2)).not.toContainText('0 paid');
+});
+
+test('a slow Catalogue reload that lands after a newer one cannot put the old counts back', async ({ page }) => {
+  let paid = 0, getN = 0, releaseSlow;
+  const slow = new Promise((res) => { releaseSlow = res; });
+  const calls = await openLeads(page, OPS, {
+    list: async (r, db) => {
+      const n = ++getN, snapshot = paid; // the counts as they stood when this request arrived
+      if (n === 2) await slow;           // the first Catalogue revisit answers late
+      return r.fulfill(json({ experiences: db, stats: statsFor(snapshot) }));
+    },
+    patchLead: (r, body) => { if (body.status === 'paid') paid = 1; return r.fulfill(json({ lead: { ...LEADS[1], ...body } })); },
+  });
+  const catalogue = expPage(page).locator('[data-action="expTab"][data-tab="catalogue"]');
+  await catalogue.click();                                                            // GET #2: held, still the old counts
+  await expPage(page).locator('[data-action="expTab"][data-tab="leads"]').click();
+  await leadRows(page).nth(1).locator('[data-action="expLeadStatus"]').selectOption('paid');
+  await expect.poll(() => calls.leadPatch.length).toBe(1);
+  await catalogue.click();                                                            // GET #3: fresh counts
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+  releaseSlow();
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
+  await expect(rows(page).nth(2)).toContainText('1 paid');
+});
+
+// Photo tiles (2026-10-18). With uploads on, photos are thumbnails with Add / Replace / Remove, and the
+// raw path boxes sit behind "Use a photo already on the site" (spec 2026-10-17 P6, revised).
+const UPLOADED = 'https://img-staging.ceylonhop.com/experiences/5f0c2a3e-7b1d-4c2e-9a6f-0d1e2f3a4b5c';
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const withUploads = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, uploads: true })) };
+const tiles = (page) => page.locator('[data-testid^="exp-photo-tile-"]');
+
+async function stubUpload(page, reply) {
+  const posts = [];
+  // Registered after boot's '**/admin/experiences/*' route: Playwright prefers the last match.
+  await page.route('**/admin/experiences/photos', (r) => { posts.push(r.request().postDataBuffer()); return reply(r); });
+  await page.route('https://img-staging.ceylonhop.com/**', (r) => r.fulfill({ status: 200, contentType: 'image/gif', body: GIF }));
+  return posts;
+}
+
+async function choosePhoto(page, testid) {
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('[data-testid="' + testid + '"]').click();
+  await (await chooser).setFiles({ name: 'p.png', mimeType: 'image/png', buffer: PNG });
+}
+
+async function openEdit(page, i) {
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(i).locator('[data-action="expEdit"]').click();
+}
+
+test('tiles: an experience\'s photos show as thumbnails, with no path boxes or URLs', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await openEdit(page, 1); // Village cooking lesson: two Sigiriya guide photos
+  await expect(tiles(page)).toHaveCount(2);
+  await expect(tiles(page).nth(0).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/family-food-900.jpg');
+  await expect(tiles(page).nth(1).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/village-900.jpg');
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toBeVisible();
+  await expect(page.locator('#exp-photo-0')).toBeHidden();
+  await expect(page.locator('#exp-form')).not.toContainText('slug/photo');
+});
+
+test('tiles: Add uploads two JPEGs and Save sends the new photo after the existing ones', async ({ page }) => {
+  const calls = await boot(page, OPS, withUploads);
+  const posts = await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+  await openEdit(page, 1);
+  await choosePhoto(page, 'exp-photo-add');
+  await expect(tiles(page)).toHaveCount(3);
+  await expect(tiles(page).nth(2).locator('img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
+  await expect(tiles(page).nth(2).locator('[data-testid="exp-photo-note"]')).toHaveCount(0);
+  expect(posts).toHaveLength(1);
+  const body = posts[0].toString('latin1');
+  expect(body).toContain('name="large"');
+  expect(body).toContain('name="small"');
+  expect(body.split('\xff\xd8\xff').length - 1).toBe(2); // two JPEGs, even from a PNG
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body.photos).toEqual(['guides/sigiriya/family-food', 'guides/sigiriya/village', UPLOADED]);
+});
+
+test('tiles: Replace swaps a photo in place and Remove takes one out', async ({ page }) => {
+  const calls = await boot(page, OPS, withUploads);
+  await stubUpload(page, (r) => r.fulfill(json({ stem: UPLOADED }, 201)));
+  await openEdit(page, 1);
+  await choosePhoto(page, 'exp-photo-replace-0');
+  await expect(tiles(page).nth(0).locator('img')).toHaveAttribute('src', UPLOADED + '-900.jpg');
+  await page.locator('[data-testid="exp-photo-remove-1"]').click();
+  await expect(tiles(page)).toHaveCount(1);
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body.photos).toEqual([UPLOADED]);
+});
+
+test('tiles: "Use a photo already on the site" opens the path boxes; a typed path comes back as a tile', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await openEdit(page, 0); // Ayurvedic massage: one photo
+  const link = page.locator('[data-testid="exp-photo-paths"]');
+  await expect(link).toHaveText('Use a photo already on the site');
+  await link.click();
+  await expect(page.locator('#exp-photo-1')).toBeVisible();
+  await expect(tiles(page).first()).toBeHidden();
+  await page.locator('#exp-photo-1').fill('guides/sigiriya/live-lion-rock');
+  await expect(link).toHaveText('Back to photo tiles');
+  await link.click();
+  await expect(page.locator('#exp-photo-1')).toBeHidden();
+  await expect(tiles(page)).toHaveCount(2);
+  await expect(tiles(page).nth(1).locator('img')).toHaveAttribute('src', 'https://ceylonhop.com/img/guides/sigiriya/live-lion-rock-900.jpg');
+});
+
+test('tiles: a failed upload says so and adds nothing', async ({ page }) => {
+  await boot(page, OPS, withUploads);
+  await stubUpload(page, (r) => r.fulfill(json({ error: 'upload_failed' }, 502)));
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await choosePhoto(page, 'exp-photo-add');
+  await expect(page.locator('[data-err="photos"]')).toHaveText('Upload failed — try again.');
+  await expect(tiles(page)).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toHaveText('+ Add photo');
+});
+
+test('tiles: with uploads off the form keeps the plain path boxes', async ({ page }) => {
+  await boot(page, OPS);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await expect(page.locator('#exp-photo-0')).toBeVisible();
+  await expect(tiles(page)).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-add"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="exp-photo-paths"]')).toHaveCount(0);
+});
+
+// "Find the business on Google" (2026-10-18). Search on = the catalogue GET says businessSearch: true.
+const BIZ = {
+  placeId: 'ChIJAtherya0000000000000', name: 'Atherya Ayurveda Spa', address: 'Kibissa, Sigiriya 21120, Sri Lanka',
+  lat: 7.9571, lng: 80.7601, area: 'Sigiriya', phone: '+94 77 123 4567', website: 'https://atherya.lk/', mapsUrl: 'https://maps.google.com/?cid=1',
+  openWeekdays: [1, 2, 3, 4, 5, 6],
+};
+const withBusiness = { list: (r, db) => r.fulfill(json({ experiences: db, stats: STATS, businessSearch: true })) };
+
+// Registered after boot's '**/admin/experiences/*' route: Playwright prefers the last match.
+async function stubBusiness(page, { search, details } = {}) {
+  const calls = { search: [], details: [] };
+  await page.route('**/admin/experiences/business-search**', (r) => {
+    const q = new URL(r.request().url()).searchParams.get('q');
+    calls.search.push(q);
+    if (search) return search(r, q);
+    const { placeId, name, address, lat, lng } = BIZ;
+    return r.fulfill(json({ candidates: [{ placeId, name, address, lat, lng }] }));
+  });
+  await page.route('**/admin/experiences/business/*', (r) => {
+    const id = r.request().url().split('/').pop();
+    calls.details.push(id);
+    if (details) return details(r, id);
+    return r.fulfill(json({ business: BIZ }));
+  });
+  return calls;
+}
+
+async function openNew(page) {
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+}
+
+test('business: picking a Google result fills partner, area, pin and contact, and Save keeps the place id', async ({ page }) => {
+  const calls = await boot(page, OPS, withBusiness);
+  const biz = await stubBusiness(page);
+  await openNew(page);
+  await expect(page.locator('#exp-loc')).toBeHidden(); // the pin comes from Google; the box is behind a link
+  await page.locator('#exp-biz-q').fill('atherya sigiriya');
+  await page.locator('#exp-biz-q').press('Enter');
+  const pick = page.locator('[data-testid="exp-biz-result"]');
+  await expect(pick).toHaveCount(1);
+  await expect(pick).toContainText('Atherya Ayurveda Spa');
+  await expect(pick).toContainText('Kibissa, Sigiriya 21120, Sri Lanka');
+  await pick.click();
+  await expect(page.locator('#exp-partner')).toHaveValue('Atherya Ayurveda Spa');
+  await expect(page.locator('#exp-area')).toHaveValue('Sigiriya');
+  await expect(page.locator('#exp-contact')).toHaveValue('+94 77 123 4567 · https://atherya.lk/');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.9571 · Lng 80.7601');
+  await expect(page.locator('[data-testid="exp-biz-picked"]')).toContainText('Atherya Ayurveda Spa');
+  expect(biz.search).toEqual(['atherya sigiriya']);
+  expect(biz.details).toEqual([BIZ.placeId]);
+
+  await page.locator('#exp-slug').fill('ayurvedic-massage');
+  await page.locator('#exp-name').fill('Ayurvedic massage');
+  await page.locator('#exp-summary').fill('A 90-minute massage.');
+  await page.locator('#exp-price').fill('35');
+  await page.locator('#exp-biz-confirm').check();
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.post.length).toBe(1);
+  expect(calls.post[0]).toMatchObject({
+    partnerName: 'Atherya Ayurveda Spa', areaLabel: 'Sigiriya', lat: 7.9571, lng: 80.7601,
+    partnerContact: '+94 77 123 4567 · https://atherya.lk/', googlePlaceId: BIZ.placeId,
+  });
+});
+
+test('business: "Enter the location by hand" shows the lat/lng box', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await page.locator('[data-action="expLocManual"]').click();
+  await expect(page.locator('#exp-loc')).toBeVisible();
+  await expect(page.locator('[data-action="expLocManual"]')).toBeHidden();
+  await page.locator('#exp-loc').fill('7.977, 80.76');
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.977 · Lng 80.76');
+});
+
+test('business: no match, and Google unavailable, each say so and leave the form alone', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  let off = false;
+  await stubBusiness(page, { search: (r) => (off ? r.fulfill(json({ error: 'business_off' }, 503)) : r.fulfill(json({ candidates: [] }))) });
+  await openNew(page);
+  await page.locator('#exp-biz-q').fill('nothing here');
+  await page.locator('[data-action="expBizSearch"]').click();
+  await expect(page.locator('[data-testid="exp-biz-msg"]')).toHaveText('No match on Google — try the business name and town, or enter the details by hand.');
+  off = true;
+  await page.locator('[data-action="expBizSearch"]').click();
+  await expect(page.locator('[data-testid="exp-biz-msg"]')).toHaveText('Google search isn’t available right now — enter the details by hand.');
+  await expect(page.locator('#exp-partner')).toHaveValue('');
+});
+
+test('business: editing an experience shows its pin, not an empty box', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('#exp-loc')).toBeHidden();
+  await expect(page.locator('[data-testid="exp-loc-parsed"]')).toHaveText('Lat 7.977 · Lng 80.76');
+});
+
+test('business: with no Google key the form has no search and keeps the lat/lng box', async ({ page }) => {
+  await boot(page, OPS);
+  await openNew(page);
+  await expect(page.locator('#exp-biz-q')).toHaveCount(0);
+  await expect(page.locator('#exp-loc')).toBeVisible();
+});
+
+// Fuller fill (2026-10-18): slug + name suggested from the business, open days from Google's hours, ops
+// confirms Google's partner details before saving, and Google's photos are a link, never copied.
+async function pickBusiness(page) {
+  await page.locator('#exp-biz-q').fill('atherya');
+  await page.locator('#exp-biz-q').press('Enter');
+  await page.locator('[data-testid="exp-biz-result"]').click();
+  await expect(page.locator('#exp-partner')).toHaveValue(BIZ.name);
+}
+
+test('fill: slug, name and open days come from the pick; days follow Google’s hours', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await pickBusiness(page);
+  await expect(page.locator('#exp-slug')).toHaveValue('atherya-ayurveda-spa');
+  await expect(page.locator('#exp-name')).toHaveValue('Atherya Ayurveda Spa');
+  await expect(page.locator('#exp-day-0')).not.toBeChecked();
+  for (const d of [1, 2, 3, 4, 5, 6]) await expect(page.locator('#exp-day-' + d)).toBeChecked();
+});
+
+test('fill: never overwrites a slug or name ops already typed', async ({ page }) => {
+  await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await page.locator('#exp-slug').fill('ayurvedic-massage');
+  await page.locator('#exp-name').fill('Ayurvedic massage');
+  await pickBusiness(page);
+  await expect(page.locator('#exp-slug')).toHaveValue('ayurvedic-massage');
+  await expect(page.locator('#exp-name')).toHaveValue('Ayurvedic massage');
+});
+
+test('fill: Save waits until ops confirms Google’s partner details', async ({ page }) => {
+  const calls = await boot(page, OPS, withBusiness);
+  await stubBusiness(page);
+  await openNew(page);
+  await pickBusiness(page);
+  await page.locator('#exp-summary').fill('A 90-minute massage.');
+  await page.locator('#exp-price').fill('35');
+  await page.locator('[data-action="expSave"]').click();
+  await expect(page.locator('[data-err="biz"]')).toHaveText('Check the partner name, phone and website with the partner, then tick the box.');
+  expect(calls.post).toHaveLength(0);
+  await page.locator('#exp-biz-confirm').check();
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.post.length).toBe(1);
+});
+
+test('fill: Google’s photos are a link to Google Maps, for a pick and for a saved experience', async ({ page }) => {
+  await boot(page, OPS, { list: (r, db) => r.fulfill(json({ experiences: db.map((e, i) => (i === 0 ? { ...e, googlePlaceId: BIZ.placeId } : e)), stats: STATS, businessSearch: true })) });
+  await stubBusiness(page);
+  const href = 'https://www.google.com/maps/place/?q=place_id:' + BIZ.placeId;
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveAttribute('href', href);
+  await page.locator('[data-action="expCancel"]').click();
+  await rows(page).nth(1).locator('[data-action="expEdit"]').click();
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toBeHidden();
+  await pickBusiness(page);
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveAttribute('href', href);
+  await expect(page.locator('[data-testid="exp-google-photos"]')).toHaveText('See their photos on Google Maps');
 });

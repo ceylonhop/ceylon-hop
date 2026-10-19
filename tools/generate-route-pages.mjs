@@ -1328,6 +1328,9 @@ export const SITEMAP_EXTRA = [
   'guides/arugam-bay/',
   'guides/mirissa/',
   'guides/hiriketiya/',
+  'sri-lanka-travel-faq/',
+  // The Ramayana trail page (tools/generate-ramayana.mjs).
+  'ramayana-trail-sri-lanka/',
 ];
 
 // CLI: write every generated file to disk.

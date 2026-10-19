@@ -49,6 +49,13 @@ export class PostgresExperienceInterestRepo implements ExperienceInterestRepo {
     return rows.length > 0;
   }
 
+  async withdrawFromBooking(experienceId: string, bookingId: string): Promise<boolean> {
+    const rows = await this.db.delete(experienceInterests)
+      .where(and(eq(experienceInterests.experienceId, experienceId), eq(experienceInterests.bookingId, bookingId), eq(experienceInterests.status, 'new')))
+      .returning({ id: experienceInterests.id });
+    return rows.length > 0;
+  }
+
   async linkQuoteToBooking(quoteId: string, bookingId: string): Promise<number> {
     const rows = await this.db.execute(sql`
       UPDATE experience_interests i SET booking_id = ${bookingId}, updated_at = now()

@@ -37,6 +37,17 @@ export function sameTrip(a: Booking, b: Booking): boolean {
   return false;
 }
 
+// sameTrip, or the same private transfer where ONE side has no date. A customer whose checkout
+// fails often retries undated ("Decide later") and pays that one: CH-7EWG7 (19 Oct 09:00) was left
+// open after CH-SK8U8 (same route, no date) was paid 42 s later, 2026-10-18, and the watchdog chased
+// a paying customer. Two DIFFERENT dates still never match. Used by both the settle path and the watchdog.
+export function sameTripOrUndatedRetry(a: Booking, b: Booking): boolean {
+  if (sameTrip(a, b)) return true;
+  if (a.mode !== 'single' || b.mode !== 'single') return false;
+  if (a.input.date && b.input.date) return false;
+  return norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
+}
+
 export const DUPLICATE_CLOSED_BY = 'system:duplicate-close';
 
 export interface DuplicateCloseDeps {
@@ -65,7 +76,7 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
   if (!who) return [];
   const paidAt = Date.parse(paid.createdAt);
   const candidates = (await deps.bookings.list({ status: ['draft', 'payment_pending'] })).filter(
-    (b) => b.id !== paid.id && personKey(b) === who && Date.parse(b.createdAt) < paidAt && sameTrip(b, paid),
+    (b) => b.id !== paid.id && personKey(b) === who && Date.parse(b.createdAt) < paidAt && sameTripOrUndatedRetry(b, paid),
   );
   const closed: Booking[] = [];
   for (const b of candidates) {
@@ -107,6 +118,11 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
   }
   if (closed.length) {
     const refs = closed.map((b) => b.reference).join(', ');
+    // The paid booking is undated but a closed one held the customer's date: the date is now only
+    // in this note (the ops sheet shows the paid booking), so say it rather than "Nothing to do".
+    const dated = paid.mode === 'single' && !paid.input.date
+      ? closed.filter((b) => b.mode === 'single' && b.input.date)
+      : [];
     await deps.alerts.send({
       severity: 'info',
       kind: 'duplicate_closed',
@@ -115,7 +131,12 @@ export async function closeOlderDuplicates(paid: Booking, deps: DuplicateCloseDe
         `${paid.input.customer.email} paid for ${routeText(paid)} (travels ${travelWhenText(paid)}) on ${paid.reference}.`,
         ...roadLines(paid),
         `Their earlier unpaid booking${closed.length > 1 ? 's' : ''} for the same trip ${closed.length > 1 ? 'were' : 'was'} cancelled automatically: ${refs}.`,
-        'No email was sent to the customer about this. Nothing to do.',
+        ...(dated.length
+          ? [
+              `${paid.reference} has no date yet. ${dated.map((b) => `${b.reference} had ${travelWhenText(b)}`).join('; ')}: confirm it with the customer.`,
+              'No email was sent to the customer about this.',
+            ]
+          : ['No email was sent to the customer about this. Nothing to do.']),
       ].join('\n'),
       dedupeKey: paid.reference,
     });

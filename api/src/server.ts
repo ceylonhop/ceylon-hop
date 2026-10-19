@@ -19,6 +19,10 @@ import { PayHereTokenizedPaymentAdapter } from './adapters/payhereTokenized';
 import { FakeTokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
 import { CachedMapsAdapter } from './adapters/cachedMaps';
+import { MeteredMapsAdapter } from './adapters/meteredMaps';
+import { MeteredEmailAdapter } from './adapters/meteredEmail';
+import { UsageMeter } from './services/usageMeter';
+import { PostgresUsageCounterRepo } from './db/postgresUsageCounterRepo';
 import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
@@ -43,6 +47,8 @@ import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
 import { PostgresCustomerCommunicationRepo } from './db/postgresCustomerCommunicationRepo';
 import { MeasurementProtocolAdapter } from './adapters/ga4';
 import { selectTripadvisor } from './adapters/tripadvisor';
+import { selectImageStore } from './adapters/imageStore';
+import { selectBusinessPlaces } from './adapters/businessPlaces';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -90,7 +96,7 @@ const rawMaps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
   : new FakeMapsAdapter();
 
-const email = config.RESEND_API_KEY
+const rawEmail = config.RESEND_API_KEY
   ? new ResendEmailAdapter(config.RESEND_API_KEY, {
       from: config.EMAIL_FROM,
       replyTo: config.EMAIL_REPLY_TO,
@@ -105,13 +111,26 @@ const ga4Adapter = config.GA4_API_SECRET
 // Live Tripadvisor ratings - dormant unless BOTH the key and the Tripadvisor logo URL are set (their display
 // rules require the logo beside every bubble): otherwise the null adapter is used and no rating is shown.
 const tripadvisor = selectTripadvisor({ apiKey: config.TRIPADVISOR_API_KEY, logoUrl: config.TRIPADVISOR_LOGO_URL, referer: config.TRIPADVISOR_REFERER });
+// Experience photo uploads (spec 2026-10-17) - R2 only when all five settings are present; otherwise off.
+const photoStore = selectImageStore(config);
 
 const { db, sql } = createDb(config.DATABASE_URL);
 
+// Usage counters (spec 2026-10-13): one meter, shared by the email and Maps wrappers below, the
+// 429 counter inside createApp, the Health tab and the watchdog's quota rule. Counts in memory,
+// writes coalesced — never a database await on a hot path.
+const usageCounters = new PostgresUsageCounterRepo(db);
+const usageMeter = new UsageMeter(usageCounters);
+// "Find the business on Google" (2026-10-18): the quote tool's server key; off without one. Metered like maps.
+const businessPlaces = selectBusinessPlaces(config.GOOGLE_MAPS_API_KEY, usageMeter);
+// Below the guard app.ts adds, so the ops alerts and the digest — which bypass it — count too.
+const email = new MeteredEmailAdapter(rawEmail, usageMeter);
+
 // Distance cache (spec 2026-08-12): only wrap the REAL adapter. Keyless dev keeps the bare
 // fake — wrapping it would write synthetic distances into whatever database the env points at.
+// The meter sits INSIDE the cache, so only live Google calls count — a cache hit is free.
 const maps = config.GOOGLE_MAPS_API_KEY
-  ? new CachedMapsAdapter(rawMaps, new PostgresDistanceCacheRepo(db))
+  ? new CachedMapsAdapter(new MeteredMapsAdapter(rawMaps, usageMeter), new PostgresDistanceCacheRepo(db))
   : rawMaps;
 
 // Apply pending DB migrations before serving, so deployed code never ships ahead of the
@@ -170,6 +189,13 @@ const app = createApp({
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
   analyticsData: new PostgresAnalyticsDataRepo(sql),
+  usageCounters,
+  usageMeter,
+  // pg_database_size comes back as a bigint string from postgres.js.
+  dbSize: async () => {
+    const rows = await sql<{ bytes: string | number }[]>`select pg_database_size(current_database()) as bytes`;
+    return rows[0] ? Number(rows[0].bytes) : null;
+  },
   // Founder manual discounts. WITHOUT this line app.ts falls back to the in-memory repo, and the
   // failure is silent and confusing: PostgresQuoteRepo.update still writes the row inside the save
   // transaction, so the discount really is in Postgres — but every READ goes to an empty object.
@@ -184,6 +210,8 @@ const app = createApp({
   tripadvisor: tripadvisor.adapter,
   ...(tripadvisor.logoUrl ? { tripadvisorLogoUrl: tripadvisor.logoUrl } : {}),
   experienceInterests: new PostgresExperienceInterestRepo(db),
+  photoStore,
+  businessPlaces,
   // Founder rate revisions (spec 2026-09-26). WITHOUT this line app.ts falls back to an empty
   // in-memory repo: every save from the Rates page would vanish on restart.
   rateRevisions: new PostgresRateRevisionRepo(db),
