@@ -6,6 +6,7 @@ import * as schema from './schema';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
+import { seedCorridors } from './postgresDepartureRepo';
 import { makePromoCode } from './promoCodeRepo.test';
 import type { NewBooking } from './bookingRepo';
 
@@ -48,6 +49,8 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
     const sql = postgres(TEST_URL as string, { debug: (_conn, query) => { if (!query.includes('pg_catalog')) statements += 1; } });
     const db = drizzle(sql, { schema });
     await migrate(db, { migrationsFolder: 'drizzle' });
+    // The shared fixture's corridor is an FK; seed it so this file passes on a fresh database.
+    await seedCorridors(sql);
     bookings = new PostgresBookingRepo(db);
     payments = new PostgresPaymentRepo(db);
     promoCodes = new PostgresPromoCodeRepo(db);
