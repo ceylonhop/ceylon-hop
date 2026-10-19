@@ -119,3 +119,41 @@ test('a broken link fails softly, in the shared state style', async ({ page }) =
   await expect(page.locator('.st-title')).toHaveText('We couldn’t open this booking');
   await expect(page.locator('body')).toContainText('WhatsApp');
 });
+
+// A booking the server couldn't price (a bare hotel name it couldn't place) carries a flat
+// placeholder total — $40/$50 a leg — that checkout refuses with 409. The card used to show that
+// placeholder with an enabled Pay button, and pressing it said "already paid or closed". The view
+// now says needsPricing, and the card says what is really happening instead.
+const HAND_PRICE = 'We’re confirming the price for this trip by hand — we’ll message you on WhatsApp with a payment link.';
+const UNPRICED = { ...BOOKING, status: 'draft', needsPricing: true, totalCents: 4000, amountDueNowCents: 4000 };
+
+test('a booking awaiting a hand price offers no Pay and no placeholder amount', async ({ page }) => {
+  await stub(page, UNPRICED);
+  await page.goto(PAGE);
+  await expect(page.locator('.ticket')).toBeVisible();
+  await expect(page.locator('#paybtn')).toHaveCount(0);
+  await expect(page.locator('.tot')).toHaveCount(0); // no Total row at all
+  await expect(page.locator('body')).not.toContainText('$40.00');
+  await expect(page.locator('.t-stat')).toHaveText('Price to confirm');
+  await expect(page.locator('.pp-tbc')).toHaveText(HAND_PRICE);
+  // A neutral question that already names the booking — nothing failed, so not "didn't go through".
+  const wa = page.locator('#pricewa');
+  await expect(wa).toBeVisible();
+  const href = await wa.getAttribute('href');
+  expect(href).toMatch(/^https:\/\/wa\.me\/94779669662\?text=/);
+  expect(decodeURIComponent(href.split('text=')[1])).toBe('Hi Ceylon Hop, a question about booking CH-HAFDZ: ');
+});
+
+test('a Pay refused as awaiting a price says so, never "already paid or closed"', async ({ page }) => {
+  // A view without the flag (e.g. served before it existed) still shows Pay; the refusal decides.
+  await stub(page, { ...UNPRICED, needsPricing: undefined });
+  await page.route('**/bookings/view/checkout-token', (r) => r.fulfill({
+    status: 409, contentType: 'application/json',
+    body: JSON.stringify({ error: 'not_chargeable', reason: 'awaiting_price', status: 'draft' }),
+  }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('.pp-tbc')).toHaveText(HAND_PRICE);
+  await expect(page.locator('#paybtn')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('already been paid');
+});

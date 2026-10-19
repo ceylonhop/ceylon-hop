@@ -183,6 +183,9 @@ export interface CustomerBookingView {
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
   balancePayable: boolean;
+  // The engine couldn't price this booking: `totalCents` is a placeholder checkout refuses, and
+  // ops prices it by hand. The manage page shows neither the amount nor a Pay button then.
+  needsPricing: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
@@ -208,6 +211,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     balanceDueCents: balanceDueCents(b, payments),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
+    needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -980,7 +984,12 @@ function invalidRequest(error: ZodError) {
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
     ) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+      // `reason` tells an open booking awaiting a hand price apart from a closed one, so the
+      // manage page never tells that customer it is "already paid or closed".
+      return c.json(
+        { error: 'not_chargeable', ...(booking.needsPricing ? { reason: 'awaiting_price' } : {}), status: booking.status },
+        409,
+      );
     }
     // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
     // customer-safe view projection deliberately withholds it. The caller has already proved
