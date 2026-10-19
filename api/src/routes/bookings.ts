@@ -36,6 +36,8 @@ import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { AlertAdapter } from '../adapters/alerts';
+import { teamUnpricedEmail } from '../services/opsNotifications';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
@@ -305,6 +307,9 @@ export function bookingRoutes(deps: {
   // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
   experiences?: ExperienceRepo;
   experienceInterests?: ExperienceInterestRepo;
+  // The team's "Unpriced:" email (CH-E7EE8). Unset → the ops task is the only signal.
+  alerts?: AlertAdapter;
+  opsBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -452,6 +457,23 @@ export function bookingRoutes(deps: {
       // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
       // down, and it would send ops hunting for a bad place name that isn't there.
       await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
+      // The task alone sat unseen for weeks (CH-E7EE8): tell the team now. Best-effort, like
+      // the task — the booking exists and the customer is mid-checkout.
+      if (deps.alerts) {
+        const reason = resolved.reason ?? 'distance unresolved';
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'booking_unpriced',
+            title: `Unpriced: ${booking.reference} needs a price before the customer can pay`,
+            body: `${booking.reference} was saved without a price (${reason}). Set the price in ops, then send a pay link.`,
+            email: teamUnpricedEmail(booking, reason, deps.opsBaseUrl ?? ''),
+            dedupeKey: booking.id,
+          });
+        } catch (err) {
+          console.error(`unpriced alert failed for ${booking.reference}:`, err);
+        }
+      }
     }
   }
 
