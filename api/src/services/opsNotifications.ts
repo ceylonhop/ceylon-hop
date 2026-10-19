@@ -467,9 +467,13 @@ export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string
         pill: ['PRICE NEEDED', '#8a3b12', '#fbe9dc'],
         lead: 'saved without a price',
         keys: bookingKeys(f, b),
+        // Every customer behind the first seven unpriced bookings had rebooked and paid by the
+        // time anyone looked, so checking comes before messaging.
         note:
           `We couldn’t price this trip (${reason}), so ${c.firstName} was told at checkout that we’d confirm ` +
-          'the price and message them. Nothing was charged. Set the price on the booking, then send a pay link.',
+          'the price and message them. Nothing was charged. ' +
+          `They may have already rebooked: search ${c.email} in ops first. ` +
+          'If not, set the price on the booking, then send a pay link.',
         moneyTitle: 'Payment',
         moneyRows: [['Price', 'No price yet'], ['Channel', channelLabel(b)]],
         strong: ['Price'],

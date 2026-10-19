@@ -470,6 +470,16 @@ describe('teamUnpricedEmail', () => {
     }
   });
 
+  // All six real customers behind the unpriced bookings of 15 Sep–18 Oct had already rebooked
+  // and paid elsewhere: messaging them first would chase people who are fine.
+  it('tells the team to check for a later paid booking before messaging the customer', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('already rebooked');
+      expect(part).toContain('traveller@example.com');
+    }
+  });
+
   it('shows no money figure: an unpriced total is a placeholder, not a price', () => {
     const b = sampleBooking('single');
     const m = teamUnpricedEmail(b, REASON, 'https://ops.example');
