@@ -726,6 +726,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-divider{height:0;border-top:2px dashed var(--line);margin:28px 0 22px}
   .form-error{display:flex;align-items:center;gap:.45rem;margin:14px 0 0;color:#b13b22;background:#fdeee9;border:1px solid #f4c9bb;border-radius:10px;padding:.6rem .8rem;font-size:.86rem;font-weight:600}
   .form-error[hidden]{display:none}
+  /* The "can't price this trip" gate's way forward (2026-10-18): its own line under the reason. */
+  .form-error:has(.unpriced-actions){flex-wrap:wrap}
+  .unpriced-text{flex:1 1 0;min-width:0}
+  .unpriced-actions{flex-basis:100%;padding-left:calc(18px + .45rem);font-weight:600}
+  .unpriced-actions a,.unpriced-actions button{color:inherit;text-decoration:underline;text-underline-offset:2px}
+  .unpriced-actions button{-webkit-appearance:none;appearance:none;background:none;border:0;padding:0;font:inherit;cursor:pointer}
   /* Billing block. `#billnames` is a .grid2, and .grid2 sets `display:grid` — which beats the
      browser's own `[hidden]{display:none}`, so the cardholder boxes would sit there visible
      with the attribute set. Every hidden-by-attribute element on this page needs its own
@@ -1251,10 +1257,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with manage.html. -->
 <script src="checkout-handoff.js?v=13d6bf1c9f"></script>
 <script src="ch-map.js?v=18772b2dd8"></script>
-<script src="ch-pricing.js?v=74a30546ee"></script>
+<script src="ch-pricing.js?v=3a152c88c1"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=70354338f9"></script>
+<script src="booking.js?v=d1ee3cfa3b"></script>
 </body>
 </html>

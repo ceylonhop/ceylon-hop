@@ -357,6 +357,54 @@
         "accountId": "0",
         "containerId": "0",
         "variableId": "15",
+        "name": "DLV - mode",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "mode"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "16",
+        "name": "DLV - named",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "named"
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "variableId": "17",
         "name": "DLV - new_value",
         "type": "v",
         "parameter": [
@@ -380,7 +428,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "16",
+        "variableId": "18",
         "name": "DLV - page",
         "type": "v",
         "parameter": [
@@ -404,7 +452,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "17",
+        "variableId": "19",
         "name": "DLV - payment_type",
         "type": "v",
         "parameter": [
@@ -428,7 +476,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "18",
+        "variableId": "20",
         "name": "DLV - reason",
         "type": "v",
         "parameter": [
@@ -452,7 +500,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "19",
+        "variableId": "21",
         "name": "DLV - route_fingerprint",
         "type": "v",
         "parameter": [
@@ -476,7 +524,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "20",
+        "variableId": "22",
         "name": "DLV - saving_usd",
         "type": "v",
         "parameter": [
@@ -500,7 +548,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "21",
+        "variableId": "23",
         "name": "DLV - source",
         "type": "v",
         "parameter": [
@@ -524,7 +572,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "22",
+        "variableId": "24",
         "name": "DLV - state",
         "type": "v",
         "parameter": [
@@ -548,7 +596,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "23",
+        "variableId": "25",
         "name": "DLV - status",
         "type": "v",
         "parameter": [
@@ -572,7 +620,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "24",
+        "variableId": "26",
         "name": "DLV - surface",
         "type": "v",
         "parameter": [
@@ -596,7 +644,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "25",
+        "variableId": "27",
         "name": "DLV - tries",
         "type": "v",
         "parameter": [
@@ -620,7 +668,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "26",
+        "variableId": "28",
         "name": "DLV - value",
         "type": "v",
         "parameter": [
@@ -644,7 +692,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "variableId": "27",
+        "variableId": "29",
         "name": "DLV - which",
         "type": "v",
         "parameter": [
@@ -1127,6 +1175,30 @@
         "accountId": "0",
         "containerId": "0",
         "triggerId": "20",
+        "name": "CE - quote_unpriced_shown",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "quote_unpriced_shown"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "triggerId": "21",
         "name": "CE - route_choice",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1150,7 +1222,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "21",
+        "triggerId": "22",
         "name": "CE - exact_location_deferred",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1174,7 +1246,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "22",
+        "triggerId": "23",
         "name": "CE - exact_location_out_of_range",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -1198,7 +1270,7 @@
       {
         "accountId": "0",
         "containerId": "0",
-        "triggerId": "23",
+        "triggerId": "24",
         "name": "CE - consent_choice",
         "type": "CUSTOM_EVENT",
         "customEventFilter": [
@@ -2768,6 +2840,97 @@
         "accountId": "0",
         "containerId": "0",
         "tagId": "20",
+        "name": "GA4 - quote_unpriced_shown",
+        "type": "gaawe",
+        "notes": "The server could not place a stop, so Pay was withheld (CH-E7EE8, 2026-10-18). Counts customers who hit it, including those who never book.",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "false"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "quote_unpriced_shown"
+          },
+          {
+            "type": "LIST",
+            "key": "eventSettingsTable",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "surface"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - surface}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "mode"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - mode}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameter",
+                    "value": "named"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "parameterValue",
+                    "value": "{{DLV - named}}"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementIdOverride",
+            "value": "G-XEW62ZD7B3"
+          }
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "value": "analytics_storage"
+              }
+            ]
+          }
+        },
+        "firingTriggerId": [
+          "20"
+        ]
+      },
+      {
+        "accountId": "0",
+        "containerId": "0",
+        "tagId": "21",
         "name": "GA4 - route_choice",
         "type": "gaawe",
         "notes": "Which road customers pick when the local road is cheaper (fastest / no_tolls / dismissed), from the popup or the card switch — the take-up of the cheaper road.",
@@ -2867,13 +3030,13 @@
           }
         },
         "firingTriggerId": [
-          "20"
+          "21"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "21",
+        "tagId": "22",
         "name": "GA4 - exact_location_deferred",
         "type": "gaawe",
         "notes": "Customer skipped giving an exact pickup/drop — a driver-side problem later.",
@@ -2928,13 +3091,13 @@
           }
         },
         "firingTriggerId": [
-          "21"
+          "22"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "22",
+        "tagId": "23",
         "name": "GA4 - exact_location_out_of_range",
         "type": "gaawe",
         "notes": "The pin was outside the serviceable radius; `km` sizes the demand you are refusing.",
@@ -3004,13 +3167,13 @@
           }
         },
         "firingTriggerId": [
-          "22"
+          "23"
         ]
       },
       {
         "accountId": "0",
         "containerId": "0",
-        "tagId": "23",
+        "tagId": "24",
         "name": "GA4 - consent_choice",
         "type": "gaawe",
         "notes": "Accept vs Reject on the cookie strip. The accept rate is how much of Europe Clarity can follow across pages again.",
@@ -3065,7 +3228,7 @@
           }
         },
         "firingTriggerId": [
-          "23"
+          "24"
         ]
       }
     ]
