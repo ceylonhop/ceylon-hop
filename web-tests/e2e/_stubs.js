@@ -154,7 +154,9 @@ export async function installEstimateStub(page, opts = {}) {
     } = o;
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
     if (status !== 200) {
-      return r.fulfill({ status, contentType: 'application/json', body: '{"error":"not_found"}' });
+      // `body` lets a spec answer with a real refusal (e.g. 422 quote_unpriced); the default is
+      // the flag-off 404 shape every existing spec relies on.
+      return r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(rest.body ?? { error: 'not_found' }) });
     }
     return r.fulfill(json({ ...rest, totalCents, amountDueNowCents, estimated, legs }));
   });
