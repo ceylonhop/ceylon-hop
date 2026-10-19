@@ -39,7 +39,7 @@ describe('GA4 event ledger', () => {
     await log.markFailed('k', 'late_error_from_a_stale_process');
     const farLater = later(STALE_CLAIM_MS * 10);
     expect(await log.claim('k', 'purchase', {}, farLater)).toBeNull();
-    expect(await log.listRetryable(new Date(0), farLater)).toEqual([]);
+    expect(await log.listRetryable(new Date(0), farLater, 100)).toEqual([]);
   });
   it('a failed event is re-claimable, keeps its FIRST payload, and counts attempts', async () => {
     const log = new InMemoryGa4EventLogRepo();
@@ -51,13 +51,24 @@ describe('GA4 event ledger', () => {
   it('a claim abandoned for longer than STALE_CLAIM_MS is retryable; a fresh one is not', async () => {
     const log = new InMemoryGa4EventLogRepo();
     await log.claim('k', 'purchase', {}, T0);
-    expect(await log.listRetryable(new Date(0), later(STALE_CLAIM_MS - 1))).toEqual([]);
-    expect((await log.listRetryable(new Date(0), later(STALE_CLAIM_MS + 1))).map((r) => r.eventKey)).toEqual(['k']);
+    expect(await log.listRetryable(new Date(0), later(STALE_CLAIM_MS - 1), 100)).toEqual([]);
+    expect((await log.listRetryable(new Date(0), later(STALE_CLAIM_MS + 1), 100)).map((r) => r.eventKey)).toEqual(['k']);
   });
   it('listRetryable ignores rows created before `since` (the 72 h MP window)', async () => {
     const log = new InMemoryGa4EventLogRepo();
     await log.claim('old', 'purchase', {}, T0);
     await log.markFailed('old', 'x');
-    expect(await log.listRetryable(later(1), later(2))).toEqual([]);
+    expect(await log.listRetryable(later(1), later(2), 100)).toEqual([]);
+  });
+  it('listRetryable returns the oldest rows first and at most `limit` of them', async () => {
+    const log = new InMemoryGa4EventLogRepo();
+    // Claimed out of age order, so insertion order cannot pass for age order.
+    for (const [k, ms] of [['c', 3], ['a', 1], ['b', 2]] as const) {
+      await log.claim(k, 'purchase', {}, later(ms));
+      await log.markFailed(k, 'x');
+    }
+    const keys = async (limit: number) => (await log.listRetryable(new Date(0), later(STALE_CLAIM_MS * 10), limit)).map((r) => r.eventKey);
+    expect(await keys(2)).toEqual(['a', 'b']);
+    expect(await keys(10)).toEqual(['a', 'b', 'c']);
   });
 });

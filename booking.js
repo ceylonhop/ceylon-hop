@@ -286,6 +286,7 @@ const state={
   ad: Math.max(1, parseInt(params.get('ad'))||parseInt(params.get('pax'))||1),
   ch: Math.max(0, parseInt(params.get('ch'))||0),
   addons: new Set(),
+  experiences: new Map(), // partner experiences the customer is interested in: id -> {name, partnerName}. Never priced.
   bags: Math.min(2, maxBags),
   locFrom: '',
   locTo: '',
@@ -725,17 +726,19 @@ if(isTrip){
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
   const fmtLeg=(iso)=>{ if(!iso) return ''; return shortDate(new Date(iso+'T00:00:00')); };
+  // leg.from/leg.to are the ?stops= names from the URL: text, never markup.
+  const escHtml=(x)=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
     if(leg.gap){
-      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
     const dt=fmtLeg(tripDates[i]);
     html+=`<div class="tr-leg" data-wire="${i}">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
@@ -834,6 +837,10 @@ if(isTrip){
     // renumber panels into the journey: Service=3, Payment=4; park the dropped When + vehicle steps
     if(whenPanel){ whenPanel.dataset.panel='99'; whenPanel.classList.remove('active'); }
     if(tripPanel) tripPanel.dataset.panel='3';
+    // A trip parks the travellers panel (below), and the experiences block lives in it - move the block
+    // to the trip's own Service step so the trip still gets "While you're in {stop}".
+    const xpBlock=document.getElementById('experiences-block'), tripNav=tripPanel && tripPanel.querySelector('.nav-btns');
+    if(xpBlock && tripNav) tripNav.before(xpBlock);
     // vehicle & headcount are fixed in the planner, so the standalone vehicle step is dropped here
     if(tvPanel){ tvPanel.dataset.panel='97'; tvPanel.classList.remove('active'); }
     if(dtPanel) dtPanel.dataset.panel='4';
@@ -1301,26 +1308,46 @@ function checkWhere(){
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
-// proceed without a date (confirmed later on WhatsApp).
+// proceed without a date (confirmed later on WhatsApp) — but only when the
+// customer ticks "Decide later", never by simply not picking one.
 function checkWhen(){
+  syncWhenToUrl();
   const n2=document.getElementById('n2');
   if(!n2) return;
-  if(isShared){
-    // Shared seats depart at fixed times — a concrete date AND departure are both required,
-    // else the backend (which requires `time`) 400s at the moment of payment.
-    const ok = !!(state.date && !state.flexDate && state.dep);
-    n2.disabled = !ok;
-    // Never leave a greyed-out button with no reason next to it.
-    var why=document.getElementById('when-blocked');
-    if(!why){
-      why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
-      n2.parentNode.insertBefore(why, n2);
-    }
-    why.textContent = ok ? '' : (!state.date ? 'Pick a travel date above \u2014 shared seats need a set departure day.' : 'Choose a departure time to continue.');
-    why.style.display = ok ? 'none' : '';
-  } else {
-    n2.disabled = false;
+  if(isTrip){ n2.disabled = false; return; }
+  // Shared seats depart at fixed times — a concrete date AND departure are both required,
+  // else the backend (which requires `time`) 400s at the moment of payment.
+  // A private transfer with neither a date nor "Decide later" went through undated on
+  // CH-SK8U8 (2026-10-18): the date was lost on a reload and Continue let them past.
+  const ok = isShared ? !!(state.date && !state.flexDate && state.dep) : !!(state.date || state.flexDate);
+  n2.disabled = !ok;
+  // Never leave a greyed-out button with no reason next to it.
+  var why=document.getElementById('when-blocked');
+  if(!why){
+    why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
+    n2.parentNode.insertBefore(why, n2);
   }
+  why.textContent = ok ? '' : (!isShared ? 'Pick a pick-up date above — or tick “Decide later” if you don’t know it yet.'
+    : !state.date ? 'Pick a travel date above — shared seats need a set departure day.' : 'Choose a departure time to continue.');
+  why.style.display = ok ? 'none' : '';
+}
+// The When step's choices live only in JS state, so a page that loads fresh from its URL — Back
+// from PayHere when the browser skips its back/forward cache — came back with no date (CH-SK8U8).
+// Mirror them into ?date=&time=, which the boot code already reads (startParam / timeParam).
+// Only once the customer changes something: armed after init, so loading the page never rewrites
+// the link it was opened with (an out-of-window date it ignores, a departure it auto-selects).
+var whenUrlArmed=false;
+function syncWhenToUrl(){
+  if(isTrip || !whenUrlArmed) return;
+  try{
+    const u=new URL(location.href);
+    const date = state.date && !state.flexDate ? fmtISO(state.date) : '';
+    const time = state.dep && !state.flexTime ? state.dep : '';
+    if((u.searchParams.get('date')||'')===date && (u.searchParams.get('time')||'')===time) return;
+    u.searchParams.set('date', date);
+    if(time) u.searchParams.set('time', time); else u.searchParams.delete('time');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  }catch(e){ /* the address bar is a convenience; the booking never depends on it */ }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
 
@@ -1348,6 +1375,204 @@ window.toggleAddon=function(el){
 // the keys in addonNames; EXTRAS carrying additional codes (safari-wait, waiting) is harmless.
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
+
+/* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
+   "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
+   estimate, so a tap cannot move the Total. Only ids go to the API (payload.experienceIds); every
+   name on screen came from GET /experiences/near and goes through acEsc (which does not escape ',
+   so every attribute below is double-quoted). The block stays hidden on any error, timeout or
+   empty answer - an upsell must never get in the way of the booking. */
+const expUi = { key:null, seq:0, ctl:null, meta:new Map(), rateSeq:0, rateCtl:null };   // meta: id -> {name, partnerName, slug, place}
+const EXP_TIMEOUT_MS = 3000;
+const expLabel = s => String(s||'').split(' / ')[0].trim().slice(0,60);
+const expRound = n => Math.round(n*1000)/1000;
+const expDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function expDays(days){
+  const set=new Set((days||[]).filter(d=>d>=0&&d<=6));
+  if(!set.size) return '';
+  if(set.size===7) return 'Daily';
+  const order=[1,2,3,4,5,6,0].filter(d=>set.has(d)), runs=[];
+  let i=0;
+  while(i<order.length){
+    let j=i;
+    while(j+1<order.length && (order[j+1]===(order[j]+1)%7)) j++;
+    runs.push(j-i>=2 ? expDay[order[i]]+'–'+expDay[order[j]] : order.slice(i,j+1).map(d=>expDay[d]).join(', '));
+    i=j+1;
+  }
+  return runs.join(', ');
+}
+// The stop points to ask about (spec D9). Trip: every stop by name. Private single: the exact
+// drop-off picked in step 2, else the catalogue place, else a known name. Shared: the catalogue
+// drop-off. A place we cannot locate is simply left out.
+function experienceStops(){
+  const T=window.TRANSFERS;
+  if(!T) return [];
+  const stop=(label,p)=>{
+    const l=expLabel(label);
+    return (l && p && typeof p.lat==='number' && typeof p.lng==='number') ? { label:l, lat:expRound(p.lat), lng:expRound(p.lng) } : null;
+  };
+  let stops;
+  if(isTrip) stops=tripStops.map(n=>stop(n,T.resolvePlace(n)));
+  else {
+    const geo=(!isShared && state.locToGeo) ? state.locToGeo : null;
+    stops=[stop(AREA_TO, geo || (routeToId && T.place(routeToId)) || T.resolvePlace(AREA_TO))];
+  }
+  return stops.filter(Boolean).slice(0,8);
+}
+function syncExperiences(){
+  try { syncExperiencesNow(); } catch(e) { /* an upsell must never break the booking flow (spec D17) */ }
+}
+function syncExperiencesNow(){
+  const block=document.getElementById('experiences-block');
+  const panel=block && block.closest('.panel');   // step 3's panel (a trip's block is moved into its Service step)
+  if(!block || !panel || !panel.classList.contains('active')) return;
+  const stops=experienceStops();
+  const key=JSON.stringify(stops);
+  if(key===expUi.key) return;          // same question as last time: nothing to do
+  expUi.key=key;
+  const seq=++expUi.seq;               // a slower, older answer must not overwrite a newer one
+  if(expUi.ctl) expUi.ctl.abort();
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!stops.length || !base){ showExperiences([]); return; }
+  const ctl=new AbortController(); expUi.ctl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/near?'+stops.map(s=>'at='+encodeURIComponent(s.label+'@'+s.lat+','+s.lng)).join('&'),
+    { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('experiences_'+res.status); return res.json(); })
+    .then(data=>{ if(seq===expUi.seq) showExperiences(data && Array.isArray(data.stops) ? data.stops : []); })
+    .catch(()=>{ if(seq===expUi.seq) showExperiences([]); })
+    .then(()=>clearTimeout(timer));
+}
+function expCardHtml(it, place, n){
+  const id=acEsc(it.id), on=state.experiences.has(it.id);
+  const photos=Array.isArray(it.photos) ? it.photos.filter(p=>p && typeof p.small==='string' && typeof p.large==='string') : [];
+  const km=Number(it.aboutKm);
+  const days=expDays(it.openWeekdays);
+  const times=Array.isArray(it.startTimes) ? it.startTimes.filter(t=>typeof t==='string') : [];
+  const details=String(it.details||'').split(/\n+/).map(t=>t.trim()).filter(Boolean);
+  const meta=[it.partnerName, km>0 ? Math.round(km)+' km' : '', it.durationText, days].filter(Boolean).map(t=>acEsc(t)).join(' · ');
+  const panelId='xp-panel-'+n;
+  // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
+  return `<article class="xp-row${photos.length?'':' nophoto'}${on?' on':''}" data-id="${id}">`
+    + (photos.length ? `<img class="xp-photo" src="${acEsc(photos[0].small)}" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility='hidden'">` : '')
+    + `<div class="xp-main"><b class="xp-name">${acEsc(it.name)}</b><span class="xp-meta">${meta}</span>`
+    + `<button type="button" class="xp-more" aria-expanded="false" aria-controls="${panelId}">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>`
+    // No price on the card (owner, 2026-10-14): a request is for information, and the price is the
+    // concierge's to give. The tiny line says the request itself costs nothing.
+    + `<div class="xp-buy"><button type="button" class="xp-btn" data-id="${id}" aria-pressed="${on}">${on?'✓ Info requested':'Request info'}</button>`
+    + `<small class="xp-free">No charge for requesting info</small></div>`
+    + `<div class="xp-panel" id="${panelId}" hidden>${details.map(t=>`<p>${acEsc(t)}</p>`).join('')}`
+    + `<p class="xp-facts">${days?`Open: ${acEsc(days)}`:''}${days&&times.length?'<br>':''}${times.length?`Times: ${acEsc(times.join(' · '))}`:''}</p>`
+    + (photos.length ? `<div class="xp-photos">${photos.map(p=>`<img src="${acEsc(p.small)}" srcset="${acEsc(p.small)} 900w, ${acEsc(p.large)} 1800w" sizes="(max-width:560px) 45vw, 200px" alt="${acEsc(it.name)}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : '')
+    + `</div></article>`;
+}
+// Live Tripadvisor ratings (spec D22). Asked once, AFTER the rows are on screen, for the ids just rendered
+// (the endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is cached here
+// either: each fresh render asks again. Any failure, timeout or odd answer leaves the rows as they are.
+const EXP_RATING_IDS = 6;
+function expRatingHtml(r, logoUrl){
+  const https=u=>typeof u==='string' && /^https:\/\//i.test(u);
+  // Tripadvisor's display rules: a bubble rating is shown only with their logo to its left (>= 20px tall, bubbles >= 55px wide).
+  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl) || !https(logoUrl)) return '';
+  const rating=r.rating, n=r.numReviews;
+  if(typeof rating!=='number' || !(rating>=0 && rating<=5) || typeof n!=='number' || !Number.isInteger(n) || n<0) return '';
+  return `<a class="xp-ta" href="${acEsc(r.webUrl)}" target="_blank" rel="noopener noreferrer">`
+    + `<img class="xp-ta-logo" src="${acEsc(logoUrl)}" alt="Tripadvisor" height="20">`
+    + `<img class="xp-ta-bubbles" src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" width="75" height="15">`
+    + `<span>${n} ${n===1?'review':'reviews'}</span></a>`;
+}
+function loadExperienceRatings(){
+  try { loadExperienceRatingsNow(); } catch(e) { /* a rating must never break the booking flow */ }
+}
+function loadExperienceRatingsNow(){
+  const seq=++expUi.rateSeq;           // a newer render (or a newer ask) makes an older answer stale
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const block=document.getElementById('experiences-block');
+  const ids=[...expUi.meta.keys()].slice(0,EXP_RATING_IDS);
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!block || !ids.length || !base) return;
+  const ctl=new AbortController(); expUi.rateCtl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/ratings?ids='+ids.map(encodeURIComponent).join(','), { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('ratings_'+res.status); return res.json(); })
+    .then(data=>{
+      if(seq!==expUi.rateSeq || !data || !Array.isArray(data.ratings)) return;
+      data.ratings.forEach(r=>{
+        if(!r || typeof r.id!=='string') return;
+        const row=[...block.querySelectorAll('.xp-row')].find(x=>x.dataset.id===r.id);
+        const html=expRatingHtml(r, data.logoUrl), meta=row && row.querySelector('.xp-meta');
+        if(html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
+      });
+    })
+    .catch(()=>{})
+    .then(()=>clearTimeout(timer));
+}
+function showExperiences(stops){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  expUi.rateSeq++;                     // whatever ratings were in flight belong to rows that are about to go
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const usable=(stops||[]).map(s=>({ place:expLabel(s && s.place), items:(s && Array.isArray(s.items) ? s.items : []).filter(it=>it && typeof it.id==='string' && typeof it.name==='string') }))
+    .filter(s=>s.place && s.items.length);
+  expUi.meta.clear();
+  let html='', n=0;
+  usable.forEach((s,i)=>{
+    // The accent line and the one explanation line open the first stop only (owner: don't repeat yourself).
+    html+=`<section class="xp-stop">`
+      + (i===0 ? `<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>` : '')
+      + `<h3>While you’re in ${acEsc(s.place)}</h3>`
+      + (i===0 ? `<p class="xp-sub">Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.</p>` : '')
+      + `<div class="xp-list">`;
+    s.items.forEach(it=>{
+      if(!expUi.meta.has(it.id)) expUi.meta.set(it.id,{ name:it.name, partnerName:String(it.partnerName||''), slug:String(it.slug||''), place:s.place });
+      html+=expCardHtml(it, s.place, n++);
+    });
+    html+='</div></section>';
+  });
+  // A choice for something no longer offered (the drop-off changed) is not carried to the booking.
+  [...state.experiences.keys()].forEach(id=>{ if(!expUi.meta.has(id)) state.experiences.delete(id); });
+  if(!usable.length){ block.hidden=true; block.innerHTML=''; renderExperienceSummary(); return; }
+  block.innerHTML=html;
+  block.hidden=false;
+  renderExperienceSummary();
+  loadExperienceRatings();
+}
+function renderExperienceSummary(){
+  const box=document.getElementById('sum-experiences'), count=document.getElementById('sum-experiences-count'), list=document.getElementById('sum-experiences-list');
+  if(!box || !count || !list) return;
+  const names=[...state.experiences.values()].map(v=>v.name);
+  count.textContent=names.length+' requested · no charge';
+  list.textContent=names.join(' · ');
+  box.hidden = names.length===0;
+}
+window.toggleExperience=function(btn){
+  const id=btn && btn.dataset.id, meta=id && expUi.meta.get(id);
+  if(!meta) return;
+  const interested=!state.experiences.has(id);
+  if(interested) state.experiences.set(id,{ name:meta.name, partnerName:meta.partnerName });
+  else state.experiences.delete(id);
+  const card=btn.closest('.xp-row');
+  btn.setAttribute('aria-pressed',String(interested));
+  btn.textContent=interested ? '✓ Info requested' : 'Request info';
+  if(card) card.classList.toggle('on',interested);
+  renderExperienceSummary();
+  if(typeof window.chTrack==='function') window.chTrack('experience_interest',{ experience_slug:meta.slug, place:meta.place, source:'booking_page', interested });
+};
+(function(){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  block.addEventListener('click',function(e){
+    const btn=e.target.closest('.xp-btn');
+    if(btn){ window.toggleExperience(btn); return; }
+    const more=e.target.closest('.xp-more');
+    if(more){
+      const open=more.getAttribute('aria-expanded')!=='true';
+      more.setAttribute('aria-expanded',String(open));
+      const panel=document.getElementById(more.getAttribute('aria-controls'));
+      if(panel) panel.hidden=!open;
+    }
+  });
+})();
 
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
@@ -1882,11 +2107,11 @@ function calcTotal(){
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
-// Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
+// Deposit %/minimum come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
-const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
-function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
+const DEPOSIT_MIN = window.TRANSFERS.DEPOSIT_MIN; // USD floor
+function depositDue(){ const t = calcTotal(); return Math.min(t, Math.max(Math.round(t*DEPOSIT_PCT), DEPOSIT_MIN)); }
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
 // The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
 // order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds
@@ -2368,6 +2593,7 @@ function render(){
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
+  syncExperiences(); // no-op unless step 3 is showing and the drop-off changed since the last ask
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
     // A chauffeur-guide trip used to split this into "Chauffeur distance" + a "Chauffeur-guide · N days"
@@ -2477,7 +2703,7 @@ function render(){
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
     // The road being paid for, under the route — the summary's words, gone when the road is.
     const dueRoad = roadChoiceText();
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':acEsc(dueLabel))}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
@@ -2532,6 +2758,7 @@ window.goStep=function(n){
   // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
   // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
   renderRepriceNote();
+  syncExperiences(); // step 3 opens: ask what is near the drop-off (no-op elsewhere / when unchanged)
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
@@ -2743,18 +2970,26 @@ async function continueToCheckout(booking){
   // own manage page, carrying only the status-only `rt` (the manage token comes back in the
   // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
   // request body says is a phishing primitive.
+  //
+  // A deadline, like every call pay.html makes: the overlay hides both buttons while this runs
+  // and Pay is latched, so an API that accepts the connection and never answers (a saturated
+  // pool, an instance mid-restart) otherwise leaves the customer on the spinner with no way out
+  // but a reload. An abort lands in the catch below → the generic failure with Try again.
   let checkout=null, refusal=null;
+  const ctrl = new AbortController();
+  const deadline = setTimeout(()=>ctrl.abort(), 20000);
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'}),signal:ctrl.signal}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
   }catch(e){}
+  finally{ clearTimeout(deadline); }
 
   // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
   // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
@@ -2762,14 +2997,18 @@ async function continueToCheckout(booking){
     return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway: the customer leaves for PayHere's own page and comes back to their
-  // booking's manage page, which asks our server what happened.
-  if(/payhere\.lk/.test(checkout.checkoutUrl)){
+  // booking's manage page, which asks our server what happened. Only PayHere's own two origins
+  // (api/src/adapters/payhere.ts) — a URL that merely CONTAINS "payhere.lk" is not the gateway.
+  if(/^https:\/\/(www|sandbox)\.payhere\.lk\//.test(checkout.checkoutUrl)){
     if(!checkout.fields) return phShowEnd(...checkoutRefusal(null));
     document.getElementById('ph-msg').textContent='Opening secure payment…';
     return redirectToPayHere(checkout, booking);
   }
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
-  // (no real money gateway). Simulated interstitial with the real reference.
+  // (no real money gateway). Simulated interstitial with the real reference — but never on the
+  // production site, whose API cannot boot on the fake gateway: there it is an anomaly, and a
+  // simulated "Payment approved" would confirm (and report a purchase for) an unpaid booking.
+  if(/^(www\.)?ceylonhop\.com$/.test(location.hostname)) return phShowEnd(...checkoutRefusal(null));
   return simulatePayThenConfirm(booking);
 }
 
@@ -3205,6 +3444,9 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
+  // The partner experiences they tapped "Request" on - ids only (the API looks the names up
+  // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
+  if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);
@@ -3358,6 +3600,7 @@ if(!isTrip && !state.dep){
 
 // ---- init ----
 buildCal(); renderDeps(); checkWhen();
+whenUrlArmed=true;
 document.getElementById('ad-n').textContent=state.ad;
 document.getElementById('ch-n').textContent=state.ch;
 document.getElementById('bg-n').textContent=state.bags;
@@ -3502,9 +3745,11 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
   closeBtn.addEventListener('click',closeSheet);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&aside.classList.contains('open')) closeSheet(); });
 
-  // ── keyboard: never cover a focused field with the bar
+  // ── keyboard: never cover a focused field with the bar. Not the two "Decide later" boxes: they open
+  // no keyboard, sit high on the When step, and ticking one (the only way past it undated) used to
+  // hide the very CTA it unlocks until the customer tapped elsewhere (Android focuses checkboxes).
   document.addEventListener('focusin',e=>{
-    if(e.target.matches && e.target.matches('.panel input, .panel textarea, .panel select')) bar.classList.add('kb');
+    if(e.target.matches && e.target.matches('.panel input:not(#flex-date):not(#flex-time-chk), .panel textarea, .panel select')) bar.classList.add('kb');
   });
   document.addEventListener('focusout',()=>bar.classList.remove('kb'));
 

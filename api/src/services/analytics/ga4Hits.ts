@@ -69,9 +69,19 @@ export function bookingFacts(b: Booking): PurchaseFacts {
   });
 }
 
-const itemFor = (f: PurchaseFacts, value: number): Ga4Item => ({
-  item_id: cut(f.route), item_name: cut(f.route), item_category: f.service_type, price: value, quantity: 1,
+// GA4's item reports group by these built-in categories: private vs shared first, then where the
+// ride starts and ends, then the exact service.
+export type Ga4ItemCategories = Omit<Ga4Item, 'price' | 'quantity'>;
+const itemCategories = (f: PurchaseFacts): Ga4ItemCategories => ({
+  item_id: cut(f.route), item_name: cut(f.route),
+  item_category: f.service_type === 'shared_seat' ? 'shared' : 'private',
+  item_category2: f.pickup_region, item_category3: f.dropoff_region, item_category4: f.service_type,
 });
+const itemFor = (f: PurchaseFacts, value: number): Ga4Item => ({ ...itemCategories(f), price: value, quantity: 1 });
+
+// The same item for the BROWSER `purchase` (spec D1-alt), handed to pay.html / manage.html so
+// both sides report one item; the page adds price = the value it sends.
+export const browserItem = (b: Booking): Ga4ItemCategories => itemCategories(bookingFacts(b));
 
 function factParams(f: PurchaseFacts, at: Date): Record<string, string | number> {
   const p: Record<string, string | number> = {
@@ -136,6 +146,8 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
 
 export interface RefundHitInput {
   booking: Booking; refund: Refund; identity: GaIdentity | null; at: Date; secondPayment: boolean;
+  /** The purchase event name in force: in shadow mode (`purchase_server`) the refund shadows too. */
+  eventName: Ga4PurchaseName;
   /** The client_id the purchase was sent with; used when no identity is stored (spec §5.4: same client_id). */
   clientId?: string;
 }
@@ -150,7 +162,7 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
     timestamp_micros: micros(i.at),
     consent: { ad_user_data: consent, ad_personalization: consent },
     events: [checked({
-      name: 'refund',
+      name: i.eventName === 'purchase' ? 'refund' : 'refund_server',
       params: {
         // Same formula as purchaseHit, so the refund lands on the purchase it reverses.
         transaction_id: i.secondPayment ? `${b.reference}-${i.refund.paymentId.slice(0, 6)}` : b.reference,

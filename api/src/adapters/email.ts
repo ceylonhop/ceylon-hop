@@ -18,7 +18,11 @@ export type CustomerCommunicationKind =
   | 'review_request'
   | 'payment_recovery'
   | 'payment_failed'
-  | 'deposit_received';
+  | 'deposit_received'
+  | 'balance_received'
+  | 'schedule_set'
+  | 'details_reminder_1'
+  | 'details_reminder_2';
 
 export interface CustomerCommunicationTracking {
   bookingId: string;

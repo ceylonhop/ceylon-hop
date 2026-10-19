@@ -166,11 +166,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (sessionStorage.getItem(seen) === String(v.reference || '1')) return;
       sessionStorage.setItem(seen, String(v.reference || '1'));
     } catch (e) { /* private mode — better a possible double than a missing purchase */ }
-    track('purchase', {
+    var p = {
       transaction_id: String(v.reference || ''),
       value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
       currency: v.currency || 'USD',
-    });
+    };
+    // /view's ga4Item is the server purchase's own item (route, private/shared, regions); absent
+    // from an older API, in which case the purchase simply goes without one.
+    if (v.ga4Item && typeof v.ga4Item === 'object') p.items = [Object.assign({}, v.ga4Item, { price: p.value, quantity: 1 })];
+    track('purchase', p);
   }
   function moneyOf(v){
     return { value: Math.round(Number(v && v.amountDueNowCents || 0)) / 100, currency: (v && v.currency) || 'USD' };
@@ -392,6 +396,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p>When PayHere is done, tap <strong>Back to Site</strong> to see your booking.</p></div>');
   }
 
+  // Both checkout calls get a deadline — the one pay.html's fetchJson gives every call, and
+  // booking.js gave its checkout (#974). The hand-off screen above has no button on it, so an API
+  // that accepts the connection and never answers (a saturated pool, an instance mid-restart)
+  // otherwise holds the customer on "Taking you to PayHere…" with no way out but a reload. The
+  // deadline runs until the BODY is read, not just the headers: a server that answers the headers
+  // and then goes quiet traps the customer just the same. Any failure — the deadline, a dropped
+  // connection, a body that won't parse — rejects into pay()'s catch in this page's own words (the
+  // booking view rebuilt with the error named on it, Pay back), never the browser's "Failed to
+  // fetch" or abort wording. The answer exposes only what pay() reads: ok and json().
+  var NET_TIMEOUT_MS = 20000;
+  function fetchWithDeadline(url, opts){
+    opts = opts || {};
+    var ctl = typeof AbortController === 'undefined' ? null : new AbortController();
+    var timer = ctl ? setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS) : null;
+    if (ctl) opts.signal = ctl.signal;
+    function failed(){
+      clearTimeout(timer);
+      return new Error('We couldn’t start your payment just now — no charge was made.');
+    }
+    return fetch(url, opts).then(function(r){
+      return {
+        ok: r.ok,
+        json: function(){
+          return r.json().then(function(x){ clearTimeout(timer); return x; }, function(){ throw failed(); });
+        },
+      };
+    }, function(){ throw failed(); });
+  }
+
   function pay(v){
     // A return-leg poll still running underneath must not repaint over the hand-off.
     handedOff = true;
@@ -402,7 +435,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     function fail(msg){ render(v, msg); }
     // The link token authorises a checkout token, which authorises the charge. The booking
     // id comes back with it — the view projection withholds it on purpose.
-    fetch(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
+    fetchWithDeadline(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
       .then(function(r){
         return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
           throw new Error(x.error === 'not_chargeable'
@@ -414,7 +447,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // `returnTo` states INTENT, never a URL: the server builds the return address (back to
         // this page, on the manage link's own origin) from its own config — a gateway that
         // redirects wherever the request body says is a phishing primitive.
-        return fetch(A + '/bookings/' + x.bookingId + '/checkout', {
+        return fetchWithDeadline(A + '/bookings/' + x.bookingId + '/checkout', {
           method: 'POST',
           headers: { authorization: 'Bearer ' + x.checkoutToken, 'content-type': 'application/json' },
           body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa({ returnTo: 'manage' }) : { returnTo: 'manage' }),

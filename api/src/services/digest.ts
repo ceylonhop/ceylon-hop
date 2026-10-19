@@ -2,9 +2,13 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { opsEmailShell, detailTable, money } from './opsEmail';
 import { WATCHDOG_TICK, agoText } from './watchdog';
+import { NOTIFICATIONS_TICK } from './scheduler';
 import { isTeamEmail } from './testBookings';
+import { needsDetails } from './notifications';
+import { bookingDeepLink } from './opsNotifications';
 
 // M17 daily ops digest — one compact founder email per day riding the notifications
 // tick: what the business did in the last 24 h and whether the watchdog barked. Pure
@@ -17,7 +21,7 @@ const ALERT_LABELS: Record<string, string> = {
   payment_failed: 'Payment failed',
 };
 // Ledger rows that are bookkeeping, not alerts anyone received.
-const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind]);
+const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind, NOTIFICATIONS_TICK.kind]);
 const alertLabel = (kind: string): string => ALERT_LABELS[kind] ?? kind;
 // Payments early warning: at least this many checkouts, and fewer than this share paid.
 const PAY_WARN_MIN_STARTED = 3;
@@ -32,6 +36,9 @@ export async function buildDigest(
     opsBaseUrl?: string;
     teamEmails?: ReadonlySet<string>;
     checkoutEvents?: Pick<BookingCheckoutEventRepo, 'summarySince'>;
+    // Dateless capture Phase 2: who to chase on WhatsApp. Both optional — absent, no section.
+    notificationLog?: Pick<NotificationLogRepo, 'sentAmong'>;
+    rideOps?: { get(id: string): Promise<{ customerUpdated: boolean } | null> };
   },
 ): Promise<{ subject: string; text: string; html: string }> {
   const since = new Date(now.getTime() - 24 * 60 * 60_000);
@@ -77,6 +84,20 @@ export async function buildDigest(
     .sort(([, a], [, b]) => b - a)
     .map(([kind, n]) => [alertLabel(kind), String(n)]);
 
+  // Both details reminders went out and the pickup date/time is still missing: ops chases on
+  // WhatsApp, the booking stays open (owner 2026-10-18). Listed every day until it's in, unless
+  // ops ticked "Customer contacted · pickup confirmed".
+  const chase: typeof all = [];
+  if (deps.notificationLog && deps.rideOps) {
+    const open = all.filter((b) => b.mode === 'single' && (b.status === 'paid' || b.status === 'confirmed')
+      && needsDetails(b) && !isTeamEmail(b.input.customer.email, team));
+    const reminded = await deps.notificationLog.sentAmong(open.map((b) => b.id), ['details_reminder_2']);
+    for (const b of open.filter((x) => reminded.has(x.id))) {
+      if (!(await deps.rideOps.get(b.id))?.customerUpdated) chase.push(b);
+    }
+  }
+  const chaseLine = (b: (typeof all)[number]) => `${b.reference} · ${b.input.customer.firstName} · ${b.input.customer.whatsapp}`;
+
   // Payments (24h), from the checkout attempt log (migration 0055): the founder's early warning
   // that website payments are failing, without running SQL. Team test bookings are left out.
   let payLine: string | null = null;
@@ -98,6 +119,7 @@ export async function buildDigest(
     ...(payLine ? ['', `Payments (24h):\n  ${payLine}`, ...(payWarn ? [`  ${payWarn}`] : [])] : []),
     '',
     alertRows.length ? `Alerts fired (24h):\n${alertRows.map(([k, v]) => `  ${k}: ${v}`).join('\n')}` : 'Alerts fired (24h): none',
+    ...(chase.length ? ['', `Chase on WhatsApp (${chase.length}) — paid, still no pickup date/time after 2 reminders:`, ...chase.map((b) => `  ${chaseLine(b)}`)] : []),
     ...(link ? ['', `Dashboard: ${link}/ops`] : []),
   ];
   const html = [
@@ -108,6 +130,14 @@ export async function buildDigest(
         (payWarn ? `<p style="font-size:14px;margin:0 0 12px;color:#b91c1c;font-weight:600">${payWarn}</p>` : '')
       : '',
     alertRows.length ? `<h3 style="font-size:14px;margin:0 0 8px">Alerts fired (24h)</h3>${detailTable(alertRows)}` : '<p style="font-size:14px;color:#6b7280">No alerts fired in the last 24h.</p>',
+    chase.length
+      ? `<h3 style="font-size:14px;margin:12px 0 8px">Chase on WhatsApp (${chase.length})</h3><p style="font-size:13px;color:#6b7280;margin:0 0 8px">Paid, still no pickup date/time after 2 reminders.</p>` +
+        chase.map((b) => {
+          const href = bookingDeepLink(b.id, deps.opsBaseUrl ?? '');
+          const label = chaseLine(b).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+          return `<p style="font-size:14px;margin:0 0 6px">${href ? `<a href="${href}" style="color:#24758A">${label}</a>` : label}</p>`;
+        }).join('')
+      : '',
     link ? `<p style="margin:16px 0 0"><a href="${link}/ops" style="color:#24758A">Open the ops dashboard</a></p>` : '',
   ].join('');
 

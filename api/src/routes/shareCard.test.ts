@@ -77,6 +77,19 @@ describe('GET /r/:code — share unfurl', () => {
     expect(html).toContain(`https://prod.ceylonhop.com/board.html#/${code}`);
   });
 
+  it('bounces humans by script only — no meta refresh for a crawler to follow', async () => {
+    // Facebook treats <meta http-equiv="refresh"> as a redirect hop and builds the preview
+    // from where it lands: board.html#/CODE, whose fragment it drops, so the post unfurled
+    // as the generic board instead of the ride. Crawlers don't run JS; people do.
+    const { app, code } = await seeded(5);
+    const html = await (await app.request(`/r/${code}`)).text();
+    expect(html).not.toMatch(/http-equiv="refresh"/i);
+    expect(html).toContain(`location.replace("https://prod.ceylonhop.com/board.html#/${code}")`);
+
+    const stale = await (await app.request('/r/ZZ-9999')).text();
+    expect(stale).not.toMatch(/http-equiv="refresh"/i);
+  });
+
   it('never leaks an email or a subject', async () => {
     const { app, code } = await seeded(5);
     const html = await (await app.request(`/r/${code}`)).text();

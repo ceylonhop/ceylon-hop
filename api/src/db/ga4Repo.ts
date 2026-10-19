@@ -20,8 +20,9 @@ export interface Ga4EventLogRepo {
   claim(eventKey: string, kind: Ga4EventKind, payload: unknown, now: Date): Promise<Ga4Claim | null>;
   markSent(eventKey: string, now: Date): Promise<void>;
   markFailed(eventKey: string, error: string): Promise<void>;
-  /** Failed rows, and claims older than STALE_CLAIM_MS, created at or after `since`. */
-  listRetryable(since: Date, now: Date): Promise<Ga4Claim[]>;
+  /** Failed rows, and claims older than STALE_CLAIM_MS, created at or after `since`: the oldest
+   *  `limit` of them, oldest first (the oldest are the nearest to falling out of the MP window). */
+  listRetryable(since: Date, now: Date, limit: number): Promise<Ga4Claim[]>;
   /** The payload stored at the first claim of this key, or null when there is no row. */
   payloadOf(eventKey: string): Promise<unknown | null>;
 }
@@ -77,9 +78,11 @@ export class InMemoryGa4EventLogRepo implements Ga4EventLogRepo {
   async payloadOf(eventKey: string): Promise<unknown | null> {
     return this.rows.get(eventKey)?.payload ?? null;
   }
-  async listRetryable(since: Date, now: Date): Promise<Ga4Claim[]> {
+  async listRetryable(since: Date, now: Date, limit: number): Promise<Ga4Claim[]> {
     return [...this.rows.values()]
       .filter((r) => r.createdAt.getTime() >= since.getTime() && this.retryable(r, now))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, limit)
       .map((r) => this.view(r));
   }
 }

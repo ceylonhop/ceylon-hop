@@ -135,7 +135,7 @@ describe('server-side GA4 hooks — admin money paths', () => {
     expect(h.ga4Adapter.sent).toHaveLength(1);
   });
 
-  it('a confirmed refund sends one refund event carrying the booking reference', async () => {
+  it('a confirmed refund sends one refund_server event (shadow mode) carrying the booking reference', async () => {
     const h = adminGa4App();
     const b = await awaitingPayment(h);
     await markPaid(h, b.id);
@@ -148,13 +148,13 @@ describe('server-side GA4 hooks — admin money paths', () => {
     expect(requested.status).toBe(201);
     const refund = await requested.json();
     await flush();
-    expect(h.ga4Adapter.sent.filter((x) => x.events[0].name === 'refund')).toHaveLength(0); // requested, not confirmed
+    expect(h.ga4Adapter.sent.filter((x) => x.events[0].name === 'refund_server')).toHaveLength(0); // requested, not confirmed
     const confirmed = await h.app.request(`/admin/bookings/${b.id}/refunds/${refund.id}/confirm`, {
       method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ gatewayRef: 'GA4-REFUND-1' }),
     });
     expect(confirmed.status).toBe(200);
     await flush();
-    const refunds = h.ga4Adapter.sent.filter((x) => x.events[0].name === 'refund');
+    const refunds = h.ga4Adapter.sent.filter((x) => x.events[0].name === 'refund_server');
     expect(refunds).toHaveLength(1);
     expect(refunds[0].events[0].params).toMatchObject({ transaction_id: b.reference, value: b.total / 100 });
   });

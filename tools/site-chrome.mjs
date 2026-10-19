@@ -79,9 +79,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 // recording. The gate therefore has to live here, in the head, before the loader.
 //
 // The allowlist mirrors chEnv()'s notion of a real host: any *.ceylonhop.com (which
-// keeps prod, pay/quote/ride and staging tracking exactly as before) plus the Render
-// API host. Everything else — localhost, 127.0.0.1, file:// (hostname ''), preview
-// hosts, github.io — loads no analytics at all.
+// keeps prod and pay/quote/ride tracking exactly as before) plus the Render API host.
+// Everything else — localhost, 127.0.0.1, file:// (hostname ''), preview hosts,
+// github.io — loads no analytics at all.
+//
+// Staging is NOT tracked (owner decision 2026-10-04), but that is enforced downstream,
+// not here: tools/build-staging.mjs strips this loader from the staged site, and
+// api/src/routes/customerPages.ts strips it from pay/quote/manage on a staging host. The
+// snippet itself still passes staging hosts, so every page stays byte-identical.
 //
 // Written with slice(-14) rather than the obvious /(^|\.)ceylonhop\.com$/ because this
 // snippet is inlined into the pay/quote link-unfurl previews, and customerPages.test.ts

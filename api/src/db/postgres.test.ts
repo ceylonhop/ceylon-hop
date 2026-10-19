@@ -20,7 +20,9 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache } from './schema';
+import { bookings as bookingRows, distanceCache, usageCounters } from './schema';
+import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
+import { usageCounterRepoContract } from './usageCounterRepo.test';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
@@ -28,7 +30,9 @@ import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
+import { amountDueNowContract } from './bookingAmountDueNow.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
+import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -61,6 +65,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let quotes: PostgresQuoteRepo;
   let db: Db;
   let sql: Sql;
+  let communications: PostgresCustomerCommunicationRepo;
 
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
@@ -77,6 +82,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     rideOps = new PostgresRideOpsRepo(conn.db);
     notifLog = new PostgresNotificationLogRepo(conn.db);
     quotes = new PostgresQuoteRepo(conn.db);
+    communications = new PostgresCustomerCommunicationRepo(conn.db);
   });
 
   it('notification log records sent kinds per booking, idempotently', async () => {
@@ -113,6 +119,45 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
+  // Spec PR #964: which add-ons a booking names is decided by the BOOKING, not by the quote's
+  // current selection — and the Postgres load reads the raw jsonb selection (no type check).
+  it('add-ons follow the booking: a chauffeur booking names none, a private one keeps its own after a switch', async () => {
+    const engine: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+      extras: [{ code: 'waiting', legIndex: 0 }],
+    };
+    const result = quote(engine, RATE_CARD);
+    const chauffeurTrip: NewBooking = {
+      mode: 'trip' as const,
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+        vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 30000, amountDueNow: 30000, currency: 'USD',
+    };
+    const seed = async (booking: NewBooking) => {
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: result.totalCents, currency: 'USD',
+        rateCardVersion: RATE_CARD.version, result, request: { engine },
+      });
+      const b = await bookings.create(booking);
+      await quotes.patch(q.id, { convertedBookingId: b.id, status: 'won', payLinkSelection: { service: 'chauffeur' }, soldCents: result.totalCents + 5000 });
+      expect((await quotes.get(q.id))?.payLinkSelection).toEqual({ service: 'chauffeur' }); // guard: it round-trips
+      return b;
+    };
+    const chauffeur = await seed(chauffeurTrip);
+    expect((await bookings.get(chauffeur.id))?.addOns).toBeUndefined();
+    const listed = await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 50);
+    expect(listed.find((b) => b.id === chauffeur.id)?.addOns).toBeUndefined();
+    // the same selection, but the booking is the PRIVATE one that was started before the switch
+    const priv = await seed(sample);
+    expect((await bookings.get(priv.id))?.addOns).toEqual(['Waiting fee — Kandy → Ella']);
+    expect((await bookings.listByPersonKey(personKeyFor(sample.input.customer.email), 50)).find((b) => b.id === priv.id)?.addOns)
+      .toEqual(['Waiting fee — Kandy → Ella']);
+  });
+
   // A website booking has no quote: it keeps the engine's own priced lines in
   // pricing_snapshot_json, and a load names its add-ons from them.
   it('a website booking keeps the lines it was priced with and names its add-ons', async () => {
@@ -127,6 +172,16 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(b.id))?.addOns).toEqual(['Sightseeing stops (up to 3h)']);
     const [row] = await db.select({ s: bookingRows.pricingSnapshotJson }).from(bookingRows).where(eq(bookingRows.id, b.id));
     expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
+  });
+
+  // The ops refund picker reads a website booking's lines from here (refund approvals phase 2).
+  it('reads back a website booking\'s pricing snapshot; none for a booking without one', async () => {
+    const engine: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }] };
+    const result = quote(engine, RATE_CARD);
+    const web = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(await bookings.websitePricingSnapshot(web.id)).toMatchObject({ source: 'website', totalCents: result.totalCents, engine });
+    const plain = await bookings.create(sample);
+    expect(await bookings.websitePricingSnapshot(plain.id)).toBeNull();
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
@@ -238,6 +293,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
 
     const firstRead = await trackedBookings.listStatusEvents(b.id);
+    expect(await trackedBookings.listStatusEventsForBookingIds([b.id])).toEqual(firstRead);
     expect((await trackedBookings.listStatusEvents(b.id))).toEqual(firstRead);
     expect(firstRead.map((event) => [event.fromStatus, event.toStatus])).toEqual([
       ['draft', 'payment_pending'],
@@ -301,6 +357,39 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       currentStatus: 'cancelled',
       eventStatus: 'payment_pending',
     });
+  });
+
+  it('queries unresolved, orphan and explicit communication failures without treating missing delivery as failure', async () => {
+    const b = await bookings.create(sample);
+    const planned = await communications.plan({
+      bookingId: b.id, kind: 'confirmation', channel: 'email',
+      templateKey: 'booking-confirmation', templateVersion: '1', recipient: 'maya@example.com',
+      source: 'payment_webhook', actorType: 'provider', actorId: null, requestId: null, runId: null,
+      trackingKey: `${b.id}:confirmation:${randomUUID()}`, payloadSha256: 'a'.repeat(64),
+    });
+    const attemptedAt = new Date(Date.now() - 5 * 60_000);
+    await communications.recordEvent({
+      communicationId: planned.id, eventType: 'send_attempted', providerEventId: null,
+      providerMessageId: null, reasonCode: null, detailJson: null, occurredAt: attemptedAt,
+    });
+    await communications.recordProviderEvent({
+      communicationId: null, eventType: 'bounced', providerEventId: randomUUID(),
+      providerMessageId: `unknown-${randomUUID()}`, reasonCode: 'hard_bounce', detailJson: null,
+      occurredAt: new Date(),
+    });
+    await communications.recordProviderEvent({
+      communicationId: planned.id, eventType: 'complained', providerEventId: randomUUID(),
+      providerMessageId: `email-${randomUUID()}`, reasonCode: 'spam', detailJson: null,
+      occurredAt: new Date(),
+    });
+
+    const findings = await communications.listReconciliationFindings(new Date());
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'communication_attempt_unresolved', communicationId: planned.id }),
+      expect.objectContaining({ kind: 'orphan_provider_event' }),
+      expect.objectContaining({ kind: 'provider_communication_failure', eventType: 'complained' }),
+    ]));
+    expect(findings).not.toContainEqual(expect.objectContaining({ kind: 'delivery_missing' }));
   });
 
   it('persists and reads back a multi-stop trip', async () => {
@@ -770,6 +859,31 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     ).rejects.toMatchObject({ code: 'refund_already_confirmed' });
   });
 
+  it('refunds one named payment of a deposit + balance pair, capped at that payment', async () => {
+    const refunds = new PostgresRefundRepo(db);
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 1_000 });
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 1_000,
+      currency: booking.currency, idempotencyKey: `refund-pair-d-${booking.id}`, purpose: 'deposit',
+    });
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `refund-pair-b-${booking.id}`, purpose: 'balance',
+    });
+    await payments.markSucceeded(deposit.id);
+    await payments.markSucceeded(balance.id);
+    const ask = (amountCents: number, paymentId?: string) =>
+      refunds.request({ bookingId: booking.id, amountCents, currency: 'USD', reason: 'x', requestedBy: 'founder@test', paymentId });
+
+    await expect(ask(100)).rejects.toMatchObject({ code: 'payment_ambiguous' });
+    await expect(ask(1_001, deposit.id)).rejects.toMatchObject({ code: 'refund_exceeds_payment' });
+    await expect(ask(100, randomUUID())).rejects.toMatchObject({ code: 'payment_not_captured' });
+    const ok = await ask(1_000, deposit.id);
+    expect(ok.paymentId).toBe(deposit.id);
+    await expect(ask(1, deposit.id)).rejects.toMatchObject({ code: 'refund_exceeds_payment' });
+    expect((await ask(3_000, balance.id)).paymentId).toBe(balance.id);
+  });
+
   it('atomically records a full-refund transition and rolls both ledgers back on failure', async () => {
     const checkoutRequestId = randomUUID();
     const paidRequestId = randomUUID();
@@ -1081,6 +1195,92 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
   });
 
+  // Deposits (spec 2026-10-07 §5.1): the balance of a deposit booking is the second half of one
+  // sale — settled, booking left alone — while a balance past the total is still a double capture.
+  async function depositBooking(tag: string) {
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 1_000 });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 1_000,
+      currency: booking.currency, idempotencyKey: `${tag}-dep-${booking.id}`, purpose: 'deposit',
+    });
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    const depositEvent = {
+      provider: 'payhere' as const, merchantId: '1234567', orderId: deposit.orderId,
+      providerTxnId: `PAY-DEP-${deposit.id}`, amountCents: deposit.amount, currency: deposit.currency,
+      status: 'succeeded' as const, providerStatusCode: '2', receivedAt: new Date(),
+      payloadSha256: '4'.repeat(64), sanitizedPayload: { order_id: deposit.orderId, status_code: '2' },
+    };
+    expect((await settlement.acceptVerifiedEvent(depositEvent)).kind).toBe('settled');
+    return { booking, settlement, depositEvent };
+  }
+
+  it('settles a balance after its deposit as one sale and leaves the booking paid', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-ok');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `bal-ok-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_000, payloadSha256: '5'.repeat(64),
+    });
+    expect(outcome.kind).toBe('balance_settled');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
+  // The first payment that settles IS what secured the booking: it rewrites amount_due_now, so a
+  // customer who switched deposit -> full (or back) mid-checkout is told the truth afterwards.
+  it.each([
+    ['deposit', 1_000, 4_000],
+    ['full', 4_000, 1_000],
+  ] as const)('a settled %s payment of %i makes it the booking amount_due_now (was %i)', async (purpose, amount, wasDueNow) => {
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: wasDueNow });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-${purpose}`, amount,
+      currency: booking.currency, idempotencyKey: `due-now-${purpose}-${booking.id}`, purpose,
+    });
+    const outcome = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent({
+      provider: 'payhere', merchantId: '1234567', orderId: payment.orderId, providerTxnId: `PAY-DUE-${payment.id}`,
+      amountCents: amount, currency: payment.currency, status: 'succeeded', providerStatusCode: '2',
+      receivedAt: new Date(), payloadSha256: '8'.repeat(64), sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+    });
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.amountDueNow).toBe(amount);
+    expect((await bookings.get(booking.id))?.amountDueNow).toBe(amount);
+  });
+
+  it('does not call a balance on a cancelled booking a settled sale', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-cancelled');
+    await bookings.setStatus(booking.id, 'cancelled');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `bal-cancelled-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_000, payloadSha256: '7'.repeat(64),
+    });
+    expect(outcome.kind).toBe('unexpected_booking_state');
+    expect(outcome.payment.status).toBe('succeeded'); // recorded, not dropped
+    expect((await bookings.get(booking.id))?.status).toBe('cancelled');
+  });
+
+  it('still flags a balance that would take more than the total as a double capture', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-over');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_001,
+      currency: booking.currency, idempotencyKey: `bal-over-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_001, payloadSha256: '6'.repeat(64),
+    });
+    expect(outcome.kind).toBe('double_capture');
+  });
+
   it('persists a quote with JSONB request/result and patches its status', async () => {
     const saved = await quotes.save({
       product: 'private',
@@ -1372,6 +1572,13 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       return new PostgresDistanceCacheRepo(db);
     });
   });
+
+  describe('PostgresUsageCounterRepo', () => {
+    usageCounterRepoContract(async () => {
+      await db.delete(usageCounters);
+      return new PostgresUsageCounterRepo(db);
+    });
+  });
 });
 
 // The same contract the in-memory fake satisfies, run against the real database — so the fake can
@@ -1483,5 +1690,13 @@ describe.skipIf(!TEST_URL)('Postgres promo code uses (integration)', () => {
       payments: new PostgresPaymentRepo(conn.db),
       promoCodes: new PostgresPromoCodeRepo(conn.db),
     };
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)', () => {
+  amountDueNowContract('contract', async () => {
+    const conn = createDb(TEST_URL as string);
+    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    return { bookings: new PostgresBookingRepo(conn.db), payments: new PostgresPaymentRepo(conn.db) };
   });
 });

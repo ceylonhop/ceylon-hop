@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
-import type { PaymentRepo, NewPayment, Payment, PaymentProvenance, PaymentStatus } from './paymentRepo';
+import type { PaymentRepo, NewPayment, Payment, PaymentProvenance, PaymentPurpose, PaymentStatus } from './paymentRepo';
 
 type Row = typeof payments.$inferSelect;
 const toPayment = (r: Row): Payment => ({
@@ -13,8 +13,10 @@ const toPayment = (r: Row): Payment => ({
   currency: r.currency,
   status: r.status as PaymentStatus,
   idempotencyKey: r.idempotencyKey,
+  purpose: r.purpose as PaymentPurpose,
   attemptCount: r.attemptCount,
   lastAttemptAt: r.lastAttemptAt,
+  settledAt: r.settledAt,
 });
 
 export class PostgresPaymentRepo implements PaymentRepo {
@@ -25,7 +27,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
     if (existing) return existing;
     const [row] = await this.db
       .insert(payments)
-      .values({ ...p, status: 'pending' })
+      .values({ ...p, purpose: p.purpose ?? 'full', status: 'pending' })
       .returning();
     return toPayment(row);
   }
@@ -148,6 +150,21 @@ export class PostgresPaymentRepo implements PaymentRepo {
       )
       .limit(1);
     return Boolean(row);
+  }
+
+  async manualSettlementAmong(bookingIds: string[]): Promise<Set<string>> {
+    if (bookingIds.length === 0) return new Set();
+    const rows = await this.db
+      .selectDistinct({ bookingId: payments.bookingId })
+      .from(payments)
+      .where(
+        and(
+          inArray(payments.bookingId, bookingIds),
+          eq(payments.status, 'succeeded'),
+          eq(payments.settlementSource, 'manual'),
+        ),
+      );
+    return new Set(rows.map((r) => r.bookingId));
   }
 
   // Bookkeeping only: status, settlement and updated_at are untouched, so nothing that reads

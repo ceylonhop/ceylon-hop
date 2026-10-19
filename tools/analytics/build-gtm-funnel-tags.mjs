@@ -36,7 +36,7 @@ const EVENTS = [
     why: 'Forward progress through the booking steps (when / where / pax or service / payment).' },
   { name: 'add_payment_info', params: ['payment_type', 'currency', 'value'],
     why: 'Chose a payment plan (booking) or reached the pay step (pay link).' },
-  { name: 'purchase', params: ['transaction_id', 'value', 'currency', 'payment_type'],
+  { name: 'purchase', params: ['transaction_id', 'value', 'currency', 'payment_type', 'items'],
     why: 'Revenue. Gated in code to real hosts and de-duplicated per booking reference.' },
   { name: 'view_item', params: ['item_category', 'value', 'currency'],
     why: 'A pay link was opened on something payable.' },

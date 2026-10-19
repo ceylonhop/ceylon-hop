@@ -92,8 +92,8 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
     await page.waitForTimeout(120);
   }
 
-  // Force chauffeur.
-  await page.evaluate(() => { const b = document.querySelector('[data-action="setService"][data-service="chauffeur"]'); if (b) { b.disabled = false; b.click(); } });
+  // Chauffeur — by what the customer asked for; the Pricing as cards are display-only (2026-10-12).
+  await page.locator('[data-action="setRequestedService"][data-req="chauffeur"]').click();
   await page.waitForTimeout(400);
 
   // The undated leg (leg 1) is flagged, and the needs line names the missing date.

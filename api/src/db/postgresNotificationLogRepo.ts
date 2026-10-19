@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { notificationLog } from './schema';
 import type { NotificationLogRepo, NotificationKind } from './notificationLogRepo';
@@ -16,6 +16,15 @@ export class PostgresNotificationLogRepo implements NotificationLogRepo {
       .from(notificationLog)
       .where(and(eq(notificationLog.bookingId, bookingId), eq(notificationLog.kind, kind)));
     return rows.length > 0;
+  }
+
+  async sentAmong(bookingIds: string[], kinds: NotificationKind[]): Promise<Set<string>> {
+    if (bookingIds.length === 0 || kinds.length === 0) return new Set();
+    const rows = await this.db
+      .selectDistinct({ bookingId: notificationLog.bookingId })
+      .from(notificationLog)
+      .where(and(inArray(notificationLog.bookingId, bookingIds), inArray(notificationLog.kind, kinds)));
+    return new Set(rows.map((r) => r.bookingId));
   }
 
   async markSent(bookingId: string, kind: NotificationKind): Promise<void> {

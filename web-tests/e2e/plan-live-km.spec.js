@@ -67,3 +67,34 @@ test('a transient routeStats failure does not poison the leg — the next render
   await expect(dist()).toContainText('Approx. 120 km · 2h', { timeout: 6000 });
   await expect(dist()).toContainText('Google route');
 });
+
+// Audit 2026-10-04: a CATALOGUE place was routed by its bare name, so Google geocoded "Yala" to
+// somewhere ~55 km from Colombo and the planner showed "Yala → Colombo · from $29" while booking
+// charged the engine's $123 (293 km). A place the planner already knows must be routed by its
+// own coordinates; only free-text Google picks go by name. The stub answers a bare name with the
+// wrong short road and a coordinate with the right one, so the shown distance says which was sent.
+test('a known catalogue place is routed by its coordinates, not its bare name', async ({ page }) => {
+  await page.addInitScript(() => {
+    const Route = {
+      computeRoutes: async (req) => {
+        const byName = typeof req.origin === 'string' || typeof req.destination === 'string'
+          || (req.origin && req.origin.address) || (req.destination && req.destination.address);
+        const km = byName ? 55 : 293;
+        return { routes: [{ legs: [{ distanceMeters: km * 1000, durationMillis: km * 80000 }] }] };
+      },
+    };
+    const places = {
+      AutocompleteSessionToken: function () {},
+      AutocompleteSuggestion: { fetchAutocompleteSuggestions: async () => ({ suggestions: [] }) },
+    };
+    const libs = { routes: { Route }, places };
+    window.google = { maps: { importLibrary: async (name) => libs[name] || {} } };
+  });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Yala|Colombo') + '&pax=2&vehicle=car');
+
+  const meta = page.locator('#rail .leg-card').first().locator('[data-dist]');
+  await expect(meta).toContainText('Google route');
+  await expect(meta).toContainText('295 km'); // 293 km, shown rounded to 5
+  await expect(meta).not.toContainText('55 km');
+});

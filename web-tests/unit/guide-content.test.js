@@ -34,6 +34,7 @@ const photoKeys = g => [
   ...(g.onTheWay?.stops || []).map(s => s.photo),
   ...g.eat.map(e => e.photo),
   ...g.stay.map(s => s.photo),
+  ...(g.nightlife?.items || []).map(n => n.photo),
 ].filter(Boolean);
 
 describe('destination guide content', () => {
@@ -57,7 +58,16 @@ describe('destination guide content', () => {
           }
           expect(meta.alt, `${k}.alt`).toBeTruthy();
           expect(meta.credit, `${k}.credit`).toBeTruthy();
-          expect(meta.creditUrl, `${k}.creditUrl`).toMatch(/^https:\/\/unsplash\.com\//);
+          if (meta.source === 'commons') {
+            // Wikimedia Commons: the licence must travel with the photo (CC BY / CC BY-SA attribution).
+            expect(meta.creditUrl, `${k}.creditUrl`).toMatch(/^https:\/\/commons\.wikimedia\.org\//);
+            expect(meta.photoUrl, `${k}.photoUrl`).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
+            expect(meta.license, `${k}.license`).toMatch(/^CC BY(-SA)? \d\.\d$/);
+            expect(meta.licenseUrl, `${k}.licenseUrl`).toMatch(/^https:\/\/creativecommons\.org\/licenses\//);
+          } else {
+            expect(meta.source, `${k}.source`).toBeUndefined();
+            expect(meta.creditUrl, `${k}.creditUrl`).toMatch(/^https:\/\/unsplash\.com\//);
+          }
         }
       });
       it('declares the real pixel size of each -1800 file', () => {

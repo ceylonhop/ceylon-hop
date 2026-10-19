@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { refreshExperiencePins } from '../experiences/pinRefresh';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { BusinessPlacesAdapter } from '../adapters/businessPlaces';
 import { z } from 'zod';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
@@ -11,19 +14,20 @@ import {
   sendRefundConfirmation,
   sendNoShowNotice,
 } from '../services/notifications';
-import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds, NOTIFICATIONS_TICK } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
-import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
+import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
-import { runWatchdog, checkWatchdogLiveness } from '../services/watchdog';
+import { runWatchdog, checkWatchdogLiveness, type WatchdogEmailQuota } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
+import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
@@ -31,15 +35,16 @@ import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
-import { mayReverse } from '../domain/reversalWindow';
+import { mayReverse, isLateRequest } from '../domain/reversalWindow';
+import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import { createJobCorrelation } from '../lib/correlation';
 
-// Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
-// session with payments:act (founder or finance) — the machine key (system) does NOT
-// have payments:act, so a leaked x-admin-key can no longer issue refunds (spec D6).
+// Capability-gated staff API. Refunds (owner, 2026-10-17): founder and ops may REQUEST any
+// amount; only a founder (payments:reverse) sends or confirms one. Cancelling a booking keeps
+// the 24-hour rule (domain/reversalWindow.ts). The machine key (system) holds none of these.
 // Cron/watchdog endpoints stay machine-driven via admin:jobs (system or founder).
 export function adminRoutes(deps: {
   bookings: BookingRepo;
@@ -54,12 +59,16 @@ export function adminRoutes(deps: {
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  /** Daily re-fetch of Google-sourced experience pins (Places lat/lng may be kept 30 days). Absent = no Google key. */
+  experiencePins?: { experiences: ExperienceRepo; business: BusinessPlacesAdapter };
   // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
   // Test bookings (2026-09-24): config.TEAM_EMAILS, left out of the digest's status counts.
   teamEmails?: ReadonlySet<string>;
   // Checkout attempt log (migration 0055) — the digest's payments line; omitted without it.
   checkoutEvents?: BookingCheckoutEventRepo;
+  // Present only once both Phase A ledgers are enabled; the watchdog then reconciles them.
+  customerCommunications?: Pick<CustomerCommunicationRepo, 'listReconciliationFindings'>;
   // Server-side GA4: refunds, mark-paid settlements, and the sweep that retries failed sends.
   ga4?: Ga4Reporter;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
@@ -82,6 +91,8 @@ export function adminRoutes(deps: {
   // ONE tick may send before it stops and pages. Optional so existing callers/tests keep
   // their uncapped behaviour; the production mount always passes config.NOTIFY_MAX_PER_RUN.
   notifyMaxPerRun?: number;
+  // Resend daily-cap early warning for the watchdog (spec 2026-10-13 §6); absent without counters.
+  emailQuota?: WatchdogEmailQuota;
   // Relevance window + epoch (R6). Both optional; unset means unbounded, as before.
   notifyMaxTripAgeDays?: number;
   notifyEpoch?: Date;
@@ -168,7 +179,7 @@ export function adminRoutes(deps: {
   // grant applied by reversalGate() below so the rule is readable in one place.
   const CancelRequest = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
-  // Shared by all four reversal routes. Returns a Response to send, or null to proceed.
+  // Guards booking cancellation only (the refund routes left it on 2026-10-17). Returns a Response to send, or null to proceed.
   const reversalGate = async (c: Context, bookingId: string): Promise<Response | null> => {
     const booking = await bookings.get(bookingId);
     if (!booking) return c.json({ error: 'booking_not_found' }, 404);
@@ -206,6 +217,7 @@ export function adminRoutes(deps: {
       amountCents: z.number().int().positive(),
       currency: z.string().length(3),
       reason: z.string().trim().min(1).max(500),
+      paymentId: z.string().uuid().optional(),
     })
     .strict();
   const RefundConfirm = z.object({ gatewayRef: z.string().trim().min(1).max(200) }).strict();
@@ -218,16 +230,16 @@ export function adminRoutes(deps: {
     return c.json({ error: error.code }, 409);
   };
 
-  // Reading refund history stays on payments:act — finance must be able to reconcile the books
-  // without being able to move money. Only the four REVERSAL routes below are founder-only.
-  r.get('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+  // Everyone who works bookings reads the ledger — ops needs to see its own requests waiting.
+  // Moving money is gated on the routes below, never here.
+  r.get('/bookings/:id/refunds', requireCap('bookings:read'), async (c) => {
     if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
     return c.json(await deps.refunds.list(c.req.param('id')), 200);
   });
 
+  // A request moves no money and a founder decides every one, so it is not held to the 24-hour
+  // rule (owner, 2026-10-17). It still reserves the amount, so requests never exceed the capture.
   r.post('/bookings/:id/refunds', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
     try {
@@ -237,6 +249,38 @@ export function adminRoutes(deps: {
         currency: parsed.data.currency.toUpperCase(),
         requestedBy: c.get('identity').email,
       });
+      // Founders hear about every request someone else files (spec 2026-10-17 §2). A founder's
+      // own request is about to be fired, so it needs no email. Best-effort: never fails the request.
+      const identity = c.get('identity');
+      try {
+        if (!can(identity.role, 'payments:reverse')) {
+          const booking = await bookings.get(refund.bookingId);
+          if (booking) {
+            const capturedCents = (await deps.payments.findByBookingId(booking.id))
+              .filter((p) => p.status === 'succeeded')
+              .reduce((sum, p) => sum + p.amount, 0);
+            // Full/partial on the title: an empty amount box means "everything" (spec §2).
+            const scope = refund.amountCents >= capturedCents ? 'full' : 'partial';
+            const late = isLateRequest(booking, refund.requestedAt);
+            const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${refund.currency}`;
+            const link = bookingDeepLink(booking.id, deps.opsBaseUrl ?? '');
+            void alerts.send({
+              severity: 'info',
+              kind: 'refund_requested',
+              title: `Refund requested: ${booking.reference} · ${fmt(refund.amountCents)} (${scope})${late ? ' · LATE' : ''}`,
+              body:
+                `${identity.email} asked for a refund of ${fmt(refund.amountCents)} of ${fmt(capturedCents)} paid ` +
+                `on ${booking.reference}.\n\n` +
+                `Reason: ${refund.reason}\n` +
+                (late ? '\nLate — the trip starts in under 24 hours; the driver may already be committed.\n' : '') +
+                `\nNo money has moved. Approve or cancel it in the ops tool${link ? `:\n${link}` : '.'}`,
+              dedupeKey: refund.id,
+            }).catch((error) => console.error(`refund_requested alert failed for ${refund.id}:`, error));
+          }
+        }
+      } catch (error) {
+        console.error(`refund_requested alert failed for ${refund.id}:`, error);
+      }
       return c.json(refund, 201);
     } catch (error) {
       return refundError(c, error);
@@ -305,12 +349,7 @@ export function adminRoutes(deps: {
     }
   };
 
-  // Confirm and cancel-request carry the SAME gate as the request. The money actually moves at
-  // confirm, so the protected last day has to be protected there too; if ops runs out of window
-  // mid-flow a founder finishes it, and nothing is stranded.
-  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:reverse'), async (c) => {
     const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
     const before = await bookings.get(c.req.param('id'));
@@ -330,8 +369,8 @@ export function adminRoutes(deps: {
     }
   });
 
-  // Refund through PayHere's API instead of by hand. Same gate as confirm — this is the moment
-  // money moves, so the protected last day is protected here too.
+  // Refund through PayHere's API instead of by hand. Same gate as confirm: founder only — this is the
+  // moment money moves.
   //
   // The order below is the entire safety design and must not be rearranged:
   //   1. beginApi() claims the row as api_processing and commits, BEFORE any HTTP call
@@ -339,9 +378,7 @@ export function adminRoutes(deps: {
   //   3. only a DEFINITE answer settles the row
   // An indefinite answer leaves it in api_processing on purpose. PayHere's Refund API has no
   // idempotency key, so a retry against an unknown outcome is how a customer is refunded twice.
-  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('payments:reverse'), async (c) => {
     const adapter = deps.paymentAdapter;
     if (!adapter?.refund) return c.json({ error: 'refund_api_unavailable' }, 409);
     const before = await bookings.get(c.req.param('id'));
@@ -426,9 +463,8 @@ export function adminRoutes(deps: {
     }
   });
 
+  // Cancelling a pending request releases the reservation and moves no money: ops may do it.
   r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     try {
       return c.json(
         await deps.refunds.cancel({
@@ -521,7 +557,9 @@ export function adminRoutes(deps: {
         // and order_id is unique — a booking once handed a PayHere form must still be settleable
         // in cash.
         orderId: `${booking.reference}-MANUAL`,
-        amount: booking.amountDueNow ?? booking.total,
+        // What the ops confirm dialog shows ("Record <total> received"): the whole total, never
+        // amountDueNow — an abandoned PayHere deposit attempt leaves that below the total.
+        amount: booking.total,
         currency: booking.currency,
         idempotencyKey,
       });
@@ -530,6 +568,11 @@ export function adminRoutes(deps: {
       await deps.payments.markSucceededManually(payment.id, { reference, settledBy: c.get('identity').email });
       transitionPaymentId = payment.id;
     }
+
+    // The booking is now settled for its whole total, so what was "due now" is the total too —
+    // otherwise balanceDueCents reads the abandoned deposit as a balance nobody can pay. Runs on the
+    // repair path as well (idempotent), and before the status move, which closes its payment_pending guard.
+    await bookings.setAmountDueNowToTotal(booking.id);
 
     let paid: Booking;
     try {
@@ -599,12 +642,14 @@ export function adminRoutes(deps: {
     if (c.req.query('dryRun')) {
       const preview = await runScheduledNotifications(new Date(), {
         bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true, correlation,
+        payments: deps.payments, rideOps: deps.rideOps,
       });
       return c.json({ ...preview, dryRun: true }, 200);
     }
 
     const result = await runScheduledNotifications(new Date(), {
       bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, correlation,
+      payments: deps.payments, rideOps: deps.rideOps,
     });
     let staleSharedHolds = 0;
     try {
@@ -670,7 +715,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents, notificationLog, rideOps: deps.rideOps });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {
@@ -691,8 +736,24 @@ export function adminRoutes(deps: {
         console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
       }
     }
+    // Experience pins from Google ride the same tick, once per ~day however often the cron POSTs (20h
+    // cooldown on the alert ledger, as the digest), best-effort like every rider here.
+    let experiencePins: Awaited<ReturnType<typeof refreshExperiencePins>> | null = null;
+    if (deps.experiencePins) {
+      const due = !deps.alertLog || (await deps.alertLog.shouldSend('experience_pin_refresh', 'daily', 20 * 3600_000, new Date()));
+      if (due) {
+        try {
+          experiencePins = await refreshExperiencePins(deps.experiencePins);
+        } catch (err) {
+          console.error('experience pin refresh failed:', err);
+        }
+      }
+    }
+    // Footprint, last (spec 2026-10-13 §4) — the watchdog's WATCHDOG_TICK for this tick, so the
+    // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
+    await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
@@ -724,7 +785,9 @@ export function adminRoutes(deps: {
       bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget,
       alertLog: deps.alertLog, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents,
       rideLists: deps.rideLists,
+      customerCommunications: deps.customerCommunications,
       correlation,
+      emailQuota: deps.emailQuota,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it
     // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).

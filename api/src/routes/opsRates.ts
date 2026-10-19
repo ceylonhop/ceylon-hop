@@ -64,8 +64,12 @@ export function opsRatesRoutes(deps: {
         : { ...defaults, source: 'defaults', createdBy: null, createdAt: null },
       defaults,
       history: history.map(serialize),
-      // Shown, never edited: no booking charges a deposit (engine.ts:171, owner decision 2026-09-26).
-      readOnly: { depositPct: RATE_CARD.deposit.pct, depositCapCents: RATE_CARD.deposit.capCents },
+      // Shown, never edited: the deposit rule is fixed (owner 2026-10-07).
+      readOnly: {
+        depositPct: RATE_CARD.deposit.pct,
+        depositMinCents: RATE_CARD.deposit.minCents,
+        depositEligibleMinCents: RATE_CARD.deposit.eligibleMinTotalCents,
+      },
     });
   });
 

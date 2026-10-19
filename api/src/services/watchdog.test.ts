@@ -91,6 +91,17 @@ describe('runWatchdog', () => {
     expect(alerts.sent).toHaveLength(0);
   });
 
+  // A deposit booking's confirmation IS the deposit-received email (spec 2026-10-07).
+  it('stays quiet when the deposit-received email was sent instead of the confirmation', async () => {
+    const { bookings, booking } = await seed('paid');
+    const log = new InMemoryNotificationLogRepo();
+    await log.markSent(booking.id, 'deposit_received');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log, alerts });
+    expect(res.paidUnconfirmed).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
 
   // The exemption is about HOW the money arrived, not which channel booked it. That only
   // started mattering once ops could hand a WhatsApp customer a card link: a whatsapp-channel
@@ -344,6 +355,26 @@ describe('stuck payment eligibility follows the latest gateway attempt', () => {
     expect(result.stuckPending).toBe(1);
     expect(alerts.sent).toHaveLength(1);
     expect(alerts.sent[0].kind).toBe('watchdog_stuck_pending');
+  });
+
+  // The attempt log is best-effort by contract: a read failure falls back to the payment row
+  // rather than taking the sweep down with it.
+  it('falls back to the payment row when the checkout log cannot be read', async () => {
+    const { bookings, payments, at } = await seededGatewayPayment();
+    const down = () => Promise.reject(new Error('log is down'));
+    const checkoutEvents = { listByBookingId: down, listByBookingIds: down };
+    const alerts = new FakeAlertAdapter();
+
+    const result = await runWatchdog(at(45), {
+      bookings,
+      payments,
+      checkoutEvents,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+    });
+
+    expect(result.stuckPending).toBe(1);
+    expect(alerts.sent.map((a) => a.kind)).toEqual(['watchdog_stuck_pending']);
   });
 });
 
@@ -682,7 +713,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       time: over.time ?? '09:00', seats: 1, bags: 1, customer: { ...customer, email: over.email ?? customer.email },
     },
   });
-  function mk(reference: string, status: string, createdAt: string, trip: ReturnType<typeof shared>) {
+  function mk(reference: string, status: string, createdAt: string, trip: { mode: string; input: object }) {
     return {
       id: `id-${reference}`, reference, status, createdAt, channel: 'website', currency: 'USD', total: 5498, amountDueNow: 5498,
       ...trip,
@@ -718,7 +749,7 @@ describe('runWatchdog — the customer already paid for the same trip on a later
     expect(stuck).toHaveLength(1);
     expect(stuck[0].severity).toBe('warning');
     expect(stuck[0].title).toContain('CH-Y5RXW');
-    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX, cancel this duplicate.');
+    expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX. Leave this one: cancelling it from ops emails the customer a cancellation for the trip they paid for.');
   });
 
   it('counts any later lifecycle status as paid (confirmed, in progress, completed)', async () => {
@@ -746,7 +777,65 @@ describe('runWatchdog — the customer already paid for the same trip on a later
       expect(email.sent).toHaveLength(1);
       const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
       expect(stuck[0].severity).toBe('critical');
-      expect(stuck[0].body).not.toContain('cancel this duplicate');
+      expect(stuck[0].body).not.toContain('Customer paid for the same trip');
+    });
+  }
+
+  // CH-7EWG7 / CH-SK8U8 (2026-10-18): the customer checked out a private transfer for 19 Oct 09:00,
+  // then 42 s later retried the same route with "Decide later" and PAID that one. sameTrip() matches
+  // no undated booking, so the watchdog paged CRITICAL every 30 min and emailed the paying customer
+  // to finish paying. Here (and only here — the settle path's auto-cancel keeps the strict rule) an
+  // undated side counts as the same transfer when the person and the route match.
+  const single = (over: Partial<{ from: string; to: string; date: string | undefined; time: string | undefined }> = {}) => ({
+    mode: 'single' as const,
+    input: {
+      from: over.from ?? 'C1 Colombo Fort, Mudalige Mawatha, Colombo, Sri Lanka',
+      to: over.to ?? 'Sigiri Aliya Tree house, Sigiriya, Sri Lanka',
+      date: 'date' in over ? over.date : TRAVEL, time: 'time' in over ? over.time : '09:00',
+      vehicleType: 'van', adults: 2, children: 1, bags: 3, customer,
+    },
+  });
+  const undated = () => single({ date: undefined, time: undefined });
+
+  for (const [what, stuckTrip, paidTrip] of [
+    ['a dated checkout, then the same route paid with "Decide later"', single(), undated()],
+    ['a "Decide later" checkout, then the same route paid with a date', undated(), single()],
+    ['both undated', undated(), undated()],
+  ] as const) {
+    it(`private transfer, ${what}: no recovery email, a WARNING naming the paid booking`, async () => {
+      const bookings = repo([
+        mk('CH-7EWG7', 'payment_pending', at(0), stuckTrip),
+        mk('CH-SK8U8', 'paid', at(1), paidTrip),
+      ]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      const log = new InMemoryNotificationLogRepo();
+      await runWatchdog(new Date(T0 + 36 * MIN), { bookings, log, alerts, email, ...mail });
+      expect(email.sent).toHaveLength(0);
+      expect(await log.wasSent('id-CH-7EWG7', 'payment_recovery')).toBe(false);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck).toHaveLength(1);
+      expect(stuck[0].severity).toBe('warning');
+      expect(stuck[0].body).toContain('Customer paid for the same trip on CH-SK8U8. Leave this one');
+    });
+  }
+
+  // A missing date waives only the date: route, person and order still have to match.
+  for (const [what, paid] of [
+    ['a different pickup', () => mk('CH-SK8U8', 'paid', at(1), single({ from: 'Negombo', date: undefined, time: undefined }))],
+    ['a different drop-off', () => mk('CH-SK8U8', 'paid', at(1), single({ to: 'Kandy', date: undefined, time: undefined }))],
+    ['a paid undated booking made BEFORE the stuck one', () => mk('CH-SK8U8', 'paid', at(-20), undated())],
+    ['two different dates', () => mk('CH-SK8U8', 'paid', at(1), single({ date: futureIsoDate(8) }))],
+  ] as const) {
+    it(`private transfer, ${what}: the usual recovery email and critical page`, async () => {
+      const bookings = repo([mk('CH-7EWG7', 'payment_pending', at(0), single()), paid()]);
+      const alerts = new FakeAlertAdapter();
+      const email = new FakeEmailAdapter();
+      await runWatchdog(new Date(T0 + 36 * MIN), { bookings, log: new InMemoryNotificationLogRepo(), alerts, email, ...mail });
+      expect(email.sent).toHaveLength(1);
+      const stuck = alerts.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+      expect(stuck[0].severity).toBe('critical');
+      expect(stuck[0].body).not.toContain('Customer paid for the same trip');
     });
   }
 });
@@ -803,5 +892,39 @@ describe('runWatchdog: Ride Board lists left open past their cutoff', () => {
     await runWatchdog(now, { ...base(), alerts, rideLists });
 
     expect(alerts.sent.map((a) => a.kind)).not.toContain('ride_list_overdue');
+  });
+});
+
+// Spec 2026-10-13 §6: the one usage rule the watchdog carries — warn at 70 % of the Resend daily
+// cap, so the owner upgrades before the cap bites and takes the alert channel with it.
+describe('runWatchdog — email quota', () => {
+  const quota = async (sentToday: number) => {
+    const { InMemoryUsageCounterRepo } = await import('../db/usageCounterRepo');
+    const { UsageMeter } = await import('./usageMeter');
+    const repo = new InMemoryUsageCounterRepo();
+    const meter = new UsageMeter(repo, { flushMs: 0 });
+    if (sentToday) meter.bump('email.sent', sentToday);
+    return { usage: { meter, repo }, dailyLimit: 100 };
+  };
+
+  it('stays quiet below the threshold', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(69),
+    });
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('email_quota_near');
+  });
+
+  it('raises email_quota_near at 70 % of the daily limit', async () => {
+    const alerts = new FakeAlertAdapter();
+    await runWatchdog(new Date(), {
+      bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), alerts,
+      emailQuota: await quota(70),
+    });
+    const a = alerts.sent.find((x) => x.kind === 'email_quota_near');
+    expect(a).toBeDefined();
+    expect(a!.severity).toBe('critical');
+    expect(a!.title).toContain('70 of 100');
   });
 });

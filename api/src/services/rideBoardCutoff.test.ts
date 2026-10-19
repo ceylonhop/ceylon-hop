@@ -631,3 +631,106 @@ describe('runRideBoardCutoff: an email failure never stops the sweep', () => {
     expect((await repo.getByCode(second.code))?.list.status).toBe('confirmed');
   });
 });
+
+// Owner 2026-10-07: starting a ride takes no card. The starter's seat is real — it counts toward
+// the van like any other — but there is no token to charge, so the sweep leaves their fare to ops
+// (a payment link sent by hand) instead of treating the missing token as a failed charge.
+// Everything else at the cutoff runs exactly as before.
+describe('runRideBoardCutoff — a starter who gave no card', () => {
+  async function startedList(repo: InMemoryRideListRepo, joiners: number, over: Partial<CreateListArgs> = {}) {
+    const list = await repo.createList(listArgs({ minSeats: 3, capacity: 6, createdBy: 'starter', ...over }));
+    await repo.addMember(list.id, { ...joiner('starter', 'unused'), preapprovalRef: null, phone: '+94 77 333 4444' });
+    await fill(repo, list.id, joiners);
+    return list;
+  }
+
+  it('counts their seat toward the van and charges nobody for it', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const list = await startedList(repo, 2);
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email: new FakeEmailAdapter() });
+    expect(res).toMatchObject({ confirmed: 1, charged: 2, chargeFailed: 0 });
+    expect(paygw.charges.map((c) => c.ref).sort()).toEqual(['pa_u0', 'pa_u1']);
+    const after = await repo.getByCode(list.code);
+    expect(after?.list.status).toBe('confirmed');
+    // Still 'held': 'charged' means money was taken, and none was.
+    expect(after?.members.find((m) => m.sub === 'starter')?.status).toBe('held');
+  });
+
+  it('emails the starter that it is confirmed and a payment link is coming — never "charged", never "at risk"', async () => {
+    const repo = new InMemoryRideListRepo();
+    const email = new FakeEmailAdapter();
+    await startedList(repo, 2);
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email });
+    const toStarter = email.sent.filter((e) => e.to === 'starter@x.com');
+    expect(toStarter).toHaveLength(1);
+    expect(toStarter[0].subject).toMatch(/confirmed/i);
+    expect(toStarter[0].text).toMatch(/payment link/i);
+    expect(`${toStarter[0].html} ${toStarter[0].text}`).not.toMatch(/charged now/i);
+    // The joiners' confirmation is unchanged.
+    const toJoiner = email.sent.find((e) => e.to === 'u0@x.com')!;
+    expect(toJoiner.html).toMatch(/charged now/i);
+  });
+
+  it('tells the team whose fare to collect, with their number, in the "Paid: Locked in" mail', async () => {
+    const repo = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    await startedList(repo, 2);
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email: new FakeEmailAdapter(), alerts });
+    const m = alerts.sent.find((a) => a.kind === 'ride_board_locked')!.email!;
+    // The van carries three; two of them have paid.
+    expect(m.subject).toContain('3 pax');
+    expect(m.subject).toContain('$48.00 collected');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('To collect');
+      expect(part).toContain('STARTER');
+      expect(part).toContain('$24.00');
+    }
+    expect(m.html).toContain('https://wa.me/94773334444');
+  });
+
+  it('still sends the team mail when the starter is the only real traveller on a van seeds filled', async () => {
+    const repo = new InMemoryRideListRepo();
+    const alerts = new FakeAlertAdapter();
+    const list = await startedList(repo, 0);
+    for (let j = 0; j < 2; j++) {
+      await repo.addMember(list.id, {
+        sub: `seed-rideboard:${list.code}:${j}`, firstName: `Seed${j}`, country: 'DE',
+        email: `seed.${j}@example.com`, seats: 1, preapprovalRef: null, preferredTime: '09:00',
+      });
+    }
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email: new FakeEmailAdapter(), alerts });
+    expect(res).toMatchObject({ confirmed: 1, charged: 0 });
+    expect(alerts.sent.filter((a) => a.kind === 'ride_board_locked')).toHaveLength(1);
+    // ops is warned the seeded van really runs — for the one real person on it.
+    const seeded = alerts.sent.find((a) => a.kind === 'ride_board_seeded_list_running')!;
+    expect(seeded.title).toContain('1 real traveller(s)');
+    expect(seeded.body).toContain('starter@x.com');
+  });
+
+  it('called off: tells the starter they were not charged, without mentioning a card hold they never had', async () => {
+    const repo = new InMemoryRideListRepo();
+    const email = new FakeEmailAdapter();
+    await startedList(repo, 1);
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email });
+    expect(res).toMatchObject({ expired: 1, charged: 0 });
+    const toStarter = email.sent.filter((e) => e.to === 'starter@x.com');
+    expect(toStarter).toHaveLength(1);
+    expect(toStarter[0].subject).toMatch(/called off/i);
+    expect(`${toStarter[0].html} ${toStarter[0].text}`).not.toMatch(/hold/i);
+  });
+
+  it('a token-less member who did NOT start the ride is still a failed charge', async () => {
+    const repo = new InMemoryRideListRepo();
+    const list = await startedList(repo, 3);
+    await repo.addMember(list.id, { ...joiner('u9', 'unused'), preapprovalRef: null });
+
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw: new FakeTokenizedPaymentAdapter(), email: new FakeEmailAdapter() });
+    expect(res).toMatchObject({ confirmed: 1, charged: 3, chargeFailed: 1 });
+    expect((await repo.getByCode(list.code))?.members.find((m) => m.sub === 'u9')?.status).toBe('charge_failed');
+  });
+});

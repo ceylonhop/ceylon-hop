@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg, chosenAddOns } from './paySelection';
+import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg, chosenAddOns, isServiceSelection, legSelectionOf, refundLinesFor } from './paySelection';
 import { quote } from './engine';
 import { RATE_CARD } from './rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -154,5 +154,79 @@ describe('chosenAddOns', () => {
     // A selection that is not a list of indexes filters nothing.
     expect(chosenAddOns(savedQuote(), { extraIndexes: 'all' as unknown as number[] }))
       .toEqual(['Luggage rack — Kandy → Ella', 'Flexi ticket']);
+  });
+});
+
+describe('a service selection (a link sold as the chauffeur option)', () => {
+  const service = { service: 'chauffeur' as const };
+  const leg = { legIndexes: [0], extraIndexes: [1] };
+
+  it('is told apart from a part-of-trip selection', () => {
+    expect(isServiceSelection(service)).toBe(true);
+    expect(isServiceSelection(leg)).toBe(false);
+    expect(isServiceSelection(null)).toBe(false);
+    expect(isServiceSelection(undefined)).toBe(false);
+  });
+
+  // Strict: the key alone does not make it a service selection.
+  it('only { service: "chauffeur" } is a service selection', () => {
+    expect(isServiceSelection({ service: 'private' })).toBe(false);
+    expect(isServiceSelection({ service: 'shared' })).toBe(false);
+    expect(isServiceSelection({ service: undefined })).toBe(false);
+    expect(isServiceSelection({})).toBe(false);
+    expect(chosenAddOns(savedQuote(), { service: 'private' } as never)).toEqual(chosenAddOns(savedQuote())); // not a service selection
+  });
+
+  it('legSelectionOf accepts only a well-formed leg selection', () => {
+    expect(legSelectionOf({ service: 'private' } as never)).toBeNull();
+    expect(legSelectionOf({ legIndexes: 'x', extraIndexes: [] } as never)).toBeNull();
+  });
+
+  it('legSelectionOf is the part-of-trip half only', () => {
+    expect(legSelectionOf(leg)).toBe(leg);
+    expect(legSelectionOf(service)).toBeNull();
+    expect(legSelectionOf(null)).toBeNull();
+  });
+
+  // The stored lines are the PRIVATE quote's; a chauffeur link did not buy them.
+  it('names no add-ons, though the underlying private quote has some', () => {
+    expect(chosenAddOns(savedQuote())).toHaveLength(2); // guard: there ARE add-ons to wrongly name
+    expect(chosenAddOns(savedQuote(), service)).toEqual([]);
+  });
+});
+
+// Refund leg picker (refund approvals phase 2, owner rule 2026-10-17): each line is worth its share
+// of what the booking was charged — line × charged / sum of lines, rounded to the cent — so the
+// finishing adjustment and any discount are spread pro rata rather than refunded twice or never.
+describe('refundLinesFor', () => {
+  it('pro-rates each line by what was charged over the sum of the lines', () => {
+    const q = savedQuote();
+    const raw = payLines(q);
+    const base = raw.reduce((a, l) => a + l.amountCents, 0);
+    const charged = Math.round(base * 0.9); // e.g. a 10% discount
+    const lines = refundLinesFor(q, { selection: null, chargedCents: charged })!;
+    expect(lines.map((l) => l.label)).toEqual(raw.map((l) => l.label));
+    expect(lines.map((l) => l.amountCents)).toEqual(raw.map((l) => Math.round((l.amountCents * charged) / base)));
+  });
+
+  it('offers only the lines a part-of-trip link sold, shared over what that sale charged', () => {
+    const q = savedQuote();
+    const sel = { legIndexes: [0, 1], extraIndexes: [0] };
+    const sold = payLines(q).filter((l) => (l.kind === 'leg' ? sel.legIndexes : sel.extraIndexes).includes(l.index));
+    const charged = sold.reduce((a, l) => a + l.amountCents, 0);
+    const lines = refundLinesFor(q, { selection: sel, chargedCents: charged })!;
+    expect(lines.map((l) => `${l.kind}:${l.index}`)).toEqual(['leg:0', 'leg:1', 'extra:0']);
+    expect(lines.map((l) => l.amountCents)).toEqual(sold.map((l) => l.amountCents));
+  });
+
+  it('offers nothing for a quote payLines cannot read (chauffeur, shell)', () => {
+    const shell = { request: { engine: req }, result: { lineItems: [] } } as unknown as SavedQuote;
+    expect(refundLinesFor(shell, { selection: null, chargedCents: 1000 })).toBeNull();
+    expect(refundLinesFor({ request: null, result: null } as unknown as SavedQuote, { selection: null, chargedCents: 1000 })).toBeNull();
+  });
+
+  it('offers nothing when there is only one line to pick', () => {
+    const one: QuoteRequest = { ...req, legs: [req.legs[0]], extras: [] };
+    expect(refundLinesFor(savedQuote(one), { selection: null, chargedCents: 5000 })).toBeNull();
   });
 });
