@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app';
+import type { MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import {
   CHECKOUT_TOKEN_TTL_MS,
@@ -139,7 +140,34 @@ describe('POST /bookings/view/checkout-token', () => {
     await bookings.setStatus(body.id, 'cancelled');
     const refused = await exchange();
     expect(refused.status).toBe(409);
-    expect((await refused.json()).error).toBe('not_chargeable');
+    const closed = await refused.json();
+    expect(closed.error).toBe('not_chargeable');
+    expect(closed).not.toHaveProperty('reason'); // a closed booking is not awaiting a price
+  });
+
+  // The manage page answered every not_chargeable with "already paid or closed" — untrue for a
+  // booking that is still open but awaiting a hand price. `reason` lets it say which.
+  it('names an unpriced booking as awaiting a price, not closed', async () => {
+    const outageMaps: MapsAdapter = {
+      provider: 'outage',
+      places: async () => [],
+      distanceVariants: async () => null,
+      distance: async () => ({ km: 179, durationMin: 255, estimated: true }),
+    };
+    const app = create(() => START, { maps: outageMaps });
+    const created = await app.request('/bookings/single', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...input, from: 'Colombo City', to: 'Ella' }),
+    });
+    expect(created.status).toBe(201);
+    const { id } = await created.json();
+    const refused = await app.request('/bookings/view/checkout-token', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${signBookingToken(id, SECRET)}` },
+    });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: 'not_chargeable', reason: 'awaiting_price', status: 'draft' });
   });
 
   it('rejects missing/invalid view credentials and an unknown signed booking', async () => {
