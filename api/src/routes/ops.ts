@@ -3,7 +3,7 @@ import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { legSelectionOf } from '../quote/paySelection';
+import { legSelectionOf, refundLinesFor, type PayLine } from '../quote/paySelection';
 import { isChauffeurBooking } from '../quote/quoteAlternative';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
@@ -349,6 +349,25 @@ export function opsRoutes(deps: OpsDeps) {
     const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
+    // The refund picker's lines (refund approvals phase 2): legs and extras, each worth its share of
+    // what the booking was charged — from the quote it came from, else a website booking's own
+    // snapshot. Only a convenience that fills the amount box; a founder approves every request.
+    // Best-effort, like the checkout log below: a row that cannot be read costs the picker only.
+    let refundLines: { currency: string; lines: PayLine[] } | null = null;
+    if (!isChauffeurBooking(b)) {
+      try {
+        const web = srcQuote ? null : await deps.bookings.websitePricingSnapshot(b.id);
+        const source = srcQuote
+          ? { quote: srcQuote, currency: srcQuote.currency }
+          : web ? { quote: { request: { engine: web.engine }, result: { lineItems: web.lineItems } }, currency: web.currency } : null;
+        const lines = source && source.currency === b.currency
+          ? refundLinesFor(source.quote, { selection: sel, chargedCents: b.total })
+          : null;
+        refundLines = lines ? { currency: b.currency, lines } : null;
+      } catch (err) {
+        console.error(`[ops] refund lines unavailable for ${b.id}:`, err);
+      }
+    }
     // Payment attempts (2026-09-24): debugging a failed payment took SQL against
     // booking_checkout_event. Latest 50, oldest first. `ua` stays server-side — it is
     // diagnostic only. Best-effort: a log that cannot be read must not fail the drawer.
@@ -386,7 +405,7 @@ export function opsRoutes(deps: OpsDeps) {
       ? (await deps.notificationLog.listByBookingId(b.id).catch(() => []))
           .filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2')
       : [];
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests, scheduleEvents, reminders });
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
