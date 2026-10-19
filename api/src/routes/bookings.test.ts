@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
@@ -764,6 +765,61 @@ describe('an unpriced booking never charges the client-supplied figure', () => {
     const res = await post(app, { ...valid, date: futureIsoDate(14), quotedTotal: 99_999_00 });
     const body = await res.json();
     expect(body.total).toBeLessThan(99_999_00);
+  });
+});
+
+// CH-E7EE8 (2026-10-18): unpriced bookings only ever raised a quiet ops task, and three sat
+// open for up to a month while the customers waited for a price nobody knew to send. The team
+// now gets an email the moment one lands.
+describe('an unpriced booking emails the team', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const trip = (stops: string[]) => ({
+    stops, nights: stops.map(() => 0),
+    pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+  });
+  const unpricedAlerts = (alerts: FakeAlertAdapter) => alerts.sent.filter((a) => a.kind === 'booking_unpriced');
+
+  it('sends one alert for a trip the server could not price, naming the leg and the ops link', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts, opsBaseUrl: 'https://ops.example' });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
+    const { reference, id } = await res.json();
+
+    const sent = unpricedAlerts(alerts);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].dedupeKey).toBe(id);
+    expect(sent[0].email?.subject).toContain('Unpriced');
+    expect(sent[0].email?.subject).toContain(reference);
+    for (const part of [sent[0].email!.html, sent[0].email!.text]) {
+      expect(part).toContain('distance unresolved: Kandy → ZZQQ Nowhere 4417');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  it('sends one for a single transfer the server could not price', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    const res = await post(app, { ...valid, to: 'ZZQQ Nowhere 4417', date: futureIsoDate(14) });
+    expect(res.status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(1);
+  });
+
+  it('sends none for a booking the server priced', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    expect((await jpost(app, '/bookings/trip', trip(['Kandy', 'Ella']))).status).toBe(201);
+    expect((await post(app, { ...valid, from: 'Kandy', to: 'Ella', date: futureIsoDate(14) })).status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(0);
+  });
+
+  // Best-effort, like the ops task: the booking already exists and the customer is mid-checkout.
+  it('still creates the booking when the alert channel throws', async () => {
+    const alerts = { send: async () => { throw new Error('resend down'); } };
+    const app = createApp({ alerts });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
   });
 });
 
