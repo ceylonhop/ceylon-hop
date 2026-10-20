@@ -3,6 +3,7 @@ import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { futureIsoDate } from '../testSupport/dates';
 import { closeOlderDuplicates } from './duplicateBookings';
+import { travelWhenText } from './notifications';
 
 // CH-Y5RXW (declined at 3-D Secure, left payment_pending) and CH-L72HX (the same shared seat,
 // paid 20 min later). When the second one settles, the first is a leftover: close it quietly.
@@ -20,7 +21,7 @@ const shared = (over: Partial<{ date: string; time: string; corridorId: string; 
 });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any;
-function mk(reference: string, status: string, createdAt: string, trip: ReturnType<typeof shared>): Row {
+function mk(reference: string, status: string, createdAt: string, trip: { mode: string; input: object }): Row {
   return { id: `id-${reference}`, reference, status, createdAt, channel: 'website', currency: 'USD', total: 4600, amountDueNow: 4600, ...trip };
 }
 function repo(rows: Row[]) {
@@ -138,6 +139,68 @@ describe('closeOlderDuplicates — the customer paid for the same trip on a newe
     expect(await closeOlderDuplicates(paid, deps)).toEqual([]);
     expect(departures.releaseSeats).not.toHaveBeenCalled();
     expect(alerts.sent).toHaveLength(0);
+  });
+});
+
+// CH-7EWG7 / CH-SK8U8 (2026-10-18): a private transfer checked out for a date, then the same route
+// paid 42 s later with no date. sameTrip() matches no undated booking, so the leftover stayed open,
+// the watchdog chased the paying customer, and the only cancel ops had emails "Your booking is
+// cancelled". An undated side now counts as the same transfer when the person and route match.
+describe('closeOlderDuplicates — a private transfer retried with no date', () => {
+  const single = (over: Partial<{ from: string; to: string; date: string | undefined; time: string | undefined }> = {}) => ({
+    mode: 'single' as const,
+    input: {
+      from: over.from ?? 'C1 Colombo Fort, Mudalige Mawatha, Colombo, Sri Lanka',
+      to: over.to ?? 'Sigiri Aliya Tree house, Sigiriya, Sri Lanka',
+      date: 'date' in over ? over.date : TRAVEL, time: 'time' in over ? over.time : '09:00',
+      vehicleType: 'van', adults: 2, children: 1, bags: 3, customer,
+    },
+  });
+  const undated = () => single({ date: undefined, time: undefined });
+
+  it('a dated checkout, then the same route paid undated: closed quietly, and the note carries the earlier date', async () => {
+    const paid = mk('CH-SK8U8', 'paid', at(1), undated() as never);
+    const { bookings, alerts, deps } = setup([mk('CH-7EWG7', 'payment_pending', at(0), single() as never), paid]);
+
+    expect((await closeOlderDuplicates(paid, deps)).map((b) => b.reference)).toEqual(['CH-7EWG7']);
+    expect(bookings.byId.get('id-CH-7EWG7').status).toBe('cancelled');
+    expect(alerts.sent).toHaveLength(1);
+    const body = alerts.sent[0].body;
+    expect(body).toContain('No email was sent to the customer about this.');
+    expect(body).toContain('CH-SK8U8 has no date yet');
+    expect(body).toContain(`CH-7EWG7 had ${travelWhenText(single() as never)}`);
+    expect(body).not.toContain('Nothing to do.');
+  });
+
+  it('an undated checkout, then the same route paid with a date: closed, no date hint needed', async () => {
+    const paid = mk('CH-SK8U8', 'paid', at(1), single() as never);
+    const { bookings, alerts, deps } = setup([mk('CH-7EWG7', 'payment_pending', at(0), undated() as never), paid]);
+    await closeOlderDuplicates(paid, deps);
+    expect(bookings.byId.get('id-CH-7EWG7').status).toBe('cancelled');
+    expect(alerts.sent[0].body).toContain('Nothing to do.');
+    expect(alerts.sent[0].body).not.toContain('has no date yet');
+  });
+
+  for (const [what, older] of [
+    ['a different pickup', () => mk('CH-7EWG7', 'payment_pending', at(0), single({ from: 'Negombo' }) as never)],
+    ['a different drop-off', () => mk('CH-7EWG7', 'payment_pending', at(0), single({ to: 'Kandy' }) as never)],
+    ['a NEWER undated pending booking', () => mk('CH-7EWG7', 'payment_pending', at(40), undated() as never)],
+  ] as const) {
+    it(`${what}: untouched, no alert`, async () => {
+      const paid = mk('CH-SK8U8', 'paid', at(1), undated() as never);
+      const row = older();
+      const { bookings, alerts, deps } = setup([row, paid]);
+      expect(await closeOlderDuplicates(paid, deps)).toEqual([]);
+      expect(bookings.byId.get(row.id).status).toBe('payment_pending');
+      expect(alerts.sent).toHaveLength(0);
+    });
+  }
+
+  it('two DIFFERENT dates on the same route still never match', async () => {
+    const paid = mk('CH-SK8U8', 'paid', at(1), single({ date: futureIsoDate(8) }) as never);
+    const { bookings, deps } = setup([mk('CH-7EWG7', 'payment_pending', at(0), single() as never), paid]);
+    expect(await closeOlderDuplicates(paid, deps)).toEqual([]);
+    expect(bookings.byId.get('id-CH-7EWG7').status).toBe('payment_pending');
   });
 });
 

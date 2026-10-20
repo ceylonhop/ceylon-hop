@@ -9,6 +9,7 @@ const PAIRS = [
   ['negombo','kandy'],['colombo','kandy'],['colombo','galle'],['colombo','ella'],['sigiriya','kandy'],
   ['kandy','ella'],['kandy','nuwara-eliya'],['nuwara-eliya','ella'],['ella','yala'],['ella','arugam-bay'],
   ['ella','mirissa'],['yala','mirissa'],['mirissa','galle'],['galle','ella'],
+  ['cmb-airport','hiriketiya'],['ella','hiriketiya'],['yala','hiriketiya'],
 ];
 
 describe('route-content.json', () => {
@@ -20,6 +21,11 @@ describe('route-content.json', () => {
       expect(content.places[id].short.length).toBeGreaterThan(20);
       expect(T.byId[id], `place ${id} is a real place id`).toBeTruthy();
     }
+  });
+  // A pair missing from REAL_KM silently prices off straight-line distance x 1.35 and prints
+  // "estimated" on its trip page — every corridor needs its baked Google road distance.
+  it('prices every pair off a baked road distance, never a straight-line estimate', () => {
+    for (const [a,b] of PAIRS) expect(T.privateQuote(a, b).estimated, `pair ${a}|${b}`).toBe(false);
   });
   it('has an intro + back + >=3 highlights for every pair', () => {
     for (const [a,b] of PAIRS) {

@@ -70,3 +70,50 @@ test('the ride domain, once configured, shortens links to a bare code', async ({
   const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
   expect(copyTarget).toBe('https://ride.ceylonhop.com/EA-7797');
 });
+
+// The address bar is a share link too — people copy it straight into Facebook. A #/CODE
+// fragment never reaches a server, so it always unfurled as the generic board. ?r=CODE does
+// reach one: on ceylonhop.com a Cloudflare Worker hands it to the API's per-ride preview.
+async function openFirstRide(page) {
+  await page.locator('.rw').first().waitFor({ timeout: 15000 });
+  await page.locator('.rw [data-view]').first().click();
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+}
+
+test('an open ride shows ?r=CODE in the address bar, not a #/CODE fragment', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html?from=Colombo+Airport+(CMB)');
+  await openFirstRide(page);
+
+  const url = new URL(page.url());
+  expect(url.searchParams.get('r')).toBe('EA-7797');
+  expect(url.searchParams.get('from')).toBe('Colombo Airport (CMB)');
+  expect(url.hash).toBe('');
+});
+
+test('back closes the ride and drops ?r= from the address bar', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html');
+  await openFirstRide(page);
+
+  await page.goBack();
+  await expect(page.locator('body')).not.toHaveClass(/detail-open/);
+  expect(new URL(page.url()).searchParams.has('r')).toBe(false);
+});
+
+test('a ?r=CODE link opens that ride', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html?r=EA-7797');
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+  await expect(page.locator('.d-title')).toContainText('Dambulla');
+});
+
+test('an old #/CODE link still opens, and the address bar is rewritten to ?r=CODE', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html#/EA-7797');
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+
+  const url = new URL(page.url());
+  expect(url.searchParams.get('r')).toBe('EA-7797');
+  expect(url.hash).toBe('');
+});

@@ -339,8 +339,18 @@ function teamBookingBody(b: Booking, f: BookingFacts, p: TeamBookingParts, opsBa
 
 const channelLabel = (b: Booking) => (b.channel === 'whatsapp' ? 'WhatsApp' : 'Website');
 
-export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string; html: string; text: string } {
-  const f = bookingFacts(b);
+export interface TeamInterest { name: string; partnerName?: string; status: string }
+
+// "Ayurvedic massage (Atherya Spa) — new lead": a plain-words status, so a glance reads as a to-do.
+const interestRow = (i: TeamInterest): [string, string] => [
+  'Interested in',
+  `${i.name}${i.partnerName ? ` (${i.partnerName})` : ''} — ${i.status === 'new' ? 'new lead' : i.status.replace('_', ' ')}`,
+];
+
+export function teamPaidEmail(b: Booking, opsBaseUrl: string, interests: TeamInterest[] = []): { subject: string; html: string; text: string } {
+  const facts = bookingFacts(b);
+  // Only this email carries the row, so it joins this email's own copy of the facts.
+  const f = { ...facts, tripRows: [...facts.tripRows, ...interests.map(interestRow)] };
   const balance = b.total - f.paidNow;
   const paid = money(f.paidNow, b.currency);
   const subject = `Paid: ${f.subjectRoute}, ${f.when} — ${f.people} — ${paid}`;
@@ -354,6 +364,28 @@ export function teamPaidEmail(b: Booking, opsBaseUrl: string): { subject: string
   return {
     subject,
     ...teamBookingBody(b, f, { pill: ['PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Paid'] }, opsBaseUrl),
+  };
+}
+
+// The balance of a deposit booking landing is money landing too, so it keeps the "Paid: " subject
+// prefix the owner's Gmail forward filters on (every money-landed mail MUST start "Paid: ").
+// The subject says it is the balance and the amount just paid; the body shows the whole split.
+export function teamBalancePaidEmail(
+  b: Booking,
+  paid: { depositCents: number; balanceCents: number },
+  opsBaseUrl: string,
+): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const subject = `Paid: ${f.subjectRoute}, ${f.when} — balance ${money(paid.balanceCents, b.currency)}`;
+  const moneyRows: [string, string][] = [
+    ['Total', money(b.total, b.currency)],
+    ['Deposit paid', money(paid.depositCents, b.currency)],
+    ['Balance paid', money(paid.balanceCents, b.currency)],
+    ['Channel', channelLabel(b)],
+  ];
+  return {
+    subject,
+    ...teamBookingBody(b, f, { pill: ['BALANCE PAID', '#1f6b3a', '#e3f1e6'], keys: bookingKeys(f, b), moneyTitle: 'Payment', moneyRows, strong: ['Balance paid'] }, opsBaseUrl),
   };
 }
 
@@ -409,6 +441,42 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
         moneyRows: [['Due', amount], ['Channel', channelLabel(b)]],
         strong: ['Due'],
         primaryCta,
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Unpriced (CH-E7EE8, 2026-10-18). The server couldn't price a leg, so the booking was saved
+// with a placeholder total and checkout refuses it (`awaiting_price`): the customer was told
+// we'd confirm the price and message them. This used to raise only a quiet ops task, and three
+// sat open for up to a month. No money figure: the placeholder is not a price.
+// ---------------------------------------------------------------------------
+
+export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const c = b.input.customer;
+  const subject = `Unpriced: ${b.reference} — ${f.subjectRoute}, ${f.when} — set a price before ${c.firstName} can pay`;
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['PRICE NEEDED', '#8a3b12', '#fbe9dc'],
+        lead: 'saved without a price',
+        keys: bookingKeys(f, b),
+        // Every customer behind the first seven unpriced bookings had rebooked and paid by the
+        // time anyone looked, so checking comes before messaging.
+        note:
+          `We couldn’t price this trip (${reason}), so ${c.firstName} was told at checkout that we’d confirm ` +
+          'the price and message them. Nothing was charged. ' +
+          `They may have already rebooked: search ${c.email} in ops first. ` +
+          'If not, set the price on the booking, then send a pay link.',
+        moneyTitle: 'Payment',
+        moneyRows: [['Price', 'No price yet'], ['Channel', channelLabel(b)]],
+        strong: ['Price'],
       },
       opsBaseUrl,
     ),
@@ -528,6 +596,9 @@ export interface RideLockedArgs {
   declined: RideMember[];
   /** Subset of `charged` whose charge reply was lost — flagged, since that money is in doubt. */
   unknown: RideMember[];
+  /** The starter, who gave no card (owner, 2026-10-07): on the van, fare not taken — ops sends a
+   *  payment link. Omitted → nobody to collect from. */
+  toCollect?: RideMember[];
   /** Placeholder seats that helped clear the minimum but are nobody. */
   seedSeats: number;
   currency: string;
@@ -536,27 +607,36 @@ export interface RideLockedArgs {
 export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
   const { list, time } = a;
   const route = `${list.fromPlace} → ${list.toPlace}`;
-  const pax = a.charged.reduce((n, m) => n + m.seats, 0);
-  const collected = money(pax * list.seatPrice, a.currency);
+  const toCollect = a.toCollect ?? [];
+  const paidPax = a.charged.reduce((n, m) => n + m.seats, 0);
+  const owedPax = toCollect.reduce((n, m) => n + m.seats, 0);
+  const pax = paidPax + owedPax;
+  const collected = money(paidPax * list.seatPrice, a.currency);
   const unknownSubs = new Set(a.unknown.map((m) => m.sub));
   const subject = `Paid: Locked in — ${route}, ${shortDay(list.date)} ${time} — Shared taxi · ${pax} pax — ${collected} collected`;
 
   const rideRows: [string, string][] = [
     ['Departs', `${rideDay(list.date)} · ${time} (locked)`],
     ['Vehicle', `Shared taxi · ${list.capacity} seats max`],
-    ['Passengers', `${pax} paid${a.seedSeats ? ` + ${a.seedSeats} placeholder seat${a.seedSeats === 1 ? '' : 's'} (not people)` : ''}`],
+    ['Passengers', `${paidPax} paid${owedPax ? ` + ${owedPax} to collect` : ''}${a.seedSeats ? ` + ${a.seedSeats} placeholder seat${a.seedSeats === 1 ? '' : 's'} (not people)` : ''}`],
     ['Seat price', money(list.seatPrice, a.currency)],
   ];
-  const onBoard: SectionRow[] = a.charged.map((m) => {
+  const onVan = [...a.charged, ...toCollect];
+  const owedSubs = new Set(toCollect.map((m) => m.sub));
+  const onBoard: SectionRow[] = onVan.map((m) => {
     const phone = m.phone?.trim() || '';
+    const state = owedSubs.has(m.sub) ? 'to collect — send a payment link' : unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid';
     return [
       `${m.firstName} (${m.country})`,
-      `${seatsWord(m.seats)} · ${unknownSubs.has(m.sub) ? 'charge unconfirmed' : 'paid'} · ${m.email}${phone ? ` · ${phone}` : ''}`,
+      `${seatsWord(m.seats)} · ${state} · ${m.email}${phone ? ` · ${phone}` : ''}`,
       whatsappButton(phone),
     ];
   });
   const moneyRows: [string, string][] = [
-    ['Collected', `${collected} (${seatsWord(pax)})`],
+    ['Collected', `${collected} (${seatsWord(paidPax)})`],
+    ...(toCollect.length
+      ? [['To collect', toCollect.map((m) => `${m.firstName} (${seatsWord(m.seats)}, ${money(m.seats * list.seatPrice, a.currency)}) — started the ride with no card; send a payment link`).join('; ')] as [string, string]]
+      : []),
     ...(a.unknown.length ? [['Unconfirmed', `${a.unknown.length} charge(s) — check PayHere before chasing`] as [string, string]] : []),
     ['Card declined', a.declined.length ? a.declined.map((m) => `${m.firstName} (${seatsWord(m.seats)}, ${m.email})`).join('; ') : 'None'],
   ];
@@ -576,7 +656,7 @@ export function teamRideLockedEmail(a: RideLockedArgs, opsBaseUrl: string): { su
   const rows = (title: string, r: SectionRow[]) => [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(15)}${v}`), ''];
   // The text version: each traveller's WhatsApp link on the line after them.
   const onBoardText = onBoard.flatMap((row, i): SectionRow[] => {
-    const wa = whatsappLink(a.charged[i].phone);
+    const wa = whatsappLink(onVan[i].phone);
     return wa ? [row, ['', wa]] : [row];
   });
   const text = [

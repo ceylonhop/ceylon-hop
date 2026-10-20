@@ -4,8 +4,9 @@ export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'quote:approve_simple' | 'margin:view' | 'bookings:operate'
   | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view'
-  | 'discount:apply_manual' | 'promo_codes:manage' | 'rates:manage';
+  | 'discount:apply_manual' | 'promo_codes:manage' | 'rates:manage' | 'experiences:manage';
 
+// experiences:manage — the partner-experience catalogue (spec 2026-10-06 D14). Display-only price, and the owner wants ops to maintain it.
 // The capability matrix as data (spec §3). Adding a capability is one row here.
 // rates:manage — saving the founder's rate revisions from the ops Rates page (spec 2026-09-26):
 // every customer price moves with it. Founder only, the same class as promo_codes:manage.
@@ -28,9 +29,9 @@ export type OpsAction =
 // the per-quote flag, never on `caps.includes('quote:approve_simple')`, which would offer the
 // button on every quote including the ones the predicate refuses.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual', 'promo_codes:manage', 'rates:manage']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual', 'promo_codes:manage', 'rates:manage', 'experiences:manage']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
-  ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read']),
+  ops: new Set(['quote:manage', 'quote:approve_simple', 'bookings:operate', 'bookings:read', 'experiences:manage']),
   system: new Set(['admin:jobs']),
 };
 
@@ -40,7 +41,7 @@ export function can(role: OpsRole, action: OpsAction): boolean {
 
 // Every action the matrix grants to somebody — DERIVED from it, never hand-listed. /admin/ops/whoami
 // filters this by role to tell the client what it may offer, and ops-ui.html gates its actions on the
-// resulting strings (refund confirm/cancel read caps.includes('payments:reverse')). A hand-maintained
+// resulting strings (refund confirm and execute read caps.includes('payments:reverse'); cancelling a request reads 'bookings:operate'). A hand-maintained
 // copy of this list is a silent-failure machine: omitting an action there does not fail a request or
 // a type check, it just makes the client hide a button from the role that holds it. That is precisely
 // what happened to payments:reverse — dead refund confirmation for the founder, the only role with it.

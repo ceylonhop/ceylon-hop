@@ -168,7 +168,7 @@ describe('the ops shell wires board rows up safely', () => {
 
   it('blocks every booking mutation for a board row', () => {
     expect(body).toContain(
-      "if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel'].includes(act))return;",
+      "if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;",
     );
   });
 

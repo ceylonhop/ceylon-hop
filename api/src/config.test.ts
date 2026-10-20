@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildConfig } from './config';
 
 // The founder ops-session cookie now unlocks /admin/quote (margin + customer PII), so a
@@ -229,5 +229,64 @@ describe('config — GA4_SERVER_EVENT_NAME stays purchase_server by default', ()
     for (const bad of ['', 'Purchase', 'refund', 'purchase ', 'begin_checkout']) {
       expect(() => buildConfig({ GA4_SERVER_EVENT_NAME: bad }), bad).toThrow();
     }
+  });
+});
+
+// Tripadvisor's display rules need their logo beside every bubble rating (spec D22), so the logo URL is
+// config. A bad value must never stop the API booting: it is treated as unset (ratings then stay off).
+describe('config - TRIPADVISOR_LOGO_URL', () => {
+  it('keeps an https URL on a Tripadvisor host', () => {
+    for (const u of ['https://static.tacdn.com/img2/brand_refresh/logo.svg', 'https://www.tripadvisor.com/img/ollie.svg']) {
+      expect(buildConfig({ TRIPADVISOR_LOGO_URL: u }).TRIPADVISOR_LOGO_URL).toBe(u);
+    }
+  });
+
+  it('is unset by default and when empty, without a warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(buildConfig({}).TRIPADVISOR_LOGO_URL).toBeUndefined();
+    expect(buildConfig({ TRIPADVISOR_LOGO_URL: '' }).TRIPADVISOR_LOGO_URL).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('treats a non-https, foreign-host or unparseable URL as unset, with a startup warning - never a throw', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const bad = ['http://www.tripadvisor.com/logo.svg', 'https://evil.example/tripadvisor.com/logo.svg', 'https://eviltripadvisor.com/l.svg', 'https://tripadvisor.com.evil.example/l.svg', 'not a url', 'data:image/svg+xml,<svg/>'];
+    for (const u of bad) {
+      expect(() => buildConfig({ TRIPADVISOR_LOGO_URL: u }), u).not.toThrow();
+      expect(buildConfig({ TRIPADVISOR_LOGO_URL: u }).TRIPADVISOR_LOGO_URL, u).toBeUndefined();
+    }
+    expect(warn).toHaveBeenCalledTimes(bad.length * 2);
+    expect(String(warn.mock.calls[0]![0])).toMatch(/TRIPADVISOR_LOGO_URL/);
+    warn.mockRestore();
+  });
+});
+
+describe('config - PHOTO_PUBLIC_ORIGIN (spec 2026-10-17 P5)', () => {
+  it('keeps the two image hosts, a trailing slash trimmed', () => {
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: 'https://img.ceylonhop.com' }).PHOTO_PUBLIC_ORIGIN).toBe('https://img.ceylonhop.com');
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: 'https://img-staging.ceylonhop.com/' }).PHOTO_PUBLIC_ORIGIN).toBe('https://img-staging.ceylonhop.com');
+  });
+
+  it('drops any other value, with a warning (uploads stay off)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const v of ['http://img.ceylonhop.com', 'https://evil.example', 'https://img.ceylonhop.com.evil.example', 'https://ceylonhop.com']) {
+      expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: v }).PHOTO_PUBLIC_ORIGIN, v).toBeUndefined();
+    }
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('is unset by default and when empty, without a warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(buildConfig({}).PHOTO_PUBLIC_ORIGIN).toBeUndefined();
+    expect(buildConfig({ PHOTO_PUBLIC_ORIGIN: '' }).PHOTO_PUBLIC_ORIGIN).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('passes the four R2 settings through', () => {
+    const c = buildConfig({ R2_ACCOUNT_ID: 'acct', R2_ACCESS_KEY_ID: 'AK', R2_SECRET_ACCESS_KEY: 'SK', R2_BUCKET: 'ceylonhop-photos-staging' });
+    expect([c.R2_ACCOUNT_ID, c.R2_ACCESS_KEY_ID, c.R2_SECRET_ACCESS_KEY, c.R2_BUCKET]).toEqual(['acct', 'AK', 'SK', 'ceylonhop-photos-staging']);
   });
 });

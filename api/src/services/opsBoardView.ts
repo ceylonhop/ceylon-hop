@@ -94,6 +94,9 @@ export function rideListToOpsRow(
     stage: stageFor(list),
     paymentStatus: paymentStatusFor(onboard),
     amount: list.seatPrice * seats,
+    // A van is charged per seat by the sweep, never as a deposit + balance.
+    paidCents: 0,
+    balanceCents: 0,
     currency: opts.currency,
     customerFirstName: name.first,
     customerName: name.full,
@@ -113,7 +116,10 @@ export function rideListToOpsRow(
     // A van row is a projection of many travellers, not one customer email.
     isTest: false,
     createdAt: list.createdAt.toISOString(),
+    // Seats are charged per member by the sweep; the van row has no single payment time.
+    paidAt: null,
     serviceType: null,
+    refundWaitingCents: 0,
     board: {
       code: list.code,
       listStatus: list.status,

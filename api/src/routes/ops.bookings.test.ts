@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { Hono } from 'hono';
 
@@ -381,5 +382,119 @@ describe('ops bookings rows — isTest', () => {
     const rows: Array<{ isTest: boolean }> = await res.json();
     expect(rows).toHaveLength(1);
     expect(rows[0].isTest).toBe(false);
+  });
+});
+
+// A booking sold on a pay link for the CHAUFFEUR option of a "both" quote (spec PR #964) is a
+// whole-trip sale: the drawer shows no "2 of 4 legs" coverage — and, above all, still opens.
+const chauffeurTrip = {
+  mode: 'trip' as const, total: 30000, amountDueNow: 30000, currency: 'USD',
+  input: {
+    stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-07-20', '2026-07-22'], pax: 2,
+    vehicleType: 'car' as const, serviceType: 'chauffeur' as const, days: 3, driverNights: 2,
+    customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' },
+  },
+};
+
+describe('the booking drawer for a booking sold on a chauffeur link', () => {
+  async function drawerFor(selection: object | null, booking: ReturnType<typeof bookingInput> | typeof chauffeurTrip = bookingInput()) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const b = await bookings.create(booking as never);
+    await bookings.setStatus(b.id, 'payment_pending');
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } },
+      result: { totalCents: 21900, lineItems: [] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, ...(selection ? { payLinkSelection: selection as never, soldCents: 30000 } : {}) });
+    return app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+  }
+
+  it('opens, with no coverage (it is a whole-trip sale)', async () => {
+    const res = await drawerFor({ service: 'chauffeur' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toBeNull();
+  });
+
+  it('still reports coverage for a part-of-trip sale', async () => {
+    const res = await drawerFor({ legIndexes: [0], extraIndexes: [] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toEqual({ soldLegs: 1, totalLegs: 2 });
+  });
+
+  // Coverage is decided by the BOOKING: a chauffeur booking is a whole-trip sale however the quote's
+  // selection moved afterwards (here: re-minted to a part-of-trip link).
+  it('a chauffeur booking has no coverage even when the quote now carries a part-of-trip selection', async () => {
+    const res = await drawerFor({ legIndexes: [0], extraIndexes: [] }, chauffeurTrip);
+    expect(res.status).toBe(200);
+    expect((await res.json()).coverage).toBeNull();
+  });
+});
+
+// Refund leg picker (refund approvals phase 2): the drawer carries the booking's charge lines,
+// each worth its share of what the booking was charged, so ops can tick legs and the amount fills
+// in. A convenience only — a founder approves every request.
+import { quote as priceQuote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import { websitePricingSnapshot } from '../db/bookingRepo';
+import type { QuoteRequest } from '../quote/types';
+
+describe('the booking drawer\'s refund lines', () => {
+  const engine: QuoteRequest = {
+    product: 'private', vehicle: 'car', pax: 2, bags: 1,
+    legs: [{ from: 'Colombo', to: 'Kandy', distanceKm: 120 }, { from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+    extras: [{ code: 'waiting', legIndex: 1 }],
+  };
+  const priced = priceQuote(engine, RATE_CARD);
+  type Lines = { currency: string; lines: Array<{ kind: string; index: number; label: string; amountCents: number }> } | null;
+
+  async function drawer(opts: { booking?: object; quote?: boolean; snapshot?: boolean; currency?: string } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const input = { ...bookingInput(), total: priced.totalCents, amountDueNow: priced.totalCents, ...(opts.booking ?? {}) };
+    const b = await bookings.create(input as never, opts.snapshot ? { pricingSnapshot: websitePricingSnapshot({ engine, result: { ...priced, currency: (opts.currency ?? priced.currency) as never } }) } : undefined);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    if (opts.quote) {
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: priced.totalCents, currency: opts.currency ?? priced.currency, rateCardVersion: 'v1',
+        request: { engine }, result: { ...priced, currency: opts.currency ?? priced.currency },
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id });
+    }
+    const res = await app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+    expect(res.status).toBe(200);
+    return (await res.json()).refundLines as Lines;
+  }
+
+  function expectProRated(lines: Lines) {
+    expect(lines?.currency).toBe('USD');
+    expect(lines?.lines.map((l) => l.label)).toEqual(['Colombo → Kandy (car)', 'Kandy → Ella (car)', expect.stringContaining('Kandy → Ella')]);
+    // Each line is rounded on its own, so the sum lands within a cent per line of the charge.
+    const sum = lines!.lines.reduce((a, l) => a + l.amountCents, 0);
+    expect(Math.abs(sum - priced.totalCents)).toBeLessThanOrEqual(lines!.lines.length);
+  }
+
+  it('reads them from the quote the booking was converted from', async () => {
+    expectProRated(await drawer({ quote: true }));
+  });
+
+  it('reads them from a website booking\'s own pricing snapshot', async () => {
+    expectProRated(await drawer({ snapshot: true }));
+  });
+
+  it('has none for a booking with neither', async () => {
+    expect(await drawer()).toBeNull();
+  });
+
+  it('has none for a chauffeur trip', async () => {
+    expect(await drawer({ booking: chauffeurTrip, quote: true })).toBeNull();
+  });
+
+  it('has none when the priced lines are in another currency than the booking', async () => {
+    expect(await drawer({ quote: true, currency: 'LKR' })).toBeNull();
   });
 });

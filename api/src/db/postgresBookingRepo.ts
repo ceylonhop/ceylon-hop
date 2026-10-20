@@ -11,8 +11,10 @@ import {
   promoCodes,
   quotes,
   bookingStatusEvents,
+  bookingScheduleEvents,
 } from './schema';
-import { chosenAddOns, type PaySelection } from '../quote/paySelection';
+import { addOnsFor } from '../quote/quoteAlternative';
+import type { PayLinkSelection } from '../quote/paySelection';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -27,6 +29,10 @@ import {
   type WebsitePricingSnapshot,
   BookingNotFoundError,
   BookingTransitionContextRequiredError,
+  SCHEDULE_EDITABLE_STATUSES,
+  type ScheduleChange,
+  type SetScheduleResult,
+  type BookingScheduleEvent,
   generateReference,
   snapshotAddOns,
   PAYER_EDITABLE_STATUSES,
@@ -391,7 +397,7 @@ export class PostgresBookingRepo implements BookingRepo {
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
     const transferBy = new Map(transfers.map((t) => [t.bookingId, t]));
-    const addOnsBy = new Map(linkedQuotes.map((q) => [q.bookingId, chosenAddOns(q, q.selection as PaySelection | null)]));
+    const quoteBy = new Map(linkedQuotes.map((q) => [q.bookingId, { request: q.request, result: q.result, payLinkSelection: q.selection as PayLinkSelection | null }]));
     return rows.map((row) => {
       const cust = custById.get(row.customerId);
       if (!cust) throw new Error(`booking ${row.id}: customer ${row.customerId} missing`);
@@ -401,7 +407,8 @@ export class PostgresBookingRepo implements BookingRepo {
       const promoCode = row.promoCodeId ? codeBy.get(row.promoCodeId) : undefined;
       const booking = promoCode ? { ...built, promoCode } : built;
       // The booking's quote names them; a website booking has none, so its own snapshot does.
-      const fromQuote = addOnsBy.get(row.id);
+      const linked = quoteBy.get(row.id);
+      const fromQuote = linked ? addOnsFor(linked, built) : undefined;
       const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
       return addOns.length ? { ...booking, addOns } : booking;
     });
@@ -601,6 +608,13 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  // The column also holds a quote conversion's snapshot (no engine); only a website one counts.
+  async websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null> {
+    const [row] = await this.db.select({ s: bookings.pricingSnapshotJson }).from(bookings).where(eq(bookings.id, bookingId));
+    const s = row?.s as Partial<WebsitePricingSnapshot> | null | undefined;
+    return s && s.source === 'website' ? (s as WebsitePricingSnapshot) : null;
+  }
+
   // person_key is the generated lower(btrim(email)) column, indexed (0032). One query for the
   // rows, then the same batched assembly list() uses.
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
@@ -616,7 +630,7 @@ export class PostgresBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking> {
     const c = details.customer;
     const b = details.billing;
@@ -641,6 +655,12 @@ export class PostgresBookingRepo implements BookingRepo {
       // rewrites it. An ops re-book sends none — nobody ticked a box on a WhatsApp booking —
       // and must leave the column as it found it.
       if (details.termsAcceptedAt) set.termsAcceptedAt = details.termsAcceptedAt;
+      // The deposit-or-full choice (spec 2026-10-07 §4): rewritten only while no payment on the
+      // booking has succeeded, decided inside this same statement so a settlement landing
+      // concurrently cannot be undone. The status guard in the WHERE below covers the rest.
+      if (details.amountDueNow !== undefined) {
+        set.amountDueNow = sql`case when ${this.succeededPayment()} then ${bookings.amountDueNow} else ${details.amountDueNow}::integer end`;
+      }
       // The UPDATE has to SET something real or it returns no row, and the status guard below
       // is the whole point of doing this as one statement. An ops re-book carries neither
       // billing nor an acceptance, so assign status to itself: here the guard, not the value,
@@ -671,6 +691,75 @@ export class PostgresBookingRepo implements BookingRepo {
     const fresh = await this.get(id);
     if (!fresh) throw new BookingNotFoundError(id);
     return fresh;
+  }
+
+  async setAmountDueNowToTotal(id: string): Promise<Booking> {
+    // The status guard is part of the UPDATE, not a read-then-write (see refreshPayerDetails).
+    await this.db
+      .update(bookings)
+      .set({ amountDueNow: sql`${bookings.total}` })
+      .where(and(eq(bookings.id, id), eq(bookings.status, 'payment_pending')));
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
+  }
+
+  async setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult> {
+    const outcome = await this.db.transaction(async (tx) => {
+      // Lock the booking so two editors serialise; the expected-value guard below then decides
+      // the race, instead of the last write silently winning.
+      const [bk] = await tx
+        .select({ status: bookings.status, mode: bookings.mode })
+        .from(bookings)
+        .where(eq(bookings.id, id))
+        .for('update');
+      if (!bk) return 'not_found' as const;
+      if (bk.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(bk.status)) {
+        return 'not_editable' as const;
+      }
+      // `is not distinct from` so an expected NULL matches a NULL column. The ::text casts give
+      // Postgres a type for a NULL parameter.
+      const [tr] = await tx
+        .update(transferRequests)
+        .set({ travelDate: change.date, travelTime: change.time })
+        .where(and(
+          eq(transferRequests.bookingId, id),
+          sql`${transferRequests.travelDate} is not distinct from ${change.expected.date}::text`,
+          sql`${transferRequests.travelTime} is not distinct from ${change.expected.time}::text`,
+        ))
+        .returning({ id: transferRequests.id });
+      if (!tr) return 'conflict' as const;
+      // The date's second home (spec §2). A legacy row without legs updates nothing here.
+      await tx
+        .update(bookingLegs)
+        .set({ travelDate: change.date, pickupTime: change.time })
+        .where(and(eq(bookingLegs.bookingId, id), eq(bookingLegs.kind, 'leg')));
+      await tx.insert(bookingScheduleEvents).values({
+        bookingId: id,
+        fromDate: change.expected.date, fromTime: change.expected.time,
+        toDate: change.date, toTime: change.time,
+        actorType: change.actor.type, actorId: change.actor.id,
+      });
+      return 'ok' as const;
+    });
+    const fresh = await this.get(id);
+    if (outcome === 'not_found' || !fresh) return { ok: false, reason: 'not_found' };
+    if (outcome === 'ok') return { ok: true, booking: fresh };
+    return { ok: false, reason: outcome, booking: fresh };
+  }
+
+  async listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]> {
+    const rows = await this.db
+      .select()
+      .from(bookingScheduleEvents)
+      .where(eq(bookingScheduleEvents.bookingId, bookingId))
+      .orderBy(asc(bookingScheduleEvents.createdAt), asc(bookingScheduleEvents.id));
+    return rows.map((r) => ({
+      id: r.id, bookingId: r.bookingId,
+      fromDate: r.fromDate, fromTime: r.fromTime, toDate: r.toDate, toTime: r.toTime,
+      actorType: r.actorType as 'staff' | 'customer', actorId: r.actorId,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 
   async setStatus(

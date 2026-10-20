@@ -35,7 +35,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- Live ride dates come from here (route-page.js). "?api=off" disables it and
      "?api=ORIGIN" points it elsewhere — the same contract as search.html and
      booking.html, so one local API can be driven from any of them. -->
-<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+<script>(function(){var q=(/^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   /* Fares: held back (transparent, in place) until route-page-fares.js has the engine's answer,
      so the page never shows one price and then another. Set HERE, before first paint, and
      released HERE on a timer too — if that script never loads, the catalogue fares still appear.
@@ -530,7 +530,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
-<script src="../../ch-pricing.js?v=74a30546ee"></script>
+<script src="../../ch-pricing.js?v=3a152c88c1"></script>
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>

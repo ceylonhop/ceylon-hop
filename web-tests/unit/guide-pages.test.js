@@ -107,6 +107,28 @@ describe('generateGuides', () => {
     expect(next).toContain('href="../../trip/nuwara-eliya-to-ella/"');
     expect(() => renderGuide({ ...g, next: ['trincomalee'] }, T, photos)).toThrow(/trincomalee/);
   });
+  it('optional Nightlife: its own section and jump chip after Eat & stay, same card row as Eat; absent, nothing renders', () => {
+    const ne = loadGuides().find(g => g.slug === 'nuwara-eliya');
+    const T = loadTransfers(), photos = loadPlacePhotos();
+    expect(renderGuide(ne, T, photos)).not.toContain('id="night"');
+    const g = structuredClone(ne);
+    g.nightlife = {
+      sub: 'Night sub here.',
+      items: g.eat.map((e, i) => ({ ...e, name: `Bar ${i}`, map: `Bar ${i} Nuwara Eliya` })),
+      collector: { title: 'Where did you go out?', text: 'Tell us.', wa: 'Hi Ceylon Hop — a bar I liked: ' },
+    };
+    const h = renderGuide(g, T, photos);
+    const night = section(h, 'night');
+    expect(night).toContain('<h2>Nightlife</h2>');
+    expect(night).toContain('<p>Night sub here.</p>');
+    expect(night.match(/<article class="pl reveal">/g)).toHaveLength(g.eat.length);
+    expect(night).toContain('See on map ↗');
+    expect(night).toContain(`text=${encodeURIComponent('Hi Ceylon Hop — a bar I liked: ')}`);
+    expect(h.indexOf('id="night"')).toBeGreaterThan(h.indexOf('id="eat"'));
+    expect(h.indexOf('id="night"')).toBeLessThan(h.indexOf('id="qa"'));
+    const chips = [...h.match(/<div class="jump" id="jump">[\s\S]*?<\/div><\/div>/)[0].matchAll(/href="#([a-z]+)"/g)].map(m => m[1]);
+    expect(chips.slice(chips.indexOf('eat'), chips.indexOf('eat') + 3)).toEqual(['eat', 'night', 'qa']);
+  });
   it("shared links unfurl with the guide's own hero image, not the site-wide cover", () => {
     const img = 'https://ceylonhop.com/img/guides/nuwara-eliya/og.jpg';
     expect(html).toContain(`<meta property="og:image" content="${img}">`);
@@ -135,6 +157,12 @@ const MORE = [
   { slug: 'arugam-bay', origins: ['ella', 'cmb-airport', 'yala'],
     next: ['arugam-bay-to-ella', 'ella-to-arugam-bay'],
     book: 'plan.html?stops=Arugam+Bay%7CElla&amp;nights=0%2C0' },
+  { slug: 'mirissa', origins: ['ella', 'cmb-airport', 'yala'],
+    next: ['mirissa-to-cmb-airport', 'mirissa-to-ella', 'mirissa-to-yala', 'mirissa-to-galle'],
+    book: 'plan.html?stops=Mirissa%7CColombo+Airport+%28CMB%29&amp;nights=0%2C0' },
+  { slug: 'hiriketiya', origins: ['cmb-airport', 'ella', 'yala'],
+    next: ['hiriketiya-to-yala', 'hiriketiya-to-ella', 'hiriketiya-to-cmb-airport'],
+    book: 'plan.html?stops=Hiriketiya%7CYala&amp;nights=0%2C0' },
 ];
 for (const g of MORE) {
   describe(`guide: ${g.slug}`, () => {
@@ -178,3 +206,43 @@ for (const g of MORE) {
     });
   });
 }
+
+// Wikimedia Commons photos (CC BY / CC BY-SA) need the licence named next to the photographer,
+// not the Unsplash line — Unsplash credits stay exactly as they were.
+describe('photo credits by source', () => {
+  const ne = loadGuides().find(g => g.slug === 'nuwara-eliya');
+  const T = loadTransfers(), photos = loadPlacePhotos();
+  const credits = h => { const i = h.indexOf('<div class="credits">'); return h.slice(i, h.indexOf('</div></div>', i)); };
+  const commons = { source: 'commons', credit: 'Test Person', creditUrl: 'https://commons.wikimedia.org/wiki/User:Test',
+    photoUrl: 'https://commons.wikimedia.org/wiki/File:Test.jpg', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/' };
+  it('an all-Unsplash guide keeps the plain “on Unsplash” line', () => {
+    const g = structuredClone(ne);
+    for (const m of Object.values(g.photos)) { delete m.source; delete m.license; delete m.licenseUrl; }
+    const c = credits(renderGuide(g, T, photos));
+    expect(c).toContain('— on Unsplash');
+    expect(c).not.toContain('Wikimedia');
+  });
+  it('a Commons photo is credited with its licence, linked, and Commons is named', () => {
+    const g = structuredClone(ne);
+    Object.assign(g.photos[g.eat[0].photo], commons);
+    const c = credits(renderGuide(g, T, photos));
+    expect(c).toContain('Test Person');
+    expect(c).toContain('<a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>');
+    expect(c).toContain('Wikimedia Commons');
+  });
+  it('a photo caption shows under an Eat/Stay card photo, so a stand-in photo is labelled as one', () => {
+    const g = structuredClone(ne);
+    g.photos[g.stay[0].photo].caption = 'Illustrative: not this hotel';
+    const h = renderGuide(g, T, photos);
+    expect(section(h, 'eat')).toMatch(/<span class="cap"[^>]*>Illustrative: not this hotel<\/span>/);
+    expect(renderGuide(ne, T, photos)).not.toContain('class="cap"');
+  });
+  it('a Commons hero says Wikimedia Commons, not Unsplash', () => {
+    const g = structuredClone(ne);
+    Object.assign(g.photos[g.hero.photo], commons);
+    const h = renderGuide(g, T, photos);
+    const hero = h.slice(h.indexOf('<span class="credit">'), h.indexOf('</span>', h.indexOf('<span class="credit">')));
+    expect(hero).toContain('Test Person / Wikimedia Commons (CC BY-SA 4.0)');
+    expect(hero).not.toContain('Unsplash');
+  });
+});

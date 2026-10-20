@@ -4,6 +4,7 @@ import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
 import { roadRow } from './notifications';
+import { balanceDueCents, paidCents } from '../domain/balance';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -39,6 +40,10 @@ export interface OpsBookingRow {
   stage: OpsStage;
   paymentStatus: 'paid' | 'unpaid';
   amount: number; // minor units
+  /** Σ succeeded payments (gross), and what is still owed — the ledger's own figures
+   *  (domain/balance.ts), so a deposit booking reads "paid $50 · balance $169" on the row. */
+  paidCents: number;
+  balanceCents: number;
   currency: string;
   customerFirstName: string;
   customerName: string;
@@ -64,8 +69,14 @@ export interface OpsBookingRow {
   /** When the booking was made (ISO) — the ride list's creation time on a board row. Drives the
    *  queue's "Recently booked" view. */
   createdAt: string;
+  /** When the money first landed (ISO): the earliest settled payment. Null when nothing has
+   *  settled, and on a board row. The "No date yet" queue counts days since payment from it. */
+  paidAt: string | null;
   /** A trip's service: a private car or a chauffeur guide. Null on every other mode. */
   serviceType: 'private' | 'chauffeur' | null;
+  /** Σ refund requests waiting for a founder (manual_pending), 0 when none. Drives the founder's
+   *  "Refunds waiting" queue chip (spec 2026-10-17 §4). Always 0 on a ride-board row. */
+  refundWaitingCents: number;
 }
 
 const NO_TEAM: ReadonlySet<string> = new Set();
@@ -104,14 +115,17 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string> },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number },
 ): OpsBookingRow {
+  const ledger = opts.payments ?? [];
+  const settled = ledger.flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
   const t = travel(b);
   const c = b.input.customer;
   return {
     id: b.id, reference: b.reference, mode: b.mode, channel: b.channel,
     bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
+    paidCents: paidCents(ledger), balanceCents: balanceDueCents(b, ledger),
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
     route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
@@ -121,6 +135,8 @@ export function toOpsRow(
     source: 'booking',
     isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),
     createdAt: b.createdAt,
+    paidAt: settled.length ? new Date(Math.min(...settled)).toISOString() : null,
     serviceType: b.mode === 'trip' ? b.input.serviceType : null,
+    refundWaitingCents: opts.refundWaitingCents ?? 0,
   };
 }

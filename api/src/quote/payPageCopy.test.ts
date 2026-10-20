@@ -177,6 +177,8 @@ describe('payPageCopy — chauffeur', () => {
     expect(c.facts[0].v).toBe('Colombo Airport (CMB) → Galle');
     expect(c.facts[0].sub).toContain('day-by-day');
     expect(c.facts[1].v).toBe('6 with your driver');
+    // True of every chauffeur trip — the old "including your free days" showed on trips with none.
+    expect(c.facts[1].sub).toBe('your driver stays with you throughout');
     expect(c.facts[2].v).toBe('4 · Van'); // pax from tool, vehicle label mapped
     expect(c.facts[3].v).toBe('Wed 12 Aug');
   });

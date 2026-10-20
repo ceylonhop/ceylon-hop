@@ -28,13 +28,16 @@ import { measureLeg } from '../quote/routeChoice';
 import { promoDiscount, roadRow } from '../services/notifications';
 import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { IllegalTransitionError } from '../domain/status';
-import type { PaymentRepo } from '../db/paymentRepo';
+import type { PaymentRepo, Payment } from '../db/paymentRepo';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { AlertAdapter } from '../adapters/alerts';
+import { teamUnpricedEmail } from '../services/opsNotifications';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
@@ -66,6 +69,9 @@ import {
 import type { PromoCodeRepo } from '../db/promoCodeRepo';
 import { SeenOnce } from '../lib/seenOnce';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
+import { browserItem } from '../services/analytics/ga4Hits';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
@@ -175,6 +181,13 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // Money actually received (Σ succeeded payments) and whether the manage page may offer the
+  // balance (spec 2026-10-07 §5.3).
+  paidCents: number;
+  balancePayable: boolean;
+  // The engine couldn't price this booking: `totalCents` is a placeholder checkout refuses, and
+  // ops prices it by hand. The manage page shows neither the amount nor a Pay button then.
+  needsPricing: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
@@ -185,7 +198,7 @@ export interface CustomerBookingView {
   discountCents?: number;
 }
 
-export function projectBooking(b: Booking): CustomerBookingView {
+export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
   const road = roadRow(b)?.[1];
   const promo = promoDiscount(b);
@@ -197,7 +210,10 @@ export function projectBooking(b: Booking): CustomerBookingView {
     currency: b.currency,
     totalCents: b.total,
     amountDueNowCents: dueNow,
-    balanceDueCents: Math.max(0, b.total - dueNow),
+    balanceDueCents: balanceDueCents(b, payments),
+    paidCents: paidCents(payments),
+    balancePayable: isBalanceOpen(b, payments),
+    needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -292,6 +308,12 @@ export function bookingRoutes(deps: {
   checkoutEvents?: BookingCheckoutEventRepo;
   // Server-side GA4: remembers the checkout's GA visitor. Unset → nothing captured.
   ga4?: Ga4Reporter;
+  // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
+  // The team's "Unpriced:" email (CH-E7EE8). Unset → the ops task is the only signal.
+  alerts?: AlertAdapter;
+  opsBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -412,6 +434,19 @@ export function bookingRoutes(deps: {
     }
   }
 
+  // Best-effort, after the booking exists — the flagForOps shape. A lead is never a reason to fail
+  // the booking the customer is about to pay for (spec 2026-10-06 D17).
+  async function recordInterests(booking: Booking, ids: string[]): Promise<void> {
+    if (!ids.length || !deps.experiences || !deps.experienceInterests) return;
+    try {
+      for (const experience of (await deps.experiences.getMany(ids)).filter((e) => e.active)) {
+        await deps.experienceInterests.record({ experience, source: 'booking_page', bookingId: booking.id });
+      }
+    } catch (err) {
+      console.error(`experience interests failed for ${booking.reference}:`, err);
+    }
+  }
+
   async function flagPricing(
     booking: Booking,
     resolved: { mismatch: boolean; unpriced: boolean; total: number; reason?: string },
@@ -426,6 +461,23 @@ export function bookingRoutes(deps: {
       // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
       // down, and it would send ops hunting for a bad place name that isn't there.
       await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
+      // The task alone sat unseen for weeks (CH-E7EE8): tell the team now. Best-effort, like
+      // the task — the booking exists and the customer is mid-checkout.
+      if (deps.alerts) {
+        const reason = resolved.reason ?? 'distance unresolved';
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'booking_unpriced',
+            title: `Unpriced: ${booking.reference} needs a price before the customer can pay`,
+            body: `${booking.reference} was saved without a price (${reason}). Set the price in ops, then send a pay link.`,
+            email: teamUnpricedEmail(booking, reason, deps.opsBaseUrl ?? ''),
+            dedupeKey: booking.id,
+          });
+        } catch (err) {
+          console.error(`unpriced alert failed for ${booking.reference}:`, err);
+        }
+      }
     }
   }
 
@@ -478,6 +530,18 @@ function customerNotesFrom(body: unknown): { ok: true; notes: string | undefined
     .trim();
   if (notes.length > MAX_CUSTOMER_NOTES) return { ok: false };
   return { ok: true, notes: notes || undefined };
+}
+// Partner experiences the customer tapped "I'm interested" on (spec 2026-10-06 D10/D11). Only
+// uuids come from the browser — every label ops sees is the server's. Read off the raw body like
+// customerNotes so the domain inputs (stable interfaces) don't change. Never a 400: a malformed
+// list from an old cached page must not cost us a booking.
+const MAX_EXPERIENCE_IDS = 10;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function experienceIdsFrom(body: unknown): string[] {
+  const raw = (body as { experienceIds?: unknown } | null)?.experienceIds;
+  if (!Array.isArray(raw)) return [];
+  const ids = raw.filter((x): x is string => typeof x === 'string' && UUID.test(x)).map((x) => x.toLowerCase());
+  return [...new Set(ids)].slice(0, MAX_EXPERIENCE_IDS);
 }
 const INVALID_NOTES = { error: 'invalid_notes', message: 'Please keep your note to 1,000 characters or fewer.' };
 
@@ -605,6 +669,7 @@ function invalidRequest(error: ZodError) {
       throw err;
     }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 
@@ -731,6 +796,7 @@ function invalidRequest(error: ZodError) {
       throw err;
     }
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 
@@ -861,6 +927,7 @@ function invalidRequest(error: ZodError) {
         `price mismatch ${booking.reference}: site quoted ${req.quotedTotal}¢, engine priced ${total}¢`,
       );
     }
+    await recordInterests(booking, experienceIdsFrom(body));
     return c.json(withCheckoutToken(booking), 201);
   });
 
@@ -899,9 +966,15 @@ function invalidRequest(error: ZodError) {
     // someone who just paid "no charge was made — try again", and PayHere takes a second payment
     // on the same order. So the return leg stays `pending` until the money lands; if it never
     // does, the page's poll budget runs out into its own "we haven't heard back from your bank".
-    const status = rows.some((p) => p.status === 'succeeded')
+    //
+    // A balance attempt is judged on its OWN row (spec 2026-10-07 §5.3): the deposit has already
+    // succeeded, so "any payment succeeded" would tell a customer who just came back from the
+    // balance's PayHere page "paid" before the balance's webhook has landed, or after it declined.
+    const balanceRow = rows.find((p) => p.purpose === 'balance');
+    const judged = balanceRow ? [balanceRow] : rows;
+    const status = judged.some((p) => p.status === 'succeeded')
       ? 'paid'
-      : token.leg === 'cancel' && rows.some((p) => p.status === 'failed')
+      : token.leg === 'cancel' && judged.some((p) => p.status === 'failed')
         ? 'failed'
         : 'pending';
     // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
@@ -919,7 +992,8 @@ function invalidRequest(error: ZodError) {
     if (!id) return c.json({ error: 'invalid_link' }, 401);
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
-    return c.json(projectBooking(booking), 200);
+    // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
+    return c.json({ ...projectBooking(booking, await payments.findByBookingId(booking.id)), ga4Item: browserItem(booking) }, 200);
   });
 
   r.post('/view/checkout-token', async (c) => {
@@ -932,7 +1006,12 @@ function invalidRequest(error: ZodError) {
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
     ) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+      // `reason` tells an open booking awaiting a hand price apart from a closed one, so the
+      // manage page never tells that customer it is "already paid or closed".
+      return c.json(
+        { error: 'not_chargeable', ...(booking.needsPricing ? { reason: 'awaiting_price' } : {}), status: booking.status },
+        409,
+      );
     }
     // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
     // customer-safe view projection deliberately withholds it. The caller has already proved
@@ -962,10 +1041,23 @@ function invalidRequest(error: ZodError) {
     }
     const booking = await bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
-    // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
-    // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
-    // form — that is how a customer ends up paying for a trip that no longer exists.
-    if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
+    // The caller's INTENT (never an amount): returnTo, the GA visitor, and — for the balance of a
+    // deposit booking — purpose. Read once, here, because the balance branch changes which gate
+    // applies.
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown; purpose?: unknown } | null;
+    const wantsBalance = body?.purpose === 'balance';
+    // The balance of a deposit booking (spec 2026-10-07 §5.3): the booking is already SECURED
+    // (paid | confirmed | in_progress), so the draft/payment_pending gate below would refuse it.
+    // The only way in is isBalanceOpen — a succeeded deposit and money still owed.
+    let balanceDue = 0;
+    if (wantsBalance) {
+      const rows = await payments.findByBookingId(booking.id);
+      if (!isBalanceOpen(booking, rows)) return c.json({ error: 'no_balance_due' }, 409);
+      balanceDue = balanceDueCents(booking, rows);
+    } else if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
+      // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
+      // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
+      // form — that is how a customer ends up paying for a trip that no longer exists.
       return c.json({ error: 'not_chargeable', status: booking.status }, 409);
     }
     // The engine could not price this, so `total` is a flat placeholder rather than a quote.
@@ -980,9 +1072,15 @@ function invalidRequest(error: ZodError) {
         409,
       );
     }
-    const dueNow = booking.amountDueNow ?? booking.total;
+    // The balance charges exactly what is still owed (the ledger's figure), never amountDueNow.
+    const dueNow = wantsBalance ? balanceDue : (booking.amountDueNow ?? booking.total);
 
-    const idempotencyKey = `checkout:${booking.id}`;
+    // One row per kind of attempt (spec 2026-10-07 §4, rev. 2026-10-08): a customer who tries the
+    // deposit and then switches to full gets a fresh row, never a UNIQUE collision on order_id /
+    // idempotency_key. Full keeps REF so every existing booking reads exactly as before.
+    const purpose = wantsBalance ? 'balance' : dueNow < booking.total ? 'deposit' : 'full';
+    const idempotencyKey = purpose === 'full' ? `checkout:${booking.id}` : `checkout:${booking.id}:${purpose}`;
+    const orderId = purpose === 'full' ? booking.reference : `${booking.reference}-${purpose === 'deposit' ? 'D' : 'B'}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
     // Defence in depth: if the payment already settled, refuse a second checkout even if the
     // booking somehow lags in a chargeable status.
@@ -991,7 +1089,9 @@ function invalidRequest(error: ZodError) {
     }
     // §6.3 — a booking made with a code re-checks its hold before a payment starts. Runs whatever
     // PROMO_CODES_ENABLED says: the flag gates accepting codes, never honouring one already held.
-    if (booking.promoCodeId && deps.promoCodes) {
+    // Not for the balance: the code was honoured at the deposit, and a lapsed code must not block
+    // the customer from paying what they owe.
+    if (!wantsBalance && booking.promoCodeId && deps.promoCodes) {
       const code = await deps.promoCodes.get(booking.promoCodeId);
       if (!code) return c.json({ error: 'promo_code_invalid' }, 409);
       try {
@@ -1005,10 +1105,11 @@ function invalidRequest(error: ZodError) {
       payment = await payments.create({
         bookingId: booking.id,
         provider: adapter.provider,
-        orderId: booking.reference,
+        orderId,
         amount: dueNow,
         currency: booking.currency,
         idempotencyKey,
+        purpose,
       });
     }
     // Outside `if (!payment)` on purpose: the payment row and this move are two writes, and when
@@ -1043,7 +1144,6 @@ function invalidRequest(error: ZodError) {
     // customer wherever the request body says is a phishing primitive, and the request that
     // reaches here has already crossed the network. So the origin comes from our own config and
     // the token is minted here, over the booking this checkout is actually for.
-    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown } | null;
     // The GA visitor this checkout comes from (analytics.js chWithGa), so the server's purchase
     // joins that visit. Best-effort and not awaited: analytics never delays or fails a checkout.
     if (deps.ga4 && body?.ga !== undefined) {
@@ -1182,7 +1282,8 @@ function invalidRequest(error: ZodError) {
         attempt: parsed.data.attempt ?? null,
         bookingId: asUuid(id),
         reference: booking?.reference ?? null,
-        // The payment's order id is the booking reference (see /checkout).
+        // The beacon cannot tell which attempt it reports (a deposit attempt's order id is REF-D,
+        // see /checkout), so it records the reference; the booking id is the join key.
         orderId: booking?.reference ?? null,
         channel: booking?.channel ?? null,
         ua: uaOf(c),

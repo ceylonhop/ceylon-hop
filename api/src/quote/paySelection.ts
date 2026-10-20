@@ -23,6 +23,27 @@ export interface PaySelection {
   extraIndexes: number[];
 }
 
+/**
+ * What `quotes.pay_link_selection` can hold. null = a link for the whole trip as priced; a
+ * PaySelection = part of it (spec 2026-08-04); `{ service: 'chauffeur' }` = a link sold as the
+ * chauffeur option of a "both" quote (spec PR #964) — a whole-trip sale of a DIFFERENT product,
+ * priced from the frozen `result.alt`. A union rather than extra optional fields so the compiler
+ * flags every reader that assumes `.legIndexes`.
+ */
+export type PayLinkSelection = PaySelection | { service: 'chauffeur' };
+
+/** Strict: only `{ service: 'chauffeur' }` — a stored `{ service: 'private' }` (or any other value) is not one. */
+export function isServiceSelection(sel: unknown): sel is { service: 'chauffeur' } {
+  return !!sel && typeof sel === 'object' && (sel as { service?: unknown }).service === 'chauffeur';
+}
+
+/** The part-of-trip half of a stored selection; null for nothing, a service link, or anything malformed. */
+export function legSelectionOf(sel: PayLinkSelection | null | undefined): PaySelection | null {
+  if (!sel || isServiceSelection(sel)) return null;
+  const leg = sel as Partial<PaySelection>;
+  return Array.isArray(leg.legIndexes) && Array.isArray(leg.extraIndexes) ? (sel as PaySelection) : null;
+}
+
 export interface PayLine {
   kind: 'leg' | 'extra';
   /** Index into `engine.legs` or `engine.extras` — positional, matching the `legIndex` convention. */
@@ -96,8 +117,13 @@ export function payLines(quote: Pick<SavedQuote, 'request' | 'result'>): PayLine
  */
 export function chosenAddOns(
   quote: Pick<SavedQuote, 'request' | 'result'>,
-  selection?: { legIndexes?: number[]; extraIndexes?: number[] } | null,
+  selection?: Partial<PaySelection> | { service: 'chauffeur' } | null,
 ): string[] {
+  // A chauffeur link sells the chauffeur product. The stored lines read here are the PRIVATE
+  // quote's (the chauffeur day rate covers waiting, sightseeing and safari wait; nothing else the
+  // private quote lists is carried over), so naming them would put add-ons on a booking that did
+  // not buy them. Callers holding a booking use addOnsFor, which decides by the booking.
+  if (isServiceSelection(selection)) return [];
   // Booking loads (the ops queue, every email) and the quote and pay pages all come through here,
   // so a malformed stored row must cost a missing line, never a page: check the shape payLines
   // assumes (a legs list, object line items) before handing it over.
@@ -112,7 +138,7 @@ export function chosenAddOns(
     if (err instanceof NotLineablePriceError) return [];
     throw err;
   }
-  const picked = Array.isArray(selection?.extraIndexes) ? selection.extraIndexes : null;
+  const picked = selection && 'extraIndexes' in selection && Array.isArray(selection.extraIndexes) ? selection.extraIndexes : null;
   return lines
     .filter((l) => l.kind === 'extra' && typeof l.label === 'string' && (!picked || picked.includes(l.index)))
     .map((l) => l.label);
@@ -145,4 +171,35 @@ export function gapAfterLeg(lines: PayLine[], sel: PaySelection): string | null 
   if (holeAt < 1) return null;
   const prev = sorted[holeAt - 1];
   return lines.find((l) => l.kind === 'leg' && l.index === prev)?.label ?? null;
+}
+
+/**
+ * The lines the ops refund picker offers (refund approvals phase 2) — a convenience that FILLS the
+ * amount box; a founder approves every request, so nothing here is enforced server-side. Each line
+ * is worth its share of what the booking was charged (owner rule 2026-10-17): line × charged / sum
+ * of the offered lines, rounded to the cent. That one ratio spreads both the finishing adjustment
+ * and any discount, which sit between the lines and the total. A part-of-trip sale offers only the
+ * lines it sold. Null when there is nothing to pick: a quote payLines cannot read (chauffeur, shell,
+ * legacy), a malformed row, or a single line.
+ */
+export function refundLinesFor(
+  quote: Pick<SavedQuote, 'request' | 'result'>,
+  opts: { selection: PaySelection | null; chargedCents: number },
+): PayLine[] | null {
+  // Same shape guard as chosenAddOns: the drawer loads through here, so a malformed row costs the
+  // picker, never the page.
+  const items = (quote.result as { lineItems?: unknown } | null)?.lineItems;
+  if (Array.isArray(items) && items.some((i) => !i || typeof i !== 'object')) return null;
+  let lines: PayLine[];
+  try {
+    lines = payLines(quote);
+  } catch (err) {
+    if (err instanceof NotLineablePriceError) return null;
+    throw err;
+  }
+  const sel = opts.selection;
+  const offered = sel ? lines.filter((l) => ticked(l, sel)) : lines;
+  const base = offered.reduce((sum, l) => sum + l.amountCents, 0);
+  if (offered.length < 2 || base <= 0) return null;
+  return offered.map((l) => ({ ...l, amountCents: Math.round((l.amountCents * opts.chargedCents) / base) }));
 }

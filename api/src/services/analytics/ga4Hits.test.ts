@@ -32,7 +32,17 @@ describe('purchaseHit', () => {
       pickup: 'Colombo Airport (CMB)', dropoff: 'Galle', pax: 2, vehicle_type: 'car',
       travel_month: '2026-11', days_to_travel: 10, customer_country: 'United Kingdom', customer_type: 'new', channel: 'website',
     });
-    expect(p.items).toEqual([{ item_id: 'Colombo Airport (CMB) → Galle', item_name: 'Colombo Airport (CMB) → Galle', item_category: 'transfer', price: 229, quantity: 1 }]);
+    expect(p.items).toEqual([{
+      item_id: 'Colombo Airport (CMB) → Galle', item_name: 'Colombo Airport (CMB) → Galle',
+      item_category: 'private', item_category2: 'Airport & Negombo', item_category3: 'South coast', item_category4: 'transfer',
+      price: 229, quantity: 1,
+    }]);
+  });
+  it('files the item private vs shared first, then pickup region, drop-off region, service', () => {
+    const shared = purchaseHit({ booking: { ...booking, mode: 'shared' } as Booking, payment, settledAt: SETTLED, identity, returning: false, secondPayment: false, eventName: 'purchase' });
+    expect(shared.events[0].params.items).toMatchObject([{ item_category: 'shared', item_category4: 'shared_seat' }]);
+    const trip = purchaseHit({ booking: { ...booking, mode: 'trip', input: { ...booking.input, stops: ['Kandy', 'Ella'], dates: ['2026-11-08'] } } as Booking, payment, settledAt: SETTLED, identity, returning: false, secondPayment: false, eventName: 'purchase' });
+    expect(trip.events[0].params.items).toMatchObject([{ item_category: 'private', item_category4: 'trip' }]);
   });
   it('never carries personal data', () => {
     const raw = JSON.stringify(hit);
@@ -96,6 +106,9 @@ describe('refundHit', () => {
     expect(hit.events[0].name).toBe('refund');
     expect(hit.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', value: 229, currency: 'USD' });
     expect(hit.events[0].params).not.toHaveProperty('refund_reason');
+    // GA4 takes item revenue back off the item it names: the refund's item is the purchase's.
+    const sold = purchaseHit({ booking, payment, settledAt: SETTLED, identity, returning: false, secondPayment: false, eventName: 'purchase' });
+    expect(hit.events[0].params.items).toEqual(sold.events[0].params.items);
   });
   it('in shadow mode (purchase_server) goes out as refund_server with the same params', () => {
     const refund = { id: 'rf-5', bookingId: 'b-1', paymentId: 'pay-abcdef12', amountCents: 22900, currency: 'USD', reason: '' } as unknown as Refund;
@@ -131,6 +144,7 @@ describe('boardHit', () => {
     const member = { sub: 'google-sub-123', email: 'm@x.com', firstName: 'M', country: 'AU', seats: 2 } as RideMember;
     const hit = boardHit({ list, member, amountCents: 4800, currency: 'USD', at: SETTLED, eventName: 'purchase_server' });
     expect(hit.events[0].params).toMatchObject({ service_type: 'shared_seat', route: 'Ella → Mirissa', pax: 2, value: 48, channel: 'ride_board', vehicle_type: 'shared' });
+    expect(hit.events[0].params.items).toMatchObject([{ item_category: 'shared', item_category2: 'Hill country', item_category3: 'South coast', item_category4: 'shared_seat' }]);
     expect(String(hit.events[0].params.transaction_id)).toMatch(/^EM-4821-[0-9a-f]{8}$/);
     expect(JSON.stringify(hit)).not.toContain('google-sub-123');
     expect(hit.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });

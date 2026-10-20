@@ -102,6 +102,7 @@ describe('projectBooking names the local road the customer chose', () => {
     for (const b of [singleBooking, tripBooking, fastest]) expect(projectBooking(b)).not.toHaveProperty('road');
     expect(Object.keys(projectBooking(singleBooking))).toEqual([
       'reference', 'status', 'mode', 'firstName', 'currency', 'totalCents', 'amountDueNowCents', 'balanceDueCents',
+      'paidCents', 'balancePayable', 'needsPricing',
       'from', 'to', 'date', 'time', 'stops', 'legDates', 'endDate', 'travellers', 'bags', 'vehicleType',
     ]);
     expect(JSON.stringify(projectBooking(fastest))).toBe(JSON.stringify(projectBooking(singleBooking)));
@@ -124,5 +125,21 @@ describe('projectBooking names the promo code the customer used', () => {
       expect(projectBooking(b)).not.toHaveProperty('promoCode');
       expect(projectBooking(b)).not.toHaveProperty('discountCents');
     }
+  });
+});
+
+// A booking the engine couldn't price carries a flat placeholder total that checkout refuses. The
+// manage card showed that placeholder with an enabled Pay button, and pressing it said "already
+// paid or closed". The view now says the booking is awaiting a hand price, so the card can say so.
+describe('projectBooking says when the price is still being confirmed by hand', () => {
+  it('is true on an unpriced booking, on a transfer and a trip', () => {
+    for (const b of [singleBooking, tripBooking]) {
+      expect(projectBooking({ ...b, needsPricing: true } as unknown as Booking).needsPricing).toBe(true);
+    }
+  });
+
+  it('is false on a priced booking, including one that predates the column', () => {
+    expect(projectBooking({ ...singleBooking, needsPricing: false } as unknown as Booking).needsPricing).toBe(false);
+    expect(projectBooking(singleBooking).needsPricing).toBe(false); // needsPricing absent
   });
 });
