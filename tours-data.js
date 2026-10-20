@@ -276,6 +276,80 @@
         {place:'Hiriketiya', t:'The horseshoe bay', body:'Drive to the tucked-away horseshoe bay of Hiriketiya — surf, swim, and a laid-back beach-cafe evening.'},
         {place:'Arugam Bay', t:'The point break', body:'Cross to the east coast and Sri Lanka’s most famous surf town. Sunrise sessions at the point and a final few easy days by the sea.'}
       ]
+    },
+    {
+      id:'ramayana-yatra',
+      name:'Gentle Ramayana Yatra',
+      theme:'culture',
+      days:6, nights:5,
+      price:445,
+      tag:'Pilgrimage',
+      mapBg:'ph-saffron',
+      pace:'Gentle',
+      best:'Dec – Apr',
+      photo:'PHOTO — the painted gopuram of a Hindu kovil',
+      blurb:'The heart of the Ramayana trail at a pace parents can enjoy — Rama’s temples at Chilaw, Hanuman at Ramboda, and two nights in the hills around Ashok Vatika. Two or three places a day, never a rushed one.',
+      regions:['Chilaw','Kandy','Hill Country','Colombo'],
+      stops:['Negombo','Kandy','Nuwara Eliya','Colombo'],
+      highlights:[
+        'Seetha Amman temple at Ashok Vatika',
+        'Shri Bhakta Hanuman temple, Ramboda',
+        'Munneswaram & Manavari, where Rama prayed'
+      ],
+      includes:[
+        'Temple visits need the chauffeur-guide option — your driver stays with you all trip (from $445 per car)',
+        'Private AC vehicle and driver between your stops',
+        'A hand-picked hotel shortlist for all 5 nights',
+        'Airport pick-up & drop-off',
+        'All driving, fuel, tolls & parking'
+      ],
+      excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Temple entry fees & puja offerings','Tips'],
+      itinerary:[
+        {place:'Negombo', t:'Arrive — Rama’s temples at Chilaw', body:'Met at arrivals and driven up the coast to Chilaw: Manavari, where tradition says Rama installed a lingam, and the great Shiva temple at Munneswaram. Back to Negombo for an easy first night.'},
+        {place:'Kandy', t:'Into the hills', body:'About three hours to Kandy. Rest after the journey; the Temple of the Tooth in the evening if you’d like.'},
+        {place:'Nuwara Eliya', t:'Hanuman at Ramboda', body:'Up the hairpins of the A5 to the Shri Bhakta Hanuman temple at Ramboda, with its 18-foot Hanuman over the tea. A vegetarian lunch at the temple, then on to Nuwara Eliya.'},
+        {place:'Nuwara Eliya', t:'Ashok Vatika day', body:'Morning puja at Seetha Amman, the garden where tradition says Sita was held, then Hakgala gardens and Gayathri Peedam. Under an hour of driving all day.'},
+        {place:'Colombo', t:'Down to Colombo', body:'The one long day, about five hours with stops. Kelaniya, where Vibhishana is said to have been crowned, on the way into the city.'},
+        {place:'Colombo', t:'Five-faced Hanuman & home', body:'Panchamuga Anjaneyar at Kalubowila if your flight allows, then the airport.'}
+      ]
+    },
+    {
+      id:'ramayana-trail',
+      name:'Full Ramayana Trail',
+      theme:'culture',
+      days:8, nights:7,
+      price:618,
+      tag:'Pilgrimage',
+      mapBg:'ph-teal',
+      pace:'Balanced',
+      best:'Dec – Apr',
+      photo:'PHOTO — Ravana Falls near Ella',
+      blurb:'Follow the story from the hills to the south coast — Ashok Vatika, the fire-trial temple at Divurumpola, Ravana Falls, Kataragama’s evening puja, Hanuman’s red earth at Ussangoda and the Sanjeevani hill at Rumassala.',
+      regions:['Chilaw','Kandy','Hill Country','Ella','South Coast'],
+      stops:['Negombo','Kandy','Nuwara Eliya','Ella','Tissamaharama','Galle','Colombo'],
+      highlights:[
+        'Ashok Vatika & the Hanuman temple, Ramboda',
+        'Divurumpola and Ravana Falls',
+        'Kataragama, Ussangoda & Rumassala'
+      ],
+      includes:[
+        'Temple visits need the chauffeur-guide option — your driver stays with you all trip (from $618 per car)',
+        'Private AC vehicle and driver between your stops',
+        'A hand-picked hotel shortlist for all 7 nights',
+        'Airport pick-up & drop-off',
+        'All driving, fuel, tolls & parking'
+      ],
+      excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Temple entry fees & puja offerings','Tips'],
+      itinerary:[
+        {place:'Negombo', t:'Arrive — Rama’s temples at Chilaw', body:'Met at arrivals and driven up the coast to Manavari and Munneswaram at Chilaw, then back to Negombo for the night.'},
+        {place:'Kandy', t:'Into the hills', body:'About three hours to Kandy, with the evening free for the Temple of the Tooth.'},
+        {place:'Nuwara Eliya', t:'Hanuman at Ramboda', body:'Up the A5 to the Shri Bhakta Hanuman temple at Ramboda and a vegetarian lunch there, then Nuwara Eliya.'},
+        {place:'Nuwara Eliya', t:'Ashok Vatika day', body:'Morning puja at Seetha Amman, then Hakgala gardens and Gayathri Peedam, with an easy afternoon in town.'},
+        {place:'Ella', t:'The fire-trial temple & Ravana Falls', body:'Divurumpola, where tradition says Sita took her trial by fire, then down to Ella and Ravana Falls in the afternoon.'},
+        {place:'Tissamaharama', t:'Kataragama’s evening puja', body:'About three hours south to Kataragama, where Hindu, Buddhist and Muslim pilgrims share the evening puja. Night in Tissamaharama.'},
+        {place:'Galle', t:'Hanuman’s red earth & the Sanjeevani hill', body:'Ussangoda’s red plateau by the sea, then Rumassala, said to be a fragment of the mountain Hanuman carried, and sunset on Galle Fort’s walls.'},
+        {place:'Colombo', t:'Kelaniya & home', body:'Up the expressway to Kelaniya, where Vibhishana is said to have been crowned, then the airport.'}
+      ]
     }
   ];
 

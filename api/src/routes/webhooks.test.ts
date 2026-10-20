@@ -13,6 +13,11 @@ import { futureIsoDate, nextIsoWeekday } from '../testSupport/dates';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
+import type { MapsAdapter } from '../adapters/maps';
+import { InMemoryCustomerCommunicationRepo } from '../db/customerCommunicationRepo';
+import { runWatchdog } from '../services/watchdog';
+import { InMemoryExperienceRepo } from '../db/experienceRepo';
+import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from '../db/experienceInterestRepo';
 
 const valid = {
   from: 'Colombo Airport (CMB)',
@@ -351,6 +356,113 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(paid?.email?.text).toContain(b.reference);
   });
 
+  // Route choice (spec §4.3): the plain paid alert names the road when the customer bought the
+  // local one, so the team books a driver for the road that was sold. The subject never changes.
+  it('the paid alert body names the local road the customer chose; the expressway body is unchanged', async () => {
+    const forkMaps: MapsAdapter = {
+      provider: 'fork',
+      places: async () => [],
+      distance: async () => ({ km: 335, durationMin: 299 }),
+      distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+    };
+    const paidAlert = async (overrides: Record<string, unknown>) => {
+      const adapter = new FakePaymentAdapter();
+      const alerts = new FakeAlertAdapter();
+      const app = createApp({ adapter, alerts, maps: forkMaps });
+      const b = await bookAndCheckout(app, overrides);
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return alerts.sent.find((a) => a.kind === 'booking_paid')!;
+    };
+    const local = await paidAlert({ routeVariant: 'no_tolls' });
+    expect(local.body).toContain('Road: Local road, no expressway · about 6h 14m');
+    expect(local.email?.subject.startsWith('Paid: ')).toBe(true);
+    const plain = await paidAlert({});
+    expect(plain.body).not.toContain('Road:');
+    expect(plain.body.split('\n')).toHaveLength(5);
+  });
+
+  // Partner experiences (spec 2026-10-06 D15): the paid mail names what the customer asked about.
+  describe('team email "Interested in" row', () => {
+    const EXP = {
+      slug: 'ayurveda-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
+      summary: 'A massage', details: '', priceCents: 3500, priceUnit: 'per_person' as const, durationText: null,
+      openWeekdays: [], startTimes: [], lat: 7.977, lng: 80.76, radiusKm: 5, photos: [], partnerContact: null, active: true,
+      createdBy: 'seed',
+    };
+    async function paidAlertWith(opts: { interests?: ExperienceInterestRepo; seed?: boolean }) {
+      const adapter = new FakePaymentAdapter();
+      const alerts = new FakeAlertAdapter();
+      const experiences = new InMemoryExperienceRepo();
+      const interests = opts.interests ?? new InMemoryExperienceInterestRepo();
+      const app = createApp({ adapter, alerts, experiences, experienceInterests: interests });
+      const b = await bookAndCheckout(app);
+      if (opts.seed) {
+        const e = await experiences.create(EXP as never);
+        await interests.record({ experience: e, source: 'booking_page', bookingId: b.id });
+      }
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return alerts.sent.find((a) => a.kind === 'booking_paid')!;
+    }
+
+    it('names the experience and partner in the HTML and text', async () => {
+      const paid = await paidAlertWith({ seed: true });
+      expect(paid.email?.html).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+      expect(paid.email?.text).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+    });
+
+    it('is absent when the booking has no interests', async () => {
+      const paid = await paidAlertWith({});
+      expect(paid.email?.html).not.toContain('Interested in');
+    });
+
+    it('a failing interest lookup sends the email without the row', async () => {
+      const paid = await paidAlertWith({ interests: { listForBooking: async () => { throw new Error('db down'); } } as unknown as ExperienceInterestRepo });
+      expect(paid.email?.subject.startsWith('Paid: ')).toBe(true);
+      expect(paid.email?.html).not.toContain('Interested in');
+    });
+  });
+
+  // Partner experiences (spec 2026-10-06 D16): the customer's confirmation carries the same row.
+  describe('customer confirmation "Interested in" row', () => {
+    const EXP = {
+      slug: 'ayurveda-massage', name: 'Ayurvedic massage', partnerName: 'Atherya Spa', areaLabel: 'Sigiriya',
+      summary: 'A massage', details: '', priceCents: 3500, priceUnit: 'per_person' as const, durationText: null,
+      openWeekdays: [], startTimes: [], lat: 7.977, lng: 80.76, radiusKm: 5, photos: [], partnerContact: null, active: true,
+      createdBy: 'seed',
+    };
+    async function confirmationWith(opts: { interests?: ExperienceInterestRepo; seed?: boolean }) {
+      const adapter = new FakePaymentAdapter();
+      const email = new FakeEmailAdapter();
+      const experiences = new InMemoryExperienceRepo();
+      const interests = opts.interests ?? new InMemoryExperienceInterestRepo();
+      const app = createApp({ adapter, email, experiences, experienceInterests: interests });
+      const b = await bookAndCheckout(app);
+      if (opts.seed) {
+        const e = await experiences.create(EXP as never);
+        await interests.record({ experience: e, source: 'booking_page', bookingId: b.id });
+      }
+      await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      return email.sent.find((m) => m.subject.includes('confirmed'))!;
+    }
+
+    it('names the experience and partner, "not charged", in the HTML and text', async () => {
+      const m = await confirmationWith({ seed: true });
+      expect(m.html).toContain('Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out');
+      expect(m.text).toContain('Interested in: Ayurvedic massage (Atherya Spa) — not charged; our Pro team will reach out');
+    });
+
+    it('is absent when the booking has no interests', async () => {
+      const m = await confirmationWith({});
+      expect(m.html).not.toContain('Interested in');
+    });
+
+    it('a failing interest lookup still sends the confirmation, without the row', async () => {
+      const m = await confirmationWith({ interests: { listForBooking: async () => { throw new Error('db down'); } } as unknown as ExperienceInterestRepo });
+      expect(m.subject).toContain('confirmed');
+      expect(m.html).not.toContain('Interested in');
+    });
+  });
+
   it('the team notification never costs the customer their confirmation', async () => {
     // The customer's email comes first and the team's is best-effort behind it: a failure in
     // ours must not cost them theirs, and must not fail the webhook (PayHere would retry).
@@ -499,6 +611,169 @@ describe('payment webhook ops alerts (M17)', () => {
     expect((await payments.findByOrderId(b.reference))!.status).toBe('succeeded');
   });
 
+  // Deposits (spec 2026-10-07 §5.1): the balance of a deposit booking is the second half of ONE
+  // sale. The customer gets a "fully paid" receipt and the team a money line; nothing is paged.
+  async function depositBooking(bookings: InMemoryBookingRepo, payments: InMemoryPaymentRepo) {
+    const booking = await bookings.create({
+      mode: 'single', total: 20_000, amountDueNow: 5_000, currency: 'USD',
+      input: {
+        from: 'Colombo', to: 'Kandy', vehicleType: 'car', adults: 2, children: 0, bags: 1,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+94770000000', country: 'LK' },
+      },
+    });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:deposit`, purpose: 'deposit',
+    });
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 15_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    return { booking, deposit, balance };
+  }
+
+  it('a deposit settle titles the team "Paid:" with the amount actually paid, not the total', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  // Customer choice: start a deposit, switch to full (amountDueNow rewritten to the total while the
+  // deposit attempt is still pending), then the DEPOSIT notify lands - and the reverse. What was
+  // charged decides the email, not what amountDueNow said when the customer last tapped.
+  it('a deposit that lands after the customer switched to full still gets the deposit email', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments });
+    const { booking, deposit } = await depositBooking(bookings, payments);
+    bookings.setAmountDueNowForSettlement(booking.id, 20_000); // the switch to "full"
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('deposit_received');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('confirmation');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(5_000);
+    expect(alerts.sent.find((a) => a.kind === 'booking_paid')!.title).toBe(`Paid: ${booking.reference} — $50.00`);
+  });
+
+  it('a full payment that lands after the customer switched to a deposit gets the confirmation', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, bookings, payments });
+    const { booking } = await depositBooking(bookings, payments); // amountDueNow 5_000
+    const full = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 20_000,
+      currency: 'USD', idempotencyKey: `checkout:${booking.id}`,
+    });
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: full.orderId, amount: 20_000, currency: 'USD' }),
+    });
+    expect(email.sent.map((m) => m.tracking?.kind)).toContain('confirmation');
+    expect(email.sent.map((m) => m.tracking?.kind)).not.toContain('deposit_received');
+    expect((await bookings.get(booking.id))!.amountDueNow).toBe(20_000);
+  });
+
+  // sendDepositReceived is the deposit booking's confirmation (the watchdog accepts its row as
+  // one), so it must obey the same rule: a suppressed send writes nothing and the alarm still fires.
+  it('does NOT record a deposit-received or balance receipt that notifications suppressed, and the watchdog still alerts', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const watchdogAlerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, bookings, payments, notificationLog, emailPolicy: { enabled: false } });
+    const { booking, deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' }),
+    });
+    expect(await notificationLog.wasSent(booking.id, 'deposit_received')).toBe(false);
+    expect(await notificationLog.wasSent(booking.id, 'balance_received')).toBe(false);
+
+    const res = await runWatchdog(new Date(Date.now() + 16 * 60_000), { bookings, log: notificationLog, alerts: watchdogAlerts });
+    expect(res.paidUnconfirmed).toBe(1);
+    expect(watchdogAlerts.sent[0].kind).toBe('watchdog_paid_unconfirmed');
+  });
+
+  it('a balance after its deposit sends the fully-paid receipt and the team money line, and pages nothing', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const concierge = new InMemoryConciergeTaskRepo();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments, conciergeTasks: concierge, notificationLog });
+    const { booking, deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    const sentBefore = email.sent.length;
+    const tasksBefore = (await concierge.list()).length;
+
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(alerts.sent.find((a) => a.kind === 'payment_double_capture')).toBeUndefined();
+    expect(email.sent).toHaveLength(sentBefore + 1);
+    expect(email.sent.at(-1)!.subject).toMatch(/^You’re fully paid/);
+    expect(await notificationLog.wasSent(booking.id, 'balance_received')).toBe(true);
+    expect(alerts.sent.filter((a) => a.kind === 'booking_paid').at(-1)!.title).toBe(
+      `Balance paid: ${booking.reference} — $150.00`,
+    );
+    expect((await bookings.get(booking.id))!.status).toBe('paid');
+    expect((await concierge.list()).length).toBe(tasksBefore); // no second confirm_pickup task
+    // The owner forwards money-landed mail from Gmail on the "Paid: " subject prefix.
+    const mail = alerts.sent.filter((a) => a.kind === 'booking_paid').at(-1)!.email!;
+    expect(mail.subject.startsWith('Paid: ')).toBe(true);
+    expect(mail.subject).toContain('balance $150.00');
+    expect(mail.text).toContain('Balance paid');
+  });
+
+  it('a re-delivered balance notify sends no second receipt and no second team mail', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, email, alerts, bookings, payments });
+    const { deposit, balance } = await depositBooking(bookings, payments);
+    await app.request('/webhooks/payments', {
+      method: 'POST', body: adapter.simulateWebhook({ orderId: deposit.orderId, amount: 5_000, currency: 'USD' }),
+    });
+    const body = adapter.simulateWebhook({ orderId: balance.orderId, amount: 15_000, currency: 'USD' });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+    const emails = email.sent.length;
+    const paidAlerts = alerts.sent.filter((a) => a.kind === 'booking_paid').length;
+
+    const again = await app.request('/webhooks/payments', { method: 'POST', body });
+
+    expect(again.status).toBe(200);
+    expect(email.sent).toHaveLength(emails);
+    expect(alerts.sent.filter((a) => a.kind === 'booking_paid')).toHaveLength(paidAlerts);
+  });
+
   it('does not 500 the webhook when concierge-task creation fails (booking stays paid, alert raised)', async () => {
     const adapter = new FakePaymentAdapter();
     const alerts = new FakeAlertAdapter();
@@ -520,9 +795,9 @@ describe('POST /webhooks/resend (M17)', () => {
   const SECRET_KEY = Buffer.from('super-secret-signing-key').toString('base64');
   const SECRET = 'whsec_' + SECRET_KEY;
 
-  const signed = (payload: object, opts?: { timestamp?: number; badSig?: boolean }) => {
+  const signed = (payload: object, opts?: { timestamp?: number; badSig?: boolean; id?: string }) => {
     const raw = JSON.stringify(payload);
-    const id = 'msg_test1';
+    const id = opts?.id ?? 'msg_test1';
     const timestamp = String(opts?.timestamp ?? Math.floor(Date.now() / 1000));
     const sig = createHmac('sha256', Buffer.from(SECRET_KEY, 'base64'))
       .update(`${id}.${timestamp}.${raw}`)
@@ -574,6 +849,145 @@ describe('POST /webhooks/resend (M17)', () => {
     const res = await app.request('/webhooks/resend', { method: 'POST', body: ok.body, headers: ok.headers });
     expect(res.status).toBe(204);
     expect(alerts.sent).toHaveLength(0);
+  });
+
+  const seededCommunication = async (
+    ledger: InMemoryCustomerCommunicationRepo,
+    providerMessageId = 'email_provider_123',
+  ) => {
+    const row = await ledger.plan({
+      bookingId: '00000000-0000-4000-8000-000000000001',
+      kind: 'confirmation',
+      channel: 'email',
+      templateKey: 'booking-confirmation',
+      templateVersion: '1',
+      recipient: 'maya@example.com',
+      source: 'payment_webhook',
+      actorType: 'provider',
+      actorId: null,
+      requestId: null,
+      runId: null,
+      trackingKey: 'booking:confirmation',
+      payloadSha256: 'a'.repeat(64),
+    });
+    await ledger.markProviderAccepted(row.id, 'resend', providerMessageId);
+    return row;
+  };
+
+  it.each([
+    ['email.sent', 'provider_sent'],
+    ['email.delivered', 'delivered'],
+    ['email.delivery_delayed', 'delayed'],
+    ['email.failed', 'provider_failed'],
+    ['email.bounced', 'bounced'],
+    ['email.complained', 'complained'],
+  ] as const)('records signed %s as %s and correlates it to the logical email', async (providerType, eventType) => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const communication = await seededCommunication(ledger);
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({
+      alerts,
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const webhook = signed({
+      type: providerType,
+      created_at: '2026-09-27T12:00:00.000Z',
+      data: {
+        email_id: 'email_provider_123',
+        message_id: '<safe-provider-message@example.net>',
+        to: ['maya@example.com'],
+        subject: 'Your booking',
+      },
+    }, { id: `evt-${eventType}` });
+
+    expect((await app.request('/webhooks/resend', {
+      method: 'POST', body: webhook.body, headers: webhook.headers,
+    })).status).toBe(204);
+    expect(await ledger.listEvents(communication.id)).toEqual([
+      expect.objectContaining({
+        communicationId: communication.id,
+        eventType,
+        providerEventId: `evt-${eventType}`,
+        providerMessageId: 'email_provider_123',
+        occurredAt: new Date('2026-09-27T12:00:00.000Z'),
+      }),
+    ]);
+    expect(alerts.sent.map((alert) => alert.kind)).toEqual(
+      providerType === 'email.failed' ? ['email_failed']
+        : providerType === 'email.bounced' || providerType === 'email.complained' ? ['email_bounce'] : [],
+    );
+  });
+
+  it('deduplicates a replayed provider event and preserves out-of-order facts', async () => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const communication = await seededCommunication(ledger);
+    const app = createApp({
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const delivered = signed({
+      type: 'email.delivered', created_at: '2026-09-27T12:02:00.000Z',
+      data: { email_id: 'email_provider_123' },
+    }, { id: 'evt-delivered' });
+    const sent = signed({
+      type: 'email.sent', created_at: '2026-09-27T12:01:00.000Z',
+      data: { email_id: 'email_provider_123' },
+    }, { id: 'evt-sent' });
+
+    for (const webhook of [delivered, delivered, sent]) {
+      expect((await app.request('/webhooks/resend', {
+        method: 'POST', body: webhook.body, headers: webhook.headers,
+      })).status).toBe(204);
+    }
+    const events = await ledger.listEvents(communication.id);
+    expect(events.map((event) => event.eventType)).toEqual(['delivered', 'provider_sent']);
+    expect(events.map((event) => event.occurredAt.toISOString())).toEqual([
+      '2026-09-27T12:02:00.000Z', '2026-09-27T12:01:00.000Z',
+    ]);
+  });
+
+  it('stores an unknown provider message as orphan evidence with sanitized metadata', async () => {
+    const ledger = new InMemoryCustomerCommunicationRepo();
+    const app = createApp({
+      resendWebhookSecret: SECRET,
+      customerCommunications: ledger,
+      communicationTrackingEnabled: true,
+    });
+    const webhook = signed({
+      type: 'email.bounced',
+      created_at: '2026-09-27T12:00:00.000Z',
+      data: {
+        email_id: 'email_unknown',
+        message_id: '<provider-message@example.net>',
+        to: ['maya+secret@example.com'],
+        subject: 'Manage token-secret',
+        bounce: { type: 'Permanent', subType: 'Suppressed', message: 'raw-provider-secret' },
+      },
+    }, { id: 'evt-orphan' });
+
+    expect((await app.request('/webhooks/resend', {
+      method: 'POST', body: webhook.body, headers: webhook.headers,
+    })).status).toBe(204);
+    const [event] = await ledger.listEvents();
+    expect(event).toMatchObject({
+      communicationId: null,
+      providerMessageId: 'email_unknown',
+      eventType: 'bounced',
+      detailJson: {
+        provider: 'resend',
+        messageId: '<provider-message@example.net>',
+        recipientDomain: 'example.com',
+        bounceType: 'Permanent',
+        bounceSubType: 'Suppressed',
+      },
+    });
+    const persisted = JSON.stringify(event);
+    expect(persisted).not.toContain('maya+secret');
+    expect(persisted).not.toContain('token-secret');
+    expect(persisted).not.toContain('raw-provider-secret');
   });
 });
 
@@ -657,6 +1071,128 @@ describe('settlement claims the quote (pay links)', () => {
     expect(res.status).toBe(200);
     expect((await bookings.get(started.bookingId))?.status).toBe('paid');
     expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+
+  // A pay link re-minted while the customer sat on PayHere: /start cancels the older link's booking,
+  // and the customer then completes payment on the window they already had open. The money must be
+  // RECORDED (payment row succeeded, so the refund ceiling is right) and ops told loudly; the
+  // cancelled booking is not resurrected and the quote is not won through it.
+  it('a payment landing on a booking superseded by a newer pay link is recorded and alerted, not lost', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const alerts = new FakeAlertAdapter();
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+    const app = createApp({ quotes, bookings, payments, adapter, alerts, bookingLinkSecret: 'test-link-secret' });
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: futureIsoDate(30) }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+      result: {},
+    });
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    await quotes.patch(q.id, { status: 'sent' });
+    const customer = { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' };
+    const startOn = async (seq: number) => {
+      const fresh = (await quotes.get(q.id))!;
+      return (await (await app.request('/quotes/pay/start', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ t: signQuotePayToken(q.id, fresh.revision, 'test-link-secret', seq), customer, termsAccepted: true }),
+      })).json()) as { bookingId: string; checkoutToken: string };
+    };
+    const seq1 = (await quotes.get(q.id))!.payLinkSeq;
+    const first = await startOn(seq1);
+    await app.request(`/bookings/${first.bookingId}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${first.checkoutToken}` } }); // PayHere opens
+    await quotes.patch(q.id, { payLinkSeq: seq1 + 1 }); // ops re-mints
+    const second = await startOn(seq1 + 1);
+    expect(second.bookingId).not.toBe(first.bookingId);
+    expect((await bookings.get(first.bookingId))!.status).toBe('cancelled');
+
+    const old = (await bookings.get(first.bookingId))!;
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: adapter.simulateNotify({ orderId: old.reference, amount: 21900, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(first.bookingId))!.status).toBe('cancelled'); // not resurrected
+    expect((await payments.findByBookingId(first.bookingId)).some((p) => p.status === 'succeeded')).toBe(true); // money recorded
+    const alert = alerts.sent.find((a) => a.kind === 'paid_in_unexpected_status');
+    expect(alert?.severity).toBe('critical');
+    expect(alert?.body).toContain("status 'cancelled'");
+    expect((await quotes.get(q.id))?.status).toBe('sent'); // the cancelled booking did not win the quote
+  });
+
+  // Spec PR #964: a booking sold on a link for the chauffeur option of a "both" quote carries a
+  // `{ service }` selection. The confirmation reads the selection for its "2 of 4 legs" line; a
+  // throw there would leave a customer who has just paid with no confirmation at all.
+  it('a booking sold on a chauffeur link still gets its confirmation email', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ adapter, email, bookings, quotes });
+    const b = await bookAndCheckout(app);
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: b.total, currency: 'USD', rateCardVersion: 'v1',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } },
+      result: { totalCents: b.total, lineItems: [] },
+    });
+    await quotes.patch(q.id, { convertedBookingId: b.id, payLinkSelection: { service: 'chauffeur' }, soldCents: b.total });
+
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+    expect(res.status).toBe(200);
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].subject.toLowerCase()).toContain('confirmed');
+    expect(email.sent[0].text).not.toMatch(/of 2 /); // no "x of 2 journeys" coverage line: it is a whole-trip sale
+  });
+
+  // Coverage ("this booking covers 1 of the 2 legs") describes a PART-OF-TRIP sale. It is decided by
+  // the BOOKING: a chauffeur booking is a whole-trip sale however the quote's selection moved since
+  // (here the agent re-minted to a part-of-trip link after the chauffeur booking was started).
+  describe('the confirmation email\'s coverage line follows the booking', () => {
+    const TWO_LEGS = { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }, { from: 'B', to: 'C', distanceKm: 10 }] } };
+    async function confirmed(kind: 'chauffeur' | 'private') {
+      const adapter = new FakePaymentAdapter();
+      const email = new FakeEmailAdapter();
+      const bookings = new InMemoryBookingRepo();
+      const quotes = new InMemoryQuoteRepo();
+      const app = createApp({ adapter, email, bookings, quotes });
+      const b = kind === 'private'
+        ? await bookAndCheckout(app)
+        : await (async () => {
+          const made = await (await app.request('/bookings/trip', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0], dates: [futureIsoDate(30), futureIsoDate(32)], pax: 2, vehicleType: 'car', serviceType: 'chauffeur', customer: valid.customer }),
+          })).json();
+          await app.request(`/bookings/${made.id}/checkout`, { method: 'POST', headers: { authorization: `Bearer ${made.checkoutToken}` } });
+          return made;
+        })();
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: b.total, currency: 'USD', rateCardVersion: 'v1',
+        request: TWO_LEGS, result: { totalCents: b.total, lineItems: [] },
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id, payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 5000 });
+      const res = await app.request('/webhooks/payments', { method: 'POST', body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }) });
+      expect(res.status).toBe(200);
+      expect(email.sent).toHaveLength(1);
+      return email.sent[0].text as string;
+    }
+
+    it('a chauffeur booking paid in full says nothing about legs even though the quote now has a part-of-trip selection', async () => {
+      expect(await confirmed('chauffeur')).not.toMatch(/of the \d+ legs/);
+    });
+
+    it('a private booking sold on a part-of-trip link still carries it (control)', async () => {
+      expect(await confirmed('private')).toMatch(/covers 1 of the 2 legs/);
+    });
   });
 
   it('a settle on a booking with no quote behind it changes nothing and never errors', async () => {

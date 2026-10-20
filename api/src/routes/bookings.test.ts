@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
@@ -234,6 +235,102 @@ describe('POST /bookings/single', () => {
   });
 });
 
+// The details step asks "Anything we should know?" (hotel name, dietary needs, surf gear). Until
+// 2026-09-27 nothing read that box, so what a customer wrote there never reached ops. The note is
+// the customer's own free text, so it is bounded and cleaned at the door, then kept as plain text.
+describe("the customer's note is kept on the booking", () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  // A future shared service day (Wed=3 / Sat=6), so a shared request reaches bookings.create.
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  it('keeps a transfer note, trimmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: '  Hilton Colombo, two surfboards  ' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hilton Colombo, two surfboards');
+  });
+
+  it('keeps the note on a trip and on a shared seat', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const trip = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: 'Vegetarian',
+    });
+    const shared = await jpost(app, '/bookings/shared', {
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+      customer: valid.customer, customerNotes: 'One big backpack',
+    });
+    expect(trip.status).toBe(201);
+    expect(shared.status).toBe(201);
+    expect((await bookings.get((await trip.json()).id))?.customerNotes).toBe('Vegetarian');
+    expect((await bookings.get((await shared.json()).id))?.customerNotes).toBe('One big backpack');
+  });
+
+  it('stores a blank note as no note', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const blank = await (await post(app, { ...valid, customerNotes: ' \n\t ' })).json();
+    const none = await (await post(app, valid)).json();
+    expect((await bookings.get(blank.id))?.customerNotes).toBeNull();
+    expect((await bookings.get(none.id))?.customerNotes).toBeNull();
+  });
+
+  // A NUL byte is rejected by Postgres text columns, so left in it would 500 the booking.
+  it('keeps line breaks and drops invisible control characters', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, { ...valid, customerNotes: 'Hotel: Galle Face\r\nFlight\u0000 UL\u0007 504\u001b' });
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).id))?.customerNotes).toBe('Hotel: Galle Face\nFlight UL 504');
+  });
+
+  it('refuses a note over 1,000 characters on every booking route, and creates no booking', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const long = 'x'.repeat(1001);
+    const responses = [
+      await post(app, { ...valid, customerNotes: long }),
+      await jpost(app, '/bookings/trip', {
+        stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+        pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, customerNotes: long,
+      }),
+      await jpost(app, '/bookings/shared', {
+        from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 2,
+        customer: valid.customer, customerNotes: long,
+      }),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('invalid_notes');
+      expect(body.message).toContain('1,000');
+    }
+    expect(await bookings.list()).toHaveLength(0);
+    // Exactly at the limit is fine.
+    expect((await post(app, { ...valid, customerNotes: 'x'.repeat(1000) })).status).toBe(201);
+  });
+
+  it('refuses a note that is not text', async () => {
+    const app = createApp();
+    for (const customerNotes of [42, { $gt: '' }, ['a', 'b'], true]) {
+      const res = await post(app, { ...valid, customerNotes });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('invalid_notes');
+    }
+  });
+});
+
 describe('GET /bookings/view (tokenized customer view)', () => {
   const SECRET = 'dev-booking-link-secret-change-me';
 
@@ -262,6 +359,12 @@ describe('GET /bookings/view (tokenized customer view)', () => {
     expect(body.from).toBe('Colombo Airport (CMB)');
     expect(body.firstName).toBe('Maya');
     expect(body.totalCents).toBe(6000);
+    // The item manage.html's browser `purchase` carries — the server hit's item, minus price.
+    expect(body.ga4Item).toEqual({
+      item_id: 'Colombo Airport (CMB) → Kandy', item_name: 'Colombo Airport (CMB) → Kandy',
+      item_category: 'private', item_category2: 'Airport & Negombo', item_category3: 'Hill country',
+      item_category4: 'transfer',
+    });
     // Allow-list: never leak the id, channel, or contact details.
     for (const leak of [
       'id',
@@ -592,6 +695,50 @@ describe('a Maps outage must not silently reprice', () => {
   });
 });
 
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): a single
+// transfer prices the road it was asked for, server-side, and never silently swaps roads
+// under the customer — a fork that vanishes between quote and booking refuses to charge.
+describe('POST /bookings/single — route choice (spec §4.2)', () => {
+  const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
+    "The local road isn't available for this trip right now, so nothing was charged. We've switched the price back to the expressway. Please check it and book again.";
+
+  const forkMaps: MapsAdapter = {
+    provider: 'fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: { km: 213, durationMin: 374 }, hasChoice: true }),
+  };
+  const noForkMaps: MapsAdapter = {
+    provider: 'no-fork',
+    places: async () => [],
+    distance: async () => ({ km: 335, durationMin: 299 }),
+    distanceVariants: async () => ({ fastest: { km: 335, durationMin: 299 }, noTolls: null, hasChoice: false }),
+  };
+
+  it('books the toll-free road and stores/returns its own km + minutes', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: forkMaps });
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.distanceKm).toBe(213);
+    expect(b.durationMin).toBe(374);
+    const got = await bookings.get(b.id);
+    if (got?.mode !== 'single') throw new Error('expected a single booking');
+    expect(got.input.routeVariant).toBe('no_tolls');
+  });
+
+  it('422s with route_choice_unavailable and creates no booking when the road cannot be confirmed', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, maps: noForkMaps });
+    const before = await bookings.list();
+    const res = await post(app, { ...valid, routeVariant: 'no_tolls' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'route_choice_unavailable', message: ROUTE_CHOICE_UNAVAILABLE_MESSAGE });
+    expect(await bookings.list()).toHaveLength(before.length);
+  });
+});
+
 // The booking re-price is a second entry point onto the live rate card (the first is
 // POST /quote) — it must compose the same active hot zones, or a customer who quotes then
 // books straight through the wizard (no quoteId) gets the pre-boost price.
@@ -618,6 +765,61 @@ describe('an unpriced booking never charges the client-supplied figure', () => {
     const res = await post(app, { ...valid, date: futureIsoDate(14), quotedTotal: 99_999_00 });
     const body = await res.json();
     expect(body.total).toBeLessThan(99_999_00);
+  });
+});
+
+// CH-E7EE8 (2026-10-18): unpriced bookings only ever raised a quiet ops task, and three sat
+// open for up to a month while the customers waited for a price nobody knew to send. The team
+// now gets an email the moment one lands.
+describe('an unpriced booking emails the team', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const trip = (stops: string[]) => ({
+    stops, nights: stops.map(() => 0),
+    pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+  });
+  const unpricedAlerts = (alerts: FakeAlertAdapter) => alerts.sent.filter((a) => a.kind === 'booking_unpriced');
+
+  it('sends one alert for a trip the server could not price, naming the leg and the ops link', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts, opsBaseUrl: 'https://ops.example' });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
+    const { reference, id } = await res.json();
+
+    const sent = unpricedAlerts(alerts);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].dedupeKey).toBe(id);
+    expect(sent[0].email?.subject).toContain('Unpriced');
+    expect(sent[0].email?.subject).toContain(reference);
+    for (const part of [sent[0].email!.html, sent[0].email!.text]) {
+      expect(part).toContain('distance unresolved: Kandy → ZZQQ Nowhere 4417');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  it('sends one for a single transfer the server could not price', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    const res = await post(app, { ...valid, to: 'ZZQQ Nowhere 4417', date: futureIsoDate(14) });
+    expect(res.status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(1);
+  });
+
+  it('sends none for a booking the server priced', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    expect((await jpost(app, '/bookings/trip', trip(['Kandy', 'Ella']))).status).toBe(201);
+    expect((await post(app, { ...valid, from: 'Kandy', to: 'Ella', date: futureIsoDate(14) })).status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(0);
+  });
+
+  // Best-effort, like the ops task: the booking already exists and the customer is mid-checkout.
+  it('still creates the booking when the alert channel throws', async () => {
+    const alerts = { send: async () => { throw new Error('resend down'); } };
+    const app = createApp({ alerts });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
   });
 });
 

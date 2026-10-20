@@ -39,7 +39,7 @@ describe('payment outcomes are segmentable, not just countable', () => {
   it('payment_initiated still reports the plan and the money, behind the chTrack guard', () => {
     const initiated = callFor('payment_initiated');
     expect(initiated).toContain('payment_type:state.payPlan');
-    expect(initiated).toContain('value:calcTotal()');
+    expect(initiated).toContain('value:payableTotal()');
     expect(initiated).toContain("currency:'USD'");
     expect(src).toMatch(/if\(typeof window\.chTrack==='function'\) window\.chTrack\(\s*'payment_initiated'/);
   });

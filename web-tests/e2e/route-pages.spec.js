@@ -44,10 +44,12 @@ test('a route we DO sell shared states the seat price and its boarding points', 
   await expect(shared).toBeVisible();
   // scoped to the card: the price also appears in the title and the FAQ
   await expect(shared.locator('.seat-price')).toContainText('$27.49');
-  await expect(shared.getByText(/Runs once 3 travellers are going/)).toBeVisible();
   await expect(shared.getByText('Zen Cafe, Negombo')).toBeVisible();
-  // design A: no timetable language anywhere on the page
-  await expect(page.getByText(/scheduled|Wed & Sat/i)).toHaveCount(0);
+  // The shared taxi runs on its days and is paid at booking; the ride board covers every
+  // other day on its own terms (owner, 2026-09-30) — two products, never one blurred card.
+  await expect(shared.locator('.runs-line')).toHaveText('Runs every Wednesday & Saturday · guaranteed departure · paid when you book');
+  await expect(shared.locator('.share-board h3')).toHaveText('Not travelling on a Wednesday or Saturday?');
+  await expect(shared.locator('.share-board')).toContainText('It runs once 3 travellers are going');
 });
 
 test('/trip/ index lists route cards that link to pages', async ({ page }) => {

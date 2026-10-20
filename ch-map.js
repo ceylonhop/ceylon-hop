@@ -5,6 +5,66 @@
 (function () {
   let loaderPromise = null;
 
+  /* Google Maps is OFF on test sites unless the tab opts in. Every map load and route query
+     bills the live key, and that key accepts localhost — so the e2e suite alone (~19 maps +
+     ~29 route queries per CI run) was ~75% of September 2026's $122 Maps bill. Real sites are
+     untouched. "Off" is exactly what "Google unreachable" already meant here: the caller's drawn
+     map, local place suggestions, stored distances. Opt a tab in with ?maps=1 (or the pill
+     below); ?maps=0 opts it out. A google.maps already on the page (a test stub) is used as-is.
+     DELIBERATE SECOND COPY of isTestHost() in api/src/routes/ops-ui.html — the ops shell is on
+     another origin and cannot import this file; web-tests/unit/maps-test-hosts.test.js asserts
+     the two agree. */
+  function isTestHost(host) {
+    host = String(host || '').toLowerCase();
+    if (host === '' || host === 'localhost' || host === '0.0.0.0' || host === '[::1]' || /\.localhost$/.test(host)) return true;
+    if (/^(127|10)\.\d+\.\d+\.\d+$/.test(host) || /^192\.168\.\d+\.\d+$/.test(host) || /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)) return true;
+    return /(^|[.-])staging([.-]|$)/.test(host);
+  }
+  const LIVE_FLAG = 'ch_maps_live';
+  function liveOptIn() {
+    try {
+      const q = new URLSearchParams(location.search).get('maps');
+      if (q === '1') sessionStorage.setItem(LIVE_FLAG, '1');
+      else if (q === '0') sessionStorage.removeItem(LIVE_FLAG);
+      return sessionStorage.getItem(LIVE_FLAG) === '1';
+    } catch (e) { return false; }
+  }
+  const testHost = isTestHost(location.hostname);
+  const liveOn = !testHost || liveOptIn();
+  const googleReady = () => !!(window.google && window.google.maps && window.google.maps.importLibrary);
+  const mapsAllowed = () => liveOn || googleReady();
+
+  // The on/off pill, for a PERSON on a test site only. Automation (navigator.webdriver) never
+  // sees it, so it can't sit on top of anything an e2e spec measures or clicks.
+  function mountLiveToggle() {
+    if (!testHost || navigator.webdriver || document.getElementById('ch-maps-live')) return;
+    const bar = document.createElement('div');
+    bar.id = 'ch-maps-live';
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', 'Google Maps on this test site');
+    bar.style.cssText = 'position:fixed;right:8px;top:8px;z-index:2147483000;display:flex;align-items:center;' +
+      'gap:8px;padding:3px 3px 3px 10px;border-radius:999px;font:600 11px/1.2 system-ui,sans-serif;color:#fff;' +
+      'box-shadow:0 2px 10px rgba(0,0,0,.25);background:' + (liveOn ? '#9a3412' : '#1f2d2a');
+    const label = document.createElement('span');
+    label.textContent = liveOn ? 'Google Maps on · billed' : 'Google Maps off';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = liveOn ? 'Turn off' : 'Turn on';
+    btn.style.cssText = 'border:0;border-radius:999px;padding:3px 9px;background:#fff;color:#1f2d2a;font:inherit;cursor:pointer';
+    btn.addEventListener('click', () => {
+      try {
+        if (liveOn) sessionStorage.removeItem(LIVE_FLAG); else sessionStorage.setItem(LIVE_FLAG, '1');
+      } catch (e) { /* storage blocked: the URL parameter below still carries the choice */ }
+      const u = new URL(location.href);
+      u.searchParams.set('maps', liveOn ? '0' : '1');
+      location.replace(u.toString());
+    });
+    bar.append(label, btn);
+    document.body.appendChild(bar);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountLiveToggle);
+  else mountLiveToggle();
+
   function ensureStyle() {
     if (document.getElementById('ch-map-style')) return;
     const st = document.createElement('style');
@@ -52,7 +112,8 @@
   }
 
   function loadJs(key) {
-    if (window.google && window.google.maps && window.google.maps.importLibrary) return Promise.resolve();
+    if (googleReady()) return Promise.resolve();
+    if (!liveOn) return Promise.reject(new Error('maps_off_on_test_site'));
     if (loaderPromise) return loaderPromise;
     loaderPromise = new Promise((resolve, reject) => {
       window.__chMapsReady = () => resolve();
@@ -331,7 +392,7 @@
     // back to the whole stop list rather than showing no map at all.
     const given = (opts.runs || []).filter((r) => r && (r.stops || []).length >= 2);
     const runs = given.length ? given : [{ stops, avoidTolls: false, continues: false }];
-    if (!key || stops.length < 2) {
+    if (!key || stops.length < 2 || !mapsAllowed()) {
       if (opts.onFail) opts.onFail();
       return;
     }
@@ -527,7 +588,7 @@
   async function routeStats(names) {
     const key = window.CEYLON_MAPS_KEY;
     const stops = (names || []).filter(Boolean);
-    if (!key || stops.length < 2) return null;
+    if (!key || stops.length < 2 || !mapsAllowed()) return null;
     try {
       await loadJs(key);
       // Stats only — import just the routes library (no map/marker classes needed), and
@@ -572,7 +633,7 @@
   async function suggest(input) {
     const key = window.CEYLON_MAPS_KEY;
     const text = (input || '').trim();
-    if (!key || text.length < 1) return [];
+    if (!key || text.length < 1 || !mapsAllowed()) return [];
     try {
       const { AutocompleteSuggestion, AutocompleteSessionToken } = await loadPlaces(key);
       if (!sessionToken) sessionToken = new AutocompleteSessionToken();

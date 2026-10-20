@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
 
 // Spec 2026-09-26 §9: plan, home and why draw copy prices on first paint. With the live list
 // available they show ITS numbers — held blank until it lands, never the baked ones first — and
@@ -9,7 +10,7 @@ const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.
 const LIVE = {
   perKm: { car: 1.2, van: 1.5 }, floors: { car: 29, van: 49.99 }, bufferPct: 10,
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 }, chauffeurDayFee: 31.05,
-  chauffeurIdleMinKm: { car: 50, van: 100 }, depositPct: 0.1, depositCap: 50,
+  chauffeurIdleMinKm: { car: 50, van: 100 }, depositPct: 0.1, depositMin: 50,
   extras: { sightseeing: 10, 'safari-wait': 19, luggage: 5, front: 8, flex: 12, waiting: 10 },
   corridorSeat: {}, seatPricing: { perKmCentsVan: 150, floorCentsVan: 4999, seatsCoveringVan: 3 }, sharedProducts: [],
 };
@@ -76,6 +77,7 @@ test('why: the comparison shows the live car price', async ({ page }) => {
 });
 
 test('plan: a restored itinerary holds its leg price, then prices it on the live list', async ({ page }) => {
+  await blockLiveApi(page);   // the planner's road check (estimate-batch) must not reach the API
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   const release = await stubPricing(page, { held: true });
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car', { waitUntil: 'domcontentloaded' });

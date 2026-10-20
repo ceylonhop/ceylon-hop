@@ -19,6 +19,8 @@
      the decline help. .btn sets a display, so [hidden] needs saying. */
   .pp-tellus{text-decoration:none}
   .pp-tellus[hidden]{display:none}
+  /* A booking awaiting a hand price: what happens next, in place of the placeholder total. */
+  .pp-tbc{margin:0 0 12px;font-size:.88rem;line-height:1.5;color:var(--ink)}
   .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
   .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
   .pp-help li+li{margin-top:6px}
@@ -27,16 +29,23 @@
   .pp-quiet summary:after{content:' \25BE'}
   .pp-quiet[open] summary:after{content:' \25B4'}
   .pp-quiet ol{margin-top:9px}
+  /* A promo code's row above Total — pay.html's Discount row (.tot-sub/.tot-disc/.tot-final), so a
+     discounted booking reads the same on both pages. .tot .v is 2rem in ticket.css, so the size is
+     set on .v itself, as pay.html does. */
+  .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
+  .tot.tot-disc .v{color:var(--accent-deep)}
+  .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
 gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',region:['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']});
+try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='manage';</script>
-<script src="analytics.js?v=a1d10c14f3"></script>
+<script src="analytics.js?v=10d3674e7f"></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -159,11 +168,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (sessionStorage.getItem(seen) === String(v.reference || '1')) return;
       sessionStorage.setItem(seen, String(v.reference || '1'));
     } catch (e) { /* private mode — better a possible double than a missing purchase */ }
-    track('purchase', {
+    var p = {
       transaction_id: String(v.reference || ''),
       value: Math.round(Number(v.amountDueNowCents || 0)) / 100,
       currency: v.currency || 'USD',
-    });
+    };
+    // /view's ga4Item is the server purchase's own item (route, private/shared, regions); absent
+    // from an older API, in which case the purchase simply goes without one.
+    if (v.ga4Item && typeof v.ga4Item === 'object') p.items = [Object.assign({}, v.ga4Item, { price: p.value, quantity: 1 })];
+    track('purchase', p);
   }
   function moneyOf(v){
     return { value: Math.round(Number(v && v.amountDueNowCents || 0)) / 100, currency: (v && v.currency) || 'USD' };
@@ -216,7 +229,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   // The booking's status is a DATABASE enum. A traveller gets told what it means for them —
   // never "payment_pending", which is what this page used to print at them.
-  function statusChip(status){
+  function statusChip(status, needsPricing){
+    // An open booking the server couldn't price isn't awaiting payment yet — nothing can be paid.
+    if (needsPricing && (status === 'draft' || status === 'payment_pending')) return '<span class="t-stat wait">Price to confirm</span>';
     var s = {
       draft:            ['wait', 'Awaiting payment'],
       payment_pending:  ['wait', 'Awaiting payment'],
@@ -247,7 +262,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // A booking can only be charged while it is genuinely open and something is owed. Offering
   // payment on a settled booking is how somebody pays twice; the backend refuses it too.
-  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0; }
+  // An unpriced booking (needsPricing) carries a placeholder total checkout refuses: never payable.
+  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0 && !v.needsPricing; }
 
   // The title has to survive a four-stop tour. "first → last" reads exactly like a direct
   // transfer and hides the middle, so a real trip leads with what it IS — how many journeys, over
@@ -277,9 +293,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
       { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
-      { k: 'Travellers', v: String(v.travellers) },
-      { k: 'Vehicle', v: vehicleLabel(v.vehicleType) },
     ];
+    // The local road the customer chose (the view carries it only then), in the emails' words.
+    if (v.road) rows.push({ k: 'Road', v: v.road });
+    rows.push(
+      { k: 'Travellers', v: String(v.travellers) },
+      { k: 'Vehicle', v: vehicleLabel(v.vehicleType) }
+    );
     // The add-ons the customer chose, as the quote named them. Only when there are some.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
@@ -319,13 +339,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
+    var promo = !!v.promoCode && Number(v.discountCents || 0) > 0;
     var html =
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
       + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
       + '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
-      + statusChip(v.status) + '</div>'
+      + statusChip(v.status, v.needsPricing) + '</div>'
       // A trip with stops in the middle shows every journey; a direct transfer has nothing to
       // add beyond its title, so it skips the rail rather than drawing a rail of one.
       + (legsOf(v).length > 1 ? '<div class="hops">' + legsOf(v).map(function(l, i, all){
@@ -336,10 +357,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             + '<div class="hop-d">' + (l.date ? esc(stamp(l.date)) : 'date to be confirmed') + '</div></div></div>';
         }).join('') + '</div>' : '')
       + factsOf(v)
-      + '</div><div class="perf"></div><div class="t-stub">'
-      + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
-      // A zero balance is not news — it earns a row only when something is left to pay.
-      + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
+      + '</div><div class="perf"></div><div class="t-stub">';
+    // The total on an unpriced booking is a placeholder, not a price: say what happens instead.
+    if (v.needsPricing) {
+      html += '<p class="pp-tbc">We’re confirming the price for this trip by hand — we’ll message you on WhatsApp with a payment link.</p>'
+        + '<a class="btn btn-ghost pp-cta pp-tellus" id="pricewa" href="' + esc(window.chTellUsHref(v.reference, 'contact'))
+        + '" target="_blank" rel="noopener">Message us on WhatsApp</a>';
+    } else {
+      // The promo code the booking was made with, and what it took off — only on such a booking.
+      html += (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
+          + esc(money(v.discountCents, v.currency)) + '</span></div>' : '')
+        + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
+        // A zero balance is not news — it earns a row only when something is left to pay.
+        + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
+    }
 
     if (payable(v)) {
       html += '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
@@ -377,6 +408,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p>When PayHere is done, tap <strong>Back to Site</strong> to see your booking.</p></div>');
   }
 
+  // Both checkout calls get a deadline — the one pay.html's fetchJson gives every call, and
+  // booking.js gave its checkout (#974). The hand-off screen above has no button on it, so an API
+  // that accepts the connection and never answers (a saturated pool, an instance mid-restart)
+  // otherwise holds the customer on "Taking you to PayHere…" with no way out but a reload. The
+  // deadline runs until the BODY is read, not just the headers: a server that answers the headers
+  // and then goes quiet traps the customer just the same. Any failure — the deadline, a dropped
+  // connection, a body that won't parse — rejects into pay()'s catch in this page's own words (the
+  // booking view rebuilt with the error named on it, Pay back), never the browser's "Failed to
+  // fetch" or abort wording. The answer exposes only what pay() reads: ok and json().
+  var NET_TIMEOUT_MS = 20000;
+  function fetchWithDeadline(url, opts){
+    opts = opts || {};
+    var ctl = typeof AbortController === 'undefined' ? null : new AbortController();
+    var timer = ctl ? setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS) : null;
+    if (ctl) opts.signal = ctl.signal;
+    function failed(){
+      clearTimeout(timer);
+      return new Error('We couldn’t start your payment just now — no charge was made.');
+    }
+    return fetch(url, opts).then(function(r){
+      return {
+        ok: r.ok,
+        json: function(){
+          return r.json().then(function(x){ clearTimeout(timer); return x; }, function(){ throw failed(); });
+        },
+      };
+    }, function(){ throw failed(); });
+  }
+
   function pay(v){
     // A return-leg poll still running underneath must not repaint over the hand-off.
     handedOff = true;
@@ -387,9 +447,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     function fail(msg){ render(v, msg); }
     // The link token authorises a checkout token, which authorises the charge. The booking
     // id comes back with it — the view projection withholds it on purpose.
-    fetch(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
+    fetchWithDeadline(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
       .then(function(r){
         return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
+          // Still open, but the server couldn't price it — not "paid or closed". The catch below
+          // repaints the card in its awaiting-a-price state.
+          if (x.error === 'not_chargeable' && x.reason === 'awaiting_price') {
+            var e = new Error('awaiting_price'); e.awaitingPrice = true; throw e;
+          }
           throw new Error(x.error === 'not_chargeable'
             ? 'This booking has already been paid or closed.'
             : 'We couldn’t start your payment just now.');
@@ -399,10 +464,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // `returnTo` states INTENT, never a URL: the server builds the return address (back to
         // this page, on the manage link's own origin) from its own config — a gateway that
         // redirects wherever the request body says is a phishing primitive.
-        return fetch(A + '/bookings/' + x.bookingId + '/checkout', {
+        return fetchWithDeadline(A + '/bookings/' + x.bookingId + '/checkout', {
           method: 'POST',
           headers: { authorization: 'Bearer ' + x.checkoutToken, 'content-type': 'application/json' },
-          body: JSON.stringify({ returnTo: 'manage' }),
+          body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa({ returnTo: 'manage' }) : { returnTo: 'manage' }),
         })
           .then(function(r){ if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.'); return r.json(); });
       })
@@ -424,6 +489,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         window.chSubmitToGateway(checkout);
       })
       .catch(function(e){
+        if (e && e.awaitingPrice) return render(Object.assign({}, v, { needsPricing: true }));
         track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
         report('checkout start failed', e);
         fail(e.message);

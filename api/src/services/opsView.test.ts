@@ -27,6 +27,33 @@ describe('opsView', () => {
     expect(toOpsRow(none, { paid: true }).customerPhone).toBeNull();
   });
 
+  it('carries what is paid so far and what is still owed, from the ledger', () => {
+    const deposit = { status: 'succeeded', amount: 5000, purpose: 'deposit' };
+    const dep = { ...base, total: 21900, amountDueNow: 5000 } as Booking;
+    expect(toOpsRow(dep, { paid: true, payments: [deposit] })).toMatchObject({ paymentStatus: 'paid', paidCents: 5000, balanceCents: 16900 });
+    const full = [deposit, { status: 'succeeded', amount: 16900, purpose: 'balance' }];
+    expect(toOpsRow(dep, { paid: true, payments: full })).toMatchObject({ paidCents: 21900, balanceCents: 0 });
+  });
+
+  it('a fully paid booking owes nothing; an abandoned attempt is not money', () => {
+    const row = toOpsRow(base, { paid: true, payments: [
+      { status: 'succeeded', amount: 12100, purpose: 'full' }, { status: 'pending', amount: 5000, purpose: 'deposit' },
+    ] });
+    expect(row).toMatchObject({ paidCents: 12100, balanceCents: 0 });
+  });
+
+  // Dateless capture Phase 3: the "No date yet" queue counts days since the money landed.
+  it('carries when the booking was first paid: the earliest settled payment, else null', () => {
+    const row = toOpsRow(base, { paid: true, payments: [
+      { status: 'succeeded', amount: 16900, purpose: 'balance', settledAt: new Date('2026-06-25T10:00:00Z') },
+      { status: 'succeeded', amount: 5000, purpose: 'deposit', settledAt: new Date('2026-06-21T08:30:00Z') },
+      { status: 'pending', amount: 5000, purpose: 'deposit', settledAt: null },
+    ] });
+    expect(row.paidAt).toBe('2026-06-21T08:30:00.000Z');
+    expect(toOpsRow(base, { paid: false, payments: [{ status: 'failed', amount: 12100, purpose: 'full', settledAt: null }] }).paidAt).toBeNull();
+    expect(toOpsRow(base, { paid: false }).paidAt).toBeNull();
+  });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });
@@ -92,6 +119,20 @@ describe('opsView', () => {
     expect(row.travelTime).toBe('08:00');
   });
 
+  // Owner 2026-09-28: a "Recently booked" view (newest first) and a product-type filter. The
+  // list needs when each booking came in, and which trips are a chauffeur guide vs a private car.
+  it('carries when the booking was made', () => {
+    expect(toOpsRow(base, { paid: true }).createdAt).toBe('2026-06-21T00:00:00Z');
+  });
+
+  it('carries the trip service type, and null for every other mode', () => {
+    expect(toOpsRow(trip, { paid: true }).serviceType).toBe('chauffeur');
+    const privateTrip = { ...trip, input: { ...trip.input, serviceType: 'private' } } as Booking;
+    expect(toOpsRow(privateTrip, { paid: true }).serviceType).toBe('private');
+    expect(toOpsRow(base, { paid: true }).serviceType).toBeNull();
+    expect(toOpsRow(shared, { paid: true }).serviceType).toBeNull();
+  });
+
   it('exposes booking channel on the ops row', () => {
     const row = toOpsRow({ ...base, channel: 'whatsapp' }, { paid: true });
     expect(row.channel).toBe('whatsapp');
@@ -137,5 +178,35 @@ describe('opsView — isTest', () => {
   it('is false when the team set is empty or omitted', () => {
     expect(toOpsRow(base, { paid: true, teamEmails: new Set() }).isTest).toBe(false);
     expect(toOpsRow(base, { paid: true }).isTest).toBe(false);
+  });
+});
+
+// Route choice (spec §4.3): the queue card says when the customer bought the local road, so ops
+// books a driver for the right road. A separate field — `route` feeds search, reminders and the
+// Lookup, and stays exactly what it was.
+describe('opsView — road', () => {
+  it('a transfer on the local road is marked, and its route is untouched', () => {
+    const row = toOpsRow({ ...base, input: { ...base.input, routeVariant: 'no_tolls' } } as Booking, { paid: true });
+    expect(row.road).toBe('Local road');
+    expect(row.route).toBe('Colombo Airport → Galle');
+  });
+
+  // A trip names its local legs (roadRow's words): the reminder built from this row goes to the
+  // customer, and "via the local road" would be false for the legs on the expressway.
+  it('a trip with a leg on the local road names that leg', () => {
+    const trip = {
+      ...base, mode: 'trip',
+      input: { stops: ['Colombo Airport', 'Kandy', 'Ella'], pax: 2, vehicleType: 'car', serviceType: 'private',
+        routeVariants: ['fastest', 'no_tolls'], customer: base.input.customer },
+    } as unknown as Booking;
+    expect(toOpsRow(trip, { paid: true }).road).toBe('Local road for Kandy → Ella');
+    const allFast = { ...trip, input: { ...(trip.input as object), routeVariants: ['fastest', 'fastest'] } } as unknown as Booking;
+    expect(toOpsRow(allFast, { paid: true }).road).toBeNull();
+  });
+
+  it('is null on the expressway, and nothing else in the row changes', () => {
+    const fastest = { ...base, input: { ...base.input, routeVariant: 'fastest' } } as Booking;
+    expect(toOpsRow(base, { paid: true }).road).toBeNull();
+    expect(toOpsRow(fastest, { paid: true })).toEqual(toOpsRow(base, { paid: true }));
   });
 });

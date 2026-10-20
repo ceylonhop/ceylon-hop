@@ -230,6 +230,27 @@ test('a real settlement reports a purchase once, with the amount it actually cos
   expect(purchase).toMatchObject({ transaction_id: 'CH-TEST1', value: 498.85, currency: 'USD' });
 });
 
+// GA4 item reports (spec 2026-10-03 D1-alt): /start's ga4Item is stashed at hand-off with the
+// amount, and the purchase carries it priced at the value it reports.
+test('a real settlement carries the GA4 item that /start handed over', async ({ page }) => {
+  await offline(page);
+  await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } }) }));
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  const item = { item_id: 'Colombo City → Galle', item_name: 'Colombo City → Galle', item_category: 'private',
+    item_category2: 'Colombo', item_category3: 'South coast', item_category4: 'transfer' };
+  await page.addInitScript((it) => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null, cents: 49885, item: it }));
+    sessionStorage.setItem('ch_pay_v1:sandbox', '0');
+  }, item);
+  await forceProdHost(page);
+  await page.goto('/pay.html?rt=return-token-1');
+
+  await expect.poll(() => find(page, 'purchase')).toBeTruthy();
+  expect((await find(page, 'purchase')).items).toEqual([{ ...item, price: 498.85, quantity: 1 }]);
+});
+
 test('a sandbox settlement never becomes revenue', async ({ page }) => {
   await offline(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',

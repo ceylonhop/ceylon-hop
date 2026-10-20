@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { EXTRA_CODES } from './rateCard';
+import { ROUTE_VARIANTS } from './routeChoice';
 
 const Place = z.string().trim().min(1).max(500);
 const Identity = {
@@ -27,11 +28,13 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
             .object({
               from: Place,
               to: Place,
+              // Customer route choice (spec 2026-09-26 §4.1): ASK for a road, never send a distance.
+              routeVariant: z.enum(ROUTE_VARIANTS).optional(),
             })
             .strict(),
         )
         .min(1)
-        .max(8), // Each leg is a billed distance lookup, and the per-IP limiter counts REQUESTS, not lookups. Capping legs is what bounds the money one allowed request can spend (2026-08-12).
+        .max(8), // Each leg is a billed distance lookup — a no_tolls leg can cost up to 3 Google elements (1 distance + 2 comparison), so 8 legs bound ~24 elements — and the per-IP limiter counts REQUESTS, not lookups. Capping legs is what bounds the money one allowed request can spend (2026-08-12).
       extras: Extras,
     })
     .strict(),

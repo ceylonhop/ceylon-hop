@@ -3,7 +3,8 @@ import type { Booking, BookingRepo } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { IllegalTransitionError } from '../domain/status';
-import { routeText, travelWhenText } from './notifications';
+import { roadLines, routeText, travelWhenText } from './notifications';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 // "Same customer, same trip" — one matcher, shared by the watchdog (which stops chasing a stuck
 // checkout the customer already paid for on a newer booking, #775) and the settle path (which
@@ -38,6 +39,17 @@ export function sameTrip(a: Booking, b: Booking): boolean {
   return false;
 }
 
+// sameTrip, or the same private transfer where ONE side has no date. A customer whose checkout
+// fails often retries undated ("Decide later") and pays that one: CH-7EWG7 (19 Oct 09:00) was left
+// open after CH-SK8U8 (same route, no date) was paid 42 s later, 2026-10-18, and the watchdog chased
+// a paying customer. Two DIFFERENT dates still never match. Used by both the settle path and the watchdog.
+export function sameTripOrUndatedRetry(a: Booking, b: Booking): boolean {
+  if (sameTrip(a, b)) return true;
+  if (a.mode !== 'single' || b.mode !== 'single') return false;
+  if (a.input.date && b.input.date) return false;
+  return norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to);
+}
+
 export const DUPLICATE_CLOSED_BY = 'system:duplicate-close';
 
 // How long a newer unpaid booking must sit untouched (no checkout) before it counts as a leftover.
@@ -48,6 +60,7 @@ export interface DuplicateCloseDeps {
   departures: Pick<DepartureRepo, 'releaseSeats'>;
   payments: Pick<PaymentRepo, 'findByBookingId'>;
   alerts: AlertAdapter;
+  correlation?: TrackingCorrelation;
 }
 
 // Owner-approved 2026-09-25. A customer whose first checkout fails usually just tries again, and
@@ -74,7 +87,7 @@ export async function closeLeftoverDuplicates(paid: Booking, deps: DuplicateClos
   if (!who) return [];
   const paidCreatedAt = Date.parse(paid.createdAt);
   const candidates = (await deps.bookings.list({ status: ['draft', 'payment_pending'] })).filter(
-    (b) => b.id !== paid.id && personKey(b) === who && sameTrip(b, paid),
+    (b) => b.id !== paid.id && personKey(b) === who && sameTripOrUndatedRetry(b, paid),
   );
   const closed: Booking[] = [];
   for (const b of candidates) {
@@ -90,6 +103,11 @@ export async function closeLeftoverDuplicates(paid: Booking, deps: DuplicateClos
         cancelled = await deps.bookings.setStatus(b.id, 'cancelled', {
           reason: `duplicate — paid on ${paid.reference}`,
           by: DUPLICATE_CLOSED_BY,
+        }, {
+          source: 'system',
+          actorType: 'system',
+          ...deps.correlation,
+          reason: `duplicate — paid on ${paid.reference}`,
         });
       } catch (err) {
         if (err instanceof IllegalTransitionError) continue; // it moved on; not ours to close
@@ -116,14 +134,25 @@ export async function closeLeftoverDuplicates(paid: Booking, deps: DuplicateClos
   }
   if (closed.length) {
     const refs = closed.map((b) => b.reference).join(', ');
+    // The paid booking is undated but a closed one held the customer's date: the date is now only
+    // in this note (the ops sheet shows the paid booking), so say it rather than "Nothing to do".
+    const dated = paid.mode === 'single' && !paid.input.date
+      ? closed.filter((b) => b.mode === 'single' && b.input.date)
+      : [];
     await deps.alerts.send({
       severity: 'info',
       kind: 'duplicate_closed',
       title: `Closed duplicate ${refs} — customer paid on ${paid.reference}`,
       body: [
         `${paid.input.customer.email} paid for ${routeText(paid)} (travels ${travelWhenText(paid)}) on ${paid.reference}.`,
+        ...roadLines(paid),
         `Their other unpaid booking${closed.length > 1 ? 's' : ''} for the same trip ${closed.length > 1 ? 'were' : 'was'} cancelled automatically: ${refs}.`,
-        'No email was sent to the customer about this. Nothing to do.',
+        ...(dated.length
+          ? [
+              `${paid.reference} has no date yet. ${dated.map((b) => `${b.reference} had ${travelWhenText(b)}`).join('; ')}: confirm it with the customer.`,
+              'No email was sent to the customer about this.',
+            ]
+          : ['No email was sent to the customer about this. Nothing to do.']),
       ].join('\n'),
       dedupeKey: paid.reference,
     });

@@ -88,13 +88,61 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
+// The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
+// the planner's `roads=` (one per stop pair, 'no_tolls' or blank) for a trip. roadNotice says
+// why a chosen local road was dropped: 'echo' when the engine could only price the expressway.
+let bookRoad=null, tripRoads=[], roadNotice='';
+// Back to the planner, carrying the roads as they stand NOW — a road dropped on this page (the
+// engine or the booking couldn't confirm it) must not come back when the customer returns.
+// Built at click time for that reason; `dates` lands on the planner's When step.
+function buildTripEditUrl(dates){
+  const q=new URLSearchParams(tripEditQuery);
+  const local=tripLocalWires();
+  const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
+  if(roads) q.set('roads', roads);
+  if(dates) q.set('step', 'dates');
+  return 'plan.html?'+q.toString();
+}
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
     const n=parseInt((s||'').trim(),10);
     return Number.isFinite(n) && n>0 ? n : null;
+  });
+}
+// A trip leg's drive chip in the itinerary card.
+// A trip leg's chip, in the words every other screen uses (route-estimate.js rounding): "215 km",
+// never the raw 213 the search and plan pages rounded. A leg on the local road is timed by the
+// engine's own answer (`est`, the current estimate), never by the distance model — that would time
+// the shorter local road FASTER than the expressway it is slower than ("5h" for a 6h drive).
+// `est` is passed in, not read here: the itinerary is first drawn before engineEst exists.
+function tripKmText(km){
+  const RE=window.CH && CH.routeEstimate, k=RE ? RE.roundDistanceKm(km) : null;
+  return `${k!=null ? k : km} km`;
+}
+function tripMinText(min){
+  const RE=window.CH && CH.routeEstimate, m=RE ? RE.roundDurationMin(min) : Math.round(min);
+  if(min<60) return `${m} min`;
+  const h=Math.floor(m/60), r=m%60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+function tripDriveText(leg, i, est){
+  if(leg.km==null) return 'Distance on request';
+  if(tripRoads[i]==='no_tolls' && state.svc!=='chauffeur' && !tripGaps.has(i)){
+    const e=est && Array.isArray(est.legs)
+      ? est.legs.find(l=>l && l.from===tripStops[i] && l.to===tripStops[i+1] && l.routeVariant==='no_tolls') : null;
+    return e && e.durationMin>0 ? `${tripKmText(e.distanceKm>0 ? e.distanceKm : leg.km)} · ${tripMinText(e.durationMin)}` : tripKmText(leg.km);
+  }
+  return `${tripKmText(leg.km)} · ${leg.duration}`;
+}
+// Repaint every leg chip against the itinerary and estimate as they stand now.
+function repaintTripDrives(){
+  const est=currentEngineEst();
+  document.querySelectorAll('#trip-route .tr-leg[data-wire]').forEach(el=>{
+    const i=+el.dataset.wire, leg=tripLegs[i], chip=el.querySelector('.tr-drive');
+    if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
 function tripQuoteWithKms(veh){
@@ -138,6 +186,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
@@ -164,12 +213,17 @@ if(mode==='trip' && window.TRANSFERS){
   let price=parseFloat(params.get('rawPrice') || params.get('price'))||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
+  if(mode==='private') bookRoad = params.get('road')==='no_tolls' ? 'no_tolls' : null;
   // pre-compute both vehicle prices so we can switch car→van when over capacity
   if(T.place(routeFromId) && T.place(routeToId)){
     const q=T.privateQuote(routeFromId, routeToId);
     // Keep the unfinished vehicle fares internally so extras are added before the one final
     // price-finishing pass in calcTotal(). privateQuote's car/van fields are display totals.
     vehPrices={ car:q.rawCar, van:q.rawVan };
+    // A local-road pick carries its own (shorter) km from search; the catalogue km is the
+    // expressway's, so the car↔van figures come from the passed distance instead.
+    const k=positiveNumberParam('estimateKm');
+    if(bookRoad && k) vehPrices={ car:T.legPrice(k,'car'), van:T.legPrice(k,'van') };
   }
   r={
     id:'transfer', type:mode,
@@ -199,6 +253,14 @@ const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
 
+// ---- promo code field (spec docs/superpowers/specs/2026-09-24-promo-code-field-design.md) ----
+// Live since 2026-09-28 (owner go). Setting it back to false is the rollback. The window
+// override forces it either way, only so web-tests can drive both paths; it unlocks nothing on
+// the server, where PROMO_CODES_ENABLED still refuses every code while it is off.
+const PROMO_FIELD_ENABLED = true;
+// Shared seats never take a code (POST /bookings/shared refuses one), so the field never draws there.
+const promoFieldOn = (typeof window.CH_PROMO_FIELD === 'boolean' ? window.CH_PROMO_FIELD : PROMO_FIELD_ENABLED) && !isShared;
+
 // Shared rides run a fixed weekly schedule — seats depart only on set weekdays
 // (0=Sun … 6=Sat), passed via ?days= (search builds it from the corridor). Mirrors the
 // backend `serviceDays` (POST /bookings/shared rejects off-schedule dates); default Wed &
@@ -224,6 +286,7 @@ const state={
   ad: Math.max(1, parseInt(params.get('ad'))||parseInt(params.get('pax'))||1),
   ch: Math.max(0, parseInt(params.get('ch'))||0),
   addons: new Set(),
+  experiences: new Map(), // partner experiences the customer is interested in: id -> {name, partnerName}. Never priced.
   bags: Math.min(2, maxBags),
   locFrom: '',
   locTo: '',
@@ -255,6 +318,10 @@ function selectedBrowseEstimate(){
       estimateId:params.get('estimateId')||'search-selection'
     };
   }
+  return catalogueRouteEstimate();
+}
+// The reviewed catalogue pair's figures (the expressway), or 'unavailable' off-catalogue.
+function catalogueRouteEstimate(){
   if(window.TRANSFERS && routeFromId && routeToId){
     const q=window.TRANSFERS.privateQuote(routeFromId,routeToId);
     if(q && (q.km>0 || q.durationMin>0)) return {
@@ -266,7 +333,8 @@ function selectedBrowseEstimate(){
   }
   return { state:'unavailable', estimateId:'unavailable' };
 }
-const browseRouteEstimate=selectedBrowseEstimate();
+// `let`: a dropped local road (dropLocalRoad) replaces search's local-road figures.
+let browseRouteEstimate=selectedBrowseEstimate();
 let activeRouteEstimate=Object.assign({},browseRouteEstimate);
 let routeEstimateUnavailable=false;
 let lastRouteAnnouncement='';
@@ -431,7 +499,8 @@ function attachAC(input, menu, which){
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
-      if(geo && geo.name) input.value=geo.name;
+      // Keep Google's full text in the field (set from d.label above): the bare main text is a
+      // name the server often can't place, and the booking lands unpriced (2026-10-18).
       markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
@@ -603,7 +672,7 @@ function renderRouteMap(){
   if(window.CH_MAP && window.CH_MAP.renderRoute){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
-    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], Object.assign({
       expandable: true,
       // pFrom/pTo are {lat,lng} once the customer picks from autocomplete, so the legend
       // can't read a name off them — hand it the display names explicitly.
@@ -637,7 +706,7 @@ function renderRouteMap(){
           render(); checkWhere();
         }
       },
-    });
+    }, bookRoad==='no_tolls' ? { runs:[{ stops:[pFrom,pTo], avoidTolls:true, continues:false }] } : {}));
   } else {
     showFallback();
   }
@@ -658,40 +727,41 @@ if(isTrip){
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
   const fmtLeg=(iso)=>{ if(!iso) return ''; return shortDate(new Date(iso+'T00:00:00')); };
+  // leg.from/leg.to are the ?stops= names from the URL: text, never markup.
+  const escHtml=(x)=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   let html='<div class="tr-leg-list">';
   let _legNo=0;
   tripLegs.forEach((leg,i)=>{
     if(leg.gap){
-      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
     const dt=fmtLeg(tripDates[i]);
-    const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
-    html+=`<div class="tr-leg">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+    html+=`<div class="tr-leg" data-wire="${i}">`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
-        `<span class="tr-chip muted">${drive}</span>`+
+        `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
-  const datesUrl=editUrl+'&step=dates';
+  // (buildTripEditUrl(true) vs buildTripEditUrl()).
   // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
-  html+=`<div class="tr-foot"><button type="button" class="tr-edit" onclick="location.href='${editUrl}'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
+  html+=`<div class="tr-foot"><button type="button" class="tr-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
   tr.innerHTML=html;
-  tripEditUrl=datesUrl;
+  tr.querySelector('.tr-edit').addEventListener('click',()=>{ location.href=buildTripEditUrl(); });
   // a clear way back to the planner from the booking flow (task: no way back)
   const nav1=document.getElementById('nav1');
   if(nav1 && nav1.firstElementChild){
     const back=document.createElement('button');
     back.type='button'; back.className='back-link'; back.textContent='← Back to planner';
-    back.onclick=()=>location.href=datesUrl;
+    back.onclick=()=>location.href=buildTripEditUrl(true);
     nav1.replaceChild(back, nav1.firstElementChild);
   }
   // Show the private vs chauffeur chooser ONLY when there's a real choice — i.e. a multi-day
@@ -768,6 +838,10 @@ if(isTrip){
     // renumber panels into the journey: Service=3, Payment=4; park the dropped When + vehicle steps
     if(whenPanel){ whenPanel.dataset.panel='99'; whenPanel.classList.remove('active'); }
     if(tripPanel) tripPanel.dataset.panel='3';
+    // A trip parks the travellers panel (below), and the experiences block lives in it - move the block
+    // to the trip's own Service step so the trip still gets "While you're in {stop}".
+    const xpBlock=document.getElementById('experiences-block'), tripNav=tripPanel && tripPanel.querySelector('.nav-btns');
+    if(xpBlock && tripNav) tripNav.before(xpBlock);
     // vehicle & headcount are fixed in the planner, so the standalone vehicle step is dropped here
     if(tvPanel){ tvPanel.dataset.panel='97'; tvPanel.classList.remove('active'); }
     if(dtPanel) dtPanel.dataset.panel='4';
@@ -783,7 +857,7 @@ if(isTrip){
         '<div class="pline"></div>'+
         '<div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Pay</span></div>';
       // the two leading nodes jump back to the planner (Route / Dates live there)
-      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=editUrl; }); });
+      steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=buildTripEditUrl(); }); });
     }
     // rewire navigation to the journey numbering (n1’s click listener is made trip-aware where it’s bound)
     const n4=document.getElementById('n4'); if(n4) n4.setAttribute('onclick','goStep(4)'); // (parked) Travellers → Payment
@@ -1053,7 +1127,7 @@ window.pickSvc=function(svc){
   // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
   // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
-    if(tripEditUrl) location.href=tripEditUrl;
+    location.href=buildTripEditUrl(true);
     return;
   }
   // Inside the notice window the card can't be chosen online — pressing it opens the explainer
@@ -1164,7 +1238,18 @@ function renderRepriceNote(){
   }
   if(p.engineRaise){
     const eEl=ensureEngineRepriceEl();
-    const toAmt=money(p.toCents/100), fromAmt=money(p.fromCents/100);
+    // With a code applied, the customer never saw the FULL fromCents/toCents on screen — they saw
+    // payableTotal() and, once they accept, the parked estimate's own (possibly re-priced) promo
+    // total. Quoting the full figures here would show a jump they never agreed to (spec §4.4).
+    // "Now" follows the parked estimate's own answer, not whether a discount is on screen today: a
+    // code that had stopped applying can apply again on the raised price, and accepting then lands
+    // the discounted figure.
+    const held=heldPromo();
+    const newPromo = p.est && p.est.promoCode;
+    const newAccepted = promoFieldOn && promoCode && newPromo && !newPromo.error
+      && newPromo.code === promoCode && typeof newPromo.totalCents === 'number';
+    const fromAmt = money(held ? payableTotal() : p.fromCents/100);
+    const toAmt = money(newAccepted ? newPromo.totalCents/100 : p.toCents/100);
     eEl.innerHTML =
       '<b>Your price has been updated.</b> '+
       'Based on your latest details, your total is now '+toAmt+' (it was '+fromAmt+').'+
@@ -1191,13 +1276,13 @@ window.acceptReprice=function(){
   if(p.engineRaise){
     adoptEngineEstimate(p.est, p.sig);
     state.pendingReprice=null;
-    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:calcTotal()});
+    if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:null,new_value:payableTotal()});
     render(); checkWhere();
     return;
   }
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
-  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:payableTotal()});
   render(); checkWhere();
 };
 window.dismissReprice=function(){
@@ -1224,26 +1309,46 @@ function checkWhere(){
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
-// proceed without a date (confirmed later on WhatsApp).
+// proceed without a date (confirmed later on WhatsApp) — but only when the
+// customer ticks "Decide later", never by simply not picking one.
 function checkWhen(){
+  syncWhenToUrl();
   const n2=document.getElementById('n2');
   if(!n2) return;
-  if(isShared){
-    // Shared seats depart at fixed times — a concrete date AND departure are both required,
-    // else the backend (which requires `time`) 400s at the moment of payment.
-    const ok = !!(state.date && !state.flexDate && state.dep);
-    n2.disabled = !ok;
-    // Never leave a greyed-out button with no reason next to it.
-    var why=document.getElementById('when-blocked');
-    if(!why){
-      why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
-      n2.parentNode.insertBefore(why, n2);
-    }
-    why.textContent = ok ? '' : (!state.date ? 'Pick a travel date above \u2014 shared seats need a set departure day.' : 'Choose a departure time to continue.');
-    why.style.display = ok ? 'none' : '';
-  } else {
-    n2.disabled = false;
+  if(isTrip){ n2.disabled = false; return; }
+  // Shared seats depart at fixed times — a concrete date AND departure are both required,
+  // else the backend (which requires `time`) 400s at the moment of payment.
+  // A private transfer with neither a date nor "Decide later" went through undated on
+  // CH-SK8U8 (2026-10-18): the date was lost on a reload and Continue let them past.
+  const ok = isShared ? !!(state.date && !state.flexDate && state.dep) : !!(state.date || state.flexDate);
+  n2.disabled = !ok;
+  // Never leave a greyed-out button with no reason next to it.
+  var why=document.getElementById('when-blocked');
+  if(!why){
+    why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
+    n2.parentNode.insertBefore(why, n2);
   }
+  why.textContent = ok ? '' : (!isShared ? 'Pick a pick-up date above — or tick “Decide later” if you don’t know it yet.'
+    : !state.date ? 'Pick a travel date above — shared seats need a set departure day.' : 'Choose a departure time to continue.');
+  why.style.display = ok ? 'none' : '';
+}
+// The When step's choices live only in JS state, so a page that loads fresh from its URL — Back
+// from PayHere when the browser skips its back/forward cache — came back with no date (CH-SK8U8).
+// Mirror them into ?date=&time=, which the boot code already reads (startParam / timeParam).
+// Only once the customer changes something: armed after init, so loading the page never rewrites
+// the link it was opened with (an out-of-window date it ignores, a departure it auto-selects).
+var whenUrlArmed=false;
+function syncWhenToUrl(){
+  if(isTrip || !whenUrlArmed) return;
+  try{
+    const u=new URL(location.href);
+    const date = state.date && !state.flexDate ? fmtISO(state.date) : '';
+    const time = state.dep && !state.flexTime ? state.dep : '';
+    if((u.searchParams.get('date')||'')===date && (u.searchParams.get('time')||'')===time) return;
+    u.searchParams.set('date', date);
+    if(time) u.searchParams.set('time', time); else u.searchParams.delete('time');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  }catch(e){ /* the address bar is a convenience; the booking never depends on it */ }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
 
@@ -1272,10 +1377,208 @@ window.toggleAddon=function(el){
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
 
+/* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
+   "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
+   estimate, so a tap cannot move the Total. Only ids go to the API (payload.experienceIds); every
+   name on screen came from GET /experiences/near and goes through acEsc (which does not escape ',
+   so every attribute below is double-quoted). The block stays hidden on any error, timeout or
+   empty answer - an upsell must never get in the way of the booking. */
+const expUi = { key:null, seq:0, ctl:null, meta:new Map(), rateSeq:0, rateCtl:null };   // meta: id -> {name, partnerName, slug, place}
+const EXP_TIMEOUT_MS = 3000;
+const expLabel = s => String(s||'').split(' / ')[0].trim().slice(0,60);
+const expRound = n => Math.round(n*1000)/1000;
+const expDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function expDays(days){
+  const set=new Set((days||[]).filter(d=>d>=0&&d<=6));
+  if(!set.size) return '';
+  if(set.size===7) return 'Daily';
+  const order=[1,2,3,4,5,6,0].filter(d=>set.has(d)), runs=[];
+  let i=0;
+  while(i<order.length){
+    let j=i;
+    while(j+1<order.length && (order[j+1]===(order[j]+1)%7)) j++;
+    runs.push(j-i>=2 ? expDay[order[i]]+'–'+expDay[order[j]] : order.slice(i,j+1).map(d=>expDay[d]).join(', '));
+    i=j+1;
+  }
+  return runs.join(', ');
+}
+// The stop points to ask about (spec D9). Trip: every stop by name. Private single: the exact
+// drop-off picked in step 2, else the catalogue place, else a known name. Shared: the catalogue
+// drop-off. A place we cannot locate is simply left out.
+function experienceStops(){
+  const T=window.TRANSFERS;
+  if(!T) return [];
+  const stop=(label,p)=>{
+    const l=expLabel(label);
+    return (l && p && typeof p.lat==='number' && typeof p.lng==='number') ? { label:l, lat:expRound(p.lat), lng:expRound(p.lng) } : null;
+  };
+  let stops;
+  if(isTrip) stops=tripStops.map(n=>stop(n,T.resolvePlace(n)));
+  else {
+    const geo=(!isShared && state.locToGeo) ? state.locToGeo : null;
+    stops=[stop(AREA_TO, geo || (routeToId && T.place(routeToId)) || T.resolvePlace(AREA_TO))];
+  }
+  return stops.filter(Boolean).slice(0,8);
+}
+function syncExperiences(){
+  try { syncExperiencesNow(); } catch(e) { /* an upsell must never break the booking flow (spec D17) */ }
+}
+function syncExperiencesNow(){
+  const block=document.getElementById('experiences-block');
+  const panel=block && block.closest('.panel');   // step 3's panel (a trip's block is moved into its Service step)
+  if(!block || !panel || !panel.classList.contains('active')) return;
+  const stops=experienceStops();
+  const key=JSON.stringify(stops);
+  if(key===expUi.key) return;          // same question as last time: nothing to do
+  expUi.key=key;
+  const seq=++expUi.seq;               // a slower, older answer must not overwrite a newer one
+  if(expUi.ctl) expUi.ctl.abort();
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!stops.length || !base){ showExperiences([]); return; }
+  const ctl=new AbortController(); expUi.ctl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/near?'+stops.map(s=>'at='+encodeURIComponent(s.label+'@'+s.lat+','+s.lng)).join('&'),
+    { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('experiences_'+res.status); return res.json(); })
+    .then(data=>{ if(seq===expUi.seq) showExperiences(data && Array.isArray(data.stops) ? data.stops : []); })
+    .catch(()=>{ if(seq===expUi.seq) showExperiences([]); })
+    .then(()=>clearTimeout(timer));
+}
+function expCardHtml(it, place, n){
+  const id=acEsc(it.id), on=state.experiences.has(it.id);
+  const photos=Array.isArray(it.photos) ? it.photos.filter(p=>p && typeof p.small==='string' && typeof p.large==='string') : [];
+  const km=Number(it.aboutKm);
+  const days=expDays(it.openWeekdays);
+  const times=Array.isArray(it.startTimes) ? it.startTimes.filter(t=>typeof t==='string') : [];
+  const details=String(it.details||'').split(/\n+/).map(t=>t.trim()).filter(Boolean);
+  const meta=[it.partnerName, km>0 ? Math.round(km)+' km' : '', it.durationText, days].filter(Boolean).map(t=>acEsc(t)).join(' · ');
+  const panelId='xp-panel-'+n;
+  // A missing photo is hidden with visibility (not display) so the grid keeps its columns.
+  return `<article class="xp-row${photos.length?'':' nophoto'}${on?' on':''}" data-id="${id}">`
+    + (photos.length ? `<img class="xp-photo" src="${acEsc(photos[0].small)}" alt="" width="58" height="58" loading="lazy" onerror="this.style.visibility='hidden'">` : '')
+    + `<div class="xp-main"><b class="xp-name">${acEsc(it.name)}</b><span class="xp-meta">${meta}</span>`
+    + `<button type="button" class="xp-more" aria-expanded="false" aria-controls="${panelId}">Details <span class="xp-chev" aria-hidden="true">›</span></button></div>`
+    // No price on the card (owner, 2026-10-14): a request is for information, and the price is the
+    // concierge's to give. The tiny line says the request itself costs nothing.
+    + `<div class="xp-buy"><button type="button" class="xp-btn" data-id="${id}" aria-pressed="${on}">${on?'✓ Info requested':'Request info'}</button>`
+    + `<small class="xp-free">No charge for requesting info</small></div>`
+    + `<div class="xp-panel" id="${panelId}" hidden>${details.map(t=>`<p>${acEsc(t)}</p>`).join('')}`
+    + `<p class="xp-facts">${days?`Open: ${acEsc(days)}`:''}${days&&times.length?'<br>':''}${times.length?`Times: ${acEsc(times.join(' · '))}`:''}</p>`
+    + (photos.length ? `<div class="xp-photos">${photos.map(p=>`<img src="${acEsc(p.small)}" srcset="${acEsc(p.small)} 900w, ${acEsc(p.large)} 1800w" sizes="(max-width:560px) 45vw, 200px" alt="${acEsc(it.name)}" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : '')
+    + `</div></article>`;
+}
+// Live Tripadvisor ratings (spec D22). Asked once, AFTER the rows are on screen, for the ids just rendered
+// (the endpoint takes at most 6). Tripadvisor's terms forbid keeping a rating, so nothing is cached here
+// either: each fresh render asks again. Any failure, timeout or odd answer leaves the rows as they are.
+const EXP_RATING_IDS = 6;
+function expRatingHtml(r, logoUrl){
+  const https=u=>typeof u==='string' && /^https:\/\//i.test(u);
+  // Tripadvisor's display rules: a bubble rating is shown only with their logo to its left (>= 20px tall, bubbles >= 55px wide).
+  if(!r || !https(r.webUrl) || !https(r.ratingImageUrl) || !https(logoUrl)) return '';
+  const rating=r.rating, n=r.numReviews;
+  if(typeof rating!=='number' || !(rating>=0 && rating<=5) || typeof n!=='number' || !Number.isInteger(n) || n<0) return '';
+  return `<a class="xp-ta" href="${acEsc(r.webUrl)}" target="_blank" rel="noopener noreferrer">`
+    + `<img class="xp-ta-logo" src="${acEsc(logoUrl)}" alt="Tripadvisor" height="20">`
+    + `<img class="xp-ta-bubbles" src="${acEsc(r.ratingImageUrl)}" alt="Tripadvisor rating ${acEsc(String(rating))} of 5" width="75" height="15">`
+    + `<span>${n} ${n===1?'review':'reviews'}</span></a>`;
+}
+function loadExperienceRatings(){
+  try { loadExperienceRatingsNow(); } catch(e) { /* a rating must never break the booking flow */ }
+}
+function loadExperienceRatingsNow(){
+  const seq=++expUi.rateSeq;           // a newer render (or a newer ask) makes an older answer stale
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const block=document.getElementById('experiences-block');
+  const ids=[...expUi.meta.keys()].slice(0,EXP_RATING_IDS);
+  const base=(window.CEYLON_HOP_API||'').replace(/\/$/,'');
+  if(!block || !ids.length || !base) return;
+  const ctl=new AbortController(); expUi.rateCtl=ctl;
+  const timer=setTimeout(()=>ctl.abort(), EXP_TIMEOUT_MS);
+  fetch(base+'/experiences/ratings?ids='+ids.map(encodeURIComponent).join(','), { credentials:'omit', signal:ctl.signal })
+    .then(res=>{ if(!res.ok) throw new Error('ratings_'+res.status); return res.json(); })
+    .then(data=>{
+      if(seq!==expUi.rateSeq || !data || !Array.isArray(data.ratings)) return;
+      data.ratings.forEach(r=>{
+        if(!r || typeof r.id!=='string') return;
+        const row=[...block.querySelectorAll('.xp-row')].find(x=>x.dataset.id===r.id);
+        const html=expRatingHtml(r, data.logoUrl), meta=row && row.querySelector('.xp-meta');
+        if(html && meta && !row.querySelector('.xp-ta')) meta.insertAdjacentHTML('afterend', html);
+      });
+    })
+    .catch(()=>{})
+    .then(()=>clearTimeout(timer));
+}
+function showExperiences(stops){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  expUi.rateSeq++;                     // whatever ratings were in flight belong to rows that are about to go
+  if(expUi.rateCtl){ expUi.rateCtl.abort(); expUi.rateCtl=null; }
+  const usable=(stops||[]).map(s=>({ place:expLabel(s && s.place), items:(s && Array.isArray(s.items) ? s.items : []).filter(it=>it && typeof it.id==='string' && typeof it.name==='string') }))
+    .filter(s=>s.place && s.items.length);
+  expUi.meta.clear();
+  let html='', n=0;
+  usable.forEach((s,i)=>{
+    // The accent line and the one explanation line open the first stop only (owner: don't repeat yourself).
+    html+=`<section class="xp-stop">`
+      + (i===0 ? `<p class="xp-kicker"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7.1L12 17.3 5.8 21l1.6-7.1L2 9.2l7.1-.6z"/></svg>Hand-picked by the Ceylon Hop concierge</p>` : '')
+      + `<h3>While you’re in ${acEsc(s.place)}</h3>`
+      + (i===0 ? `<p class="xp-sub">Request info on any of Ceylon Hop’s curated, recommended experiences — our concierge messages you with the details. No charge to request info.</p>` : '')
+      + `<div class="xp-list">`;
+    s.items.forEach(it=>{
+      if(!expUi.meta.has(it.id)) expUi.meta.set(it.id,{ name:it.name, partnerName:String(it.partnerName||''), slug:String(it.slug||''), place:s.place });
+      html+=expCardHtml(it, s.place, n++);
+    });
+    html+='</div></section>';
+  });
+  // A choice for something no longer offered (the drop-off changed) is not carried to the booking.
+  [...state.experiences.keys()].forEach(id=>{ if(!expUi.meta.has(id)) state.experiences.delete(id); });
+  if(!usable.length){ block.hidden=true; block.innerHTML=''; renderExperienceSummary(); return; }
+  block.innerHTML=html;
+  block.hidden=false;
+  renderExperienceSummary();
+  loadExperienceRatings();
+}
+function renderExperienceSummary(){
+  const box=document.getElementById('sum-experiences'), count=document.getElementById('sum-experiences-count'), list=document.getElementById('sum-experiences-list');
+  if(!box || !count || !list) return;
+  const names=[...state.experiences.values()].map(v=>v.name);
+  count.textContent=names.length+' requested · no charge';
+  list.textContent=names.join(' · ');
+  box.hidden = names.length===0;
+}
+window.toggleExperience=function(btn){
+  const id=btn && btn.dataset.id, meta=id && expUi.meta.get(id);
+  if(!meta) return;
+  const interested=!state.experiences.has(id);
+  if(interested) state.experiences.set(id,{ name:meta.name, partnerName:meta.partnerName });
+  else state.experiences.delete(id);
+  const card=btn.closest('.xp-row');
+  btn.setAttribute('aria-pressed',String(interested));
+  btn.textContent=interested ? '✓ Info requested' : 'Request info';
+  if(card) card.classList.toggle('on',interested);
+  renderExperienceSummary();
+  if(typeof window.chTrack==='function') window.chTrack('experience_interest',{ experience_slug:meta.slug, place:meta.place, source:'booking_page', interested });
+};
+(function(){
+  const block=document.getElementById('experiences-block');
+  if(!block) return;
+  block.addEventListener('click',function(e){
+    const btn=e.target.closest('.xp-btn');
+    if(btn){ window.toggleExperience(btn); return; }
+    const more=e.target.closest('.xp-more');
+    if(more){
+      const open=more.getAttribute('aria-expanded')!=='true';
+      more.setAttribute('aria-expanded',String(open));
+      const panel=document.getElementById(more.getAttribute('aria-controls'));
+      if(panel) panel.hidden=!open;
+    }
+  });
+})();
+
 // The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
 // still landed in a card form. The row is now a plain statement of what actually happens.
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
-  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
+  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:payableTotal()}); };
 
 // Longest known dial code (digits only) that prefixes `digits`, or '' if none.
 function matchDialCode(digits){
@@ -1429,12 +1732,76 @@ function isDeposit(){
 let engineEst = null;        // { totalCents, amountDueNowCents, estimated, legs, intentSig } | null
 let estimatePending = false; // true while an estimate fetch for the current intent is in flight (Task 3 gates payment on this)
 
+// The code the customer applied (trimmed, upper-cased), or null. While set it rides in every
+// estimate intent, so each re-price re-checks it (spec §4.2).
+let promoCode = null;
+// True once an estimate has accepted the current code. Until then a refusal drops the code (a
+// typo stays a typo); after it, a refusal keeps it applied as "doesn't apply" (spec §9.1).
+let promoConfirmed = false;
+// Why the open field is showing a message (an API error code, or 'promo_unchecked'), and
+// whether the customer has opened the field at all.
+let promoApplyError = null;
+let promoOpen = false;
+// A code refused when the BOOKING was made this visit (normalised code → the error code), kept
+// for the rest of the visit so re-applying it shows the same refusal without asking the server
+// again. ch-pricing.js caches estimate answers by intent in sessionStorage, so a fresh preview for
+// the same code would just replay the OLD "accepted" answer — the server can't tell us anything
+// new until the code's hold or session state actually changes, which needs a fresh visit.
+let promoRefusedAtBooking = {};
+
 // The itinerary as the pricing engine sees it: place-name legs only — never a client-measured
 // distance (Global Constraints: the intent carries names, distances come back on the response) —
 // so a routing change on the API side is never shadowed by a stale km the browser had on hand.
 // null means "nothing to price": shared seats run their own fixed-schedule local formula
 // (Global Constraints) and never call the estimate endpoint.
-function buildEstimateIntent(){
+// The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
+// choice only applies to private transfers.
+// A gap wire is the traveller's own stretch, so it never asks for a road either.
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+// The priced (non-gap) wires the customer chose the local road for, whatever the service.
+function tripLocalWires(){
+  const out=[];
+  for(let i=0;i<tripStops.length-1;i++) if(!tripGaps.has(i) && tripRoads[i]==='no_tolls') out.push(i);
+  return out;
+}
+// Drops the local road wherever it couldn't be confirmed, and with it every figure that described
+// it: the distance line and car/van fares (single), the leg km and local trip fares (trip).
+// estLegs = the estimate's legs (drop only legs echoed 'fastest', adopting their km), or null
+// after a 422 (drop every local road, back to the catalogue figures). True when anything dropped.
+function dropLocalRoad(estLegs){
+  const T=window.TRANSFERS;
+  if(!isTrip){
+    if(bookRoad!=='no_tolls') return false;
+    const leg=estLegs ? estLegs[0] : null;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) return false;
+    bookRoad=null;
+    browseRouteEstimate = (leg && (leg.distanceKm>0 || leg.durationMin>0))
+      ? { distanceKm:leg.distanceKm, durationMin:leg.durationMin, state:'browse', estimateId:'engine-v2' }
+      : catalogueRouteEstimate();
+    if(!hasExactRouteInputs()) activeRouteEstimate=Object.assign({},browseRouteEstimate);
+    const q=(T && T.place(routeFromId) && T.place(routeToId)) ? T.privateQuote(routeFromId, routeToId) : null;
+    vehPrices = q ? { car:q.rawCar, van:q.rawVan } : null;
+    if(vehPrices){ unit=vehPrices[vehicleKey]; r.price=unit; }
+    scheduleRouteMap(); // redraw the map on the road now priced
+    return true;
+  }
+  let dropped=false;
+  for(let i=0, j=0; i<tripStops.length-1; i++){
+    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    const leg=estLegs ? estLegs[j++] : null;
+    if(tripRoads[i]!=='no_tolls') continue;
+    if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
+    tripRoads[i]='fastest';
+    tripKms[i]=(leg && leg.distanceKm>0) ? Math.round(leg.distanceKm) : null; // null → catalogue km
+    dropped=true;
+  }
+  if(dropped){
+    const q=tripQuoteWithKms(vehicleKey); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
+    repaintTripDrives();
+  }
+  return dropped;
+}
+function itineraryIntent(){
   if(isShared) return null;
   const vehicle = (vehicleKey==='van') ? 'van' : 'car';
   const pax = state.ad + state.ch;
@@ -1463,16 +1830,25 @@ function buildEstimateIntent(){
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
       if(tripGaps.has(i)) continue;
-      legs.push({ from: tripStops[i], to: tripStops[i+1] });
+      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
   // Single transfer: the same place strings the booking payload sends (createApiBooking,
   // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
-  const legs = [{ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] }];
+  const legs = [Object.assign({ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] },
+    bookRoad==='no_tolls' ? { routeVariant:'no_tolls' } : {})];
   const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
+}
+// The intent POST /quote/v2/estimate prices: the itinerary, plus the applied code. The API lifts
+// promoCode off before pricing (api/src/routes/quote.ts:298-308), so the top-level total is the
+// same with or without it; only the promoCode block in the answer differs.
+function buildEstimateIntent(){
+  const intent = itineraryIntent();
+  if(intent && promoFieldOn && promoCode) intent.promoCode = promoCode;
+  return intent;
 }
 // A stable key for "is this the itinerary engineEst was priced against". Cheap to recompute (a
 // handful of strings/numbers) so, unlike the real debounce ch-pricing.js owns (Task 1), this is
@@ -1501,8 +1877,12 @@ function adoptEngineEstimate(est, sig){
     amountDueNowCents: est.amountDueNowCents,
     estimated: est.estimated,
     legs: est.legs,
+    // The promo answer lives ON the estimate it came with, so a discount is only ever taken off
+    // the full price it was computed for — it goes stale together with that price (spec §4.1).
+    promo: est.promoCode,
     intentSig: sig
   };
+  settlePromoAnswer();
 }
 
 // engineEst that is actually priced against the itinerary as it stands RIGHT NOW — the same
@@ -1584,6 +1964,49 @@ function lockLegKm(from, to){
 // it can't know two calls in a row are for the same intent unless we only call it when the
 // intent actually moved.
 let lastRequestedSig = null;
+// The intent the server said it CANNOT price (422 quote_unpriced). Not an outage: checkout will
+// refuse it (awaiting_price), so Pay must not be offered (CH-E7EE8, 2026-10-18). Keyed by intent
+// signature, so changing any stop clears it.
+let engineUnpriced = null; // { sig, names:[] } | null
+function currentUnpriced(){ return (engineUnpriced && engineUnpriced.sig===currentIntentSig()) ? engineUnpriced : null; }
+function unpricedCopy(u){
+  const n=u.names;
+  const what = n.length===0 ? 'one of your stops'
+    : n.length===1 ? n[0] : n.slice(0,-1).join(', ')+' and '+n[n.length-1];
+  return 'We couldn’t find '+what+' on the map, so we can’t price this trip automatically. '+
+    'Pick each hotel from the list as you type, or send us the trip on WhatsApp and we’ll price it by hand.';
+}
+// The WhatsApp text for an unpriced trip: no "Quoted $…" line, since the figure on screen is the
+// page's own rough estimate, not a price.
+function waUnpricedText(){
+  return waTripSummary().replace(/\nQuoted [^\n]*$/, '')+'\n\nThe website couldn’t price it automatically.';
+}
+function renderUnpricedActions(note){
+  const row=document.createElement('span');
+  row.className='unpriced-actions';
+  if(isTrip){
+    const edit=document.createElement('a');
+    edit.href=buildTripEditUrl(false); edit.textContent='Change stops';
+    row.appendChild(edit);
+  } else {
+    const change=document.createElement('button');
+    change.type='button'; change.className='linklike'; change.textContent='Change pickup or drop-off';
+    change.addEventListener('click',()=>{ window.goStep(2); const el=document.getElementById('loc-to'); if(el) el.focus(); });
+    row.appendChild(change);
+  }
+  row.appendChild(document.createTextNode(' · '));
+  const wa=document.createElement('a');
+  wa.href=waHrefFor(waUnpricedText()); wa.target='_blank'; wa.rel='noopener'; wa.textContent='Send it on WhatsApp';
+  row.appendChild(wa);
+  // The reason goes in its own span so it stays beside the note's "!" icon (.form-error is a
+  // flex row) while the actions wrap onto their own line below it.
+  const text=document.createElement('span');
+  text.className='unpriced-text';
+  text.textContent=note.textContent;
+  note.textContent='';
+  note.appendChild(text);
+  note.appendChild(row);
+}
 function requestEstimate(){
   if(!window.CH_PRICING || isShared) return; // shared seats price locally only (Global Constraints)
   const intent = buildEstimateIntent();
@@ -1594,12 +2017,19 @@ function requestEstimate(){
   estimatePending = true;
   if(hasExactRouteInputs()) routeEstimateUnavailable=false;
   window.CH_PRICING.estimate(intent, {
-    onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
+    onResult: function(est){ estimatePending = false; if(engineUnpriced && engineUnpriced.sig===sig) engineUnpriced = null; handleEngineEstimate(est, sig); },
     // Flag off, a network hiccup, or a timeout — the local formula is already what's on
     // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
-    onUnavailable: function(reason){
+    onUnavailable: function(reason, detail){
       estimatePending = false;
+      if(reason==='unpriced'){
+        engineUnpriced = { sig: sig, names: (detail && detail.unresolved) || [] };
+        if(typeof window.chTrack==='function') window.chTrack('quote_unpriced_shown',{
+          surface:'booking', mode: isTrip ? 'trip' : 'single', named: engineUnpriced.names.length
+        });
+      }
+      if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
         const text=window.CH && CH.routeEstimate
@@ -1663,20 +2093,28 @@ function handleEngineEstimate(est, sig){
   // render() already re-requested for it — see requestEstimate's sig guard) — a response for a
   // sig that's no longer current is stale and must not touch what's on screen.
   if(sig !== currentIntentSig()){ render(); return; }
-  adoptCustomerRouteEstimate(est,sig);
+  // Route choice: the engine echoes the road it actually priced on each leg. A local road asked
+  // for but answered with 'fastest' could not be confirmed for these points — the figure is the
+  // expressway fare, so the page stops claiming (and asking for) the local road.
+  if(est && Array.isArray(est.legs) && !(isTrip && state.svc==='chauffeur') && dropLocalRoad(est.legs)) roadNotice='echo';
+  // Clearing a road moves the intent: an echoed 'fastest' is exactly the expressway price for
+  // the NEW intent, so everything below settles against that one. render() still sends one more
+  // estimate for it (lastRequestedSig holds the old sig) — deliberately not suppressed.
+  const sigNow = currentIntentSig();
+  adoptCustomerRouteEstimate(est,sigNow);
   const priorCents = engineEst ? engineEst.totalCents : null;
-  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sig, engineEst.intentSig)){
+  if(priorCents!=null && est.totalCents > priorCents && !customerDroveTheRaise(sigNow, engineEst.intentSig)){
     // `vehicleUpgrade`: the party has outgrown the car, so the engine priced a van on its own.
     // The capacity note already owns that decision (it blocks Continue until it's resolved) and
     // is the ONE control for it — see carOutgrownVanFits(). The figure is still held, exactly as
     // for any undriven raise; it just isn't announced a second time by renderRepriceNote.
     state.pendingReprice = { engineRaise:true, vehicleUpgrade:carOutgrownVanFits(),
-      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sig };
+      fromCents:priorCents, toCents:est.totalCents, est:est, sig:sigNow };
     render();
     checkWhere();
     return;
   }
-  adoptEngineEstimate(est, sig);
+  adoptEngineEstimate(est, sigNow);
   state.pendingReprice = null; // a fresh figure supersedes any stale reprice notice too
   render();
   checkWhere();
@@ -1719,12 +2157,145 @@ function calcTotal(){
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
-// Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
+// Deposit %/minimum come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
 const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
-const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
-function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
+const DEPOSIT_MIN = window.TRANSFERS.DEPOSIT_MIN; // USD floor
+function depositDue(){ const t = calcTotal(); return Math.min(t, Math.max(Math.round(t*DEPOSIT_PCT), DEPOSIT_MIN)); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return payableTotal(); }
+// The successful promo answer on the SAME estimate calcTotal() is reading from — mirroring its
+// order: a parked raise holds engineEst, a live estimate wins, a re-price in flight holds
+// engineEst. The local formula never carries one, and once the booking exists its own total
+// (serverQuote) already includes the discount.
+function heldPromo(){
+  if(!promoFieldOn || !promoCode || serverQuote) return null;
+  const est = (state.pendingReprice && state.pendingReprice.engineRaise) ? engineEst
+    : (currentEngineEst() || (repricing() ? engineEst : null));
+  const p = est && est.promo;
+  // p.code === promoCode: a held estimate can go stale for the code it priced (a later re-check
+  // never lands) while the customer removes it and applies a DIFFERENT one — without this check
+  // the old code's discount could show under the new code's name while its own answer is still
+  // in flight (spec §4.1: the discount comes only from the same estimate as the full price).
+  return (p && !p.error && p.code === promoCode && typeof p.totalCents === 'number' && typeof p.discountCents === 'number') ? p : null;
+}
+// What the customer pays (spec §4.3). calcTotal() stays the FULL price on purpose: the summary's
+// vehicle row is calcTotal() − extras, and a discount folded in there would shrink the car's own
+// line. Total, Due now, quotedTotal and the final price check read this instead.
+function payableTotal(){
+  if(serverQuote) return serverQuote.total;
+  const p = heldPromo();
+  return p ? p.totalCents/100 : calcTotal();
+}
+
+const PROMO_MESSAGES = {
+  promo_code_invalid: "That code isn’t valid.",
+  promo_code_not_started: "That code isn’t active yet.",
+  promo_code_expired: 'That code has expired.',
+  promo_code_used_up: 'That code has been fully used.',
+  promo_code_not_eligible: "That code can’t be used on this booking.",
+  promo_unchecked: "We couldn’t check your code just now, please try again.",
+};
+function promoMessage(err){ return PROMO_MESSAGES[err] || PROMO_MESSAGES.promo_code_invalid; }
+
+// Settles the promo answer on the estimate just adopted (spec §3.2). The FIRST answer for a code
+// decides whether it sticks: accepted → confirmed; refused → dropped, its message shown and the
+// typed text left in the field. Once confirmed, a later refusal (the trip changed) keeps the code
+// applied, so the summary can say "Doesn't apply" and the discount returns if the trip qualifies.
+function settlePromoAnswer(){
+  if(!promoCode || promoConfirmed || !engineEst || engineEst.intentSig !== currentIntentSig()) return;
+  const p = engineEst.promo;
+  if(p && !p.error){ promoConfirmed = true; promoApplyError = null; return; }
+  promoApplyError = (p && p.error) || 'promo_code_invalid';
+  dropPromo();
+}
+// The check for a code nobody has confirmed yet could not run. Pricing the trip "with a code" by
+// the local formula would put a different, never-shown figure on screen — so forget the code and
+// say so; the held engine answer for the trip without it is current again.
+function settlePromoUnavailable(){
+  if(!promoCode || promoConfirmed) return;
+  promoCode = null;
+  promoApplyError = 'promo_unchecked';
+  if(currentEngineEst()) lastRequestedSig = currentIntentSig();
+}
+// Forgets the applied code. The estimate's full price never depends on the code (the API lifts it
+// off the intent before pricing), so the answer held for "this trip + code" IS the answer for
+// "this trip": re-key it rather than fetch the same price again and shimmer the Total for it.
+function dropPromo(){
+  const cur = currentEngineEst();
+  promoCode = null;
+  promoConfirmed = false;
+  if(cur){
+    delete cur.promo;
+    cur.intentSig = currentIntentSig();
+    lastRequestedSig = cur.intentSig;
+  }
+}
+// The code a booking may carry: only while the estimate priced for THIS trip accepted it
+// (spec §4.5) — never in the doesn't-apply, couldn't-check or local-fallback states.
+function sendablePromoCode(){
+  const cur = currentEngineEst();
+  const p = cur && cur.promo;
+  return (promoFieldOn && promoCode && p && !p.error) ? p.code : undefined;
+}
+// Why an applied code is taking nothing off right now, or null when it is.
+function promoOffReason(){
+  const cur = currentEngineEst();
+  if(!cur) return 'promo_unchecked';
+  const p = cur.promo;
+  return (p && !p.error) ? null : ((p && p.error) || 'promo_code_invalid');
+}
+// Which face the field shows (spec §3.2).
+function promoUiState(){
+  if(!promoFieldOn) return 'hidden';
+  if(!promoCode) return promoOpen ? 'open' : 'collapsed';
+  if(currentEngineEst()) return promoOffReason() ? 'off' : 'applied';
+  return (estimatePending || state.pendingReprice) ? 'checking' : 'off';
+}
+
+// Short reasons for the muted chip — the message's own words without "That code …".
+const PROMO_OFF_REASONS = {
+  promo_code_invalid: 'isn’t valid',
+  promo_code_not_started: 'isn’t active yet',
+  promo_code_expired: 'has expired',
+  promo_code_used_up: 'has been fully used',
+  promo_code_not_eligible: 'can’t be used on this booking',
+  promo_unchecked: 'couldn’t be checked just now',
+};
+// Draws the field and the summary row for promoUiState() (spec §3.2). The input's value is only
+// written while checking — otherwise it holds exactly what the customer typed.
+function renderPromo(){
+  const box=document.getElementById('promo'), row=document.getElementById('sum-promo');
+  if(!box || !row) return;
+  const ui=promoUiState();
+  box.hidden = ui==='hidden';
+  const form=document.getElementById('promo-form'), input=document.getElementById('promo-input');
+  const apply=document.getElementById('promo-apply'), chip=document.getElementById('promo-chip');
+  const msg=document.getElementById('promo-msg');
+  document.getElementById('promo-toggle').hidden = ui!=='collapsed';
+  form.hidden = !(ui==='open' || ui==='checking');
+  input.readOnly = ui==='checking';
+  if(ui==='checking') input.value = promoCode;
+  apply.disabled = ui==='checking';
+  apply.textContent = ui==='checking' ? 'Checking…' : 'Apply';
+  chip.hidden = !(ui==='applied' || ui==='off');
+  chip.classList.toggle('off', ui==='off');
+  const chipHtml = ui==='applied' ? `<b>${acEsc(promoCode)}</b> applied`
+    : ui==='off' ? `<b>${acEsc(promoCode)}</b> · ${PROMO_OFF_REASONS[promoOffReason()] || PROMO_OFF_REASONS.promo_code_invalid}` : '';
+  const chipText=document.getElementById('promo-chip-text');
+  if(chipText.innerHTML!==chipHtml) chipText.innerHTML=chipHtml;
+  const text = (ui==='open' && promoApplyError) ? promoMessage(promoApplyError) : '';
+  if(msg.textContent!==text) msg.textContent=text;
+  msg.classList.toggle('soft', promoApplyError==='promo_unchecked');
+  form.classList.toggle('has-error', ui==='open' && !!promoApplyError && promoApplyError!=='promo_unchecked');
+  // Summary row: the discount held with the price on screen (it keeps its figure through a
+  // re-price, like the vehicle row), or "Doesn't apply" for a code that stopped applying.
+  const held=heldPromo();
+  row.hidden = !(ui==='off' || held);
+  row.classList.toggle('off', ui==='off');
+  document.getElementById('sum-promo-label').textContent = promoCode ? 'Promo '+promoCode : '';
+  document.getElementById('sum-promo-amt').textContent = ui==='off' ? 'Doesn’t apply' : held ? '−'+money(held.discountCents/100) : '';
+}
+
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 /* A date the way this page prints it in a chip or on the pass — "Sat 29 Aug" — plus the year
    whenever the date is NOT in the current year.
@@ -1765,7 +2336,7 @@ function waTripSummary(){
   const veh = (vehicleKey === 'van') ? 'AC van' : 'AC car';
   const svc = isShared ? 'Shared seat' : (isTrip && state.svc === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer');
   let priced = '';
-  try { const t = calcTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
+  try { const t = payableTotal(); if (t > 0) priced = '\nQuoted ' + money(t); } catch (e) {}
   return 'Hi Ceylon Hop — I’d like to ask about this trip:\n'
     + (route ? route + '\n' : '')
     + when + ' · ' + pax + ' traveller' + (pax === 1 ? '' : 's') + ' · ' + veh + ' · ' + svc
@@ -1877,10 +2448,33 @@ function customerRouteEstimateText(){
     ? CH.routeEstimate.formatRouteEstimate(activeRouteEstimate)
     : '';
 }
+// The local road being booked, in words — '' on the expressway, or once the road was dropped.
+// The summary (#sum-road) and step 4's Due now box both say it.
+function roadChoiceText(){
+  if(isTrip){
+    if(state.svc==='chauffeur') return '';
+    const local=tripLocalWires().map(i=>shortPlaceLabel(tripStops[i])+' → '+shortPlaceLabel(tripStops[i+1]));
+    return local.length ? 'Local road for '+local.join(', ') : '';
+  }
+  return bookRoad==='no_tolls' ? 'Via the local road · no expressway' : '';
+}
+// The road the customer chose, under the route estimate — and, beside it, why a chosen local road
+// no longer applies (the engine could only price the expressway, or a chauffeur-guide was picked).
+function paintRoadChoice(){
+  const road=roadChoiceText();
+  const roadEl=document.getElementById('sum-road');
+  if(roadEl){ roadEl.textContent=road; roadEl.hidden=!road; }
+  let note='';
+  if(isTrip && state.svc==='chauffeur' && tripLocalWires().length) note='Local roads apply to private transfers, so a chauffeur-guide takes the usual roads.';
+  else if(roadNotice==='echo') note='The local road isn’t available for these exact points, so this is the expressway fare.';
+  const noteEl=document.getElementById('sum-road-note');
+  if(noteEl){ noteEl.textContent=note; noteEl.hidden=!note; }
+}
 function paintCustomerRouteEstimate(){
   const text=customerRouteEstimateText();
   const summary=document.getElementById('sum-route-estimate');
   if(summary){ summary.textContent=text; summary.hidden=!text; }
+  paintRoadChoice();
   const bar=document.getElementById('rm-bar');
   if(!bar || isTrip) return;
   const from=shortPlaceLabel(state.locFrom || r.stops[0]);
@@ -1891,6 +2485,7 @@ function paintCustomerRouteEstimate(){
     `<div class="rm-meta">${clock}<span>${acEsc(text)}</span></div>`;
 }
 function render(){
+  if(isTrip) repaintTripDrives(); // a local-road leg takes the engine's drive time once it lands
   requestEstimate(); // no-op unless the priced itinerary actually changed (see its own guard)
   renderRepriceNote();
   updateWaLinks();   // keeps the summary's WhatsApp draft in step with the trip on screen
@@ -1949,7 +2544,7 @@ function render(){
           // one route that still works. waTripSummary() carries the itinerary, so the
           // traveller does not retype what they just entered.
           '<p class="cx-alt">Starting sooner? <a href="'+waHrefFor(waTripSummary()+'\n\nCan you do a chauffeur-guide starting earlier than '+fmtNoticeDate(earliestChauffeurISO())+'?')+'" target="_blank" rel="noopener">Message us on WhatsApp</a> and we’ll see what we can do.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Change your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Change your dates →</button>';
       } else { note.hidden=true; note.innerHTML=''; }
     }
     if(!chOK && state.svc==='chauffeur'){
@@ -1963,7 +2558,7 @@ function render(){
         cx.className='cx-inline warn'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
+          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
@@ -2048,6 +2643,7 @@ function render(){
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
+  syncExperiences(); // no-op unless step 3 is showing and the drop-off changed since the last ask
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
     // A chauffeur-guide trip used to split this into "Chauffeur distance" + a "Chauffeur-guide · N days"
@@ -2100,7 +2696,7 @@ function render(){
   // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
   const busy = repricing();
   const totalEl = document.getElementById('sum-total');
-  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(calcTotal()));
+  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
   if(totalEl){
     totalEl.classList.toggle('is-pricing', busy);
     if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
@@ -2155,13 +2751,16 @@ function render(){
       ? `${r.stops[0]} → ${r.stops[r.stops.length-1]}`
       : r.name;
     const dueLabel = (window.CH && CH.shortenRouteLabel) ? CH.shortenRouteLabel(dueRoute) : dueRoute;
-    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':dueLabel)}</b></span>`+
+    // The road being paid for, under the route — the summary's words, gone when the road is.
+    const dueRoad = roadChoiceText();
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':acEsc(dueLabel))}</b>${dueRoad?`<small class="due-road">${acEsc(dueRoad)}</small>`:''}</span>`+
       `<span class="amt${busy?' is-pricing':''}">${busy ? PRICING_LABEL : money(amountDueNow())}</span>`;
   }
   let choice=document.getElementById('pay-choice');
   if(choice){
     choice.style.display = 'none';
   }
+  renderPromo();
 
   // Pay gate (Task 3): the established disabled treatment (same idiom as #n1/#n4 above) for the
   // three states a charge must never start from — a fresh price still in flight, a raise
@@ -2173,7 +2772,10 @@ function render(){
   // whenever that panel isn't the active step regardless of its own `hidden` — safe to set on
   // every render() without tracking which step is open.
   const payBtn=document.getElementById('pay-btn');
-  const payGateReason = estimatePending
+  const unpriced=currentUnpriced();
+  const payGateReason = unpriced
+    ? unpricedCopy(unpriced)
+    : estimatePending
     ? 'Still getting your latest price — one moment…'
     : state.pendingReprice
       ? 'Please review the updated price above before continuing.'
@@ -2183,7 +2785,10 @@ function render(){
   if(payBtn) payBtn.disabled = !!payGateReason;
   const gateNote=document.getElementById('details-error');
   if(gateNote){
-    if(payGateReason){ gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1'; }
+    if(payGateReason){
+      gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1';
+      if(unpriced) renderUnpricedActions(gateNote);
+    }
     else if(gateNote.dataset.gate){ gateNote.hidden=true; gateNote.textContent=''; delete gateNote.dataset.gate; }
   }
 }
@@ -2209,6 +2814,7 @@ window.goStep=function(n){
   // AFTER the scroll home so that its own scrollIntoView is the one that lands: a new step with
   // a blocked CTA should open on the reason, not on a top-of-page the customer must scroll off.
   renderRepriceNote();
+  syncExperiences(); // step 3 opens: ask what is near the drop-off (no-op elsewhere / when unchanged)
 };
 
 // Clear the consent warning as soon as they tick it, so the red border can't stick around.
@@ -2258,6 +2864,11 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // Pay gate (Task 3) — the button is already disabled for these in render(); this is the
   // belt-and-braces check for the moment a stale enabled button gets clicked anyway (e.g. a
   // click queued a frame before a re-render lands).
+  const unpricedNow=currentUnpriced();
+  if(unpricedNow){
+    if(derr){ derr.textContent=unpricedCopy(unpricedNow); renderUnpricedActions(derr); derr.hidden=false; }
+    return;
+  }
   if(estimatePending){
     if(derr){ derr.textContent='Still getting your latest price — please wait a moment and try again.'; derr.hidden=false; }
     return;
@@ -2336,7 +2947,7 @@ async function runPayment(){
   // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
   const _payBtn = document.getElementById('pay-btn');
   if(_payBtn) _payBtn.disabled = true;
-  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
+  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:payableTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
@@ -2351,7 +2962,30 @@ async function runPayment(){
   let booking;
   payRef = null; // a fresh attempt: no reference until the create answers
   try { booking = await createApiBooking(); }
-  catch(e){ clearTimeout(slow); return phShowEnd(...bookingCreateFailure(e)); }
+  catch(e){
+    clearTimeout(slow);
+    // The local road couldn't be confirmed at booking time: drop it, re-price on the expressway,
+    // and show why — with no one-click retry, so the customer sees the new price before paying.
+    if(e && e.status===422 && e.body && e.body.error==='route_choice_unavailable'){
+      dropLocalRoad(null); roadNotice='';
+      render();
+      return phShowEnd('error', bookingCreateFailure(e)[1], {retry:false});
+    }
+    // A code the preview accepted can still be refused here — its last use went, or it expired,
+    // in between (spec §4.6). Same shape as the road refusal above: forget it, show the full
+    // price, and no one-click retry, so the customer presses Pay again at the price they now see.
+    if(e && e.status===422 && e.body && /^promo_code_/.test(e.body.error||'')){
+      // Captured before dropPromo() clears promoCode, so the SAME code stays refused for the
+      // rest of the visit (Apply won't ask the server again — see promoRefusedAtBooking above).
+      if(promoCode) promoRefusedAtBooking[promoCode] = e.body.error;
+      promoApplyError=e.body.error;
+      promoOpen=true;
+      dropPromo();
+      render();
+      return phShowEnd('error', promoMessage(e.body.error)+' Your total is now the full price.', {retry:false});
+    }
+    return phShowEnd(...bookingCreateFailure(e));
+  }
   clearTimeout(slow);
   payRef = (booking && booking.reference) || null;
   if(!booking){ return simulatePayThenConfirm(null); }
@@ -2365,10 +2999,12 @@ async function runPayment(){
   // the LAST hop where the "never charge a figure not shown immediately beforehand" rule
   // (renderRepriceNote, applied mid-wizard) can still be broken, and gets the same gate here.
   const shownEngineEst = currentEngineEst();
-  const shownBeforeAdopt = calcTotal();
+  // payableTotal(), not calcTotal(): with a code the booking comes back DISCOUNTED, so comparing
+  // it with the full price would stop every discounted booking with a false "price changed".
+  const shownBeforeAdopt = payableTotal();
   adoptServerQuote(booking);
-  if(shownEngineEst && Math.abs(calcTotal()-shownBeforeAdopt) > 1){
-    return phShowFinalRepriceGate(booking, shownBeforeAdopt, calcTotal());
+  if(shownEngineEst && Math.abs(payableTotal()-shownBeforeAdopt) > 1){
+    return phShowFinalRepriceGate(booking, shownBeforeAdopt, payableTotal());
   }
   return continueToCheckout(booking);
 }
@@ -2395,18 +3031,26 @@ async function continueToCheckout(booking){
   // own manage page, carrying only the status-only `rt` (the manage token comes back in the
   // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
   // request body says is a phishing primitive.
+  //
+  // A deadline, like every call pay.html makes: the overlay hides both buttons while this runs
+  // and Pay is latched, so an API that accepts the connection and never answers (a saturated
+  // pool, an instance mid-restart) otherwise leaves the customer on the spinner with no way out
+  // but a reload. An abort lands in the catch below → the generic failure with Try again.
   let checkout=null, refusal=null;
+  const ctrl = new AbortController();
+  const deadline = setTimeout(()=>ctrl.abort(), 20000);
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify({returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'}),signal:ctrl.signal}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
   }catch(e){}
+  finally{ clearTimeout(deadline); }
 
   // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
   // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
@@ -2414,14 +3058,18 @@ async function continueToCheckout(booking){
     return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway: the customer leaves for PayHere's own page and comes back to their
-  // booking's manage page, which asks our server what happened.
-  if(/payhere\.lk/.test(checkout.checkoutUrl)){
+  // booking's manage page, which asks our server what happened. Only PayHere's own two origins
+  // (api/src/adapters/payhere.ts) — a URL that merely CONTAINS "payhere.lk" is not the gateway.
+  if(/^https:\/\/(www|sandbox)\.payhere\.lk\//.test(checkout.checkoutUrl)){
     if(!checkout.fields) return phShowEnd(...checkoutRefusal(null));
     document.getElementById('ph-msg').textContent='Opening secure payment…';
     return redirectToPayHere(checkout, booking);
   }
   // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
-  // (no real money gateway). Simulated interstitial with the real reference.
+  // (no real money gateway). Simulated interstitial with the real reference — but never on the
+  // production site, whose API cannot boot on the fake gateway: there it is an anomaly, and a
+  // simulated "Payment approved" would confirm (and report a purchase for) an unpaid booking.
+  if(/^(www\.)?ceylonhop\.com$/.test(location.hostname)) return phShowEnd(...checkoutRefusal(null));
   return simulatePayThenConfirm(booking);
 }
 
@@ -2582,6 +3230,37 @@ function phShowEnd(kind, msg, opts){
 document.getElementById('ph-retry').addEventListener('click', ()=>runPayment());
 document.getElementById('ph-close').addEventListener('click', ()=>document.getElementById('ph-overlay').classList.remove('show'));
 
+// Promo field controls (spec §3.2). Wired only when the field can show at all.
+(function wirePromo(){
+  if(!promoFieldOn) return;
+  const input=document.getElementById('promo-input');
+  function apply(){
+    const typed=(input.value||'').trim().toUpperCase();
+    if(!typed) return;
+    if(promoRefusedAtBooking[typed]){
+      // Refused at booking time this visit already — re-asking would only replay the pricing
+      // module's cached "accepted" answer for it (see promoRefusedAtBooking above), so show the
+      // same message again without sending anything.
+      promoApplyError=promoRefusedAtBooking[typed];
+      promoOpen=true;
+      render();
+      return;
+    }
+    promoApplyError=null;
+    promoCode=typed;
+    promoConfirmed=false;
+    lastRequestedSig=null; // a retry after "couldn't check" must really ask again
+    render();
+  }
+  document.getElementById('promo-toggle').addEventListener('click', ()=>{ promoOpen=true; render(); input.focus(); });
+  document.getElementById('promo-apply').addEventListener('click', apply);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); apply(); } });
+  input.addEventListener('input', ()=>{ if(promoApplyError){ promoApplyError=null; render(); } });
+  document.getElementById('promo-remove').addEventListener('click', ()=>{
+    dropPromo(); promoApplyError=null; promoOpen=true; input.value=''; render(); input.focus();
+  });
+})();
+
 // Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
 function simulatePayThenConfirm(booking){
   const ov=document.getElementById('ph-overlay');
@@ -2718,7 +3397,7 @@ async function createApiBooking(){
   };
   // the price the customer was shown (minor units) — the backend records this, so the
   // confirmation, the DB and the eventual charge all agree.
-  const quotedTotal = calcTotal() > 0 ? Math.round(calcTotal() * 100) : undefined;
+  const quotedTotal = payableTotal() > 0 ? Math.round(payableTotal() * 100) : undefined;
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
@@ -2747,7 +3426,14 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: tQuoteId,
       days: (state.svc==='chauffeur') ? tripDays : undefined,
-      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined
+      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined,
+      // The server prices from THIS payload, so it must know which wires are the traveller's own
+      // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
+      gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // One road per consecutive stop pair; sent only when a local road is actually chosen.
+      routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
+      // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
+      promoCode: sendablePromoCode()
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -2787,7 +3473,9 @@ async function createApiBooking(){
       quotedTotal,
       quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
-      extras: state.addons.size ? Array.from(state.addons) : undefined
+      extras: state.addons.size ? Array.from(state.addons) : undefined,
+      routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined,
+      promoCode: sendablePromoCode()
     };
   }
   // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
@@ -2813,6 +3501,13 @@ async function createApiBooking(){
     bill.lastName  = document.getElementById('f-blast').value.trim();
   }
   payload.billing = bill;
+  // The "Anything we should know?" note (2026-09-27) — hotel, dietary needs, surf gear. Nothing
+  // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
+  const notes = document.getElementById('f-notes').value.trim();
+  if(notes) payload.customerNotes = notes;
+  // The partner experiences they tapped "Request" on - ids only (the API looks the names up
+  // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
+  if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);
@@ -2966,6 +3661,7 @@ if(!isTrip && !state.dep){
 
 // ---- init ----
 buildCal(); renderDeps(); checkWhen();
+whenUrlArmed=true;
 document.getElementById('ad-n').textContent=state.ad;
 document.getElementById('ch-n').textContent=state.ch;
 document.getElementById('bg-n').textContent=state.bags;
@@ -3110,9 +3806,11 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
   closeBtn.addEventListener('click',closeSheet);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&aside.classList.contains('open')) closeSheet(); });
 
-  // ── keyboard: never cover a focused field with the bar
+  // ── keyboard: never cover a focused field with the bar. Not the two "Decide later" boxes: they open
+  // no keyboard, sit high on the When step, and ticking one (the only way past it undated) used to
+  // hide the very CTA it unlocks until the customer tapped elsewhere (Android focuses checkboxes).
   document.addEventListener('focusin',e=>{
-    if(e.target.matches && e.target.matches('.panel input, .panel textarea, .panel select')) bar.classList.add('kb');
+    if(e.target.matches && e.target.matches('.panel input:not(#flex-date):not(#flex-time-chk), .panel textarea, .panel select')) bar.classList.add('kb');
   });
   document.addEventListener('focusout',()=>bar.classList.remove('kb'));
 

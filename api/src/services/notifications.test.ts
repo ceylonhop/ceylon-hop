@@ -7,10 +7,14 @@ import {
   sendTripReminder,
   sendReviewRequest,
   sendPaymentFailed,
+  sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
   routeText,
+  factRows,
+  roadRow,
 } from './notifications';
+import { shortPlace } from '../quote/shortPlace';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
@@ -278,6 +282,31 @@ describe('sendRefundConfirmation', () => {
     expect(m.text).toContain('CH-ABC12');
     expect(m.text).not.toContain('<');
   });
+
+  // The refund letter drops the facts list (facts:false), so it was the one customer email that
+  // never said which road was refunded. It names the local road alone — nothing else returns.
+  it('names the local road the customer paid for, in the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } }, email);
+    const m = email.sent[0];
+    expect(m.html).toMatch(/>Road<\/td>\s*<td[^>]*>Local road, no expressway · about 6h 14m<\/td>/);
+    expect(m.text).toContain('Road: Local road, no expressway · about 6h 14m');
+    // Only the road — the letter still carries no facts list.
+    expect(m.html).not.toContain('Travellers');
+    expect(m.subject).toBe('Your Ceylon Hop refund is processed — CH-ABC12');
+  });
+
+  it('adds nothing when the booking took the expressway', async () => {
+    const plain = new FakeEmailAdapter();
+    await sendRefundConfirmation(single, plain);
+    const fastest = new FakeEmailAdapter();
+    await sendRefundConfirmation({ ...single, input: { ...single.input, routeVariant: 'fastest' } }, fastest);
+    for (const m of [plain.sent[0], fastest.sent[0]]) {
+      expect(m.html).not.toContain('Local road');
+      expect(m.text).not.toContain('Road:');
+    }
+    expect(fastest.sent[0].html).toBe(plain.sent[0].html);
+  });
 });
 
 // ── New lifecycle emails ────────────────────────────────────────────────────
@@ -286,6 +315,8 @@ import {
   sendBookingConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
+  sendScheduleSet,
+  sendDetailsReminder,
   needsDetails,
 } from './notifications';
 
@@ -326,7 +357,7 @@ describe('sendPaymentIncomplete — abandoned checkout recovery', () => {
   // The watchdog may only count (and keep the one-shot claim for) a recovery email that
   // actually left — so the sender has to hand back what the adapter said happened.
   it("returns the adapter's outcome — delivered, and suppressed", async () => {
-    expect(await sendPaymentIncomplete(pending, new FakeEmailAdapter())).toEqual({ delivered: true });
+    expect(await sendPaymentIncomplete(pending, new FakeEmailAdapter())).toMatchObject({ delivered: true });
     const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_allowlist' as const }) };
     expect(await sendPaymentIncomplete(pending, suppressed)).toEqual({ delivered: false, reason: 'suppressed_allowlist' });
   });
@@ -372,9 +403,11 @@ describe('sendDetailsNeeded — flexible booking follow-up', () => {
 });
 
 describe('needsDetails', () => {
-  it('true for a single transfer with no date, false once a date is set', () => {
-    expect(needsDetails(single)).toBe(true); // fixture has no date
-    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(false);
+  it('true for a single transfer missing its date or its time, false once both are set', () => {
+    expect(needsDetails(single)).toBe(true); // fixture has neither
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(true); // no time
+    expect(needsDetails({ ...single, input: { ...single.input, time: '09:00' } } as Booking)).toBe(true); // no date
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01', time: '09:00' } } as Booking)).toBe(false);
   });
   it('true for a trip with no dates, false when a date exists', () => {
     const noDates: Booking = {
@@ -504,6 +537,46 @@ describe('sendDepositReceived', () => {
     expect(m.html).toContain('$50.00'); // deposit
     expect(m.html).toContain('$150.00'); // balance
     expect(m.text).toContain('Balance due before travel: $150.00');
+  });
+
+  it('says the balance can be paid any time with the same link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDepositReceived({ ...single, total: 20000, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('any time before your trip, using the same link you paid the deposit with');
+    expect(m.html).not.toContain('WhatsApp closer to the day');
+  });
+});
+
+describe('sendBalanceReceived', () => {
+  it('says fully paid with the deposit and balance actually collected, and their sum', async () => {
+    const email = new FakeEmailAdapter();
+    const booking = { ...single, total: 20000, amountDueNow: 5000 };
+    await sendBalanceReceived(booking, { depositCents: 5000, balanceCents: 15000 }, email, { manage: 'https://x/m' });
+    const sent = email.sent.at(-1)!;
+    expect(sent.subject).toBe(`You’re fully paid — ${booking.reference}`);
+    expect(sent.text).toContain('Deposit paid: $50.00');
+    expect(sent.text).toContain('Balance paid: $150.00');
+    expect(sent.text).toContain('Total paid: $200.00');
+    expect(sent.tracking?.kind).toBe('balance_received');
+  });
+
+  it('reads the amounts from the payments, not from the booking total', async () => {
+    const email = new FakeEmailAdapter();
+    // e.g. a promo trimmed the balance: 50 + 140 collected against a 200 total
+    await sendBalanceReceived({ ...single, total: 20000, amountDueNow: 5000 }, { depositCents: 5000, balanceCents: 14000 }, email);
+    const sent = email.sent.at(-1)!;
+    expect(sent.text).toContain('Balance paid: $140.00');
+    expect(sent.text).toContain('Total paid: $190.00');
+  });
+});
+
+describe('deposit and balance emails report whether they left', () => {
+  it('return the adapter outcome so the caller logs only what was delivered', async () => {
+    const suppressed = { send: async () => ({ delivered: false as const, reason: 'suppressed_disabled' as const }) };
+    const b = { ...single, total: 20000, amountDueNow: 5000 };
+    expect(await sendDepositReceived(b, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
+    expect(await sendBalanceReceived(b, { depositCents: 5000, balanceCents: 15000 }, suppressed)).toEqual({ delivered: false, reason: 'suppressed_disabled' });
   });
 });
 
@@ -664,5 +737,229 @@ describe('confirmation email — the vehicle line does not invent a capacity', (
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(fiveUp, email);
     expect(email.sent[0].text).toContain('AC car');
+  });
+});
+
+// Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): the road the
+// customer paid for, when it isn't the expressway. Absent (or 'fastest') means today's
+// behaviour — no Road row, no change to any existing email.
+describe('roadRow / factRows — the road the customer paid for (spec §4.3)', () => {
+  it('a single with the toll-free road and a known duration', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    expect(factRows(b)).toContainEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+    // Right after the date row (index 0).
+    expect(factRows(b)[1]).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
+  it('a single with the toll-free road but no known duration omits the "about" clause', () => {
+    const b: Booking = { ...single, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway']);
+  });
+
+  // hoursMinutes (private to this file, exercised only through roadRow): under an hour reads as
+  // plain minutes — "0h 45m" is an odd way to state a 45-minute detour — a whole hour drops the
+  // "0m" remainder, and anything else states both units.
+  it('states a sub-hour duration as plain minutes, not "0h 45m"', () => {
+    const b: Booking = { ...single, durationMin: 45, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 45 min']);
+  });
+
+  it('states a whole-hour duration without a "0m" remainder', () => {
+    const b: Booking = { ...single, durationMin: 360, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h']);
+  });
+
+  it('states an hours-and-minutes duration as both units', () => {
+    const b: Booking = { ...single, durationMin: 374, input: { ...single.input, routeVariant: 'no_tolls' } };
+    expect(roadRow(b)).toEqual(['Road', 'Local road, no expressway · about 6h 14m']);
+  });
+
+  it('a single with no road, or the fastest road, has no Road row', () => {
+    expect(roadRow(single)).toBeNull();
+    expect(factRows(single).some(([k]) => k === 'Road')).toBe(false);
+    const fastest: Booking = { ...single, input: { ...single.input, routeVariant: 'fastest' } };
+    expect(roadRow(fastest)).toBeNull();
+  });
+
+  it('a trip names the leg(s) that used the toll-free road, with shortPlace names', () => {
+    const stops = ['Colombo Airport (CMB)', 'Ella', 'Yala'];
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops,
+        nights: [0, 1, 0],
+        dates: ['2026-08-09'],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+        routeVariants: ['no_tolls', 'fastest'],
+      },
+    };
+    expect(roadRow(t)).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+    const rows = factRows(t);
+    const datesIdx = rows.findIndex(([k]) => k === 'Dates');
+    expect(rows[datesIdx + 1]).toEqual(['Road', `Local road for ${shortPlace(stops[0])} → ${shortPlace(stops[1])}`]);
+  });
+
+  it('a trip with no toll-free leg has no Road row', () => {
+    const t: Booking = {
+      ...single,
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport (CMB)', 'Ella'],
+        nights: [0],
+        pax: 2,
+        vehicleType: 'car',
+        serviceType: 'private',
+        customer: single.input.customer,
+      },
+    };
+    expect(roadRow(t)).toBeNull();
+    expect(factRows(t).some(([k]) => k === 'Road')).toBe(false);
+  });
+});
+
+// A booking made with a promo code names the code and what it took off, right above the total —
+// the total alone (lower than the page's advertised price) read as a mistake. Never otherwise.
+describe('promo code row', () => {
+  const promo: Booking = { ...single, total: 4500, amountDueNow: 4500, promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 500 } as Booking;
+  const pendingPromo: Booking = { ...promo, status: 'payment_pending' };
+
+  it('the confirmation shows the code and the discount above the total paid', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(promo, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Promo SUMMER-15');
+    expect(m.html).toContain('−$5.00');
+    expect(m.html.indexOf('Promo SUMMER-15')).toBeLessThan(m.html.indexOf('Total paid'));
+    expect(m.html).toContain('$45.00');
+    expect(m.text).toContain('Promo SUMMER-15: −$5.00\nTotal paid: $45.00');
+  });
+
+  it('the payment-incomplete and payment-failed emails show it above the amount due', async () => {
+    for (const send of [sendPaymentIncomplete, sendPaymentFailed]) {
+      const email = new FakeEmailAdapter();
+      await send(pendingPromo, email);
+      const m = email.sent[0];
+      expect(m.html.indexOf('Promo SUMMER-15')).toBeGreaterThan(-1);
+      expect(m.html.indexOf('Promo SUMMER-15')).toBeLessThan(m.html.indexOf('Amount due'));
+      expect(m.text).toContain('Promo SUMMER-15: −$5.00\nAmount due: $45.00');
+    }
+  });
+
+  it('escapes the code', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation({ ...promo, promoCode: '<b>X</b>' } as Booking, email);
+    expect(email.sent[0].html).not.toContain('<b>X</b>');
+  });
+
+  it('no row without a code', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email);
+    await sendPaymentFailed(single, email);
+    for (const m of email.sent) {
+      expect(m.html).not.toContain('Promo');
+      expect(m.text).not.toContain('Promo');
+    }
+  });
+});
+
+// Partner experiences (spec 2026-10-06 D16): the confirmation names what the customer tapped
+// "I'm interested" on, in ITS OWN rows — never the shared factRows, which cancellation, refund and
+// reminder emails reuse.
+describe('sendBookingConfirmation — experience interests', () => {
+  const ROW = 'Ayurvedic massage (Atherya Spa), Village cooking lesson (Suwee) — not charged; our Pro team will reach out';
+  const interests = [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa' }, { name: 'Village cooking lesson', partnerName: 'Suwee' }];
+
+  it('adds an "Interested in" row to the HTML and the text', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(email.sent[0].html).toContain('Interested in');
+    expect(email.sent[0].html).toContain(ROW);
+    expect(email.sent[0].text).toContain(`Interested in: ${ROW}`);
+  });
+
+  it('has no such row when there are no interests', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [] });
+    await sendBookingConfirmation(single, email);
+    for (const m of email.sent) {
+      expect(m.html).not.toContain('Interested in');
+      expect(m.text).not.toContain('Interested in');
+    }
+  });
+
+  it('escapes the names', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests: [{ name: '<b>x</b>', partnerName: 'A&B' }] });
+    expect(email.sent[0].html).not.toContain('<b>x</b>');
+    expect(email.sent[0].html).toContain('&lt;b&gt;x&lt;/b&gt; (A&amp;B)');
+  });
+
+  it('never leaks into the shared fact rows, so a cancellation email does not show it', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, email, { interests });
+    expect(factRows(single).flat().join(' ')).not.toContain('Interested');
+    await sendCancellationConfirmation(single, email);
+    const cancelled = email.sent[1];
+    expect(cancelled.subject).toContain('cancelled');
+    expect(cancelled.html).not.toContain('Interested in');
+    expect(cancelled.text).not.toContain('Interested in');
+  });
+});
+
+describe('sendScheduleSet — pickup set after booking', () => {
+  const scheduled = { ...single, status: 'paid', input: { ...single.input, date: '2026-11-04', time: '09:00' } } as Booking;
+
+  it('states the weekday, date and Sri Lanka time, and offers WhatsApp for corrections', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(scheduled, email, { manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.subject).toBe('Your pickup is set — CH-ABC12');
+    expect(m.html).toMatch(/Wed,? 4 Nov 2026/); // ICU builds differ on the comma
+    expect(m.html).toContain('09:00');
+    expect(m.html).toContain('Sri Lanka time');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html).toContain('manage.html?t=abc');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('schedule_set');
+  });
+
+  it('says the time is still to confirm when only the date is set', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, time: undefined } } as Booking, email);
+    expect(email.sent[0].html).toContain('pickup time to confirm');
+  });
+
+  it('sends nothing for a booking without a date', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(single, email);
+    expect(email.sent).toHaveLength(0);
+  });
+});
+
+describe('sendDetailsReminder — still need the pickup date/time', () => {
+  it('asks on WhatsApp with the reference already typed, and says to ignore it if they already told us', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    expect(m.subject).toBe('Reminder: your pickup date and time — CH-ABC12');
+    expect(m.html).toContain('wa.me/94779669662?text=');
+    expect(m.html).toContain(encodeURIComponent('CH-ABC12'));
+    expect(m.html.toLowerCase()).toContain('already told us');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('details_reminder_1');
+  });
+
+  it('names only what is missing', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, date: '2026-11-04' } } as Booking, email, { nth: 2 });
+    expect(email.sent[0].html).toContain('pickup time');
+    expect(email.sent[0].html).not.toContain('pickup date and time');
+    expect(email.sent[0].tracking?.kind).toBe('details_reminder_2');
   });
 });

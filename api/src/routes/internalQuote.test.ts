@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
@@ -6,12 +6,16 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryQuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { quote } from '../quote/engine';
 import type { QuoteRequest } from '../quote/types';
 import { signSession } from '../lib/opsAuth';
-import { verifyQuotePayToken } from '../lib/bookingToken';
+import { signQuotePayToken, verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryZonesRepo } from '../db/zonesRepo';
+import { futureIsoDate } from '../testSupport/dates';
+import { depositFor } from '../quote/extrasDeposit';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -1708,7 +1712,7 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
 
   it('books a sent quote: draft booking at the quote price, quote stamped won+linked', async () => {
     const quotes = new InMemoryQuoteRepo();
-    const bookings = new InMemoryBookingRepo();
+    const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
     const id = await sentQuote(quotes);
     const res = await book(createApp({ quotes, bookings }), id, BODY);
     expect(res.status).toBe(201);
@@ -1722,6 +1726,12 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(q?.status).toBe('won');
     expect(q?.convertedBookingId).toBe(b.id);
     expect(await bookings.get(b.id)).not.toBeNull();
+    expect(await bookings.listStatusEvents(b.id)).toEqual([
+      expect.objectContaining({
+        source: 'quote_conversion', actorType: 'staff', actorId: 'f@x.com',
+        relatedEntityType: 'quote', relatedEntityId: id, requestId: expect.any(String),
+      }),
+    ]);
   });
 
   // The add-ons live on the quote as its priced lines, and the booking only links back to it.
@@ -2880,6 +2890,25 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     expect(after!.payLinkSeq).toBe(2); // monotonic — never reset
   });
 
+  // The ops picker once read "Covers 2 of 2 legs — $106.67" for a $106.00 quote (staging, Q-29EYR).
+  // The leg lines sum to the pre-finishing subtotal; the customer is charged the finished total.
+  // This proves the SERVER side of that: ticking everything charges the quote total, not the sum.
+  it('an all-ticked selection charges the finished quote total, not the sum of the lines', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const stored = (await quotes.get(id))!;
+    const app = createApp({ quotes });
+    const lines = (await (await authedGet(app, `/admin/quote/${id}/pay-lines`)).json()).lines as { amountCents: number }[];
+    const lineSum = lines.reduce((s, l) => s + l.amountCents, 0);
+    // Guard the premise: the fixture really does finish to something other than the line sum.
+    expect(lineSum).not.toBe(stored.totalCents);
+
+    const body = await (await mintSel(app, id, { legIndexes: [0, 1, 2], extraIndexes: [0] })).json();
+    expect(body.amountCents).toBe(stored.totalCents);
+    expect(body.amountCents).not.toBe(lineSum);
+    expect((await quotes.get(id))!.soldCents).toBeNull(); // the pay page falls back to totalCents
+  });
+
   it('a bodyless mint still produces the full-total link', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await priced(quotes);
@@ -2942,6 +2971,40 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     expect(after!.payLinkSelection).toBeNull();
     expect(after!.soldCents).toBeNull();
     expect(after!.payLinkSeq).toBe(2);
+  });
+
+  // Spec PR #964: a service selection is not a leg selection. The ops part-of-trip picker reads
+  // `selection` as one, so it must see "nothing ticked", not `{ service }`.
+  it('GET /pay-lines reports no leg selection for a link sold as the chauffeur option', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 99900, payLinkSeq: 1 });
+    const res = await authedGet(createApp({ quotes }), `/admin/quote/${id}/pay-lines`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).selection).toBeNull();
+  });
+
+  it('GET /pay-lines still reports a part-of-trip selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 100, payLinkSeq: 1 });
+    const body = await (await authedGet(createApp({ quotes }), `/admin/quote/${id}/pay-lines`)).json();
+    expect(body.selection).toEqual({ legIndexes: [0], extraIndexes: [] });
+  });
+
+  // The mint decides "has the selection changed" by comparing the stored one with the requested
+  // one. A stored service selection must compare as itself — if it read as "nothing", a bodyless
+  // mint would find no change and leave the chauffeur selection (and its soldCents) live.
+  it('a bodyless mint retires a stored chauffeur-service selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await quotes.patch(id, { payLinkSelection: { service: 'chauffeur' }, soldCents: 99900, payLinkSeq: 1 });
+    const res = await mintSel(createApp({ quotes }), id);
+    expect(res.status).toBe(200);
+    const after = (await quotes.get(id))!;
+    expect(after.payLinkSelection).toBeNull();
+    expect(after.soldCents).toBeNull();
+    expect(after.payLinkSeq).toBe(2);
   });
 
   it('GET /pay-lines refuses a chauffeur quote', async () => {
@@ -3209,5 +3272,740 @@ describe('POST /admin/quote/:id/quote-link — mint the customer quote link (spe
     const days = (after!.offerValidUntil!.getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(6.9);
     expect(days).toBeLessThan(7.1);
+  });
+});
+
+// Owner 2026-10-12 (spec PR #964): a quote asked for as "both" freezes the chauffeur price at /save,
+// so the figure shown, approved and (in a later PR) charged is one number.
+describe('/save freezes the chauffeur alternative of a "both" quote', () => {
+  const D1 = futureIsoDate(30);
+  const D2 = futureIsoDate(32);
+  const BOTH = {
+    firstName: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+    legs: [
+      leg({ from: 'Colombo', to: 'Kandy', distanceKm: 115, date: D1 }),
+      leg({ from: 'Kandy', to: 'Ella', distanceKm: 140, date: D2 }),
+    ],
+  };
+  type AltRow = { alt?: { product: string; engine: { product: string }; result: { totalCents: number; marginEstimateCents?: number; lineItems: { meta?: Record<string, unknown> }[] } } };
+
+  function wired(extra: AppDeps = {}) {
+    const discounts = new InMemoryQuoteDiscountRepo();
+    const quotes = new InMemoryQuoteRepo(discounts);
+    const zones = new InMemoryZonesRepo();
+    const app = createApp({ quotes, quoteDiscounts: discounts, opsManualDiscountsEnabled: true, zones, ...extra });
+    return { app, quotes, zones };
+  }
+  type Wired = ReturnType<typeof wired>;
+  const send = (w: Wired, method: string, path: string, body: unknown, ck = FOUNDER_COOKIE) =>
+    w.app.request(path, { method, headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify(body) });
+  const altOf = async (w: Wired, id: string) => ((await w.quotes.get(id))!.result as AltRow).alt;
+  const saveBoth = async (w: Wired, body: unknown = BOTH, ck = FOUNDER_COOKIE) => {
+    const res = await send(w, 'POST', '/admin/quote/save', body, ck);
+    expect([200, 201]).toContain(res.status);
+    return (await res.json()) as { id: string; totalCents: number };
+  };
+  const estimateChauffeurCents = async (w: Wired, body: unknown = BOTH) =>
+    ((await (await send(w, 'POST', '/admin/quote/estimate', body)).json()).services.chauffeur.total.cents) as number;
+
+  it('stores the chauffeur price, equal to what /estimate shows for it', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    const alt = await altOf(w, saved.id);
+    expect(alt?.product).toBe('chauffeur');
+    expect(alt?.engine.product).toBe('chauffeur');
+    expect(alt?.result.totalCents).toBe(await estimateChauffeurCents(w));
+    // The row itself is still the point-to-point quote at the point-to-point price.
+    const row = (await w.quotes.get(saved.id))!;
+    expect(row.product).toBe('private');
+    expect(row.totalCents).toBe(saved.totalCents);
+    expect(alt!.result.totalCents).not.toBe(row.totalCents);
+  });
+
+  it.each([
+    ['asked for private only', { ...BOTH, requestedService: 'private' }],
+    ['asked for chauffeur only', { ...BOTH, requestedService: 'chauffeur' }],
+    ['not recorded', { ...BOTH, requestedService: null }],
+    ['single-day', { ...BOTH, legs: BOTH.legs.map((l) => ({ ...l, date: D1 })) }],
+    ['an undated leg', { ...BOTH, legs: [BOTH.legs[0], { ...BOTH.legs[1], date: '' }] }],
+  ])('stores no alternative when %s', async (_l, body) => {
+    const w = wired();
+    const saved = await saveBoth(w, body);
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('stores no alternative on a discounted quote, and restores it when the discount is removed (D2)', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    expect(await altOf(w, saved.id)).toBeDefined();
+
+    await saveBoth(w, { ...BOTH, id: saved.id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+    expect((await w.quotes.get(saved.id))!.totalCents).toBeLessThan(saved.totalCents); // guard: really discounted
+    expect(await altOf(w, saved.id)).toBeUndefined();
+
+    // A plain content save PRESERVES the discount — still no alternative.
+    await saveBoth(w, { ...BOTH, id: saved.id });
+    expect(await altOf(w, saved.id)).toBeUndefined();
+
+    await saveBoth(w, { ...BOTH, id: saved.id, discount: null });
+    expect(await altOf(w, saved.id)).toBeDefined();
+  });
+
+  it('a discounted first save carries no alternative either', async () => {
+    const w = wired();
+    const saved = await saveBoth(w, { ...BOTH, discount: { method: 'percentage', basisPoints: 500, reason: 'repeat' } });
+    expect((await w.quotes.get(saved.id))!.result).toHaveProperty('discount');
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('prices the alternative on the same live card as the primary (an active hot zone shows in it)', async () => {
+    const plain = wired();
+    const base = (await altOf(plain, (await saveBoth(plain)).id))!.result.totalCents;
+
+    const w = wired();
+    await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+    const saved = await saveBoth(w);
+    const alt = (await altOf(w, saved.id))!;
+    expect(alt.result.totalCents).toBeGreaterThan(base);
+    expect(alt.result.totalCents).toBe(await estimateChauffeurCents(w));
+    expect(JSON.stringify(alt.result.lineItems)).toContain('Ella premium +15%');
+  });
+
+  it('a re-save recomputes the alternative, and removes it when the quote stops being "both"', async () => {
+    const w = wired();
+    const saved = await saveBoth(w);
+    const first = (await altOf(w, saved.id))!.result.totalCents;
+
+    const longer = { ...BOTH, id: saved.id, legs: [BOTH.legs[0], { ...BOTH.legs[1], distanceKm: 300 }] };
+    await saveBoth(w, longer);
+    const second = (await altOf(w, saved.id))!.result.totalCents;
+    expect(second).toBeGreaterThan(first);
+    expect(second).toBe(await estimateChauffeurCents(w, longer));
+
+    await saveBoth(w, { ...longer, requestedService: 'private' });
+    expect(await altOf(w, saved.id)).toBeUndefined();
+  });
+
+  it('saves without an alternative when the chauffeur pass throws (best-effort, never a failed save)', async () => {
+    const w = wired();
+    // '2027-13-45' passes the ISO_DATE regex, so the quote prices point-to-point (which ignores
+    // dates) and chauffeurFeasibility() passes, but the chauffeur engine throws on the date.
+    const body = { ...BOTH, legs: [BOTH.legs[0], { ...BOTH.legs[1], date: '2027-13-45' }] };
+    const res = await send(w, 'POST', '/admin/quote/save', body);
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const row = (await w.quotes.get(id))!;
+    expect(row.product).toBe('private');
+    expect(row.totalCents).toBeGreaterThan(0);
+    expect(await altOf(w, id)).toBeUndefined();
+  });
+
+  it('drops an alt whose result is not an object for a non-margin role (fail closed)', async () => {
+    const w = wired();
+    const saved = await saveBoth(w, BOTH, cookie('op@x.com'));
+    const row = (await w.quotes.get(saved.id))!;
+    const OPS_COOKIE = cookie('op@x.com');
+    for (const alt of [{ product: 'chauffeur', marginEstimateCents: 999 }, { product: 'chauffeur', result: 'x', marginEstimateCents: 999 }, 'x', 42, []]) {
+      await w.quotes.update(saved.id, { ...row, result: { ...(row.result as object), alt } } as never);
+      const raw = await (await w.app.request(`/admin/quote/${saved.id}`, { headers: { cookie: OPS_COOKIE } })).text();
+      expect(raw, JSON.stringify(alt)).not.toMatch(/marginEstimateCents|"alt"/);
+    }
+  });
+
+  it('shows ops (no margin:view) neither margin nor hot-zone text anywhere under result.alt, on GET and PATCH', async () => {
+    const w = wired();
+    await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+    const OPS_COOKIE = cookie('op@x.com');
+    const saved = await saveBoth(w, BOTH, OPS_COOKIE);
+    const stored = (await altOf(w, saved.id))!;
+    expect(stored.result.marginEstimateCents).toBeGreaterThan(0); // guard: there IS something to leak
+    expect(JSON.stringify(stored.result.lineItems)).toContain('hotZone');
+
+    const getRaw = await (await w.app.request(`/admin/quote/${saved.id}`, { headers: { cookie: OPS_COOKIE } })).text();
+    expect(getRaw).toContain('"alt"'); // guard: the alternative IS returned, just stripped
+    expect(getRaw).not.toMatch(/marginEstimateCents|hotZone/);
+
+    const patchRaw = await (await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'pending_review' }, OPS_COOKIE)).text();
+    expect(patchRaw).toContain('"alt"');
+    expect(patchRaw).not.toMatch(/marginEstimateCents|hotZone/);
+
+    // The founder still sees both — the strip is per role, not global.
+    const founder = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+    expect(founder.result.alt.result.marginEstimateCents).toBeGreaterThan(0);
+    expect(JSON.stringify(founder.result.alt.result.lineItems)).toContain('hotZone');
+  });
+
+  describe('the stored number wins over a recompute for ready | sent quotes', () => {
+    it('GET /:id builder cards show the stored chauffeur total after the card moved before approval', async () => {
+      const w = wired();
+      const saved = await saveBoth(w);
+      const stored = (await altOf(w, saved.id))!.result.totalCents;
+
+      // The card moves AFTER the save and BEFORE approval: the frozen snapshot now holds the zone.
+      await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+      await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'pending_review' });
+      expect((await send(w, 'PATCH', `/admin/quote/${saved.id}`, { status: 'ready' })).status).toBe(200);
+      expect(await estimateChauffeurCents(w)).not.toBe(stored); // guard: a recompute WOULD differ
+
+      const got = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+      expect(got.estimate.services.chauffeur.total.cents).toBe(stored);
+    });
+
+    it('a draft still shows the live recompute (stored-wins is for ready | sent)', async () => {
+      const w = wired();
+      const saved = await saveBoth(w);
+      await w.zones.create({ placeName: 'Ella', boostPct: 15 });
+      const got = await (await authedGet(w.app, `/admin/quote/${saved.id}`)).json();
+      expect(got.estimate.services.chauffeur.total.cents).toBe(await estimateChauffeurCents(w));
+    });
+  });
+});
+
+// Pay link for either option of a "both" quote (spec 2026-10-12, PR 3). The quote row stays the
+// point-to-point quote; a chauffeur link freezes `{ service: 'chauffeur' }` + the alt total on it.
+describe('POST /admin/quote/:id/pay-link with { service } — the chauffeur option of a "both" quote', () => {
+  const D1 = futureIsoDate(30);
+  const D2 = futureIsoDate(32);
+  const BOTH = {
+    firstName: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'both',
+    legs: [
+      leg({ from: 'Colombo', to: 'Kandy', distanceKm: 115, date: D1 }),
+      leg({ from: 'Kandy', to: 'Ella', distanceKm: 140, date: D2 }),
+    ],
+  };
+  const OPS_COOKIE = cookie('op@x.com');
+
+  function wired() {
+    const discounts = new InMemoryQuoteDiscountRepo();
+    const quotes = new InMemoryQuoteRepo(discounts);
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings, quoteDiscounts: discounts, opsManualDiscountsEnabled: true });
+    return { app, quotes, bookings };
+  }
+  type W = ReturnType<typeof wired>;
+  const send = (w: W, method: string, path: string, body?: unknown, ck = FOUNDER_COOKIE) =>
+    w.app.request(path, { method, headers: { 'content-type': 'application/json', cookie: ck }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  async function bothReady(w: W, body: unknown = BOTH, status: 'ready' | 'sent' = 'ready') {
+    const res = await send(w, 'POST', '/admin/quote/save', body);
+    expect([200, 201]).toContain(res.status);
+    const { id } = (await res.json()) as { id: string };
+    for (const s of status === 'sent' ? (['pending_review', 'ready', 'sent'] as const) : (['pending_review', 'ready'] as const)) {
+      await w.quotes.patch(id, { status: s });
+    }
+    return id;
+  }
+  const altTotalOf = async (w: W, id: string) =>
+    ((await w.quotes.get(id))!.result as { alt: { result: { totalCents: number } } }).alt.result.totalCents;
+  const mint = (w: W, id: string, body?: unknown, ck = FOUNDER_COOKIE) => send(w, 'POST', `/admin/quote/${id}/pay-link`, body, ck);
+  const tokenOf = (url: string) => new URL(url).searchParams.get('t')!;
+  const payView = async (w: W, url: string) => (await w.app.request(`/quotes/pay/view?t=${encodeURIComponent(tokenOf(url))}`)).json();
+
+  it('mints the chauffeur link: amount is the alt total, selection and soldCents are frozen, seq moves', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    const alt = await altTotalOf(w, id);
+    const before = (await w.quotes.get(id))!;
+    expect(alt).not.toBe(before.totalCents); // guard: the two options really differ
+
+    const res = await mint(w, id, { service: 'chauffeur' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.amountCents).toBe(alt);
+    expect(body.coverage).toBeNull();
+    expect(body.service).toBe('chauffeur');
+
+    const after = (await w.quotes.get(id))!;
+    expect(after.payLinkSelection).toEqual({ service: 'chauffeur' });
+    expect(after.soldCents).toBe(alt);
+    expect(after.payLinkSeq).toBe(before.payLinkSeq + 1);
+    // The row itself is untouched: still the point-to-point quote at the point-to-point price.
+    expect(after.product).toBe('private');
+    expect(after.totalCents).toBe(before.totalCents);
+    expect(after.status).toBe('ready');
+    expect(after.revision).toBe(before.revision);
+  });
+
+  it('mints from a sent quote too', async () => {
+    const w = wired();
+    const id = await bothReady(w, BOTH, 'sent');
+    expect((await mint(w, id, { service: 'chauffeur' })).status).toBe(200);
+  });
+
+  it('the same option again is the same URL and leaves seq alone', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    const a = await (await mint(w, id, { service: 'chauffeur' })).json();
+    const b = await (await mint(w, id, { service: 'chauffeur' })).json();
+    expect(b.url).toBe(a.url);
+    expect((await w.quotes.get(id))!.payLinkSeq).toBe(1);
+  });
+
+  it('a bodyless mint afterwards retires the chauffeur link and clears the selection and soldCents', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    const chauffeur = await (await mint(w, id, { service: 'chauffeur' })).json();
+    const plain = await (await mint(w, id)).json();
+    expect(plain.url).not.toBe(chauffeur.url);
+    expect(plain).not.toHaveProperty('service'); // the bodyless response is today's shape
+    const q = (await w.quotes.get(id))!;
+    expect(q.payLinkSelection).toBeNull();
+    expect(q.soldCents).toBeNull();
+    expect(q.payLinkSeq).toBe(2);
+    expect(plain.amountCents).toBe(q.totalCents);
+  });
+
+  it('{ service: "private" } behaves exactly like a bodyless mint, before and after a chauffeur link', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    const bare = await (await mint(w, id)).json();
+    const priv = await (await mint(w, id, { service: 'private' })).json();
+    expect(priv.url).toBe(bare.url);
+    expect((await w.quotes.get(id))!.payLinkSeq).toBe(0);
+
+    await mint(w, id, { service: 'chauffeur' });
+    const back = await (await mint(w, id, { service: 'private' })).json();
+    const q = (await w.quotes.get(id))!;
+    expect(back.url).not.toBe(bare.url);
+    expect(q.payLinkSelection).toBeNull();
+    expect(q.soldCents).toBeNull();
+    expect(q.payLinkSeq).toBe(2);
+    expect(back.amountCents).toBe(q.totalCents);
+  });
+
+  it('refuses a chauffeur link with 409 no_alternative when the quote has no alternative', async () => {
+    const w = wired();
+    // Single-day "both": the chauffeur pass is infeasible, so /save froze no alternative.
+    const id = await bothReady(w, { ...BOTH, legs: BOTH.legs.map((l) => ({ ...l, date: D1 })) });
+    const before = (await w.quotes.get(id))!;
+    const res = await mint(w, id, { service: 'chauffeur' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'not_linkable', reason: 'no_alternative' });
+    const after = (await w.quotes.get(id))!;
+    expect(after.payLinkSeq).toBe(before.payLinkSeq);
+    expect(after.payLinkSelection).toBeNull();
+  });
+
+  it('a quote that was not asked for as "both" has no chauffeur link either', async () => {
+    const w = wired();
+    const id = await bothReady(w, { ...BOTH, requestedService: 'private' });
+    const res = await mint(w, id, { service: 'chauffeur' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'not_linkable', reason: 'no_alternative' });
+  });
+
+  it('refuses a chauffeur link on a DISCOUNTED "both" quote with reason discounted (D2)', async () => {
+    const w = wired();
+    const id = await bothReady(w, { ...BOTH, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+    const q = (await w.quotes.get(id))!;
+    expect(q.result).toHaveProperty('discount'); // guard: really discounted
+    const res = await mint(w, id, { service: 'chauffeur' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'not_linkable', reason: 'discounted' });
+    expect((await w.quotes.get(id))!.payLinkSeq).toBe(q.payLinkSeq);
+    // …and the point-to-point link still mints, at the discounted total.
+    const ok = await mint(w, id, { service: 'private' });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).amountCents).toBe(q.totalCents);
+  });
+
+  it('refuses a chauffeur link on a quote that is not ready or sent, exactly as the bodyless mint does', async () => {
+    const w = wired();
+    const res = await send(w, 'POST', '/admin/quote/save', BOTH);
+    const { id } = (await res.json()) as { id: string };
+    const out = await mint(w, id, { service: 'chauffeur' });
+    expect(out.status).toBe(409);
+    expect(await out.json()).toMatchObject({ error: 'not_linkable', status: 'draft' });
+  });
+
+  it.each([
+    ['service with legIndexes', { service: 'chauffeur', legIndexes: [0], extraIndexes: [] }],
+    ['service with extraIndexes only', { service: 'chauffeur', extraIndexes: [] }],
+    ['an unknown service', { service: 'bus' }],
+    ['a non-string service', { service: 5 }],
+    ['a null service', { service: null }],
+    ['an unknown extra key', { service: 'chauffeur', amountCents: 1 }],
+  ])('400 bad_request for %s, and the quote is untouched', async (_l, badBody) => {
+    const w = wired();
+    const id = await bothReady(w);
+    const before = (await w.quotes.get(id))!;
+    const res = await mint(w, id, badBody);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'bad_request' });
+    const after = (await w.quotes.get(id))!;
+    expect(after.payLinkSeq).toBe(before.payLinkSeq);
+    expect(after.payLinkSelection).toBeNull();
+  });
+
+  it('the price-drift baseline still records the quote TOTAL, not the chauffeur amount', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    const alt = await altTotalOf(w, id);
+    await mint(w, id, { service: 'chauffeur' });
+    const q = (await w.quotes.get(id))!;
+    expect(q.customerTotalCents).toBe(q.totalCents);
+    expect(q.customerTotalCents).not.toBe(alt);
+    expect(q.customerTotalVia).toBe('pay_link');
+  });
+
+  it('"Mark booked" retires a service link like any selection, and still books the point-to-point option (D4)', async () => {
+    const w = wired();
+    const id = await bothReady(w, BOTH, 'sent');
+    const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+    const before = (await w.quotes.get(id))!;
+    expect(before.payLinkSelection).toEqual({ service: 'chauffeur' });
+
+    const res = await send(w, 'POST', `/admin/quote/${id}/book`, {
+      customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+      vehicleType: 'car', pax: 2, bags: 1, date: D1, time: '09:00',
+    });
+    expect(res.status).toBe(201);
+    const booking = await res.json();
+    expect(booking.total).toBe(before.totalCents); // the point-to-point price, not the chauffeur one
+    const after = (await w.quotes.get(id))!;
+    expect(after.payLinkSelection).toBeNull();
+    expect(after.soldCents).toBeNull();
+    expect(after.payLinkSeq).toBe(before.payLinkSeq + 1);
+    expect(after.status).toBe('won');
+    // The chauffeur link no longer offers a payment.
+    expect((await payView(w, chauffeurUrl)).state).not.toBe('payable');
+  });
+
+  it('NEVER stores { service: "private" }: it takes the bodyless path and leaves selection and soldCents null', async () => {
+    const w = wired();
+    const id = await bothReady(w);
+    await mint(w, id, { service: 'private' });
+    const q = (await w.quotes.get(id))!;
+    expect(q.payLinkSelection).toBeNull();
+    expect(q.soldCents).toBeNull();
+  });
+
+  describe('"Mark booked" with a service link out (D4: it books the point-to-point option)', () => {
+    const BOOK_BODY = {
+      customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+      vehicleType: 'car', pax: 2, bags: 1, date: D1, time: '09:00',
+    };
+    const book = (w: W, id: string) => send(w, 'POST', `/admin/quote/${id}/book`, BOOK_BODY);
+    const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
+    // The customer taps Continue on a link: the pay side creates the booking and links the quote.
+    const customerStarts = async (w: W, url: string) => {
+      const res = await w.app.request('/quotes/pay/start', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ t: tokenOf(url), customer: CUSTOMER, termsAccepted: true }),
+      });
+      expect(res.status).toBe(201);
+      return (await res.json()).bookingId as string;
+    };
+
+    it('(a) the link was switched to chauffeur after the customer started the POINT-TO-POINT link: adopts that booking and clears the service selection', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const pointUrl = (await (await mint(w, id)).json()).url as string;
+      const bookingId = await customerStarts(w, pointUrl);
+      await mint(w, id, { service: 'chauffeur' });
+      const before = (await w.quotes.get(id))!;
+      expect(before.payLinkSelection).toEqual({ service: 'chauffeur' }); // guard
+      expect(before.convertedBookingId).toBe(bookingId);
+
+      const res = await book(w, id);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(bookingId);
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('won');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect(after.payLinkSelection).toBeNull();
+      expect(after.soldCents).toBeNull();
+      // The retirement is a seq bump (the stored selection alone would not retire the old token).
+      expect(after.payLinkSeq).toBe(before.payLinkSeq + 1);
+      expect((await w.bookings.get(bookingId))!.total).toBe(before.totalCents); // point-to-point
+    });
+
+    it('(c) the customer started the CHAUFFEUR link and the agent then switched back to point-to-point: still refuses (decided by the booking, not the current link)', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      await mint(w, id, { service: 'private' }); // selection cleared
+      const before = (await w.quotes.get(id))!;
+      expect(before.payLinkSelection).toBeNull(); // guard: nothing on the quote says chauffeur any more
+      expect(before.convertedBookingId).toBe(bookingId);
+
+      const res = await book(w, id);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'not_bookable', reason: 'other_option_started' });
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('sent');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect((await w.bookings.get(bookingId))!.total).toBe(await altTotalOf(w, id)); // untouched chauffeur booking
+    });
+
+    it('the way out the refusal names works: reopen, re-price as Chauffeur-guide, approve, Mark booked adopts the chauffeur booking', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const alt = await altTotalOf(w, id);
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      expect((await book(w, id)).status).toBe(409); // guard: refused as a point-to-point sale
+
+      expect((await send(w, 'PATCH', `/admin/quote/${id}`, { status: 'draft' })).status).toBe(200);
+      const saved = await send(w, 'POST', '/admin/quote/save', { ...BOTH, id, requestedService: 'chauffeur', service: 'chauffeur' });
+      expect(saved.status).toBe(200);
+      for (const st of ['pending_review', 'ready', 'sent']) {
+        expect((await send(w, 'PATCH', `/admin/quote/${id}`, { status: st })).status).toBe(200);
+      }
+      const q = (await w.quotes.get(id))!;
+      expect(q.product).toBe('chauffeur');
+      expect(q.totalCents).toBe(alt); // guard: the re-priced total is the booking's total
+
+      const res = await book(w, id);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(bookingId);
+      expect((await w.quotes.get(id))!.status).toBe('won');
+    });
+
+    it('(b) the customer already started the CHAUFFEUR link: refuses with other_option_started and touches nothing', async () => {
+      const w = wired();
+      const id = await bothReady(w, BOTH, 'sent');
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const bookingId = await customerStarts(w, chauffeurUrl);
+      const before = (await w.quotes.get(id))!;
+
+      const res = await book(w, id);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'not_bookable', reason: 'other_option_started' });
+      const after = (await w.quotes.get(id))!;
+      expect(after.status).toBe('sent');
+      expect(after.convertedBookingId).toBe(bookingId);
+      expect(after.payLinkSelection).toEqual({ service: 'chauffeur' });
+      expect(after.soldCents).toBe(before.soldCents);
+      const b = (await w.bookings.get(bookingId))!;
+      expect(b.status).toBe('payment_pending'); // the chauffeur booking was not edited
+      expect(b.total).toBe(await altTotalOf(w, id));
+    });
+  });
+
+  describe('end to end through /quotes/pay/view', () => {
+    it('the chauffeur link shows chauffeur copy at the alt total with the deposit offer; the earlier point-to-point token reads revised', async () => {
+      const w = wired();
+      const id = await bothReady(w);
+      const alt = await altTotalOf(w, id);
+      expect(alt).toBeGreaterThanOrEqual(15000); // guard: deposit-eligible
+
+      const pointUrl = (await (await mint(w, id)).json()).url as string;
+      const pointView = await payView(w, pointUrl);
+      expect(pointView.state).toBe('payable');
+      expect(pointView.copy.product).not.toBe('chauffeur');
+
+      const res = await mint(w, id, { service: 'chauffeur' });
+      const minted = await res.json();
+      const sold = (await w.quotes.get(id))!.soldCents;
+      const view = await payView(w, minted.url);
+
+      expect(view.state).toBe('payable');
+      expect(view.copy.product).toBe('chauffeur');
+      // The four numbers of the sale are one number.
+      expect(minted.amountCents).toBe(alt);
+      expect(sold).toBe(alt);
+      expect(view.totals.cents).toBe(alt);
+      expect(view.deposit).toMatchObject({ cents: depositFor('chauffeur', alt), balanceCents: alt - depositFor('chauffeur', alt) });
+      expect(JSON.stringify(view)).not.toMatch(/margin|hotZone|"alt"|rateCard/i);
+
+      // The link that was out before is retired.
+      expect((await payView(w, pointUrl)).state).toBe('revised');
+    });
+
+    it('going back to point-to-point retires the chauffeur token and serves private copy again', async () => {
+      const w = wired();
+      const id = await bothReady(w);
+      const chauffeurUrl = (await (await mint(w, id, { service: 'chauffeur' })).json()).url as string;
+      const plainUrl = (await (await mint(w, id, { service: 'private' })).json()).url as string;
+      expect((await payView(w, chauffeurUrl)).state).toBe('revised');
+      const v = await payView(w, plainUrl);
+      expect(v.state).toBe('payable');
+      expect(v.copy.product).not.toBe('chauffeur');
+      expect(v.totals.cents).toBe((await w.quotes.get(id))!.totalCents);
+      expect(v).not.toHaveProperty('deposit');
+    });
+  });
+
+  describe('GET /admin/quote/:id — payOptions', () => {
+    const get = async (w: W, id: string, ck = FOUNDER_COOKIE) => (await w.app.request(`/admin/quote/${id}`, { headers: { cookie: ck } })).json();
+
+    it('lists both options with sell-side numbers, and tracks which one is linked', async () => {
+      const w = wired();
+      const id = await bothReady(w);
+      const alt = await altTotalOf(w, id);
+      const q = (await w.quotes.get(id))!;
+
+      expect((await get(w, id)).payOptions).toEqual({
+        primary: { service: 'private', totalCents: q.totalCents },
+        alternative: { service: 'chauffeur', totalCents: alt, depositCents: depositFor('chauffeur', alt) },
+        linkedService: null,
+      });
+      expect(depositFor('chauffeur', alt)).toBeGreaterThan(0); // guard: the deposit figure is real
+
+      await mint(w, id, { service: 'chauffeur' });
+      expect((await get(w, id)).payOptions.linkedService).toBe('chauffeur');
+      await mint(w, id);
+      expect((await get(w, id)).payOptions.linkedService).toBeNull();
+    });
+
+    it('is null on a quote without an alternative: single-service, single-day, discounted', async () => {
+      const w = wired();
+      const single = await bothReady(w, { ...BOTH, requestedService: 'private' });
+      const oneDay = await bothReady(w, { ...BOTH, legs: BOTH.legs.map((l) => ({ ...l, date: D1 })) });
+      const discounted = await bothReady(w, { ...BOTH, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+      for (const id of [single, oneDay, discounted]) expect((await get(w, id)).payOptions).toBeNull();
+    });
+
+    it('reaches every quote role and carries no margin or cost figure', async () => {
+      const w = wired();
+      const id = await bothReady(w);
+      for (const ck of [FOUNDER_COOKIE, OPS_COOKIE, cookie('fin@x.com')]) {
+        const body = await get(w, id, ck);
+        expect(body.payOptions).not.toBeNull();
+        expect(Object.keys(body.payOptions.alternative).sort()).toEqual(['depositCents', 'service', 'totalCents']);
+        expect(Object.keys(body.payOptions.primary).sort()).toEqual(['service', 'totalCents']);
+        expect(JSON.stringify(body.payOptions)).not.toMatch(/margin|cost|hotZone/i);
+      }
+    });
+  });
+});
+
+// Owner, 2026-10-12: "after the deposit is paid, there is no place to get the balance payment link
+// again, that link should be available both in the quote and in the booking pane". The booking pane
+// had it (ops.balance.test.ts); a won quote offered nothing and /pay-link refuses a won quote. The
+// quote read now carries the same link — the customer's own pay URL, which reads `balance`.
+describe('GET /admin/quote/:id — balancePayLink (the balance link after a deposit)', () => {
+  const OPS_COOKIE = cookie('op@x.com');
+  const CUSTOMER = { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' };
+
+  async function world(opts: { amountDueNow?: number; payments?: InMemoryPaymentRepo } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const payments = opts.payments ?? new InMemoryPaymentRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, payments, quotes, payBaseUrl: 'https://pay.example' });
+    const saved = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Maya', customerContact: '+34600',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', marginCents: 4300, result: { totalCents: 21900 }, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: '2026-09-01' }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    for (const s of ['pending_review', 'ready', 'sent'] as const) await quotes.patch(saved.id, { status: s });
+    const b = await bookings.create({
+      mode: 'single', total: 21900, amountDueNow: opts.amountDueNow ?? 5000, currency: 'USD',
+      input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: '2026-06-22', time: '09:00', customer: CUSTOMER },
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const pay = async (amount: number, purpose?: 'deposit' | 'balance') => {
+      const p = await payments.create({
+        bookingId: b.id, provider: 'payhere', orderId: `${b.reference}-${purpose ?? 'F'}`, amount, currency: 'USD',
+        idempotencyKey: `checkout:${b.id}:${purpose ?? 'full'}`, ...(purpose ? { purpose } : {}),
+      });
+      await payments.markSucceeded(p.id);
+    };
+    // What the payment webhook leaves behind: the booking secured, the quote won and bound to it.
+    const convert = async () => {
+      await bookings.setStatus(b.id, 'paid');
+      await quotes.patch(saved.id, { status: 'won', convertedBookingId: b.id });
+    };
+    const read = async (ck = FOUNDER_COOKIE) => {
+      const res = await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: ck } });
+      expect(res.status).toBe(200);
+      return res.json();
+    };
+    const pane = async () => (await (await app.request(`/admin/ops/bookings/${b.id}`, { headers: { cookie: FOUNDER_COOKIE } })).json());
+    const payView = async (url: string) =>
+      (await app.request(`/quotes/pay/view?t=${encodeURIComponent(new URL(url).searchParams.get('t')!)}`)).json();
+    return { app, bookings, quotes, id: saved.id, b, pay, convert, read, pane, payView };
+  }
+  // The headline case: a $50 deposit landed on a $219 booking.
+  async function depositPaid(opts: Parameters<typeof world>[0] = {}) {
+    const w = await world(opts);
+    await w.pay(5000, 'deposit');
+    await w.convert();
+    return w;
+  }
+
+  it('a won quote whose booking still owes a balance carries the link and the amount', async () => {
+    const w = await depositPaid();
+    const q = (await w.quotes.get(w.id))!;
+    const body = await w.read();
+    expect(body.status).toBe('won');
+    expect(body.balancePayLink).toBe(`https://pay.example/p?t=${signQuotePayToken(q.id, q.revision, 'test-link-secret', q.payLinkSeq)}`);
+    expect(body.balanceCents).toBe(16900);
+  });
+
+  it('is the IDENTICAL link the booking pane hands out for that booking', async () => {
+    const w = await depositPaid();
+    const fromPane = (await w.pane()).balancePayLink;
+    expect(fromPane).toEqual(expect.stringContaining('https://pay.example/p?t='));
+    expect((await w.read()).balancePayLink).toBe(fromPane);
+  });
+
+  it('opens on the customer page as the balance still to pay — not a dead or "paid" link', async () => {
+    const w = await depositPaid();
+    const { balancePayLink, balanceCents } = await w.read();
+    const view = await w.payView(balancePayLink);
+    expect(view.state).toBe('balance');
+    expect(view.balance.balanceCents).toBe(balanceCents);
+  });
+
+  it('is null on a quote that is not won and has no booking', async () => {
+    const w = await world();
+    const body = await w.read();
+    expect(body.status).toBe('sent');
+    expect(body).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null when the booking was paid in full (no deposit)', async () => {
+    const w = await world({ amountDueNow: 21900 });
+    await w.pay(21900);
+    await w.convert();
+    expect(await w.read()).toMatchObject({ status: 'won', balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null once the balance has been settled', async () => {
+    const w = await depositPaid();
+    await w.pay(16900, 'balance');
+    expect(await w.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('is null once the booking is cancelled or refunded', async () => {
+    const cancelled = await depositPaid();
+    await cancelled.bookings.setStatus(cancelled.b.id, 'cancelled');
+    expect(await cancelled.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+
+    const refunded = await depositPaid();
+    await refunded.bookings.setStatus(refunded.b.id, 'refunded');
+    expect(await refunded.read()).toMatchObject({ balancePayLink: null, balanceCents: null });
+  });
+
+  it('reaches every role that can read the quote', async () => {
+    const w = await depositPaid();
+    const founder = await w.read();
+    for (const ck of [OPS_COOKIE, cookie('fin@x.com')]) {
+      expect(await w.read(ck)).toMatchObject({ balancePayLink: founder.balancePayLink, balanceCents: 16900 });
+    }
+  });
+
+  it('a payments read that fails costs the link, never the quote', async () => {
+    class Unreadable extends InMemoryPaymentRepo {
+      down = false;
+      override async findByBookingId(bookingId: string) {
+        if (this.down) throw new Error('payments unavailable');
+        return super.findByBookingId(bookingId);
+      }
+    }
+    const payments = new Unreadable();
+    const w = await depositPaid({ payments });
+    expect((await w.read()).balancePayLink).not.toBeNull(); // guard: readable, the link is there
+    payments.down = true;
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await w.read()).toMatchObject({ status: 'won', balancePayLink: null, balanceCents: null });
+      expect(logged).toHaveBeenCalledTimes(1); // the failure was the ledger read, and it was caught
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

@@ -98,8 +98,10 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await gotoBooking(page, { query });
 
   await expect(page.locator('#trip-route .tr-leg')).toHaveCount(2);
-  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('52 km');
-  await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('236 km');
+  // The planner's 52 / 236 km, rounded to 5 as every other screen shows a distance (the plan card
+  // reads "Approx. 50 km"); the $130 total below still prices the exact km.
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('50 km');
+  await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('235 km');
   await expect(page.locator('#trip-route')).not.toContainText('Distance on request');
   await expect(page.locator('#sum-total')).toHaveText('$130');
 

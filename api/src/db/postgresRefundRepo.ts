@@ -1,6 +1,7 @@
 import { and, eq, inArray, lt, sql as dsql } from 'drizzle-orm';
 import type { Db } from './client';
 import { bookings, payments, refunds } from './schema';
+import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
   RefundError,
   REFUNDED_STATUSES,
@@ -12,6 +13,7 @@ import {
   type RefundRepo,
   type RefundStatus,
 } from './refundRepo';
+import type { TrackingCorrelation } from '../domain/trackingContract';
 
 type Row = typeof refunds.$inferSelect;
 const toRefund = (row: Row): Refund => ({
@@ -29,8 +31,15 @@ function uniqueViolation(error: unknown): boolean {
   return false;
 }
 
+export type RefundFailurePoint = 'after_refund_update' | 'after_booking_update';
+export type RefundFailureHook = (point: RefundFailurePoint) => Promise<void> | void;
+
 export class PostgresRefundRepo implements RefundRepo {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: { transitionTrackingEnabled?: boolean } = {},
+    private readonly failureHook?: RefundFailureHook,
+  ) {}
 
   async request(input: {
     bookingId: string;
@@ -38,6 +47,7 @@ export class PostgresRefundRepo implements RefundRepo {
     currency: string;
     reason: string;
     requestedBy: string;
+    paymentId?: string;
   }): Promise<Refund> {
     return this.db.transaction(async (tx) => {
       const [booking] = await tx
@@ -55,6 +65,12 @@ export class PostgresRefundRepo implements RefundRepo {
       if (captured.some((payment) => payment.currency !== input.currency)) {
         throw new RefundError('currency_mismatch');
       }
+      // A deposit booking holds two captures (spec 2026-10-07). A refund belongs to ONE of them —
+      // it is that payment's gateway id PayHere refunds — so with several, ops must say which.
+      const target = input.paymentId
+        ? captured.find((payment) => payment.id === input.paymentId)
+        : captured.length === 1 ? captured[0] : undefined;
+      if (!target) throw new RefundError(input.paymentId ? 'payment_not_captured' : 'payment_ambiguous');
       const [{ reserved }] = await tx
         .select({ reserved: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
         .from(refunds)
@@ -68,13 +84,18 @@ export class PostgresRefundRepo implements RefundRepo {
       if (reserved + input.amountCents > capturedCents) {
         throw new RefundError('refund_exceeds_captured');
       }
+      const [{ onTarget }] = await tx
+        .select({ onTarget: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
+        .from(refunds)
+        .where(and(eq(refunds.paymentId, target.id), inArray(refunds.status, [...RESERVING_STATUSES])));
+      if (onTarget + input.amountCents > target.amount) throw new RefundError('refund_exceeds_payment');
       const now = new Date();
       const [row] = await tx
         .insert(refunds)
         .values({
           bookingId: input.bookingId,
-          paymentId: captured[0].id,
-          provider: captured[0].provider,
+          paymentId: target.id,
+          provider: target.provider,
           amountCents: input.amountCents,
           currency: input.currency,
           status: 'manual_pending',
@@ -93,6 +114,7 @@ export class PostgresRefundRepo implements RefundRepo {
     refundId: string;
     gatewayRef: string;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     try {
       return await this.db.transaction(async (tx) => {
@@ -135,6 +157,7 @@ export class PostgresRefundRepo implements RefundRepo {
           })
           .where(eq(refunds.id, refund.id))
           .returning();
+        await this.failureHook?.('after_refund_update');
         const [{ refunded }] = await tx
           .select({ refunded: dsql<number>`coalesce(sum(${refunds.amountCents}), 0)::int` })
           .from(refunds)
@@ -147,17 +170,30 @@ export class PostgresRefundRepo implements RefundRepo {
         if (refunded > capturedCents) throw new RefundError('refund_exceeds_captured');
         const fully = refunded === capturedCents;
         if (fully) {
-          const [updated] = await tx
-            .update(bookings)
-            .set({ status: 'refunded' })
-            .where(
-              and(
-                eq(bookings.id, input.bookingId),
-                inArray(bookings.status, ['paid', 'confirmed', 'cancelled']),
-              ),
-            )
-            .returning({ id: bookings.id });
-          if (!updated) throw new RefundError('booking_state_conflict');
+          if (!['paid', 'confirmed', 'cancelled'].includes(booking.status)) {
+            throw new RefundError('booking_state_conflict');
+          }
+          try {
+            await applyBookingStatusTransition(tx, {
+              id: input.bookingId,
+              to: 'refunded',
+              transitionTrackingEnabled: this.options.transitionTrackingEnabled,
+              context: {
+                source: 'refund',
+                actorType: 'staff',
+                actorId: input.confirmedBy,
+                ...input.correlation,
+                relatedEntityType: 'refund',
+                relatedEntityId: refund.id,
+              },
+            });
+          } catch (error) {
+            if (error instanceof Error && (error.name === 'IllegalTransitionError' || error.name === 'BookingNotFoundError')) {
+              throw new RefundError('booking_state_conflict');
+            }
+            throw error;
+          }
+          await this.failureHook?.('after_booking_update');
         }
         return { refund: toRefund(confirmed), bookingFullyRefunded: fully };
       });
@@ -236,6 +272,7 @@ export class PostgresRefundRepo implements RefundRepo {
     refundId: string;
     outcome: RefundApiOutcome;
     confirmedBy: string;
+    correlation?: TrackingCorrelation;
   }): Promise<RefundConfirmation> {
     if (input.outcome.kind === 'succeeded') {
       // Success reuses confirm() wholesale — same evidence rules, same fully-refunded
@@ -246,6 +283,7 @@ export class PostgresRefundRepo implements RefundRepo {
         refundId: input.refundId,
         gatewayRef,
         confirmedBy: input.confirmedBy,
+        correlation: input.correlation,
       });
       if (!providerMessage) return outcome;
       const [withMessage] = await this.db
@@ -291,5 +329,15 @@ export class PostgresRefundRepo implements RefundRepo {
       .where(eq(refunds.bookingId, bookingId))
       .orderBy(refunds.createdAt);
     return rows.map(toRefund);
+  }
+
+  async pendingCentsByBookingIds(bookingIds: string[]): Promise<Map<string, number>> {
+    if (bookingIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ bookingId: refunds.bookingId, cents: dsql<number>`sum(${refunds.amountCents})::int` })
+      .from(refunds)
+      .where(and(inArray(refunds.bookingId, bookingIds), eq(refunds.status, 'manual_pending')))
+      .groupBy(refunds.bookingId);
+    return new Map(rows.map((row) => [row.bookingId, Number(row.cents)]));
   }
 }

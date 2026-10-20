@@ -67,6 +67,12 @@ describe('rideListToOpsRow', () => {
     expect(row.route).toBe('Ella → Mirissa');
   });
 
+  it('carries when the list was started, and no service type', () => {
+    const row = rideListToOpsRow({ list: list(), members: [member()] }, { currency: 'USD' });
+    expect(row.createdAt).toBe('2026-08-01T00:00:00.000Z');
+    expect(row.serviceType).toBeNull();
+  });
+
   it('counts seats, not people — one member bringing three seats fills the threshold', () => {
     const row = rideListToOpsRow(
       { list: list(), members: [member({ seats: 3 })] },

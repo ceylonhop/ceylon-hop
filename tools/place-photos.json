@@ -35,6 +35,15 @@
     "focal": "30% 45%",
     "w": 1800, "h": 1200
   },
+  "hiriketiya": {
+    "stem": "hiriketiya",
+    "alt": "A surfer riding a wave into Hiriketiya's palm-backed horseshoe bay",
+    "caption": "Hiriketiya bay",
+    "credit": "Zoshua Colah",
+    "creditUrl": "https://unsplash.com/photos/a-surfer-rides-a-wave-near-a-sunny-beach-Rk1aOrEjxOY?utm_source=ceylon_hop&utm_medium=referral",
+    "focal": "40% 50%",
+    "w": 1800, "h": 1200
+  },
   "nuwara-eliya": {
     "stem": "nuwara-eliya",
     "alt": "Sunlit green tea terraces rolling across the hills of Nuwara Eliya under a blue sky",

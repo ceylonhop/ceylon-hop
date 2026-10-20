@@ -1,6 +1,11 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
-import type { EmailAdapter, SendOutcome } from '../adapters/email';
+import type {
+  CustomerCommunicationKind,
+  CustomerCommunicationTracking,
+  EmailAdapter,
+  SendOutcome,
+} from '../adapters/email';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -30,6 +35,34 @@ const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
 
+const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
+  confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
+  details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
+  booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
+  refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
+  no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
+  trip_reminder: { templateKey: 'trip-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  review_request: { templateKey: 'review-request', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_recovery: { templateKey: 'payment-recovery', source: 'scheduled_job', actorType: 'scheduler' },
+  payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
+  deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
+  balance_received: { templateKey: 'balance-received', source: 'payment_webhook', actorType: 'provider' },
+  schedule_set: { templateKey: 'booking-schedule-set', source: 'ops', actorType: 'staff' },
+  details_reminder_1: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  details_reminder_2: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+};
+
+function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
+  return {
+    bookingId: booking.id,
+    kind,
+    ...trackingDefaults[kind],
+    templateVersion: '1',
+    trackingKey: `${booking.id}:${kind}`,
+  };
+}
+
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 }
@@ -51,6 +84,15 @@ function fmtDate(d: string): string {
 function dateTime(date?: string, time?: string): string {
   if (!date) return 'To confirm';
   return time ? `${fmtDate(date)} · ${time}` : fmtDate(date);
+}
+// "374 minutes" → "6h 14m" ("6h" when the remainder is 0; under an hour, "45 min" — "0h 45m"
+// reads oddly for a short local-road detour). Used only by roadRow — no existing formatter in
+// this file states a duration this way (the rest state a DATE, or a day count).
+function hoursMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 function travellers(adults: number, children: number): string {
   let s = `${adults} adult${adults > 1 ? 's' : ''}`;
@@ -134,6 +176,43 @@ function addOnsLabel(booking: Booking): string | null {
   return booking.mode === 'single' ? extrasLabel(booking.input.extras) : null;
 }
 
+// The road the customer paid for, when it isn't the expressway (spec §4.3). Null otherwise, so
+// every existing booking's emails are unchanged.
+export function roadRow(booking: Booking): [string, string] | null {
+  if (booking.mode === 'single' && booking.input.routeVariant === 'no_tolls') {
+    const t = booking.durationMin ? ` · about ${hoursMinutes(booking.durationMin)}` : '';
+    return ['Road', `Local road, no expressway${t}`];
+  }
+  if (booking.mode === 'trip' && booking.input.routeVariants?.includes('no_tolls')) {
+    const s = booking.input.stops;
+    const legs = booking.input.routeVariants
+      .map((v, i) => (v === 'no_tolls' && s[i + 1] ? `${shortPlace(s[i]!)} → ${shortPlace(s[i + 1]!)}` : null))
+      .filter(Boolean);
+    return legs.length ? ['Road', `Local road for ${legs.join(', ')}`] : null;
+  }
+  return null;
+}
+
+// The promo code a booking was made with and what it took off (spec 2026-09-14). Null on every
+// other booking — and on a shared seat, which a code never applies to. The emails, the manage page
+// and the team's paid alert all print it, so a total below the advertised price reads as meant.
+export function promoDiscount(booking: Booking): { code: string; cents: number } | null {
+  if (booking.mode === 'shared' || !booking.promoCode || !booking.discountTotal) return null;
+  return { code: booking.promoCode, cents: booking.discountTotal };
+}
+
+// promoDiscount as the customer emails' row, right above the total: "Promo SUMMER-15  −$6.70".
+function promoRows(booking: Booking): [string, string][] {
+  const p = promoDiscount(booking);
+  return p ? [[`Promo ${p.code}`, `−${money(p.cents, booking.currency)}`]] : [];
+}
+
+// roadRow as a plain-text line ("Road: …"), or nothing — for the text emails and team alerts.
+export function roadLines(booking: Booking): string[] {
+  const road = roadRow(booking);
+  return road ? [`${road[0]}: ${road[1]}`] : [];
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs. Exported so the
 // team's paid email states the vehicle and head-count in exactly the customer's words.
 export function factRows(booking: Booking): [string, string][] {
@@ -147,6 +226,8 @@ export function factRows(booking: Booking): [string, string][] {
     ];
     if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
     rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    const road = roadRow(booking);
+    if (road) rows.push(road);
     const addOns = addOnsLabel(booking);
     if (addOns) rows.push(['Extras', addOns]);
     return rows;
@@ -167,9 +248,13 @@ export function factRows(booking: Booking): [string, string][] {
   }
   const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
+  ];
+  const road = roadRow(booking);
+  if (road) rows.push(road);
+  rows.push(
     ['Vehicle', vehicleLabel(booking.input.vehicleType)],
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
-  ];
+  );
   if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
   const extras = addOnsLabel(booking);
   if (extras) rows.push(['Extras', extras]);
@@ -225,13 +310,14 @@ const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c
 const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fff6e8', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
-// True when a paid booking still has an open detail we must confirm (a flexible/"to
-// confirm" date). Drives the "we still need your details" follow-up. The exact pickup
-// is always captured as an area (input.from is required), so date is the open field.
+// True when a paid booking still has an open detail we must confirm. A single transfer needs
+// BOTH a date and a pickup time — "Decide later" can leave either blank (booking.js), and a
+// driver can't be sent with only one. A trip needs at least one date. Shared rides always book
+// a fixed departure. Drives the "we still need your details" email and its reminders.
 export function needsDetails(booking: Booking): boolean {
-  if (booking.mode === 'shared') return false; // shared always books a fixed departure
+  if (booking.mode === 'shared') return false;
   if (booking.mode === 'trip') return !booking.input.dates?.some(Boolean);
-  return !booking.input.date;
+  return !booking.input.date || !booking.input.time;
 }
 
 // Header lockup: a teal monogram + serif wordmark on the warm card (no heavy band —
@@ -342,8 +428,8 @@ function routeRow(booking: Booking): string {
 }
 
 // The non-route facts as an editorial list with hairline dividers.
-function detailsRow(booking: Booking): string {
-  const rows = factRows(booking)
+function detailsRow(facts: [string, string][]): string {
+  const rows = facts
     .map(
       ([k, v]) =>
         `<tr>
@@ -359,8 +445,10 @@ function detailsRow(booking: Booking): string {
 
 // Composes the letter body: reference + status, the journey line, then (optionally) the
 // facts list. Keeps the same call shape the senders already use.
-function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean } = {}): string {
-  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(booking) : '');
+// `extraFacts` are rows only THIS email adds after the shared factRows (never into factRows itself).
+function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean; extraFacts?: [string, string][] } = {}): string {
+  return metaRow(booking, badge) + routeRow(booking)
+    + (opts.facts !== false ? detailsRow([...factRows(booking), ...(opts.extraFacts ?? [])]) : '');
 }
 
 // Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
@@ -383,6 +471,19 @@ function totalBlock(label: string, amount: string): string {
       <tr>
         <td style="padding:15px 0 4px;font-family:${SERIF};font-size:16px;font-weight:600;color:${INK}">${esc(label)}</td>
         <td align="right" style="padding:15px 0 4px;font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">${esc(amount)}</td>
+      </tr>
+    </table>
+  </td></tr>`;
+}
+
+// A quiet line above totalBlock — the promo discount. Deep accent for the amount, as the pay page
+// colours its Discount row.
+function discountBlock(label: string, amount: string): string {
+  return `<tr><td style="padding:12px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="padding:0 0 4px;font-size:14px;color:${MUTED}">${esc(label)}</td>
+        <td align="right" style="padding:0 0 4px;font-size:14px;font-weight:600;color:${TEAL_DEEP}">${esc(amount)}</td>
       </tr>
     </table>
   </td></tr>`;
@@ -475,12 +576,26 @@ function paidRows(booking: Booking): [string, string][] {
   return [['Total paid', money(booking.total, booking.currency)]];
 }
 
+// Partner experiences the customer tapped "I'm interested" on (spec 2026-10-06 D16). Only the
+// confirmation carries this row — it is built here, not in factRows, which a dozen emails share.
+export interface ConfirmationInterest { name: string; partnerName?: string }
+function interestRows(interests: ConfirmationInterest[]): [string, string][] {
+  if (!interests.length) return [];
+  const names = interests.map((i) => `${i.name}${i.partnerName ? ` (${i.partnerName})` : ''}`).join(', ');
+  return [['Interested in', `${names} — not charged; our Pro team will reach out`]];
+}
+
 function coverageLine(coverage?: { soldLegs: number; totalLegs: number }): string {
   if (!coverage) return '';
   return `This booking covers ${coverage.soldLegs} of the ${coverage.totalLegs} legs in your itinerary; travel between them is your own arrangement.`;
 }
 
-function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
+function renderHtml(
+  booking: Booking,
+  manageLink?: string,
+  coverage?: { soldLegs: number; totalLegs: number },
+  interests: ConfirmationInterest[] = [],
+): string {
   const first = esc(booking.input.customer.firstName);
   return page(
     brandHeader() +
@@ -495,7 +610,8 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
       (coverage
         ? `<tr><td style="padding:0 34px 14px"><p style="margin:0;font-size:13px;color:${MUTED}">${esc(coverageLine(coverage))}</p></td></tr>`
         : '') +
-      ticketCard(booking, BADGE_PAID) +
+      ticketCard(booking, BADGE_PAID, { extraFacts: interestRows(interests) }) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
@@ -507,10 +623,16 @@ function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs
   );
 }
 
-function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
+function renderText(
+  booking: Booking,
+  manageLink?: string,
+  coverage?: { soldLegs: number; totalLegs: number },
+  interests: ConfirmationInterest[] = [],
+): string {
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...(coverage ? [coverageLine(coverage), ''] : []),
-    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...[...factRows(booking), ...interestRows(interests)].map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     'What happens next: our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
@@ -526,7 +648,7 @@ function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs
 export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
-  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
+  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number }; interests?: ConfirmationInterest[] } = {},
 ): Promise<SendOutcome | void> {
   // Returns the adapter's outcome so the caller can decide whether to write this down. A
   // suppressed confirmation must NOT be recorded as sent: that row is what the watchdog
@@ -534,8 +656,9 @@ export async function sendBookingConfirmation(
   return email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
-    html: renderHtml(booking, links.manage, links.coverage),
-    text: renderText(booking, links.manage, links.coverage),
+    html: renderHtml(booking, links.manage, links.coverage, links.interests),
+    text: renderText(booking, links.manage, links.coverage, links.interests),
+    tracking: emailTracking(booking, 'confirmation'),
   });
 }
 
@@ -567,6 +690,7 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
     subject: `Your Ceylon Hop booking was cancelled — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'cancellation'),
   });
 }
 
@@ -579,6 +703,7 @@ export async function sendRefundConfirmation(
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
   const amount = money(amountCents, currency);
+  const road = roadRow(booking);
   const html = page(
     brandHeader() +
       introBlock(
@@ -588,6 +713,8 @@ export async function sendRefundConfirmation(
         'We&rsquo;ve processed a refund for the booking below.',
       ) +
       ticketCard(booking, BADGE_REFUNDED, { facts: false }) +
+      // No facts list on a refund — but the road they paid for, when it was the local one.
+      (road ? detailsRow([road]) : '') +
       totalBlock('Amount refunded', amount) +
       infoBox(
         'When will I see it?',
@@ -596,6 +723,7 @@ export async function sendRefundConfirmation(
       footer(),
   );
   const text = textShell('refund processed', "We've processed a refund for your booking.", booking, [
+    ...roadLines(booking),
     `Amount refunded: ${amount}`,
     '',
     'Refunds usually land in 5-10 business days, depending on your bank or card provider.',
@@ -605,6 +733,7 @@ export async function sendRefundConfirmation(
     subject: `Your Ceylon Hop refund is processed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'refund'),
   });
 }
 
@@ -642,6 +771,7 @@ export async function sendTripReminder(
     subject: `Your Ceylon Hop trip is coming up — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'trip_reminder'),
   });
 }
 
@@ -674,6 +804,7 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
     subject: `How was your trip? — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'review_request'),
   });
 }
 
@@ -704,6 +835,7 @@ export async function sendPaymentIncomplete(
         'We saved your booking, but the payment didn’t complete — so your spot isn’t held yet.',
       ) +
       ticketCard(booking, BADGE_ACTION) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       totalBlock('Amount due', due) +
       (links.resume ? ctaRow(links.resume, 'Finish your booking') : '') +
       infoBox(
@@ -716,6 +848,7 @@ export async function sendPaymentIncomplete(
   );
   const text = textShell('finish your booking', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Finish your booking: ${links.resume}`] : []),
     '',
@@ -728,6 +861,7 @@ export async function sendPaymentIncomplete(
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_recovery'),
   });
 }
 
@@ -752,6 +886,7 @@ export async function sendPaymentFailed(
         'Your payment didn’t complete, so your booking isn’t held yet — but nothing’s lost. You can pick up right where you left off.',
       ) +
       ticketCard(booking, BADGE_FAILED) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       totalBlock('Amount due', due) +
       (links.resume ? ctaRow(links.resume, 'Try payment again') : '') +
       // Was one sentence telling them to have "a quick note to your bank". The common case is
@@ -768,6 +903,7 @@ export async function sendPaymentFailed(
   );
   const text = textShell('your payment didn’t go through', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     `Amount due: ${due}`,
     ...(links.resume ? ['', `Try payment again: ${links.resume}`] : []),
     '',
@@ -778,17 +914,21 @@ export async function sendPaymentFailed(
     subject: `Your payment didn’t go through — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'payment_failed'),
   });
 }
 
-// ── Deposit received (a partial deposit was collected; balance due later) ──
-// Dormant today: the engine charges the full amount for every booking, so no public flow
-// produces amountDueNow < total. Wired to fire only on a real partial deposit.
+// ── Deposit received (a deposit was collected; balance due later) ──
+// A deposit was collected; the balance is paid on the same pay link, any time (spec 2026-10-07,
+// revised 2026-10-08). Fires only on a real partial deposit (amountDueNow < total).
 export async function sendDepositReceived(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
+  // Returns the adapter's outcome, like sendBookingConfirmation: this email IS a deposit
+  // booking's confirmation (the watchdog accepts its log row as one), so the caller records it
+  // only when it actually left.
   const first = esc(booking.input.customer.firstName);
   const balance = money(booking.total - (booking.amountDueNow ?? booking.total), booking.currency);
   const html = page(
@@ -800,27 +940,67 @@ export async function sendDepositReceived(
         'We’ve received your deposit and your spot is secured. The balance is due before you travel.',
       ) +
       ticketCard(booking, BADGE_DEPOSIT) +
+      promoRows(booking).map(([label, amount]) => discountBlock(label, amount)).join('') +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Paying the balance',
-        `Your remaining balance of ${esc(balance)} is due before travel — we’ll share the payment details on WhatsApp closer to the day.`,
+        `Your remaining balance is due before travel. Pay the balance of ${esc(balance)} any time before your trip, using the same link you paid the deposit with.`,
         cancellationPolicy(booking),
       ) +
       footer(),
   );
   const text = textShell('deposit received', 'We’ve received your deposit — your spot is secured.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...promoRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     `Balance due before travel: ${balance}`,
+    `Pay the balance of ${balance} any time before your trip, using the same link you paid the deposit with.`,
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
-  await email.send({
+  return email.send({
     to: booking.input.customer.email,
     subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'deposit_received'),
+  });
+}
+
+// ── Balance received (the second half of a deposit booking — now fully paid) ──
+export async function sendBalanceReceived(
+  booking: Booking,
+  // What was actually collected, read from the succeeded payment rows (not derived from the total).
+  paid: { depositCents: number; balanceCents: number },
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const rows: [string, string][] = [
+    ['Deposit paid', money(paid.depositCents, booking.currency)],
+    ['Balance paid', money(paid.balanceCents, booking.currency)],
+    ['Total paid', money(paid.depositCents + paid.balanceCents, booking.currency)],
+  ];
+  const html = page(
+    brandHeader() +
+      introBlock('Fully paid', TEAL_DEEP, `Thanks, ${first} — you’re fully paid`, 'We’ve received your balance. Nothing more is due for this trip.') +
+      ticketCard(booking, BADGE_PAID) +
+      rows.map(([label, amount]) => totalBlock(label, amount)).join('') +
+      (links.manage ? manageButton(links.manage) : '') +
+      footer(),
+  );
+  const text = textShell('balance received', 'We’ve received your balance — you’re fully paid.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...rows.map(([label, amount]) => `${label}: ${amount}`),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `You’re fully paid — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'balance_received'),
   });
 }
 
@@ -860,6 +1040,7 @@ export async function sendBookingConfirmed(
     subject: `You’re confirmed — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'booking_confirmed'),
   });
 }
 
@@ -891,6 +1072,7 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
     subject: `Your Ceylon Hop pickup — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'no_show_notice'),
   });
 }
 
@@ -928,6 +1110,93 @@ export async function sendDetailsNeeded(
     subject: `We need a couple of details — ${booking.reference}`,
     html,
     text,
+    tracking: emailTracking(booking, 'details_needed'),
+  });
+}
+
+// ── Reminder: we still need the pickup date/time (Phase 2, plan 2026-10-18) ─
+// Sent by the scheduled tick at ~2 and ~7 days after payment while a single transfer is still
+// missing its date or time. WhatsApp is the ask — the reference is already typed, so replying is
+// one tap. Says plainly to ignore it if they already told us: ops may not have entered it yet.
+export async function sendDetailsReminder(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { nth: 1 | 2; manage?: string },
+): Promise<void> {
+  if (booking.mode !== 'single') return;
+  const first = esc(booking.input.customer.firstName);
+  const missing = !booking.input.date && !booking.input.time
+    ? 'pickup date and time'
+    : !booking.input.date ? 'pickup date' : 'pickup time';
+  const msg = `Hi Ceylon Hop, for booking ${booking.reference} my ${missing} is: `;
+  const ask: Cta = { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Reminder',
+        AMBER,
+        `What's your ${missing}, ${first}?`,
+        `Your booking is paid and safe. We just need your ${missing} to book your driver.`,
+      ) +
+      ticketCard(booking, BADGE_ACTION) +
+      infoBox(
+        'Tell us on WhatsApp',
+        `Tap below and send us your ${missing}. Already told us? You can ignore this email.`,
+        undefined,
+        ask,
+      ) +
+      (opts.manage ? manageButton(opts.manage) : '') +
+      footer(),
+  );
+  const text = textShell(`what's your ${missing}?`, `Your booking is paid — we just need your ${missing}.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    `Tell us on WhatsApp: ${ask.href}`,
+    'Already told us? You can ignore this email.',
+    ...(opts.manage ? ['', `View your booking: ${opts.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Reminder: your ${missing} — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, opts.nth === 1 ? 'details_reminder_1' : 'details_reminder_2'),
+  });
+}
+
+// ── Your pickup is set (date/time filled or changed after booking) ─────────
+// Spec 2026-10-17 §4. The reader is often abroad, so the time is labelled Sri Lanka time and the
+// weekday is spelled out — this is where a wrong date is easiest to catch.
+export async function sendScheduleSet(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  if (booking.mode !== 'single' || !booking.input.date) return;
+  const first = esc(booking.input.customer.firstName);
+  const when = booking.input.time
+    ? `${fmtDate(booking.input.date)} · ${booking.input.time} (Sri Lanka time)`
+    : `${fmtDate(booking.input.date)} · pickup time to confirm`;
+  const html = page(
+    brandHeader() +
+      introBlock('Pickup set', TEAL_DEEP, `Your pickup is set, ${first}`, `${esc(when)}. Please check it now.`) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('Something not right?', 'Message us on WhatsApp with your booking reference and we will fix it.') +
+      footer(),
+  );
+  const text = textShell('your pickup is set', `${when}. Please check it now.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Something not right? Message us on WhatsApp with your booking reference.',
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your pickup is set — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'schedule_set'),
   });
 }
 
@@ -1060,4 +1329,91 @@ export async function sendCustomerQuote(
     html,
     text,
   });
+}
+
+// ── Experience confirmation (spec 2026-10-06 D21) ───────────────────────────
+// Sent only when ops presses "Send confirmation", once the partner has agreed the date, time and
+// meeting point. The date and time are Sri Lanka wall-clock, exactly as ops entered them — never an
+// instant, so nothing here converts between timezones. Not a booking email: it keys on the booking
+// OR quote reference and is not recorded in the customer-communication ledger.
+export interface ExperienceConfirmedView {
+  reference: string;
+  customerFirstName: string;
+  experienceName: string;
+  partnerName?: string | null;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // HH:MM
+  meetingPoint?: string | null;
+  amountPaidCents?: number | null;
+  amountPaidCurrency?: string | null;
+  paymentRef?: string | null;
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "Sat 21 Nov" (+ " 2026" when withYear). Built by hand so the text never depends on the ICU build.
+// An unreadable stored date is returned as typed rather than failing the send.
+function experienceDay(iso: string, withYear: boolean): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (Number.isNaN(dt.getTime())) return iso;
+  return `${WEEKDAYS[dt.getUTCDay()]} ${dt.getUTCDate()} ${MONTHS[dt.getUTCMonth()]}${withYear ? ` ${dt.getUTCFullYear()}` : ''}`;
+}
+
+const EXPERIENCE_CANCELLATION = 'Free cancellation up to 24 hours before the experience date.';
+const BADGE_EXPERIENCE: Badge = { label: 'Confirmed', bg: '#e4f2f7', color: TEAL_DEEP };
+
+function experienceFacts(v: ExperienceConfirmedView): [string, string][] {
+  const rows: [string, string][] = [['Experience', v.experienceName]];
+  if (v.partnerName) rows.push(['With', v.partnerName]);
+  rows.push(['Date', experienceDay(v.scheduledDate, true)]);
+  rows.push(['Time', `${v.scheduledTime} (Sri Lanka time)`]);
+  if (v.meetingPoint) rows.push(['Meeting point', v.meetingPoint]);
+  if (v.amountPaidCents != null && v.amountPaidCurrency) rows.push(['Amount paid', money(v.amountPaidCents, v.amountPaidCurrency)]);
+  if (v.paymentRef) rows.push(['PayHere reference', v.paymentRef]);
+  return rows;
+}
+
+export function experienceConfirmedEmail(v: ExperienceConfirmedView): { subject: string; html: string; text: string } {
+  const first = v.customerFirstName.trim();
+  const facts = experienceFacts(v);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        '✓ Experience confirmed',
+        TEAL_DEEP,
+        first ? `See you there, ${esc(first)}!` : 'See you there!',
+        'Everything is booked in. Here is when and where to be &mdash; keep this email for your records.',
+      ) +
+      `<tr><td style="padding:18px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td valign="middle"><span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${TEAL_DEEP};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(v.reference)}</span></td>
+      <td valign="middle" align="right">${statusPill(BADGE_EXPERIENCE)}</td>
+    </tr></table>
+  </td></tr>` +
+      detailsRow(facts) +
+      infoBox(
+        'Need to change something?',
+        `${EXPERIENCE_CANCELLATION} Questions, or a change of plan? Just reply or message us on WhatsApp.`,
+      ) +
+      footer(),
+  );
+  const text = [
+    'CEYLON HOP — your experience is confirmed',
+    '',
+    `Hi ${first || 'there'},`,
+    '',
+    'Everything is booked in. Here is when and where to be:',
+    '',
+    ...facts.map(([k, val]) => `${k}: ${val}`),
+    `Reference: ${v.reference}`,
+    '',
+    EXPERIENCE_CANCELLATION,
+    '',
+    `WhatsApp: ${WA_URL}`,
+    '',
+    'Ceylon Hop · Ground transport across Sri Lanka',
+  ].join('\n');
+  return { subject: `Confirmed: ${v.experienceName} on ${experienceDay(v.scheduledDate, false)}`, html, text };
 }

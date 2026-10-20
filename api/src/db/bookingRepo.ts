@@ -7,6 +7,7 @@ import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
+import { addOnsFor } from '../quote/quoteAlternative';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
@@ -54,6 +55,7 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
       // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
       discountTotal?: number;
     }
@@ -70,6 +72,7 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
       // Cents taken off by a promo code (spec 2026-09-14 §6.1). Absent on every other booking.
       discountTotal?: number;
     }
@@ -83,12 +86,13 @@ export type NewBooking =
       needsPricing?: boolean;
       billing?: BillingInput;
       termsAcceptedAt?: Date;
+      customerNotes?: string;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt' | 'customerNotes'> & {
   // Billing details for the card (2026-08-01). Absent on website bookings and on every row
   // predating the pay page — the checkout adapter then OMITS the fields so PayHere collects
   // them itself, rather than sending the placeholder it used to.
@@ -96,6 +100,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // When they accepted the terms + cancellation policy. Null on website bookings and every
   // row predating this — absence means "never recorded", never "declined".
   termsAcceptedAt?: string | null;
+  // The customer's own note from the booking page ("Anything we should know?"). Plain text,
+  // already cleaned and bounded at the door. Null when they left none, and on older rows.
+  customerNotes?: string | null;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -113,6 +120,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // Promo code (spec 2026-09-14 §5). Present only on bookings made with a code.
   promoCodeId?: string | null;
   promoHoldUntil?: string | null; // ISO
+  // The code's own name ("SUMMER-15"), read on every load from promo_codes — what the emails, the
+  // manage page and the ops sheet print. A code's name never changes once created.
+  promoCode?: string;
   // The add-ons the customer chose ("Waiting fee — Kandy → Ella"). Read on every load from the priced
   // lines that already exist — the booking's quote (quotes.converted_booking_id), or a website
   // booking's own WebsitePricingSnapshot — never stored as a field. Present only when there is at
@@ -125,6 +135,38 @@ export interface StatusAudit {
   reason: string;
   by: string;
   at?: Date;
+}
+
+// Pickup date/time set or changed after booking (spec 2026-10-17 §4). Single transfers only, and
+// only once the booking is paid: before that the customer can still change it on the booking page.
+export const SCHEDULE_EDITABLE_STATUSES = ['paid', 'confirmed'] as const;
+
+export interface ScheduleValue { date: string | null; time: string | null }
+
+export interface ScheduleChange {
+  date: string;
+  time: string | null;
+  // What the editor was looking at. A mismatch means someone else changed it meanwhile — the
+  // write is refused rather than silently winning.
+  expected: ScheduleValue;
+  actor: { type: 'staff' | 'customer'; id: string };
+}
+
+export type SetScheduleResult =
+  | { ok: true; booking: Booking }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'not_editable' | 'conflict'; booking: Booking };
+
+export interface BookingScheduleEvent {
+  id: string;
+  bookingId: string;
+  fromDate: string | null;
+  fromTime: string | null;
+  toDate: string;
+  toTime: string | null;
+  actorType: 'staff' | 'customer';
+  actorId: string;
+  createdAt: string; // ISO
 }
 
 /** One applied booking status fact. Legacy bookings deliberately have no synthetic baseline. */
@@ -252,6 +294,9 @@ export interface BookingRepo {
   // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
   // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
   findByReference(reference: string): Promise<Booking | null>;
+  // A website booking's own priced lines (bookings.pricing_snapshot_json), for the ops refund
+  // picker. Null for any booking without one — a quote booking's lines live on its quote.
+  websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null>;
   // Every booking by one person — customers.person_key, i.e. personKeyFor(email) — newest first,
   // at most `limit`. The lookup's "this customer's bookings" (spec 2026-09-26 §15).
   listByPersonKey(personKey: string, limit: number): Promise<Booking[]>;
@@ -265,6 +310,8 @@ export interface BookingRepo {
   ): Promise<Booking>;
   /** Applied transition facts, oldest first. Empty means no recorded history, not no activity. */
   listStatusEvents(bookingId: string): Promise<BookingStatusEvent[]>;
+  /** Applied facts for a set of bookings, in one read for reconciliation. */
+  listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]>;
   /** Rows whose current status disagrees with their latest recorded applied transition. */
   listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
@@ -282,10 +329,26 @@ export interface BookingRepo {
   // `termsAcceptedAt` is optional: an ops "Mark booked" re-book carries no acceptance, because
   // nobody ticked a box — that customer agreed over WhatsApp. Absent leaves the column alone
   // rather than stamping an acceptance that never happened.
+  //
+  // `amountDueNow` is the pay link's deposit-or-full choice on a resumed /start (spec 2026-10-07
+  // §4): a customer who tried the deposit and came back for full (or the reverse) moves the same
+  // booking. Applied ONLY while no payment on the booking has succeeded — the status guard above
+  // is not enough on its own, because settlement and the status move are separate writes.
   refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking>;
+  // Ops "Mark paid" settles the whole total by hand, so what was "due now" (possibly a deposit an
+  // abandoned PayHere attempt left behind) becomes the total, keeping every reader of
+  // amountDueNow (balance, manage page, pay view, receipts) in agreement. Applies ONLY while the
+  // booking is payment_pending, decided in the write itself; otherwise returns it unchanged.
+  setAmountDueNowToTotal(id: string): Promise<Booking>;
+  // Set a single transfer's pickup date/time after booking. Implementations MUST make the
+  // expected-value check part of the write and update BOTH stores of the date (transfer_request
+  // and booking_legs) plus the history row in one transaction.
+  setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult>;
+  /** Every applied schedule change for one booking, oldest first. */
+  listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]>;
 }
 
 // A booking's payer may only be rewritten while it is still awaiting money.
@@ -317,6 +380,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   // awaits, so without it two concurrent bookings could both see the last use as free.
   private promoLocks = new Map<string, Promise<void>>();
   private statusEvents: BookingStatusEvent[] = [];
+  private scheduleEvents: BookingScheduleEvent[] = [];
 
   constructor(private readonly options: InMemoryBookingRepoOptions = {}) {}
 
@@ -338,7 +402,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   // with none comes back as the very object stored, exactly as before.
   private async present(b: Booking): Promise<Booking> {
     const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
-    const fromQuote = q ? chosenAddOns(q, q.payLinkSelection) : [];
+    const fromQuote = q ? addOnsFor(q, b) : [];
     const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
     return addOns.length ? { ...b, addOns } : b;
   }
@@ -394,6 +458,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       return this.present(this.insert(b, key, {
         promoCodeId: promo.code.id,
         promoHoldUntil: new Date(promo.now.getTime() + PROMO_HOLD_MS).toISOString(),
+        promoCode: promo.code.code,
       }, opts?.pricingSnapshot));
     });
   }
@@ -401,7 +466,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   private insert(
     b: NewBooking,
     key: string | undefined,
-    promo?: { promoCodeId: string; promoHoldUntil: string },
+    promo?: { promoCodeId: string; promoHoldUntil: string; promoCode: string },
     pricingSnapshot?: WebsitePricingSnapshot,
   ): Booking {
     let reference = generateReference();
@@ -415,6 +480,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       channel: b.channel ?? 'website',
       billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
       termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
+      customerNotes: b.customerNotes ?? null,
       ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
@@ -438,6 +504,11 @@ export class InMemoryBookingRepo implements BookingRepo {
   async findByReference(reference: string): Promise<Booking | null> {
     for (const b of this.byId.values()) if (b.reference === reference) return this.present(b);
     return null;
+  }
+
+  async websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null> {
+    const s = this.websitePricing.get(bookingId);
+    return s ? structuredClone(s) : null;
   }
 
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
@@ -495,6 +566,11 @@ export class InMemoryBookingRepo implements BookingRepo {
     return this.statusEvents.filter((event) => event.bookingId === bookingId).map((event) => ({ ...event }));
   }
 
+  async listStatusEventsForBookingIds(bookingIds: string[]): Promise<BookingStatusEvent[]> {
+    const wanted = new Set(bookingIds);
+    return this.statusEvents.filter((event) => wanted.has(event.bookingId)).map((event) => ({ ...event }));
+  }
+
   async listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]> {
     const latest = new Map<string, BookingStatusEvent>();
     for (const event of this.statusEvents) latest.set(event.bookingId, event);
@@ -510,13 +586,18 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date; amountDueNow?: number },
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
+    // The choice is frozen the moment any payment on the booking has succeeded (see the interface).
+    const settled = this.payments
+      ? (await this.payments.findByBookingId(id)).some((p) => p.status === 'succeeded')
+      : false;
     const updated: Booking = {
       ...current,
+      ...(details.amountDueNow !== undefined && !settled ? { amountDueNow: details.amountDueNow } : {}),
       input: { ...current.input, customer: { ...details.customer } },
       // Absent billing leaves what was captured before: a payer who filled the address on the
       // first attempt and left it blank on a retry should not lose it.
@@ -528,6 +609,39 @@ export class InMemoryBookingRepo implements BookingRepo {
     } as Booking;
     this.byId.set(id, updated);
     return this.present(updated);
+  }
+
+  async setAmountDueNowToTotal(id: string): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    if (current.status !== 'payment_pending') return this.present(current);
+    const updated: Booking = { ...current, amountDueNow: current.total };
+    this.byId.set(id, updated);
+    return this.present(updated);
+  }
+
+  async setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult> {
+    const current = this.byId.get(id);
+    if (!current) return { ok: false, reason: 'not_found' };
+    if (current.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(current.status)) {
+      return { ok: false, reason: 'not_editable', booking: await this.present(current) };
+    }
+    const from: ScheduleValue = { date: current.input.date ?? null, time: current.input.time ?? null };
+    if (from.date !== change.expected.date || from.time !== change.expected.time) {
+      return { ok: false, reason: 'conflict', booking: await this.present(current) };
+    }
+    const updated = { ...current, input: { ...current.input, date: change.date, time: change.time ?? undefined } } as Booking;
+    this.byId.set(id, updated);
+    this.scheduleEvents.push({
+      id: randomUUID(), bookingId: id,
+      fromDate: from.date, fromTime: from.time, toDate: change.date, toTime: change.time,
+      actorType: change.actor.type, actorId: change.actor.id, createdAt: new Date().toISOString(),
+    });
+    return { ok: true, booking: await this.present(updated) };
+  }
+
+  async listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]> {
+    return this.scheduleEvents.filter((e) => e.bookingId === bookingId).map((e) => ({ ...e }));
   }
 
   async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
@@ -579,12 +693,25 @@ export class InMemoryBookingRepo implements BookingRepo {
     });
   }
 
-  snapshotForSettlement(): Map<string, Booking> {
-    return new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)]));
+  // Settlement only (paymentSettlementRepo): the first payment that settles IS what secured the
+  // booking, so amountDueNow becomes that payment's amount. Unguarded on purpose — the caller
+  // checks 0 <= amount <= total, as the DB CHECK does.
+  setAmountDueNowForSettlement(id: string, cents: number): void {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    this.byId.set(id, { ...current, amountDueNow: cents });
   }
 
-  restoreForSettlement(snapshot: Map<string, Booking>): void {
-    this.byId = new Map([...snapshot].map(([id, booking]) => [id, structuredClone(booking)]));
+  snapshotForSettlement(): { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] } {
+    return {
+      bookings: new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)])),
+      statusEvents: structuredClone(this.statusEvents),
+    };
+  }
+
+  restoreForSettlement(snapshot: { bookings: Map<string, Booking>; statusEvents: BookingStatusEvent[] }): void {
+    this.byId = new Map([...snapshot.bookings].map(([id, booking]) => [id, structuredClone(booking)]));
+    this.statusEvents = structuredClone(snapshot.statusEvents);
   }
 
   snapshotForQuoteConversion(): {

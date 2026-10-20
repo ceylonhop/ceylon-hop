@@ -7,6 +7,10 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import type { MapsAdapter } from '../adapters/maps';
 import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
 import type { RateCard } from '../quote/rateCard';
+import type { DistanceResult, RouteVariants } from '../adapters/maps';
+import { RATE_CARD } from '../quote/rateCard';
+import { quote as priceQuote } from '../quote/engine';
+import { MAX_COMPARE_PER_BATCH } from '../quote/routeChoice';
 
 async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
   const repo = new InMemoryZonesRepo();
@@ -727,5 +731,179 @@ describe('engineRequestFor', () => {
       maps as never,
     );
     expect(out).toBeNull();
+  });
+});
+
+describe('route choice (v2)', () => {
+  const FAST: DistanceResult = { km: 335, durationMin: 299 };
+  const SLOW: DistanceResult = { km: 213, durationMin: 374 };
+  const FORK: RouteVariants = { fastest: FAST, noTolls: SLOW, hasChoice: true };
+
+  function forkMaps(variants: RouteVariants | null = FORK, fast: DistanceResult = FAST): MapsAdapter & { variantCalls: number } {
+    const m = {
+      provider: 'stub',
+      variantCalls: 0,
+      async distance() { return fast; },
+      async distanceVariants() { m.variantCalls++; return variants; },
+      async places() { return []; },
+    };
+    return m;
+  }
+  function appWith(maps: MapsAdapter) {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps, v2Enabled: true }));
+    return app;
+  }
+  const send = (app: Hono, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const ONE = (leg: Record<string, unknown> = {}) => ({
+    product: 'private', vehicle: 'car', pax: 1, bags: 0, extras: [],
+    legs: [{ from: 'Colombo Airport (CMB)', to: 'Ella', ...leg }],
+  });
+  // The engine's own price for a car at `km`, on the same card the route uses (no zones seeded).
+  const carAt = (km: number) => priceQuote(
+    { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ from: 'Colombo Airport (CMB)', to: 'Ella', distanceKm: km }], extras: [] },
+    RATE_CARD,
+  ).totalCents;
+
+  it('prices a requested local road at the toll-free km and echoes the road priced', async () => {
+    const res = await send(appWith(forkMaps()), '/quote/v2/estimate', ONE({ routeVariant: 'no_tolls' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.totalCents).toBe(carAt(213));
+    expect(body.legs[0]).toMatchObject({ distanceKm: 213, durationMin: 374, routeVariant: 'no_tolls' });
+  });
+
+  it('prices the expressway and echoes fastest when there is no fork', async () => {
+    const noFork: RouteVariants = { fastest: FAST, noTolls: null, hasChoice: false };
+    const body = await (await send(appWith(forkMaps(noFork)), '/quote/v2/estimate', ONE({ routeVariant: 'no_tolls' }))).json();
+    expect(body.totalCents).toBe(carAt(335));
+    expect(body.legs[0].routeVariant).toBe('fastest');
+  });
+
+  it('leaves legs without a routeVariant key when none was asked for', async () => {
+    const body = await (await send(appWith(forkMaps()), '/quote/v2/estimate', ONE())).json();
+    expect(body.legs[0]).toEqual({ from: 'Colombo Airport (CMB)', to: 'Ella', distanceKm: 335, durationMin: 299 });
+    expect(body.routeChoice).toBeUndefined();
+  });
+
+  it('prices each leg of a multi-leg intent on its own road', async () => {
+    const body = await (await send(appWith(forkMaps()), '/quote/v2/estimate', {
+      ...ONE(), legs: [{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: 'Yala', routeVariant: 'no_tolls' }],
+    })).json();
+    expect(body.legs.map((l: { distanceKm: number }) => l.distanceKm)).toEqual([335, 213]);
+    expect(body.legs[0].routeVariant).toBeUndefined();
+    expect(body.legs[1].routeVariant).toBe('no_tolls');
+  });
+
+  it('compareRoutes returns both roads priced when the local road is cheaper', async () => {
+    const maps = forkMaps();
+    const body = await (await send(appWith(maps), '/quote/v2/estimate', { ...ONE(), compareRoutes: true })).json();
+    expect(body.totalCents).toBe(carAt(335));
+    expect(body.routeChoice).toEqual({
+      fastest: { distanceKm: 335, durationMin: 299, totalCents: carAt(335) },
+      noTolls: { distanceKm: 213, durationMin: 374, totalCents: carAt(213) },
+    });
+    expect(maps.variantCalls).toBe(1);
+  });
+
+  it('compareRoutes adds nothing without a fork or when the local road is not cheaper', async () => {
+    const noFork: RouteVariants = { fastest: FAST, noTolls: null, hasChoice: false };
+    expect((await (await send(appWith(forkMaps(noFork)), '/quote/v2/estimate', { ...ONE(), compareRoutes: true })).json()).routeChoice).toBeUndefined();
+    const longer: RouteVariants = { fastest: FAST, noTolls: { km: 360, durationMin: 420 }, hasChoice: true };
+    expect((await (await send(appWith(forkMaps(longer)), '/quote/v2/estimate', { ...ONE(), compareRoutes: true })).json()).routeChoice).toBeUndefined();
+  });
+
+  it('refuses compareRoutes on two legs, a non-true value, or a chauffeur intent; refuses routeVariant on a chauffeur day', async () => {
+    const app = appWith(forkMaps());
+    expect((await send(app, '/quote/v2/estimate', { ...ONE(), legs: [{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: 'Yala' }], compareRoutes: true })).status).toBe(400);
+    expect((await send(app, '/quote/v2/estimate', { ...ONE(), compareRoutes: 'yes' })).status).toBe(400);
+    const chauffeur = {
+      product: 'chauffeur', vehicle: 'car', pax: 1, bags: 0, extras: [], firstDate: '2030-01-01', lastDate: '2030-01-02',
+      travelDays: [{ date: '2030-01-01', from: 'Kandy', to: 'Ella' }],
+    };
+    expect((await send(app, '/quote/v2/estimate', { ...chauffeur, compareRoutes: true })).status).toBe(400);
+    expect((await send(app, '/quote/v2/estimate', { ...chauffeur, travelDays: [{ date: '2030-01-01', from: 'Kandy', to: 'Ella', routeVariant: 'no_tolls' }] })).status).toBe(400);
+  });
+
+  it('refuses a road on /v2/lock and on PUT /v2/:id — a locked quote cannot carry it to a booking', async () => {
+    const app = appWith(forkMaps());
+    const lock = await send(app, '/quote/v2/lock', ONE({ routeVariant: 'no_tolls' }));
+    expect(lock.status).toBe(400);
+    expect((await lock.json()).error).toBe('route_choice_not_supported');
+    // PUT: lock a plain intent first, then try to update it with a road. Use the same
+    // id/accessToken/revision headers the existing 'public quote v2 lock' PUT tests use.
+    const created = await (await send(app, '/quote/v2/lock', ONE())).json();
+    const put = await app.request(`/quote/v2/${created.quoteId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${created.accessToken}` },
+      body: JSON.stringify({ revision: created.revision, intent: ONE({ routeVariant: 'no_tolls' }) }),
+    });
+    expect(put.status).toBe(400);
+    expect((await put.json()).error).toBe('route_choice_not_supported');
+  });
+
+  it('still refuses a client-sent distance on a leg', async () => {
+    expect((await send(appWith(forkMaps()), '/quote/v2/estimate', ONE({ distanceKm: 1 }))).status).toBe(400);
+  });
+
+  it('estimate-batch returns routeChoice per catalogue intent and still skips non-catalogue legs', async () => {
+    const body = await (await send(appWith(forkMaps()), '/quote/v2/estimate-batch', {
+      intents: [
+        { ...ONE(), compareRoutes: true },
+        ONE(),
+        { ...ONE(), legs: [{ from: '12 Temple Rd, Ella', to: 'Kandy' }], compareRoutes: true },
+      ],
+    })).json();
+    expect(body.results[0]).toMatchObject({ totalCents: carAt(335), routeChoice: { noTolls: { distanceKm: 213 } } });
+    expect(body.results[1].routeChoice).toBeUndefined();
+    expect(body.results[2]).toBeNull();
+  });
+
+  it('caps comparisons per batch, and a non-catalogue compare intent never consumes a slot', async () => {
+    const thirteen = Array.from({ length: 13 }, () => ({ ...ONE(), compareRoutes: true }));
+    const capped = await (await send(appWith(forkMaps()), '/quote/v2/estimate-batch', { intents: thirteen })).json();
+    expect(capped.results).toHaveLength(13);
+    expect(capped.results.slice(0, MAX_COMPARE_PER_BATCH).every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
+    expect(capped.results[MAX_COMPARE_PER_BATCH].routeChoice).toBeUndefined();
+    // The 13th is still priced — only the comparison is skipped, not the price.
+    expect(capped.results[MAX_COMPARE_PER_BATCH].totalCents).toBe(carAt(335));
+
+    const nonCatalogueFirst = [
+      { ...ONE(), legs: [{ from: '12 Temple Rd, Ella', to: 'Kandy' }], compareRoutes: true },
+      ...Array.from({ length: MAX_COMPARE_PER_BATCH }, () => ({ ...ONE(), compareRoutes: true })),
+    ];
+    const body = await (await send(appWith(forkMaps()), '/quote/v2/estimate-batch', { intents: nonCatalogueFirst })).json();
+    expect(body.results[0]).toBeNull();
+    expect(body.results.slice(1).every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
+  });
+
+  it('estimate-batch refuses any intent carrying a road, without a single comparison', async () => {
+    // No client sends routeVariant in a batch (plan.js sends only compareRoutes). Allowing it
+    // let 8 legs x 60 intents each bill a distanceVariants call outside MAX_COMPARE_PER_BATCH.
+    const maps = forkMaps();
+    const legs = Array.from({ length: 8 }, () => ({ from: 'Kandy', to: 'Ella', routeVariant: 'no_tolls' }));
+    const body = await (await send(appWith(maps), '/quote/v2/estimate-batch', {
+      intents: [
+        { ...ONE(), legs },
+        ONE({ routeVariant: 'fastest' }),
+        { ...ONE(), legs: [{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: 'Yala', routeVariant: 'no_tolls' }] },
+        ONE(),
+      ],
+    })).json();
+    expect(body.results.slice(0, 3)).toEqual([null, null, null]);
+    expect(body.results[3].totalCents).toBe(carAt(335));
+    expect(maps.variantCalls).toBe(0);
+  });
+
+  it('estimate-batch compares one pair once however its names are cased or spaced', async () => {
+    const spellings = ['Kandy', 'KANDY', 'kandy', ' Kandy ', 'kAnDy', 'Kandy'];
+    const intents = Array.from({ length: 12 }, (_, i) => ({
+      ...ONE(), legs: [{ from: spellings[i % spellings.length], to: i % 2 ? 'ELLA' : 'ella' }], compareRoutes: true,
+    }));
+    const maps = forkMaps();
+    const body = await (await send(appWith(maps), '/quote/v2/estimate-batch', { intents })).json();
+    expect(body.results.every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
+    expect(maps.variantCalls).toBe(1);
   });
 });

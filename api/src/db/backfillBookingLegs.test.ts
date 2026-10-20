@@ -18,6 +18,7 @@ describe('toBackfillRow', () => {
         bags: 2,
         distanceKm: 120,
         durationMin: 180,
+        routeVariant: null,
       },
       undefined,
     );
@@ -48,6 +49,7 @@ describe('toBackfillRow', () => {
         dates: null,
         days: null,
         driverNights: null,
+        routeVariants: null,
       },
     );
     expect(row).toEqual({

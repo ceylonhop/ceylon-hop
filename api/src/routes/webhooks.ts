@@ -10,11 +10,15 @@ import {
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
 import { wasDelivered } from '../adapters/email';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText, travelWhenText } from '../services/notifications';
+import type { PaymentRepo } from '../db/paymentRepo';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, sendBalanceReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
-import { teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
+import { teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
 import type { Booking } from '../db/bookingRepo';
+import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { legSelectionOf } from '../quote/paySelection';
+import { isChauffeurBooking } from '../quote/quoteAlternative';
 import {
   recordCheckoutEvent,
   type BookingCheckoutEventInput,
@@ -22,8 +26,15 @@ import {
   type CheckoutOutcome,
 } from '../db/bookingCheckoutEventRepo';
 import type { ProviderPaymentStatus } from '../adapters/payments';
+import { loadBookingInterests } from '../experiences/bookingInterests';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
 import { closeLeftoverDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
+import type {
+  CustomerCommunicationEventType,
+  CustomerCommunicationRepo,
+} from '../db/customerCommunicationRepo';
 
 const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -71,6 +82,8 @@ function teamPaidBody(b: Booking): string {
   const c = b.input.customer;
   return [
     `${routeText(b)}`,
+    // The road that was sold, when it is the local one (route choice, spec §4.3).
+    ...roadLines(b),
     // When they travel — omitted until 2026-09-22, so the one message telling the team a seat
     // sold could not tell them it departs in two days. The timestamp the alert transport adds
     // at the foot of that email is the send time, which is when the money landed (CH-6HE3V).
@@ -91,6 +104,51 @@ const NOTIFY_OUTCOME: Record<ProviderPaymentStatus, CheckoutOutcome> = {
   charged_back: 'failed', // -3
 };
 
+const RESEND_EVENT_TYPE: Record<string, CustomerCommunicationEventType> = {
+  'email.sent': 'provider_sent',
+  'email.delivered': 'delivered',
+  'email.delivery_delayed': 'delayed',
+  'email.failed': 'provider_failed',
+  'email.bounced': 'bounced',
+  'email.complained': 'complained',
+};
+
+interface ResendWebhookEvent {
+  type?: string;
+  created_at?: string;
+  data?: {
+    email_id?: string;
+    message_id?: string;
+    to?: string[] | string;
+    subject?: string;
+    bounce?: { type?: string; subType?: string; message?: string };
+  };
+}
+
+function shortDiagnostic(value: unknown, max = 160): string | undefined {
+  return typeof value === 'string' && value ? value.slice(0, max) : undefined;
+}
+
+function recipientDomain(to: string[] | string | undefined): string | undefined {
+  const address = Array.isArray(to) ? to[0] : to;
+  if (typeof address !== 'string') return undefined;
+  const at = address.lastIndexOf('@');
+  return at >= 0 ? address.slice(at + 1).trim().toLowerCase().slice(0, 255) : undefined;
+}
+
+function resendDiagnostic(event: ResendWebhookEvent): Record<string, string> {
+  const detail: Record<string, string> = { provider: 'resend' };
+  const messageId = shortDiagnostic(event.data?.message_id);
+  const domain = recipientDomain(event.data?.to);
+  const bounceType = shortDiagnostic(event.data?.bounce?.type);
+  const bounceSubType = shortDiagnostic(event.data?.bounce?.subType);
+  if (messageId) detail.messageId = messageId;
+  if (domain) detail.recipientDomain = domain;
+  if (bounceType) detail.bounceType = bounceType;
+  if (bounceSubType) detail.bounceSubType = bounceSubType;
+  return detail;
+}
+
 // The attempt-log row a webhook request will write, set by the handler where the outcome is
 // decided and written once the response is known (so http_status is the real one).
 type WebhookVars = { Variables: { checkoutEvent?: Omit<BookingCheckoutEventInput, 'source' | 'httpStatus' | 'ua'> } };
@@ -107,8 +165,14 @@ export function webhookRoutes(deps: {
   // M17 — optional so existing callers/tests keep working; alerts default to no-op.
   alerts?: AlertAdapter;
   notificationLog?: NotificationLogRepo;
-  // Enables POST /webhooks/resend (bounce/complaint alerts). Unset → endpoint 404s.
+  // Reads the succeeded deposit/balance amounts for the balance receipt. Unset → derived from the booking.
+  payments?: PaymentRepo;
+  // Enables POST /webhooks/resend (delivery evidence + bounce/complaint/failure alerts).
+  // Unset → endpoint 404s.
   resendWebhookSecret?: string;
+  // M23.6 — present only while communication tracking is enabled. It observes signed
+  // provider facts; it never authorizes a send or changes booking state.
+  customerCommunications?: CustomerCommunicationRepo;
   // Signs the customer's "manage my booking" link in the confirmation email.
   baseUrl: string;
   linkSecret: string;
@@ -119,6 +183,11 @@ export function webhookRoutes(deps: {
   // Closes the same customer's older unpaid bookings for the same trip once one settles
   // (services/duplicateBookings.ts). Unset → nothing is closed, as before.
   duplicates?: Omit<DuplicateCloseDeps, 'alerts'>;
+  // Server-side GA4 purchase on a settled payment. Unset → nothing reported.
+  ga4?: Ga4Reporter;
+  // Partner experiences (spec 2026-10-06 D15): the team's paid email names what the customer asked about.
+  experiences?: ExperienceRepo;
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -185,7 +254,7 @@ export function webhookRoutes(deps: {
 
     let outcome;
     try {
-      outcome = await settlements.acceptVerifiedEvent(event);
+      outcome = await settlements.acceptVerifiedEvent(event, { requestId: c.get('requestId') });
     } catch (error) {
       if (!(error instanceof PaymentSettlementError)) throw error;
       c.set('checkoutEvent', {
@@ -297,6 +366,53 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, doubleCapture: true }, 200);
     }
 
+    // The balance of a deposit booking (spec 2026-10-07 §5.1). The booking was secured by the
+    // deposit and has already had its confirmation, concierge task and quote claim — none of that
+    // runs again. The customer gets a receipt; the team gets the money line; GA4 gets the payment
+    // (ga4Hits labels a second payment 'balance'). All best-effort, like the paid branch below.
+    if (outcome.kind === 'balance_settled') {
+      const b = outcome.booking;
+      const balanceCents = outcome.payment.amount;
+      // What was actually collected comes from the succeeded payment rows, not from the total.
+      const depositCents = deps.payments
+        ? (await deps.payments.findByBookingId(b.id))
+            .filter((p) => p.status === 'succeeded' && p.purpose === 'deposit')
+            .reduce((sum, p) => sum + p.amount, 0)
+        : (b.amountDueNow ?? b.total - balanceCents);
+      try {
+        const sent = await sendBalanceReceived(b, { depositCents, balanceCents }, email, { manage: manageUrl(b, baseUrl, linkSecret) });
+        if (wasDelivered(sent)) await notificationLog?.markSent(b.id, 'balance_received');
+      } catch (err) {
+        console.error(`balance receipt failed for ${b.reference}:`, err);
+        void alerts.send({
+          severity: 'critical',
+          kind: 'confirmation_email_failed',
+          title: `Balance receipt failed for ${b.reference}`,
+          body: `Booking ${b.reference}'s balance is PAID but the customer got no receipt. Error: ${err instanceof Error ? err.message : String(err)}`,
+          dedupeKey: `${b.reference}:balance`,
+        });
+      }
+      try {
+        await alerts.send({
+          severity: 'info',
+          kind: 'booking_paid',
+          title: `Balance paid: ${b.reference} — ${fmtMoney(balanceCents, b.currency)}`,
+          body: `Balance of ${fmtMoney(balanceCents, b.currency)} received. ${b.reference} is now fully paid (${fmtMoney(b.total, b.currency)}).`,
+          // "Paid: " subject prefix: the owner forwards money-landed mail on it.
+          email: teamBalancePaidEmail(b, { depositCents, balanceCents }, deps.opsBaseUrl ?? ''),
+          dedupeKey: `${b.reference}:balance`,
+        });
+      } catch (err) {
+        console.error(`team balance notification failed for ${b.reference}:`, err);
+      }
+      if (deps.ga4) {
+        void deps.ga4.reportPayment(b, outcome.payment, event.receivedAt).catch((err) => {
+          console.error(`ga4 balance report failed for ${b.reference}:`, err instanceof Error ? err.message : String(err));
+        });
+      }
+      return c.json({ ok: true }, 200);
+    }
+
     if (outcome.kind === 'settled') {
       const paid = outcome.booking;
       // Money landed — claim the quote behind this booking (pay-link flow). Best-effort
@@ -323,17 +439,25 @@ export function webhookRoutes(deps: {
         // the full confirmation. Dormant today — the engine charges the full amount for every
         // public booking — but wired so reintroducing deposits needs no webhook change.
         if (paid.amountDueNow != null && paid.amountDueNow < paid.total) {
-          await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
-          await notificationLog?.markSent(paid.id, 'deposit_received');
+          // Logged only when it actually left (like the confirmation below): the watchdog
+          // accepts this row as the booking's confirmation.
+          const sent = await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          if (wasDelivered(sent)) await notificationLog?.markSent(paid.id, 'deposit_received');
         } else {
           // Partial pay link (spec 2026-08-04): if this booking was sold as part of a quote,
           // say so in the email — the itinerary alone can't (its flat stop list renders a gap
           // as a driven leg, docs/known-bugs.md 2026-07-30). Best-effort like everything here.
           const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
-          const sel = srcQuote?.payLinkSelection;
+          // Decided by the BOOKING: a chauffeur booking is a whole-trip sale however the quote's selection moved since.
+          const sel = isChauffeurBooking(paid) ? null : legSelectionOf(srcQuote?.payLinkSelection);
           const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          // Partner experiences the customer tapped (spec 2026-10-06 D16); a failed lookup is just no row.
+          const interests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({
+            name: e?.name ?? i.nameSnapshot, partnerName: e?.partnerName,
+          }));
           const outcome = await sendBookingConfirmation(paid, email, {
             manage: manageUrl(paid, baseUrl, linkSecret),
+            interests,
             ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
           });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
@@ -372,16 +496,26 @@ export function webhookRoutes(deps: {
       // the idempotent return, and skip everything downstream forever). Severity 'info', so it
       // does not read as an incident; dedupeKey is the reference, so a retry cannot re-notify.
       try {
+        const teamInterests = (await loadBookingInterests(deps, paid.id)).map(({ interest: i, experience: e }) => ({
+          name: e?.name ?? i.nameSnapshot, partnerName: e?.partnerName, status: i.status,
+        }));
         await alerts.send({
           severity: 'info',
           kind: 'booking_paid',
-          title: `Paid: ${paid.reference} — ${fmtMoney(paid.total, paid.currency)}`,
+          title: `Paid: ${paid.reference} — ${fmtMoney(outcome.payment.amount, paid.currency)}`,
           body: teamPaidBody(paid),
-          email: teamPaidEmail(paid, deps.opsBaseUrl ?? ''),
+          email: teamPaidEmail(paid, deps.opsBaseUrl ?? '', teamInterests),
           dedupeKey: paid.reference,
         });
       } catch (err) {
         console.error(`team paid-notification failed for ${paid.reference}:`, err);
+      }
+      // Server-side GA4 purchase (spec 2026-10-03). After everything the paid booking needs and
+      // not awaited — PayHere must get its 200 regardless. A replay never gets here (duplicate).
+      if (deps.ga4) {
+        void deps.ga4.reportPayment(paid, outcome.payment, event.receivedAt).catch((err) => {
+          console.error(`ga4 purchase report failed for ${paid.reference}:`, err instanceof Error ? err.message : String(err));
+        });
       }
       // The customer's other unfinished attempts at this same trip are leftovers now (Lea:
       // CH-Y5RXW declined at 3-D Secure, CH-L72HX paid 20 min later) — close them quietly.
@@ -389,7 +523,11 @@ export function webhookRoutes(deps: {
       // must neither fail nor delay this 200 (PayHere would retry, hit the idempotent return and
       // skip nothing — but a slow lookup still holds the notify open). A replay never gets here.
       if (deps.duplicates) {
-        void closeLeftoverDuplicates(paid, { ...deps.duplicates, alerts }).catch((err) => {
+        void closeLeftoverDuplicates(paid, {
+          ...deps.duplicates,
+          alerts,
+          correlation: { requestId: c.get('requestId') },
+        }).catch((err) => {
           console.error(`duplicate close after ${paid.reference} failed:`, err);
         });
       }
@@ -408,8 +546,9 @@ export function webhookRoutes(deps: {
     return c.json({ ok: true }, 200);
   });
 
-  // M17 — Resend deliverability webhook (svix-signed). Alerts on bounces/complaints so a
-  // customer silently not receiving booking email is no longer invisible. Enabled only
+  // M17/M23.6 — Resend deliverability webhook (svix-signed). Alerts on provider failures,
+  // bounces and complaints so a customer silently not receiving booking email is no longer
+  // invisible. Enabled only
   // when the secret is configured; otherwise the route does not exist (404).
   r.post('/resend', async (c) => {
     const secret = deps.resendWebhookSecret;
@@ -438,14 +577,37 @@ export function webhookRoutes(deps: {
     });
     if (!match) return c.json({ error: 'invalid_signature' }, 401);
 
-    let event: { type?: string; data?: { to?: string[] | string; subject?: string } };
+    let event: ResendWebhookEvent;
     try {
       event = JSON.parse(raw);
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
 
-    if (event.type === 'email.bounced' || event.type === 'email.complained') {
+    const normalizedType = event.type ? RESEND_EVENT_TYPE[event.type] : undefined;
+    let newlyRecorded = true;
+    const communications = deps.customerCommunications;
+    if (communications && normalizedType) {
+      const providerMessageId = event.data?.email_id;
+      const occurredAt = event.created_at ? new Date(event.created_at) : null;
+      if (!providerMessageId || !occurredAt || Number.isNaN(occurredAt.getTime())) {
+        return c.json({ error: 'invalid_payload' }, 400);
+      }
+      const communication = await communications.findByProviderMessageId(providerMessageId);
+      const recorded = await communications.recordProviderEvent({
+        communicationId: communication?.id ?? null,
+        eventType: normalizedType,
+        providerEventId: id,
+        providerMessageId,
+        reasonCode: normalizedType === 'provider_failed' ? 'provider_failed'
+          : normalizedType === 'delayed' ? 'delivery_delayed' : null,
+        detailJson: resendDiagnostic(event),
+        occurredAt,
+      });
+      newlyRecorded = recorded.inserted;
+    }
+
+    if (newlyRecorded && (event.type === 'email.bounced' || event.type === 'email.complained')) {
       const to = Array.isArray(event.data?.to) ? event.data.to.join(', ') : (event.data?.to ?? 'unknown');
       void alerts.send({
         severity: 'warning',
@@ -453,6 +615,16 @@ export function webhookRoutes(deps: {
         title: `Email ${event.type === 'email.bounced' ? 'bounced' : 'flagged as spam'}: ${to}`,
         body: `to: ${to}\nsubject: ${event.data?.subject ?? '?'}\nevent: ${event.type}`,
         dedupeKey: to,
+      });
+    }
+    if (newlyRecorded && event.type === 'email.failed') {
+      const to = Array.isArray(event.data?.to) ? event.data.to.join(', ') : (event.data?.to ?? 'unknown');
+      void alerts.send({
+        severity: 'warning',
+        kind: 'email_failed',
+        title: `Email failed: ${to}`,
+        body: `to: ${to}\nsubject: ${event.data?.subject ?? '?'}\nevent: ${event.type}`,
+        dedupeKey: event.data?.email_id ?? to,
       });
     }
     return c.body(null, 204);

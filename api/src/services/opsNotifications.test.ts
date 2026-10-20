@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
-import { sampleBooking } from './__fixtures__/sampleBookings';
+import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, type AssignedQuote } from './opsNotifications';
+import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
   id: 'q1',
@@ -185,6 +185,35 @@ describe('teamPaidEmail', () => {
     for (const part of [m.html, m.text]) expect(part).toContain('Waiting fee — Kandy → Ella');
   });
 
+  it('names the promo code and what it took off, above what was paid', () => {
+    const b = { ...sampleBooking('single'), promoCodeId: 'pc1', promoCode: 'SUMMER-15', discountTotal: 1850 } as ReturnType<typeof sampleBooking>;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('SUMMER-15 · −LKR 18.50');
+    expect(m.text.indexOf('Promo:')).toBeLessThan(m.text.indexOf('Paid:', m.text.indexOf('PAYMENT')));
+    expect(teamPaidEmail(sampleBooking('single'), '').text).not.toContain('Promo');
+  });
+
+  // Partner experiences (spec 2026-10-06 D15): the team learns of a lead from the paid mail.
+  it('adds an "Interested in" row, only when the booking has interests', () => {
+    const interests = [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa', status: 'new' as const }];
+    const m = teamPaidEmail(sampleBooking('single'), 'https://ops.example', interests);
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Interested in');
+      expect(part).toContain('Ayurvedic massage (Atherya Spa) — new lead');
+    }
+    expect(m.subject).not.toContain('Ayurvedic');
+    for (const none of [teamPaidEmail(sampleBooking('single'), ''), teamPaidEmail(sampleBooking('single'), '', [])]) {
+      expect(none.html).not.toContain('Interested in');
+      expect(none.text).not.toContain('Interested in');
+    }
+  });
+
+  it('escapes the experience name in the HTML row', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '', [{ name: '<b>Spa</b>', partnerName: 'A&B', status: 'link_sent' }]);
+    expect(m.html).not.toContain('<b>Spa</b>');
+    expect(m.html).toContain('&lt;b&gt;Spa&lt;/b&gt; (A&amp;B) — link sent');
+  });
+
   it('a chauffeur trip: vehicle, head-count and days', () => {
     const m = teamPaidEmail(sampleBooking('trip'), 'https://ops.example');
     expect(m.subject.startsWith('Paid: ')).toBe(true);
@@ -211,6 +240,23 @@ describe('teamPaidEmail', () => {
     expect(m.text).toContain('LKR 16650.00');
   });
 
+  // The balance is money landing too: the owner's Gmail forward filters on the "Paid: " prefix.
+  it('a balance: "Paid: " prefix, says it is the balance and what just landed, with the split in the body', () => {
+    const b = { ...sampleBooking('single'), amountDueNow: 185_000 };
+    const m = teamBalancePaidEmail(b, { depositCents: 185_000, balanceCents: 166_500 }, 'https://ops.example');
+    expect(m.subject.startsWith('Paid: ')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('balance LKR 1665.00');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Total');
+      expect(part).toContain('Deposit paid');
+      expect(part).toContain('Balance paid');
+      expect(part).toContain('LKR 1850.00');
+      expect(part).toContain('LKR 1665.00');
+      expect(part).toContain('CH-7QK2P');
+    }
+  });
+
   it('links straight to the booking sheet, or says where to look without a base URL', () => {
     expect(teamPaidEmail(sampleBooking('single'), 'https://ops.example/').html).toContain('https://ops.example/ops?booking=sample-id');
     const bare = teamPaidEmail(sampleBooking('single'), '');
@@ -222,6 +268,36 @@ describe('teamPaidEmail', () => {
     const b = sampleBooking('single');
     const evil = { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<img src=x>' } } } as typeof b;
     expect(teamPaidEmail(evil, '').html).not.toContain('<img src=x>');
+  });
+
+  it("carries the customer's note, escaped, and leaves the subject alone", () => {
+    const plain = sampleBooking('single');
+    const b = { ...plain, customerNotes: 'Hilton Colombo <img src=x onerror=alert(1)>\nTwo surfboards' };
+    const m = teamPaidEmail(b, '');
+    expect(m.subject).toBe(teamPaidEmail(plain, '').subject);
+    expect(m.html).toContain('Hilton Colombo &lt;img src=x onerror=alert(1)&gt;');
+    expect(m.html).not.toContain('<img src=x');
+    expect(m.text).toMatch(/^Note: +Hilton Colombo/m);
+    expect(m.text).toContain('Two surfboards');
+  });
+
+  it('shows no note row when the customer left none', () => {
+    const m = teamPaidEmail(sampleBooking('single'), '');
+    expect(m.text).not.toMatch(/^Note:/m);
+    expect(m.html).not.toContain('>Note<');
+  });
+
+  // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): factRows feeds
+  // teamBookingBody's Trip section, so the "Paid:" body gets the Road row for free — but the
+  // subject (subjectRoute/when/people, never tripRows) must be byte-identical either way.
+  it('carries the Road row in the body, with no change to the subject', () => {
+    const plain = sampleBooking('single');
+    const withRoad = { ...plain, durationMin: 374, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const plainEmail = teamPaidEmail(plain, 'https://ops.example');
+    const roadEmail = teamPaidEmail(withRoad, 'https://ops.example');
+    expect(roadEmail.html).toContain('Local road, no expressway');
+    expect(roadEmail.text).toContain('Local road, no expressway');
+    expect(roadEmail.subject).toBe(plainEmail.subject);
   });
 });
 
@@ -335,6 +411,27 @@ describe('teamRescueEmail', () => {
     expect(m.text).toContain(href!);
   });
 
+  // Route choice (spec §4.3): the customer bought the local road — the message says so, so the
+  // booking they are asked to pay for is recognisably theirs. The expressway message is unchanged.
+  it('names the local road in the pre-filled message when the customer chose it', () => {
+    const plain = sampleBooking('single');
+    const local = { ...plain, input: { ...plain.input, routeVariant: 'no_tolls' as const } } as typeof plain;
+    const text = (b: typeof plain) => new URL(waHref(teamRescueEmail(b, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text(local)).toContain('Colombo Fort → Kandy via the local road');
+    expect(text(plain)).not.toContain('local road');
+    expect(teamRescueEmail(local, PAY, 'https://ops.example').subject).toBe(teamRescueEmail(plain, PAY, 'https://ops.example').subject);
+  });
+
+  // A partly-local trip: the message goes to the customer, so it names the local legs and never
+  // claims the whole trip is on the local road.
+  it('names only the local legs of a partly-local trip in the pre-filled message', () => {
+    const plain = sampleVariants.tripPrivate;
+    const local = { ...plain, input: { ...plain.input, routeVariants: ['fastest', 'no_tolls', 'fastest'] } } as typeof plain;
+    const text = new URL(waHref(teamRescueEmail(local, PAY, 'https://ops.example').html)!).searchParams.get('text')!;
+    expect(text).toContain('Colombo Fort → Kandy → Nuwara Eliya → Ella with the local road for Kandy → Nuwara Eliya');
+    expect(text).not.toContain('via the local road');
+  });
+
   it('tells the team to check the booking is still unpaid before messaging', () => {
     const m = teamRescueEmail(sampleBooking('single'), PAY, 'https://ops.example');
     for (const part of [m.html, m.text]) expect(part).toContain('still unpaid');
@@ -347,5 +444,46 @@ describe('teamRescueEmail', () => {
     const m = teamRescueEmail(noPhone, PAY, 'https://ops.example');
     expect(waHref(m.html)).toBeNull();
     for (const part of [m.html, m.text]) expect(part).toContain('No WhatsApp number on this booking');
+  });
+});
+
+// CH-E7EE8 (2026-10-18): an unpriced booking only raised a quiet ops task. This is the team's
+// email for it. Not "Paid:": that prefix is the owner's Gmail forward anchor.
+describe('teamUnpricedEmail', () => {
+  const REASON = 'distance unresolved: EKHO Sigiriya → Casa Selvita';
+
+  it('names the booking, the trip and that it needs a price in the subject, never "Paid:"', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    expect(m.subject.startsWith('Unpriced: CH-7QK2P')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('set a price before Priya can pay');
+    expect(m.subject.startsWith('Paid:')).toBe(false);
+  });
+
+  it('carries the server’s reason, says nothing was charged, and links the booking in ops', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain(REASON);
+      expect(part).toContain('Nothing was charged');
+      expect(part).toContain('send a pay link');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  // All six real customers behind the unpriced bookings of 15 Sep–18 Oct had already rebooked
+  // and paid elsewhere: messaging them first would chase people who are fine.
+  it('tells the team to check for a later paid booking before messaging the customer', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('already rebooked');
+      expect(part).toContain('traveller@example.com');
+    }
+  });
+
+  it('shows no money figure: an unpriced total is a placeholder, not a price', () => {
+    const b = sampleBooking('single');
+    const m = teamUnpricedEmail(b, REASON, 'https://ops.example');
+    expect(m.subject).not.toContain('18500');
+    expect(m.text).toContain('No price yet');
   });
 });

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { PayHerePaymentAdapter } from '../adapters/payhere';
 import { isoToday } from '../domain/dateRules';
@@ -218,5 +220,45 @@ describe('GET /bookings/pay-return: a decline is only final on the cancel leg', 
     const { app, adapter, b } = await checkedOut('manage');
     await notify(app, decline(adapter, b));
     expect(await (await ret(app, signPayReturnToken(b.id, SECRET))).json()).toMatchObject({ status: 'pending' });
+  });
+});
+
+// The balance of a deposit booking (spec 2026-10-07 §5.3): the deposit has already succeeded, so
+// "any payment succeeded" would tell a balance payer "paid" off the deposit. A balance attempt is
+// judged on its OWN row.
+describe('GET /bookings/pay-return — the balance attempt', () => {
+  async function depositPaidWithBalanceRow(balance: 'pending' | 'succeeded' | 'failed') {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments });
+    const created = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport (CMB)', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 2, customer: valid.customer },
+      total: 21900, amountDueNow: 5000, currency: 'USD',
+    });
+    const dep = await payments.create({ bookingId: created.id, provider: 'fake', orderId: `${created.reference}-D`, amount: 5000, currency: 'USD', idempotencyKey: `checkout:${created.id}:deposit`, purpose: 'deposit' });
+    await bookings.setStatus(created.id, 'payment_pending');
+    await payments.markSucceeded(dep.id);
+    await bookings.setStatus(created.id, 'paid');
+    const bal = await payments.create({ bookingId: created.id, provider: 'fake', orderId: `${created.reference}-B`, amount: 16900, currency: 'USD', idempotencyKey: `checkout:${created.id}:balance`, purpose: 'balance' });
+    if (balance === 'succeeded') await payments.markSucceeded(bal.id);
+    if (balance === 'failed') await payments.markFailed(bal.id);
+    return { app, id: created.id };
+  }
+
+  it('reports pending while the balance is unpaid, though the deposit succeeded', async () => {
+    const { app, id } = await depositPaidWithBalanceRow('pending');
+    expect(await (await ret(app, signPayReturnToken(id, SECRET))).json()).toMatchObject({ status: 'pending' });
+  });
+
+  it('reports paid once the balance row has succeeded', async () => {
+    const { app, id } = await depositPaidWithBalanceRow('succeeded');
+    expect(await (await ret(app, signPayReturnToken(id, SECRET))).json()).toMatchObject({ status: 'paid' });
+  });
+
+  it('a declined balance is failed on the cancel leg, pending on the return leg', async () => {
+    const { app, id } = await depositPaidWithBalanceRow('failed');
+    expect(await (await ret(app, signPayReturnToken(id, SECRET, 'cancel'))).json()).toMatchObject({ status: 'failed' });
+    expect(await (await ret(app, signPayReturnToken(id, SECRET))).json()).toMatchObject({ status: 'pending' });
   });
 });
