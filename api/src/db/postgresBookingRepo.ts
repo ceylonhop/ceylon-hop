@@ -608,6 +608,13 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  // The column also holds a quote conversion's snapshot (no engine); only a website one counts.
+  async websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null> {
+    const [row] = await this.db.select({ s: bookings.pricingSnapshotJson }).from(bookings).where(eq(bookings.id, bookingId));
+    const s = row?.s as Partial<WebsitePricingSnapshot> | null | undefined;
+    return s && s.source === 'website' ? (s as WebsitePricingSnapshot) : null;
+  }
+
   // person_key is the generated lower(btrim(email)) column, indexed (0032). One query for the
   // rows, then the same batched assembly list() uses.
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {

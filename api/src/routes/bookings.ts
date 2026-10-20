@@ -36,6 +36,8 @@ import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { AlertAdapter } from '../adapters/alerts';
+import { teamUnpricedEmail } from '../services/opsNotifications';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
@@ -183,6 +185,9 @@ export interface CustomerBookingView {
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
   balancePayable: boolean;
+  // The engine couldn't price this booking: `totalCents` is a placeholder checkout refuses, and
+  // ops prices it by hand. The manage page shows neither the amount nor a Pay button then.
+  needsPricing: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
@@ -208,6 +213,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     balanceDueCents: balanceDueCents(b, payments),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
+    needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -305,6 +311,9 @@ export function bookingRoutes(deps: {
   // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
   experiences?: ExperienceRepo;
   experienceInterests?: ExperienceInterestRepo;
+  // The team's "Unpriced:" email (CH-E7EE8). Unset → the ops task is the only signal.
+  alerts?: AlertAdapter;
+  opsBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -452,6 +461,23 @@ export function bookingRoutes(deps: {
       // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
       // down, and it would send ops hunting for a bad place name that isn't there.
       await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
+      // The task alone sat unseen for weeks (CH-E7EE8): tell the team now. Best-effort, like
+      // the task — the booking exists and the customer is mid-checkout.
+      if (deps.alerts) {
+        const reason = resolved.reason ?? 'distance unresolved';
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'booking_unpriced',
+            title: `Unpriced: ${booking.reference} needs a price before the customer can pay`,
+            body: `${booking.reference} was saved without a price (${reason}). Set the price in ops, then send a pay link.`,
+            email: teamUnpricedEmail(booking, reason, deps.opsBaseUrl ?? ''),
+            dedupeKey: booking.id,
+          });
+        } catch (err) {
+          console.error(`unpriced alert failed for ${booking.reference}:`, err);
+        }
+      }
     }
   }
 
@@ -980,7 +1006,12 @@ function invalidRequest(error: ZodError) {
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
     ) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+      // `reason` tells an open booking awaiting a hand price apart from a closed one, so the
+      // manage page never tells that customer it is "already paid or closed".
+      return c.json(
+        { error: 'not_chargeable', ...(booking.needsPricing ? { reason: 'awaiting_price' } : {}), status: booking.status },
+        409,
+      );
     }
     // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
     // customer-safe view projection deliberately withholds it. The caller has already proved

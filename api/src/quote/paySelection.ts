@@ -172,3 +172,34 @@ export function gapAfterLeg(lines: PayLine[], sel: PaySelection): string | null 
   const prev = sorted[holeAt - 1];
   return lines.find((l) => l.kind === 'leg' && l.index === prev)?.label ?? null;
 }
+
+/**
+ * The lines the ops refund picker offers (refund approvals phase 2) — a convenience that FILLS the
+ * amount box; a founder approves every request, so nothing here is enforced server-side. Each line
+ * is worth its share of what the booking was charged (owner rule 2026-10-17): line × charged / sum
+ * of the offered lines, rounded to the cent. That one ratio spreads both the finishing adjustment
+ * and any discount, which sit between the lines and the total. A part-of-trip sale offers only the
+ * lines it sold. Null when there is nothing to pick: a quote payLines cannot read (chauffeur, shell,
+ * legacy), a malformed row, or a single line.
+ */
+export function refundLinesFor(
+  quote: Pick<SavedQuote, 'request' | 'result'>,
+  opts: { selection: PaySelection | null; chargedCents: number },
+): PayLine[] | null {
+  // Same shape guard as chosenAddOns: the drawer loads through here, so a malformed row costs the
+  // picker, never the page.
+  const items = (quote.result as { lineItems?: unknown } | null)?.lineItems;
+  if (Array.isArray(items) && items.some((i) => !i || typeof i !== 'object')) return null;
+  let lines: PayLine[];
+  try {
+    lines = payLines(quote);
+  } catch (err) {
+    if (err instanceof NotLineablePriceError) return null;
+    throw err;
+  }
+  const sel = opts.selection;
+  const offered = sel ? lines.filter((l) => ticked(l, sel)) : lines;
+  const base = offered.reduce((sum, l) => sum + l.amountCents, 0);
+  if (offered.length < 2 || base <= 0) return null;
+  return offered.map((l) => ({ ...l, amountCents: Math.round((l.amountCents * opts.chargedCents) / base) }));
+}

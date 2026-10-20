@@ -55,10 +55,12 @@
 
   // Only fires callbacks if `record` is still the module's current request — an older request
   // that lands late after being superseded is silently dropped here.
-  function settle(record, fn, arg){
+  function settle(record, fn, arg, detail){
     if(pending !== record) return;
     pending = null;
-    record.callbacks.forEach(function(cb){ try { if(cb[fn]) cb[fn](arg); } catch(e){} });
+    // `detail` only when there is one, so every existing callback sees exactly one argument.
+    const args = detail === undefined ? [arg] : [arg, detail];
+    record.callbacks.forEach(function(cb){ try { if(cb[fn]) cb[fn].apply(null, args); } catch(e){} });
   }
 
   function doFetch(record){
@@ -77,6 +79,19 @@
         // fetch is no longer the one anybody's waiting on.
         available = false;
         return settle(record, 'onUnavailable', 'flag_off');
+      }
+      if(res.status === 422){
+        // A deterministic refusal: the server can't price this itinerary and WILL refuse the
+        // booking (bookings.ts awaiting_price). Not an outage, so the page must not sell it
+        // (CH-E7EE8, 2026-10-18). Never cached: changing a stop asks again.
+        return res.json().catch(function(){ return null; }).then(function(body){
+          if(body && body.error === 'quote_unpriced'){
+            const names = Array.isArray(body.unresolved)
+              ? body.unresolved.filter(function(s){ return typeof s === 'string'; }) : [];
+            return settle(record, 'onUnavailable', 'unpriced', { unresolved: names });
+          }
+          return settle(record, 'onUnavailable', 'http_error');
+        });
       }
       if(!res.ok) return settle(record, 'onUnavailable', 'http_error');
       return res.json().then(function(est){

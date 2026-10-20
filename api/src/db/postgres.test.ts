@@ -174,6 +174,16 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
   });
 
+  // The ops refund picker reads a website booking's lines from here (refund approvals phase 2).
+  it('reads back a website booking\'s pricing snapshot; none for a booking without one', async () => {
+    const engine: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }] };
+    const result = quote(engine, RATE_CARD);
+    const web = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(await bookings.websitePricingSnapshot(web.id)).toMatchObject({ source: 'website', totalCents: result.totalCents, engine });
+    const plain = await bookings.create(sample);
+    expect(await bookings.websitePricingSnapshot(plain.id)).toBeNull();
+  });
+
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
     const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
     const key = 'pgtest-' + Date.now(); // unique per run — the shared test DB persists rows
