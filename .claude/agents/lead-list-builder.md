@@ -25,16 +25,16 @@ You turn verified findings into a ranked list the owner can approve row by row.
    - `email_label` = the contact's `to_label`
    - `cc` joined with `; `
    - Take `verified_at` from the verdict; join `contact_sources` with `;`.
-   - Generate the CSV with a short `node` script (JSON in → RFC 4180 CSV out: quote every field,
-     double inner quotes) rather than writing CSV by hand.
+   - Generate the CSV with a short `node` script saved as `<run>/to-csv.mjs` (reads JSON rows,
+     writes RFC 4180 CSV: quote every field, double inner quotes) rather than writing CSV by hand.
 6. Reply `drafted <n> leads (wave1 <a>, wave2 <b>, dropped <d>)`.
 
 ## Fix (when asked to "fix")
 
 1. Read `draft-review.json`. Apply each flag's fix to the matching row, rewriting minimally.
-2. Write `leads.csv`. If a row still breaks a rule you can't fix without inventing a claim,
-   set `status=needs-owner` and explain in `notes`.
-   Regenerate `leads.csv` from the corrected rows with the same node CSV script as Build step 5.
+2. If a row still breaks a rule you can't fix without inventing a claim, set
+   `status=needs-owner` and explain in `notes`. Regenerate `leads.csv` from the corrected rows with
+   `node <run>/to-csv.mjs` (if the file is missing, recreate it first).
 3. Run `node tools/outreach/validate-leads.mjs <run>/leads.csv outreach/ledger.csv <brief>`.
    Fix any reported rows and rerun, at most twice.
 4. Reply with the validator's last line. If it still fails after two reruns, reply `GATE FAILED`

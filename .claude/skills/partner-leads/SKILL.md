@@ -18,8 +18,13 @@ or a line in the report. That is what lets this run on a schedule later.
 - `RUN=outreach/runs/<market>/<today YYYY-MM-DD>`. Create it with `mkdir -p`.
   `outreach/` is gitignored: never `git add` anything under it.
 - Read `outreach/ledger.csv` if it exists. Collect its domains as LEDGER_DOMAINS.
-- **Resume:** if `$RUN/report.md` exists, the run is done; say so and stop. Otherwise skip each
-  step below whose merged output already exists.
+- **Resume:** the run is done only when `$RUN/report.md` exists AND every domain in
+  `$RUN/leads.csv` is in `outreach/ledger.csv`. If `report.md` exists but the ledger lacks them,
+  redo only the ledger update in step 7 and stop. Otherwise resume at the first step whose resume
+  marker is missing. Markers: step 1 `candidates.json`, step 2 `contacts.json`, step 3
+  `verdicts.json`, step 4 `leads.draft.csv`, step 5 `leads.csv` (if `draft-review.json` already
+  exists, skip just the critic sub-step). To restart a finished run, delete its folder. Resume
+  only applies within the same day's folder; a rerun on a later day starts a new run.
 
 ## 1. Research → `$RUN/candidates.json`
 
@@ -28,7 +33,8 @@ Each prompt gives:
 - the brief path and the segment name
 - PER_SEGMENT = ceil(1.5 × TARGET / number of segments)
 - LEDGER_DOMAINS plus the other segments' names, to stay out of their lane
-- the output path `$RUN/candidates.<segment-slug>.json`
+- the output path `$RUN/candidates.<segment-slug>.json`, where `<segment-slug>` is the segment
+  name lowercased with every run of non-alphanumerics replaced by `-` (e.g. `north-west-india-fit`)
 
 When all are done, merge them into `$RUN/candidates.json`:
 - Drop any candidate whose website domain (lowercase, no `www.`) is in LEDGER_DOMAINS or
@@ -47,13 +53,18 @@ each with its batch and the output path `$RUN/contacts.<n>.json`. Concatenate th
 
 Join candidates and contacts on website. Split into batches of 12. Dispatch one `lead-critic`
 per batch in **facts** mode, in parallel, with the output path `$RUN/verdicts.<n>.json`.
-Concatenate the outputs into `$RUN/verdicts.json`.
 
 For `needs-evidence` verdicts:
 - Dispatch one `lead-researcher` with just those agencies and the critic's `reason`, asking for
-  the missing evidence, written to `$RUN/candidates.retry.json`.
+  the missing evidence, written to `$RUN/candidates.retry.json`. Tell it to copy each `website`
+  exactly from its input.
 - Dispatch one `lead-critic` (facts) on them, written to `$RUN/verdicts.retry.json`.
-- Replace their verdicts. Anything not `pass` or `fix` now becomes `reject`.
+- Replace their verdicts. Overwrite those agencies' records in the merged candidate list with the
+  `candidates.retry.json` records (joined on the original `website`) and rewrite
+  `$RUN/candidates.json`. Any lead still not `pass` or `fix` becomes `reject`.
+
+Only then concatenate the per-batch outputs, with the retry replacements, into the merged
+`$RUN/verdicts.json` (its existence marks step 3 finished).
 
 ## 4. Build → `$RUN/leads.draft.csv`
 
@@ -79,7 +90,15 @@ Note the result in the report.
 
 ## 7. Finish
 
-Write `$RUN/report.md`:
+Update the ledger first:
+- Write `outreach/ledger.tmp.csv` = the old ledger plus one row per new domain:
+  - `researched` for domains in leads.csv
+  - `rejected` for rejected domains
+  - `first_seen=today`, `last_run=today`
+  - header `domain,market,first_seen,last_run,status` if the ledger is new
+- Then `mv` it over `outreach/ledger.csv`.
+
+Write `$RUN/report.md` last:
 - counts per step: candidates per segment → after dedupe → verdict counts → kept
 - rejection reasons grouped by bar item
 - dropped by the list builder (`$RUN/dropped.json`), with reasons
@@ -90,19 +109,12 @@ Write `$RUN/report.md`:
 - the agent count and tokens used, if known
 - 3 lessons for the next run of this market
 
-Update the ledger last:
-- Write `outreach/ledger.tmp.csv` = the old ledger plus one row per new domain:
-  - `researched` for domains in leads.csv
-  - `rejected` for rejected domains
-  - `first_seen=today`, `last_run=today`
-  - header `domain,market,first_seen,last_run,status` if the ledger is new
-- Then `mv` it over `outreach/ledger.csv`.
-
 Reply to the owner with: the leads count by wave, the path to `leads.csv` and `report.md`, and
 the top 5 rows (agency, attn, score). Remind them that nothing was sent.
 
 ## Failure handling
 
 - **Agent errors, or malformed or missing output:** rerun that one batch once. A second failure
-  stops the run, and `report.md` names the batch.
+  stops the run, leave the ledger untouched, and `report.md` names the batch and tells the owner
+  to delete the run folder to retry.
 - **Interrupted:** the same command resumes from the last merged file.

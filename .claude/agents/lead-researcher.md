@@ -27,6 +27,8 @@ segment name you were given), destination_url (their own page selling our destin
 that Ceylon Hop could build on, phrased neutrally), hook_source_url, reputation (rating + count +
 source, or "self-claimed"), size (boutique/mid/large), red_flags, notes.
 
+If you are given existing agencies to re-check, copy each `website` exactly as given (it is the join key).
+
 **Output:** write a JSON array to the exact file path you are given. Then reply with one line:
 `wrote <n> candidates to <path>`.
 
