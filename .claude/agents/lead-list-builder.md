@@ -13,8 +13,8 @@ You turn verified findings into a ranked list the owner can approve row by row.
 
 1. Read `candidates.json`, `contacts.json` and `verdicts.json` in the run folder. Join them on
    `website`. Drop every lead whose verdict isn't `pass` or `fix`. Apply `fixes`. Also drop leads with an empty
-   `to`, or whose contact `to_label` isn't `published` / `pattern-inferred`, and note them for the
-   report.
+   `to`, or whose contact `to_label` isn't `published` / `pattern-inferred`. Write the dropped
+   leads to `<run>/dropped.json` as `[{website, agency, reason}]`.
 2. Score each lead (quality-bar.md), write `score_breakdown`, assign `wave`, and rank by wave,
    then score.
 3. Keep the top *target*.
@@ -27,13 +27,14 @@ You turn verified findings into a ranked list the owner can approve row by row.
    - Take `verified_at` from the verdict; join `contact_sources` with `;`.
    - Generate the CSV with a short `node` script (JSON in → RFC 4180 CSV out: quote every field,
      double inner quotes) rather than writing CSV by hand.
-6. Reply `drafted <n> leads (wave1 <a>, wave2 <b>)`.
+6. Reply `drafted <n> leads (wave1 <a>, wave2 <b>, dropped <d>)`.
 
 ## Fix (when asked to "fix")
 
 1. Read `draft-review.json`. Apply each flag's fix to the matching row, rewriting minimally.
 2. Write `leads.csv`. If a row still breaks a rule you can't fix without inventing a claim,
    set `status=needs-owner` and explain in `notes`.
+   Regenerate `leads.csv` from the corrected rows with the same node CSV script as Build step 5.
 3. Run `node tools/outreach/validate-leads.mjs <run>/leads.csv outreach/ledger.csv <brief>`.
    Fix any reported rows and rerun, at most twice.
 4. Reply with the validator's last line. If it still fails after two reruns, reply `GATE FAILED`
