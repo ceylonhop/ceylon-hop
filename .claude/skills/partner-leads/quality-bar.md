@@ -8,7 +8,9 @@ A lead must pass **all five**. The critic records which item a rejected lead fai
    "own fleet in Sri Lanka", a Sri Lanka office), and not on the brief's exclusion list.
 3. **Reachable by email:** an address the agency publishes as its own, on its own domain (a
    free-mail address only if the agency publishes it as its business contact). Phone- or
-   WhatsApp-only agencies go under Reserves in the report, not in leads.csv.
+   WhatsApp-only agencies go under Reserves in the report, not in leads.csv. A pattern-inferred
+   To is allowed only when a published company address also exists; put that published address
+   in cc.
 4. **Named decision-maker:** name + source + confidence (contact-rules.md). LOW is allowed;
    the greeting then uses the team name.
 5. **Hook:** one true, specific detail, re-checked by the critic on `hook_source_url`, with the date in `verified_at`.
@@ -34,8 +36,9 @@ page, internally inconsistent prices.
 - **Wave 2:** everything else that passed. Their email uses the brief's `Wave 2` pitch line (a
   private-car tier for families who ask, never a replacement for their coach).
 
-## Price fit (off unless the brief says `Price fit: on`)
+## Price fit
 
-When on, the brief gives our agency rate per vehicle-day. The critic reads the agency's own
+Applies only when the brief's `## Price fit` section says `on` and gives a line
+`Agency rate: <amount> per vehicle-day`; otherwise skip it. The critic reads the agency's own
 published package price. If ground transport is clearly priced below our rate (e.g. a ₹28,999
 6-day package for 6 people), the lead fails bar item 1 with reason `price-fit`.

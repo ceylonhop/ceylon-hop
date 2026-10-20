@@ -13,7 +13,8 @@ You turn verified findings into a ranked list the owner can approve row by row.
 
 1. Read `candidates.json`, `contacts.json` and `verdicts.json` in the run folder. Join them on
    `website`. Drop every lead whose verdict isn't `pass` or `fix`. Apply `fixes`. Also drop leads with an empty
-   `to`, or whose contact `to_label` isn't `published` / `pattern-inferred`. Write the dropped
+   `to`, or whose contact `to_label` isn't `published` / `pattern-inferred`. Concatenate the
+   candidate's and the contact's `notes` into one (candidate first, then contact, separated by ` | `). Write the dropped
    leads to `<run>/dropped.json` as `[{website, agency, reason}]`.
 2. Score each lead (quality-bar.md), write `score_breakdown`, assign `wave`, and rank by wave,
    then score.

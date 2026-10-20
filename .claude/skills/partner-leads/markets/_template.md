@@ -34,3 +34,4 @@ Theme line (optional; added when a lead's fit includes the theme): <one sentence
 
 ## Price fit
 off
+<when on: Agency rate: USD <n> per vehicle-day>
