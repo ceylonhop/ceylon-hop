@@ -28,9 +28,13 @@ export const OPT_OUT = 'no thanks';
 const EMAIL = /^[^\s@;,]+@[^\s@;,]+\.[a-z]{2,}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY = 86_400_000;
+/** Shape AND calendar: rejects 2026-13-45 and 2026-02-31, which Date.parse rolls over. */
+const isRealDate = s => DATE.test(s) && !Number.isNaN(Date.parse(s))
+  && new Date(Date.parse(s)).toISOString().slice(0, 10) === s;
 
 /** RFC 4180-style CSV: quoted fields may hold commas, "" quotes and newlines. */
 export function parseCsv(text) {
+  text = text.replace(/^﻿/, ''); // a UTF-8 BOM from a spreadsheet export would corrupt the first header
   const rows = [];
   let row = [], field = '', quoted = false;
   for (let i = 0; i < text.length; i++) {
@@ -76,7 +80,8 @@ export function validateLeads({ leadsCsv, ledgerCsv, brief }) {
   for (const c of COLUMNS) if (!head.includes(c)) err(0, c, 'missing column');
   if (errors.length) return { ok: false, errors };
 
-  const ledger = new Set(toObjects(ledgerCsv).rows.map(r => (r.domain || '').toLowerCase()).filter(Boolean));
+  const ledger = new Set(toObjects(ledgerCsv).rows
+    .map(r => (r.domain || '').trim().toLowerCase().replace(/^www\./, '')).filter(Boolean));
   const ids = new Set(), domains = new Set();
   rows.forEach((r, i) => {
     const n = i + 1;
@@ -109,11 +114,13 @@ export function validateLeads({ leadsCsv, ledgerCsv, brief }) {
     if (cc.some(a => !EMAIL.test(a))) err(n, 'cc', 'not an email');
     if (['HIGH', 'MEDIUM'].includes(r.contact_confidence) && !r.attn_name.trim()) err(n, 'attn_name', 'required for HIGH/MEDIUM');
 
-    if (r.run_date && !DATE.test(r.run_date)) err(n, 'run_date', 'must be YYYY-MM-DD');
-    if (r.verified_at && DATE.test(r.verified_at) && DATE.test(r.run_date)) {
+    const runOk = isRealDate(r.run_date), verifiedOk = isRealDate(r.verified_at);
+    if (r.run_date && !runOk) err(n, 'run_date', 'must be YYYY-MM-DD');
+    if (r.verified_at && !verifiedOk) err(n, 'verified_at', 'must be YYYY-MM-DD');
+    if (runOk && verifiedOk) {
       const gap = (Date.parse(r.run_date) - Date.parse(r.verified_at)) / DAY;
       if (gap < 0 || gap > 7) err(n, 'verified_at', 'must be within 7 days before run_date');
-    } else if (r.verified_at) err(n, 'verified_at', 'must be YYYY-MM-DD');
+    }
 
     if (r.subject.length > MAX_SUBJECT) err(n, 'subject', `over ${MAX_SUBJECT} characters`);
     if (r.body) {

@@ -134,4 +134,26 @@ describe('validateLeads', () => {
   it('treats an empty ledger as no prior domains', () => {
     expect(run([good({ website: 'https://already.in', lead_id: 'india-ramayana-already.in' })], '').ok).toBe(true);
   });
+
+  it('rejects an impossible verified_at date', () => {
+    expect(rules(run([good({ verified_at: '2026-13-45' })]))).toContain('verified_at:must be YYYY-MM-DD'); // date-bomb-ok: impossible calendar date, must fail the date check
+  });
+
+  it('rejects an impossible run_date without also blaming verified_at', () => {
+    const res = run([good({ run_date: '2026-02-31' })]);
+    expect(rules(res)).toContain('run_date:must be YYYY-MM-DD');
+    expect(rules(res).some(r => r.startsWith('verified_at:'))).toBe(false);
+  });
+
+  it('accepts a file that starts with a UTF-8 BOM', () => {
+    const res = validateLeads({ leadsCsv: '﻿' + csv([good()]), ledgerCsv: LEDGER, brief });
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it('matches a www. ledger domain against the bare website domain', () => {
+    const ledgerCsv = 'domain,market,first_seen,last_run,status\nwww.already.in,india-ramayana,2026-10-19,2026-10-19,researched\n';
+    const res = run([good({ website: 'https://already.in', lead_id: 'india-ramayana-already.in' })], ledgerCsv);
+    expect(rules(res)).toContain('website:domain already in ledger');
+  });
 });
