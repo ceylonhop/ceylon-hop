@@ -24,9 +24,9 @@ change this file and the validator together.
 | cc | email addresses separated by `;` |
 | attn_name | required when contact_confidence is HIGH or MEDIUM |
 | attn_title | |
-| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` / `none` |
+| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` (a lead with no named person fails the bar and never reaches this file) |
 | contact_sources | URLs separated by `;` |
-| email_label ★ | label of the **to** address: `published` / `registry-filed` / `pattern-inferred` |
+| email_label ★ | label of the **to** address: `published` / `pattern-inferred` (registry-filed addresses go in cc only) |
 | follow_up | the agency's published WhatsApp or phone line, e.g. `WhatsApp +91 98765 43210` |
 | hook ★ | one true, specific sentence about the agency |
 | hook_source_url ★ | https URL the critic re-opened to confirm the hook |

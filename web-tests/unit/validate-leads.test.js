@@ -109,10 +109,14 @@ describe('validateLeads', () => {
     expect(rules(res)).toEqual(expect.arrayContaining([
       'format:must be one of private|mixed|group',
       'wave:must be one of 1|2',
-      'contact_confidence:must be one of HIGH|MEDIUM|LOW|none',
-      'email_label:must be one of published|registry-filed|pattern-inferred',
+      'contact_confidence:must be one of HIGH|MEDIUM|LOW',
+      'email_label:must be one of published|pattern-inferred',
       'status:must be one of draft|needs-owner',
     ]));
+  });
+
+  it("rejects contact_confidence 'none'", () => {
+    expect(rules(run([good({ contact_confidence: 'none' })]))).toContain('contact_confidence:must be one of HIGH|MEDIUM|LOW');
   });
 
   it('rejects a bad to/cc address and a score outside 0–15', () => {

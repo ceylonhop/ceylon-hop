@@ -18,8 +18,8 @@ const REQUIRED = ['lead_id', 'market', 'run_date', 'agency', 'country', 'website
 const ENUMS = {
   format: ['private', 'mixed', 'group'],
   wave: ['1', '2'],
-  contact_confidence: ['HIGH', 'MEDIUM', 'LOW', 'none'],
-  email_label: ['published', 'registry-filed', 'pattern-inferred'],
+  contact_confidence: ['HIGH', 'MEDIUM', 'LOW'],
+  email_label: ['published', 'pattern-inferred'],
   status: ['draft', 'needs-owner'],
 };
 export const MAX_WORDS = 170;
