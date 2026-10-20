@@ -57,7 +57,7 @@ Agents write their output to the run folder, not into the chat. That keeps the o
 
 - **Buyer:** who we sell to, e.g. "outbound agencies headquartered in India" or "agencies in UK/DE/NL whose clients are Indian-diaspora families".
 - **Segments:** 2–4 named segments. Each gets one researcher, e.g. "North/West India FIT", "South India FIT", "pilgrimage specialists", "senior/family specialists".
-- **Pitch:** what we offer this market, with live URLs. These are the only claims email drafts may make beyond the shared proof paragraph.
+- **Pitch:** a line per segment, a `Wave 2` line for group/coach leads, and an optional theme line. What we offer this market, with live URLs. These are the only claims email drafts may make beyond the shared proof paragraph.
 - **Proof paragraph:** the shared paragraph, with its facts and their sources (e.g. Tripadvisor rating and count, read from `index.html` on `origin/main`).
 - **Exclusions:** competitors (agencies with their own Sri Lanka ground operations), giant chains, named domains.
 - **Language and greeting norms:** e.g. "Namaste/Vanakkam acceptable; default 'Dear <full name>'".
@@ -110,7 +110,7 @@ A lead must pass **all** of these:
 
 1. **Sells the destination:** a live page on the agency's own site that sells Sri Lanka, or the brief's stated equivalent.
 2. **Not a competitor:** no ground operation of its own in Sri Lanka, and not on the brief's exclusion list.
-3. **Reachable:** an email on the agency's own domain, or a published B2B or sales line.
+3. **Reachable by email:** an address the agency publishes as its own, on its own domain (a free-mail address only if the agency publishes it as its business contact). Phone- or WhatsApp-only agencies go under Reserves in the report, not in leads.csv.
 4. **Named decision-maker:** a name with a source and a confidence. LOW confidence is allowed, but the greeting then uses the team name.
 5. **Hook:** one true, specific detail, re-checked by the critic on its source URL, with the date checked.
 
@@ -172,9 +172,9 @@ This is the interface to spec 2. It is CSV, UTF-8, with one header row. The vali
 | to ★ | an email address |
 | cc | zero or more email addresses, separated by `;` |
 | attn_name, attn_title | optional; attn_name is required when contact_confidence is HIGH or MEDIUM |
-| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` / `none` |
+| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` |
 | contact_sources | URLs separated by `;` |
-| email_label ★ | `published` / `registry-filed` / `pattern-inferred` |
+| email_label ★ | `published` / `pattern-inferred` (registry-filed addresses go in cc only) |
 | follow_up | published WhatsApp or phone line, or empty |
 | hook ★ | non-empty |
 | hook_source_url ★ | https URL |

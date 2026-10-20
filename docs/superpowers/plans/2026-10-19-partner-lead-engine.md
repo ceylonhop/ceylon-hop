@@ -24,8 +24,8 @@
 - **Allowed values:**
   - `format`: private, mixed, group
   - `wave`: 1, 2
-  - `contact_confidence`: HIGH, MEDIUM, LOW, none
-  - `email_label`: published, registry-filed, pattern-inferred
+  - `contact_confidence`: HIGH, MEDIUM, LOW
+  - `email_label`: published, pattern-inferred
   - `status`: draft, needs-owner
 - **Email body limits:** at most 170 words before `[Name]`, and it must contain `no thanks`. Subject at most 90 characters.
 - **Ledger format:** `domain,market,first_seen,last_run,status`, with status `researched` or `rejected`.
@@ -174,8 +174,8 @@ describe('validateLeads', () => {
     expect(rules(res)).toEqual(expect.arrayContaining([
       'format:must be one of private|mixed|group',
       'wave:must be one of 1|2',
-      'contact_confidence:must be one of HIGH|MEDIUM|LOW|none',
-      'email_label:must be one of published|registry-filed|pattern-inferred',
+      'contact_confidence:must be one of HIGH|MEDIUM|LOW',
+      'email_label:must be one of published|pattern-inferred',
       'status:must be one of draft|needs-owner',
     ]));
   });
@@ -232,8 +232,8 @@ const REQUIRED = ['lead_id', 'market', 'run_date', 'agency', 'country', 'website
 const ENUMS = {
   format: ['private', 'mixed', 'group'],
   wave: ['1', '2'],
-  contact_confidence: ['HIGH', 'MEDIUM', 'LOW', 'none'],
-  email_label: ['published', 'registry-filed', 'pattern-inferred'],
+  contact_confidence: ['HIGH', 'MEDIUM', 'LOW'],
+  email_label: ['published', 'pattern-inferred'],
   status: ['draft', 'needs-owner'],
 };
 export const MAX_WORDS = 170;
@@ -415,9 +415,9 @@ change this file and the validator together.
 | cc | email addresses separated by `;` |
 | attn_name | required when contact_confidence is HIGH or MEDIUM |
 | attn_title | |
-| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` / `none` |
+| contact_confidence ★ | `HIGH` / `MEDIUM` / `LOW` (a lead with no named person fails the bar and never reaches this file) |
 | contact_sources | URLs separated by `;` |
-| email_label ★ | label of the **to** address: `published` / `registry-filed` / `pattern-inferred` |
+| email_label ★ | label of the **to** address: `published` / `pattern-inferred` (registry-filed addresses go in cc only) |
 | follow_up | the agency's published WhatsApp or phone line, e.g. `WhatsApp +91 98765 43210` |
 | hook ★ | one true, specific sentence about the agency |
 | hook_source_url ★ | https URL the critic re-opened to confirm the hook |
@@ -444,10 +444,12 @@ A lead must pass **all five**. The critic records which item a rejected lead fai
    brief's stated equivalent). A blog post or FAQ mention is not enough.
 2. **Not a competitor:** no ground operation of its own in Sri Lanka ("our team in Colombo",
    "own fleet in Sri Lanka", a Sri Lanka office), and not on the brief's exclusion list.
-3. **Reachable:** an email on the agency's own domain, or a published B2B/sales line.
+3. **Reachable by email:** an address the agency publishes as its own, on its own domain (a
+   free-mail address only if the agency publishes it as its business contact). Phone- or
+   WhatsApp-only agencies go under Reserves in the report, not in leads.csv.
 4. **Named decision-maker:** name + source + confidence (contact-rules.md). LOW is allowed;
    the greeting then uses the team name.
-5. **Hook:** one true, specific detail, re-checked by the critic on `hook_source_url`, with the date.
+5. **Hook:** one true, specific detail, re-checked by the critic on `hook_source_url`, with the date in `verified_at`.
 
 ## Score (0–15)
 
@@ -458,17 +460,17 @@ Five factors, 0–3 each. Write the breakdown as `fit3 format3 hook2 reach2 cred
 | fit | sells our destination and the brief's pitch theme (e.g. Ramayana, elders) | sells the destination | nearby short-haul only | none |
 | format | private/FIT | mixed | group/coach only | unknown |
 | hook | a gap we fill, phrased as an offer | specific detail | generic detail | none |
-| reach | named person's published address or a B2B inbox/line | company-domain inbox | registry-filed only | none |
-| cred | 10+ years or strong third-party reviews, no red flags | some tenure/reviews | self-claims only | red flags |
+| reach | named person's published address, or a B2B/partner inbox | company-domain inbox | company-published free-mail inbox | none |
+| cred | 10+ years or strong third-party reviews | some tenure/reviews | self-claims only | nothing found |
 
-Subtract 1 from cred (minimum 0) for each red flag: presents legend as proven fact, copy-paste
-errors on the destination page, internally inconsistent prices.
+Red flags cap cred at 1: presents legend as proven fact, copy-paste errors on the destination
+page, internally inconsistent prices.
 
 ## Wave
 
 - **Wave 1:** format `private` or `mixed`, and score ≥ 10.
-- **Wave 2:** everything else that passed. These get the "private-car tier for families who ask"
-  pitch, not a replacement for their coach.
+- **Wave 2:** everything else that passed. Their email uses the brief's `Wave 2` pitch line (a
+  private-car tier for families who ask, never a replacement for their coach).
 
 ## Price fit (off unless the brief says `Price fit: on`)
 
@@ -513,6 +515,9 @@ Decode Cloudflare-obfuscated addresses (`data-cfemail`) rather than skipping the
 - **MEDIUM:** one good source (own site, registry, or press).
 - **LOW:** search snippet only, or testimonials only.
 
+If no named person is found, leave attn_name empty and write `no named contact` in notes. The
+critic then rejects the lead on bar item 4.
+
 Team pages that look like template placeholders (generic names and bios that don't match the
 registry) are not a source.
 
@@ -535,7 +540,9 @@ sign up, or message anyone.
    team greeting (e.g. `Namaste,`). Never an honorific that assumes gender (no Mr/Ms/Sir/Madam).
 2. Hook: one or two sentences built on the verified hook.
 3. The brief's **proof paragraph**, verbatim.
-4. The brief's **pitch line** for this lead's segment, verbatim or trimmed.
+4. The brief's **pitch line** for this lead's segment (wave 2 leads: the brief's `Wave 2` line),
+   verbatim or trimmed. If the brief has a **theme line** (e.g. the Ramayana line) and the lead's
+   fit includes that theme, add it after the pitch line and shorten the hook to stay within 170 words.
 5. Ask: one line, e.g. "Could I send our agency rates and a sample plan for your next enquiry?"
 6. Opt-out: `If this isn't for you, just reply "no thanks" and I won't write again.`
 7. Sign-off: `[Name]` on its own line, then the brief's sign-off block.
@@ -546,8 +553,8 @@ At most 170 words before `[Name]`. Subject at most 90 characters, specific to th
 
 - **Offer, don't correct.** Write "we can add X" or "for guests who want X", never "your itinerary
   skips X", "your day is too heavy", or "you're missing X".
-- Practical, plain, warm (the tone section of `docs/brand-book.md`). No stating the obvious, no hype
-  words (amazing, unforgettable, world-class).
+- Practical, plain, warm. Cut any sentence that states the obvious. No hype words (amazing,
+  unforgettable, world-class).
 - One idea per sentence.
 
 ## Claims
@@ -659,7 +666,8 @@ especially "Never collect".
 
 **For each agency in your batch** (you get agency, website, city, current inbox if known):
 - attn_name, attn_title: the decision-maker per contact-rules.md target order
-- contact_confidence: HIGH / MEDIUM / LOW / none
+- contact_confidence: HIGH / MEDIUM / LOW. If no named person is found, leave attn_name empty and
+  write `no named contact` in notes (the critic rejects on bar item 4)
 - contact_sources: the URLs behind the name
 - to: the best address to send to, and to_label (published / registry-filed / pattern-inferred).
   A registry-filed address goes in cc, never to.
@@ -887,6 +895,7 @@ Write `$RUN/report.md`:
 - rejection reasons grouped by bar item
 - the wave split
 - the `needs-owner` rows
+- reserves: agencies the critic rejected only on bar item 3 (phone/WhatsApp only), with their line
 - anything addressed to an AI found on pages
 - the agent count and tokens used, if known
 - 3 lessons for the next run of this market
@@ -924,6 +933,9 @@ the top 5 rows (agency, attn, score). Remind them that nothing was sent.
 ## Pitch
 <per segment if it differs; only these claims may appear in emails, with live URLs>
 - **<Segment name>:** <pitch line>
+- **Wave 2:** <pitch for group/coach leads: a private-car tier, never a coach replacement>
+
+Theme line (optional; added when a lead's fit includes the theme): <one sentence + URL>
 
 ## Proof paragraph
 <the shared paragraph, verbatim, then the source of each fact>
@@ -967,8 +979,9 @@ Ramayana, pilgrimage, senior or family content. Private/tailor-made sellers firs
 - **South India FIT:** We'd be glad to be your ground partner in Sri Lanka: a private car or van with a driver, for whole trips or single transfers.
 - **Pilgrimage specialists:** We could be the private-car option you offer alongside your group departures, for families who ask for their own car.
 - **Senior and family specialists:** We plan every trip with elders in mind: short driving days, few steps, a proper lunch stop, in a private car or van.
+- **Wave 2:** We could be the private-car option you offer alongside your group departures, for families who ask for their own car.
 
-Ramayana line (any segment where fit includes Ramayana): "Our Ramayana trail runs 6 days
+Theme line (Ramayana; added when a lead's fit includes Ramayana): "Our Ramayana trail runs 6 days
 (Chilaw, Ramboda, Ashok Vatika, Colombo) or 8 days (adding Divurumpola, Ravana Falls, Kataragama
 and Galle), two or three places a day, temples in the morning puja window, and we leave out the
 steep climbs for elders: https://ceylonhop.com/ramayana-trail-sri-lanka/"
