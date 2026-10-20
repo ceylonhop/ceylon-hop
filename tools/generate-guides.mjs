@@ -53,7 +53,7 @@ function hero(g, p) {
       <h1>${esc(g.name)}</h1>
       <p class="sub">${g.hero.intro}</p>
     </div>
-    <span class="credit">Photo: ${esc(g.photos[g.hero.photo].credit)} / Unsplash</span>
+    <span class="credit">Photo: ${heroCredit(g.photos[g.hero.photo])}</span>
   </div>`;
 }
 
@@ -152,7 +152,7 @@ function onTheWay(g, p) {
 
 function placeRow(g, items, collector, p, withMap) {
   const cards = items.map(e => `<article class="pl reveal">
-          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}
+          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}${g.photos[e.photo].caption ? `<span class="cap" style="display:block;padding:8px 18px 0;font-size:.72rem;line-height:1.4;color:var(--ink-soft)">${esc(g.photos[e.photo].caption)}</span>` : ''}
           <span class="tier">${esc(e.tier)}</span>${e.pick ? '<span class="pick">Our pick</span>' : ''}
           <div class="bd"><h3>${esc(e.name)}</h3><p class="why">${e.text}</p><button class="tg" type="button" aria-expanded="false">More</button>
             <div class="m"><span class="pb">${esc(e.band)}</span>${(e.flags || []).map(f => `<span>${esc(f)}</span>`).join('')}${(e.warn || []).map(f => `<span class="warn">${esc(f)}</span>`).join('')}</div>
@@ -175,6 +175,17 @@ function eatStay(g, p) {
       ${sh('Where to stay', 'Stay', esc(g.staySub || 'Nights are cold and most places don’t have heating — ask for extra blankets wherever you stay.'))}
       ${placeRow(g, g.stay, g.stayCollector, p, false)}
     </div>
+  </div></section>`;
+}
+
+/** Optional: guides for places that go out at night. Same card row as Eat, its own section.
+    Starts with its own newline so a guide without one renders byte-for-byte as before. */
+function nightlife(g, p) {
+  const n = g.nightlife; if (!n) return '';
+  return `
+  <section class="section" id="night"><div class="wrap">
+    ${sh('After dark', 'Nightlife', esc(n.sub))}
+    ${placeRow(g, n.items, n.collector, p, true)}
   </div></section>`;
 }
 
@@ -235,9 +246,22 @@ function askBand(g) {
   </div></section>`;
 }
 
+// Wikimedia Commons photos (source: 'commons') are CC BY / CC BY-SA: the licence is named and linked
+// beside the photographer. Everything else is Unsplash, credited exactly as before.
+const isCommons = ph => ph.source === 'commons';
+const heroCredit = ph => isCommons(ph) ? `${esc(ph.credit)} / Wikimedia Commons (${esc(ph.license)})` : `${esc(ph.credit)} / Unsplash`;
+
 function credits(g, p) {
-  const names = [...new Set(Object.values(g.photos).map(x => x.credit))];
-  return `<div class="credits"><div class="wrap"><span>Photos:</span>${names.map(n => `<span>${esc(n)}</span>`).join('')}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  const all = Object.values(g.photos);
+  const names = [...new Set(all.filter(x => !isCommons(x)).map(x => x.credit))];
+  const commons = [...new Map(all.filter(isCommons).map(x => [x.credit + x.license, x])).values()];
+  const nameHtml = names.map(n => `<span>${esc(n)}</span>`).join('');
+  if (!commons.length) {
+    return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  }
+  const commonsHtml = commons.map(x =>
+    `<span>${esc(x.credit)} (<a href="${esc(x.licenseUrl)}">${esc(x.license)}</a>, Wikimedia Commons)</span>`).join('');
+  return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash</span>${commonsHtml}<span>· <a href="${p}credits.html">all credits</a></span></div></div>`;
 }
 
 function jsonLd(g, url) {
@@ -264,11 +288,13 @@ export function renderGuide(g, T, placePhotos) {
   if (g.itinerary) nav.push(['plan', 'Itinerary']);
   if (g.months) nav.push(['when', 'When to come']);
   if (g.onTheWay && g.onTheWay.stops.length) nav.push(['way', 'On the way']);
-  nav.push(['eat', 'Eat & stay'], ['qa', 'Your questions'], ['next', 'Where next']);
+  nav.push(['eat', 'Eat & stay']);
+  if (g.nightlife) nav.push(['night', 'Nightlife']);
+  nav.push(['qa', 'Your questions'], ['next', 'Where next']);
 
   // Runs before anything below it paints: the API origin ("?api=off" / "?api=ORIGIN", the same
   // contract as the trip pages) and the Where-next fare hold that route-list-fares.js releases.
-  const head = `<script>(function(){var q=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+  const head = `<script>(function(){var q=(/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$|\\.(localhost|test)$/.test(location.hostname)?new URLSearchParams(location.search).get('api'):null);window.CEYLON_HOP_API=(q==='off')?'':(q||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
   if(window.CEYLON_HOP_API){var d=document.documentElement;d.classList.add('list-fares-pending');setTimeout(function(){d.classList.remove('list-fares-pending');},4500);}
   document.documentElement.classList.add('js');})();</script>`;
 
@@ -287,7 +313,7 @@ ${jsonLd(g, url)}
   ${itinerary(g, p)}
   ${months(g)}
   ${onTheWay(g, p)}
-  ${eatStay(g, p)}
+  ${eatStay(g, p)}${nightlife(g, p)}
   ${faq(g)}
   ${whereNext(g, T, placePhotos, p)}
   ${askBand(g)}
@@ -308,7 +334,7 @@ export function generateGuides() {
 // ── styles ────────────────────────────────────────────────────────────────────────────────
 // Tokens (--blue, --paper, --display, …) come from site.css. Phone rules at 759px match the
 // site's own breakpoints; the mockup used container queries only to preview both widths.
-const GUIDE_STYLE = `
+export const GUIDE_STYLE = `
   .g-hero{position:relative;min-height:560px;display:flex;align-items:flex-end;color:#fff;isolation:isolate;overflow:hidden;margin-top:-74px}
   .g-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;transform:scale(1.06);animation:g-kb 9s cubic-bezier(.2,.7,.2,1) forwards}
   @keyframes g-kb{to{transform:scale(1)}}
@@ -390,7 +416,9 @@ const GUIDE_STYLE = `
     .poi.feature img{height:100%;aspect-ratio:auto;min-height:480px}
     .poi.feature .bd{padding:44px;display:flex;flex-direction:column;justify-content:center}
     .poi.feature h3{font-size:clamp(2rem,3.4vw,2.8rem);font-variation-settings:"opsz" 72}
-    .poi.feature p{font-size:1.08rem}}
+    .poi.feature p{font-size:1.08rem}
+    .poi:not(.feature):last-child:nth-child(even){grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}
+    .poi:not(.feature):last-child:nth-child(even) img{height:100%;aspect-ratio:auto;min-height:360px}}
   .far-head{margin-top:44px}
   .far{display:grid;gap:12px}
   @media(min-width:760px){.far{grid-template-columns:repeat(3,1fr);gap:18px}}

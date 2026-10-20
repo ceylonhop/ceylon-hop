@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check, primaryKey } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -147,6 +147,8 @@ export const payments = pgTable(
     // retry reuses the row (idempotent per booking), so until then the count was invisible.
     attemptCount: integer('attempt_count').default(0).notNull(),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // 0066 — deposits (spec 2026-10-07): which part of the sale this payment is.
+    purpose: text('purpose').default('full').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -163,6 +165,7 @@ export const payments = pgTable(
       sql`${t.provider} in ('payhere', 'fake', 'cash', 'bank_transfer', 'manual_other')`,
     ),
     check('payments_status_valid', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
+    check('payments_purpose_valid', sql`${t.purpose} in ('full', 'deposit', 'balance')`),
     check(
       'payments_succeeded_settled_at_required',
       sql`${t.status} <> 'succeeded' or ${t.settledAt} is not null`,
@@ -171,6 +174,8 @@ export const payments = pgTable(
       'payments_succeeded_settlement_source_required',
       sql`${t.status} <> 'succeeded' or ${t.settlementSource} is not null`,
     ),
+    // 0064 — every payments read but the gateway's is by booking.
+    index('payments_booking_id_idx').on(t.bookingId),
   ],
 );
 
@@ -527,6 +532,33 @@ export const bookingCheckoutEvents = pgTable(
   ],
 );
 
+// Server-side GA4 (0063). The GA visitor + session a booking checked out from, latest wins.
+export const bookingGaIdentity = pgTable('booking_ga_identity', {
+  bookingId: uuid('booking_id').primaryKey(),
+  clientId: text('client_id'),
+  sessionId: text('session_id'),
+  adConsent: text('ad_consent'), // granted | denied | unknown
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Server-side GA4 (0063). Exactly-once ledger + outbox: `payload` is the stored MP hit.
+export const ga4EventLog = pgTable(
+  'ga4_event_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventKey: text('event_key').notNull().unique(),
+    kind: text('kind').notNull(), // purchase | refund | board_purchase
+    status: text('status').notNull(), // claimed | sent | failed
+    attempts: integer('attempts').default(1).notNull(),
+    payload: jsonb('payload').notNull(),
+    lastError: text('last_error'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('ga4_event_log_status_idx').on(t.status)],
+);
+
 // M23.3 — append-only facts for booking status changes. The booking row and event are written
 // in one transaction by BookingRepo.setStatus; no synthetic baseline is created for legacy rows.
 export const bookingStatusEvents = pgTable(
@@ -575,6 +607,28 @@ export const bookingStatusEvents = pgTable(
   ],
 );
 
+// Every pickup date/time change made AFTER booking (spec 2026-10-17 §4, migration 0072). The
+// change overwrites transfer_request + booking_legs in place, so this is the only record of what
+// it was before and who moved it. Written only by BookingRepo.setSchedule, inside the same write.
+export const bookingScheduleEvents = pgTable(
+  'booking_schedule_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    fromDate: text('from_date'),
+    fromTime: text('from_time'),
+    toDate: text('to_date').notNull(),
+    toTime: text('to_time'),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('booking_schedule_events_actor_type_valid', sql`${t.actorType} in ('staff', 'customer')`),
+    index('booking_schedule_events_booking_created_idx').on(t.bookingId, t.createdAt),
+  ],
+);
+
 // M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
 // never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
 export const customerCommunications = pgTable(
@@ -601,7 +655,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
@@ -945,3 +999,81 @@ export const promoCodes = pgTable('promo_codes', {
   check('promo_codes_window_valid', sql`${t.startsAt} IS NULL OR ${t.startsAt} < ${t.expiresAt}`),
   check('promo_codes_created_by_present', sql`btrim(${t.createdBy}) <> ''`),
 ]);
+
+// Partner experiences (spec 2026-10-06 D4; migration 0065). The catalogue ops maintains on the
+// Experiences page. Money is cents + currency; open days and start times are structured so a later
+// paid phase can use them. partner_contact and the pin are ops-only.
+export const experiences = pgTable('experiences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  partnerName: text('partner_name').notNull(),
+  areaLabel: text('area_label').notNull(),
+  summary: text('summary').notNull(),
+  details: text('details').notNull().default(''),
+  priceCents: integer('price_cents').notNull(),
+  currency: text('currency').notNull().default('USD'),
+  priceUnit: text('price_unit').notNull(),
+  durationText: text('duration_text'),
+  openWeekdays: integer('open_weekdays').array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`),
+  startTimes: text('start_times').array().notNull().default(sql`'{}'::text[]`),
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
+  radiusKm: doublePrecision('radius_km').notNull().default(5),
+  photos: text('photos').array().notNull().default(sql`'{}'::text[]`),
+  partnerContact: text('partner_contact'),
+  // Tripadvisor listing id (D22) - the only Tripadvisor datum we may store; ratings are fetched live.
+  tripadvisorLocationId: text('tripadvisor_location_id'),
+  // Google place id the experience was filled from ("Find the business on Google"); refreshes the pin later.
+  googlePlaceId: text('google_place_id'),
+  active: boolean('active').notNull().default(true),
+  createdBy: text('created_by'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// One row per customer × experience (spec D5). Snapshots keep the price THIS customer was shown —
+// the amount ops puts on their PayHere link. Payment happens outside our system (spec D13), so
+// payment_ref + amount are the only record of it. A quote interest gains booking_id at conversion.
+export const experienceInterests = pgTable('experience_interests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experienceId: uuid('experience_id').notNull().references(() => experiences.id),
+  bookingId: uuid('booking_id').references(() => bookings.id),
+  quoteId: uuid('quote_id').references(() => quotes.id),
+  source: text('source').notNull(),
+  nameSnapshot: text('name_snapshot').notNull(),
+  priceCentsSnapshot: integer('price_cents_snapshot').notNull(),
+  priceUnitSnapshot: text('price_unit_snapshot').notNull(),
+  status: text('status').notNull().default('new'),
+  paymentRef: text('payment_ref'),
+  amountPaidCents: integer('amount_paid_cents'),
+  amountPaidCurrency: text('amount_paid_currency'),
+  opsNote: text('ops_note'),
+  // D21: when and where, as the partner gave it (Sri Lanka wall clock, hence date + 'HH:MM', not an instant).
+  scheduledDate: date('scheduled_date', { mode: 'string' }),
+  scheduledTime: text('scheduled_time'),
+  meetingPoint: text('meeting_point'),
+  confirmationSentAt: timestamp('confirmation_sent_at', { withTimezone: true }),
+  confirmationChannel: text('confirmation_channel'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('experience_interests_booking_uq').on(t.experienceId, t.bookingId).where(sql`${t.bookingId} IS NOT NULL`),
+  uniqueIndex('experience_interests_quote_uq').on(t.experienceId, t.quoteId).where(sql`${t.quoteId} IS NOT NULL`),
+  index('experience_interests_status_idx').on(t.status),
+]);
+
+// Usage counters (spec 2026-10-13 §1): one row per UTC day and counter key — provider email sends
+// against the Resend caps, live Google calls per method, 429s served. Written by UsageMeter as
+// coalesced upserts that ADD; read only by the ops Health tab. migration 0071.
+export const usageCounters = pgTable(
+  'usage_counters',
+  {
+    day: date('day').notNull(),
+    key: text('key').notNull(),
+    n: integer('n').notNull().default(0),
+  },
+  (t) => [primaryKey({ name: 'usage_counters_pkey', columns: [t.day, t.key] })],
+);

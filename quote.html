@@ -3,6 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// The quote token (?t=) unlocks this quote — and, once it is booked, a signed manage link — so
+// it must be gone from everything a tag can read BEFORE the tag snippet below runs: the address
+// bar (GA4 page_location, Clarity, the Meta/TikTok pixels, the error beacon) and the og:/twitter:
+// tags the API stamps per token for the WhatsApp unfurl (crawlers never run this). Same script
+// as pay.html's, its own storage key. If storage throws the token stays in the URL, so a reload
+// still works (manage.html's rule).
+(function(){
+  try {
+    var u = new URL(location.href), t = u.searchParams.get('t');
+    if (t) {
+      sessionStorage.setItem('ch_quote_t', t);
+      u.searchParams.delete('t');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } else {
+      t = sessionStorage.getItem('ch_quote_t');
+    }
+    if (t) window.CH_LINK_TOKEN = t;
+  } catch (e) {}
+  var m = document.querySelectorAll('meta[property="og:url"],meta[property="og:image"],meta[property="twitter:image"]');
+  for (var i = 0; i < m.length; i++) m[i].parentNode.removeChild(m[i]);
+})();
+</script>
 <title>Your quote · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#63BFD6">
@@ -28,7 +51,7 @@ try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.crossOrigin='anonymous';j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='quote';</script>
-<script src="analytics.js?v=72fed96a54"></script>
+<script src="analytics.js?v=10d3674e7f"></script>
 <!-- No consent script at all (owner, 2026-08-16). A customer reading a proposal we sent them
      privately was never the audience for a floating cookie card, and the strip that replaced
      it is gone too: the head now defaults analytics_storage to GRANTED site-wide, so replays
@@ -81,7 +104,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <a href="https://www.instagram.com/ceylonhop" aria-label="Ceylon Hop on Instagram" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.7 3.7 0 0 1-1.38-.9 3.7 3.7 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68A6.16 6.16 0 1 0 18.16 12 6.16 6.16 0 0 0 12 5.84zm0 10.16A4 4 0 1 1 16 12a4 4 0 0 1-4 4zm6.41-10.4a1.44 1.44 0 1 0 1.44 1.44 1.44 1.44 0 0 0-1.44-1.44z"/></svg></a>
   <a href="https://www.tiktok.com/@ceylonhop" aria-label="Ceylon Hop on TikTok" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 5.82a4.28 4.28 0 0 1-1.06-2.82h-3.3v12.6a2.34 2.34 0 1 1-2.34-2.34c.23 0 .46.04.67.1V9.98a5.66 5.66 0 0 0-.67-.04 5.66 5.66 0 1 0 5.66 5.66V9.01a7.52 7.52 0 0 0 4.4 1.4V7.1a4.28 4.28 0 0 1-3.36-1.28z"/></svg></a>
 </footer>
-<script src="ch-map.js?v=9ccbce517b"></script>
+<script src="ch-map.js?v=18772b2dd8"></script>
 <script>
 (function(){
   'use strict';
@@ -93,7 +116,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // host serves this file; the hard-coded default is the fallback for the customer site.
   var API = (window.CEYLON_HOP_API || 'https://api.ceylonhop.com').replace(/\/$/, '');
   var WA = '94779669662';
-  var token = new URLSearchParams(location.search).get('t') || '';
+  // Taken out of the address bar by the head's first script; the URL is the fallback for when
+  // storage was unavailable and it stayed there.
+  var token = window.CH_LINK_TOKEN || new URLSearchParams(location.search).get('t') || '';
 
   function waHref(text){ return 'https://wa.me/' + WA + '?text=' + encodeURIComponent(text); }
 

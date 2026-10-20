@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed';
+// Deposits (spec 2026-10-07): which part of the sale a payment is. 'full' for every booking that
+// pays once — every row before the deposit feature.
+export type PaymentPurpose = 'full' | 'deposit' | 'balance';
 
 export interface NewPayment {
   bookingId: string;
@@ -9,15 +12,20 @@ export interface NewPayment {
   amount: number;
   currency: string;
   idempotencyKey: string;
+  purpose?: PaymentPurpose; // omitted = 'full'
 }
 
-export interface Payment extends NewPayment {
+export interface Payment extends Omit<NewPayment, 'purpose'> {
   id: string;
   status: PaymentStatus;
+  purpose: PaymentPurpose;
   // 0055 — how many checkouts were started against this row and when the last one was. A retry
   // reuses the row (idempotent per booking), so before this the count was invisible.
   attemptCount: number;
   lastAttemptAt: Date | null;
+  // When the money landed (0 or 1 per row; null until it settles). The ops queue counts "paid
+  // N days ago" from it. Only the time — how and by whom it settled stays in the provenance readers.
+  settledAt: Date | null;
 }
 
 export interface PaymentSettlementEvidence {
@@ -61,6 +69,8 @@ export interface PaymentRepo {
   // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
   // silently failed to confirm. A predicate rather than a row read: no caller wants the rows.
   hasManualSettlement(bookingId: string): Promise<boolean>;
+  // hasManualSettlement for a SET of bookings in one query: the ids among `bookingIds` with one.
+  manualSettlementAmong(bookingIds: string[]): Promise<Set<string>>;
   // The GATEWAY's own payment id, which the PayHere Refund API takes as `payment_id`. Same
   // reasoning as hasManualSettlement: the narrow Payment shape drops it on purpose, and the
   // refund path wants exactly this one field rather than the whole provenance record.
@@ -102,6 +112,7 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     if (existing) return existing;
     const payment: InternalPaymentRecord = {
       ...p,
+      purpose: p.purpose ?? 'full',
       id: randomUUID(),
       status: 'pending',
       attemptCount: 0,
@@ -141,7 +152,9 @@ export class InMemoryPaymentRepo implements PaymentRepo {
   async markSucceeded(id: string): Promise<Payment> {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
-    const updated: InternalPaymentRecord = { ...p, status: 'succeeded', updatedAt: new Date() };
+    // Stamps settledAt as the Postgres repo does (its CHECK requires one on a succeeded row).
+    const now = new Date();
+    const updated: InternalPaymentRecord = { ...p, status: 'succeeded', settledAt: p.settledAt ?? now, updatedAt: now };
     this.byId.set(id, updated);
     return this.toPayment(updated);
   }
@@ -182,6 +195,15 @@ export class InMemoryPaymentRepo implements PaymentRepo {
   async hasManualSettlement(bookingId: string): Promise<boolean> {
     return [...this.byId.values()].some(
       (p) => p.bookingId === bookingId && p.status === 'succeeded' && p.settlementSource === 'manual',
+    );
+  }
+
+  async manualSettlementAmong(bookingIds: string[]): Promise<Set<string>> {
+    const want = new Set(bookingIds);
+    return new Set(
+      [...this.byId.values()]
+        .filter((p) => want.has(p.bookingId) && p.status === 'succeeded' && p.settlementSource === 'manual')
+        .map((p) => p.bookingId),
     );
   }
 
@@ -254,8 +276,10 @@ export class InMemoryPaymentRepo implements PaymentRepo {
       currency: payment.currency,
       idempotencyKey: payment.idempotencyKey,
       status: payment.status,
+      purpose: payment.purpose,
       attemptCount: payment.attemptCount,
       lastAttemptAt: payment.lastAttemptAt ? new Date(payment.lastAttemptAt) : null,
+      settledAt: payment.settledAt ? new Date(payment.settledAt) : null,
     };
   }
 }

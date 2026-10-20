@@ -14,6 +14,8 @@ import { sendRideSeatHeld, teamPaidEmail, teamRideLockedEmail } from '../service
 import {
   sendBookingConfirmation,
   sendDetailsNeeded,
+  sendScheduleSet,
+  sendDetailsReminder,
   sendBookingConfirmed,
   sendCancellationConfirmation,
   sendRefundConfirmation,
@@ -22,8 +24,10 @@ import {
   sendReviewRequest,
   sendPaymentIncomplete,
   sendPaymentFailed,
+  sendBalanceReceived,
   sendDepositReceived,
   sendCustomerQuote,
+  experienceConfirmedEmail,
 } from '../services/notifications';
 
 // Dev-only preview harness for the customer emails. Renders the ACTUAL sender output
@@ -62,6 +66,16 @@ const LINKS = {
   book: 'https://ceylonhop.com/quote.html?q=preview',
 };
 
+// One partner experience the customer tapped "I'm interested" on, so the confirmation's row is previewable.
+const SAMPLE_INTEREST = { name: 'Ayurvedic massage', partnerName: 'Atherya Spa' };
+
+// A paid massage, scheduled and ready to confirm (spec D21), so the new email is previewable.
+const SAMPLE_EXPERIENCE_CONFIRMED = {
+  reference: 'CH-4821', customerFirstName: 'Maya', experienceName: 'Ayurvedic massage', partnerName: 'Atherya Spa',
+  scheduledDate: '2026-11-21', scheduledTime: '09:30', meetingPoint: 'Hotel lobby, Sigiriya Village',
+  amountPaidCents: 3500, amountPaidCurrency: 'USD', paymentRef: 'PH-123456',
+};
+
 interface EmailDef {
   name: string;
   label: string;
@@ -71,10 +85,13 @@ interface EmailDef {
 }
 
 const EMAILS: EmailDef[] = [
-  { name: 'confirmation', label: 'Booking confirmation', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage }) },
+  { name: 'confirmation', label: 'Booking confirmation', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, interests: [SAMPLE_INTEREST] }) },
   // Partial pay link variant (spec 2026-08-04): the coverage sentence above the itinerary.
-  { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 } }) },
+  { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 }, interests: [SAMPLE_INTEREST] }) },
   { name: 'details-needed', label: 'Awaiting details', run: (b, e) => sendDetailsNeeded(b, e, { manage: LINKS.manage }) },
+  { name: 'schedule-set', label: 'Pickup set (after booking)', run: (b, e) => sendScheduleSet(b.mode === 'single' ? ({ ...b, input: { ...b.input, date: '2026-11-04', time: '09:00' } } as Booking) : b, e, { manage: LINKS.manage }) },
+  { name: 'details-reminder-1', label: 'Reminder 1: still need date/time', run: (b, e) => sendDetailsReminder(b, e, { nth: 1, manage: LINKS.manage }) },
+  { name: 'details-reminder-2', label: 'Reminder 2: still need date/time', run: (b, e) => sendDetailsReminder(b, e, { nth: 2, manage: LINKS.manage }) },
   { name: 'booking-confirmed', label: 'Booking confirmed', run: (b, e) => sendBookingConfirmed(b, e, { manage: LINKS.manage }) },
   { name: 'cancellation', label: 'Cancellation', run: (b, e) => sendCancellationConfirmation(b, e) },
   { name: 'refund', label: 'Refund processed', run: (b, e) => sendRefundConfirmation(b, e) },
@@ -84,12 +101,14 @@ const EMAILS: EmailDef[] = [
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
   { name: 'payment-failed', label: 'Payment failed (immediate)', run: (b, e) => sendPaymentFailed(b, e, { resume: LINKS.resume }) },
   { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
+  { name: 'balance-received', label: 'Balance received (fully paid)', run: (_b, e) => sendBalanceReceived(sampleVariants.singleBalancePaid, { depositCents: 185_000, balanceCents: sampleVariants.singleBalancePaid.total - 185_000 }, e, { manage: LINKS.manage }) },
   { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
+  { name: 'experience-confirmed', label: 'Experience confirmed (date, time, meeting point)', run: (_b, e) => e.send({ to: 'preview@ceylonhop.com', ...experienceConfirmedEmail(SAMPLE_EXPERIENCE_CONFIRMED) }) },
   // Ride Board (self-contained templates in rideBoardEmails.ts). Previously not previewable —
   // which is exactly how they drifted off the design language unnoticed (2026-08-13 audit).
   // The team's "Paid:" mail rides the alert channel, so it is rendered here and handed to the
   // fake directly — same bytes EmailAlertAdapter sends.
-  { name: 'team-paid-ops', label: 'Team (ops): booking paid', run: (b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamPaidEmail(b, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
+  { name: 'team-paid-ops', label: 'Team (ops): booking paid', run: (b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamPaidEmail(b, 'https://ops.ceylonhop.com', [{ name: 'Ayurvedic massage', partnerName: 'Atherya Spa', status: 'new' }]), audience: 'ops' }) },
   { name: 'team-ride-locked-ops', label: 'Team (ops): ride locked in, paid', run: (_b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamRideLockedEmail({ list: SAMPLE_RIDE, time: '08:00', charged: [{ ...SAMPLE_MEMBER, status: 'charged' }, { ...SAMPLE_MEMBER, id: 'm2', sub: 'sub-2', firstName: 'Luca', country: 'IT', email: 'luca@example.com', seats: 2, status: 'charged' }], declined: [], unknown: [], seedSeats: 0, currency: 'USD' }, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
   { name: 'ride-seat-held-ops', label: 'Ride Board (ops): seat held', run: (_b, e) => sendRideSeatHeld({ to: 'ops@ceylonhop.com', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, member: SAMPLE_MEMBER, committed: 2, kind: 'joined' }, e, 'https://ops.ceylonhop.com') },
   { name: 'ride-joined', label: 'Ride Board: you\'re on the list', run: (_b, e) => sendRideJoined(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, seats: 2, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' }) },

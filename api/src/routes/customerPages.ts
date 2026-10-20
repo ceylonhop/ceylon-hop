@@ -144,6 +144,17 @@ const forApiHost = (html: string) =>
     .replace('<head>', '<head>\n<script>window.CEYLON_HOP_API=location.origin;</script>')
     .replaceAll('href="index.html"', `href="${SITE_HOME}"`);
 
+// On a staging host the GTM loader is dropped per request (owner decision 2026-10-04). The
+// shared snippet loads it on any *.ceylonhop.com and the container has no staging condition,
+// so staff testing a pay link reported a fake begin_checkout into prod GA4, Clarity and the
+// ad pixels. Same host test as chEnv() in analytics.js; analytics.js stays no-op safe.
+// The staged site drops it at build time instead (tools/build-staging.mjs).
+const STAGING_HOST = /(^|[.-])staging([.-]|$)/;
+const INLINE_SCRIPT = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
+const withoutTagManager = (html: string) =>
+  html.replace(INLINE_SCRIPT, (tag) => (tag.includes('googletagmanager.com') ? '' : tag));
+const isStagingHost = (c: Context) => STAGING_HOST.test(new URL(c.req.url).hostname.toLowerCase());
+
 export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
   const r = new Hono();
 
@@ -216,8 +227,9 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
   for (const page of [...PAGES, 'p', 'q']) {
     const file = page === 'p' ? 'pay.html' : page === 'q' ? 'quote.html' : page;
     r.get(`/${page}`, async (c) => {
-      const html = read(file, forApiHost) as string | null;
-      if (html === null) return c.notFound();
+      const cached = read(file, forApiHost) as string | null;
+      if (cached === null) return c.notFound();
+      const html = isStagingHost(c) ? withoutTagManager(cached) : cached;
       // manage.html still does not unfurl — it is sent after payment, when trust is already
       // established (spec: deliberately deferred).
       if (file !== 'pay.html' && file !== 'quote.html') return c.html(html);

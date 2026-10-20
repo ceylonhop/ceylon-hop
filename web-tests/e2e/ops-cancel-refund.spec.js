@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 // Drives the REAL ops shell (api/src/routes/ops-ui.html) offline (stubbed API, no DB).
 //
 // Owner, 2026-08-02: Cancel and Refund are the two irreversible actions, founder-only
-// (payments:reverse), and the refund is always the full remainder — our PayHere setup cannot
-// do partials, so an amount box would only invite records the gateway can't honour. Since #357
+// (payments:reverse); refunds take an amount (since 2026-10-17) and an ops request waits for a
+// founder's approval; the 24-hour rule now guards Cancel only. Since #357
 // (2026-08-07) the refund request lives INSIDE the Refunds block beside the money it acts on,
 // and Cancel booking keeps the foot of the sheet — each with its own required reason field.
 //
@@ -68,10 +68,10 @@ test('a founder sees a full-amount Refund in the Refunds block, and Cancel at th
   await expect(cancel).toBeVisible();
   await expect(refund).toBeVisible();
 
-  // Full remainder, stated on the button — never an amount box to type into. The reason field
-  // is required and inline (one per action since the 2026-08-07 split).
-  await expect(refund).toContainText('$39');
-  await expect(page.locator('#refundamount')).toHaveCount(0);
+  // The button says what it does; the amount box (empty = the full remainder) shows that remainder
+  // as its placeholder. The reason field is required and inline (one per action since 2026-08-07).
+  await expect(refund).toHaveText('Refund');
+  await expect(page.locator('#refundamount')).toHaveAttribute('placeholder', '$39');
   await expect(page.locator('#refundreason')).toBeVisible();
 
   // The refund request sits in the Refunds block, beside the money it acts on (#357).
@@ -107,14 +107,13 @@ test('an OPS agent may reverse while more than 24 hours remain', async ({ page }
   await expect(page.locator('#cancelreason')).toBeVisible();
 });
 
-test('an OPS agent is locked out inside the last 24 hours, and told why', async ({ page }) => {
+test('an OPS agent cannot cancel inside the last 24 hours, and is told why', async ({ page }) => {
   await boot(page, { caps: OPS, travelDate: iso(Date.now() + 0.5 * DAY) });
   await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
-  await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
-  await expect(page.locator('#sheet')).toContainText('only a founder can cancel or refund');
-  // No reason box either — there is nothing here they can do.
+  await expect(page.locator('#sheet')).toContainText('only a founder can cancel from here');
   await expect(page.locator('#cancelreason')).toHaveCount(0);
-  await expect(page.locator('#refundreason')).toHaveCount(0);
+  // Refund REQUESTS are not held to the window (2026-10-17): a founder approves every one.
+  await expect(page.locator('[data-act="refundrequest"]')).toBeVisible();
 });
 
 test('an OPS agent cannot reverse a booking with no trip date — fails closed', async ({ page }) => {

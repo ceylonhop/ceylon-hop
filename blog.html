@@ -25,7 +25,7 @@ gtag('consent','default',{ad_storage:'denied',ad_user_data:'denied',ad_personali
 try{var chc=localStorage.getItem('ceylonhop_cookie_choice');if(chc==='granted'||chc==='denied')gtag('consent','update',{ad_storage:chc,ad_user_data:chc,ad_personalization:chc});}catch(e){}
 </script>
 <script>(function(w,d,s,l,i){if(!(location.hostname==='ceylonhop.com'||location.hostname.slice(-14)==='.ceylonhop.com'||location.hostname==='ceylon-hop-api.onrender.com'))return;w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
-<script src="analytics.js?v=72fed96a54"></script>
+<script src="analytics.js?v=10d3674e7f"></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -94,6 +94,29 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       </div>
     </div>
 
+    <!-- Travel FAQ: generated from tools/faq/sri-lanka.json by tools/generate-faq.mjs.
+         Static HTML on purpose — crawlable without JS, like the guides block below. -->
+    <div id="know" style="margin-top:48px">
+      <span class="eyebrow">Know before you go</span>
+      <h2 style="margin:.3rem 0 .8rem">The questions everyone asks us, answered</h2>
+      <div class="grid cols-3">
+        <a class="bcard" href="sri-lanka-travel-faq/">
+          <img src="img/faq/hero-900.jpg" alt="Tea fields on a misty hillside near Nuwara Eliya" width="1800" height="1013" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
+          <div class="meta" style="margin-top:14px">Reference &middot; Whole island</div>
+          <h3>Sri Lanka travel FAQ</h3>
+          <p>Visas, money and ATMs, trains and buses, which safari and which beach, leeches &mdash; the questions people ask us most, kept current by the team.</p>
+          <span class="more">Read the answers &rarr;</span>
+        </a>
+        <a class="bcard" href="ramayana-trail-sri-lanka/">
+          <img src="img/ramayana/hero-900.jpg" alt="The painted gopuram of a Hindu kovil in Colombo, covered in carved deities" width="1800" height="1013" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:50% 30%;border-radius:16px" loading="lazy" decoding="async">
+          <div class="meta" style="margin-top:14px">Trail &middot; Hill country &amp; the south</div>
+          <h3>The Ramayana Trail in Sri Lanka</h3>
+          <p>Ashok Vatika, Ramboda&rsquo;s Hanuman, the temples where Rama prayed &mdash; thirteen places, two private-car trips with prices, and what to wear.</p>
+          <span class="more">Plan the trail &rarr;</span>
+        </a>
+      </div>
+    </div>
+
     <!-- Destination guides: generated from tools/guides/<slug>.json by tools/generate-guides.mjs.
          Static HTML on purpose — crawlable without JS, unlike the #posts list below. -->
     <div id="guides" style="margin-top:48px">
@@ -129,7 +152,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <span class="more">Read the guide &rarr;</span>
         </a>
         <a class="bcard" href="guides/colombo/">
-          <img src="img/guides/colombo/hero-900.jpg" alt="Sunset over Galle Face Green and the sea, the promenade and Port City beyond" width="1800" height="1013" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
+          <img src="img/guides/colombo/hero-900.jpg" alt="The Lotus Tower lit up at night above the lights of Colombo and Beira Lake" width="1800" height="1013" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
           <div class="meta" style="margin-top:14px">Guide &middot; West coast</div>
           <h3>Colombo</h3>
           <p>Is it worth a day? Pettah and the Red Mosque, sunset on Galle Face, where to sleep before an early flight &mdash; and how we drive you in.</p>
@@ -140,6 +163,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <div class="meta" style="margin-top:14px">Guide &middot; East coast</div>
           <h3>Arugam Bay</h3>
           <p>Which surf point suits you, when the season really runs, crocodiles, Kumana and the lagoon &mdash; and how we drive you there.</p>
+          <span class="more">Read the guide &rarr;</span>
+        </a>
+        <a class="bcard" href="guides/mirissa/">
+          <img src="img/guides/mirissa/hero-900.jpg" alt="Palms, the curve of Mirissa&rsquo;s beach and the headland beyond, seen from the air" width="1800" height="1012" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
+          <div class="meta" style="margin-top:14px">Guide &middot; South coast</div>
+          <h3>Mirissa</h3>
+          <p>Whale boats at dawn, Coconut Tree Hill, turtles in the shallows, where the parties really are &mdash; and how we drive you there.</p>
+          <span class="more">Read the guide &rarr;</span>
+        </a>
+        <a class="bcard" href="guides/hiriketiya/">
+          <img src="img/guides/hiriketiya/hero-900.jpg" alt="A surfer riding a wave across Hiriketiya&rsquo;s bay, palms and beach bars behind" width="1800" height="1012" style="display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;border-radius:16px" loading="lazy" decoding="async">
+          <div class="meta" style="margin-top:14px">Guide &middot; South coast</div>
+          <h3>Hiriketiya</h3>
+          <p>Which side of the bay to surf, Blue Beach Island at low tide, Raa and the brunch caf&eacute;s &mdash; and how we drive you there.</p>
           <span class="more">Read the guide &rarr;</span>
         </a>
       </div>

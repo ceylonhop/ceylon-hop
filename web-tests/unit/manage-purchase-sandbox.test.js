@@ -24,7 +24,7 @@ const VIEW = {
 };
 
 // Load the real page on the production host, with analytics recorded and the API stubbed.
-function load(payReturn, { prod = true } = {}) {
+function load(payReturn, { prod = true, view = VIEW } = {}) {
   const events = [];
   const dom = new JSDOM(HTML, {
     url: 'https://ceylonhop.com/manage.html?t=tok&rt=rt-1',
@@ -39,7 +39,7 @@ function load(payReturn, { prod = true } = {}) {
       w.fetch = (url) => {
         url = String(url);
         if (url.includes('/bookings/pay-return')) return reply(payReturn);
-        if (url.includes('/bookings/view')) return reply(VIEW);
+        if (url.includes('/bookings/view')) return reply(view);
         return reply({});
       };
     },
@@ -68,6 +68,19 @@ describe('manage.html purchase gate', () => {
     const { w, events } = load({ status: 'paid', reference: 'CH-HAFDZ', sandbox: false });
     await settle(w);
     expect(purchases(events)).toEqual([{ event: 'purchase', transaction_id: 'CH-HAFDZ', value: 229, currency: 'USD' }]);
+  });
+
+  // GA4 item reports (spec 2026-10-03 D1-alt): /view hands over the server purchase's own item and
+  // the page prices it at the value it reports, so item revenue equals purchase revenue.
+  it('carries the server’s GA4 item, priced at the purchase value', async () => {
+    const ga4Item = {
+      item_id: 'Colombo Airport (CMB) → Ella', item_name: 'Colombo Airport (CMB) → Ella', item_category: 'private',
+      item_category2: 'Airport & Negombo', item_category3: 'Hill country', item_category4: 'transfer',
+    };
+    const { w, events } = load({ status: 'paid', reference: 'CH-HAFDZ', sandbox: false }, { view: { ...VIEW, ga4Item } });
+    await settle(w);
+    expect(purchases(events)).toEqual([{ event: 'purchase', transaction_id: 'CH-HAFDZ', value: 229, currency: 'USD',
+      items: [{ ...ga4Item, price: 229, quantity: 1 }] }]);
   });
 
   it('ignores any leftover sessionStorage sandbox flag — the server’s answer is the only input', async () => {

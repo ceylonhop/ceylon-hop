@@ -7,7 +7,9 @@ import type { Booking } from '../db/bookingRepo';
 //
 // This RELAXES the founder-only `payments:reverse` rule set earlier the same day: the capability
 // stays founder-only (it is read elsewhere, and widening it would grant ops reversal everywhere),
-// and the time-bounded grant lives here, at the four reversal routes, where it can be read.
+// and the time-bounded grant lives here. Since 2026-10-17 it guards CANCELLING only: a refund
+// request needs a founder's approval anyway, so it is never blocked — late ones are flagged
+// instead (isLateRequest below).
 
 export const REVERSAL_WINDOW_HOURS = 24;
 
@@ -80,7 +82,7 @@ export function mayReverse(role: OpsRole, booking: Booking, now: Date = new Date
     return {
       ok: false,
       code: 'trip_start_unknown',
-      message: 'This booking has no trip date, so the 24-hour rule cannot be checked. A founder can still cancel or refund it.',
+      message: 'This booking has no trip date, so the 24-hour rule cannot be checked. A founder can still cancel it.',
     };
   }
 
@@ -91,7 +93,7 @@ export function mayReverse(role: OpsRole, booking: Booking, now: Date = new Date
   return {
     ok: false,
     code: 'within_24h_founder_only',
-    message: `The trip starts in under ${REVERSAL_WINDOW_HOURS} hours — only a founder can cancel or refund from here.`,
+    message: `The trip starts in under ${REVERSAL_WINDOW_HOURS} hours — only a founder can cancel from here.`,
   };
 }
 
@@ -105,4 +107,15 @@ function withinGrace(booking: Booking, now: Date): boolean {
   // reversible by ops. Nonsense data must not be the most permissive case.
   if (age < 0) return false;
   return age < FRESH_BOOKING_GRACE_HOURS * 3600_000;
+}
+
+/**
+ * Was this refund request filed inside the last day before the trip (or after it began)? Display
+ * only (spec 2026-10-17 §3): since requests need a founder's approval they are never blocked, but
+ * a late one is flagged because the driver may already be committed. No trip date is never late.
+ */
+export function isLateRequest(booking: Booking, at: Date): boolean {
+  const start = tripStartAt(booking);
+  if (!start) return false;
+  return at.getTime() >= start.getTime() - REVERSAL_WINDOW_HOURS * 3600_000;
 }

@@ -37,6 +37,16 @@ export class PostgresBookingCheckoutEventRepo implements BookingCheckoutEventRep
     return rows.map(toEvent);
   }
 
+  async listByBookingIds(bookingIds: string[]): Promise<BookingCheckoutEvent[]> {
+    if (bookingIds.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(bookingCheckoutEvents)
+      .where(inArray(bookingCheckoutEvents.bookingId, bookingIds))
+      .orderBy(desc(bookingCheckoutEvents.at));
+    return rows.map(toEvent);
+  }
+
   // Served by booking_checkout_event_order_id_idx.
   async listByOrderId(orderId: string): Promise<BookingCheckoutEvent[]> {
     const rows = await this.db

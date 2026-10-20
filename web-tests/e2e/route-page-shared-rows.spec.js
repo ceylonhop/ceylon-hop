@@ -40,8 +40,11 @@ const BOUNDARY = {
 // Fix 1: the longest real row — an afternoon slot AND the "your date" tag, together — is the
 // combination that exposed the bug (the tag's TEXT was invisible; only its chip border
 // survived, and the slot word ellipsised on nearly every row at 375px).
+// Pinned to a Monday: picking this date must land on the board branch, and a plain
+// futureIsoDate(15) falls on a shared-taxi day (Wed/Sat) whenever today is a Tue or Fri (UTC),
+// where the page rightly shows the seat and no rows (went red Fri 2026-10-02 UTC).
 const MARKED = {
-  code: 'RB-MINE', corridorId: 'airport-cultural', date: futureIsoDate(15), slot: 'afternoon',
+  code: 'RB-MINE', corridorId: 'airport-cultural', date: nextIsoWeekday(1, 15), slot: 'afternoon',
   status: 'gathering', minSeats: 3, committed: 2,
   members: ['Kim', 'Lee'].map(member),
 };
@@ -134,7 +137,10 @@ test('an off day picked on the board part still invites a board ride', async ({ 
   await stubBoard(page, [RUNNING]);
   await page.goto('/trip/cmb-airport-to-sigiriya/');
   await expect(page.locator('.ld-row')).toHaveCount(1);
-  await pickDate(page, nextIsoWeekday(4));
+  // At least 21 days out, past RUNNING's futureIsoDate(20): nextIsoWeekday(4) alone IS
+  // RUNNING's date whenever today is a Friday (UTC), and a date with a list on it rightly
+  // shows that list instead of the "no one's going" invitation.
+  await pickDate(page, nextIsoWeekday(4, 21));
   await expect(page.locator('.ld-head')).toHaveText(/^No one's going Thu /);
 });
 
@@ -359,4 +365,43 @@ test('Fix 2 — the sticky book bar never sits on top of the shared-ride CTA', a
     return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
   });
   await pollBarHidden(true, '(d) at the top: the fares card is on screen, so the bar should be hidden');
+});
+
+/* The picked date is local midnight (`new Date(value + 'T00:00:00')`), so formatting it with
+   toISOString() gave the PREVIOUS UTC day anywhere east of UTC — Sri Lanka included. A traveller
+   in Colombo who picked a list's own date was told nobody was going, and the list the day before
+   was tagged "your date". The host and CI run west of / at UTC, so only a pinned zone shows it. */
+test.describe('east of UTC (Asia/Colombo)', () => {
+  test.use({ timezoneId: 'Asia/Colombo' });
+
+  test('picking a list\'s own date marks THAT list as yours, not the day before', async ({ page }) => {
+    // A Friday and the Thursday before it: neither is a shared-taxi day (Wed/Sat), so the
+    // picked date always takes the board-rows branch, whatever weekday the suite runs on.
+    const fri = nextIsoWeekday(5);
+    const thu = new Date(fri + 'T00:00:00Z'); thu.setUTCDate(thu.getUTCDate() - 1);
+    const mine = { ...MARKED, date: fri };
+    const dayBefore = { ...NEEDS_ONE, code: 'RB-PREV', date: thu.toISOString().slice(0, 10) };
+    await stubBoard(page, [mine, dayBefore]);
+    await page.goto('/trip/cmb-airport-to-sigiriya/');
+    await expect(page.locator('.ld-row')).toHaveCount(2);
+    await pickDate(page, fri);
+
+    await expect(page.locator('.ld-head')).not.toHaveText(/No one's going/);
+    await expect(page.locator('.ld-row.is-yours')).toHaveCount(1);
+    await expect(page.locator('.ld-row.is-yours')).toHaveAttribute('href', /RB-MINE$/);
+  });
+
+  test('the date field\'s earliest pick is tomorrow in the traveller\'s own zone', async ({ page }) => {
+    await stubBoard(page, [RUNNING]);
+    await page.goto('/trip/cmb-airport-to-sigiriya/');
+    const { min, tomorrow } = await page.evaluate(() => {
+      const t = new Date(); t.setDate(t.getDate() + 1);
+      const p = (n) => String(n).padStart(2, '0');
+      return {
+        min: document.querySelector('.ld-date').min,
+        tomorrow: t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate()),
+      };
+    });
+    expect(min).toBe(tomorrow);
+  });
 });

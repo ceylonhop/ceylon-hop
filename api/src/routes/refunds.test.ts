@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -98,7 +98,7 @@ describe('manual refund ledger API', () => {
     expect(
       (
         await fin.app.request(`/admin/bookings/${fin.booking.id}/refunds`, {
-          headers: { cookie: await cookie('founder@test') },
+          headers: { cookie: await cookie('finance@test') },
         })
       ).status,
     ).toBe(200);
@@ -532,5 +532,190 @@ describe('refund team email', () => {
       expect(part).toContain('Customer request');
     }
     expect(sent[0].dedupeKey).toBe(refund.id);
+  });
+});
+
+// Deposits (spec 2026-10-07 §5.1): a deposit booking holds TWO captures. A refund belongs to one
+// of them — it is that payment's gateway id PayHere refunds — so with several, ops names which.
+describe('refunding one payment of a deposit + balance pair', () => {
+  async function pairFixture() {
+    const f = await fixture();
+    // Replace the fixture's single full capture with a deposit (5000) and a balance (15000).
+    const { app, bookings, payments, booking } = f;
+    await payments.markFailed(f.payment.id);
+    const deposit = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-D`, amount: 5_000,
+      currency: booking.currency, idempotencyKey: `checkout:${booking.id}:deposit`, purpose: 'deposit',
+    });
+    await payments.markSucceeded(deposit.id);
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 15_000,
+      currency: booking.currency, idempotencyKey: `checkout:${booking.id}:balance`, purpose: 'balance',
+    });
+    await payments.markSucceeded(balance.id);
+    return { app, bookings, payments, booking, deposit, balance };
+  }
+  const post = async (app: ReturnType<typeof createApp>, bookingId: string, body: Record<string, unknown>) =>
+    app.request(`/admin/bookings/${bookingId}/refunds`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
+      body: JSON.stringify({ currency: 'USD', reason: 'Customer request', ...body }),
+    });
+
+  it('refunds a named payment and caps it at that payment', async () => {
+    const { app, booking, deposit } = await pairFixture();
+    const over = await post(app, booking.id, { amountCents: 5_001, paymentId: deposit.id });
+    expect(over.status).toBe(409);
+    expect(await over.json()).toEqual({ error: 'refund_exceeds_payment' });
+    const ok = await post(app, booking.id, { amountCents: 5_000, paymentId: deposit.id });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).paymentId).toBe(deposit.id);
+    // The deposit is now fully spoken for — the ceiling is per payment, not just per booking.
+    const again = await post(app, booking.id, { amountCents: 1, paymentId: deposit.id });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: 'refund_exceeds_payment' });
+  });
+
+  it('asks which payment when there are several and none is named', async () => {
+    const { app, booking } = await pairFixture();
+    const res = await post(app, booking.id, { amountCents: 100 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'payment_ambiguous' });
+  });
+
+  it('refuses a paymentId that is not a captured payment of this booking', async () => {
+    const { app, booking } = await pairFixture();
+    const res = await post(app, booking.id, { amountCents: 100, paymentId: '00000000-0000-4000-8000-000000000000' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'payment_not_captured' });
+  });
+
+  it('a one-payment booking needs no paymentId (unchanged), and may still name it', async () => {
+    const { app, booking, payment } = await fixture();
+    expect((await post(app, booking.id, { amountCents: 100 })).status).toBe(201);
+    const named = await post(app, booking.id, { amountCents: 100, paymentId: payment.id });
+    expect(named.status).toBe(201);
+    expect((await named.json()).paymentId).toBe(payment.id);
+  });
+});
+
+describe('founder approval (spec 2026-10-17)', () => {
+  const post = async (app: ReturnType<typeof createApp>, path: string, actor: string, body: unknown = {}) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie(actor) },
+      body: JSON.stringify(body),
+    });
+
+  it('ops may request a partial amount, but only a founder may confirm it', async () => {
+    const { app, booking } = await fixture();
+    const res = await requestRefund(app, booking.id, 2500, 'ops@test');
+    expect(res.status).toBe(201);
+    const refund = await res.json();
+    expect(refund).toMatchObject({ amountCents: 2500, status: 'manual_pending', requestedBy: 'ops@test' });
+
+    const base = `/admin/bookings/${booking.id}/refunds/${refund.id}`;
+    expect((await post(app, `${base}/confirm`, 'ops@test', { gatewayRef: 'PH-1' })).status).toBe(403);
+    expect((await post(app, `${base}/confirm`, 'founder@test', { gatewayRef: 'PH-1' })).status).toBe(200);
+  });
+
+  it('ops may never send a refund through PayHere', async () => {
+    const { app, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const res = await post(app, `/admin/bookings/${booking.id}/refunds/${refund.id}/execute`, 'ops@test');
+    expect(res.status).toBe(403);
+  });
+
+  it('ops may cancel a pending request', async () => {
+    const { app, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const res = await post(app, `/admin/bookings/${booking.id}/refunds/${refund.id}/cancel`, 'ops@test');
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('cancelled');
+  });
+
+  it('ops reads the ledger; the machine key still cannot', async () => {
+    const { app, booking } = await fixture();
+    const asOps = await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { cookie: await cookie('ops@test') } });
+    expect(asOps.status).toBe(200);
+    const asKey = await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { 'x-admin-key': KEY } });
+    expect(asKey.status).toBe(403);
+  });
+
+  it('ops may request on an old booking with no trip date — the 24-hour rule no longer applies to refunds', async () => {
+    const { app, booking } = await fixture(); // no date: mayReverse would say trip_start_unknown
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 48 * 3600_000); // past the fresh-booking grace
+      expect((await requestRefund(app, booking.id, 2500, 'ops@test')).status).toBe(201);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('alerts the founders when ops files a request, says partial, and stays quiet for a founder', async () => {
+    const { app, alerts, booking } = await fixture();
+    const refund = await (await requestRefund(app, booking.id, 2500, 'ops@test')).json();
+    const sent = alerts.sent.filter((a) => a.kind === 'refund_requested');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ severity: 'info', dedupeKey: refund.id });
+    expect(sent[0].title).toBe(`Refund requested: ${booking.reference} · 25.00 USD (partial)`);
+    expect(sent[0].body).toContain('ops@test');
+    expect(sent[0].body).toContain('Customer request');
+    expect(sent[0].body).toContain(`of ${(booking.total / 100).toFixed(2)} USD paid`);
+
+    expect((await requestRefund(app, booking.id, 100, 'founder@test')).status).toBe(201);
+    expect(alerts.sent.filter((a) => a.kind === 'refund_requested')).toHaveLength(1);
+  });
+
+  it('marks a full request on a trip starting within 24 hours as full and LATE', async () => {
+    const { app, alerts, bookings, payments } = await fixture();
+    // Today's date in Sri Lanka (fixed UTC+05:30), 23:59: the trip is inside its last day — or,
+    // run late at night, just past — late either way.
+    const today = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single', total: 10000, amountDueNow: 10000, currency: 'USD',
+      input: {
+        from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: today, time: '23:59',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+94770000000', country: 'Sri Lanka' },
+      },
+    });
+    const p = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: b.reference, amount: 10000, currency: 'USD', idempotencyKey: `late:${b.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    expect((await requestRefund(app, b.id, 10000, 'ops@test')).status).toBe(201);
+    const sent = alerts.sent.filter((a) => a.kind === 'refund_requested');
+    expect(sent.at(-1)!.title).toBe(`Refund requested: ${b.reference} · 100.00 USD (full) · LATE`);
+  });
+
+  it('a failing alert lookup never fails the request', async () => {
+    const { app, payments, booking } = await fixture();
+    // The refund repo reads the captured payments first (that call must work); the alert's own
+    // lookup is the second call, and that is the one that fails.
+    const realFind = payments.findByBookingId.bind(payments);
+    let calls = 0;
+    vi.spyOn(payments, 'findByBookingId').mockImplementation(async (id) => {
+      if (++calls > 1) throw new Error('db down');
+      return realFind(id);
+    });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await requestRefund(app, booking.id, 2500, 'ops@test');
+      expect(res.status).toBe(201);
+      const ledger = await (
+        await app.request(`/admin/bookings/${booking.id}/refunds`, { headers: { cookie: await cookie('founder@test') } })
+      ).json();
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ status: 'manual_pending', amountCents: 2500 });
+      expect(errorLog).toHaveBeenCalled();
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it('finance still may not request', async () => {
+    const { app, booking } = await fixture();
+    expect((await requestRefund(app, booking.id, 2500, 'finance@test')).status).toBe(403);
   });
 });

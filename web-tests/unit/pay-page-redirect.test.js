@@ -101,11 +101,13 @@ describe('pay page survives the round trip and never hangs silently', () => {
   // `cents` joined t/typed on 2026-08-07: the return leg renders before /view has been
   // re-fetched, so without the trip's own total a real `purchase` reports a value of zero.
   // It is the quote's price — the same number already printed on the page — not PII.
+  // `item` joined on 2026-10-07: the GA4 item /start returns (town-level route, private/shared,
+  // regions — knownPlace never passes a typed address through), for the `purchase` items array.
   it('stores only the pay token, the typed form values, and the amount', () => {
     const m = js.match(/setItem\(STORE,\s*JSON\.stringify\(([\s\S]*?)\)\s*\)\s*;/);
     expect(m, 'expected a single STORE write').toBeTruthy();
     const keys = [...m[1].matchAll(/(^|[{,\s])([A-Za-z_$][\w$]*)\s*:/g)].map((x) => x[2]);
-    expect(keys.sort()).toEqual(['cents', 't', 'typed']);
+    expect(keys.sort()).toEqual(['cents', 'item', 't', 'typed']);
     // Whatever the shape, these must never appear in the persisted object.
     expect(m[1]).not.toMatch(/card|cvv|cvc|pan\b|checkoutToken|hash/i);
   });
