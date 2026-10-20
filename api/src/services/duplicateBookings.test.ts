@@ -165,13 +165,13 @@ describe('closeLeftoverDuplicates — a NEWER unpaid booking for the same trip',
   const paid = () => mk('CH-Y8LYF', 'paid', at(0), single());
 
   it("CH-ULS3L's shape: last checkout long before the payment → cancelled like an older one", async () => {
+    // Made 10 min after the paid booking, last checkout 3 min later, the other one paid 4 h 51 min after that.
     const newer = mk('CH-ULS3L', 'payment_pending', at(10), single());
     const { bookings, payments, alerts, deps } = setup([newer, paid()]);
     const p = await payments.create({ bookingId: newer.id, provider: 'payhere', orderId: 'CH-ULS3L', amount: 4700, currency: 'USD', idempotencyKey: 'k2' });
-    await payments.touchAttempt(p.id);
-    const lastAttempt = (await payments.findByBookingId(newer.id))[0].lastAttemptAt!.getTime();
+    await checkoutAt(payments, p.id, 13);
 
-    const closed = await closeLeftoverDuplicates(paid(), deps, new Date(lastAttempt + 5 * 60 * MIN));
+    const closed = await closeLeftoverDuplicates(paid(), deps, new Date(T0 + (13 + 291) * MIN));
 
     expect(closed.map((b) => b.reference)).toEqual(['CH-ULS3L']);
     expect(bookings.byId.get(newer.id).cancellationReason).toBe('duplicate — paid on CH-Y8LYF');
@@ -258,7 +258,6 @@ describe('closeLeftoverDuplicates — a private transfer retried with no date', 
   for (const [what, older] of [
     ['a different pickup', () => mk('CH-7EWG7', 'payment_pending', at(0), single({ from: 'Negombo' }) as never)],
     ['a different drop-off', () => mk('CH-7EWG7', 'payment_pending', at(0), single({ to: 'Kandy' }) as never)],
-    ['a NEWER undated pending booking', () => mk('CH-7EWG7', 'payment_pending', at(40), undated() as never)],
   ] as const) {
     it(`${what}: untouched, no alert`, async () => {
       const paid = mk('CH-SK8U8', 'paid', at(1), undated() as never);
@@ -269,6 +268,36 @@ describe('closeLeftoverDuplicates — a private transfer retried with no date', 
       expect(alerts.sent).toHaveLength(0);
     });
   }
+
+  // Owner 2026-10-19: a NEWER booking that matches, an undated retry included, closes once it has
+  // gone 30 min without a checkout, like any newer leftover. Here the customer booked with a date,
+  // retried with no date (made at T0+40, never checked out), then paid the dated one.
+  describe('a NEWER undated retry, after the dated booking is paid', () => {
+    const paid = () => mk('CH-DATED', 'paid', at(1), single() as never);
+    const retry = () => mk('CH-RETRY', 'payment_pending', at(40), undated() as never);
+
+    it('used under 30 min ago: untouched, no alert', async () => {
+      const { bookings, alerts, deps } = setup([retry(), paid()]);
+      expect(await closeLeftoverDuplicates(paid(), deps, new Date(T0 + 69 * MIN))).toEqual([]);
+      expect(bookings.byId.get('id-CH-RETRY').status).toBe('payment_pending');
+      expect(bookings.setStatus).not.toHaveBeenCalled();
+      expect(alerts.sent).toHaveLength(0);
+    });
+
+    it('idle 30 min or more: closed quietly, and the note says there is nothing to do', async () => {
+      const { bookings, alerts, deps } = setup([retry(), paid()]);
+      expect((await closeLeftoverDuplicates(paid(), deps, new Date(T0 + 70 * MIN))).map((b) => b.reference)).toEqual(['CH-RETRY']);
+      const closed = bookings.byId.get('id-CH-RETRY');
+      expect(closed.status).toBe('cancelled');
+      expect(closed.cancellationReason).toBe('duplicate — paid on CH-DATED');
+      expect(closed.cancelledBy).toBe('system:duplicate-close');
+      expect(alerts.sent).toHaveLength(1);
+      const body = alerts.sent[0].body;
+      expect(body).toContain('Their other unpaid booking for the same trip was cancelled automatically: CH-RETRY.');
+      expect(body).toContain('No email was sent to the customer about this. Nothing to do.');
+      expect(body).not.toContain('has no date yet');
+    });
+  });
 
   it('two DIFFERENT dates on the same route still never match', async () => {
     const paid = mk('CH-SK8U8', 'paid', at(1), single({ date: futureIsoDate(8) }) as never);
