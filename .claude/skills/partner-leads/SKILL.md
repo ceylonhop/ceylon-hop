@@ -18,6 +18,8 @@ or a line in the report. That is what lets this run on a schedule later.
 - `RUN=outreach/runs/<market>/<today YYYY-MM-DD>`. Create it with `mkdir -p`.
   `outreach/` is gitignored: never `git add` anything under it.
 - Read `outreach/ledger.csv` if it exists. Collect its domains as LEDGER_DOMAINS.
+- **Failed run:** if `$RUN/report-failed.md` exists, say the run stopped on a failure, quote its
+  first lines, and stop. Never touch the ledger.
 - **Resume:** the run is done only when `$RUN/report.md` exists AND every domain in
   `$RUN/leads.csv` is in `outreach/ledger.csv`. If `report.md` exists but the ledger lacks them,
   redo only the ledger update in step 7 and stop. Otherwise resume at the first step whose resume
@@ -82,8 +84,8 @@ Run it yourself:
 `node tools/outreach/validate-leads.mjs $RUN/leads.csv outreach/ledger.csv $BRIEF`
 
 - Exit 0: continue.
-- Otherwise: write `report.md` with the validator output under "Gate failed", leave the ledger
-  untouched, and stop.
+- Otherwise: write `$RUN/report-failed.md` with the validator output under "Gate failed", leave
+  the ledger untouched, tell the owner to delete the run folder to retry, and stop.
 
 Then spot-check 3 random rows yourself: open `hook_source_url` and confirm it supports `hook`.
 Note the result in the report.
@@ -115,6 +117,6 @@ the top 5 rows (agency, attn, score). Remind them that nothing was sent.
 ## Failure handling
 
 - **Agent errors, or malformed or missing output:** rerun that one batch once. A second failure
-  stops the run, leave the ledger untouched, and `report.md` names the batch and tells the owner
-  to delete the run folder to retry.
+  stops the run: write `$RUN/report-failed.md` naming the batch, leave the ledger untouched,
+  and tell the owner to delete the run folder to retry.
 - **Interrupted:** the same command resumes from the last merged file.
