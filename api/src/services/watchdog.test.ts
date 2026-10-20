@@ -826,6 +826,8 @@ describe('runWatchdog — the customer already paid for the same trip on a later
     ['a different drop-off', () => mk('CH-SK8U8', 'paid', at(1), single({ to: 'Kandy', date: undefined, time: undefined }))],
     ['a paid undated booking made BEFORE the stuck one', () => mk('CH-SK8U8', 'paid', at(-20), undated())],
     ['two different dates', () => mk('CH-SK8U8', 'paid', at(1), single({ date: futureIsoDate(8) }))],
+    // Owner 2026-10-19: pick-ups 2 h or more apart on the same day are two trips (sameTrip).
+    ['a pick-up 2 h after the stuck one, same day', () => mk('CH-SK8U8', 'paid', at(1), single({ time: '11:00' }))],
   ] as const) {
     it(`private transfer, ${what}: the usual recovery email and critical page`, async () => {
       const bookings = repo([mk('CH-7EWG7', 'payment_pending', at(0), single()), paid()]);
