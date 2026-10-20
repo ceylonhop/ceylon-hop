@@ -149,6 +149,18 @@ const single = (over: Partial<{ time: string; from: string }> = {}) => ({
   input: { from: over.from ?? 'Colombo Airport (CMB)', to: 'Galle', date: TRAVEL, time: over.time, customer },
 });
 
+// touchAttempt stamps the real clock (about T0, before most fixtures' createdAt). Pin it so the
+// checkout lands at T0 + `min` minutes, after the booking was made, as a real checkout does.
+async function checkoutAt(payments: InMemoryPaymentRepo, paymentId: string, min: number) {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(T0 + min * MIN);
+    await payments.touchAttempt(paymentId);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe('closeLeftoverDuplicates — a NEWER unpaid booking for the same trip', () => {
   const paid = () => mk('CH-Y8LYF', 'paid', at(0), single());
 
@@ -167,13 +179,15 @@ describe('closeLeftoverDuplicates — a NEWER unpaid booking for the same trip',
   });
 
   it('a checkout on it within the last 30 minutes → left alone (the customer may still be paying it)', async () => {
+    // Made at T0+10, checked out at T0+50, the other booking settles at T0+70: an hour since it was
+    // made, but only 20 min since its checkout. The checkout keeps it open, not its creation time.
     const newer = mk('CH-ULS3L', 'payment_pending', at(10), single());
     const { bookings, payments, alerts, deps } = setup([newer, paid()]);
     const p = await payments.create({ bookingId: newer.id, provider: 'payhere', orderId: 'CH-ULS3L', amount: 4700, currency: 'USD', idempotencyKey: 'k2' });
-    await payments.touchAttempt(p.id);
-    const lastAttempt = (await payments.findByBookingId(newer.id))[0].lastAttemptAt!.getTime();
+    await checkoutAt(payments, p.id, 50);
+    expect((await payments.findByBookingId(newer.id))[0].lastAttemptAt!.getTime()).toBe(T0 + 50 * MIN);
 
-    expect(await closeLeftoverDuplicates(paid(), deps, new Date(lastAttempt + 29 * MIN))).toEqual([]);
+    expect(await closeLeftoverDuplicates(paid(), deps, new Date(T0 + 70 * MIN))).toEqual([]);
     expect(bookings.setStatus).not.toHaveBeenCalled();
     expect(alerts.sent).toHaveLength(0);
   });
