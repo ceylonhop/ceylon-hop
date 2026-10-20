@@ -3,6 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// The quote token (?t=) unlocks this quote — and, once it is booked, a signed manage link — so
+// it must be gone from everything a tag can read BEFORE the tag snippet below runs: the address
+// bar (GA4 page_location, Clarity, the Meta/TikTok pixels, the error beacon) and the og:/twitter:
+// tags the API stamps per token for the WhatsApp unfurl (crawlers never run this). Same script
+// as pay.html's, its own storage key. If storage throws the token stays in the URL, so a reload
+// still works (manage.html's rule).
+(function(){
+  try {
+    var u = new URL(location.href), t = u.searchParams.get('t');
+    if (t) {
+      sessionStorage.setItem('ch_quote_t', t);
+      u.searchParams.delete('t');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    } else {
+      t = sessionStorage.getItem('ch_quote_t');
+    }
+    if (t) window.CH_LINK_TOKEN = t;
+  } catch (e) {}
+  var m = document.querySelectorAll('meta[property="og:url"],meta[property="og:image"],meta[property="twitter:image"]');
+  for (var i = 0; i < m.length; i++) m[i].parentNode.removeChild(m[i]);
+})();
+</script>
 <title>Your quote · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#63BFD6">
@@ -93,7 +116,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // host serves this file; the hard-coded default is the fallback for the customer site.
   var API = (window.CEYLON_HOP_API || 'https://api.ceylonhop.com').replace(/\/$/, '');
   var WA = '94779669662';
-  var token = new URLSearchParams(location.search).get('t') || '';
+  // Taken out of the address bar by the head's first script; the URL is the fallback for when
+  // storage was unavailable and it stayed there.
+  var token = window.CH_LINK_TOKEN || new URLSearchParams(location.search).get('t') || '';
 
   function waHref(text){ return 'https://wa.me/' + WA + '?text=' + encodeURIComponent(text); }
 
