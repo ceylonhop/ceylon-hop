@@ -207,28 +207,20 @@ for (const g of MORE) {
   });
 }
 
-// Wikimedia Commons photos (CC BY / CC BY-SA) need the licence named next to the photographer,
-// not the Unsplash line — Unsplash credits stay exactly as they were.
-describe('photo credits by source', () => {
+// Guides carry no per-photo credits (owner, 2026-10-20): every photographer — Commons licences
+// included — is credited on credits.html, which the site footer links from every guide.
+describe('photo credits', () => {
   const ne = loadGuides().find(g => g.slug === 'nuwara-eliya');
   const T = loadTransfers(), photos = loadPlacePhotos();
-  const credits = h => { const i = h.indexOf('<div class="credits">'); return h.slice(i, h.indexOf('</div></div>', i)); };
-  const commons = { source: 'commons', credit: 'Test Person', creditUrl: 'https://commons.wikimedia.org/wiki/User:Test',
-    photoUrl: 'https://commons.wikimedia.org/wiki/File:Test.jpg', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/' };
-  it('an all-Unsplash guide keeps the plain “on Unsplash” line', () => {
+  it('a guide shows no photo credits, hero or strip — even with a Commons photo', () => {
     const g = structuredClone(ne);
-    for (const m of Object.values(g.photos)) { delete m.source; delete m.license; delete m.licenseUrl; }
-    const c = credits(renderGuide(g, T, photos));
-    expect(c).toContain('— on Unsplash');
-    expect(c).not.toContain('Wikimedia');
-  });
-  it('a Commons photo is credited with its licence, linked, and Commons is named', () => {
-    const g = structuredClone(ne);
-    Object.assign(g.photos[g.eat[0].photo], commons);
-    const c = credits(renderGuide(g, T, photos));
-    expect(c).toContain('Test Person');
-    expect(c).toContain('<a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>');
-    expect(c).toContain('Wikimedia Commons');
+    expect(Object.values(g.photos).some(x => x.source === 'commons')).toBe(true);
+    const h = renderGuide(g, T, photos);
+    expect(h).not.toContain('class="credits"');
+    expect(h).not.toContain('class="credit"');
+    expect(h).not.toContain('Photos:');
+    expect(h).not.toMatch(/Photo: /);
+    expect(h).toContain('credits.html');
   });
   it('a photo caption shows under an Eat/Stay card photo, so a stand-in photo is labelled as one', () => {
     const g = structuredClone(ne);
@@ -236,13 +228,5 @@ describe('photo credits by source', () => {
     const h = renderGuide(g, T, photos);
     expect(section(h, 'eat')).toMatch(/<span class="cap"[^>]*>Illustrative: not this hotel<\/span>/);
     expect(renderGuide(ne, T, photos)).not.toContain('class="cap"');
-  });
-  it('a Commons hero says Wikimedia Commons, not Unsplash', () => {
-    const g = structuredClone(ne);
-    Object.assign(g.photos[g.hero.photo], commons);
-    const h = renderGuide(g, T, photos);
-    const hero = h.slice(h.indexOf('<span class="credit">'), h.indexOf('</span>', h.indexOf('<span class="credit">')));
-    expect(hero).toContain('Test Person / Wikimedia Commons (CC BY-SA 4.0)');
-    expect(hero).not.toContain('Unsplash');
   });
 });
