@@ -109,9 +109,11 @@ export async function closeLeftoverDuplicates(paid: Booking, deps: DuplicateClos
     try {
       const payments = await deps.payments.findByBookingId(b.id);
       if (payments.some((p) => p.status === 'succeeded')) continue;
-      if (Date.parse(b.createdAt) >= paidCreatedAt) {
+      // Written so an unreadable createdAt (NaN) on either side keeps the booking open: only a
+      // provably older booking skips the guard, and only a provable 30-min idle passes it.
+      if (!(Date.parse(b.createdAt) < paidCreatedAt)) {
         const lastUsed = Math.max(Date.parse(b.createdAt), ...payments.map((p) => p.lastAttemptAt?.getTime() ?? 0));
-        if (now.getTime() - lastUsed < WALKED_AWAY_MS) continue;
+        if (!(now.getTime() - lastUsed >= WALKED_AWAY_MS)) continue;
       }
       let cancelled: Booking;
       try {

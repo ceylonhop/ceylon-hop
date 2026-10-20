@@ -200,6 +200,25 @@ describe('closeLeftoverDuplicates — a NEWER unpaid booking for the same trip',
     expect((await closeLeftoverDuplicates(paid(), deps, new Date(T0 + 40 * MIN))).map((b) => b.reference)).toEqual(['CH-ULS3L']);
   });
 
+  // An unreadable createdAt must never skip the 30-min guard: when either side's age can't be read,
+  // treat the other booking as possibly still in use, never as an older leftover to close at once.
+  it("the paid booking's createdAt is unreadable: judged by its own last use, not closed at once", async () => {
+    const odd = mk('CH-Y8LYF', 'paid', 'not-a-date', single());
+    const newer = mk('CH-ULS3L', 'payment_pending', at(10), single());
+    const { bookings, deps } = setup([newer, odd]);
+    expect(await closeLeftoverDuplicates(odd, deps, new Date(T0 + 20 * MIN))).toEqual([]);
+    expect(bookings.byId.get(newer.id).status).toBe('payment_pending');
+    expect((await closeLeftoverDuplicates(odd, deps, new Date(T0 + 40 * MIN))).map((b) => b.reference)).toEqual(['CH-ULS3L']);
+  });
+
+  it("the other booking's createdAt is unreadable: left alone", async () => {
+    const odd = mk('CH-ULS3L', 'payment_pending', 'not-a-date', single());
+    const { bookings, alerts, deps } = setup([odd, paid()]);
+    expect(await closeLeftoverDuplicates(paid(), deps, new Date(T0 + 600 * MIN))).toEqual([]);
+    expect(bookings.byId.get(odd.id).status).toBe('payment_pending');
+    expect(alerts.sent).toHaveLength(0);
+  });
+
   it('two pick-ups at different times of day are two trips, not a duplicate', async () => {
     const other = mk('CH-ULS3L', 'payment_pending', at(-10), single({ time: '16:00' }));
     const paidAt8 = mk('CH-Y8LYF', 'paid', at(0), single({ time: '08:00' }));
