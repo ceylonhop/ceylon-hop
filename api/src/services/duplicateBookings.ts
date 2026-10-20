@@ -19,16 +19,31 @@ export function personKey(b: Booking): string {
 
 const norm = (s: string | undefined | null) => String(s ?? '').trim().toLowerCase();
 
+// Owner 2026-10-19: two pick-ups on the same day are one trip when they are LESS than 2 h apart.
+const SAME_PICKUP_WINDOW_MIN = 120;
+
+// A 24-hour "H:MM" / "HH:MM" pick-up time as minutes after midnight; null for anything else
+// (missing, empty, "morning"), which then matches either way, as an untimed booking always has.
+function pickupMinutes(t: string | undefined | null): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h < 24 && min < 60 ? h * 60 + min : null;
+}
+
 // Same mode, same travel date, and the same trip: the corridor and departure for a shared seat,
-// the endpoints (and pick-up time, when both have one) for a single transfer, every stop for a
-// trip. A trip or transfer with no date yet matches nothing — "to confirm" is not a date two
-// bookings can share. One time left to confirm still matches: a retry may skip the time.
+// the endpoints (and pick-up times under 2 h apart) for a single transfer, every stop for a trip.
+// A trip or transfer with no date yet matches nothing — "to confirm" is not a date two bookings
+// can share. A pick-up time missing or unreadable on either side still matches: a retry may skip it.
 export function sameTrip(a: Booking, b: Booking): boolean {
   if (a.mode === 'shared' && b.mode === 'shared') {
     return a.input.corridorId === b.input.corridorId && a.input.date === b.input.date && norm(a.input.time) === norm(b.input.time);
   }
   if (a.mode === 'single' && b.mode === 'single') {
-    const sameTime = !a.input.time || !b.input.time || norm(a.input.time) === norm(b.input.time);
+    const ta = pickupMinutes(a.input.time);
+    const tb = pickupMinutes(b.input.time);
+    const sameTime = ta === null || tb === null || Math.abs(ta - tb) < SAME_PICKUP_WINDOW_MIN;
     return !!a.input.date && a.input.date === b.input.date && norm(a.input.from) === norm(b.input.from) && norm(a.input.to) === norm(b.input.to) && sameTime;
   }
   if (a.mode === 'trip' && b.mode === 'trip') {

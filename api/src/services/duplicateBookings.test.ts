@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { futureIsoDate } from '../testSupport/dates';
-import { closeLeftoverDuplicates } from './duplicateBookings';
+import { closeLeftoverDuplicates, sameTrip } from './duplicateBookings';
 import { travelWhenText } from './notifications';
 
 // CH-Y5RXW (declined at 3-D Secure, left payment_pending) and CH-L72HX (the same shared seat,
@@ -213,6 +213,41 @@ describe('closeLeftoverDuplicates — a NEWER unpaid booking for the same trip',
     const paidAt8 = mk('CH-Y8LYF', 'paid', at(0), single({ time: '08:00' }));
     const { deps } = setup([older, paidAt8]);
     expect((await closeLeftoverDuplicates(paidAt8, deps)).map((b) => b.reference)).toEqual(['CH-ULS3L']);
+  });
+});
+
+// Owner 2026-10-19: two single transfers on the same route and date are one trip when their pick-up
+// times are LESS than 2 h apart. Exactly 2 h or more apart is two trips. A missing or unreadable time
+// matches, as before. Only 24-hour H:MM / HH:MM is read.
+describe('sameTrip — single-transfer pick-up times', () => {
+  const pair = (a: string | undefined, b: string | undefined) =>
+    [mk('CH-AAAAA', 'payment_pending', at(0), single({ time: a })), mk('CH-BBBBB', 'paid', at(1), single({ time: b }))] as const;
+
+  for (const [a, b, same] of [
+    ['08:00', '16:00', false],
+    ['08:00', '08:30', true],
+    ['08:00', '10:00', false], // exactly 2 h apart: two trips
+    ['08:00', '09:59', true],
+    ['08:00', undefined, true],
+    [undefined, '08:00', true],
+    ['8:00', '08:00', true],
+    ['morning', '08:00', true],
+  ] as const) {
+    it(`${a ?? '(no time)'} vs ${b ?? '(no time)'} → ${same ? 'same trip' : 'two trips'}`, () => {
+      const [x, y] = pair(a, b);
+      expect(sameTrip(x, y)).toBe(same);
+      expect(sameTrip(y, x)).toBe(same);
+    });
+  }
+
+  it('08:00 paid, an older 08:30 left unpaid: the leftover is closed quietly, as before', async () => {
+    const older = mk('CH-ULS3L', 'payment_pending', at(-10), single({ time: '08:30' }));
+    const paidAt8 = mk('CH-Y8LYF', 'paid', at(0), single({ time: '08:00' }));
+    const { bookings, alerts, deps } = setup([older, paidAt8]);
+    expect((await closeLeftoverDuplicates(paidAt8, deps, new Date(T0 + 60 * MIN))).map((b) => b.reference)).toEqual(['CH-ULS3L']);
+    expect(bookings.byId.get(older.id).cancelledBy).toBe('system:duplicate-close');
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].body).toContain('No email was sent to the customer about this. Nothing to do.');
   });
 });
 
