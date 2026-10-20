@@ -1114,7 +1114,7 @@ Note: the validator now runs against the *updated* ledger, which contains these 
 Pass if all of these hold:
 - (a) `report.md` shows the gate passed.
 - (b) Opening each of the 5 `hook_source_url`s in the browser shows the hook is true.
-- (c) At least 3 of the 5 domains are among the 10 highest-scoring rows of the gitignored hand-run file `outreach/runs/india-ramayana/2026-10-19/hand-run.csv` (Task 7 moves it there; in the worktree, read it from the shared tree path `/Users/roshenw/claude_code/ceylon-hop/reports/India agency outreach 2026-10-19.csv` if Task 7 hasn't run), or score at least as high.
+- (c) At least 3 of the 5 domains are among the hand-run's `researched` domains in the gitignored seed file `outreach/runs/india-ramayana/2026-10-19/seed-domains.csv` (`domain,status`; in the worktree it already exists at that path), or score at least 10.
 
 If (c) fails, record why in `report.md`. It's a quality signal, not a code failure.
 
@@ -1136,21 +1136,22 @@ cd /Users/roshenw/claude_code/ceylon-hop && mkdir -p outreach/runs/india-ramayan
 ```
 Expected: `hand-run.csv  report.md`.
 
-- [ ] **Step 2: Seed the ledger from the hand-run (25 shortlisted + rejected domains)**
+- [ ] **Step 2: Seed the ledger from the hand-run's domain list**
+
+The domain list (website domains, `domain,status`, 25 `researched` + 22 `rejected`) was recovered on 2026-10-19 into the worktree's gitignored `outreach/runs/india-ramayana/2026-10-19/seed-domains.csv`. It is never committed. Copy it next to the hand-run files, then build the ledger from it:
 
 ```bash
-cd /Users/roshenw/claude_code/ceylon-hop && node -e "
+cd /Users/roshenw/claude_code/ceylon-hop && cp "/private/tmp/claude-501/-Users-roshenw-claude-code-ceylon-hop/a6f0fbdb-5fd3-4c63-87c0-7bebd4e9776d/scratchpad/wt-lead-engine/outreach/runs/india-ramayana/2026-10-19/seed-domains.csv" outreach/runs/india-ramayana/2026-10-19/seed-domains.csv && node -e "
 import('./tools/outreach/validate-leads.mjs').then(({toObjects})=>{
 const fs=require('fs'); const d='2026-10-19'; const dir='outreach/runs/india-ramayana/'+d+'/';
-const researched=[...new Set(toObjects(fs.readFileSync(dir+'hand-run.csv','utf8')).rows.map(r=>(r.to.split('@')[1]||'').trim().toLowerCase()).filter(Boolean))];
-const rejected=[...new Set(fs.readFileSync(dir+'rejected.txt','utf8').split('\n').map(x=>x.trim().toLowerCase()).filter(Boolean))].filter(x=>!researched.includes(x));
-const rows=['domain,market,first_seen,last_run,status',...researched.map(x=>[x,'india-ramayana',d,d,'researched'].join(',')),...rejected.map(x=>[x,'india-ramayana',d,d,'rejected'].join(','))];
-fs.writeFileSync('outreach/ledger.tmp.csv',rows.join('\n')+'\n'); fs.renameSync('outreach/ledger.tmp.csv','outreach/ledger.csv'); console.log(researched.length+rejected.length,'domains');
+const seed=toObjects(fs.readFileSync(dir+'seed-domains.csv','utf8')).rows.map(r=>({domain:r.domain.trim().toLowerCase().replace(/^www\\./,''),status:r.status.trim()})).filter(r=>r.domain&&['researched','rejected'].includes(r.status));
+const rows=['domain,market,first_seen,last_run,status',...seed.map(r=>[r.domain,'india-ramayana',d,d,r.status].join(','))];
+fs.writeFileSync('outreach/ledger.tmp.csv',rows.join('\\n')+'\\n'); fs.renameSync('outreach/ledger.tmp.csv','outreach/ledger.csv'); console.log(seed.length,'domains');
 })" && git check-ignore -q outreach/ledger.csv && echo "ignored ✓" || echo "NOT IGNORED (Task 5 not merged into this tree yet)"
 ```
-Expected: `<n> domains` where n = researched + rejected. Then either `ignored ✓`, or the warning. If you see the warning, the shared tree is on a branch without Task 5. The files are still untracked: don't `git add` them, and the ignore takes effect once the PR merges.
+Expected: `47 domains`. Then either `ignored ✓`, or the warning. If you see the warning, the shared tree is on a branch without Task 5. The files are still untracked: don't `git add` them, and the ignore takes effect once the PR merges.
 
-Note on the reserves: those 9 were researched but never shortlisted. They're marked `rejected`, so new runs skip them. To re-pitch them later, change their status by hand.
+Note on the reserves: agencies that were researched but not shortlisted are marked `rejected`, so new runs skip them. To re-pitch one later, change its status by hand.
 
 ---
 
