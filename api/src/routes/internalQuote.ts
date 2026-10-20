@@ -22,6 +22,8 @@ import type { DiscountIntent } from '../db/quoteRepo';
 import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { canOpsSelfApprove } from '../quote/simpleApproval';
+import { depositFor } from '../quote/extrasDeposit';
+import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
@@ -29,17 +31,24 @@ import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import type { PaymentRepo } from '../db/paymentRepo';
+import { balanceDueCents, isBalanceOpen } from '../domain/balance';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import {
   payLines,
   selectionAmountCents,
   isFullSelection,
   NotLineablePriceError,
+  isServiceSelection,
+  legSelectionOf,
   type PaySelection,
+  type PayLinkSelection,
 } from '../quote/paySelection';
 import { changedFields } from '../quote/quoteDiff';
 import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
 import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
+import { linkQuoteInterests } from '../experiences/bookingInterests';
 import {
   customerShortCode,
   customerShortCodeDigest,
@@ -490,6 +499,33 @@ function shape(result: QuoteResult, canMargin: boolean, fx: number) {
 // QuoteResult, and QuoteResult.marginEstimateCents is the same cost/margin figure. A shallow
 // delete of marginCents alone leaks it nested. Strip both. (breakdown/lineItems carry only
 // customer-facing prices, so no other nested field needs stripping — see quote/types.ts.)
+// One stored QuoteResult → the same without its margin-class fields. Recurses into `alt` (the frozen
+// chauffeur alternative of a "both" quote, spec PR #964), which is a full QuoteResult of its own:
+// stripping only the top level would leak the chauffeur margin and zone annotation one key down.
+function stripResultMargin(result: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = { ...result };
+  delete safe.marginEstimateCents;
+  // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
+  // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
+  if (Array.isArray(safe.lineItems)) {
+    safe.lineItems = (safe.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
+      li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
+    );
+  }
+  // Fail closed: an alt whose result cannot be stripped (malformed, so unreadable by alternativeOf
+  // anyway) is dropped rather than passed through with whatever it carries.
+  if ('alt' in safe) {
+    const a = safe.alt as Record<string, unknown> | null;
+    const r = a && typeof a === 'object' && !Array.isArray(a) ? a.result : null;
+    if (r && typeof r === 'object' && !Array.isArray(r)) {
+      safe.alt = { ...a, result: stripResultMargin(r as Record<string, unknown>) };
+    } else {
+      delete safe.alt;
+    }
+  }
+  return safe;
+}
+
 function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents' | 'rateCardJson'> {
   const rest: Record<string, unknown> = { ...q };
   delete rest.marginCents;
@@ -498,37 +534,29 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   // roles. The client renders from `result` (sell prices), never from this snapshot.
   delete rest.rateCardJson;
   if (rest.result && typeof rest.result === 'object') {
-    const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
-    delete safeResult.marginEstimateCents;
-    // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
-    // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
-    if (Array.isArray(safeResult.lineItems)) {
-      safeResult.lineItems = (safeResult.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
-        li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
-      );
-    }
-    rest.result = safeResult;
+    rest.result = stripResultMargin(rest.result as Record<string, unknown>);
   }
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
 }
 
-function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'private' | 'chauffeur', selectedResult: QuoteResult): ServiceChooserData {
+// `storedAlt`, when given, is the chauffeur price /save froze for a "both" quote: it replaces the
+// recompute for the non-priced service, so the card shows the number that was approved.
+function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'private' | 'chauffeur', selectedResult: QuoteResult, storedAlt: QuoteAlternative | null = null): ServiceChooserData {
   const services: ServiceChooserData = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
 
   services.pointToPoint = selected === 'private'
     ? summary(selectedResult, rateCard.fxUsdToLkr)
     : summary(quote(toEngineRequest(body, 'private'), rateCard), rateCard.fxUsdToLkr);
 
-  const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
-  const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
-  if (chauffeurLegs.some((l) => !l.date)) {
-    services.chauffeur = { error: 'add a date to every leg' };
-  } else if (distinctDates.size <= 1) {
-    services.chauffeur = { error: 'single-day — point-to-point only' };
+  const notFeasible = chauffeurFeasibility(body.legs);
+  if (notFeasible) {
+    services.chauffeur = { error: notFeasible };
+  } else if (selected === 'chauffeur') {
+    services.chauffeur = summary(selectedResult, rateCard.fxUsdToLkr);
+  } else if (storedAlt) {
+    services.chauffeur = summary(storedAlt.result, rateCard.fxUsdToLkr);
   } else {
-    services.chauffeur = selected === 'chauffeur'
-      ? summary(selectedResult, rateCard.fxUsdToLkr)
-      : summary(quote(toEngineRequest(body, 'chauffeur'), rateCard), rateCard.fxUsdToLkr);
+    services.chauffeur = summary(quote(toEngineRequest(body, 'chauffeur'), rateCard), rateCard.fxUsdToLkr);
   }
 
   return services;
@@ -561,10 +589,14 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: R
     // Match the live /estimate shape so a ready/sent quote renders its per-leg prices AND the
     // point-to-point vs chauffeur comparison — all priced against the LOCKED card (frozen numbers).
     const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
+    // A ready/sent quote shows the chauffeur price that was frozen at save (and approved), not a
+    // recompute on the locked card — the two differ when the live card moved between save and
+    // approval. Drafts stay live: the builder re-prices them on every edit anyway.
+    const storedAlt = q.status === 'ready' || q.status === 'sent' ? alternativeOf(q) : null;
     return {
       ...base,
       breakdown: quoteBreakdown(engineReq, rateCard),
-      services: serviceChooserData(toolReq, rateCard, selected, result),
+      services: serviceChooserData(toolReq, rateCard, selected, result, storedAlt),
       displayPlaces: displayPlacesFor(toolReq.legs),
     };
   } catch {
@@ -621,11 +653,34 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
 
 // Canonical form of a selection: deduped and sorted, so [1,0] and [0,1] are ONE selection and
 // re-minting the same picks can't look like a change (which would retire the link ops just sent).
-function normalizeSel(sel: PaySelection | null | undefined): PaySelection | null {
+// A stored service selection (`{ service }`, a link sold as the chauffeur option) is its own
+// canonical form — it must compare as itself, never as "no selection" or as an empty leg list.
+function normalizeSel(sel: PaySelection): PaySelection;
+function normalizeSel(sel: PayLinkSelection | null | undefined): PayLinkSelection | null;
+function normalizeSel(sel: PayLinkSelection | null | undefined): PayLinkSelection | null {
   if (!sel) return null;
+  if (isServiceSelection(sel)) return { service: sel.service };
   return {
     legIndexes: [...new Set(sel.legIndexes)].sort((a, b) => a - b),
     extraIndexes: [...new Set(sel.extraIndexes)].sort((a, b) => a - b),
+  };
+}
+
+// What the ops "Payment link" chooser offers (spec 2026-10-12 §4.2): the two options of a "both"
+// quote with their SELL-side totals — visible to every quote role, so it must carry no margin or
+// cost. null unless the quote holds a valid stored alternative (alternativeOf fails closed, and is
+// already null for a discounted quote). `linkedService` is which option the outstanding link is for.
+function payOptionsOf(q: SavedQuote): {
+  primary: { service: 'private'; totalCents: number };
+  alternative: { service: 'chauffeur'; totalCents: number; depositCents: number };
+  linkedService: 'chauffeur' | null;
+} | null {
+  const alt = alternativeOf(q);
+  if (!alt) return null;
+  return {
+    primary: { service: 'private', totalCents: q.totalCents },
+    alternative: { service: 'chauffeur', totalCents: alt.result.totalCents, depositCents: depositFor('chauffeur', alt.result.totalCents) },
+    linkedService: isServiceSelection(q.payLinkSelection) ? q.payLinkSelection.service : null,
   };
 }
 
@@ -642,6 +697,9 @@ export function internalQuoteRoutes(deps: {
   /** Gates CREATION only; an existing discount keeps pricing regardless. */
   discountsEnabled?: boolean;
   bookings: BookingRepo;
+  // The balance pay link on the quote read (owner, 2026-10-12). Optional: with no repo injected
+  // the read simply carries no balance link, as it did before.
+  payments?: PaymentRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
   // Assignment notification (spec 2026-07-16 §6). Optional: with no adapter, assignment still
@@ -665,6 +723,8 @@ export function internalQuoteRoutes(deps: {
   // return the long URL byte-for-byte as before; only `url` ever changes.
   shortLinks?: CustomerShortLinkRepo;
   shortLinksEnabled?: boolean;
+  // Partner experiences (spec 2026-10-06 D12): a quote's interests move onto its booking.
+  experienceInterests?: ExperienceInterestRepo;
 }) {
   const r = new Hono();
 
@@ -937,7 +997,23 @@ export function internalQuoteRoutes(deps: {
 
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver, effectiveDiscount);
+      const card = await liveCard();
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver, effectiveDiscount);
+      // Freeze the chauffeur alternative of a "both" quote (spec PR #964) on the SAME card instance as
+      // the primary. Only for a point-to-point price with no discount (D2 — the discount belongs to
+      // the point-to-point price) and a feasible chauffeur itinerary. Best-effort by design: any
+      // failure means no `alt`, never a failed save. A re-save runs this again, so it recomputes
+      // or disappears with the content it was derived from.
+      let alt: QuoteAlternative | null = null;
+      if (body.requestedService === 'both' && req.product === 'private' && !effectiveDiscount && !result.discount
+        && chauffeurFeasibility(body.legs) === null) {
+        try {
+          const engine = toEngineRequest(body, 'chauffeur');
+          if (engine.product === 'chauffeur') alt = { product: 'chauffeur', engine, result: quote(engine, card) };
+        } catch {
+          alt = null;
+        }
+      }
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
@@ -950,7 +1026,7 @@ export function internalQuoteRoutes(deps: {
         // V19: persist the reopenable tool payload alongside the engine request.
         // GET /:id returns request.tool for the UI to reopen the draft.
         request: { tool: body, engine: req },
-        result,
+        result: alt ? { ...result, alt } : result,
         notes: body.notes ?? null,
         internalNotes: body.internalNotes ?? null,
         // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
@@ -1088,10 +1164,34 @@ export function internalQuoteRoutes(deps: {
           409,
         );
       }
+      // "Mark booked" books the point-to-point option (owner D4). A booking the customer started on
+      // the CHAUFFEUR link is the other product at the other price — adopting it would stamp this
+      // quote won against a sale it was not asked to record. Decided by the BOOKING, never by the
+      // quote's current link (the agent may have switched back since): the same predicate as the
+      // ops drawer and the confirmation email.
+      if (quote.product === 'private' && isChauffeurBooking(prior)) {
+        return c.json(
+          {
+            error: 'not_bookable',
+            reason: 'other_option_started',
+            message: "A Chauffeur-guide payment was started on this quote, so it can't be marked booked as Point-to-point. Reopen the quote and price it as Chauffeur-guide, or send the customer a payment link.",
+          },
+          409,
+        );
+      }
       const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
-      await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      await deps.quotes.patch(id, {
+        convertedBookingId: prior.id,
+        status: 'won',
+        // A service link is retired by booking, exactly as on the create path below: the quote must
+        // not stay won with a selection that says it was sold as the other option.
+        ...(isServiceSelection(quote.payLinkSelection)
+          ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
+          : {}),
+      });
+      await linkQuoteInterests(deps.experienceInterests, id, prior.id);
       return c.json(updated, 200);
     }
 
@@ -1163,6 +1263,7 @@ export function internalQuoteRoutes(deps: {
         ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
         : {}),
     });
+    await linkQuoteInterests(deps.experienceInterests, id, booking.id);
     return c.json(booking, 201);
   });
 
@@ -1171,6 +1272,9 @@ export function internalQuoteRoutes(deps: {
     legIndexes: z.array(z.number().int().min(0)),
     extraIndexes: z.array(z.number().int().min(0)),
   }).strict();
+  // Which option of a "both" quote the link is for (spec 2026-10-12). Never combined with a
+  // selection, and never carries an amount — the server reads the frozen alternative.
+  const PayLinkServiceSchema = z.object({ service: z.enum(['private', 'chauffeur']) }).strict();
 
   // Mint a payment link for a ready|sent quote (spec 2026-07-31). STATELESS on purpose:
   // no booking, no DB row — the URL is a signed capability over {quoteId, revision}, so a
@@ -1204,12 +1308,39 @@ export function internalQuoteRoutes(deps: {
     // selection is validated: half a selection charging the wrong amount is the failure mode.
     const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     const attemptsSelection = raw != null && ('legIndexes' in raw || 'extraIndexes' in raw);
+    // `service` and a part-of-trip selection are different questions; asking both is a mistake.
+    const attemptsService = raw != null && 'service' in raw;
+    if (attemptsService && attemptsSelection) return c.json({ error: 'bad_request' }, 400);
+    const parsedService = attemptsService ? PayLinkServiceSchema.safeParse(raw) : null;
+    if (parsedService && !parsedService.success) return c.json({ error: 'bad_request' }, 400);
     const parsedSel = attemptsSelection ? PayLinkSelectionSchema.safeParse(raw) : null;
     if (parsedSel && !parsedSel.success) return c.json({ error: 'bad_request' }, 400);
     let selection: PaySelection | null = parsedSel ? normalizeSel(parsedSel.data) : null;
 
     let amountCents = quote.totalCents;
     let coverage: { soldLegs: number; totalLegs: number } | null = null;
+
+    // The chauffeur option of a "both" quote (spec 2026-10-12): the other product, frozen at /save.
+    // A `service` equal to the priced product is today's bodyless path, untouched. Anything the
+    // quote cannot positively back with a stored, approved alternative is refused — the link must
+    // never charge a number nobody approved.
+    let serviceSel: { service: 'chauffeur' } | null = null;
+    if (parsedService?.success && parsedService.data.service !== engine.product) {
+      const alt = parsedService.data.service === 'chauffeur' ? alternativeOf(quote) : null;
+      if (!alt) {
+        const r = quote.result as { discount?: unknown; discountCents?: unknown } | null;
+        const discounted = quote.requestedService === 'both' && (
+          r?.discount != null || (typeof r?.discountCents === 'number' && r.discountCents > 0)
+          || !!(deps.discounts && (await deps.discounts.activeFor(quote.id))));
+        return c.json({ error: 'not_linkable', reason: discounted ? 'discounted' : 'no_alternative' }, 409);
+      }
+      const asSold = soldView({ ...quote, payLinkSelection: { service: 'chauffeur' }, soldCents: alt.result.totalCents });
+      if (!asSold || !isQuoteBookable(asSold)) {
+        return c.json({ error: 'not_linkable', reason: 'no_alternative' }, 409);
+      }
+      serviceSel = { service: 'chauffeur' };
+      amountCents = alt.result.totalCents;
+    }
 
     if (selection) {
       // Private and priced, or nothing — payLines throws for chauffeur, shells and legacy rows.
@@ -1251,8 +1382,9 @@ export function internalQuoteRoutes(deps: {
 
     // The seq moves ONLY when the selection actually changes, so pressing the button twice still
     // yields a byte-identical URL — the property ops relies on to re-copy a link it already sent.
+    const linkSelection: PayLinkSelection | null = serviceSel ?? selection;
     const changed =
-      JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection);
+      JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(normalizeSel(linkSelection));
     const seq = changed ? quote.payLinkSeq + 1 : quote.payLinkSeq;
 
     // Price-drift baseline (spec 2026-08-05 §9). Minting a link is a customer-facing moment — for
@@ -1270,8 +1402,8 @@ export function internalQuoteRoutes(deps: {
       await deps.quotes.patch(quote.id, {
         ...(changed
           ? {
-              payLinkSelection: selection,
-              soldCents: selection ? amountCents : null,
+              payLinkSelection: linkSelection,
+              soldCents: linkSelection ? amountCents : null,
               payLinkSeq: seq,
             }
           : {}),
@@ -1290,6 +1422,8 @@ export function internalQuoteRoutes(deps: {
       payhereMode: deps.payhereMode ?? 'off',
       amountCents,
       coverage,
+      // Only when the caller named a service, so the bodyless response is byte-for-byte today's.
+      ...(parsedService?.success ? { service: serviceSel ? 'chauffeur' : parsedService.data.service } : {}),
     });
   });
 
@@ -1393,7 +1527,8 @@ export function internalQuoteRoutes(deps: {
       return c.json({
         lines: payLines(quote),
         totalCents: quote.totalCents,
-        selection: quote.payLinkSelection,
+        // The picker ticks legs; a link sold as the chauffeur option has nothing for it to tick.
+        selection: legSelectionOf(quote.payLinkSelection),
       });
     } catch (e) {
       if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
@@ -1504,7 +1639,27 @@ export function internalQuoteRoutes(deps: {
     // priced result for a discount, and stripping is about exposure, not about what is true.
     const mayApprove = can(role, 'quote:approve')
       || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q));
-    return c.json({ ...view, estimate, mayApprove });
+    // The balance pay link (owner, 2026-10-12): once a deposit is paid the quote is won, and a won
+    // quote takes no new pay link — so the quote screen had nowhere to get the link the customer
+    // pays the balance on. It is the SAME link they already hold (spec 2026-10-07 §5.3), built
+    // exactly as the booking pane builds it (ops.ts, GET /bookings/:id) so both hand out one URL.
+    // Only while the balance is open. Best-effort: a ledger that cannot be read costs the link,
+    // never the quote. Sell-side only — an amount still owed, no margin or cost.
+    let balancePayLink: string | null = null;
+    let balanceCents: number | null = null;
+    if (q.convertedBookingId && deps.payments && deps.payBaseUrl && deps.linkSecret) {
+      try {
+        const booking = await deps.bookings.get(q.convertedBookingId);
+        const payments = booking ? await deps.payments.findByBookingId(booking.id) : [];
+        if (booking && isBalanceOpen(booking, payments)) {
+          balancePayLink = `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(q.id, q.revision, deps.linkSecret, q.payLinkSeq)}`;
+          balanceCents = balanceDueCents(booking, payments);
+        }
+      } catch (err) {
+        console.error(`[quote] balance link unavailable for ${q.id}:`, err);
+      }
+    }
+    return c.json({ ...view, estimate, mayApprove, payOptions: payOptionsOf(q), balancePayLink, balanceCents });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.

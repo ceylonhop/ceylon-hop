@@ -31,7 +31,7 @@ export function renderPricingBlock(p) {
     `let CHAUFFEUR_DAY_FEE = ${p.chauffeurDayFee};`,
     `const CHAUFFEUR_IDLE_MIN_KM = ${j(p.chauffeurIdleMinKm)};`,
     `const DEPOSIT_PCT = ${p.depositPct};`,
-    `const DEPOSIT_CAP = ${p.depositCap};`,
+    `const DEPOSIT_MIN = ${p.depositMin};`,
     `const EXTRAS = ${j(p.extras)};`,
     `const CORRIDOR_SEAT = ${j(p.corridorSeat)};`,
     `const SEAT_PRICING = ${j(p.seatPricing)};`,

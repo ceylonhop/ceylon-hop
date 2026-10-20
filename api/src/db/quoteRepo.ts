@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NewQuoteDiscount, QuoteDiscountRepo } from './quoteDiscountRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import { quoteTravelDate } from './quoteTravelDate';
-import type { PaySelection } from '../quote/paySelection';
+import type { PayLinkSelection } from '../quote/paySelection';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -100,7 +100,7 @@ export interface SavedQuote {
   revision: number;
   // Partial-leg pay links (spec 2026-08-04). null selection = the outstanding link is for the
   // full quote; soldCents is the frozen amount a partial link charges; payLinkSeq is monotonic.
-  payLinkSelection: PaySelection | null;
+  payLinkSelection: PayLinkSelection | null;
   soldCents: number | null;
   payLinkSeq: number;
   // Price-drift baseline (spec 2026-08-05): the quote total when the customer was last quoted.
@@ -186,7 +186,7 @@ export interface QuotePatch {
   // Partial-leg pay links (spec 2026-08-04). Tri-state like rateLock: `undefined` = leave alone,
   // an object = store, `null` = clear. payLinkSeq is set explicitly by the mint; it is monotonic
   // and the repo never resets it.
-  payLinkSelection?: PaySelection | null;
+  payLinkSelection?: PayLinkSelection | null;
   soldCents?: number | null;
   payLinkSeq?: number;
   // Price-drift baseline (spec 2026-08-05). Moves as a UNIT, like rateLock: `undefined` = leave

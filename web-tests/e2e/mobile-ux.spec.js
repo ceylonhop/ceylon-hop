@@ -63,7 +63,10 @@ test('mobile terms consent has a reliable touch target and can be checked', asyn
   expect(labelBox.height).toBeGreaterThanOrEqual(48);
 
   await page.locator('#agree').uncheck();
-  await page.locator('label:has(#agree)').click();
+  // Tap the label beside the box, not its centre: the centre of the sentence is the Terms link
+  // (styled as a link since 2026-10-15), and a tap there rightly opens the terms instead of ticking.
+  // Where the link wraps depends on the platform's font metrics, so a centre tap is not stable.
+  await page.locator('label:has(#agree)').click({ position: { x: 16, y: labelBox.height / 2 } });
   await expect(page.locator('#agree')).toBeChecked();
 });
 

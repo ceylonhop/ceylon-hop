@@ -38,7 +38,7 @@ const COPY = {
     title: 'Six days across Sri Lanka', subtitle: '12–17 August · your own van & driver',
     facts: [
       { k: 'Trip', v: 'Colombo Airport (CMB) → Galle', sub: 'full day-by-day plan in your quote' },
-      { k: 'Days', v: '6 with your driver', sub: 'including your free days' },
+      { k: 'Days', v: '6 with your driver', sub: 'your driver stays with you throughout' },
       { k: 'Travellers', v: '4 · Van' },
       { k: 'Starts', v: 'Wed 12 Aug' },
     ],

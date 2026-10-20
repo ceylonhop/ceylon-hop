@@ -11,6 +11,12 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './ada
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
+import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
+import type { Ga4Adapter } from './adapters/ga4';
+import type { TripadvisorAdapter } from './adapters/tripadvisor';
+import type { ImageStore } from './adapters/imageStore';
+import type { BusinessPlacesAdapter } from './adapters/businessPlaces';
+import { createGa4Reporter } from './services/analytics/ga4Reporter';
 import { shareCardRoutes } from './routes/shareCard';
 import { promoCodeRoutes } from './routes/promoCodes';
 import { opsRatesRoutes } from './routes/opsRates';
@@ -28,6 +34,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { opsAnalyticsRoutes } from './routes/opsAnalytics';
+import { opsHealthRoutes } from './routes/opsHealth';
 import { opsUiRoutes } from './routes/opsUi';
 import { customerPagesRoutes } from './routes/customerPages';
 import { quoteRoutes } from './routes/quote';
@@ -39,11 +46,17 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryExperienceRepo, type ExperienceRepo } from './db/experienceRepo';
+import { InMemoryExperienceInterestRepo, type ExperienceInterestRepo } from './db/experienceInterestRepo';
+import { opsExperiencesRoutes } from './routes/opsExperiences';
+import { publicExperiencesRoutes } from './routes/publicExperiences';
 import { InMemoryRateRevisionRepo, type RateRevisionRepo } from './db/rateRevisionRepo';
 import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
+import type { UsageCounterRepo } from './db/usageCounterRepo';
+import type { UsageMeter } from './services/usageMeter';
 import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
@@ -93,6 +106,8 @@ export interface AppDeps {
   customerCommunications?: CustomerCommunicationRepo;
   /** Independent, default-off M23.5 customer email observation switch. */
   communicationTrackingEnabled?: boolean;
+  /** M23.3 booking transition observation switch, also gates Phase A reconciliation. */
+  transitionTrackingEnabled?: boolean;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
@@ -103,6 +118,17 @@ export interface AppDeps {
   analyticsData?: AnalyticsDataRepo;
   quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
+  /** Partner experiences (spec 2026-10-06): the catalogue, and one row per customer interest. */
+  experiences?: ExperienceRepo;
+  /** Live Tripadvisor ratings (spec D22). Absent = the null adapter: no rating is shown anywhere. */
+  tripadvisor?: TripadvisorAdapter;
+  /** Tripadvisor's logo, shown beside every bubble rating (their display rules). No logo = no ratings. */
+  tripadvisorLogoUrl?: string;
+  /** Experience photo uploads (spec 2026-10-17). Absent/null = uploads off. */
+  photoStore?: { store: ImageStore; publicOrigin: string } | null;
+  /** "Find the business on Google" on the Experiences form (2026-10-18). Absent/null = off. */
+  businessPlaces?: BusinessPlacesAdapter | null;
+  experienceInterests?: ExperienceInterestRepo;
   /** Founder rate revisions (spec 2026-09-26). Empty/absent ⇒ every price is the code card. */
   rateRevisions?: RateRevisionRepo;
   placeResolutions?: PlaceResolutionRepo;
@@ -157,10 +183,24 @@ export interface AppDeps {
   pingDb?: () => Promise<void>;
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
+  // Usage counters (spec 2026-10-13): the meter server.ts already wrapped the raw email and Maps
+  // adapters with, plus its repo, so the Health tab and the watchdog's quota rule read the same
+  // numbers. Absent in keyless dev and most tests — nothing is counted, the tab shows zeros.
+  usageCounters?: UsageCounterRepo;
+  usageMeter?: UsageMeter;
+  dbSize?: () => Promise<number | null>; // pg_database_size, null off Postgres
+  emailDailyLimit?: number;
+  emailMonthlyLimit?: number;
   digestTo?: string;
   // Test bookings (2026-09-24): the team's own addresses; defaults to config.TEAM_EMAILS.
   // Reaches the ops queue rows (isTest) and the daily digest's status counts.
   teamEmails?: ReadonlySet<string>;
+  // Server-side GA4 (spec 2026-10-03). Consumed from Task 8 (reporter wiring); optional so
+  // tests and older callers are unaffected.
+  gaIdentities?: GaIdentityRepo;
+  ga4Log?: Ga4EventLogRepo;
+  ga4Adapter?: Ga4Adapter;
+  ga4EventName?: 'purchase' | 'purchase_server';
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
   // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
@@ -205,6 +245,8 @@ export function createApp(deps: AppDeps = {}) {
   );
   const communicationTrackingEnabled =
     deps.communicationTrackingEnabled ?? config.CUSTOMER_COMMUNICATION_TRACKING_ENABLED;
+  const transitionTrackingEnabled =
+    deps.transitionTrackingEnabled ?? config.BOOKING_TRANSITION_TRACKING_ENABLED;
   const customerCommunications =
     deps.customerCommunications ?? new InMemoryCustomerCommunicationRepo();
   const email = communicationTrackingEnabled
@@ -227,6 +269,10 @@ export function createApp(deps: AppDeps = {}) {
   // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
   if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Partner experiences (spec 2026-10-06). The in-memory interest repo reads the booking, quote and
+  // experience repos so its leads queue and stats apply the same owner filter the SQL does.
+  const experiences = deps.experiences ?? new InMemoryExperienceRepo();
+  const experienceInterests = deps.experienceInterests ?? new InMemoryExperienceInterestRepo({ bookings, quotes, experiences });
   // Founder rate revisions (spec 2026-09-26). One instance shared by every router that prices, so a
   // save is seen by all of them at once. Empty ⇒ the code card.
   const rateRevisions = deps.rateRevisions ?? new InMemoryRateRevisionRepo();
@@ -237,6 +283,13 @@ export function createApp(deps: AppDeps = {}) {
   const promoCodes = deps.promoCodes ?? new InMemoryPromoCodeRepo();
   const promoCodesEnabled = deps.promoCodesEnabled ?? config.PROMO_CODES_ENABLED;
   const alerts = deps.alerts ?? new LogAlertAdapter();
+  const ga4 = deps.ga4Log && deps.gaIdentities
+    ? createGa4Reporter({
+        adapter: deps.ga4Adapter, log: deps.ga4Log, identities: deps.gaIdentities, bookings, payments, alerts,
+        teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+        eventName: deps.ga4EventName ?? config.GA4_SERVER_EVENT_NAME,
+      })
+    : undefined;
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
@@ -247,7 +300,12 @@ export function createApp(deps: AppDeps = {}) {
   };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
-  const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
+  // Every limiter below spreads `rl`, so the 429 counter rides along to all of them.
+  const usage = deps.usageMeter && deps.usageCounters ? { meter: deps.usageMeter, repo: deps.usageCounters } : undefined;
+  const rl = {
+    ...(deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS }),
+    onLimited: () => usage?.meter.bump('ratelimit.refused'),
+  };
   const quoteV2Enabled = deps.quoteV2Enabled ?? config.QUOTE_V2_ENABLED;
   const quoteConversions =
     deps.quoteConversions ??
@@ -374,9 +432,18 @@ export function createApp(deps: AppDeps = {}) {
   // HEAD too: Hono dispatches it to the GET handler, so it resolves a code and costs a DB read
   // exactly like a GET. Listing only GET let a scanner spend an unlimited budget by switching method.
   app.use('/s/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
+  // Partner experiences near a drop-off (spec 2026-10-06 D7): a public, cacheable READ, so — like /s/* —
+  // it must opt in to GET+HEAD; the default limiter counts POST only (lib/rateLimit.ts).
+  app.use('/experiences/*', rateLimit({ ...rl, methods: ['GET', 'HEAD'] }));
+  // The ops business search is session-gated, but every GET is a billed Google call (2026-10-18).
+  app.use('/admin/experiences/business-search', rateLimit({ ...rl, methods: ['GET'] }));
+  app.use('/admin/experiences/business/*', rateLimit({ ...rl, methods: ['GET'] }));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
+  // The only POST under /quote-view is the retired "interested" tick (now a 410). The default
+  // POST-only limiter is what we want — the page's GET read must never be throttled.
+  app.use('/quote-view/*', rateLimit(rl));
   // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
   // POST /board/payhere/notify is excluded for the same reason /webhooks/payments is: it is a
   // gateway callback, not user traffic. Every notify arrives from a handful of PayHere egress
@@ -477,6 +544,11 @@ export function createApp(deps: AppDeps = {}) {
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      ...(ga4 ? { ga4 } : {}),
+      experiences,
+      experienceInterests,
+      alerts,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     }),
   );
   app.route(
@@ -486,6 +558,7 @@ export function createApp(deps: AppDeps = {}) {
       enabled: quoteV2Enabled,
       linkSecret: bookingLinkSecret,
       checkoutNow: deps.checkoutNow,
+      experienceInterests,
     }),
   );
   // Ride Board — public reads + customer-authenticated writes (card side via the fake).
@@ -543,6 +616,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       alerts,
       notificationLog,
+      payments,
       resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
       ...(communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
@@ -550,6 +624,8 @@ export function createApp(deps: AppDeps = {}) {
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
       duplicates: { bookings, departures, payments },
+      experiences, experienceInterests,
+      ...(ga4 ? { ga4 } : {}),
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({
@@ -557,10 +633,24 @@ export function createApp(deps: AppDeps = {}) {
     linkSecret: bookingLinkSecret,
     checkoutNow: deps.checkoutNow,
     opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
+    experienceInterests, experiences, placeResolutions,
   }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
+  // Founder system health (spec 2026-10-13): heartbeats, alert kinds, carts, usage vs the free-tier
+  // caps. Same gate as Analytics. Mounted before opsRoutes so '/admin/ops/*' can't shadow it.
+  app.route('/admin/ops/health', opsHealthRoutes({
+    auth: opsAuthCfg,
+    bookings,
+    alertLog: deps.alertLog,
+    usage,
+    dbSize: deps.dbSize,
+    limits: {
+      emailDaily: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT,
+      emailMonthly: deps.emailMonthlyLimit ?? config.EMAIL_MONTHLY_LIMIT,
+    },
+  }));
   app.route('/admin/ops/analytics', opsAnalyticsRoutes({
     quotes, auth: opsAuthCfg, data: deps.analyticsData,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
@@ -571,7 +661,9 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
+    experiences, experienceInterests, allowedOrigins,
     ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+    ...(communicationTrackingEnabled ? { customerCommunications } : {}),
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
@@ -580,6 +672,7 @@ export function createApp(deps: AppDeps = {}) {
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
   // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
   // READS ONLY — no route in it can start a payment (spec D6).
+  app.route('/experiences', publicExperiencesRoutes({ experiences, ...(deps.tripadvisor ? { tripadvisor: deps.tripadvisor } : {}), ...(deps.tripadvisorLogoUrl ? { tripadvisorLogoUrl: deps.tripadvisorLogoUrl } : {}) }));
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
   }));
@@ -618,8 +711,10 @@ export function createApp(deps: AppDeps = {}) {
   }));
   // Founder rate revisions (spec 2026-09-26): read under margin:view, save under rates:manage.
   app.route('/admin/rates', opsRatesRoutes({ revisions: rateRevisions, auth: opsAuthCfg, allowedOrigins }));
+  // Partner experiences (spec 2026-10-06 D14/D15): catalogue + leads for ops.
+  app.route('/admin/experiences', opsExperiencesRoutes({ experiences, interests: experienceInterests, bookings, quotes, email, photos: deps.photoStore, business: deps.businessPlaces, auth: opsAuthCfg, allowedOrigins }));
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, rateRevisions, bookings, placeResolutions,
+    maps, quotes, zones, rateRevisions, bookings, payments, placeResolutions, experienceInterests,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
@@ -650,15 +745,18 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+      ...(deps.businessPlaces ? { experiencePins: { experiences, business: deps.businessPlaces } } : {}),
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
       ...(deps.checkoutEvents ? { checkoutEvents: deps.checkoutEvents } : {}),
+      ...(transitionTrackingEnabled && communicationTrackingEnabled ? { customerCommunications } : {}),
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
       ridePaygw: paygw,
       refunds,
       notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
+      ...(usage ? { emailQuota: { usage, dailyLimit: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT } } : {}),
       notifyMaxTripAgeDays: deps.notifyMaxTripAgeDays ?? config.NOTIFY_MAX_TRIP_AGE_DAYS,
       notifyEpoch: deps.notifyEpoch ?? (config.NOTIFY_EPOCH ? new Date(config.NOTIFY_EPOCH) : undefined),
       // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.
@@ -667,6 +765,7 @@ export function createApp(deps: AppDeps = {}) {
       // note on the ride-ops row.
       payments,
       rideOps,
+      ...(ga4 ? { ga4 } : {}),
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.

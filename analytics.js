@@ -8,6 +8,31 @@
       window.dataLayer.push(Object.assign({ event: event }, params || {}));
     } catch (e) { /* analytics must never break the page */ }
   };
+  // ── the GA visitor + session this browser is (2026-10-03) ─────────────────
+  // Sent with checkout so the SERVER's GA4 purchase joins this visit (spec
+  // docs/superpowers/specs/2026-10-03-server-side-ga4-purchase-design.md). GA's own
+  // first-party cookies: `_ga` = GA1.1.<client id>; `_ga_XEW62ZD7B3` = GS1.1.<session id>.…
+  // or GS2.1.s<session id>$…. Plus the stored ad-consent choice. Every field may be null —
+  // blocked or not-yet-set cookies must never stop a checkout.
+  window.chGaIds = function () {
+    var out = { clientId: null, sessionId: null, adConsent: 'unknown' };
+    try {
+      var jar = String(document.cookie || '');
+      var ga = /(?:^|;\s*)_ga=GA\d\.\d\.(\d{1,20}\.\d{1,20})(?:;|$)/.exec(jar);
+      if (ga) out.clientId = ga[1];
+      var gs = /(?:^|;\s*)_ga_XEW62ZD7B3=GS\d\.\d\.s?(\d{6,12})[.$]/.exec(jar);
+      if (gs) out.sessionId = gs[1];
+      var choice = window.localStorage && window.localStorage.getItem('ceylonhop_cookie_choice');
+      if (choice === 'granted' || choice === 'denied') out.adConsent = choice;
+    } catch (e) { /* cookies or storage blocked — send what we have */ }
+    return out;
+  };
+  // A checkout body plus `ga` when there is an id to send. Unchanged otherwise, so a browser
+  // without GA (blocked, local dev, tests) sends exactly what it always did.
+  window.chWithGa = function (body) {
+    var ids = window.chGaIds();
+    return ids.clientId || ids.sessionId ? Object.assign({}, body, { ga: ids }) : body;
+  };
   // ── which property is this? ───────────────────────────────────────────
   // Five customer-facing properties now share ONE GTM container, so without a
   // property dimension every hit is an anonymous hit and nothing downstream can

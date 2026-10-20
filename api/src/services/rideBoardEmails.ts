@@ -74,37 +74,44 @@ const seatsLabel = (seats: number) => (seats > 1 ? `${seats} seats` : '1 seat');
 
 export async function sendRideConfirmed(
   email: EmailAdapter,
-  args: { to: string; firstName: string; list: RideList; lockedTime: string },
+  // payLater: the traveller who started the ride gave no card (domain/rideList.ts paysByLink),
+  // so nothing was charged — ops sends them a payment link.
+  args: { to: string; firstName: string; list: RideList; lockedTime: string; payLater?: boolean },
 ): Promise<void> {
   const { list } = args;
+  const pay = args.payLater
+    ? `${money(list.seatPrice)} per seat — we'll send you a payment link shortly.`
+    : `${money(list.seatPrice)} per seat, charged now.`;
   await email.send({
     to: args.to,
     subject: `It's on! Your ${route(list)} ride is confirmed`,
     html: shell(
       `It's on, ${esc(args.firstName)}! 🚐`,
       `<p>Enough travellers joined — your shared taxi is confirmed.</p>
-       <p><b>${routeHtml(list)}</b><br>${esc(list.date)} · departs <b>${esc(args.lockedTime)}</b><br>${money(list.seatPrice)} per seat, charged now.</p>
+       <p><b>${routeHtml(list)}</b><br>${esc(list.date)} · departs <b>${esc(args.lockedTime)}</b><br>${esc(pay)}</p>
        <p>We'll email your driver's name and WhatsApp the evening before. See you at the pickup!</p>`,
     ),
-    text: `It's on, ${args.firstName}! Your ${route(list)} ride is confirmed for ${list.date}, departs ${args.lockedTime}. ${money(list.seatPrice)} per seat.`,
+    text: `It's on, ${args.firstName}! Your ${route(list)} ride is confirmed for ${list.date}, departs ${args.lockedTime}. ${args.payLater ? pay : `${money(list.seatPrice)} per seat.`}`,
   });
 }
 
 export async function sendRideCancelled(
   email: EmailAdapter,
-  args: { to: string; firstName: string; list: RideList },
+  // payLater: a starter who gave no card has no hold to release.
+  args: { to: string; firstName: string; list: RideList; payLater?: boolean },
 ): Promise<void> {
   const { list } = args;
+  const released = args.payLater ? 'nothing to do.' : 'the card hold is released, nothing to do.';
   await email.send({
     to: args.to,
     subject: `Your ${route(list)} ride has been called off — you weren't charged`,
     html: shell(
       `Not enough names this time`,
       `<p>Hi ${esc(args.firstName)}, not enough travellers joined your <b>${routeHtml(list)}</b> ride on ${esc(list.date)} by the cutoff, so it's been <b>called off</b>.</p>
-       <p><b>You were not charged</b> — the card hold is released, nothing to do.</p>
+       <p><b>You were not charged</b> — ${released}</p>
        <p>Plenty of other routes are gathering names — start or join another anytime. It's always $0 unless the ride runs.</p>`,
     ),
-    text: `Hi ${args.firstName}, not enough travellers joined your ${route(list)} ride on ${list.date}, so it's been called off. You were not charged — the hold is released. Start or join another anytime; $0 unless it runs.`,
+    text: `Hi ${args.firstName}, not enough travellers joined your ${route(list)} ride on ${list.date}, so it's been called off. You were not charged${args.payLater ? '' : ' — the hold is released'}. Start or join another anytime; $0 unless it runs.`,
   });
 }
 
@@ -201,7 +208,8 @@ const factRow = (k: string, v: string) => `<tr>
  *  can take their name off again. Sent on join and on starting a list. */
 export async function sendRideJoined(
   email: EmailAdapter,
-  args: { to: string; firstName: string; list: RideList; seats: number; rideUrl: string },
+  // payLater: the starter gave no card (domain/rideList.ts paysByLink) — a link comes if it runs.
+  args: { to: string; firstName: string; list: RideList; seats: number; rideUrl: string; payLater?: boolean },
 ): Promise<void> {
   const { list, seats } = args;
   const total = list.seatPrice * Math.max(1, seats);
@@ -228,7 +236,9 @@ export async function sendRideJoined(
     <tr><td style="padding:26px 34px 0">
       <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Your name is down</div>
       <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">You're on the list, ${esc(args.firstName)}.</h1>
-      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">We're gathering travellers for your shared van now. <b style="color:${INK}">No ride fare has been charged.</b> PayHere may show a small card-verification charge, which is reversed automatically.</p>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">We're gathering travellers for your shared van now. ${args.payLater
+        ? `<b style="color:${INK}">No card needed and nothing charged.</b> If the van runs, we'll send you a payment link.`
+        : `<b style="color:${INK}">No ride fare has been charged.</b> PayHere may show a small card-verification charge, which is reversed automatically.`}</p>
     </td></tr>
 
     <tr><td style="padding:18px 34px 0">
@@ -274,7 +284,7 @@ export async function sendRideJoined(
     <tr><td style="padding:0 34px">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #eadfce">
         <tr>
-          <td style="padding:15px 0 4px;font-family:${SERIF};font-size:16px;font-weight:600;color:${INK}">Charged only if it runs</td>
+          <td style="padding:15px 0 4px;font-family:${SERIF};font-size:16px;font-weight:600;color:${INK}">${args.payLater ? 'You pay only if it runs' : 'Charged only if it runs'}</td>
           <td align="right" style="padding:15px 0 4px;font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">${money(total)}</td>
         </tr>
       </table>
@@ -305,7 +315,10 @@ export async function sendRideJoined(
     subject: `You're on the list — ${route(list)}, ${date}`,
     html,
     text: `You're on the list, ${args.firstName}. ${route(list)} on ${date}, departs ${slotWindow(list.slot)}. `
-      + `${seatsLabel(seats)} · ride ${list.code}. No ride fare has been charged (PayHere may show a small card-verification charge, which is reversed automatically) — we take ${money(total)} only if `
+      + `${seatsLabel(seats)} · ride ${list.code}. `
+      + (args.payLater
+        ? `No card needed and nothing charged — if the van runs, we'll send you a payment link. You pay ${money(total)} only if `
+        : `No ride fare has been charged (PayHere may show a small card-verification charge, which is reversed automatically) — we take ${money(total)} only if `)
       + `at least ${list.minSeats} seats are pledged by the cutoff and the van runs. Names close ${cutoff} (Sri Lanka time). `
       + `View your ride or scratch your name off: ${args.rideUrl}`,
   });
