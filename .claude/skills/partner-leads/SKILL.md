@@ -21,11 +21,14 @@ or a line in the report. That is what lets this run on a schedule later.
 - **Failed run:** if `$RUN/report-failed.md` exists, say the run stopped on a failure, quote its
   first lines, and stop. Never touch the ledger.
 - **Resume:** the run is done only when `$RUN/report.md` exists AND every domain in
-  `$RUN/leads.csv` is in `outreach/ledger.csv`. If `report.md` exists but the ledger lacks them,
-  redo only the ledger update in step 7 and stop. Otherwise resume at the first step whose resume
-  marker is missing. Markers: step 1 `candidates.json`, step 2 `contacts.json`, step 3
+  `$RUN/leads.csv` is in `outreach/ledger.csv`. If `leads.csv` exists, `report.md` doesn't, and
+  every `leads.csv` domain is already in `outreach/ledger.csv`, the run crashed after its ledger
+  update: skip step 6 and the ledger update and write only `report.md`. Otherwise resume at the
+  first step whose resume marker is missing. Markers: step 1 `candidates.json`, step 2 `contacts.json`, step 3
   `verdicts.json`, step 4 `leads.draft.csv`, step 5 `leads.csv` (if `draft-review.json` already
-  exists, skip just the critic sub-step). To restart a finished run, delete its folder. Resume
+  exists, skip just the critic sub-step). Every merged file (`candidates.json`, `contacts.json`,
+  `verdicts.json`) is written to a `.tmp` name and then `mv`'d into place, so a partial write never
+  counts as a marker. To restart a finished run, delete its folder. Resume
   only applies within the same day's folder; a rerun on a later day starts a new run.
 
 ## 1. Research → `$RUN/candidates.json`
@@ -58,8 +61,8 @@ per batch in **facts** mode, in parallel, with the output path `$RUN/verdicts.<n
 
 For `needs-evidence` verdicts:
 - Dispatch one `lead-researcher` with just those agencies and the critic's `reason`, asking for
-  the missing evidence, written to `$RUN/candidates.retry.json`. Tell it to copy each `website`
-  exactly from its input.
+  the missing evidence, written to `$RUN/candidates.retry.json`. Tell it to copy each agency's
+  `website` and `segment` exactly as given.
 - Dispatch one `lead-critic` (facts) on them, written to `$RUN/verdicts.retry.json`.
 - Replace their verdicts. Overwrite those agencies' records in the merged candidate list with the
   `candidates.retry.json` records (joined on the original `website`) and rewrite

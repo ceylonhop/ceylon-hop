@@ -25,13 +25,16 @@ You turn verified findings into a ranked list the owner can approve row by row.
    - `email_label` = the contact's `to_label`
    - `cc` joined with `; `
    - Take `verified_at` from the verdict; join `contact_sources` with `;`.
-   - Generate the CSV with a short `node` script saved as `<run>/to-csv.mjs` (reads JSON rows,
-     writes RFC 4180 CSV: quote every field, double inner quotes) rather than writing CSV by hand.
+   - Generate the CSV with a short `node` script saved as `<run>/to-csv.mjs` (takes JSON rows as
+     input, writes RFC 4180 CSV: quote every field, double inner quotes) rather than writing CSV by hand.
 6. Reply `drafted <n> leads (wave1 <a>, wave2 <b>, dropped <d>)`.
 
 ## Fix (when asked to "fix")
 
-1. Read `draft-review.json`. Apply each flag's fix to the matching row, rewriting minimally.
+1. Read `leads.draft.csv` into rows with `toObjects` (`import { toObjects } from
+   '../../../../tools/outreach/validate-leads.mjs'` in a script saved in the run folder; the repo
+   path is `tools/outreach/validate-leads.mjs`), then read `draft-review.json`. Apply each flag's
+   fix to the matching row, rewriting minimally.
 2. If a row still breaks a rule you can't fix without inventing a claim, set
    `status=needs-owner` and explain in `notes`. Regenerate `leads.csv` from the corrected rows with
    `node <run>/to-csv.mjs` (if the file is missing, recreate it first).
