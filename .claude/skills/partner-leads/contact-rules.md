@@ -31,8 +31,10 @@ Decode Cloudflare-obfuscated addresses (`data-cfemail`) rather than skipping the
 - **MEDIUM:** one good source (own site, registry, or press).
 - **LOW:** search snippet only, or testimonials only.
 
-If no named person is found, leave attn_name empty and write `no named contact` in notes. The
-critic then rejects the lead on bar item 4.
+If the agency's own site names nobody, try at least two company registries before giving up; a
+director filed there counts (MEDIUM). If still no named person is found, leave attn_name empty and
+write `no named contact` in notes, listing the registries tried. The critic then rejects the lead
+on bar item 4.
 
 Team pages that look like template placeholders (generic names and bios that don't match the
 registry) are not a source.

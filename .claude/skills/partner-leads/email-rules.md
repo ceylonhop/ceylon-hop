@@ -7,7 +7,8 @@
 2. Hook: one or two sentences built on the verified hook.
 3. The brief's **proof paragraph**, verbatim.
 4. The brief's **pitch line** for this lead's segment (wave 2 leads: the brief's `Wave 2` line),
-   verbatim or trimmed. If the brief has a **theme line** (e.g. the Ramayana line) and the lead's
+   verbatim or trimmed. If the brief has a `Private sellers` line and the lead's `format` is
+   `private`, use that line instead of a segment line written for group sellers. If the brief has a **theme line** (e.g. the Ramayana line) and the lead's
    fit includes that theme, add it after the pitch line and shorten the hook to stay within 170 words.
 5. Ask: one line, e.g. "Could I send our agency rates and a sample plan for your next enquiry?"
 6. Opt-out: `If this isn't for you, just reply "no thanks" and I won't write again.`
