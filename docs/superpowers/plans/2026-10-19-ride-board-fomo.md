@@ -848,14 +848,23 @@ const OPEN = { code: 'SH-1', corridorId: 'ella-south', from: 'Ella', to: 'Miriss
   members: [{ firstName: 'Tom', country: 'GB', photoUrl: null }, { firstName: 'Lea', country: 'FR', photoUrl: null }] };
 const CLOSED = { ...OPEN, code: 'SH-2', date: '2099-08-11', cutoffAt: '2099-08-09T01:30:00.000Z', status: 'confirmed', committed: 3,
   members: [...OPEN.members, { firstName: 'Ben', country: 'IE', photoUrl: null }] };
+// Confirmed with its cutoff still ahead (a hand-moved cutoff), and full while still gathering —
+// each fails ONE of the three share conditions on its own, so dropping any one condition fails a test.
+const CONFIRMED_OPEN = { ...OPEN, code: 'SH-3', date: '2099-08-14', cutoffAt: '2099-08-12T01:30:00.000Z', status: 'confirmed', committed: 3,
+  members: [...OPEN.members, { firstName: 'Ben', country: 'IE', photoUrl: null }] };
+const FULL = { ...OPEN, code: 'SH-4', date: '2099-08-16', cutoffAt: '2099-08-14T01:30:00.000Z', committed: 6,
+  members: ['Tom', 'Lea', 'Ben', 'Kim', 'Nat', 'Jo'].map((n) => ({ firstName: n, country: 'AU', photoUrl: null })) };
+const LISTS = [OPEN, CLOSED, CONFIRMED_OPEN, FULL];
 
 async function stubApi(page) {
   await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
-    if (p === '/board') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [OPEN, CLOSED] }) });
-    if (p === '/board/me') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ me: null }) });
-    if (p === '/board/SH-1') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(OPEN) });
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    const json = (b) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (p === '/board') return json({ lists: LISTS });
+    if (p === '/board/me') return json({ me: null });
+    const one = LISTS.find((l) => p === '/board/' + l.code);
+    if (one) return json(one);
+    return json({});
   });
 }
 
@@ -899,9 +908,18 @@ test('with no phone menu, the sheet offers WhatsApp, Telegram, Facebook and the 
   await expect(sheet).toBeHidden();
 });
 
-test('a ride whose names have closed offers no share', async ({ page }) => {
+test('a ride that cannot take anyone — names closed, confirmed, or full — offers no share, on its row or its page', async ({ page }) => {
   await open(page);
-  await expect(page.locator('.rw[data-code="SH-2"] [data-share]')).toHaveCount(0);
+  for (const code of ['SH-2', 'SH-3', 'SH-4']) {
+    const row = page.locator(`.rw[data-code="${code}"]`);
+    await expect(row.locator('[data-share]')).toHaveCount(0);
+    // the whole row opens the ride (a full row has no [data-view] button to click)
+    await row.locator('.rw-route').click();
+    await expect(page.locator('body')).toHaveClass(/detail-open/);
+    await expect(page.locator('.d-share')).toHaveCount(0);
+    await page.locator('#d-back').click();
+    await expect(page.locator('body')).not.toHaveClass(/detail-open/);
+  }
 });
 
 test("the ride page's WhatsApp carries the same message, and a Share… button", async ({ page }) => {
@@ -1141,6 +1159,83 @@ with
    tag is the owner's import step, like experience_interest. */
 const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest', 'share']);
 ```
+
+- [ ] **Step 6c (review fix): one predicate decides whether a ride is shareable, on all three surfaces.** The task reviewer found the ride page's `.d-share` block (gated on `shut`, which excludes confirmed rides) and the success step (no gate) still offered a share on confirmed and full rides — and `shareMessage` then says "It's running and there are seats left" for a full ride. A ride past its cutoff cannot be joined (the join route refuses it, #597), so a share link to it is the same dead end #717 removed for closed rides. In `board.js`:
+
+Directly above `function shareTextFor(L) {`, add:
+
+```js
+  // A ride worth sharing is one a friend can still join: not confirmed (the join route refuses a
+  // ride past its cutoff, #597), not closed, not full. Rows, the ride page and the share step all ask this.
+  function canShare(L) { return !!L && !L.confirmed && !isClosed(L) && L.committed < L.capacity; }
+```
+
+In `rowHtml()`, replace
+
+```js
+        (!L.confirmed && !isClosed(L) && L.committed < L.capacity
+          ? '<button class="rw-share"
+```
+
+with
+
+```js
+        (canShare(L)
+          ? '<button class="rw-share"
+```
+
+In `shareTextFor`, replace `      closes: closes && closes.text !== 'Names closed' ? closes.text : null` with `      closes: closes && !isClosed(L) ? closes.text : null`.
+
+In `openShareSheet`, replace
+
+```js
+    ['ss-wa', 'ss-tg', 'ss-fb'].forEach(function (id) {
+      document.getElementById(id).onclick = function () {
+        ev('share', { method: id.slice(3), content_type: 'ride', item_id: L.code, via: via });
+      };
+    });
+```
+
+with
+
+```js
+    // GA4 `method` values are dimension values once the owner builds the tag — full names, like
+    // the 'native' and 'copy' the other paths send
+    var METHOD = { 'ss-wa': 'whatsapp', 'ss-tg': 'telegram', 'ss-fb': 'facebook' };
+    Object.keys(METHOD).forEach(function (id) {
+      document.getElementById(id).onclick = function () {
+        ev('share', { method: METHOD[id], content_type: 'ride', item_id: L.code, via: via });
+      };
+    });
+```
+
+In `renderDetail()`, replace
+
+```js
+      (shut ? '' :
+        '<div class="d-share">
+```
+
+with
+
+```js
+      (!canShare(L) ? '' :
+        '<div class="d-share">
+```
+
+In `prepShare(L, need)`, directly after `    var url = shareUrlFor(L.code);`, add:
+
+```js
+    // The share step only offers a share a friend can act on — not after the join that filled the
+    // last seat, and not on a ride already locked. style.display, not `hidden`: the .btn and
+    // .share-btns display rules outrank the [hidden] reset.
+    var share = canShare(L);
+    [document.getElementById('share-native'), document.querySelector('#mstep-3 .share-btns'),
+      document.querySelector('#mstep-3 .copy-row'), document.querySelector('#mstep-3 .share-preview')]
+      .forEach(function (el) { if (el) el.style.display = share ? '' : 'none'; });
+```
+
+Then bring `web-tests/e2e/ride-board-share-sheet.spec.js` to Step 1's text (it gained `CONFIRMED_OPEN`, `FULL`, a `LISTS` array the stub serves, and the three-way no-share test). Run that spec alone first: the SH-3 and SH-4 cases fail on `.d-share` count 1 before the `renderDetail` change, and pass after.
 
 - [ ] **Step 7: Stamp, then run the share specs and the board specs again**
 

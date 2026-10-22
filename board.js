@@ -849,7 +849,7 @@
         (priv ? '<span class="rw-vs">vs ' + money(priv) + ' private car</span>' : '') + '</div>' +
       '<div class="rw-acts">' +
         // share only a ride that can still take someone: never one confirmed, closed or full
-        (!L.confirmed && !isClosed(L) && L.committed < L.capacity
+        (canShare(L)
           ? '<button class="rw-share" type="button" data-share="' + esc(L.code) + '" aria-label="Share this ride">' + SHARE_SVG + '</button>'
           : '') +
         '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
@@ -1253,7 +1253,7 @@
       // scroll here — the same action twice, in a louder green than the primary.
       // Not once names have closed: the link would land a friend on a ride that cannot take
       // them, which is the same dead end this whole change removes, one step further away.
-      (shut ? '' :
+      (!canShare(L) ? '' :
         '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
         '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
         '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
@@ -2056,6 +2056,10 @@
      is one (every app the traveller has, one tap), else our sheet with WhatsApp, Telegram,
      Facebook and the link. The words come from CHRideFomo.shareMessage, so a row, the ride
      page and the "you're on the list" screen all send the same thing. */
+  // A ride worth sharing is one a friend can still join: not confirmed (the join route refuses a
+  // ride past its cutoff, #597), not closed, not full. Rows, the ride page and the share step all ask this.
+  function canShare(L) { return !!L && !L.confirmed && !isClosed(L) && L.committed < L.capacity; }
+
   function shareTextFor(L) {
     var F = window.CHRideFomo;
     var togo = F.seatsToGo(L);
@@ -2068,7 +2072,7 @@
       need: togo ? togo.need : 0,
       fare: money(L.cost),
       priv: priv ? money(priv) : null,
-      closes: closes && closes.text !== 'Names closed' ? closes.text : null
+      closes: closes && !isClosed(L) ? closes.text : null
     });
   }
 
@@ -2079,9 +2083,12 @@
     document.getElementById('ss-wa').href = 'https://wa.me/?text=' + encodeURIComponent(text + ' ' + url);
     document.getElementById('ss-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text);
     document.getElementById('ss-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
-    ['ss-wa', 'ss-tg', 'ss-fb'].forEach(function (id) {
+    // GA4 `method` values are dimension values once the owner builds the tag — full names, like
+    // the 'native' and 'copy' the other paths send
+    var METHOD = { 'ss-wa': 'whatsapp', 'ss-tg': 'telegram', 'ss-fb': 'facebook' };
+    Object.keys(METHOD).forEach(function (id) {
       document.getElementById(id).onclick = function () {
-        ev('share', { method: id.slice(3), content_type: 'ride', item_id: L.code, via: via });
+        ev('share', { method: METHOD[id], content_type: 'ride', item_id: L.code, via: via });
       };
     });
     document.getElementById('ss-copy').onclick = function () {
@@ -2112,6 +2119,13 @@
 
   function prepShare(L, need) {
     var url = shareUrlFor(L.code);
+    // The share step only offers a share a friend can act on — not after the join that filled the
+    // last seat, and not on a ride already locked. style.display, not `hidden`: the .btn and
+    // .share-btns display rules outrank the [hidden] reset.
+    var share = canShare(L);
+    [document.getElementById('share-native'), document.querySelector('#mstep-3 .share-btns'),
+      document.querySelector('#mstep-3 .copy-row'), document.querySelector('#mstep-3 .share-preview')]
+      .forEach(function (el) { if (el) el.style.display = share ? '' : 'none'; });
     var s = slotWindow(L.slot).label;
     document.getElementById('sc-route').textContent = L.from + ' → ' + L.to;
     document.getElementById('sc-meta').textContent = L.whenLabel + ' · ' + s + ' · ' + L.committed + ' of ' + L.minSeats + ' in · ≈ ' + money(L.cost) + ' each';

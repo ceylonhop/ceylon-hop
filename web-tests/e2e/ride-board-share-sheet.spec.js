@@ -10,14 +10,23 @@ const OPEN = { code: 'SH-1', corridorId: 'ella-south', from: 'Ella', to: 'Miriss
   members: [{ firstName: 'Tom', country: 'GB', photoUrl: null }, { firstName: 'Lea', country: 'FR', photoUrl: null }] };
 const CLOSED = { ...OPEN, code: 'SH-2', date: '2099-08-11', cutoffAt: '2099-08-09T01:30:00.000Z', status: 'confirmed', committed: 3,
   members: [...OPEN.members, { firstName: 'Ben', country: 'IE', photoUrl: null }] };
+// Confirmed with its cutoff still ahead (a hand-moved cutoff), and full while still gathering —
+// each fails ONE of the three share conditions on its own, so dropping any one condition fails a test.
+const CONFIRMED_OPEN = { ...OPEN, code: 'SH-3', date: '2099-08-14', cutoffAt: '2099-08-12T01:30:00.000Z', status: 'confirmed', committed: 3,
+  members: [...OPEN.members, { firstName: 'Ben', country: 'IE', photoUrl: null }] };
+const FULL = { ...OPEN, code: 'SH-4', date: '2099-08-16', cutoffAt: '2099-08-14T01:30:00.000Z', committed: 6,
+  members: ['Tom', 'Lea', 'Ben', 'Kim', 'Nat', 'Jo'].map((n) => ({ firstName: n, country: 'AU', photoUrl: null })) };
+const LISTS = [OPEN, CLOSED, CONFIRMED_OPEN, FULL];
 
 async function stubApi(page) {
   await page.route((u) => isApiRequest(u), (route) => {
     const p = new URL(route.request().url()).pathname;
-    if (p === '/board') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lists: [OPEN, CLOSED] }) });
-    if (p === '/board/me') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ me: null }) });
-    if (p === '/board/SH-1') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(OPEN) });
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    const json = (b) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (p === '/board') return json({ lists: LISTS });
+    if (p === '/board/me') return json({ me: null });
+    const one = LISTS.find((l) => p === '/board/' + l.code);
+    if (one) return json(one);
+    return json({});
   });
 }
 
@@ -61,9 +70,18 @@ test('with no phone menu, the sheet offers WhatsApp, Telegram, Facebook and the 
   await expect(sheet).toBeHidden();
 });
 
-test('a ride whose names have closed offers no share', async ({ page }) => {
+test('a ride that cannot take anyone — names closed, confirmed, or full — offers no share, on its row or its page', async ({ page }) => {
   await open(page);
-  await expect(page.locator('.rw[data-code="SH-2"] [data-share]')).toHaveCount(0);
+  for (const code of ['SH-2', 'SH-3', 'SH-4']) {
+    const row = page.locator(`.rw[data-code="${code}"]`);
+    await expect(row.locator('[data-share]')).toHaveCount(0);
+    // the whole row opens the ride (a full row has no [data-view] button to click)
+    await row.locator('.rw-route').click();
+    await expect(page.locator('body')).toHaveClass(/detail-open/);
+    await expect(page.locator('.d-share')).toHaveCount(0);
+    await page.locator('#d-back').click();
+    await expect(page.locator('body')).not.toHaveClass(/detail-open/);
+  }
 });
 
 test("the ride page's WhatsApp carries the same message, and a Share… button", async ({ page }) => {
