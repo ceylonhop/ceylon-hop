@@ -74,13 +74,7 @@
 
   // Remaining-time formatter. Takes remaining milliseconds (a duration, not a
   // timestamp) so it is pure. Clamps at zero.
-  function fmtCountdown(ms) {
-    var s = Math.max(0, Math.floor(Number(ms) || 0));
-    var h = Math.floor(s / 3600000), m = Math.floor((s % 3600000) / 60000), sec = Math.floor((s % 60000) / 1000);
-    if (h >= 24) { var d = Math.floor(h / 24); return d + 'd ' + (h % 24) + 'h'; }
-    if (h >= 1) return h + 'h ' + String(m).padStart(2, '0') + 'm';
-    return m + 'm ' + String(sec).padStart(2, '0') + 's';
-  }
+  function fmtCountdown(ms) { return window.CHRideFomo.countdown(ms); }
 
   // The departure window for a slot key ('morning' | 'afternoon'); defaults to morning.
   function slotWindow(slot) { return SLOTS[slot] || SLOTS.morning; }
@@ -843,7 +837,7 @@
             : '') +
         '</span>'
       : '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span>';
-    return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
+    return '<article class="rw' + (mine ? ' mine' : '') + (L.code === HL_CODE ? ' hl' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
       ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + (togo ? togo.text : st.label)) + '">' +
       '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w') + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
@@ -908,6 +902,20 @@
       '<span class="mo-txt"><b>' + esc(t.head) + '</b>' + (t.sub ? '<small>' + esc(t.sub) + '</small>' : '') + '</span></div>';
   }
 
+  // Landed here from the home page's "Travel with others?" (?hl=CODE, plan 2026-10-19-ride-board-fomo
+  // PR 2): that ride is tinted on every paint and brought into view ONCE — a later re-render (My
+  // rides, the seat counts) keeps the tint but must not yank the page again. Instant, not smooth: a
+  // smooth scroll towards a row the next render replaces lands on the wrong spot.
+  var HL_CODE = (function () { try { return new URLSearchParams(location.search).get('hl') || ''; } catch (e) { return ''; } })();
+  var landed = false;
+  function landOnRide() {
+    if (!HL_CODE || landed) return;
+    var row = grid.querySelector('.rw[data-code="' + CSS.escape(HL_CODE) + '"]');
+    if (!row) return;
+    landed = true;
+    row.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }
+
   function render() {
     var today = colomboToday(Date.now());
     var sched = scheduledRows(VANS, { todayIso: today, days: SCHED_DAYS, filter: state.filter });
@@ -960,6 +968,7 @@
     });
     observe();
     playSeatFills();
+    landOnRide();
   }
 
   /* A seat filling is the whole point of this board. render() rebuilds every row through

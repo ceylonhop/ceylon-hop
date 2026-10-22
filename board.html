@@ -154,6 +154,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
 .rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
+/* the ride a home-page card pointed at (?hl=CODE, PR 2): saffron, because teal already means "you're on it" */
+.rw.hl{background:var(--pc-saffron);box-shadow:inset 3px 0 0 var(--saffron)}
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
 /* the duration rides on the route's own line; it drops below only when the pair leaves no room */
@@ -1100,7 +1102,7 @@ body.detail-open .detail{display:block}
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
-<script src="ride-fomo.js?v=b2e24748fa" defer></script>
-<script src="board.js?v=6790522263" defer></script>
+<script src="ride-fomo.js?v=02cfb536a1" defer></script>
+<script src="board.js?v=5bbd76739d" defer></script>
 </body>
 </html>

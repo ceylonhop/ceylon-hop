@@ -133,6 +133,7 @@
     momentum: momentum,
     momentumText: momentumText,
     busTime: busTime,
-    stripRides: stripRides
+    stripRides: stripRides,
+    countdown: countdown
   };
 })();
