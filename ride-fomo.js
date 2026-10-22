@@ -14,12 +14,14 @@
 
   function pad(n) { return String(n).padStart(2, '0'); }
 
-  // Remaining milliseconds → "2d 3h" / "9h 12m" / "12m 05s". Clamps at zero.
-  function countdown(ms) {
+  // Remaining milliseconds → "2d 3h" / "9h 12m" / "12m 05s" — or, with `minutes`, "12m" and
+  // "under a minute": the home page never shows a second hand. Clamps at zero.
+  function countdown(ms, minutes) {
     var s = Math.max(0, Math.floor(Number(ms) || 0));
     var h = Math.floor(s / HOUR), m = Math.floor((s % HOUR) / 60000), sec = Math.floor((s % 60000) / 1000);
     if (h >= 24) return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
     if (h >= 1) return h + 'h ' + pad(m) + 'm';
+    if (minutes) return m >= 1 ? m + 'm' : 'under a minute';
     return m + 'm ' + pad(sec) + 's';
   }
 
@@ -40,14 +42,15 @@
 
   // When names close: a running clock inside three days (red inside one), a Sri Lanka date
   // further out. null with no cutoff to go on. `opts.short` is the phone's time-line form —
-  // "Closes 12 Aug" — where the full line does not fit beside the price.
+  // "Closes 12 Aug" — where the full line does not fit beside the price. `opts.minutes` drops
+  // the seconds (the home page never shows a second hand).
   function closesText(cutoffMs, nowMs, opts) {
     if (!isFinite(cutoffMs)) return null;
-    var short = !!(opts && opts.short);
+    var short = !!(opts && opts.short), minutes = !!(opts && opts.minutes);
     var lead = short ? 'Closes' : 'Names close';
     var left = cutoffMs - nowMs;
     if (left <= 0) return { text: short ? 'Closed' : 'Names closed', live: false, urgent: false };
-    if (left < LIVE_MS) return { text: lead + ' in ' + countdown(left), live: true, urgent: left < URGENT_MS };
+    if (left < LIVE_MS) return { text: lead + ' in ' + countdown(left, minutes), live: true, urgent: left < URGENT_MS };
     return { text: lead + ' ' + colomboDay(cutoffMs, short), live: false, urgent: false };
   }
 
@@ -103,12 +106,33 @@
     return { head: m.travellers + (m.travellers === 1 ? ' traveller' : ' travellers') + ' on the board right now', sub: sub.join(' · ') };
   }
 
+  // The bus the seat beats — board.js's ALT table, said in words. The comparison the July spec
+  // asks for: against the bus, never our own private car. A corridor not listed says nothing.
+  var BUS = {
+    'airport-cultural': '6h by bus', 'hill-line': '7h by bus and train', 'ella-east': '6h by bus',
+    'south-coast': '2.5h by bus', 'yala-south': '5h by bus', 'ella-south': '7h by bus'
+  };
+  function busTime(corridorId) { return (corridorId && BUS[corridorId]) || null; }
+
+  // The home page's "Travel with others?": open rides that still need people, the closest to
+  // running first (fewest seats to go), then the soonest to close.
+  function stripRides(lists, nowMs, max) {
+    return (lists || []).filter(function (L) {
+      return L && !L.confirmed && !L.cancelled && seatsToGo(L) && !(isFinite(L.cutoffMs) && L.cutoffMs <= nowMs);
+    }).sort(function (a, b) {
+      return seatsToGo(a).need - seatsToGo(b).need ||
+        (isFinite(a.cutoffMs) ? a.cutoffMs : Infinity) - (isFinite(b.cutoffMs) ? b.cutoffMs : Infinity);
+    }).slice(0, max || 4);
+  }
+
   window.CHRideFomo = {
     seatsToGo: seatsToGo,
     closesText: closesText,
     privateCarFare: privateCarFare,
     shareMessage: shareMessage,
     momentum: momentum,
-    momentumText: momentumText
+    momentumText: momentumText,
+    busTime: busTime,
+    stripRides: stripRides
   };
 })();
