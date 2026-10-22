@@ -13,6 +13,11 @@ const LISTS = [
   ride({ code: 'FO-2', date: '2099-08-20', cutoffAt: '2099-08-18T01:30:00.000Z', committed: 1, members: [member('Sam', 'CA')] }),
   ride({ code: 'FO-3', date: '2099-08-11', cutoffAt: '2099-08-09T01:30:00.000Z', status: 'confirmed', committed: 3,
     members: [member('Ann', 'PL'), member('Yuki', 'JP'), member('Ben', 'IE')] }),
+  // still "gathering" but past its cutoff — names closed, the sweep has not run yet
+  ride({ code: 'FO-4', date: '2099-08-11', cutoffAt: '2099-08-09T01:30:00.000Z', committed: 1, members: [member('Ola', 'SE')] }),
+  // full, with its cutoff still ahead
+  ride({ code: 'FO-5', date: '2099-08-15', cutoffAt: '2099-08-13T01:30:00.000Z', status: 'confirmed', committed: 6,
+    members: ['Tom', 'Ela', 'Kim', 'Nat', 'Jo', 'Sam'].map((n) => member(n, 'AU')) }),
 ];
 
 async function stubApi(page, lists = LISTS) {
@@ -45,6 +50,11 @@ test.describe('on a phone', () => {
     await expect(row.locator('.rw-state .rw-close')).toBeHidden();
     await expect(row.locator('.rw-open')).toHaveCount(1);
     await expect(row.locator('.rw-vs')).toHaveText(/^vs \$\d+(\.\d{2})? private car$/);
+    // the ticker repaints every second and must keep each copy's form (the clock is pinned, so
+    // the text itself cannot change — only its form could)
+    await page.waitForTimeout(1200);
+    await expect(row.locator('.rw-when .rw-close')).toHaveText('Closes in 9h 12m');
+    await expect(row.locator('.rw-state .rw-close')).toHaveText('Names close in 9h 12m');
   });
 
   test('a ride further out gives its Sri Lanka closing date, calmly', async ({ page }) => {
@@ -57,12 +67,17 @@ test.describe('on a phone', () => {
     await expect(row.locator('.rw-open')).toHaveCount(2);
   });
 
-  test('a confirmed ride keeps its locked state — no seats to go, no comparison', async ({ page }) => {
+  test('locked, names-closed and full rides keep their own wording — no seats to go, no closing line, no comparison', async ({ page }) => {
     await open(page);
-    const row = page.locator('.rw[data-code="FO-3"]');
-    await expect(row.locator('.rw-togo')).toHaveCount(0);
-    await expect(row.locator('.rw-vs')).toHaveCount(0);
-    await expect(row.locator('.rw-state')).toContainText('Locked in');
+    for (const [code, label] of [['FO-3', 'Locked in'], ['FO-4', 'Names closed'], ['FO-5', 'Full']]) {
+      const row = page.locator(`.rw[data-code="${code}"]`);
+      await expect(row.locator('.rw-state')).toContainText(label);
+      await expect(row.locator('.rw-togo')).toHaveCount(0);
+      await expect(row.locator('.rw-close')).toHaveCount(0);
+      await expect(row.locator('.rw-vs')).toHaveCount(0);
+      const over = await row.locator('.rw-when').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+      expect(over, `${code}: the time line overflows`).toBe(false);
+    }
   });
 
   test('a FOMO row stays inside the screen', async ({ page }) => {

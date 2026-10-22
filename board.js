@@ -822,6 +822,9 @@
     // the price) and in full under the pill for wider screens (.rw-close-s). CSS shows one per
     // width; the ticker updates both through [data-close], keeping each one's form.
     var closeSpan = function (where, short) {
+      // only a ride still gathering has a closing line — locked, full and names-closed rows keep
+      // rowState's wording (closes is null for them, whatever their cutoff)
+      if (!closes) return '';
       var c = short ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : closes;
       return c
         ? '<span class="rw-close ' + where + (c.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '"' +
