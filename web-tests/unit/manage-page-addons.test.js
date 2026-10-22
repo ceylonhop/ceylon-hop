@@ -20,8 +20,8 @@ function loadFactsOf() {
     return new Function('return (' + f[0] + ')')();
   };
   // eslint-disable-next-line no-new-func
-  return new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'return (' + m[0] + ')')(
-    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'),
+  return new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'pickupNeeds', 'return (' + m[0] + ')')(
+    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'), real('pickupNeeds'),
   );
 }
 const factsOf = loadFactsOf();
@@ -74,8 +74,26 @@ describe('manage card time row', () => {
   it('calls it Landing time on an airport pickup', () => {
     expect(factsOf({ ...view, from: 'Colombo Airport (CMB)', time: '09:00' })).toContain('<span class="k">Landing time</span>');
   });
-  it('flags a missing value', () => {
-    expect(factsOf({ ...view, from: 'Kandy', time: 'to confirm' })).toContain('<span class="need">Not set yet</span>');
+  // The amber chip is a to-do, so it shows only where the customer can act (pickupNeeds non-null).
+  const paidSingle = { ...view, mode: 'single', status: 'paid', from: 'Kandy' };
+  it('flags a missing time and a missing date on a paid single transfer', () => {
+    expect(factsOf({ ...paidSingle, time: 'to confirm' })).toContain('<span class="k">Pick-up time</span><span class="v"><span class="need">Not set yet</span></span>');
+    expect(factsOf({ ...paidSingle, date: 'to confirm' })).toContain('<span class="k">Trip start</span><span class="v"><span class="need">Not set yet</span></span>');
+  });
+  it('keeps plain "To be confirmed" on a trip, whose time is always blank', () => {
+    const html = factsOf({ ...view, mode: 'trip', status: 'paid', from: 'Kandy', time: 'to confirm', date: 'to confirm' });
+    expect(html).not.toContain('class="need"');
+    expect(html).toContain('<span class="k">Pick-up time</span><span class="v">To be confirmed</span>');
+    expect(html).toContain('<span class="k">Trip start</span><span class="v">To be confirmed</span>');
+  });
+  it('keeps plain "To be confirmed" on a single transfer not yet paid', () => {
+    const html = factsOf({ ...view, mode: 'single', status: 'payment_pending', from: 'Kandy', time: 'to confirm', date: 'to confirm' });
+    expect(html).not.toContain('class="need"');
+    expect(html).toContain('To be confirmed');
+  });
+  it('never puts the chip on other rows (Trip end, Vehicle)', () => {
+    const html = factsOf({ ...paidSingle, endDate: '', vehicleType: '' });
+    expect(html).toContain('<span class="k">Trip end</span><span class="v">To be confirmed</span>');
   });
   it('says the team set the date, never "you"', () => {
     expect(factsOf({ ...view, from: 'Kandy', scheduleSetBy: 'staff' })).toContain('set by our team');

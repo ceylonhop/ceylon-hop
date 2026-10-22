@@ -335,12 +335,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // A one-day trip genuinely starts and ends on the same date; say so rather than printing
     // the same line twice with no explanation.
     var sameDay = v.date && v.endDate && v.date === v.endDate;
+    // The API sends 'to confirm' for a blank date/time. Only where the customer can fill the blank
+    // (pickupNeeds non-null) does it read as a to-do chip; elsewhere it stays plain "To be confirmed".
+    var needs = pickupNeeds(v);
+    var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
     var rows = [
-      { k: 'Trip start', v: longDate(v.date) || 'To be confirmed', sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
+      { k: 'Trip start', v: noDate ? 'To be confirmed' : longDate(v.date), blank: noDate, sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
       { k: 'Trip end', v: longDate(v.endDate) || 'To be confirmed', sub: sameDay ? 'same day' : '' },
       { k: isAirport(v) ? 'Landing time' : 'Pick-up time',
-        v: (v.time && v.time !== 'to confirm') ? fmtTime(v.time) : 'To be confirmed',
-        sub: (v.time && v.time !== 'to confirm') ? 'Sri Lanka time' : '' },
+        v: noTime ? 'To be confirmed' : fmtTime(v.time), blank: noTime,
+        sub: noTime ? '' : 'Sri Lanka time' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
       { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
@@ -355,8 +359,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
       var val = r.lines ? r.lines.map(function(l){ return esc(l); }).join('<br>') : esc(r.v);
-      // A blank is something to do, not a fact: say so plainly.
-      if (r.v === 'To be confirmed') val = '<span class="need">Not set yet</span>';
+      // A blank the customer can fill is something to do, not a fact: say so plainly.
+      if (r.blank && needs) val = '<span class="need">Not set yet</span>';
       return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + val
         + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span></div>';
     }).join('');
