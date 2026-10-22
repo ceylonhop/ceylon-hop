@@ -887,6 +887,23 @@
   var grid = document.getElementById('board-grid');
   var filtersEl = document.getElementById('filters');
 
+  // "9 travellers on the board right now · 3 rides close this week" — the browse view only: a
+  // route-filtered or My-rides board is already about one trip (plan 2026-10-19-ride-board-fomo).
+  function momentumHtml() {
+    var f = state.filter;
+    if (f.mine || f.from !== 'all' || f.to !== 'all') return '';
+    var F = window.CHRideFomo, now = Date.now();
+    var t = F.momentumText(F.momentum(state.lists, now));
+    if (!t) return '';
+    var people = [];
+    state.lists.forEach(function (L) {
+      if (!L.confirmed && !L.cancelled && !isClosed(L, now)) L.members.forEach(function (m) { people.push(m); });
+    });
+    return '<div class="rw-momentum"><span class="mo-live" aria-hidden="true"></span>' +
+      '<span class="rw-faces">' + people.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('') + '</span>' +
+      '<span class="mo-txt"><b>' + esc(t.head) + '</b>' + (t.sub ? '<small>' + esc(t.sub) + '</small>' : '') + '</span></div>';
+  }
+
   function render() {
     var today = colomboToday(Date.now());
     var sched = scheduledRows(VANS, { todayIso: today, days: SCHED_DAYS, filter: state.filter });
@@ -901,7 +918,7 @@
       var groups = groupByDay(shown);
       var endIso = addDaysIso(today, SCHED_DAYS);
       var cut = sched.length ? horizonAt(groups, endIso) : -1;
-      grid.innerHTML = groups.map(function (g, i) {
+      grid.innerHTML = momentumHtml() + groups.map(function (g, i) {
         return (i === cut ? schedMoreHtml(sched, endIso) : '') +
           '<section class="rw-group"><h3 class="rw-day-h">' + dayHeading(g, today) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
       }).join('') + (cut === groups.length ? schedMoreHtml(sched, endIso) : '') + routeInvite();

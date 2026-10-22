@@ -104,3 +104,19 @@ for (const width of [768, 1020, 1280]) {
     }
   });
 }
+
+test('the board leads with how many travellers are on it — real counts only', async ({ page }) => {
+  await open(page);
+  const m = page.locator('#board-grid .rw-momentum');
+  // FO-1 (2) + FO-2 (1) are open; FO-3 is confirmed. FO-1 closes this week and is one short.
+  await expect(m.locator('b')).toHaveText('3 travellers on the board right now');
+  await expect(m.locator('small')).toHaveText('1 ride closes this week · 1 needs just one more');
+});
+
+test('a route-filtered board skips the line', async ({ page }) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await stubApi(page);
+  await page.goto('/board.html?from=Ella&to=Mirissa');
+  await expect(page.locator('.rw[data-code="FO-1"]')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('#board-grid .rw-momentum')).toHaveCount(0);
+});
