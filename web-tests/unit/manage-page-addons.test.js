@@ -13,9 +13,15 @@ function loadFactsOf() {
   const m = html.match(/function factsOf\(v\)\{[\s\S]*?\n  \}/);
   if (!m) throw new Error('factsOf(v) not found in manage.html');
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const real = (name) => {
+    const f = html.match(new RegExp(`function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n  \\}`));
+    if (!f) throw new Error(`${name} not found in manage.html`);
+    // eslint-disable-next-line no-new-func
+    return new Function('return (' + f[0] + ')')();
+  };
   // eslint-disable-next-line no-new-func
-  return new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'return (' + m[0] + ')')(
-    esc, () => [{}], (d) => d, (v) => v,
+  return new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'return (' + m[0] + ')')(
+    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'),
   );
 }
 const factsOf = loadFactsOf();
@@ -56,5 +62,23 @@ describe('manage card names the local road the customer chose', () => {
 
   it('escapes the road', () => {
     expect(factsOf({ ...view, road: '<img src=x>' })).not.toContain('<img');
+  });
+});
+
+// factsOf now formats the time (fmtTime) and names it "Landing time" on an airport pickup (isAirport).
+describe('manage card time row', () => {
+  it('prints a 12-hour pick-up time in Sri Lanka time', () => {
+    const html = factsOf({ ...view, from: 'Kandy', time: '09:00' });
+    expect(html).toContain('<span class="k">Pick-up time</span><span class="v">9:00 am<small>Sri Lanka time</small></span>');
+  });
+  it('calls it Landing time on an airport pickup', () => {
+    expect(factsOf({ ...view, from: 'Colombo Airport (CMB)', time: '09:00' })).toContain('<span class="k">Landing time</span>');
+  });
+  it('flags a missing value', () => {
+    expect(factsOf({ ...view, from: 'Kandy', time: 'to confirm' })).toContain('<span class="need">Not set yet</span>');
+  });
+  it('says the team set the date, never "you"', () => {
+    expect(factsOf({ ...view, from: 'Kandy', scheduleSetBy: 'staff' })).toContain('set by our team');
+    expect(factsOf({ ...view, from: 'Kandy', scheduleSetBy: 'customer' })).not.toMatch(/set by/);
   });
 });

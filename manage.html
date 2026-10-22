@@ -35,6 +35,8 @@
   .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
   .tot.tot-disc .v{color:var(--accent-deep)}
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
+  /* A blank pickup date/time on the card — something still to do (Phase 4). */
+  .fact .v .need{color:#96631a;background:#fbf0d8;border-radius:99px;padding:2px 9px;font-size:.74rem;font-weight:800}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -227,6 +229,53 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (/car/i.test(v)) return 'Private car';
     return String(v).charAt(0).toUpperCase() + String(v).slice(1);
   }
+  // ---- Pickup date/time, set once by the customer (dateless capture Phase 4) ----
+  // An airport pickup is asked for its LANDING time (owner, 2026-10-21) — same test as payPageCopy.ts.
+  function isAirport(v){
+    return /airport|cmb|katunayake/i.test(String((v && v.from) || ''));
+  }
+  // booking.js:1010 — the booking page's own format, so a customer sees the same "9:00 am" twice.
+  function fmtTime(t){
+    var h = +t.slice(0, 2);
+    return ((h + 11) % 12 + 1) + ':' + t.slice(3, 5) + ' ' + (h < 12 ? 'am' : 'pm');
+  }
+  // booking.js:1017 — the booking page's slot labels, verbatim.
+  function slotLabel(h){
+    return h < 5 ? 'Night pickup' : (h < 8 ? 'Early start' : (h < 12 ? 'Morning pickup' : (h < 17 ? 'Afternoon pickup' : (h < 20 ? 'Evening pickup' : 'Night pickup'))));
+  }
+  // What the card asks for; null = no card. Only a paid single transfer with a blank is editable here
+  // (the server's SCHEDULE_EDITABLE_STATUSES + mode check, mirrored).
+  function pickupNeeds(v){
+    if (!v || v.mode !== 'single' || (v.status !== 'paid' && v.status !== 'confirmed')) return null;
+    var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
+    return noDate && noTime ? 'both' : noDate ? 'date' : noTime ? 'time' : null;
+  }
+  // Hotel pickups: the booking page's hourly list (site.js hourlyTimes). Airports: every 15 minutes,
+  // because a flight lands at 8:40, not on the hour (owner, 2026-10-21).
+  function timeChoices(v){
+    var air = isAirport(v), step = air ? 15 : 60, out = [];
+    for (var m = 0; m < 24 * 60; m += step) {
+      var h = Math.floor(m / 60), t = (h < 10 ? '0' : '') + h + ':' + (m % 60 < 10 ? '0' : '') + (m % 60);
+      out.push({ value: t, label: fmtTime(t) + (air ? '' : ' · ' + slotLabel(h)) });
+    }
+    return out;
+  }
+  // 'Wed 4 Nov' — built from UTC parts, like longDate().
+  function shortDate(iso){
+    var p = isoParts(iso);
+    if (!p) return '';
+    var d = new Date(Date.UTC(p.y, p.mo - 1, p.d));
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()] + ' ' + p.d + ' ' + MON3[p.mo - 1];
+  }
+  // The button says exactly what it will save — the set-once confirmation lives in its label —
+  // or, while it can't save, what is missing.
+  function saveLabel(v, date, time, noTime, soon){
+    var air = isAirport(v);
+    if (!date) return { text: 'Choose a date', ready: false };
+    if (soon) return { text: 'Too soon to set here', ready: false };
+    if (!time && !noTime) return { text: air ? 'Choose a landing time' : 'Choose a pick-up time', ready: false };
+    return { text: 'Save ' + (air ? 'landing ' : '') + shortDate(date) + ' · ' + (noTime ? 'time later' : fmtTime(time)), ready: true };
+  }
   // The booking's status is a DATABASE enum. A traveller gets told what it means for them —
   // never "payment_pending", which is what this page used to print at them.
   function statusChip(status, needsPricing){
@@ -277,7 +326,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   function subtitleOf(v){
     var legs = legsOf(v);
-    if (legs.length <= 1) return longDate(v.date) || 'Date to be confirmed';
+    if (legs.length <= 1) return longDate(v.date) || 'Pick-up date not set yet';
     return v.from + ' → ' + v.to;
   }
   function factsOf(v){
@@ -287,9 +336,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // the same line twice with no explanation.
     var sameDay = v.date && v.endDate && v.date === v.endDate;
     var rows = [
-      { k: 'Trip start', v: longDate(v.date) || 'To be confirmed' },
+      { k: 'Trip start', v: longDate(v.date) || 'To be confirmed', sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
       { k: 'Trip end', v: longDate(v.endDate) || 'To be confirmed', sub: sameDay ? 'same day' : '' },
-      { k: 'Pick-up time', v: (v.time && v.time !== 'to confirm') ? v.time : 'To be confirmed' },
+      { k: isAirport(v) ? 'Landing time' : 'Pick-up time',
+        v: (v.time && v.time !== 'to confirm') ? fmtTime(v.time) : 'To be confirmed',
+        sub: (v.time && v.time !== 'to confirm') ? 'Sri Lanka time' : '' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
       { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
@@ -304,6 +355,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
       var val = r.lines ? r.lines.map(function(l){ return esc(l); }).join('<br>') : esc(r.v);
+      // A blank is something to do, not a fact: say so plainly.
+      if (r.v === 'To be confirmed') val = '<span class="need">Not set yet</span>';
       return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + val
         + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span></div>';
     }).join('');
