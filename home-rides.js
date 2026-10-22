@@ -55,7 +55,7 @@
   function face(m, i) {
     return '<span class="hr-face" style="background:' + AV[i % AV.length] + '">' + esc((m.name || '·').slice(0, 2).toUpperCase()) +
       (m.photoUrl ? '<img src="' + esc(m.photoUrl) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') +
-      (m.flag ? '<span class="hr-flag">' + m.flag + '</span>' : '') + '</span>';
+      (m.flag ? '<span class="hr-flag">' + esc(m.flag) + '</span>' : '') + '</span>';
   }
   function card(L, now) {
     var togo = F.seatsToGo(L), closes = F.closesText(L.cutoffMs, now, MINUTES), bus = F.busTime(L.corridorId);
@@ -64,7 +64,7 @@
     return '<a class="hr-card" href="board.html?hl=' + encodeURIComponent(L.code) + '" data-ride="' + esc(L.code) + '">' +
       '<div class="hr-top"><h3 class="hr-route">' + esc(mainName(L.from)) + ' <span class="hr-arr" aria-hidden="true">→</span><span class="hr-sr"> to </span> ' + esc(mainName(L.to)) + '</h3>' +
         '<span class="hr-togo' + (togo.hot ? ' hot' : '') + '">' + esc(togo.text) + '</span></div>' +
-      '<div class="hr-who"><span class="hr-faces">' + faces + '</span><span class="hr-meta">' +
+      '<div class="hr-who"><span class="hr-faces" aria-hidden="true">' + faces + '</span><span class="hr-meta">' +
         '<span class="hr-kind"><b>Shared taxi</b> · ' + esc(day(L.date)) + ' · ' + esc(SLOT[L.slot] || SLOT.morning) + '</span>' +
         (closes ? '<span class="hr-close' + (closes.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '">' + esc(closes.text) + '</span>' : '') +
       '</span></div>' +
@@ -90,7 +90,7 @@
     .then(function (d) { if (!d || !Array.isArray(d.lists)) { sec.hidden = true; return; } render(d.lists); })
     .catch(function () { sec.hidden = true; });
 
-  // Minutes only, so once a minute is plenty.
+  // Minutes only — every 30 s keeps the minute shown never more than half a minute stale.
   setInterval(function () {
     var now = Date.now();
     list.querySelectorAll('[data-close]').forEach(function (el) {

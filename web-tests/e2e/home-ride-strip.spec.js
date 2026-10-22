@@ -9,7 +9,7 @@ const ride = (o) => ({ corridorId: 'ella-south', from: 'Ella', to: 'Mirissa', da
   seatPrice: 2800, status: 'gathering', note: null, lockedTime: null, cutoffAt: '2099-08-12T01:30:00.000Z', committed: 1,
   members: [{ firstName: 'Sam', country: 'CA', photoUrl: null }], ...o });
 const LISTS = [
-  ride({ code: 'HR-2' }),
+  ride({ code: 'HR-2', members: [{ firstName: 'Sam', country: 'CA', photoUrl: null }, { firstName: 'Ana', country: '<S>', photoUrl: null }] }),
   ride({ code: 'HR-1', corridorId: 'airport-cultural', from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', committed: 2,
     seatPrice: 2749, cutoffAt: '2099-08-10T09:12:00.000Z',
     members: [{ firstName: 'Tom', country: 'GB', photoUrl: null }, { firstName: 'Lea', country: 'FR', photoUrl: null }] }),
@@ -42,6 +42,10 @@ test('shows the open rides that need people, closest to running first, each a li
   await expect(first.locator('.hr-price')).toHaveText(/^\$27\.49 a seat · or 6h by bus$/);
   // the second closes in 12m 05s — the home page says minutes, never seconds
   await expect(cards.nth(1).locator('.hr-close')).toHaveText('Names close in 12m');
+  // a member's country is free text: a raw <S> would become a strike-through element, escaped it is text
+  const hr2 = page.locator('#home-rides .hr-card[data-ride="HR-2"]');
+  await expect(hr2.locator('.hr-flag').nth(1)).toHaveText('<S>');
+  await expect(hr2.locator('s')).toHaveCount(0);
 });
 
 test('never compares with our own private car, and keeps no button or link inside a card', async ({ page }) => {
@@ -56,12 +60,14 @@ test('never compares with our own private car, and keeps no button or link insid
 test('stays hidden when the board has nothing open', async ({ page }) => {
   await stubBoard(page, { lists: [LISTS[3], LISTS[4]] });
   await page.goto('/index.html');
+  await expect(page.locator('#home-rides')).toBeAttached();
   await expect(page.locator('#home-rides')).toBeHidden();
 });
 
 test('stays hidden when the board cannot be reached', async ({ page }) => {
   await stubBoard(page, { error: 'down' }, 500);
   await page.goto('/index.html');
+  await expect(page.locator('#home-rides')).toBeAttached();
   await expect(page.locator('#home-rides')).toBeHidden();
 });
 
