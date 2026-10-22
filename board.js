@@ -913,7 +913,9 @@
     var row = grid.querySelector('.rw[data-code="' + CSS.escape(HL_CODE) + '"]');
     if (!row) return;
     landed = true;
-    row.scrollIntoView({ block: 'center', behavior: 'instant' });
+    // Safari before 15.4 rejects behavior:'instant' with a TypeError; a throw here would turn the
+    // whole board into "Couldn't reach the board", so fall back to a plain scroll.
+    try { row.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (e) { row.scrollIntoView(); }
   }
 
   function render() {
