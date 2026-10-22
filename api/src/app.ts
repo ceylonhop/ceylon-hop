@@ -548,6 +548,7 @@ export function createApp(deps: AppDeps = {}) {
       experiences,
       experienceInterests,
       alerts,
+      email,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     }),
   );
