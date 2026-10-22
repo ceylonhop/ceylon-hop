@@ -86,6 +86,7 @@ test.describe('on a phone', () => {
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.locator('.rw-state .rw-close')).toBeVisible();
+    await expect(row.locator('.rw-state .rw-close')).toHaveText('Closes 12 Aug');
     await expect(row.locator('.rw-when .rw-close')).toBeHidden();
     const togo = await row.locator('.rw-togo').boundingBox();
     const close = await row.locator('.rw-state .rw-close').boundingBox();

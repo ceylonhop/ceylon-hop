@@ -54,7 +54,7 @@ test.describe('on a phone', () => {
     // the text itself cannot change — only its form could)
     await page.waitForTimeout(1200);
     await expect(row.locator('.rw-when .rw-close')).toHaveText('Closes in 9h 12m');
-    await expect(row.locator('.rw-state .rw-close')).toHaveText('Names close in 9h 12m');
+    await expect(row.locator('.rw-state .rw-close')).toHaveText('Closes in 9h 12m');
   });
 
   test('a ride further out gives its Sri Lanka closing date, calmly', async ({ page }) => {
@@ -87,6 +87,77 @@ test.describe('on a phone', () => {
     const pageOver = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(pageOver).toBe(false);
   });
+
+  test('the seats-to-go pill never runs into the actions, and the share button waits for the ride page', async ({ page }) => {
+    await open(page);
+    for (const code of ['FO-1', 'FO-2']) {
+      const row = page.locator(`.rw[data-code="${code}"]`);
+      await expect(row.locator('.rw-share')).toBeHidden();
+      const pill = await row.locator('.rw-togo').boundingBox();
+      // the visible action, not .rw-acts: that box is as wide as the price column above it
+      const cta = await row.locator('.rw-cta').boundingBox();
+      expect(pill.x + pill.width, `${code}: pill runs into the actions`).toBeLessThanOrEqual(cta.x);
+    }
+  });
+});
+
+// Signed in as Tom, who is on FO-1: "You're on it" and the closing line are two pieces, and the
+// separator between them belongs to the closing line — a phone hides that line, so a dot
+// hard-coded after "You're on it" would dangle there.
+async function openSignedInAsTom(page) {
+  const mine = { ...LISTS[0], members: [{ ...member('Tom', 'GB'), isYou: true }, member('Lea', 'FR')] };
+  await page.clock.setFixedTime(new Date(NOW));
+  await stubApi(page, [mine, ...LISTS.slice(1)]);
+  const json = (b) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+  await page.route((u) => isApiRequest(u), (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/board/me') return route.fulfill(json({ me: { firstName: 'Tom', country: 'GB', photo: null } }));
+    if (p === '/board/mine') return route.fulfill(json({ lists: [mine] }));
+    return route.fallback();
+  });
+  await page.goto('/board.html');
+  await expect(page.locator('.rw[data-code="FO-1"].mine')).toBeVisible({ timeout: 15000 });
+}
+
+test.describe('on your own ride, on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('says "You\'re on it" with no dangling dot', async ({ page }) => {
+    await openSignedInAsTom(page);
+    const row = page.locator('.rw[data-code="FO-1"]');
+    await expect(row).toHaveClass(/mine/);
+    await expect(row.locator('.rw-state small')).toHaveText(/^You're on it\s*$/, { useInnerText: true });
+    await expect(row.locator('.rw-state .rw-close')).toBeHidden();
+  });
+});
+
+test('on your own ride at 1280px the separator sits before the closing line', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openSignedInAsTom(page);
+  const close = page.locator('.rw[data-code="FO-1"] .rw-state .rw-close');
+  await expect(close).toBeVisible();
+  expect(await close.evaluate((el) => getComputedStyle(el, '::before').content)).toBe('" · "');
+});
+
+test('at 1280px the closing line under the pill is whole, not clipped', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page);
+  const row = page.locator('.rw[data-code="FO-1"]');
+  await expect(row.locator('.rw-state .rw-close')).toHaveText('Closes in 9h 12m');
+  const clipped = await row.locator('.rw-state small').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  expect(clipped).toBe(false);
+});
+
+test('the board still works if ride-fomo.js fails to load', async ({ page }) => {
+  await page.route('**/ride-fomo.js*', (r) => r.abort());
+  await page.clock.setFixedTime(new Date(NOW));
+  await stubApi(page);
+  await page.goto('/board.html');
+  const row = page.locator('.rw[data-code="FO-1"]');
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await expect(row.locator('.rw-state')).toContainText('2 of 3 in'); // rowState's own wording
+  await expect(page.locator('#board-grid .rw-momentum')).toHaveCount(0);
+  await expect(page.locator('.board-empty')).toHaveCount(0);
 });
 
 for (const width of [768, 1020, 1280]) {

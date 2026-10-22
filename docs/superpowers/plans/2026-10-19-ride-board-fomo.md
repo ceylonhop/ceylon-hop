@@ -1390,6 +1390,17 @@ Merging to `main` ships to **staging** only. Promote to prod is a separate, owne
 
 ---
 
+## PR 1 — post-review fixes (2026-10-21)
+
+- **F1 — one private-car figure:** the ride page's `.vs-strip` now prints `CHRideFomo.privateCarFare` (the catalogue's) instead of the hand-kept `ALT.priv`, which disagreed with the row ($78 vs $75 for Ella → Mirissa); `ALT` keeps only the bus time.
+- **F2 — no dangling "You're on it ·":** the separator moved from the text into a `.rw-you + .rw-close::before` rule, so phones (which hide the closing line) no longer show a trailing dot on your own rows.
+- **F3 — the board survives without `ride-fomo.js`:** one guarded `var F = window.CHRideFomo || { … }` fallback replaces four unguarded reads; rows fall back to `rowState`'s wording, the momentum line stays off, and a share sends the link alone.
+- **F4 — tests for the share step:** the start flow's native share sends the first-person text, and the join that filled the last seat offers no share (native button, share buttons, copy row all hidden).
+- **F5 — no row share button on phones:** hidden under 640px, where the "2 seats to go" pill has no room beside it; the ride page (whole-row tap) keeps "Share…" and WhatsApp. The pill test measures the visible Join button, not the `.rw-acts` box (which is as wide as the price column above it).
+- **F6 — short closing line at every width:** rows say "Closes in 9h 12m" / "Closes 12 Aug" in both copies, because the full "Names close in 9h 09m" clipped under the pill at 1280px; the share text keeps "Names close …".
+- **F7 — stale comment:** the one above `.d-share` now says it is hidden for any ride a friend can no longer join (`canShare`), not only closed ones.
+- **F8 — `shareRide` re-checks at click time:** `if (!L || !canShare(L)) return;`, so a row left open past its cutoff cannot share a dead ride.
+
 # PR 2 — Home "Travel with others?" (`feat/home-ride-strip`)
 
 **Start only after PR 1 is merged** (it needs `ride-fomo.js`). Design: the revised home section on the prototype, screens **C1 → C2** (2026-10-21). Owner's calls, fixed here:

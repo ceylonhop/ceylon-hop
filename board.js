@@ -34,10 +34,10 @@
     morning: { label: 'morning', range: 'departs 7–9 am', win: '7–9 am', opts: ['07:00', '08:00', '09:00'] },
     afternoon: { label: 'afternoon', range: 'departs 1–3 pm', win: '1–3 pm', opts: ['13:00', '14:00', '15:00'] }
   };
-  // Private-car fare + rough bus time per corridor — for the shared/private/bus price compare.
+  // Rough bus time per corridor — the third leg of the ride page's shared / private / bus strip.
   var ALT = {
-    'airport-cultural': { priv: 62, bus: '6h bus' }, 'hill-line': { priv: 68, bus: '7h bus + train' }, 'ella-east': { priv: 74, bus: '6h bus' },
-    'south-coast': { priv: 45, bus: '2.5h bus' }, 'yala-south': { priv: 52, bus: '5h bus' }, 'ella-south': { priv: 78, bus: '7h bus' }
+    'airport-cultural': { bus: '6h bus' }, 'hill-line': { bus: '7h bus + train' }, 'ella-east': { bus: '6h bus' },
+    'south-coast': { bus: '2.5h bus' }, 'yala-south': { bus: '5h bus' }, 'ella-south': { bus: '7h bus' }
   };
   var CORRIDOR_TIME = {
     'airport-cultural': '~4h door to door', 'hill-line': '~3.5h door to door', 'ella-east': '~3h door to door',
@@ -573,6 +573,14 @@
 
   var API_BASE = (window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com').replace(/\/$/, '');
   var CLIENT_ID = String(window.GOOGLE_CLIENT_ID || '').trim();
+  // ride-fomo.js carries the FOMO rules (seats to go, when names close, the private car, the
+  // share words). If it fails to load the board must still work: rows fall back to rowState's
+  // wording, the momentum line stays off, and a share sends the link alone. Never a thrown render.
+  var F = window.CHRideFomo || {
+    seatsToGo: function () { return null; }, closesText: function () { return null; },
+    privateCarFare: function () { return null; }, shareMessage: function () { return ''; },
+    momentum: function () { return { travellers: 0, closingThisWeek: 0, oneToGo: 0 }; }, momentumText: function () { return null; }
+  };
   // Share links resolve against whatever serves the unfurl page (this ride's own preview
   // tags). It used to be a hardcoded 'https://ceylonhop.com' — the old WordPress apex,
   // which 404s, so every shared link was dead.
@@ -805,7 +813,6 @@
 
   function rowHtml(L) {
     if (L.sched) return schedRowHtml(L);
-    var F = window.CHRideFomo;
     var mine = iAmOn(L);
     var st = rowState(L, mine);
     var dur = durationOf(L);
@@ -816,32 +823,29 @@
     // needs and when names close, shows its open seats, and what a private car would cost.
     // Locked, full and names-closed rows keep rowState's wording.
     var togo = st.cls === 'g' ? F.seatsToGo(L) : null;
-    var closes = togo ? F.closesText(L.cutoffMs, Date.now()) : null;
+    // The short form at every width ("Closes in 9h 12m", "Closes 12 Aug"): under the pill the
+    // seats column is 140px at 1280 and the full form clips. The share text keeps the full form.
+    var closes = togo ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : null;
     var priv = togo ? F.privateCarFare(L.fromId, L.toId, L.cost) : null;
     // The closing line is rendered twice: on the time line for phones (.rw-close-w — where the old
-    // "decided" date sat — in its short form, "Closes 12 Aug", since ~170px is all it gets beside
-    // the price) and in full under the pill for wider screens (.rw-close-s). CSS shows one per
-    // width; the ticker updates both through [data-close], keeping each one's form.
-    var closeSpan = function (where, short) {
+    // "decided" date sat) and under the pill for wider screens (.rw-close-s). CSS shows one per
+    // width; the ticker updates both through [data-close], in the short form (data-close-short).
+    var closeSpan = function (where) {
       // only a ride still gathering has a closing line — locked, full and names-closed rows keep
       // rowState's wording (closes is null for them, whatever their cutoff)
       if (!closes) return '';
-      var c = short ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : closes;
-      return c
-        ? '<span class="rw-close ' + where + (c.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '"' +
-            (short ? ' data-close-short=""' : '') + '>' + esc(c.text) + '</span>'
-        : '';
+      return '<span class="rw-close ' + where + (closes.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '" data-close-short="">' + esc(closes.text) + '</span>';
     };
     var seatHtml = togo
       ? '<span class="rw-state fomo"><b class="rw-togo' + (togo.hot ? ' hot' : '') + '">' + esc(togo.text) + '</b>' +
           (closes || mine
-            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it · </span>' : '') + closeSpan('rw-close-s') + '</small>'
+            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it</span>' : '') + closeSpan('rw-close-s') + '</small>'
             : '') +
         '</span>'
       : '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span>';
     return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
       ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + (togo ? togo.text : st.label)) + '">' +
-      '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w', true) + '</div>' +
+      '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w') + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
       '<div class="rw-seats"><span class="rw-faces">' + faces(L, togo ? togo.need : 0) + '</span>' + seatHtml + '</div>' +
@@ -892,7 +896,7 @@
   function momentumHtml() {
     var f = state.filter;
     if (f.mine || f.from !== 'all' || f.to !== 'all') return '';
-    var F = window.CHRideFomo, now = Date.now();
+    var now = Date.now();
     var t = F.momentumText(F.momentum(state.lists, now));
     if (!t) return '';
     var people = [];
@@ -1187,7 +1191,10 @@
     var myRoom = Math.min(cap - L.committed, MAX_SEATS - mySeatsOn(L));
     var sc = scarcityText(L);
     var s = slotWindow(L.slot);
-    var alt = ALT[L.corridorId] || { priv: 0, bus: '' };
+    var alt = ALT[L.corridorId] || { bus: '' };
+    // The private-car fare the rows and the share text quote (the catalogue's), never a
+    // hand-kept figure — the two disagreed on consecutive screens.
+    var altPriv = F.privateCarFare(L.fromId, L.toId, L.cost);
     var people = L.members.map(personEl).join('') +
       Array.apply(null, { length: slots }).map(function (_, i) {
         return '<div class="d-person slot" data-detail-join><span class="circ">＋</span><span class="hand">' + (i === 0 && !youIn ? 'you?' : 'a friend?') + '</span></div>';
@@ -1268,15 +1275,15 @@
       // Sharing is what fills a van, so the share block sits right under the actions. It used to
       // sit below the deadline, reached by an "Invite someone" button whose only job was to
       // scroll here — the same action twice, in a louder green than the primary.
-      // Not once names have closed: the link would land a friend on a ride that cannot take
-      // them, which is the same dead end this whole change removes, one step further away.
+      // Not on a ride a friend can no longer join — names closed, confirmed, or full (canShare): the
+      // link would land them on a dead end, the same one this block removes, one step further away.
       (!canShare(L) ? '' :
         '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
         '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
         '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
         '<button class="btn btn-ghost btn-sm" type="button" data-share-detail>Share…</button>' +
         '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>') +
-      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
+      (altPriv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · ' + money(altPriv) + ' private car' + (alt.bus ? ' · ' + esc(alt.bus) : '') + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
       (conf ? 'taxi locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
@@ -2078,7 +2085,6 @@
   function canShare(L) { return !!L && !L.confirmed && !isClosed(L) && L.committed < L.capacity; }
 
   function shareTextFor(L) {
-    var F = window.CHRideFomo;
     var togo = F.seatsToGo(L);
     var closes = F.closesText(L.cutoffMs, Date.now());
     var priv = F.privateCarFare(L.fromId, L.toId, L.cost);
@@ -2095,9 +2101,9 @@
 
   var shareSheet = document.getElementById('share-sheet');
   function openShareSheet(L, text, url, via) {
-    document.getElementById('ss-msg').textContent = text + ' ' + url;
+    document.getElementById('ss-msg').textContent = (text ? text + ' ' : '') + url;
     document.getElementById('ss-url').value = url;
-    document.getElementById('ss-wa').href = 'https://wa.me/?text=' + encodeURIComponent(text + ' ' + url);
+    document.getElementById('ss-wa').href = 'https://wa.me/?text=' + encodeURIComponent((text ? text + ' ' : '') + url);
     document.getElementById('ss-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text);
     document.getElementById('ss-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
     // GA4 `method` values are dimension values once the owner builds the tag — full names, like
@@ -2122,7 +2128,7 @@
   shareSheet.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeShareSheet(); });
 
   function shareRide(L, via) {
-    if (!L) return;
+    if (!L || !canShare(L)) return;
     var url = shareUrlFor(L.code), text = shareTextFor(L);
     if (navigator.share) {
       navigator.share({ title: L.from + ' → ' + L.to + ' · shared taxi', text: text, url: url })
@@ -2326,7 +2332,7 @@
       // FOMO rows' "Names close in …" (plan 2026-10-19-ride-board-fomo)
       var now = Date.now();
       document.querySelectorAll('[data-close]').forEach(function (el) {
-        var c = window.CHRideFomo.closesText(+el.getAttribute('data-close'), now, { short: el.hasAttribute('data-close-short') });
+        var c = F.closesText(+el.getAttribute('data-close'), now, { short: el.hasAttribute('data-close-short') });
         if (!c) return;
         if (el.textContent !== c.text) el.textContent = c.text;
         el.classList.toggle('urgent', c.urgent);

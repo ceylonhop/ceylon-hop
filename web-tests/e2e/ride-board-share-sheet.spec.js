@@ -92,4 +92,8 @@ test("the ride page's WhatsApp carries the same message, and a Share… button",
   expect(wa).toContain('1 seat left to make it run');
   expect(wa).toContain('/r/SH-1');
   await expect(page.locator('.d-share [data-share-detail]')).toBeVisible();
+  // one private-car figure: the strip on the ride page quotes the same number as the row
+  const rowVs = await page.locator('.rw[data-code="SH-1"] .rw-vs').textContent();   // "vs $75 private car"
+  const fare = rowVs.match(/\$\d+(\.\d{2})?/)[0];
+  await expect(page.locator('.vs-strip')).toContainText(`${fare} private car`);
 });
