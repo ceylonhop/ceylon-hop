@@ -37,6 +37,35 @@
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
   /* A blank pickup date/time on the card — something still to do (Phase 4). */
   .fact .v .need{color:#96631a;background:#fbf0d8;border-radius:99px;padding:2px 9px;font-size:.74rem;font-weight:800}
+  /* The pickup card (dateless capture Phase 4): one thing left to do, above the ticket. */
+  .pk{background:var(--paper);border:1px solid var(--warn-line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:16px 18px;margin:0 0 14px;scroll-margin-top:16px}
+  .pk-top{display:flex;gap:12px;align-items:flex-start}
+  .pk-ic{width:36px;height:36px;border-radius:50%;background:var(--warn-bg);color:#c98a1a;display:grid;place-items:center;flex:none}
+  .pk-ic svg{width:20px;height:20px}
+  .pk h2{font-family:var(--display);font-weight:700;font-size:1.2rem;line-height:1.15;margin:2px 0 4px}
+  .pk p{font-size:.84rem;line-height:1.5;color:var(--ink-soft);margin:0}
+  .pk .btn{width:100%;margin-top:16px}
+  .pk .btn:disabled{background:var(--cream-deep);color:var(--ink-soft);box-shadow:none;cursor:default;transform:none}
+  .pk-fine{font-size:.74rem;color:var(--ink-soft);text-align:center;margin-top:9px}
+  .pk-fine a,.pk p a,.pk-err a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+  .pk-row{display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px}
+  .pk-lbl{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+  .pk-lbl i{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600}
+  .pk-chk{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;color:var(--ink-soft);cursor:pointer}
+  .pk-chk input{width:16px;height:16px;accent-color:var(--btn-accent)}
+  .pk-fixed{font-weight:700;font-size:.95rem;padding:.72rem .8rem;border:1.5px dashed var(--line);border-radius:10px;background:var(--cream)}
+  .pk-fixed small{font-weight:600;color:var(--ink-soft);font-size:.74rem;margin-left:6px}
+  .pk select{width:100%;padding:.72rem .8rem;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
+  .pk-pill{display:flex;align-items:center;gap:.5rem;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;padding:.72rem .8rem;font-size:.84rem;color:var(--warn)}
+  /* .pk-pill and .pk select set a display, so [hidden] has to be said. */
+  .pk-pill[hidden],.pk select[hidden],.pk-err[hidden]{display:none}
+  .pk-err{margin-top:12px;padding:10px 13px;border-radius:12px;background:#fdecea;border:1px solid #f4c7c0;color:#b23214;font-size:.82rem;font-weight:600;line-height:1.45}
+  .pk-later{display:block;width:100%;background:none;border:0;margin-top:4px;font:700 .82rem var(--body);color:var(--ink-soft);cursor:pointer;padding:6px}
+  .pk.ok{border-color:var(--ok-line);background:var(--ok-bg)}
+  .pk.ok .pk-ic{background:#fff;color:var(--ok)}
+  .pk.ok h2{color:var(--ok)}
+  .pk.info{border-color:var(--pc-line);background:var(--pc-sky)}
+  .pk.info .pk-ic{background:#fff;color:var(--accent-deep)}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -61,6 +90,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
 <script src="checkout-handoff.js?v=13d6bf1c9f"></script>
+<script src="datepicker.js?v=dffb97f9e8"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
      payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
@@ -276,6 +306,105 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!time && !noTime) return { text: air ? 'Choose a landing time' : 'Choose a pick-up time', ready: false };
     return { text: 'Save ' + (air ? 'landing ' : '') + shortDate(date) + ' · ' + (noTime ? 'time later' : fmtTime(time)), ready: true };
   }
+  var IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/></svg>';
+  var IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17h18M5.5 13.5l3.2-.9L6 7.5l1.6-.5 5 4.3 4.6-1.3a1.6 1.6 0 0 1 .9 3.1L6.6 16"/></svg>';
+  var IC_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8.5 12.5l2.4 2.4 4.8-5"/><circle cx="12" cy="12" r="9"/></svg>';
+  var IC_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
+  var WA_LINK = '<a href="https://wa.me/94779669662" target="_blank" rel="noopener">WhatsApp us</a>';
+  var cardMode = null; // null | 'open' | 'saved' | 'conflict'
+  var cardFail = false;
+  // 12 h notice in Sri Lanka time (UTC+5:30), as booking.js and the server's isTooSoonPrivate do.
+  // The server re-checks; this only stops the button offering what will be refused.
+  function tooSoon(iso, time){
+    var p = isoParts(iso); if (!p) return false;
+    var q = (time || '23:59').split(':').map(Number);
+    return Date.UTC(p.y, p.mo - 1, p.d, q[0], q[1]) - 330 * 60000 - Date.now() < 12 * 3600000;
+  }
+  function pickupCard(v){
+    var air = isAirport(v), icon = air ? IC_PLANE : IC_CLOCK;
+    if (cardMode === 'saved') return '<div class="pk ok" id="pickup"><div class="pk-top"><span class="pk-ic">' + IC_OK + '</span><div>'
+      + '<h2>Pick-up set</h2><p><b>' + esc(shortDate(v.date)) + (v.time && v.time !== 'to confirm' ? ' · ' + esc(fmtTime(v.time)) + '</b> Sri Lanka time' : '</b>, time to follow')
+      + '. We’ve emailed you a copy.</p><p style="margin-top:6px">Need to change it? ' + WA_LINK + '.</p></div></div></div>';
+    if (cardMode === 'conflict') return '<div class="pk info" id="pickup"><div class="pk-top"><span class="pk-ic">' + IC_INFO + '</span><div>'
+      + '<h2>Our team has already set your pick-up</h2><p><b>' + esc(shortDate(v.date))
+      + (v.time && v.time !== 'to confirm' ? ' · ' + esc(fmtTime(v.time)) : '') + '</b> Sri Lanka time, so we didn’t save yours.</p>'
+      + '<p style="margin-top:6px">Not right? ' + WA_LINK + ' and we’ll fix it.</p></div></div></div>';
+    var needs = pickupNeeds(v);
+    if (!needs) return '';
+    if (needs !== 'time' && cardMode !== 'open') return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
+      + '<h2>' + (air ? 'Add your landing date &amp; time' : 'Add your pick-up date &amp; time') + '</h2>'
+      + '<p>You booked with “Decide later”. Add it here once you know, and we’ll book your driver.</p></div></div>'
+      + '<button class="btn btn-primary" id="pkopen">Add date &amp; time</button>'
+      + '<div class="pk-fine">You can set this once. To change it afterwards, ' + WA_LINK + '.</div></div>';
+    var timeOnly = needs === 'time';
+    var opts = '<option value="" selected disabled>' + (air ? 'Choose a landing time…' : 'Choose a pick-up time…') + '</option>'
+      + timeChoices(v).map(function(c){ return '<option value="' + c.value + '">' + esc(c.label) + '</option>'; }).join('');
+    return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
+      + '<h2>' + (timeOnly ? (air ? 'Add your landing time' : 'Add your pick-up time') : (air ? 'When does your flight land?' : 'When should we pick you up?')) + '</h2>'
+      + '<p>' + (air ? 'Your driver will be waiting at arrivals in ' + esc(v.from) + '.' : 'From ' + esc(v.from) + ', any time of day.') + '</p></div></div>'
+      + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing date' : 'Pick-up date') + '</span></div>'
+      + (timeOnly
+          ? '<div class="pk-fixed">' + esc(shortDate(v.date)) + (v.scheduleSetBy === 'staff' ? '<small>set by our team</small>' : '') + '</div>'
+          : '<input type="date" id="pkdate" data-placeholder="Choose a date" aria-label="' + (air ? 'Landing date' : 'Pick-up date') + '">')
+      + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing time' : 'Pick-up time') + ' <i>· Sri Lanka time</i></span>'
+      + (timeOnly ? '' : '<label class="pk-chk"><input type="checkbox" id="pkdk"> Don’t know yet</label>') + '</div>'
+      + '<select id="pktime" aria-label="' + (air ? 'Landing time' : 'Pick-up time') + '">' + opts + '</select>'
+      + '<div class="pk-pill" id="pkpill" hidden>No time yet. You can add it here later.</div>'
+      + '<div class="pk-err" id="pkerr" role="alert" hidden>That’s less than 12 hours away, too soon to set here. ' + WA_LINK + ' and we’ll do our best to fit you in.</div>'
+      + '<div class="pk-err" id="pkfail" role="alert"' + (cardFail ? '' : ' hidden') + '>We couldn’t save that, so nothing has changed. Try again, or ' + WA_LINK + '.</div>'
+      + '<button class="btn btn-primary" id="pksave" disabled>Choose a date</button>'
+      + '<div class="pk-fine">Once saved, changes go through ' + WA_LINK + '.</div>'
+      + (timeOnly ? '' : '<button class="pk-later" id="pklater">Not now</button>') + '</div>';
+  }
+  function wirePickup(v){
+    var open = document.getElementById('pkopen');
+    if (open) open.addEventListener('click', function(){ cardMode = 'open'; render(v); focusCard(); });
+    var later = document.getElementById('pklater');
+    if (later) later.addEventListener('click', function(){ cardMode = null; render(v); });
+    var dIn = document.getElementById('pkdate'), tIn = document.getElementById('pktime');
+    if (!tIn) return;
+    if (dIn && window.enhanceDate) window.enhanceDate(dIn);
+    var dk = document.getElementById('pkdk'), pill = document.getElementById('pkpill');
+    var err = document.getElementById('pkerr'), fail = document.getElementById('pkfail'), save = document.getElementById('pksave');
+    function state(){ return { date: dIn ? dIn.value : v.date, time: tIn.value, noTime: !!(dk && dk.checked) }; }
+    function upd(){
+      var s = state();
+      tIn.hidden = s.noTime; pill.hidden = !s.noTime;
+      var soon = !!s.date && tooSoon(s.date, s.noTime ? '' : s.time);
+      err.hidden = !soon;
+      var label = saveLabel(v, s.date, s.time, s.noTime, soon);
+      save.textContent = label.text; save.disabled = !label.ready;
+    }
+    [dIn, tIn, dk].forEach(function(el){ if (el) el.addEventListener('change', function(){ fail.hidden = true; upd(); }); });
+    upd();
+    save.addEventListener('click', function(){
+      var s = state();
+      save.disabled = true;
+      fetch(A + '/bookings/view/schedule', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t },
+        // Send only what this card fills: a date ops already set goes back unchanged (set-once).
+        body: JSON.stringify({ date: dIn ? s.date : v.date, time: s.noTime ? null : s.time }),
+      }).then(function(res){
+        return res.json().catch(function(){ return {}; }).then(function(b){ return { status: res.status, body: b }; });
+      }).then(function(r){
+        if (r.status === 200 && r.body.view) { cardMode = 'saved'; cardFail = false; render(r.body.view); focusCard(); return; }
+        if (r.status === 409 && r.body.current) {
+          cardMode = 'conflict';
+          render(Object.assign({}, v, { date: r.body.current.date || 'to confirm', endDate: r.body.current.date || 'to confirm', time: r.body.current.time || 'to confirm', scheduleSetBy: 'staff' }));
+          return;
+        }
+        // The server's clock wins over the page's: show the 12 h message even if upd() thought it fine.
+        if (r.status === 400 && (r.body.error === 'too_soon' || r.body.error === 'past')) { upd(); err.hidden = false; save.disabled = true; return; }
+        throw new Error('schedule ' + r.status);
+      }).catch(function(e){
+        report('bookings/view/schedule failed', e);
+        fail.hidden = false; save.disabled = false;
+      });
+    });
+  }
+  // After a re-render, keep the card where the customer is looking.
+  function focusCard(){ var el = document.getElementById('pickup'); if (el) el.scrollIntoView({ block: 'start' }); }
   // The booking's status is a DATABASE enum. A traveller gets told what it means for them —
   // never "payment_pending", which is what this page used to print at them.
   function statusChip(status, needsPricing){
@@ -401,6 +530,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
       + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
+      + pickupCard(v)
       + '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
       + statusChip(v.status, v.needsPricing) + '</div>'
@@ -442,6 +572,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
     html += '</div></div>' + waLine();
     paint(html);
+    wirePickup(v);
+    if (location.hash === '#pickup' && cardMode === 'open') focusCard();
     var btn = document.getElementById('paybtn');
     if (btn) btn.addEventListener('click', function(){
       track('begin_checkout', {
@@ -697,6 +829,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   if (rt) { renderReturn(); return; }
 
   if (!t) { track('manage_link_invalid', { reason: 'no_token' }); errView('This link isn’t valid.'); return; }
+  // The reminder email's main button links here with #pickup: land with the form already open.
+  if (location.hash === '#pickup') cardMode = 'open';
   fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(res){
     if (res.status === 401) { track('manage_link_invalid', { reason: 'unauthorised' }); throw new Error('This link isn’t valid or has changed.'); }
     if (res.status === 404) { track('manage_link_invalid', { reason: 'not_found' }); throw new Error('We couldn’t find this booking.'); }
