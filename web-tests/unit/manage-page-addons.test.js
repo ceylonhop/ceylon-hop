@@ -19,12 +19,22 @@ function loadFactsOf() {
     // eslint-disable-next-line no-new-func
     return new Function('return (' + f[0] + ')')();
   };
+  // isoParts is a one-line function in the page, so it has its own extractor.
+  const oneLine = html.match(/function isoParts\([^)]*\)\{[^\n]*\}/);
+  if (!oneLine) throw new Error('isoParts not found in manage.html');
   // eslint-disable-next-line no-new-func
-  return new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'pickupNeeds', 'return (' + m[0] + ')')(
-    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'), real('pickupNeeds'),
+  const isoParts = new Function('return (' + oneLine[0] + ')')();
+  // eslint-disable-next-line no-new-func
+  const factsOf = new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'pickupNeeds', 'isoParts', 'return (' + m[0] + ')')(
+    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'), real('pickupNeeds'), isoParts,
   );
+  const sub = html.match(/function subtitleOf\(v\)\{[\s\S]*?\n  \}/);
+  if (!sub) throw new Error('subtitleOf(v) not found in manage.html');
+  // eslint-disable-next-line no-new-func
+  const subtitleOf = new Function('legsOf', 'longDate', 'isoParts', 'return (' + sub[0] + ')')(() => [{}], (d) => d, isoParts);
+  return { factsOf, subtitleOf };
 }
-const factsOf = loadFactsOf();
+const { factsOf, subtitleOf } = loadFactsOf();
 const day = futureIsoDate();
 const view = { date: day, endDate: day, time: '09:00', travellers: 2, vehicleType: 'car' };
 
@@ -98,5 +108,24 @@ describe('manage card time row', () => {
   it('says the team set the date, never "you"', () => {
     expect(factsOf({ ...view, from: 'Kandy', scheduleSetBy: 'staff' })).toContain('set by our team');
     expect(factsOf({ ...view, from: 'Kandy', scheduleSetBy: 'customer' })).not.toMatch(/set by/);
+  });
+});
+
+// The API sends the string 'to confirm' (never '') for a blank date — bookings.ts:231-236. Raw, it
+// would print lowercase on the card, since longDate() hands any non-ISO string straight back.
+describe('a dateless booking never prints the raw "to confirm"', () => {
+  const dateless = { ...view, mode: 'single', status: 'paid', from: 'Kandy', date: 'to confirm', endDate: 'to confirm' };
+  it('the subtitle says the pick-up date is not set yet', () => {
+    expect(subtitleOf(dateless)).toBe('Pick-up date not set yet');
+    expect(subtitleOf({ ...view })).toBe(day);
+  });
+  it('Trip end reads plain "To be confirmed" — no chip, no "same day"', () => {
+    const html = factsOf(dateless);
+    expect(html).toContain('<span class="k">Trip end</span><span class="v">To be confirmed</span>');
+    expect(html).not.toContain('same day');
+    expect(html).not.toMatch(/to confirm[^e]/);
+  });
+  it('still says "same day" for a real one-day trip', () => {
+    expect(factsOf({ ...view, from: 'Kandy' })).toContain('same day');
   });
 });

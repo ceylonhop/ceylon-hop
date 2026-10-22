@@ -326,7 +326,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   function subtitleOf(v){
     var legs = legsOf(v);
-    if (legs.length <= 1) return longDate(v.date) || 'Pick-up date not set yet';
+    if (legs.length <= 1) return isoParts(v.date) ? longDate(v.date) : 'Pick-up date not set yet';
     return v.from + ' → ' + v.to;
   }
   function factsOf(v){
@@ -334,14 +334,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var stopCount = legs.length + 1;
     // A one-day trip genuinely starts and ends on the same date; say so rather than printing
     // the same line twice with no explanation.
-    var sameDay = v.date && v.endDate && v.date === v.endDate;
+    var sameDay = isoParts(v.date) && v.date === v.endDate;
     // The API sends 'to confirm' for a blank date/time. Only where the customer can fill the blank
     // (pickupNeeds non-null) does it read as a to-do chip; elsewhere it stays plain "To be confirmed".
     var needs = pickupNeeds(v);
     var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
     var rows = [
       { k: 'Trip start', v: noDate ? 'To be confirmed' : longDate(v.date), blank: noDate, sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
-      { k: 'Trip end', v: longDate(v.endDate) || 'To be confirmed', sub: sameDay ? 'same day' : '' },
+      { k: 'Trip end', v: isoParts(v.endDate) ? longDate(v.endDate) : 'To be confirmed', sub: sameDay ? 'same day' : '' },
       { k: isAirport(v) ? 'Landing time' : 'Pick-up time',
         v: noTime ? 'To be confirmed' : fmtTime(v.time), blank: noTime,
         sub: noTime ? '' : 'Sri Lanka time' },
