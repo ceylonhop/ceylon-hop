@@ -74,7 +74,7 @@
 
   // Remaining-time formatter. Takes remaining milliseconds (a duration, not a
   // timestamp) so it is pure. Clamps at zero.
-  function fmtCountdown(ms) { return window.CHRideFomo.countdown(ms); }
+  function fmtCountdown(ms) { var C = window.CHRideFomo; return C ? C.countdown(ms) : ''; }
 
   // The departure window for a slot key ('morning' | 'afternoon'); defaults to morning.
   function slotWindow(slot) { return SLOTS[slot] || SLOTS.morning; }
