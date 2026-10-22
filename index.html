@@ -537,9 +537,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 /* ---------- travel with others? (plan 2026-10-19-ride-board-fomo, PR 2) ----------
    Real open shared-taxi rides from the ride board, stacked. Page-local hr- names: a bare class
-   here collides with the shared chrome (#983). No real card is shorter than a skeleton (both floor
-   at 142px), so the swap never pulls the page up; more rides than skeletons grow the section below
-   it, and an empty board collapses it. */
+   here collides with the shared chrome (#983). Each card is at least as tall as a skeleton (both
+   floor at 142px), so a card never takes less room than the skeleton it replaces — but the number
+   of cards is not the number of skeletons: one ride on a phone shrinks the section, two or more
+   grow it, and an empty board collapses it. */
 .hr-sec{padding:34px 0 30px}
 .hr-title{margin:6px 0 0;font-size:clamp(1.45rem,2.6vw,2rem)}
 .hr-lead{margin:8px 0 0;max-width:52ch;color:var(--ink-soft);font-size:.95rem;line-height:1.5}
@@ -674,8 +675,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <!-- TRAVEL WITH OTHERS? (plan 2026-10-19-ride-board-fomo, PR 2) — filled by home-rides.js from GET /board.
      Starts hidden for no-JS / api=off; the inline script below shows it BEFORE first paint with two
-     skeleton cards no real card is shorter than, so the swap never pulls the page up. More than two
-     rides grow the section below it; nothing open collapses it. -->
+     skeleton cards. A card is never shorter than a skeleton, but the count differs: one ride on a
+     phone shrinks the section, two or more grow it, and nothing open collapses it. -->
 <section class="hr-sec" id="home-rides" aria-labelledby="hr-title" hidden>
   <div class="wrap">
     <span class="eyebrow">Shared taxi &middot; The ride board</span>
