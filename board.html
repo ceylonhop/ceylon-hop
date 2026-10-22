@@ -188,9 +188,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-state.g b{color:var(--warn)}
 .rw-state.l b{color:var(--ok)}
 .rw-state.f b{color:var(--ink-soft)}
+/* FOMO rows (plan 2026-10-19-ride-board-fomo): a gathering ride says how many seats it still
+   needs and when names close, and leaves its open seats visible as dashed faces. The state
+   has no g/l/f class, so .rw-state.g b's amber never reaches the pill. */
+.rw-state.fomo{gap:3px}
+.rw-togo{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:2px 9px;border-radius:999px;
+  background:var(--pc-saffron);color:#7a4f00;font-size:.78rem;font-weight:800;white-space:nowrap}
+.rw-togo::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--saffron);flex:none}
+.rw-togo.hot{background:#fde4e0;color:#B01E0B}
+.rw-togo.hot::before{background:var(--tomato);animation:rwPulse 1.6s ease-out infinite}
+@keyframes rwPulse{0%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),.5)}70%{box-shadow:0 0 0 7px rgba(var(--cta-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),0)}}
+@media (prefers-reduced-motion:reduce){.rw-togo.hot::before{animation:none}}
+.rw-close.urgent{color:#C82511;font-weight:700}
+.rw-close-w{display:none} /* the time-line copy is for phones (see the 640px block) */
+/* outranks .avatar.xs.stack (later in this sheet, same 3 classes), which would repaint the dashed border solid */
+.rw-faces .avatar.xs.rw-open{background:var(--paper);color:#8f897a;border:1.5px dashed #b9b3a3;box-shadow:none;font-size:.8rem}
+.rw-fare{display:block}
+.rw-vs{display:block;font-size:.72rem;color:var(--ink-soft)}
 .rw-price{text-align:right;white-space:nowrap;font-size:.8rem;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 .rw-price b{font-family:var(--display);font-weight:700;font-size:1.1rem;color:var(--ink)}
-.rw .rw-cta{justify-self:end;white-space:nowrap}
+.rw-acts{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.rw .rw-cta{white-space:nowrap}
 .rw-invite{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 24px;
   border-top:1px solid var(--line);background:var(--cream);font-size:.9rem;color:var(--ink-soft)}
 .rw-invite p{margin:0}
@@ -198,7 +216,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .filters .f-start{margin-left:4px}
 @media(max-width:1020px){
   .rw{grid-template-columns:88px minmax(0,1fr) 96px 156px;grid-template-areas:"when route price cta" "when seats price cta";row-gap:8px}
-  .rw-when{grid-area:when}.rw-route{grid-area:route}.rw-seats{grid-area:seats}.rw-price{grid-area:price}.rw .rw-cta{grid-area:cta}
+  .rw-when{grid-area:when}.rw-route{grid-area:route}.rw-seats{grid-area:seats}.rw-price{grid-area:price}.rw-acts{grid-area:cta}
 }
 /* the sign-up avatars and goal dots are also drawn by the ride sheet */
 /* four little dots = the goal */
@@ -626,6 +644,14 @@ body.detail-open .detail{display:block}
   .rw-places{font-size:1.05rem}
   .rw-state{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:4px}
   .rw-state small::before{content:"· "}
+  /* FOMO: beside the faces only the pill fits, so the closing line moves to the time line (where
+     the old "decided" date sat) and the duration gives way to it, as it did before */
+  .rw-state.fomo{flex-direction:column;align-items:flex-start;row-gap:3px}
+  .rw-state.fomo small::before{content:none}
+  .rw-state.fomo .rw-close-s{display:none}
+  .rw-close-w{display:inline}
+  .rw-close-w::before{content:" · "}
+  .rw-when.has-close .rw-dur{display:none}
   /* 32px, not 44: the whole row is the tap target and opens the same sheet */
   .rw .rw-cta,.rw .rw-cta:hover{background:none;border:0;box-shadow:none;color:var(--accent-deep);padding:4px 0;min-height:32px;transform:none}
   .rw .rw-cta::after{content:" ›"}
@@ -649,9 +675,6 @@ body.detail-open .detail{display:block}
 .lg-faces i+i{margin-left:-6px}
 .rw-rel{font-family:var(--body);font-size:.72rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--teal-deep);margin-left:.5rem}
 .rw-rel.soon{color:var(--cta)}
-.rw-dec-w{display:none}
-/* its own line under "needs 1 more": beside it, a laptop row cut it to "decided …" */
-.rw-dec-s{display:block}
 .rws{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
   padding:16px 24px;border-top:1px solid var(--line);text-decoration:none;color:inherit;transition:background .15s}
 .rw-day-h+.rws{border-top:0}
@@ -695,12 +718,8 @@ body.detail-open .detail{display:block}
   .rws .rw-price b{font-size:.96rem}
   .rws-go{grid-area:go;font-size:0}
   .rws-go::after{content:"›";font-size:1.3rem}
-  /* the decided date rides on the time line, where there is room; the seat line stays one line */
-  .rw-dec-w{display:inline}
-  .rw-dec-s{display:none}
-  /* ...and makes room for itself: a gathering row's duration (it is in the ride sheet) and the
-     price's "each" give way, so the time line stays one line down to a 360px phone */
-  .rw-when.has-dec .rw-dur,.rw-each{display:none}
+  /* the price's "each" gives way so the price stays one short line on a 360px phone */
+  .rw-each{display:none}
   .rws-more{display:grid;grid-template-columns:24px 1fr;gap:4px 10px;padding:12px 16px;align-items:start}
   .rws-more a{grid-column:2;margin:0}
 }
@@ -1038,6 +1057,7 @@ body.detail-open .detail{display:block}
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
-<script src="board.js?v=6fbf312094" defer></script>
+<script src="ride-fomo.js?v=61267ac10f" defer></script>
+<script src="board.js?v=34c0b9d425" defer></script>
 </body>
 </html>

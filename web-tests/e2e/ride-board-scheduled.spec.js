@@ -63,29 +63,33 @@ test.describe('on a phone', () => {
     expect(bg).not.toBe('rgba(0, 0, 0, 0)');
   });
 
-  test('a traveller ride says when it is decided, on the phone too', async ({ page }) => {
+  test('a traveller ride says when names close, on the phone too', async ({ page }) => {
     await stubApi(page);
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    // 20:00 UTC on the 11th is the 12th in Colombo; on a phone it rides on the time line
-    const dec = row.locator('.rw-dec-w');
-    await expect(dec).toBeVisible();
-    await expect(dec).toHaveText(' · decided Wed 12 Aug');
-    await expect(row.locator('.rw-dec-s')).toBeHidden();
-    // the whole line is on screen, not cut to "dec…"
+    // 20:00 UTC on the 11th is the 12th in Colombo — far enough out to be a date, not a clock.
+    // On a phone it rides on the time line (where the "decided" date used to), in its short form.
+    const close = row.locator('.rw-when .rw-close');
+    await expect(close).toBeVisible();
+    await expect(close).toHaveText('Closes 12 Aug');
+    await expect(row.locator('.rw-state .rw-close')).toBeHidden();
+    // the whole line is on screen, not cut to "Names cl…"
     const clipped = await row.locator('.rw-when').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     expect(clipped).toBe(false);
   });
 
-  test('on a laptop the decided date sits under the seat count instead', async ({ page }) => {
+  test('on a laptop the closing date sits under the seats to go instead', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await stubApi(page);
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.locator('.rw-dec-s')).toBeVisible();
-    await expect(row.locator('.rw-dec-w')).toBeHidden();
+    await expect(row.locator('.rw-state .rw-close')).toBeVisible();
+    await expect(row.locator('.rw-when .rw-close')).toBeHidden();
+    const togo = await row.locator('.rw-togo').boundingBox();
+    const close = await row.locator('.rw-state .rw-close').boundingBox();
+    expect(close.y).toBeGreaterThan(togo.y);
   });
 
   test('the board says the timetable keeps going past the two weeks it lists', async ({ page }) => {

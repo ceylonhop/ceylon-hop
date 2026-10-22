@@ -39,7 +39,7 @@ test('rides are grouped under day headings, in date order, each showing its 2-ho
   await expect(page.locator('.rw-group:has(.rw) .rw-day-h')).toHaveText(['Sat 15 Aug', 'Sun 16 Aug']);
   const first = page.locator('.rw-group:has(.rw)').first().locator('.rw');
   await expect(first.locator('.rw-when')).toHaveText([/7–9 am/, /1–3 pm/]);
-  await expect(page.locator('.rw[data-code="RW-1"] .rw-state')).toContainText('3 of 4 in');
+  await expect(page.locator('.rw[data-code="RW-1"] .rw-state')).toContainText('1 seat to go');
   await expect(page.locator('.rw[data-code="RW-1"] [data-view]')).toHaveText('Join');
   // no card-era markup survives
   await expect(page.locator('.lcard')).toHaveCount(0);
@@ -99,8 +99,10 @@ test('on a phone a ride stays a compact row, and Start a ride lives in the botto
     const row = page.locator(`.rw[data-code="${code}"]`);
     const h = (await row.boundingBox()).height;
     const route = (await row.locator('.rw-route').boundingBox()).height;
-    // 110: the price sits on the time line since the route took the full width (#622)
-    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(110);
+    // 135: a gathering ride now carries its seats-to-go pill beside the faces and the private-car
+    // line under the fare (plan 2026-10-19-ride-board-fomo), ~123px without the route; 110 was the
+    // plain two-line row. Still a row, not a card: a third line of anything would trip this.
+    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(135);
   }
   await expect(page.locator('#f-start')).toBeHidden();
   await expect(page.locator('#start-bar-btn')).toBeVisible();

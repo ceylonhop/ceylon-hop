@@ -371,6 +371,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `board.html` — script tag after `shared-day.js` (~line 1040); row CSS (~lines 186–203, 652–654, 620–633 and 694–703 on `origin/main` 96bb56e7)
 - Modify: `board.js` — `faces()` (~line 744), `rowHtml()` (~line 800), `startTicker()` (~line 2189)
+- Modify: `ride-fomo.js` (`closesText` gains `opts.short`), `web-tests/unit/ride-fomo.test.js`
 - Modify: `web-tests/e2e/ride-board-rows.spec.js:42`, `web-tests/e2e/ride-board-scheduled.spec.js:66-89`
 - Test: `web-tests/e2e/ride-board-fomo.spec.js` (new)
 
@@ -427,8 +428,10 @@ test.describe('on a phone', () => {
     const row = page.locator('.rw[data-code="FO-1"]');
     await expect(row.locator('.rw-togo')).toHaveText('1 seat to go');
     await expect(row.locator('.rw-togo')).toHaveClass(/hot/);
-    await expect(row.locator('.rw-close')).toHaveText('Names close in 9h 12m');
-    await expect(row.locator('.rw-close')).toHaveClass(/urgent/);
+    // on a phone the closing line rides on the time line, not under the pill — in its short form
+    await expect(row.locator('.rw-when .rw-close')).toHaveText('Closes in 9h 12m');
+    await expect(row.locator('.rw-when .rw-close')).toHaveClass(/urgent/);
+    await expect(row.locator('.rw-state .rw-close')).toBeHidden();
     await expect(row.locator('.rw-open')).toHaveCount(1);
     await expect(row.locator('.rw-vs')).toHaveText(/^vs \$\d+(\.\d{2})? private car$/);
   });
@@ -439,7 +442,7 @@ test.describe('on a phone', () => {
     await expect(row.locator('.rw-togo')).toHaveText('2 seats to go');
     await expect(row.locator('.rw-togo')).not.toHaveClass(/hot/);
     // 01:30 UTC on the 18th is 07:00 on the 18th in Colombo
-    await expect(row.locator('.rw-close')).toHaveText('Names close Tue 18 Aug');
+    await expect(row.locator('.rw-when .rw-close')).toHaveText('Closes 18 Aug');
     await expect(row.locator('.rw-open')).toHaveCount(2);
   });
 
@@ -497,6 +500,43 @@ to
 
 (Deferred scripts run in document order, so `window.CHRideFomo` exists before `board.js` runs. The `?v=` stamp is added in Step 9.)
 
+- [ ] **Step 3b: A short form of the closing line, for a phone's time line.** Beside the price, the time line has ~170 px; "7–9 am · Names close Wed 12 Aug" needs 225. First the failing test — append to `web-tests/unit/ride-fomo.test.js`:
+
+```js
+describe("closesText, short form for a phone's time line", () => {
+  it('says "Closes", drops the weekday, and keeps the clock', () => {
+    expect(F.closesText(NOW + 9 * H + 12 * 60000, NOW, { short: true })).toEqual({ text: 'Closes in 9h 12m', live: true, urgent: true });
+    expect(F.closesText(Date.parse('2099-08-14T20:00:00Z'), NOW, { short: true }).text).toBe('Closes 15 Aug');
+    expect(F.closesText(NOW - 1, NOW, { short: true }).text).toBe('Closed');
+  });
+});
+```
+
+Run `cd "$WT/web-tests" && npx vitest run unit/ride-fomo.test.js` — it fails on `'Names close in 9h 12m'` ≠ `'Closes in 9h 12m'`. Then in `ride-fomo.js` replace the `colomboDay` and `closesText` functions with:
+
+```js
+  // An instant → its Sri Lanka calendar date, "Fri 6 Nov" — or "6 Nov" where the weekday has no room.
+  function colomboDay(ms, short) {
+    var fmt = short ? { day: 'numeric', month: 'short', timeZone: 'UTC' } : { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' };
+    return new Date(ms + COLOMBO_OFFSET_MS).toLocaleDateString('en-GB', fmt);
+  }
+
+  // When names close: a running clock inside three days (red inside one), a Sri Lanka date
+  // further out. null with no cutoff to go on. `opts.short` is the phone's time-line form —
+  // "Closes 12 Aug" — where the full line does not fit beside the price.
+  function closesText(cutoffMs, nowMs, opts) {
+    if (!isFinite(cutoffMs)) return null;
+    var short = !!(opts && opts.short);
+    var lead = short ? 'Closes' : 'Names close';
+    var left = cutoffMs - nowMs;
+    if (left <= 0) return { text: short ? 'Closed' : 'Names closed', live: false, urgent: false };
+    if (left < LIVE_MS) return { text: lead + ' in ' + countdown(left), live: true, urgent: left < URGENT_MS };
+    return { text: lead + ' ' + colomboDay(cutoffMs, short), live: false, urgent: false };
+  }
+```
+
+Run the unit file again: `Tests  21 passed (21)`.
+
 - [ ] **Step 4: Open seats in `faces()`** — in `board.js`, replace
 
 ```js
@@ -544,18 +584,27 @@ with
     var togo = st.cls === 'g' ? F.seatsToGo(L) : null;
     var closes = togo ? F.closesText(L.cutoffMs, Date.now()) : null;
     var priv = togo ? F.privateCarFare(L.fromId, L.toId, L.cost) : null;
+    // The closing line is rendered twice: on the time line for phones (.rw-close-w — where the old
+    // "decided" date sat — in its short form, "Closes 12 Aug", since ~170px is all it gets beside
+    // the price) and in full under the pill for wider screens (.rw-close-s). CSS shows one per
+    // width; the ticker updates both through [data-close], keeping each one's form.
+    var closeSpan = function (where, short) {
+      var c = short ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : closes;
+      return c
+        ? '<span class="rw-close ' + where + (c.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '"' +
+            (short ? ' data-close-short=""' : '') + '>' + esc(c.text) + '</span>'
+        : '';
+    };
     var seatHtml = togo
       ? '<span class="rw-state fomo"><b class="rw-togo' + (togo.hot ? ' hot' : '') + '">' + esc(togo.text) + '</b>' +
           (closes || mine
-            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it · </span>' : '') +
-                (closes ? '<span class="rw-close' + (closes.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '">' + esc(closes.text) + '</span>' : '') +
-              '</small>'
+            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it · </span>' : '') + closeSpan('rw-close-s') + '</small>'
             : '') +
         '</span>'
       : '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span>';
     return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
       ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + (togo ? togo.text : st.label)) + '">' +
-      '<div class="rw-when">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + '</div>' +
+      '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w', true) + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
       '<div class="rw-seats"><span class="rw-faces">' + faces(L, togo ? togo.need : 0) + '</span>' + seatHtml + '</div>' +
@@ -587,7 +636,7 @@ with
       // FOMO rows' "Names close in …" (plan 2026-10-19-ride-board-fomo)
       var now = Date.now();
       document.querySelectorAll('[data-close]').forEach(function (el) {
-        var c = window.CHRideFomo.closesText(+el.getAttribute('data-close'), now);
+        var c = window.CHRideFomo.closesText(+el.getAttribute('data-close'), now, { short: el.hasAttribute('data-close-short') });
         if (!c) return;
         if (el.textContent !== c.text) el.textContent = c.text;
         el.classList.toggle('urgent', c.urgent);
@@ -612,6 +661,7 @@ with
 @keyframes rwPulse{0%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),.5)}70%{box-shadow:0 0 0 7px rgba(var(--cta-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),0)}}
 @media (prefers-reduced-motion:reduce){.rw-togo.hot::before{animation:none}}
 .rw-close.urgent{color:#C82511;font-weight:700}
+.rw-close-w{display:none} /* the time-line copy is for phones (see the 640px block) */
 /* outranks .avatar.xs.stack (later in this sheet, same 3 classes), which would repaint the dashed border solid */
 .rw-faces .avatar.xs.rw-open{background:var(--paper);color:#8f897a;border:1.5px dashed #b9b3a3;box-shadow:none;font-size:.8rem}
 .rw-fare{display:block}
@@ -656,9 +706,14 @@ with
 (f) In the `@media(max-width:640px)` "two-line rows" block, after `.rw-state small::before{content:"· "}`, insert:
 
 ```css
-  /* FOMO: the pill above, the closing clock under it — not run together on one line */
+  /* FOMO: beside the faces only the pill fits, so the closing line moves to the time line (where
+     the old "decided" date sat) and the duration gives way to it, as it did before */
   .rw-state.fomo{flex-direction:column;align-items:flex-start;row-gap:3px}
   .rw-state.fomo small::before{content:none}
+  .rw-state.fomo .rw-close-s{display:none}
+  .rw-close-w{display:inline}
+  .rw-close-w::before{content:" · "}
+  .rw-when.has-close .rw-dur{display:none}
 ```
 
 - [ ] **Step 8: Move the existing assertions to the new wording**
@@ -683,40 +738,62 @@ In `web-tests/e2e/ride-board-scheduled.spec.js`, replace everything from `  test
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    // 20:00 UTC on the 11th is the 12th in Colombo — far enough out to be a date, not a clock
-    const close = row.locator('.rw-close');
+    // 20:00 UTC on the 11th is the 12th in Colombo — far enough out to be a date, not a clock.
+    // On a phone it rides on the time line (where the "decided" date used to), in its short form.
+    const close = row.locator('.rw-when .rw-close');
     await expect(close).toBeVisible();
-    await expect(close).toHaveText('Names close Wed 12 Aug');
-    const clipped = await row.locator('.rw-state').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+    await expect(close).toHaveText('Closes 12 Aug');
+    await expect(row.locator('.rw-state .rw-close')).toBeHidden();
+    // the whole line is on screen, not cut to "Names cl…"
+    const clipped = await row.locator('.rw-when').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     expect(clipped).toBe(false);
   });
 
-  test('on a laptop the closing date sits under the seats to go', async ({ page }) => {
+  test('on a laptop the closing date sits under the seats to go instead', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await stubApi(page);
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.locator('.rw-close')).toBeVisible();
+    await expect(row.locator('.rw-state .rw-close')).toBeVisible();
+    await expect(row.locator('.rw-when .rw-close')).toBeHidden();
     const togo = await row.locator('.rw-togo').boundingBox();
-    const close = await row.locator('.rw-close').boundingBox();
+    const close = await row.locator('.rw-state .rw-close').boundingBox();
     expect(close.y).toBeGreaterThan(togo.y);
   });
 ```
+
+In `web-tests/e2e/ride-board-rows.spec.js` (the "on a phone a ride stays a compact row" test), replace
+
+```js
+    // 110: the price sits on the time line since the route took the full width (#622)
+    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(110);
+```
+
+with
+
+```js
+    // 135: a gathering ride now carries its seats-to-go pill beside the faces and the private-car
+    // line under the fare (plan 2026-10-19-ride-board-fomo), ~123px without the route; 110 was the
+    // plain two-line row. Still a row, not a card: a third line of anything would trip this.
+    expect(h - route, `${code}: ${Math.round(h)}px row, ${Math.round(route)}px of it route`).toBeLessThan(135);
+```
+
+(The old rows were 130px with 104px outside the route; the FOMO row measured 155px with 129px outside it on 2026-10-21. The owner approved the taller row on the prototype.)
 
 - [ ] **Step 9: Stamp, then run the board specs**
 
 ```bash
 cd "$WT" && npm run stamp
-cd "$WT/web-tests" && npx playwright test e2e/ride-board-fomo.spec.js e2e/ride-board-rows.spec.js e2e/ride-board-scheduled.spec.js e2e/ride-board-full-van.spec.js e2e/ride-board-closed-ride.spec.js e2e/ride-board-locked-cta.spec.js
+cd "$WT/web-tests" && npx vitest run unit/ride-fomo.test.js && npx playwright test e2e/ride-board-fomo.spec.js e2e/ride-board-rows.spec.js e2e/ride-board-scheduled.spec.js e2e/ride-board-full-van.spec.js e2e/ride-board-closed-ride.spec.js e2e/ride-board-locked-cta.spec.js
 ```
 
-Expected: `stamped N asset refs (…files changed)` with `board.html` among the changed files; then Playwright's summary line shows every test passed (e.g. `25 passed`), exit code 0.
+Expected: `stamped N asset refs (…files changed)` with `board.html` among the changed files; vitest `Tests  21 passed (21)`; then Playwright's summary line shows every test passed, exit code 0.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git -C "$WT" add board.js board.html web-tests/e2e/ride-board-fomo.spec.js web-tests/e2e/ride-board-rows.spec.js web-tests/e2e/ride-board-scheduled.spec.js
+git -C "$WT" add board.js board.html ride-fomo.js web-tests/unit/ride-fomo.test.js web-tests/e2e/ride-board-fomo.spec.js web-tests/e2e/ride-board-rows.spec.js web-tests/e2e/ride-board-scheduled.spec.js
 git -C "$WT" status --short   # anything else stamp touched must be added by path too
 git -C "$WT" commit -m "feat(board): rows say seats to go, when names close, and the private car they beat
 
@@ -1346,6 +1423,7 @@ The home card's target. The board tints that ride and brings it into view once �
 **Files:**
 - Modify: `board.js` — above `function render() {` (~line 852, right after `var grid = …`), the `<article` line in `rowHtml()` (PR 1's version), the end of `render()`
 - Modify: `board.html` — CSS after `.rw.mine{…}` (~line 154)
+- Modify: `ride-fomo.js` (export `countdown`), `web-tests/unit/ride-board.test.js` and any other unit file that calls `RideBoard.fmtCountdown` or `RideBoard.cdText` (`grep -l "fmtCountdown\|cdText" web-tests/unit/*.test.js`)
 - Test: `web-tests/e2e/ride-board-landing.spec.js` (new)
 
 **Interfaces:**
@@ -1449,6 +1527,14 @@ with
     landOnRide();
   }
 ```
+
+**One clock, not two** (Task 1's reviewer: `countdown` in `ride-fomo.js` duplicates `fmtCountdown` at `board.js:77-83`; owner 2026-10-21: accept in PR 1, unify here). In `ride-fomo.js` add `countdown: countdown,` to the `window.CHRideFomo` object. In `board.js` replace the whole body of `fmtCountdown` so it reads:
+
+```js
+  function fmtCountdown(ms) { return window.CHRideFomo.countdown(ms); }
+```
+
+(keep its comment; `ride-fomo.js` is loaded before `board.js` on the page since PR 1). The board's unit tests run `board.js` alone through `new Function(src)()`, so every unit file that calls `RideBoard.fmtCountdown` or `RideBoard.cdText` must load `ride-fomo.js` first: in its `beforeAll`, directly above the line that loads `board.js`, add the same `new Function(readFileSync(...))()` line for `ride-fomo.js`. Run `cd "$WT2/web-tests" && npx vitest run` to prove nothing else breaks.
 
 `board.html`, after `.rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}`, add:
 

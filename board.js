@@ -741,11 +741,16 @@
   }
 
   /* ---------------- board row ---------------- */
-  // Up to four faces (flags ride on the avatars) and a "+N" for the rest.
-  function faces(L) {
+  // Up to four faces (flags ride on the avatars), a "+N" for the rest, then a dashed seat per
+  // place the ride still needs filled — the gap a joiner would fill (plan 2026-10-19-ride-board-fomo).
+  function faces(L, open) {
     var ms = L.members;
     var html = ms.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('');
     if (ms.length > 4) html += '<span class="avatar xs stack rw-more">+' + (ms.length - 4) + '</span>';
+    var shown = Math.min(ms.length, 5);
+    for (var k = 0; k < Math.min(open || 0, 3); k++) {
+      html += '<span class="avatar xs rw-open' + (shown + k ? ' stack' : '') + '" aria-hidden="true">+</span>';
+    }
     return html;
   }
 
@@ -799,24 +804,49 @@
 
   function rowHtml(L) {
     if (L.sched) return schedRowHtml(L);
+    var F = window.CHRideFomo;
     var mine = iAmOn(L);
     var st = rowState(L, mine);
     var dur = durationOf(L);
     var win = windowLabel(L.slot);
     var hook = st.cta.kind === 'again' ? 'data-again' : 'data-view';
     var primary = st.cta.text === 'Join';
+    // FOMO (plan 2026-10-19-ride-board-fomo): a ride still gathering says how many seats it
+    // needs and when names close, shows its open seats, and what a private car would cost.
+    // Locked, full and names-closed rows keep rowState's wording.
+    var togo = st.cls === 'g' ? F.seatsToGo(L) : null;
+    var closes = togo ? F.closesText(L.cutoffMs, Date.now()) : null;
+    var priv = togo ? F.privateCarFare(L.fromId, L.toId, L.cost) : null;
+    // The closing line is rendered twice: on the time line for phones (.rw-close-w — where the old
+    // "decided" date sat — in its short form, "Closes 12 Aug", since ~170px is all it gets beside
+    // the price) and in full under the pill for wider screens (.rw-close-s). CSS shows one per
+    // width; the ticker updates both through [data-close], keeping each one's form.
+    var closeSpan = function (where, short) {
+      var c = short ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : closes;
+      return c
+        ? '<span class="rw-close ' + where + (c.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '"' +
+            (short ? ' data-close-short=""' : '') + '>' + esc(c.text) + '</span>'
+        : '';
+    };
+    var seatHtml = togo
+      ? '<span class="rw-state fomo"><b class="rw-togo' + (togo.hot ? ' hot' : '') + '">' + esc(togo.text) + '</b>' +
+          (closes || mine
+            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it · </span>' : '') + closeSpan('rw-close-s') + '</small>'
+            : '') +
+        '</span>'
+      : '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span>';
     return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
-      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
-      '<div class="rw-when' + (st.decided ? ' has-dec' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') +
-        (st.decided ? '<span class="rw-dec-w"> · decided ' + esc(st.decided) + '</span>' : '') + '</div>' +
+      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + (togo ? togo.text : st.label)) + '">' +
+      '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w', true) + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
-      '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
-        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) +
-          (st.decided ? '<span class="rw-dec-s">decided ' + esc(st.decided) + '</span>' : '') + '</small></span></div>' +
-      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></div>' +
-      '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
-        esc(st.cta.text) + '</button>' +
+      '<div class="rw-seats"><span class="rw-faces">' + faces(L, togo ? togo.need : 0) + '</span>' + seatHtml + '</div>' +
+      '<div class="rw-price"><span class="rw-fare">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></span>' +
+        (priv ? '<span class="rw-vs">vs ' + money(priv) + ' private car</span>' : '') + '</div>' +
+      '<div class="rw-acts">' +
+        '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
+          esc(st.cta.text) + '</button>' +
+      '</div>' +
       '</article>';
   }
 
@@ -2188,6 +2218,14 @@
   /* live countdown ticker */
   function startTicker() {
     setInterval(function () {
+      // FOMO rows' "Names close in …" (plan 2026-10-19-ride-board-fomo)
+      var now = Date.now();
+      document.querySelectorAll('[data-close]').forEach(function (el) {
+        var c = window.CHRideFomo.closesText(+el.getAttribute('data-close'), now, { short: el.hasAttribute('data-close-short') });
+        if (!c) return;
+        if (el.textContent !== c.text) el.textContent = c.text;
+        el.classList.toggle('urgent', c.urgent);
+      });
       document.querySelectorAll('.countdown[data-cut]').forEach(function (el) {
         var ms = +el.getAttribute('data-cut');
         var t = el.querySelector('.cd');

@@ -23,9 +23,10 @@
     return m + 'm ' + pad(sec) + 's';
   }
 
-  // An instant → its Sri Lanka calendar date, "Fri 6 Nov".
-  function colomboDay(ms) {
-    return new Date(ms + COLOMBO_OFFSET_MS).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // An instant → its Sri Lanka calendar date, "Fri 6 Nov" — or "6 Nov" where the weekday has no room.
+  function colomboDay(ms, short) {
+    var fmt = short ? { day: 'numeric', month: 'short', timeZone: 'UTC' } : { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' };
+    return new Date(ms + COLOMBO_OFFSET_MS).toLocaleDateString('en-GB', fmt);
   }
 
   // How many more seats this ride needs before it runs; null once it has its minimum or is
@@ -38,13 +39,16 @@
   }
 
   // When names close: a running clock inside three days (red inside one), a Sri Lanka date
-  // further out. null with no cutoff to go on.
-  function closesText(cutoffMs, nowMs) {
+  // further out. null with no cutoff to go on. `opts.short` is the phone's time-line form —
+  // "Closes 12 Aug" — where the full line does not fit beside the price.
+  function closesText(cutoffMs, nowMs, opts) {
     if (!isFinite(cutoffMs)) return null;
+    var short = !!(opts && opts.short);
+    var lead = short ? 'Closes' : 'Names close';
     var left = cutoffMs - nowMs;
-    if (left <= 0) return { text: 'Names closed', live: false, urgent: false };
-    if (left < LIVE_MS) return { text: 'Names close in ' + countdown(left), live: true, urgent: left < URGENT_MS };
-    return { text: 'Names close ' + colomboDay(cutoffMs), live: false, urgent: false };
+    if (left <= 0) return { text: short ? 'Closed' : 'Names closed', live: false, urgent: false };
+    if (left < LIVE_MS) return { text: lead + ' in ' + countdown(left), live: true, urgent: left < URGENT_MS };
+    return { text: lead + ' ' + colomboDay(cutoffMs, short), live: false, urgent: false };
   }
 
   // The same trip in a private car, from the generated catalogue — the figure the search and

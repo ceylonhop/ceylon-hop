@@ -112,3 +112,11 @@ describe('momentum + momentumText', () => {
     expect(F.momentumText({ travellers: 0, closingThisWeek: 0, oneToGo: 0 })).toBeNull();
   });
 });
+
+describe("closesText, short form for a phone's time line", () => {
+  it('says "Closes", drops the weekday, and keeps the clock', () => {
+    expect(F.closesText(NOW + 9 * H + 12 * 60000, NOW, { short: true })).toEqual({ text: 'Closes in 9h 12m', live: true, urgent: true });
+    expect(F.closesText(Date.parse('2099-08-14T20:00:00Z'), NOW, { short: true }).text).toBe('Closes 15 Aug');
+    expect(F.closesText(NOW - 1, NOW, { short: true }).text).toBe('Closed');
+  });
+});
