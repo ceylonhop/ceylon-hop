@@ -86,7 +86,7 @@ function vehicleLabel(tier: string | null | undefined): string {
 // Does this place read as an airport? Same test the ops shell raises its airport flag on, so the
 // pay page and the ops sheet can never disagree about what an airport run is.
 const AIRPORT_RE = /airport|cmb|katunayake/i;
-const isAirportPlace = (s: string | undefined): boolean => !!s && AIRPORT_RE.test(s);
+export const isAirportPlace = (s: string | undefined): boolean => !!s && AIRPORT_RE.test(s);
 
 // The endpoints, in travel order — the same resolution legRoute() renders from.
 function legEnds(l: ToolLegLite): [string, string] {
