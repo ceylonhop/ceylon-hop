@@ -763,6 +763,7 @@
   }
 
   var CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  var SHARE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>';
   // "Colombo Airport (CMB)" → "Airport", "Sigiriya / Dambulla" → "Sigiriya": the phone's one-line route.
   function shortPlace(name) {
     var main = splitPlace(name).main;
@@ -847,6 +848,10 @@
       '<div class="rw-price"><span class="rw-fare">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></span>' +
         (priv ? '<span class="rw-vs">vs ' + money(priv) + ' private car</span>' : '') + '</div>' +
       '<div class="rw-acts">' +
+        // share only a ride that can still take someone: never one confirmed, closed or full
+        (!L.confirmed && !isClosed(L) && L.committed < L.capacity
+          ? '<button class="rw-share" type="button" data-share="' + esc(L.code) + '" aria-label="Share this ride">' + SHARE_SVG + '</button>'
+          : '') +
         '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
           esc(st.cta.text) + '</button>' +
       '</div>' +
@@ -914,6 +919,9 @@
     });
     grid.querySelectorAll('[data-again]').forEach(function (el) {
       el.addEventListener('click', function (e) { e.stopPropagation(); startAnother(el.getAttribute('data-again')); });
+    });
+    grid.querySelectorAll('[data-share]').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); shareRide(state.byCode[el.getAttribute('data-share')], 'row'); });
     });
     grid.querySelectorAll('.rw').forEach(function (r) {
       var code = r.getAttribute('data-code');
@@ -1178,7 +1186,7 @@
         s.opts.map(function (t, i) { return '<span class="topt ' + (i === 1 ? 'lead' : '') + '">' + t + '</span>'; }).join('') +
         '</div><span class="tnote">Everyone\'s asked their preferred time when they join; the group\'s most popular wins.</span></div>';
     var shareUrl = shareUrlFor(L.code);
-    var waText = 'shared taxi ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' — ≈' + money(L.cost) + ' each, $0 unless it runs: ' + shareUrl;
+    var waText = shareTextFor(L) + ' ' + shareUrl;
     var starterName = L.members[0] ? L.members[0].name : 'Someone';
 
     detailInner.innerHTML =
@@ -1249,6 +1257,7 @@
         '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
         '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
         '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-share-detail>Share…</button>' +
         '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>') +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
@@ -1256,6 +1265,8 @@
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
+    var sd = detailInner.querySelector('[data-share-detail]');
+    if (sd) sd.addEventListener('click', function () { shareRide(L, 'detail'); });
     detailInner.querySelectorAll('[data-detail-join]').forEach(function (el) { el.addEventListener('click', function () { openModal(L.code); }); });
     // Scratching used to fire on the first click with no warning (owner, 2026-09-18). It now
     // asks inline — nothing is sent until "Yes". Inline rather than window.confirm(): the
@@ -2040,6 +2051,65 @@
     prepShare(L, need);
   }
 
+  /* ---------------- sharing (plan 2026-10-19-ride-board-fomo) ----------------
+     One way to share a ride from anywhere on the page: the phone's own share menu when there
+     is one (every app the traveller has, one tap), else our sheet with WhatsApp, Telegram,
+     Facebook and the link. The words come from CHRideFomo.shareMessage, so a row, the ride
+     page and the "you're on the list" screen all send the same thing. */
+  function shareTextFor(L) {
+    var F = window.CHRideFomo;
+    var togo = F.seatsToGo(L);
+    var closes = F.closesText(L.cutoffMs, Date.now());
+    var priv = F.privateCarFare(L.fromId, L.toId, L.cost);
+    return F.shareMessage({
+      mine: mySeatsOn(L) > 0 || iAmOn(L),
+      route: L.from + ' → ' + L.to,
+      when: L.whenLabel + ' (' + windowLabel(L.slot) + ')',
+      need: togo ? togo.need : 0,
+      fare: money(L.cost),
+      priv: priv ? money(priv) : null,
+      closes: closes && closes.text !== 'Names closed' ? closes.text : null
+    });
+  }
+
+  var shareSheet = document.getElementById('share-sheet');
+  function openShareSheet(L, text, url, via) {
+    document.getElementById('ss-msg').textContent = text + ' ' + url;
+    document.getElementById('ss-url').value = url;
+    document.getElementById('ss-wa').href = 'https://wa.me/?text=' + encodeURIComponent(text + ' ' + url);
+    document.getElementById('ss-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text);
+    document.getElementById('ss-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
+    ['ss-wa', 'ss-tg', 'ss-fb'].forEach(function (id) {
+      document.getElementById(id).onclick = function () {
+        ev('share', { method: id.slice(3), content_type: 'ride', item_id: L.code, via: via });
+      };
+    });
+    document.getElementById('ss-copy').onclick = function () {
+      var self = this;
+      ev('share', { method: 'copy', content_type: 'ride', item_id: L.code, via: via });
+      copy(url).then(function () { self.textContent = 'Copied ✓'; setTimeout(function () { self.textContent = 'Copy'; }, 1600); });
+    };
+    shareSheet.hidden = false;
+    document.getElementById('ss-close').focus();
+  }
+  function closeShareSheet() { shareSheet.hidden = true; }
+  document.getElementById('ss-close').addEventListener('click', closeShareSheet);
+  shareSheet.addEventListener('click', function (e) { if (e.target === shareSheet) closeShareSheet(); });
+  shareSheet.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeShareSheet(); });
+
+  function shareRide(L, via) {
+    if (!L) return;
+    var url = shareUrlFor(L.code), text = shareTextFor(L);
+    if (navigator.share) {
+      navigator.share({ title: L.from + ' → ' + L.to + ' · shared taxi', text: text, url: url })
+        .then(function () { ev('share', { method: 'native', content_type: 'ride', item_id: L.code, via: via }); })
+        // AbortError = the traveller closed the menu; anything else, offer our sheet instead
+        .catch(function (e) { if (!e || e.name !== 'AbortError') openShareSheet(L, text, url, via); });
+      return;
+    }
+    openShareSheet(L, text, url, via);
+  }
+
   function prepShare(L, need) {
     var url = shareUrlFor(L.code);
     var s = slotWindow(L.slot).label;
@@ -2051,7 +2121,8 @@
       ? need + ' seat' + (need > 1 ? 's' : '') + ' to lock it in — you pay $0 unless it runs.'
       : 'The taxi\'s locked in — seats still open.';
     document.getElementById('share-url').value = url;
-    var msg = 'hey — I put my name on a shared taxi list, ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' · ' + s + '. ≈' + money(L.cost) + ' each, runs when ' + (need > 0 ? need + ' more sign' : 'you grab a seat') + ', $0 if it doesn\'t happen. add your name: ' + url;
+    var msg = shareTextFor(L) + ' ' + url;
+    document.getElementById('share-native').onclick = function () { shareRide(L, 'joined'); };
     document.getElementById('wa-share').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
     document.getElementById('fb-share').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
   }

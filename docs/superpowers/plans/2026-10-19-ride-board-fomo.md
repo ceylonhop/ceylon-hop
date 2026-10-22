@@ -826,6 +826,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `board.html` — share-sheet markup and CSS; `#share-native` button in `#mstep-3`
 - Modify: `board.js` — `SHARE_SVG`; share button in `rowHtml()`; `[data-share]` binding in `render()`; `.d-share` in `renderDetail()`; `prepShare()`; new sharing functions
 - Modify: `web-tests/e2e/ride-board-start-no-card.spec.js` (one assertion)
+- Modify: `web-tests/unit/gtm-event-coverage.test.js` (the new `share` event is deliberately untagged until the owner imports a GTM tag — Decision 2)
 - Test: `web-tests/e2e/ride-board-share-sheet.spec.js` (new)
 
 **Interfaces:**
@@ -1127,19 +1128,33 @@ with
     document.getElementById('share-native').onclick = function () { shareRide(L, 'joined'); };
 ```
 
+- [ ] **Step 6b: Tell the GTM coverage guard the `share` event is untagged on purpose.** `web-tests/unit/gtm-event-coverage.test.js` fails on any event the site emits that has no tag in `tools/analytics/build-gtm-missing-tags.mjs` and is not listed as deliberately untagged. Building the tag (and regenerating `docs/analytics/gtm-missing-tags.json` for the owner to import) is its own step — Decision 2 at the top of this plan. So in that test file replace
+
+```js
+const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest']);
+```
+
+with
+
+```js
+/* 'share' (plan 2026-10-19-ride-board-fomo, PR 1): one-tap sharing of a ride from the board. Its GA4
+   tag is the owner's import step, like experience_interest. */
+const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest', 'share']);
+```
+
 - [ ] **Step 7: Stamp, then run the share specs and the board specs again**
 
 ```bash
 cd "$WT" && npm run stamp
-cd "$WT/web-tests" && npx playwright test e2e/ride-board-share-sheet.spec.js e2e/ride-board-start-no-card.spec.js e2e/ride-board-share-link.spec.js e2e/ride-board-fomo.spec.js e2e/ride-board-rows.spec.js e2e/ride-board-sheet-actions.spec.js
+cd "$WT/web-tests" && npx vitest run unit/gtm-event-coverage.test.js && npx playwright test e2e/ride-board-share-sheet.spec.js e2e/ride-board-start-no-card.spec.js e2e/ride-board-share-link.spec.js e2e/ride-board-fomo.spec.js e2e/ride-board-rows.spec.js e2e/ride-board-sheet-actions.spec.js
 ```
 
-Expected: every test passed in Playwright's summary line, exit code 0. `ride-board-share-link.spec.js` still finds `/r/EA-7797` in `.d-share a.btn-wa`.
+Expected: the vitest guard passes, then every test passed in Playwright's summary line, exit code 0. `ride-board-share-link.spec.js` still finds `/r/EA-7797` in `.d-share a.btn-wa`.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git -C "$WT" add board.js board.html web-tests/e2e/ride-board-share-sheet.spec.js web-tests/e2e/ride-board-start-no-card.spec.js
+git -C "$WT" add board.js board.html web-tests/e2e/ride-board-share-sheet.spec.js web-tests/e2e/ride-board-start-no-card.spec.js web-tests/unit/gtm-event-coverage.test.js
 git -C "$WT" status --short
 git -C "$WT" commit -m "feat(board): one-tap share from rows, the ride page and the share step
 

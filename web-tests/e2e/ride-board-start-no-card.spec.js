@@ -73,6 +73,8 @@ test('starting a ride sends no billing details and goes straight to the share st
   await page.locator('#sign-btn').click();
 
   await expect(page.locator('#mstep-3')).toBeVisible();
+  // the share step leads with one tap to the phone's share menu (plan 2026-10-19-ride-board-fomo)
+  await expect(page.locator('#share-native')).toBeVisible();
   await expect(page.locator('#pay-handoff')).toBeHidden();
   expect(seen.creates).toHaveLength(1);
   expect(seen.creates[0].payment).toEqual({ phone: '+447700900123' });
