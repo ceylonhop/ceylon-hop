@@ -576,7 +576,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .hr-price{font-size:.82rem;color:var(--ink-soft)}
 .hr-price b{font-family:var(--display);font-size:1.05rem;color:var(--ink)}
 .hr-go{font-size:.82rem;font-weight:700;color:var(--accent-deep);white-space:nowrap}
-.hr-foot{margin:14px 0 0;font-weight:700;font-size:.92rem}
+.hr-foot{margin:18px 0 0}
 </style>
 </head>
 <body data-page="home">
@@ -677,13 +677,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      Starts hidden for no-JS / api=off; the inline script below shows it BEFORE first paint with two
      skeleton cards. A card is never shorter than a skeleton, but the count differs: one ride on a
      phone shrinks the section, two or more grow it, and nothing open collapses it. -->
-<section class="hr-sec" id="home-rides" aria-labelledby="hr-title" hidden>
+<section class="hr-sec bg-postcard wash-deep wash-edge" id="home-rides" aria-labelledby="hr-title" hidden>
   <div class="wrap">
     <span class="eyebrow">Shared taxi &middot; The ride board</span>
     <h2 class="hr-title" id="hr-title">Travel with others?</h2>
     <p class="hr-lead">Share a taxi with travellers going soon &mdash; add your name, split the fare. You pay nothing unless it runs.</p>
     <div class="hr-list" id="hr-list" aria-busy="true"><div class="hr-card hr-sk"></div><div class="hr-card hr-sk"></div></div>
-    <p class="hr-foot"><a href="board.html">See every shared taxi on the board, or start your own &rarr;</a></p>
+    <p class="hr-foot"><a class="btn btn-ghost" href="board.html">See all shared taxis</a></p>
   </div>
 </section>
 <script>if(window.CEYLON_HOP_API)document.getElementById('home-rides').hidden=false;</script>
