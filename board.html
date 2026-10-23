@@ -738,19 +738,22 @@ body.detail-open .detail{display:block}
   .intro .lead{font-size:.95rem}
   .legend{flex-direction:column;gap:6px;font-size:.8rem;margin-bottom:12px}
   /* one line: [clock] 09:00  Ella → Yala / Scheduled   $22.99 › */
-  .rws{grid-template-columns:28px 40px minmax(0,1fr) auto 10px;grid-template-areas:"mark when route price go";gap:0 8px;padding:11px 16px}
+  /* the sub-line ("Scheduled · via Negombo 07:30") takes the price and chevron columns too — the
+     route column alone (144px at 375px) cannot hold it */
+  .rws{grid-template-columns:28px 40px minmax(0,1fr) auto 10px;grid-template-areas:"mark when route price go" "mark when sub sub sub";gap:0 8px;padding:11px 16px}
   .rws-kind{display:contents}
   .rws-kind .rws-mark{grid-area:mark;width:28px;height:28px}
   .rws-kt{display:none}
   .rws .rw-when{grid-area:when;font-weight:700;font-size:.9rem;color:var(--ink)}
-  .rws .rw-route{grid-area:route;display:block;min-width:0}
-  .rws .rw-places,.rws-per{display:none}
-  .rws .rws-short{display:block;font-weight:700;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .rws .rws-short small{display:block;font-size:.76rem;font-weight:700;color:var(--teal-deep)}
-  .rws .rw-price{grid-area:price}
+  .rws .rw-route,.rws .rws-short{display:contents}
+  .rws .rw-places,.rws-per,.rws .rws-via{display:none}
+  .rws .rws-rt{grid-area:route;display:block;min-width:0;font-weight:700;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rws .rws-short small{grid-area:sub;display:block;min-width:0;font-size:.76rem;font-weight:700;color:var(--teal-deep);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rws-via-s{font-weight:500;color:var(--ink-soft)}
+  .rws .rw-price{grid-area:price;align-self:center}
   .rws .rw-price b{font-size:.96rem}
   .rws-go{grid-area:go;font-size:0}
-  .rws-go::after{content:"›";font-size:1.3rem}
+  .rws-go::after{content:"›";font-size:1.3rem;line-height:1} /* line-height 1: the chevron sizes the route row alone now */
   /* the price's "each" gives way so the price stays one short line on a 360px phone */
   .rw-each{display:none}
   /* no room beside the seats-to-go pill for a share button at 375px — the ride page shares */
@@ -1107,6 +1110,6 @@ body.detail-open .detail{display:block}
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
 <script src="ride-fomo.js?v=d597efec49" defer></script>
-<script src="board.js?v=f558c782b9" defer></script>
+<script src="board.js?v=1cfe021b69" defer></script>
 </body>
 </html>

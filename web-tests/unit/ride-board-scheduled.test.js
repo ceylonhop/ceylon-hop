@@ -69,6 +69,18 @@ describe('scheduledRows — the departures inside the window, on the days they r
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ from: 'Negombo', fromId: 'negombo', time: '07:30', point: 'Zen Cafe, Negombo' });
   });
+  it('carries the stops the van still boards at after yours, so the row can say "stops at"', () => {
+    const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 1, filter: ALL });
+    const north = rows.find((r) => r.to === 'Sigiriya / Dambulla');
+    expect(north.via).toEqual([{ place: 'Negombo', time: '07:30', point: 'Zen Cafe, Negombo' }]);
+    const ella = rows.find((r) => r.to === 'Yala');
+    expect(ella.via).toEqual([]);
+  });
+  it('boarding at a later stop, the stops before it are not "via" — the van has already passed them', () => {
+    const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 1,
+      filter: { from: 'Negombo', to: 'Sigiriya / Dambulla' } });
+    expect(rows[0].via).toEqual([]);
+  });
   it('a route we do not schedule gets no scheduled rows', () => {
     const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 14, filter: { from: 'Kandy', to: 'Ella' } });
     expect(rows).toEqual([]);
