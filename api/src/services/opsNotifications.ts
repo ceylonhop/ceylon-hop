@@ -2,7 +2,8 @@ import type { EmailAdapter } from '../adapters/email';
 import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP, MUTED, whatsappButton, whatsappLink, type SectionRow } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
-import type { Booking } from '../db/bookingRepo';
+import type { Booking, ScheduleValue } from '../db/bookingRepo';
+import { isoToday, addIsoDays } from '../domain/dateRules';
 import { factRows, promoDiscount, roadRow, routeText } from './notifications';
 import { shortPlace } from '../quote/shortPlace';
 
@@ -477,6 +478,39 @@ export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string
         moneyTitle: 'Payment',
         moneyRows: [['Price', 'No price yet'], ['Channel', channelLabel(b)]],
         strong: ['Price'],
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Date set (dateless capture Phase 4, spec 2026-10-17 D4). The customer filled a blank pickup
+// date/time on their manage page — book a driver. Subjects start "Date set: " so Gmail can filter
+// them; URGENT when the pickup is today or tomorrow in Colombo (12 h notice still allows tomorrow).
+// ---------------------------------------------------------------------------
+
+export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl: string, now: Date = new Date()): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const date = b.mode === 'single' ? b.input.date : undefined;
+  const urgent = !!date && date <= addIsoDays(isoToday('Asia/Colombo', now), 1);
+  const before = `${was.date ? 'date set' : 'no date'}, ${was.time ? 'time set' : 'no time'}`;
+  const subject = `Date set: ${b.reference} — ${f.subjectRoute}, ${f.when}${f.time}${urgent ? ' — URGENT, travels within a day' : ''}`;
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: urgent ? ['URGENT · DATE SET', '#8a3b12', '#fbe9dc'] : ['DATE SET', '#1f6b3a', '#e3f1e6'],
+        lead: 'pickup set by the customer',
+        keys: bookingKeys(f, b),
+        note:
+          `${b.input.customer.firstName} set it on their booking page (was: ${before}). ` +
+          `Book a driver${urgent ? ' today' : ''}. They can't change it there again — any change comes to us on WhatsApp.`,
+        moneyTitle: 'Payment',
+        moneyRows: [['Paid', money(f.paidNow, b.currency)], ['Channel', channelLabel(b)]],
+        strong: [],
       },
       opsBaseUrl,
     ),
