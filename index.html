@@ -535,6 +535,48 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .destination-art--hill-country-rail::after{right:-72px;top:20px}
     .destination-art--mirissa-whale::after{left:-72px;bottom:-22px}
   }
+/* ---------- travel with others? (plan 2026-10-19-ride-board-fomo, PR 2) ----------
+   Real open shared-taxi rides from the ride board, stacked. Page-local hr- names: a bare class
+   here collides with the shared chrome (#983). Each card is at least as tall as a skeleton (both
+   floor at 142px), so a card never takes less room than the skeleton it replaces — but the number
+   of cards is not the number of skeletons: one ride on a phone shrinks the section, two or more
+   grow it, and an empty board collapses it. */
+.hr-sec{padding:34px 0 30px}
+.hr-title{margin:6px 0 0;font-size:clamp(1.45rem,2.6vw,2rem)}
+.hr-lead{margin:8px 0 0;max-width:52ch;color:var(--ink-soft);font-size:.95rem;line-height:1.5}
+.hr-list{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:16px}
+@media(min-width:720px){.hr-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hr-card{display:flex;flex-direction:column;gap:10px;min-height:142px;box-sizing:border-box;padding:14px;background:var(--paper);
+  border:1px solid var(--line);border-radius:16px;text-decoration:none;color:var(--ink)}
+.hr-card:hover{background:var(--pc-sky)}
+.hr-sk{height:142px;background:linear-gradient(90deg,var(--cream) 0%,var(--paper) 50%,var(--cream) 100%);background-size:200% 100%;animation:hrSk 1.4s linear infinite}
+@keyframes hrSk{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.hr-sk{animation:none}}
+.hr-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hr-route{margin:0;font-size:1.15rem;line-height:1.15;min-width:0}
+.hr-arr{font-family:var(--body);font-weight:600;color:var(--accent-deep)}
+.hr-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.hr-togo{flex:none;display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:var(--pc-saffron);color:#7a4f00;font-size:.76rem;font-weight:800;white-space:nowrap}
+.hr-togo::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--saffron)}
+.hr-togo.hot{background:#fde4e0;color:#B01E0B}
+.hr-togo.hot::before{background:var(--tomato)}
+.hr-who{display:flex;align-items:center;gap:12px}
+.hr-faces{display:flex;flex:none}
+.hr-face{position:relative;width:32px;height:32px;border-radius:50%;border:2px solid var(--paper);display:grid;place-items:center;font-size:.66rem;font-weight:800;color:#fff}
+.hr-face+.hr-face{margin-left:-8px}
+.hr-face img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.hr-flag{position:absolute;right:-4px;bottom:-3px;font-size:.66rem}
+.hr-open{background:var(--paper);border:1.5px dashed #b9b3a3;color:#8f897a}
+.hr-meta{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.35}
+.hr-kind{font-size:.82rem;font-weight:600}
+.hr-kind b{color:var(--teal-deep)}
+.hr-close{font-size:.76rem;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.hr-close.urgent{color:#C82511;font-weight:700}
+.hr-foot-row{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px dashed var(--line)}
+.hr-price{font-size:.82rem;color:var(--ink-soft)}
+.hr-price b{font-family:var(--display);font-size:1.05rem;color:var(--ink)}
+.hr-go{font-size:.82rem;font-weight:700;color:var(--accent-deep);white-space:nowrap}
+.hr-foot{margin:14px 0 0;font-weight:700;font-size:.92rem}
 </style>
 </head>
 <body data-page="home">
@@ -630,6 +672,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
   </div>
 </section>
+
+<!-- TRAVEL WITH OTHERS? (plan 2026-10-19-ride-board-fomo, PR 2) — filled by home-rides.js from GET /board.
+     Starts hidden for no-JS / api=off; the inline script below shows it BEFORE first paint with two
+     skeleton cards. A card is never shorter than a skeleton, but the count differs: one ride on a
+     phone shrinks the section, two or more grow it, and nothing open collapses it. -->
+<section class="hr-sec" id="home-rides" aria-labelledby="hr-title" hidden>
+  <div class="wrap">
+    <span class="eyebrow">Shared taxi &middot; The ride board</span>
+    <h2 class="hr-title" id="hr-title">Travel with others?</h2>
+    <p class="hr-lead">Share a taxi with travellers going soon &mdash; add your name, split the fare. You pay nothing unless it runs.</p>
+    <div class="hr-list" id="hr-list" aria-busy="true"><div class="hr-card hr-sk"></div><div class="hr-card hr-sk"></div></div>
+    <p class="hr-foot"><a href="board.html">See every shared taxi on the board, or start your own &rarr;</a></p>
+  </div>
+</section>
+<script>if(window.CEYLON_HOP_API)document.getElementById('home-rides').hidden=false;</script>
 
 <!-- WHAT IS -->
 <section class="section-tight destination-art destination-art--sigiriya" id="what" data-destination-art="sigiriya">
@@ -754,8 +811,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </footer></div>
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
-<script src="tours-data.js?v=6f44d57144"></script>
+<script src="tours-data.js?v=c99ac9e8a6"></script>
 <script src="transfers-data.js?v=095fe1f9cc"></script>
+<script src="ride-fomo.js?v=02cfb536a1"></script>
+<script src="home-rides.js?v=9459432f5b"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <script src="ch-map.js?v=18772b2dd8"></script>
 <script src="image-slot.js?v=f20592da50"></script>

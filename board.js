@@ -34,10 +34,10 @@
     morning: { label: 'morning', range: 'departs 7–9 am', win: '7–9 am', opts: ['07:00', '08:00', '09:00'] },
     afternoon: { label: 'afternoon', range: 'departs 1–3 pm', win: '1–3 pm', opts: ['13:00', '14:00', '15:00'] }
   };
-  // Private-car fare + rough bus time per corridor — for the shared/private/bus price compare.
+  // Rough bus time per corridor — the third leg of the ride page's shared / private / bus strip.
   var ALT = {
-    'airport-cultural': { priv: 62, bus: '6h bus' }, 'hill-line': { priv: 68, bus: '7h bus + train' }, 'ella-east': { priv: 74, bus: '6h bus' },
-    'south-coast': { priv: 45, bus: '2.5h bus' }, 'yala-south': { priv: 52, bus: '5h bus' }, 'ella-south': { priv: 78, bus: '7h bus' }
+    'airport-cultural': { bus: '6h bus' }, 'hill-line': { bus: '7h bus + train' }, 'ella-east': { bus: '6h bus' },
+    'south-coast': { bus: '2.5h bus' }, 'yala-south': { bus: '5h bus' }, 'ella-south': { bus: '7h bus' }
   };
   var CORRIDOR_TIME = {
     'airport-cultural': '~4h door to door', 'hill-line': '~3.5h door to door', 'ella-east': '~3h door to door',
@@ -74,13 +74,7 @@
 
   // Remaining-time formatter. Takes remaining milliseconds (a duration, not a
   // timestamp) so it is pure. Clamps at zero.
-  function fmtCountdown(ms) {
-    var s = Math.max(0, Math.floor(Number(ms) || 0));
-    var h = Math.floor(s / 3600000), m = Math.floor((s % 3600000) / 60000), sec = Math.floor((s % 60000) / 1000);
-    if (h >= 24) { var d = Math.floor(h / 24); return d + 'd ' + (h % 24) + 'h'; }
-    if (h >= 1) return h + 'h ' + String(m).padStart(2, '0') + 'm';
-    return m + 'm ' + String(sec).padStart(2, '0') + 's';
-  }
+  function fmtCountdown(ms) { var C = window.CHRideFomo; return C ? C.countdown(ms) : ''; }
 
   // The departure window for a slot key ('morning' | 'afternoon'); defaults to morning.
   function slotWindow(slot) { return SLOTS[slot] || SLOTS.morning; }
@@ -573,6 +567,14 @@
 
   var API_BASE = (window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com').replace(/\/$/, '');
   var CLIENT_ID = String(window.GOOGLE_CLIENT_ID || '').trim();
+  // ride-fomo.js carries the FOMO rules (seats to go, when names close, the private car, the
+  // share words). If it fails to load the board must still work: rows fall back to rowState's
+  // wording, the momentum line stays off, and a share sends the link alone. Never a thrown render.
+  var F = window.CHRideFomo || {
+    seatsToGo: function () { return null; }, closesText: function () { return null; },
+    privateCarFare: function () { return null; }, shareMessage: function () { return ''; },
+    momentum: function () { return { travellers: 0, closingThisWeek: 0, oneToGo: 0 }; }, momentumText: function () { return null; }
+  };
   // Share links resolve against whatever serves the unfurl page (this ride's own preview
   // tags). It used to be a hardcoded 'https://ceylonhop.com' — the old WordPress apex,
   // which 404s, so every shared link was dead.
@@ -741,11 +743,16 @@
   }
 
   /* ---------------- board row ---------------- */
-  // Up to four faces (flags ride on the avatars) and a "+N" for the rest.
-  function faces(L) {
+  // Up to four faces (flags ride on the avatars), a "+N" for the rest, then a dashed seat per
+  // place the ride still needs filled — the gap a joiner would fill (plan 2026-10-19-ride-board-fomo).
+  function faces(L, open) {
     var ms = L.members;
     var html = ms.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('');
     if (ms.length > 4) html += '<span class="avatar xs stack rw-more">+' + (ms.length - 4) + '</span>';
+    var shown = Math.min(ms.length, 5);
+    for (var k = 0; k < Math.min(open || 0, 3); k++) {
+      html += '<span class="avatar xs rw-open' + (shown + k ? ' stack' : '') + '" aria-hidden="true">+</span>';
+    }
     return html;
   }
 
@@ -758,6 +765,7 @@
   }
 
   var CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  var SHARE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>';
   // "Colombo Airport (CMB)" → "Airport", "Sigiriya / Dambulla" → "Sigiriya": the phone's one-line route.
   function shortPlace(name) {
     var main = splitPlace(name).main;
@@ -805,18 +813,46 @@
     var win = windowLabel(L.slot);
     var hook = st.cta.kind === 'again' ? 'data-again' : 'data-view';
     var primary = st.cta.text === 'Join';
-    return '<article class="rw' + (mine ? ' mine' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
-      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + st.label) + '">' +
-      '<div class="rw-when' + (st.decided ? ' has-dec' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') +
-        (st.decided ? '<span class="rw-dec-w"> · decided ' + esc(st.decided) + '</span>' : '') + '</div>' +
+    // FOMO (plan 2026-10-19-ride-board-fomo): a ride still gathering says how many seats it
+    // needs and when names close, shows its open seats, and what a private car would cost.
+    // Locked, full and names-closed rows keep rowState's wording.
+    var togo = st.cls === 'g' ? F.seatsToGo(L) : null;
+    // The short form at every width ("Closes in 9h 12m", "Closes 12 Aug"): under the pill the
+    // seats column is 140px at 1280 and the full form clips. The share text keeps the full form.
+    var closes = togo ? F.closesText(L.cutoffMs, Date.now(), { short: true }) : null;
+    var priv = togo ? F.privateCarFare(L.fromId, L.toId, L.cost) : null;
+    // The closing line is rendered twice: on the time line for phones (.rw-close-w — where the old
+    // "decided" date sat) and under the pill for wider screens (.rw-close-s). CSS shows one per
+    // width; the ticker updates both through [data-close], in the short form (data-close-short).
+    var closeSpan = function (where) {
+      // only a ride still gathering has a closing line — locked, full and names-closed rows keep
+      // rowState's wording (closes is null for them, whatever their cutoff)
+      if (!closes) return '';
+      return '<span class="rw-close ' + where + (closes.urgent ? ' urgent' : '') + '" data-close="' + L.cutoffMs + '" data-close-short="">' + esc(closes.text) + '</span>';
+    };
+    var seatHtml = togo
+      ? '<span class="rw-state fomo"><b class="rw-togo' + (togo.hot ? ' hot' : '') + '">' + esc(togo.text) + '</b>' +
+          (closes || mine
+            ? '<small>' + (mine ? '<span class="rw-you">You\'re on it</span>' : '') + closeSpan('rw-close-s') + '</small>'
+            : '') +
+        '</span>'
+      : '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) + '</small></span>';
+    return '<article class="rw' + (mine ? ' mine' : '') + (L.code === HL_CODE ? ' hl' : '') + '" data-code="' + esc(L.code) + '" tabindex="0"' +
+      ' aria-label="' + esc(L.from + ' to ' + L.to + ', ' + L.whenLabel + ', ' + win + ', ' + (togo ? togo.text : st.label)) + '">' +
+      '<div class="rw-when' + (closes ? ' has-close' : '') + '">' + esc(win) + (dur ? '<span class="rw-dur"> · ' + esc(dur) + '</span>' : '') + closeSpan('rw-close-w') + '</div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(L.from, 'a') + '<span class="arr">→</span>' + placeTag(L.to, 'b') + '</span>' +
         (dur ? '<small>' + esc(dur) + '</small>' : '') + '</div>' +
-      '<div class="rw-seats"><span class="rw-faces">' + faces(L) + '</span>' +
-        '<span class="rw-state ' + st.cls + '"><b>' + esc(st.label) + '</b><small>' + esc(st.sub) +
-          (st.decided ? '<span class="rw-dec-s">decided ' + esc(st.decided) + '</span>' : '') + '</small></span></div>' +
-      '<div class="rw-price">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></div>' +
-      '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
-        esc(st.cta.text) + '</button>' +
+      '<div class="rw-seats"><span class="rw-faces">' + faces(L, togo ? togo.need : 0) + '</span>' + seatHtml + '</div>' +
+      '<div class="rw-price"><span class="rw-fare">≈ <b>' + money(L.cost) + '</b><span class="rw-each"> each</span></span>' +
+        (priv ? '<span class="rw-vs">vs ' + money(priv) + ' private car</span>' : '') + '</div>' +
+      '<div class="rw-acts">' +
+        // share only a ride that can still take someone: never one confirmed, closed or full
+        (canShare(L)
+          ? '<button class="rw-share" type="button" data-share="' + esc(L.code) + '" aria-label="Share this ride">' + SHARE_SVG + '</button>'
+          : '') +
+        '<button class="btn btn-sm ' + (primary ? 'btn-primary' : 'btn-ghost') + ' rw-cta" ' + hook + '="' + esc(L.code) + '">' +
+          esc(st.cta.text) + '</button>' +
+      '</div>' +
       '</article>';
   }
 
@@ -849,6 +885,39 @@
   var grid = document.getElementById('board-grid');
   var filtersEl = document.getElementById('filters');
 
+  // "9 travellers on the board right now · 3 rides close this week" — the browse view only: a
+  // route-filtered or My-rides board is already about one trip (plan 2026-10-19-ride-board-fomo).
+  function momentumHtml() {
+    var f = state.filter;
+    if (f.mine || f.from !== 'all' || f.to !== 'all') return '';
+    var now = Date.now();
+    var t = F.momentumText(F.momentum(state.lists, now));
+    if (!t) return '';
+    var people = [];
+    state.lists.forEach(function (L) {
+      if (!L.confirmed && !L.cancelled && !isClosed(L, now)) L.members.forEach(function (m) { people.push(m); });
+    });
+    return '<div class="rw-momentum"><span class="mo-live" aria-hidden="true"></span>' +
+      '<span class="rw-faces">' + people.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('') + '</span>' +
+      '<span class="mo-txt"><b>' + esc(t.head) + '</b>' + (t.sub ? '<small>' + esc(t.sub) + '</small>' : '') + '</span></div>';
+  }
+
+  // Landed here from the home page's "Travel with others?" (?hl=CODE, plan 2026-10-19-ride-board-fomo
+  // PR 2): that ride is tinted on every paint and brought into view ONCE — a later re-render (My
+  // rides, the seat counts) keeps the tint but must not yank the page again. Instant, not smooth: a
+  // smooth scroll towards a row the next render replaces lands on the wrong spot.
+  var HL_CODE = (function () { try { return new URLSearchParams(location.search).get('hl') || ''; } catch (e) { return ''; } })();
+  var landed = false;
+  function landOnRide() {
+    if (!HL_CODE || landed) return;
+    var row = grid.querySelector('.rw[data-code="' + CSS.escape(HL_CODE) + '"]');
+    if (!row) return;
+    landed = true;
+    // Safari before 15.4 rejects behavior:'instant' with a TypeError; a throw here would turn the
+    // whole board into "Couldn't reach the board", so fall back to a plain scroll.
+    try { row.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (e) { row.scrollIntoView(); }
+  }
+
   function render() {
     var today = colomboToday(Date.now());
     var sched = scheduledRows(VANS, { todayIso: today, days: SCHED_DAYS, filter: state.filter });
@@ -863,7 +932,7 @@
       var groups = groupByDay(shown);
       var endIso = addDaysIso(today, SCHED_DAYS);
       var cut = sched.length ? horizonAt(groups, endIso) : -1;
-      grid.innerHTML = groups.map(function (g, i) {
+      grid.innerHTML = momentumHtml() + groups.map(function (g, i) {
         return (i === cut ? schedMoreHtml(sched, endIso) : '') +
           '<section class="rw-group"><h3 class="rw-day-h">' + dayHeading(g, today) + '</h3>' + g.lists.map(rowHtml).join('') + '</section>';
       }).join('') + (cut === groups.length ? schedMoreHtml(sched, endIso) : '') + routeInvite();
@@ -882,6 +951,9 @@
     grid.querySelectorAll('[data-again]').forEach(function (el) {
       el.addEventListener('click', function (e) { e.stopPropagation(); startAnother(el.getAttribute('data-again')); });
     });
+    grid.querySelectorAll('[data-share]').forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); shareRide(state.byCode[el.getAttribute('data-share')], 'row'); });
+    });
     grid.querySelectorAll('.rw').forEach(function (r) {
       var code = r.getAttribute('data-code');
       // the whole row opens the ride — read the code off the row, since a full van has no
@@ -898,6 +970,7 @@
     });
     observe();
     playSeatFills();
+    landOnRide();
   }
 
   /* A seat filling is the whole point of this board. render() rebuilds every row through
@@ -1129,7 +1202,10 @@
     var myRoom = Math.min(cap - L.committed, MAX_SEATS - mySeatsOn(L));
     var sc = scarcityText(L);
     var s = slotWindow(L.slot);
-    var alt = ALT[L.corridorId] || { priv: 0, bus: '' };
+    var alt = ALT[L.corridorId] || { bus: '' };
+    // The private-car fare the rows and the share text quote (the catalogue's), never a
+    // hand-kept figure — the two disagreed on consecutive screens.
+    var altPriv = F.privateCarFare(L.fromId, L.toId, L.cost);
     var people = L.members.map(personEl).join('') +
       Array.apply(null, { length: slots }).map(function (_, i) {
         return '<div class="d-person slot" data-detail-join><span class="circ">＋</span><span class="hand">' + (i === 0 && !youIn ? 'you?' : 'a friend?') + '</span></div>';
@@ -1145,7 +1221,7 @@
         s.opts.map(function (t, i) { return '<span class="topt ' + (i === 1 ? 'lead' : '') + '">' + t + '</span>'; }).join('') +
         '</div><span class="tnote">Everyone\'s asked their preferred time when they join; the group\'s most popular wins.</span></div>';
     var shareUrl = shareUrlFor(L.code);
-    var waText = 'shared taxi ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' — ≈' + money(L.cost) + ' each, $0 unless it runs: ' + shareUrl;
+    var waText = shareTextFor(L) + ' ' + shareUrl;
     var starterName = L.members[0] ? L.members[0].name : 'Someone';
 
     detailInner.innerHTML =
@@ -1210,19 +1286,22 @@
       // Sharing is what fills a van, so the share block sits right under the actions. It used to
       // sit below the deadline, reached by an "Invite someone" button whose only job was to
       // scroll here — the same action twice, in a louder green than the primary.
-      // Not once names have closed: the link would land a friend on a ride that cannot take
-      // them, which is the same dead end this whole change removes, one step further away.
-      (shut ? '' :
+      // Not on a ride a friend can no longer join — names closed, confirmed, or full (canShare): the
+      // link would land them on a dead end, the same one this block removes, one step further away.
+      (!canShare(L) ? '' :
         '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
         '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
         '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-share-detail>Share…</button>' +
         '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>') +
-      (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
+      (altPriv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · ' + money(altPriv) + ' private car' + (alt.bus ? ' · ' + esc(alt.bus) : '') + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
       (conf ? 'taxi locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
+    var sd = detailInner.querySelector('[data-share-detail]');
+    if (sd) sd.addEventListener('click', function () { shareRide(L, 'detail'); });
     detailInner.querySelectorAll('[data-detail-join]').forEach(function (el) { el.addEventListener('click', function () { openModal(L.code); }); });
     // Scratching used to fire on the first click with no warning (owner, 2026-09-18). It now
     // asks inline — nothing is sent until "Yes". Inline rather than window.confirm(): the
@@ -2007,8 +2086,80 @@
     prepShare(L, need);
   }
 
+  /* ---------------- sharing (plan 2026-10-19-ride-board-fomo) ----------------
+     One way to share a ride from anywhere on the page: the phone's own share menu when there
+     is one (every app the traveller has, one tap), else our sheet with WhatsApp, Telegram,
+     Facebook and the link. The words come from CHRideFomo.shareMessage, so a row, the ride
+     page and the "you're on the list" screen all send the same thing. */
+  // A ride worth sharing is one a friend can still join: not confirmed (the join route refuses a
+  // ride past its cutoff, #597), not closed, not full. Rows, the ride page and the share step all ask this.
+  function canShare(L) { return !!L && !L.confirmed && !isClosed(L) && L.committed < L.capacity; }
+
+  function shareTextFor(L) {
+    var togo = F.seatsToGo(L);
+    var closes = F.closesText(L.cutoffMs, Date.now());
+    var priv = F.privateCarFare(L.fromId, L.toId, L.cost);
+    return F.shareMessage({
+      mine: mySeatsOn(L) > 0 || iAmOn(L),
+      route: L.from + ' → ' + L.to,
+      when: L.whenLabel + ' (' + windowLabel(L.slot) + ')',
+      need: togo ? togo.need : 0,
+      fare: money(L.cost),
+      priv: priv ? money(priv) : null,
+      closes: closes && !isClosed(L) ? closes.text : null
+    });
+  }
+
+  var shareSheet = document.getElementById('share-sheet');
+  function openShareSheet(L, text, url, via) {
+    document.getElementById('ss-msg').textContent = (text ? text + ' ' : '') + url;
+    document.getElementById('ss-url').value = url;
+    document.getElementById('ss-wa').href = 'https://wa.me/?text=' + encodeURIComponent((text ? text + ' ' : '') + url);
+    document.getElementById('ss-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(text);
+    document.getElementById('ss-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
+    // GA4 `method` values are dimension values once the owner builds the tag — full names, like
+    // the 'native' and 'copy' the other paths send
+    var METHOD = { 'ss-wa': 'whatsapp', 'ss-tg': 'telegram', 'ss-fb': 'facebook' };
+    Object.keys(METHOD).forEach(function (id) {
+      document.getElementById(id).onclick = function () {
+        ev('share', { method: METHOD[id], content_type: 'ride', item_id: L.code, via: via });
+      };
+    });
+    document.getElementById('ss-copy').onclick = function () {
+      var self = this;
+      ev('share', { method: 'copy', content_type: 'ride', item_id: L.code, via: via });
+      copy(url).then(function () { self.textContent = 'Copied ✓'; setTimeout(function () { self.textContent = 'Copy'; }, 1600); });
+    };
+    shareSheet.hidden = false;
+    document.getElementById('ss-close').focus();
+  }
+  function closeShareSheet() { shareSheet.hidden = true; }
+  document.getElementById('ss-close').addEventListener('click', closeShareSheet);
+  shareSheet.addEventListener('click', function (e) { if (e.target === shareSheet) closeShareSheet(); });
+  shareSheet.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeShareSheet(); });
+
+  function shareRide(L, via) {
+    if (!L || !canShare(L)) return;
+    var url = shareUrlFor(L.code), text = shareTextFor(L);
+    if (navigator.share) {
+      navigator.share({ title: L.from + ' → ' + L.to + ' · shared taxi', text: text, url: url })
+        .then(function () { ev('share', { method: 'native', content_type: 'ride', item_id: L.code, via: via }); })
+        // AbortError = the traveller closed the menu; anything else, offer our sheet instead
+        .catch(function (e) { if (!e || e.name !== 'AbortError') openShareSheet(L, text, url, via); });
+      return;
+    }
+    openShareSheet(L, text, url, via);
+  }
+
   function prepShare(L, need) {
     var url = shareUrlFor(L.code);
+    // The share step only offers a share a friend can act on — not after the join that filled the
+    // last seat, and not on a ride already locked. style.display, not `hidden`: the .btn and
+    // .share-btns display rules outrank the [hidden] reset.
+    var share = canShare(L);
+    [document.getElementById('share-native'), document.querySelector('#mstep-3 .share-btns'),
+      document.querySelector('#mstep-3 .copy-row'), document.querySelector('#mstep-3 .share-preview')]
+      .forEach(function (el) { if (el) el.style.display = share ? '' : 'none'; });
     var s = slotWindow(L.slot).label;
     document.getElementById('sc-route').textContent = L.from + ' → ' + L.to;
     document.getElementById('sc-meta').textContent = L.whenLabel + ' · ' + s + ' · ' + L.committed + ' of ' + L.minSeats + ' in · ≈ ' + money(L.cost) + ' each';
@@ -2018,7 +2169,8 @@
       ? need + ' seat' + (need > 1 ? 's' : '') + ' to lock it in — you pay $0 unless it runs.'
       : 'The taxi\'s locked in — seats still open.';
     document.getElementById('share-url').value = url;
-    var msg = 'hey — I put my name on a shared taxi list, ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' · ' + s + '. ≈' + money(L.cost) + ' each, runs when ' + (need > 0 ? need + ' more sign' : 'you grab a seat') + ', $0 if it doesn\'t happen. add your name: ' + url;
+    var msg = shareTextFor(L) + ' ' + url;
+    document.getElementById('share-native').onclick = function () { shareRide(L, 'joined'); };
     document.getElementById('wa-share').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
     document.getElementById('fb-share').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
   }
@@ -2188,6 +2340,14 @@
   /* live countdown ticker */
   function startTicker() {
     setInterval(function () {
+      // FOMO rows' "Names close in …" (plan 2026-10-19-ride-board-fomo)
+      var now = Date.now();
+      document.querySelectorAll('[data-close]').forEach(function (el) {
+        var c = F.closesText(+el.getAttribute('data-close'), now, { short: el.hasAttribute('data-close-short') });
+        if (!c) return;
+        if (el.textContent !== c.text) el.textContent = c.text;
+        el.classList.toggle('urgent', c.urgent);
+      });
       document.querySelectorAll('.countdown[data-cut]').forEach(function (el) {
         var ms = +el.getAttribute('data-cut');
         var t = el.querySelector('.cd');
