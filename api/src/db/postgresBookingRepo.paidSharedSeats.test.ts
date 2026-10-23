@@ -36,6 +36,7 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.paidSharedSeats (integration)', 
     };
     const byTime = async () => {
       const rows = (await repo.paidSharedSeats(DAY, DAY)).filter((r) => r.corridorId === 'airport-cultural');
+      for (const r of rows) expect(r.date).toBe(DAY);
       return new Map(rows.map((r) => [r.time, r.seats]));
     };
     const before = await byTime();
@@ -44,8 +45,9 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.paidSharedSeats (integration)', 
     await pay(seat('07:30', 2));
     await repo.create(seat('07:00', 4)); // draft — not counted
     const after = await byTime();
-    const gained = (time: string) => (after.get(time) ?? 0) - (before.get(time) ?? 0);
-    expect(gained('07:00')).toBe(3);
-    expect(gained('07:30')).toBe(2);
+    // Strict equality, not a subtraction: a bigint string from sum() would coerce in a subtraction
+    // but fail here (and would concatenate when the domain pools departures).
+    expect(after.get('07:00')).toBe((before.get('07:00') ?? 0) + 3);
+    expect(after.get('07:30')).toBe((before.get('07:30') ?? 0) + 2);
   });
 });

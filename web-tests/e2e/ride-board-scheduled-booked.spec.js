@@ -31,6 +31,7 @@ test('a busy scheduled taxi says how many have booked; a quiet one says nothing'
   const asked = await stubApi(page);
   await page.goto('/board.html');
   await expect(wedRow(page, '07:00').locator('.rws-booked').first()).toContainText('7 booked', { timeout: 15000 });
+  await expect(wedRow(page, '11:30')).toBeVisible();
   await expect(wedRow(page, '11:30').locator('.rws-booked')).toHaveCount(0);
   expect(asked[0]).toContain('from=2099-08-11');
   expect(asked[0]).toContain('days=14');

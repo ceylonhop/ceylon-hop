@@ -20,6 +20,8 @@ describe('InMemoryBookingRepo.paidSharedSeats', () => {
     const gone = await pay(seat('2099-08-12', '07:00', 5));
     await repo.setStatus(gone.id, 'cancelled');
     await repo.create(seat('2099-08-12', '07:00', 4));        // checkout started, never paid
+    const pending = await repo.create(seat('2099-08-12', '07:00', 6));
+    await repo.setStatus(pending.id, 'payment_pending');      // at the payment page, never paid
     await pay(seat('2099-09-30', '07:00', 3));                // outside the window
     expect(await repo.paidSharedSeats('2099-08-11', '2099-08-25')).toEqual([
       { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:00', seats: 3 },
