@@ -43,5 +43,6 @@ describe('GET /board/scheduled-seats', () => {
     const app = createApp({ bookings: new InMemoryBookingRepo() });
     expect((await app.request('/board/scheduled-seats?from=next-week')).status).toBe(400);
     expect((await app.request('/board/scheduled-seats?from=2099-02-31')).status).toBe(400);
+    expect((await app.request('/board/scheduled-seats?from=2000-01-01')).status).toBe(400); // history is not public
   });
 });

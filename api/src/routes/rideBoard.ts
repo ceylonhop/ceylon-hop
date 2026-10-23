@@ -476,13 +476,16 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
   // GET /board/scheduled-seats?from=YYYY-MM-DD&days=14 — paid seats on each scheduled taxi, a
   // COUNT per departure and never who: those customers bought a seat, they did not sign up to be
-  // shown. Registered before /:code, which would otherwise read "scheduled-seats" as a ride code.
+  // shown. Past dates are refused: the endpoint is public, and sales history is not. Registered
+  // before /:code, which would otherwise read "scheduled-seats" as a ride code.
   r.get('/scheduled-seats', async (c) => {
     const from = c.req.query('from') ?? '';
     const start = Date.parse(from + 'T00:00:00Z');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(start) || new Date(start).toISOString().slice(0, 10) !== from) {
       return c.json({ error: 'bad_request' }, 400);
     }
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    if (from < todayUtc) return c.json({ error: 'bad_request' }, 400);
     const days = Math.min(31, Math.max(1, Number.parseInt(c.req.query('days') ?? '14', 10) || 14));
     const to = new Date(start + days * 86400000).toISOString().slice(0, 10);
     const rows = deps.sharedSeats ? await deps.sharedSeats.paidSharedSeats(from, to) : [];
