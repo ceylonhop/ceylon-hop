@@ -50,6 +50,17 @@ test.describe('on a phone', () => {
     expect(box.height).toBeLessThan(80);
   });
 
+  test('the phone row stays two places and one word — the stop on the way is a laptop line', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/board.html?from=Colombo%20Airport%20(CMB)&to=Sigiriya%20%2F%20Dambulla');
+    const row = page.locator('.rws').first();
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.locator('.rws-short')).toHaveText('Airport → SigiriyaScheduled');
+    await expect(row.locator('.rws-via')).toBeHidden();
+    const box = await row.boundingBox();
+    expect(box.height).toBeLessThan(80);
+  });
+
   test('Join is the only solid button in the list', async ({ page }) => {
     await stubApi(page);
     await page.goto('/board.html');
@@ -91,6 +102,21 @@ test.describe('on a phone', () => {
     const togo = await row.locator('.rw-togo').boundingBox();
     const close = await row.locator('.rw-state .rw-close').boundingBox();
     expect(close.y).toBeGreaterThan(togo.y);
+  });
+
+  test('on a laptop the row says where else the van stops to pick up, with the time there', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await stubApi(page);
+    await page.goto('/board.html?from=Colombo%20Airport%20(CMB)&to=Sigiriya%20%2F%20Dambulla');
+    const row = page.locator('.rws').first();
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.locator('.rws-via')).toHaveText('Stops at Negombo 07:30');
+    await expect(row).toHaveAttribute('aria-label', /stops at Negombo 07:30/);
+    // a van with no later boarding stop says nothing
+    await page.goto('/board.html?from=Ella&to=Yala');
+    const ella = page.locator('.rws').first();
+    await expect(ella).toBeVisible({ timeout: 15000 });
+    await expect(ella.locator('.rws-via')).toHaveCount(0);
   });
 
   test('the board says the timetable keeps going past the two weeks it lists', async ({ page }) => {

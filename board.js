@@ -298,10 +298,14 @@
       var iso = addDaysIso(opts.todayIso, i);
       (vans || []).forEach(function (v) {
         if (to && v.to !== to) return;
-        var leg = from ? v.legs.filter(function (l) { return l.place === from; })[0] : v.legs[0];
+        var at = from ? v.legs.map(function (l) { return l.place; }).indexOf(from) : 0;
+        var leg = v.legs[at];
         if (!leg || !SD.runsOn(iso, v.days)) return;
+        // The stops the van still boards at AFTER yours — the ones you ride through. Stops before
+        // yours have already been passed by the time you get in, so they are not "via".
+        var via = v.legs.slice(at + 1).map(function (l) { return { place: l.place, time: l.time, point: l.point }; });
         rows.push({ sched: true, date: iso, time: leg.time, from: leg.place, fromId: leg.placeId, point: leg.point, corridorId: v.corridorId,
-          to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText });
+          to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText, via: via });
       });
     }
     return rows;
@@ -777,14 +781,24 @@
   // A scheduled taxi: its clock time, the solid clock mark, an exact price and no button — the
   // whole row is the link to book it on search.html for that date. "· 7 booked" when that many
   // have paid (plan 2026-10-19-ride-board-fomo, PR 3) — a count, never who.
+  // "Stops at Negombo 07:30": the stops the van boards at after yours, each with its time — a
+  // CMB → Sigiriya traveller rides through Negombo and should see that on the row.
+  function viaText(S) {
+    return (S.via || []).map(function (v) { return splitPlace(v.place).main + ' ' + v.time; }).join(', ');
+  }
   function schedRowHtml(S) {
     var href = 'search.html?' + new URLSearchParams({ from: S.fromId || S.from, to: S.toId || S.to, date: S.date }).toString();
     var booked = F.bookedText(state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time]);
     var bk = booked ? '<span class="rws-booked"> · ' + esc(booked) + '</span>' : '';
+    var via = viaText(S);
+    // Laptop and tablet only. The phone's one-line row has no room for it: a third place clips the
+    // route line ("Airport → Negom…") and even "Scheduled via Negombo" overruns the 144px sub-line
+    // at 375px (measured 2026-10-23). The ride page the row opens lists every boarding stop.
     return '<a class="rws" href="' + esc(href) + '"' +
-      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
+      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + (via ? ', stops at ' + via : '') + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
       '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
+        (via ? '<small class="rws-via">Stops at ' + esc(via) + '</small>' : '') +
         '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled' + bk + '</small></span></div>' +
       '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
         '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + bk + ' · ' + esc(S.point) + '</small></span></div>' +
