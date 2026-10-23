@@ -575,6 +575,7 @@ export function createApp(deps: AppDeps = {}) {
       },
       maps,
       rateRevisions,
+      sharedSeats: bookings,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
