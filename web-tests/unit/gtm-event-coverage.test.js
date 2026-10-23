@@ -31,7 +31,9 @@ const ALREADY_LIVE = new Set([]);
     regenerating docs/analytics/gtm-missing-tags.json for the owner to import - a separate step.
     Remove it from here when that tag is built (the 'plans no tag for an event the site never emits'
     test then keeps the pair honest). */
-const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest']);
+/* 'share' (plan 2026-10-19-ride-board-fomo, PR 1): one-tap sharing of a ride from the board. Its GA4
+   tag is the owner's import step, like experience_interest. */
+const DELIBERATELY_UNTAGGED = new Set(['ch_context', 'experience_interest', 'share']);
 
 function siteFiles(dir = ROOT, out = []) {
   for (const entry of readdirSync(dir)) {

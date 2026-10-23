@@ -154,6 +154,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw:hover{background:var(--pc-sky)}
 .rw:focus-visible{outline:2px solid var(--accent-deep);outline-offset:-2px}
 .rw.mine{background:var(--pc-teal);box-shadow:inset 3px 0 0 var(--teal)}
+/* the ride a home-page card pointed at (?hl=CODE, PR 2): saffron, because teal already means "you're on it" */
+.rw.hl{background:var(--pc-saffron);box-shadow:inset 3px 0 0 var(--saffron)}
+/* on that row the "N seats to go" pill shares the wash's colour, so it keeps its shape on paper */
+.rw.hl .rw-togo:not(.hot){background:var(--paper)}
 .rw-when{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rw-dur{display:none}
 /* the duration rides on the route's own line; it drops below only when the pair leaves no room */
@@ -188,9 +192,54 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .rw-state.g b{color:var(--warn)}
 .rw-state.l b{color:var(--ok)}
 .rw-state.f b{color:var(--ink-soft)}
+/* FOMO rows (plan 2026-10-19-ride-board-fomo): a gathering ride says how many seats it still
+   needs and when names close, and leaves its open seats visible as dashed faces. The state
+   has no g/l/f class, so .rw-state.g b's amber never reaches the pill. */
+.rw-state.fomo{gap:3px}
+.rw-togo{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;padding:2px 9px;border-radius:999px;
+  background:var(--pc-saffron);color:#7a4f00;font-size:.78rem;font-weight:800;white-space:nowrap}
+.rw-togo::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--saffron);flex:none}
+.rw-togo.hot{background:#fde4e0;color:#B01E0B}
+.rw-togo.hot::before{background:var(--tomato);animation:rwPulse 1.6s ease-out infinite}
+@keyframes rwPulse{0%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),.5)}70%{box-shadow:0 0 0 7px rgba(var(--cta-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--cta-rgb),0)}}
+@media (prefers-reduced-motion:reduce){.rw-togo.hot::before{animation:none}}
+.rw-close.urgent{color:#C82511;font-weight:700}
+.rw-close-w{display:none} /* the time-line copy is for phones (see the 640px block) */
+.rw-you + .rw-close::before{content:" · "} /* the separator belongs to the closing line, which phones hide */
+/* outranks .avatar.xs.stack (later in this sheet, same 3 classes), which would repaint the dashed border solid */
+.rw-faces .avatar.xs.rw-open{background:var(--paper);color:#8f897a;border:1.5px dashed #b9b3a3;box-shadow:none;font-size:.8rem}
+.rw-fare{display:block}
+.rw-vs{display:block;font-size:.72rem;color:var(--ink-soft)}
 .rw-price{text-align:right;white-space:nowrap;font-size:.8rem;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 .rw-price b{font-family:var(--display);font-weight:700;font-size:1.1rem;color:var(--ink)}
-.rw .rw-cta{justify-self:end;white-space:nowrap}
+.rw-acts{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+.rw .rw-cta{white-space:nowrap}
+/* row share button: an outline circle beside Join, never a second solid button */
+.rw-share{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--accent-deep);
+  display:grid;place-items:center;cursor:pointer;flex:none;padding:0}
+.rw-share svg{width:17px;height:17px}
+.rw-share:hover{background:var(--pc-sky)}
+.rw-share:focus-visible{outline:2px solid var(--accent-deep);outline-offset:2px}
+/* share sheet — above the join overlay (z 100) */
+.share-sheet{position:fixed;inset:0;z-index:110;background:rgba(40,38,39,.48);display:flex;align-items:flex-end;justify-content:center}
+.share-sheet[hidden]{display:none}
+.ss-card{width:min(520px,100%);box-sizing:border-box;background:var(--paper);border-radius:22px 22px 0 0;
+  padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+@media(min-width:641px){.share-sheet{align-items:center}.ss-card{border-radius:22px}}
+.ss-head{display:flex;align-items:center;justify-content:space-between}
+.ss-head h2{margin:0;font-size:1.3rem}
+.ss-close{width:44px;height:44px;border:0;background:none;font-size:1.1rem;color:var(--ink);cursor:pointer}
+.ss-msg{margin:0;padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:14px;font-size:.88rem;line-height:1.5;color:var(--ink)}
+.ss-apps{display:flex;gap:8px;flex-wrap:wrap}
+/* momentum line — the first thing in the list, painted with the rows so nothing jumps */
+.rw-momentum{display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid var(--line);background:var(--paper)}
+.mo-live{width:8px;height:8px;border-radius:50%;background:var(--btn-cta);flex:none;animation:moLive 1.8s ease-in-out infinite}
+@keyframes moLive{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.mo-live{animation:none}}
+.mo-txt{display:flex;flex-direction:column;min-width:0;line-height:1.35}
+.mo-txt b{font-size:.92rem}
+.mo-txt small{font-size:.78rem;color:var(--ink-soft)}
+@media(max-width:640px){.rw-momentum{padding:12px 16px}}
 .rw-invite{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 24px;
   border-top:1px solid var(--line);background:var(--cream);font-size:.9rem;color:var(--ink-soft)}
 .rw-invite p{margin:0}
@@ -198,7 +247,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .filters .f-start{margin-left:4px}
 @media(max-width:1020px){
   .rw{grid-template-columns:88px minmax(0,1fr) 96px 156px;grid-template-areas:"when route price cta" "when seats price cta";row-gap:8px}
-  .rw-when{grid-area:when}.rw-route{grid-area:route}.rw-seats{grid-area:seats}.rw-price{grid-area:price}.rw .rw-cta{grid-area:cta}
+  .rw-when{grid-area:when}.rw-route{grid-area:route}.rw-seats{grid-area:seats}.rw-price{grid-area:price}.rw-acts{grid-area:cta}
 }
 /* the sign-up avatars and goal dots are also drawn by the ride sheet */
 /* four little dots = the goal */
@@ -626,6 +675,14 @@ body.detail-open .detail{display:block}
   .rw-places{font-size:1.05rem}
   .rw-state{flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:4px}
   .rw-state small::before{content:"· "}
+  /* FOMO: beside the faces only the pill fits, so the closing line moves to the time line (where
+     the old "decided" date sat) and the duration gives way to it, as it did before */
+  .rw-state.fomo{flex-direction:column;align-items:flex-start;row-gap:3px}
+  .rw-state.fomo small::before{content:none}
+  .rw-state.fomo .rw-close-s{display:none}
+  .rw-close-w{display:inline}
+  .rw-close-w::before{content:" · "}
+  .rw-when.has-close .rw-dur{display:none}
   /* 32px, not 44: the whole row is the tap target and opens the same sheet */
   .rw .rw-cta,.rw .rw-cta:hover{background:none;border:0;box-shadow:none;color:var(--accent-deep);padding:4px 0;min-height:32px;transform:none}
   .rw .rw-cta::after{content:" ›"}
@@ -649,9 +706,6 @@ body.detail-open .detail{display:block}
 .lg-faces i+i{margin-left:-6px}
 .rw-rel{font-family:var(--body);font-size:.72rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--teal-deep);margin-left:.5rem}
 .rw-rel.soon{color:var(--cta)}
-.rw-dec-w{display:none}
-/* its own line under "needs 1 more": beside it, a laptop row cut it to "decided …" */
-.rw-dec-s{display:block}
 .rws{display:grid;grid-template-columns:96px minmax(0,2.1fr) minmax(220px,1fr) 104px 156px;gap:18px;align-items:center;
   padding:16px 24px;border-top:1px solid var(--line);text-decoration:none;color:inherit;transition:background .15s}
 .rw-day-h+.rws{border-top:0}
@@ -664,6 +718,8 @@ body.detail-open .detail{display:block}
 .rws-kt{display:flex;flex-direction:column;min-width:0;line-height:1.3}
 .rws-kt b{font-size:.9rem;font-weight:700;color:var(--teal-deep)}
 .rws-kt small{font-size:.76rem;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* "· 7 booked" on a scheduled taxi (plan 2026-10-19-ride-board-fomo, PR 3) */
+.rws-booked{color:var(--ink);font-weight:600}
 .rws .rws-short{display:none}
 .rws-go{justify-self:end;font-weight:700;font-size:.9rem;color:var(--accent-deep);white-space:nowrap}
 .rws-go::after{content:" ›"}
@@ -695,12 +751,10 @@ body.detail-open .detail{display:block}
   .rws .rw-price b{font-size:.96rem}
   .rws-go{grid-area:go;font-size:0}
   .rws-go::after{content:"›";font-size:1.3rem}
-  /* the decided date rides on the time line, where there is room; the seat line stays one line */
-  .rw-dec-w{display:inline}
-  .rw-dec-s{display:none}
-  /* ...and makes room for itself: a gathering row's duration (it is in the ride sheet) and the
-     price's "each" give way, so the time line stays one line down to a 360px phone */
-  .rw-when.has-dec .rw-dur,.rw-each{display:none}
+  /* the price's "each" gives way so the price stays one short line on a 360px phone */
+  .rw-each{display:none}
+  /* no room beside the seats-to-go pill for a share button at 375px — the ride page shares */
+  .rw-share{display:none}
   .rws-more{display:grid;grid-template-columns:24px 1fr;gap:4px 10px;padding:12px 16px;align-items:start}
   .rws-more a{grid-column:2;margin:0}
 }
@@ -839,6 +893,19 @@ body.detail-open .detail{display:block}
 <div class="foot">The ride board is run by Ceylon Hop · <span class="hand">questions? shout on WhatsApp anytime ✌️</span></div>
 
 <!-- ================= RIDE DETAIL PAGE ================= -->
+<!-- Share sheet: only when the phone has no share menu of its own (plan 2026-10-19-ride-board-fomo) -->
+<div class="share-sheet" id="share-sheet" role="dialog" aria-modal="true" aria-labelledby="ss-title" hidden>
+  <div class="ss-card">
+    <div class="ss-head"><h2 id="ss-title">Share this ride</h2><button class="ss-close" id="ss-close" type="button" aria-label="Close">✕</button></div>
+    <p class="ss-msg" id="ss-msg"></p>
+    <div class="ss-apps">
+      <a class="btn btn-wa btn-sm" id="ss-wa" target="_blank" rel="noopener">WhatsApp</a>
+      <a class="btn btn-ghost btn-sm" id="ss-tg" target="_blank" rel="noopener">Telegram</a>
+      <a class="btn btn-ghost btn-sm" id="ss-fb" target="_blank" rel="noopener">Facebook</a>
+    </div>
+    <div class="copy-row"><input readonly id="ss-url" aria-label="Ride link"><button class="btn btn-ghost btn-sm" id="ss-copy" type="button">Copy</button></div>
+  </div>
+</div>
 <main class="detail" id="detail"><div class="wrap" id="detail-inner"></div></main>
 
 <!-- ================= MODAL ================= -->
@@ -969,6 +1036,7 @@ body.detail-open .detail{display:block}
         </div>
         <h3 id="done-head">Your name's on the list.</h3>
         <p class="why-share" id="done-sub">1 more name and the taxi rolls.</p>
+        <button class="btn btn-primary btn-block" id="share-native" type="button" style="margin-bottom:10px">Share — fill it faster</button>
         <div class="share-btns">
           <a class="btn btn-wa" id="wa-share" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .6l-.4.6-.5.5c-.2.2-.3.4-.1.7.2.3.8 1.4 1.8 2.2 1.2 1.1 2.3 1.4 2.6 1.6.3.1.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.6.4 0 .1 0 .8-.2 1.4z"/></svg>
@@ -1038,6 +1106,7 @@ body.detail-open .detail{display:block}
 <script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
-<script src="board.js?v=6fbf312094" defer></script>
+<script src="ride-fomo.js?v=d597efec49" defer></script>
+<script src="board.js?v=1b62256109" defer></script>
 </body>
 </html>
