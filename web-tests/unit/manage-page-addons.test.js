@@ -82,7 +82,19 @@ describe('manage card time row', () => {
     expect(html).toContain('<span class="k">Pick-up time</span><span class="v">9:00 am<small>Sri Lanka time</small></span>');
   });
   it('calls it Landing time on an airport pickup', () => {
-    expect(factsOf({ ...view, from: 'Colombo Airport (CMB)', time: '09:00' })).toContain('<span class="k">Landing time</span>');
+    expect(factsOf({ ...view, mode: 'single', from: 'Colombo Airport (CMB)', time: '09:00' })).toContain('<span class="k">Landing time</span>');
+  });
+  // 07:00 on a shared seat is when the van LEAVES; calling it "Landing time" would have a
+  // traveller who lands at 7:00 miss it. Only a single airport pickup is a landing time.
+  it('keeps Pick-up time on a shared booking from the airport', () => {
+    const html = factsOf({ ...view, mode: 'shared', from: 'Colombo Airport (CMB)', time: '07:00' });
+    expect(html).toContain('<span class="k">Pick-up time</span>');
+    expect(html).not.toContain('Landing time');
+  });
+  it('keeps Pick-up time on a trip that starts at the airport', () => {
+    const html = factsOf({ ...view, mode: 'trip', from: 'Colombo Airport (CMB)', time: '09:00' });
+    expect(html).toContain('<span class="k">Pick-up time</span>');
+    expect(html).not.toContain('Landing time');
   });
   // The amber chip is a to-do, so it shows only where the customer can act (pickupNeeds non-null).
   const paidSingle = { ...view, mode: 'single', status: 'paid', from: 'Kandy' };

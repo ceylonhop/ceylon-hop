@@ -489,7 +489,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var rows = [
       { k: 'Trip start', v: noDate ? 'To be confirmed' : longDate(v.date), blank: noDate, sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
       { k: 'Trip end', v: isoParts(v.endDate) ? longDate(v.endDate) : 'To be confirmed', sub: sameDay ? 'same day' : '' },
-      { k: isAirport(v) ? 'Landing time' : 'Pick-up time',
+      { k: v.mode === 'single' && isAirport(v) ? 'Landing time' : 'Pick-up time',
         v: noTime ? 'To be confirmed' : fmtTime(v.time), blank: noTime,
         sub: noTime ? '' : 'Sri Lanka time' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer

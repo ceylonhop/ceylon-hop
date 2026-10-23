@@ -69,8 +69,9 @@ test('trip start and end dates replace the bare pick-up row', async ({ page }) =
   await expect(card).toContainText('Trip start');
   await expect(card).toContainText('Trip end');
   // The pick-up TIME is still its own row — it was never a place, and must not be lost.
-  // (TRIP_VIEW starts at the airport, so the row is the landing time.)
-  await expect(card).toContainText('Landing time');
+  // (TRIP_VIEW starts at the airport, but only a SINGLE airport pickup is a "Landing time".)
+  await expect(card).toContainText('Pick-up time');
+  await expect(card).not.toContainText('Landing time');
   // Start and end must be DIFFERENT dates on a multi-day trip (the end date is the new fact).
   const start = await card.locator('.fact', { hasText: 'Trip start' }).innerText();
   const end = await card.locator('.fact', { hasText: 'Trip end' }).innerText();

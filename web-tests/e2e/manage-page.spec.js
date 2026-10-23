@@ -13,6 +13,7 @@ const PAGE = '/manage.html?t=test-token';
 const BOOKING = {
   reference: 'CH-HAFDZ',
   status: 'payment_pending',
+  mode: 'single',
   firstName: 'Roshen',
   from: 'Colombo Airport (CMB)',
   to: 'Batticaloa, Sri Lanka',
