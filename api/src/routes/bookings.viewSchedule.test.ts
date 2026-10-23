@@ -78,9 +78,12 @@ describe('POST /bookings/view/schedule — the customer fills a blank pickup (Ph
   });
 
   it('binds the customer to 12 h notice (ops is not)', async () => {
-    const res = await post({ date: inDays(0), time: '00:00' });
+    // A Colombo wall-clock instant ~6 h ahead (UTC+5:30 + 6 h). Built from a UTC date it would be
+    // Colombo's yesterday for part of each day and answer 'past' whatever the route does about notice.
+    const at = new Date(Date.now() + 11.5 * 3600e3).toISOString();
+    const res = await post({ date: at.slice(0, 10), time: at.slice(11, 16) });
     expect(res.status).toBe(400);
-    expect(['past', 'too_soon']).toContain((await res.json()).error);
+    expect((await res.json()).error).toBe('too_soon');
   });
 
   it('400s an empty fill, a time with no date, and a malformed body', async () => {
@@ -101,6 +104,20 @@ describe('POST /bookings/view/schedule — the customer fills a blank pickup (Ph
         customer: { firstName: 'X', lastName: 'Y', email: 'x@x.com', whatsapp: '+1', country: 'US' } },
     });
     const res = await post({ date: inDays(14), time: null }, signBookingToken(b.id, SECRET));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_editable');
+  });
+
+  it('409s a paid booking that is not a single transfer', async () => {
+    const b = await bookings.create({
+      mode: 'trip', total: 30000, amountDueNow: 30000, currency: 'USD',
+      input: { stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: [inDays(20), inDays(22)], pax: 2,
+        vehicleType: 'car', serviceType: 'chauffeur', days: 3, driverNights: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' } },
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const res = await post({ date: inDays(30), time: null }, signBookingToken(b.id, SECRET));
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('not_editable');
   });
