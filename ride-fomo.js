@@ -125,6 +125,13 @@
     }).slice(0, max || 4);
   }
 
+  // A scheduled taxi's paid seats (PR 3), said only when it reads as busy: "1 booked" reads as
+  // empty. A count only — the API never says who.
+  function bookedText(n) {
+    n = Number(n) || 0;
+    return n >= 2 ? n + ' booked' : null;
+  }
+
   window.CHRideFomo = {
     seatsToGo: seatsToGo,
     closesText: closesText,
@@ -134,6 +141,7 @@
     momentumText: momentumText,
     busTime: busTime,
     stripRides: stripRides,
-    countdown: countdown
+    countdown: countdown,
+    bookedText: bookedText
   };
 })();

@@ -158,3 +158,15 @@ describe('closesText with minutes only — no second hand on the home page', () 
     expect(F.closesText(NOW + 9 * H + 12 * 60000, NOW, { minutes: true }).text).toBe('Names close in 9h 12m');
   });
 });
+
+describe('bookedText', () => {
+  it('says how many have booked, from two up', () => {
+    expect(F.bookedText(7)).toBe('7 booked');
+    expect(F.bookedText(2)).toBe('2 booked');
+  });
+  it('stays quiet below two — "1 booked" reads as empty, not busy', () => {
+    expect(F.bookedText(1)).toBeNull();
+    expect(F.bookedText(0)).toBeNull();
+    expect(F.bookedText(undefined)).toBeNull();
+  });
+});

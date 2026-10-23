@@ -276,7 +276,7 @@
         if (seen[key]) return;
         seen[key] = true;
         vans.push({
-          to: to, toId: t, days: so.days || [], freqText: so.freqText || '', seat: so.seat,
+          to: to, toId: t, days: so.days || [], freqText: so.freqText || '', seat: so.seat, corridorId: so.corridorId,
           legs: so.pickups.map(function (x) { return { place: x.place, placeId: idOf[x.place] || null, time: x.time, point: x.point || x.place }; })
         });
       });
@@ -300,7 +300,7 @@
         if (to && v.to !== to) return;
         var leg = from ? v.legs.filter(function (l) { return l.place === from; })[0] : v.legs[0];
         if (!leg || !SD.runsOn(iso, v.days)) return;
-        rows.push({ sched: true, date: iso, time: leg.time, from: leg.place, fromId: leg.placeId, point: leg.point,
+        rows.push({ sched: true, date: iso, time: leg.time, from: leg.place, fromId: leg.placeId, point: leg.point, corridorId: v.corridorId,
           to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText });
       });
     }
@@ -573,7 +573,8 @@
   var F = window.CHRideFomo || {
     seatsToGo: function () { return null; }, closesText: function () { return null; },
     privateCarFare: function () { return null; }, shareMessage: function () { return ''; },
-    momentum: function () { return { travellers: 0, closingThisWeek: 0, oneToGo: 0 }; }, momentumText: function () { return null; }
+    momentum: function () { return { travellers: 0, closingThisWeek: 0, oneToGo: 0 }; }, momentumText: function () { return null; },
+    bookedText: function () { return null; }
   };
   // Share links resolve against whatever serves the unfurl page (this ride's own preview
   // tags). It used to be a hardcoded 'https://ceylonhop.com' — the old WordPress apex,
@@ -590,6 +591,7 @@
   var state = {
     me: null,
     lists: [],            // currently displayed normalized lists
+    schedSeats: {},       // "corridorId|date|time" → paid seats on that scheduled taxi (PR 3)
     loadFailed: false,    // last /board fetch failed — lists is empty because we couldn't ask,
                           // NOT because there are none (renderFilters must not report "0")
     byCode: {},           // code → normalized list (detail cache)
@@ -773,19 +775,35 @@
   }
 
   // A scheduled taxi: its clock time, the solid clock mark, an exact price and no button — the
-  // whole row is the link to book it on search.html for that date.
+  // whole row is the link to book it on search.html for that date. "· 7 booked" when that many
+  // have paid (plan 2026-10-19-ride-board-fomo, PR 3) — a count, never who.
   function schedRowHtml(S) {
     var href = 'search.html?' + new URLSearchParams({ from: S.fromId || S.from, to: S.toId || S.to, date: S.date }).toString();
+    var booked = F.bookedText(state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time]);
+    var bk = booked ? '<span class="rws-booked"> · ' + esc(booked) + '</span>' : '';
     return '<a class="rws" href="' + esc(href) + '"' +
-      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + ', ' + money(S.seat) + ' a seat') + '">' +
+      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
       '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
-        '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled</small></span></div>' +
+        '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled' + bk + '</small></span></div>' +
       '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
-        '<span class="rws-kt"><b>Scheduled</b><small>Always runs · ' + esc(S.point) + '</small></span></div>' +
+        '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + bk + ' · ' + esc(S.point) + '</small></span></div>' +
       '<div class="rw-price"><b>' + money(S.seat) + '</b><span class="rws-per"> / seat</span></div>' +
       '<span class="rws-go">Book a seat</span>' +
       '</a>';
+  }
+
+  // Paid seats on each scheduled taxi, once per page (the API caches it for five minutes).
+  // Silent on failure: a scheduled row without a count is exactly what the board showed before.
+  // Never repaints over a failed board load — that screen is the error message.
+  function loadSchedSeats() {
+    var from = addDaysIso(colomboToday(Date.now()), 1);
+    return apiGet('/board/scheduled-seats?from=' + from + '&days=' + SCHED_DAYS).then(function (d) {
+      var map = {};
+      ((d && d.departures) || []).forEach(function (x) { map[x.corridorId + '|' + x.date + '|' + x.time] = x.booked; });
+      state.schedSeats = map;
+      if (Object.keys(map).length && !state.loadFailed) render();
+    }).catch(function () {});
   }
 
   // Where the scheduled rows stop: they keep running, the board just stops listing them. Only a
@@ -2400,6 +2418,7 @@
       .then(function (data) { state.me = (data && data.me) || null; })
       .catch(function () { state.me = null; });
     var board = loadBoard();
+    board.then(loadSchedSeats);
 
     // /board/mine needs the identity, and its render() reads state.lists — so it waits
     // for both rather than racing the first paint and flashing the empty state.
