@@ -50,15 +50,23 @@ test.describe('on a phone', () => {
     expect(box.height).toBeLessThan(80);
   });
 
-  test('the phone row stays two places and one word — the stop on the way is a laptop line', async ({ page }) => {
+  test('a van that boards again on the way names that stop under the phone route line', async ({ page }) => {
     await stubApi(page);
     await page.goto('/board.html?from=Colombo%20Airport%20(CMB)&to=Sigiriya%20%2F%20Dambulla');
     const row = page.locator('.rws').first();
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.locator('.rws-short')).toHaveText('Airport → SigiriyaScheduled');
+    await expect(row.locator('.rws-rt')).toHaveText('Airport → Sigiriya'); // the route line stays two places
+    const sub = row.locator('.rws-short small');
+    await expect(sub).toHaveText('Scheduled · via Negombo 07:30');
+    // the sub-line borrows the price column, so the whole stop fits without clipping
+    expect(await sub.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false);
     await expect(row.locator('.rws-via')).toBeHidden();
     const box = await row.boundingBox();
     expect(box.height).toBeLessThan(80);
+    // the price sits on the route line, not below it
+    const rt = await row.locator('.rws-rt').boundingBox();
+    const price = await row.locator('.rw-price').boundingBox();
+    expect(Math.abs(rt.y + rt.height / 2 - (price.y + price.height / 2))).toBeLessThan(6);
   });
 
   test('Join is the only solid button in the list', async ({ page }) => {

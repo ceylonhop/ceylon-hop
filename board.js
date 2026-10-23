@@ -791,15 +791,19 @@
     var booked = F.bookedText(state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time]);
     var bk = booked ? '<span class="rws-booked"> · ' + esc(booked) + '</span>' : '';
     var via = viaText(S);
-    // Laptop and tablet only. The phone's one-line row has no room for it: a third place clips the
-    // route line ("Airport → Negom…") and even "Scheduled via Negombo" overruns the 144px sub-line
-    // at 375px (measured 2026-10-23). The ride page the row opens lists every boarding stop.
+    // On the phone the stop rides on the sub-line, after the booked count — the count is the
+    // stronger signal, so a tight phone trims the stop first. The sub-line spans the price column
+    // for the room ("Airport → Negombo → Sigiriya" on the route line clips at 375px). Beside a
+    // booked count the stop's time goes: "· 7 booked · via Negombo 07:30" would be cut mid-time.
+    var viaShort = via
+      ? '<span class="rws-via-s"> · via ' + esc(booked ? (S.via || []).map(function (v) { return splitPlace(v.place).main; }).join(', ') : via) + '</span>'
+      : '';
     return '<a class="rws" href="' + esc(href) + '"' +
       ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + (via ? ', stops at ' + via : '') + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
       '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
         (via ? '<small class="rws-via">Stops at ' + esc(via) + '</small>' : '') +
-        '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled' + bk + '</small></span></div>' +
+        '<span class="rws-short"><span class="rws-rt">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '</span><small>Scheduled' + bk + viaShort + '</small></span></div>' +
       '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
         '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + bk + ' · ' + esc(S.point) + '</small></span></div>' +
       '<div class="rw-price"><b>' + money(S.seat) + '</b><span class="rws-per"> / seat</span></div>' +
