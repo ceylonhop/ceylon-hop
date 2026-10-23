@@ -108,6 +108,23 @@ describe('POST /board/login', () => {
     const { app } = makeApp();
     expect((await app.request('/board/login', json(undefined, {}))).status).toBe(400);
   });
+  // The country is shown as a flag on every avatar, and only a 2-letter ISO code has one. The
+  // field used to keep up to 4 letters ("IND", "JAPA"), which the board then painted as text
+  // spilling out of the circle (2026-10-23).
+  it('rejects a country that is not a 2-letter code', async () => {
+    const { app } = makeApp();
+    for (const country of ['IND', 'JAPA', 'J', 'F1']) {
+      const res = await app.request('/board/login', json(undefined, { credential: 'tok', country }));
+      expect(res.status, country).toBe(400);
+      expect(await res.json()).toEqual({ error: 'bad_country' });
+    }
+  });
+  it('still signs in with no country (stored as XX)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/board/login', json(undefined, { credential: 'tok' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).me.country).toBe('XX');
+  });
 });
 
 describe('POST /board/:code/join', () => {
