@@ -100,8 +100,9 @@
     else el.textContent = next;
   }
 
-  // Short-code country → flag emoji. Passes through anything that isn't a
-  // 2-letter code (already an emoji, or a 3–4 letter code) so it never breaks.
+  // Short-code country → flag emoji. An emoji passes through; anything else that isn't a
+  // 2-letter code gets NO badge: the sign-in field once kept 3–4 letters ("IND", "JAPA"), and
+  // painted as text in the avatar's flag slot they spill past the circle (2026-10-23).
   function flagOf(country) {
     if (!country) return '';
     var c = String(country).trim();
@@ -109,7 +110,8 @@
       var up = c.toUpperCase();
       return String.fromCodePoint(0x1F1E6 + up.charCodeAt(0) - 65, 0x1F1E6 + up.charCodeAt(1) - 65);
     }
-    return c;
+    var cp = c.codePointAt(0); // an emoji flag is two regional-indicator symbols
+    return cp >= 0x1F1E6 && cp <= 0x1F1FF ? c : '';
   }
 
   // ISO date (or date-only) → "Sat 8 Aug". Date-only strings are pinned to local
@@ -1818,7 +1820,7 @@
   document.getElementById('auth-country-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
   function doLogin() {
     var country = (document.getElementById('auth-country-in').value || '').trim().toUpperCase();
-    if (!/^[A-Za-z]{2,4}$/.test(country)) { sheetError('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
+    if (!/^[A-Za-z]{2}$/.test(country)) { sheetError('Enter a 2-letter country code', 'e.g. GB, US, LK'); return; }
     if (!state.pendingCredential) { setStep(panels().indexOf('mstep-1')); sheetError('Please sign in again'); return; }
     var btn = document.getElementById('auth-country-go');
     btn.disabled = true; btn.textContent = 'Signing in…';
