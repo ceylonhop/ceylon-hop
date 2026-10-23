@@ -14,6 +14,8 @@ const ROOT = path.join(__dirname, '..', '..');
 let RB;
 beforeAll(() => {
   loadTransfers();                 // sets window.TRANSFERS (enriches name→id lookup)
+  // eslint-disable-next-line no-new-func
+  new Function(readFileSync(path.join(ROOT, 'ride-fomo.js'), 'utf8'))(); // one clock: fmtCountdown delegates to CHRideFomo.countdown
   const src = readFileSync(path.join(ROOT, 'board.js'), 'utf8');
   // eslint-disable-next-line no-new-func
   new Function(src)();             // runs against the ambient jsdom window/document

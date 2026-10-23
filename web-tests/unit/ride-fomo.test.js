@@ -120,3 +120,41 @@ describe("closesText, short form for a phone's time line", () => {
     expect(F.closesText(NOW - 1, NOW, { short: true }).text).toBe('Closed');
   });
 });
+
+describe('stripRides', () => {
+  const ride = (o) => ({ minSeats: 3, committed: 1, confirmed: false, cancelled: false, cutoffMs: NOW + 5 * 24 * H, ...o });
+  it('keeps open rides that need people — fewest seats to go first, then soonest to close', () => {
+    const out = F.stripRides([
+      ride({ code: 'A', committed: 1, cutoffMs: NOW + 2 * H }),
+      ride({ code: 'B', committed: 2, cutoffMs: NOW + 9 * 24 * H }),
+      ride({ code: 'C', committed: 2, cutoffMs: NOW + 3 * 24 * H }),
+      ride({ code: 'D', committed: 3 }),               // has its minimum
+      ride({ code: 'E', confirmed: true }),
+      ride({ code: 'F', cutoffMs: NOW - 1 }),          // names closed
+    ], NOW, 6);
+    expect(out.map((r) => r.code)).toEqual(['C', 'B', 'A']);
+  });
+  it('stops at the limit', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ride({ code: 'R' + i }));
+    expect(F.stripRides(many, NOW, 4)).toHaveLength(4);
+  });
+});
+
+describe('busTime — the bus a seat beats, never our own private car', () => {
+  it("names the corridor's bus time", () => {
+    expect(F.busTime('airport-cultural')).toBe('6h by bus');
+    expect(F.busTime('hill-line')).toBe('7h by bus and train');
+  });
+  it('says nothing for a corridor it does not know', () => {
+    expect(F.busTime('south-airport')).toBeNull();
+    expect(F.busTime(null)).toBeNull();
+  });
+});
+
+describe('closesText with minutes only — no second hand on the home page', () => {
+  it('drops the seconds inside the last hour, and keeps the rest as it was', () => {
+    expect(F.closesText(NOW + 12 * 60000 + 5000, NOW, { minutes: true }).text).toBe('Names close in 12m');
+    expect(F.closesText(NOW + 30000, NOW, { minutes: true }).text).toBe('Names close in under a minute');
+    expect(F.closesText(NOW + 9 * H + 12 * 60000, NOW, { minutes: true }).text).toBe('Names close in 9h 12m');
+  });
+});

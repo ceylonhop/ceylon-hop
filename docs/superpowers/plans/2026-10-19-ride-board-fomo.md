@@ -1413,6 +1413,8 @@ Merging to `main` ships to **staging** only. Promote to prod is a separate, owne
 - **One way out besides the cards:** "See every shared taxi on the board, or start your own →".
 - **The landing tint is saffron, not teal.** On the real board a teal wash with a teal bar already means "you're on this ride" (`.rw.mine`), so the prototype's teal highlight would read as that.
 
+**Pre-flight reconciliation (2026-10-22, before Task 5):** three plan lines had gone stale against `origin/main` after PR 1's fix commits — Task 5 (b) would have dropped F6's `opts.short` (merged: both options), Task 5's expected count is 26 not 25 (F6 added a test), and Task 7's `$27.49 a seat` expectation needs HR-1 priced at 2749 minor units (the fixture's default 2800 said `$28`). `select_item` is NOT deliberately untagged: it is already a planned funnel event (`tools/analytics/build-gtm-funnel-tags.mjs`), emitted by board.js, plan.js, search.js and quote.html, so the home strip's call site joins an event that already has a tag; Decision 2's "GTM has no tag" holds only for `share`.
+
 Worktree (after PR 1 merges):
 
 ```bash
@@ -1499,17 +1501,21 @@ Expected: FAIL. `TypeError: F.stripRides is not a function` (and `F.busTime`); t
   }
 ```
 
-(b) Replace the `closesText` function with:
+(b) Replace the `closesText` function with (PR 1's F6 added `opts.short`; keep it, and add `opts.minutes` beside it — reconciled 2026-10-22):
 
 ```js
   // When names close: a running clock inside three days (red inside one), a Sri Lanka date
-  // further out. null with no cutoff to go on. `opts.minutes` drops the seconds (home page).
+  // further out. null with no cutoff to go on. `opts.short` is the phone's time-line form —
+  // "Closes 12 Aug" — where the full line does not fit beside the price. `opts.minutes` drops
+  // the seconds (the home page never shows a second hand).
   function closesText(cutoffMs, nowMs, opts) {
     if (!isFinite(cutoffMs)) return null;
+    var short = !!(opts && opts.short), minutes = !!(opts && opts.minutes);
+    var lead = short ? 'Closes' : 'Names close';
     var left = cutoffMs - nowMs;
-    if (left <= 0) return { text: 'Names closed', live: false, urgent: false };
-    if (left < LIVE_MS) return { text: 'Names close in ' + countdown(left, !!(opts && opts.minutes)), live: true, urgent: left < URGENT_MS };
-    return { text: 'Names close ' + colomboDay(cutoffMs), live: false, urgent: false };
+    if (left <= 0) return { text: short ? 'Closed' : 'Names closed', live: false, urgent: false };
+    if (left < LIVE_MS) return { text: lead + ' in ' + countdown(left, minutes), live: true, urgent: left < URGENT_MS };
+    return { text: lead + ' ' + colomboDay(cutoffMs, short), live: false, urgent: false };
   }
 ```
 
@@ -1541,7 +1547,7 @@ Expected: FAIL. `TypeError: F.stripRides is not a function` (and `F.busTime`); t
 - [ ] **Step 4: Run them to make sure they pass**
 
 Run: `cd "$WT2/web-tests" && npx vitest run unit/ride-fomo.test.js`
-Expected: PASS, `Tests  25 passed (25)` — PR 1's 20 still green (`closesText` without `opts` is unchanged).
+Expected: PASS, `Tests  26 passed (26)` — PR 1's 21 still green (`closesText` without `opts.minutes` is unchanged, including the `short` form).
 
 - [ ] **Step 5: Commit** (`ride-fomo.js` changed, so stamp first: `board.html`'s `?v=` moves)
 
@@ -1729,7 +1735,7 @@ const ride = (o) => ({ corridorId: 'ella-south', from: 'Ella', to: 'Mirissa', da
 const LISTS = [
   ride({ code: 'HR-2' }),
   ride({ code: 'HR-1', corridorId: 'airport-cultural', from: 'Colombo Airport (CMB)', to: 'Sigiriya / Dambulla', committed: 2,
-    cutoffAt: '2099-08-10T09:12:00.000Z',
+    seatPrice: 2749, cutoffAt: '2099-08-10T09:12:00.000Z',
     members: [{ firstName: 'Tom', country: 'GB', photoUrl: null }, { firstName: 'Lea', country: 'FR', photoUrl: null }] }),
   ride({ code: 'HR-5', date: '2099-08-12', cutoffAt: '2099-08-10T00:12:05.000Z' }), // closes in 12m 05s
   ride({ code: 'HR-3', status: 'confirmed', committed: 3 }),

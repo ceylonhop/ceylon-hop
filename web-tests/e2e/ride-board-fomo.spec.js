@@ -149,6 +149,8 @@ test('at 1280px the closing line under the pill is whole, not clipped', async ({
 });
 
 test('the board still works if ride-fomo.js fails to load', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
   await page.route('**/ride-fomo.js*', (r) => r.abort());
   await page.clock.setFixedTime(new Date(NOW));
   await stubApi(page);
@@ -158,6 +160,10 @@ test('the board still works if ride-fomo.js fails to load', async ({ page }) => 
   await expect(row.locator('.rw-state')).toContainText('2 of 3 in'); // rowState's own wording
   await expect(page.locator('#board-grid .rw-momentum')).toHaveCount(0);
   await expect(page.locator('.board-empty')).toHaveCount(0);
+  // the ride sheet runs the countdown too (cdHtml -> fmtCountdown): it must open, not throw
+  await row.locator('[data-view]').click();
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+  expect(errors).toEqual([]);
 });
 
 for (const width of [768, 1020, 1280]) {
