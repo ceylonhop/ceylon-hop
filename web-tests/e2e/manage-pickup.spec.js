@@ -14,7 +14,12 @@ const DAY = futureIsoDate(30);
 
 async function stub(page, view, schedule) {
   // By pathname: the older specs' '**/bookings/view*' glob would also swallow /view/schedule.
-  await page.route((u) => u.pathname.endsWith('/bookings/view'), (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(view) }));
+  // `view` may be an array: successive /bookings/view responses, the last one repeating (boot, then a re-read).
+  let n = 0;
+  await page.route((u) => u.pathname.endsWith('/bookings/view'), (r) => {
+    const v = Array.isArray(view) ? view[Math.min(n++, view.length - 1)] : view;
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(v) });
+  });
   await page.route((u) => u.pathname.endsWith('/bookings/view/schedule'), schedule);
   await page.route('https://www.googletagmanager.com/**', (r) => r.fulfill({ status: 200, body: '' }));
 }
@@ -90,7 +95,7 @@ test('a date ops already set is shown fixed; only the time is asked for', async 
 });
 
 test('the team got there first: says so and shows their value', async ({ page }) => {
-  await stub(page, BASE, (r) => r.fulfill({ status: 409, contentType: 'application/json',
+  await stub(page, [BASE, { ...BASE, date: DAY, endDate: DAY, time: '10:00', scheduleSetBy: 'staff' }], (r) => r.fulfill({ status: 409, contentType: 'application/json',
     body: JSON.stringify({ error: 'already_set', current: { date: DAY, time: '10:00' } }) }));
   await page.goto(PAGE);
   await page.locator('#pkopen').click();
@@ -110,6 +115,9 @@ test('too soon (server says so): explains and offers WhatsApp', async ({ page })
   await page.locator('#pksave').click();
   await expect(page.locator('#pkerr')).toBeVisible();
   await expect(page.locator('#pkerr')).toContainText('12 hours');
+  // A disabled button says what is missing, even when the page's own clock thought the time was fine.
+  await expect(page.locator('#pksave')).toHaveText('Too soon to set here');
+  await expect(page.locator('#pksave')).toBeDisabled();
 });
 
 test('a failed save says nothing changed and keeps the choice', async ({ page }) => {
@@ -132,4 +140,66 @@ test('no card on a booking the customer cannot edit, or once both are set', asyn
     await expect(page.locator('#pickup')).toHaveCount(0);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
   }
+});
+
+const SAVED = { ...BASE, date: DAY, endDate: DAY, time: '09:00', scheduleSetBy: 'customer' };
+async function fillAndSave(page) {
+  await page.locator('#pkopen').click();
+  await pickDate(page, DAY);
+  await page.locator('#pktime').selectOption('09:00');
+  await page.locator('#pksave').click();
+}
+
+test('the reply was lost but the save went through: the re-read says so', async ({ page }) => {
+  await stub(page, [BASE, SAVED], (r) => r.abort());
+  await page.goto(PAGE);
+  await fillAndSave(page);
+  await expect(page.locator('#pickup')).toContainText('Pick-up set');
+  await expect(page.locator('#pickup')).toContainText('9:00 am');
+  await expect(page.locator('#pkfail')).toHaveCount(0);
+});
+
+test('the reply was lost and nothing was saved: says nothing changed and keeps the choice', async ({ page }) => {
+  await stub(page, BASE, (r) => r.abort());
+  await page.goto(PAGE);
+  await fillAndSave(page);
+  await expect(page.locator('#pkfail')).toBeVisible();
+  await expect(page.locator('#pkfail')).toContainText('nothing has changed');
+  await expect(page.locator('#pktime')).toHaveValue('09:00');
+  await expect(page.locator('#pksave')).toBeEnabled();
+});
+
+test('already_set but the customer set it (another tab): shows Pick-up set, not the team message', async ({ page }) => {
+  await stub(page, [BASE, SAVED], (r) => r.fulfill({ status: 409, contentType: 'application/json',
+    body: JSON.stringify({ error: 'already_set', current: { date: DAY, time: '09:00' } }) }));
+  await page.goto(PAGE);
+  await fillAndSave(page);
+  await expect(page.locator('#pickup')).toContainText('Pick-up set');
+  await expect(page.locator('body')).not.toContainText('Our team has already set');
+});
+
+test('nothing_to_set (a retry after a lost reply that did save) lands on Pick-up set', async ({ page }) => {
+  await stub(page, [BASE, SAVED], (r) => r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'nothing_to_set' }) }));
+  await page.goto(PAGE);
+  await fillAndSave(page);
+  await expect(page.locator('#pickup')).toContainText('Pick-up set');
+  await expect(page.locator('#pkfail')).toHaveCount(0);
+});
+
+test('Save stays locked while a save is in flight, even if an input changes', async ({ page }) => {
+  let posts = 0;
+  await stub(page, BASE, async (r) => {
+    posts++;
+    await new Promise((res) => setTimeout(res, 500));
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ view: SAVED, emailed: true }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#pkopen').click();
+  await pickDate(page, DAY);
+  await page.locator('#pktime').selectOption('09:00');
+  await page.locator('#pksave').click();
+  await page.locator('#pktime').evaluate((el) => el.dispatchEvent(new Event('change', { bubbles: true })));
+  await expect(page.locator('#pksave')).toBeDisabled();
+  await expect(page.locator('#pickup')).toContainText('Pick-up set');
+  expect(posts).toBe(1);
 });

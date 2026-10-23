@@ -367,40 +367,58 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var dk = document.getElementById('pkdk'), pill = document.getElementById('pkpill');
     var err = document.getElementById('pkerr'), fail = document.getElementById('pkfail'), save = document.getElementById('pksave');
     function state(){ return { date: dIn ? dIn.value : v.date, time: tIn.value, noTime: !!(dk && dk.checked) }; }
+    var busy = false; // a save is in flight: no input change may re-enable Save
     function upd(){
       var s = state();
       tIn.hidden = s.noTime; pill.hidden = !s.noTime;
       var soon = !!s.date && tooSoon(s.date, s.noTime ? '' : s.time);
       err.hidden = !soon;
       var label = saveLabel(v, s.date, s.time, s.noTime, soon);
-      save.textContent = label.text; save.disabled = !label.ready;
+      save.textContent = label.text; save.disabled = busy || !label.ready;
     }
     [dIn, tIn, dk].forEach(function(el){ if (el) el.addEventListener('change', function(){ fail.hidden = true; upd(); }); });
     upd();
+    // A reply that never arrived, or an answer that doesn't say what's stored, proves nothing:
+    // ask the server what it holds. 'saved' | 'conflict' | null (nothing changed on the server).
+    function outcome(fresh, sentDate, sentTime){
+      var before = pickupNeeds(v), now = pickupNeeds(fresh);
+      if (fresh.date === sentDate && (sentTime === null || fresh.time === sentTime)) return 'saved';
+      if (now === before) return null;
+      return fresh.scheduleSetBy === 'customer' ? 'saved' : fresh.scheduleSetBy === 'staff' ? 'conflict' : null;
+    }
     save.addEventListener('click', function(){
       var s = state();
-      save.disabled = true;
+      var sentDate = dIn ? s.date : v.date, sentTime = s.noTime ? null : s.time;
+      busy = true; save.disabled = true;
+      function failed(cause){
+        report('bookings/view/schedule failed', cause);
+        busy = false; fail.hidden = false; upd();
+      }
+      function recover(cause){
+        return loadView().then(function(fresh){
+          var how = outcome(fresh, sentDate, sentTime);
+          if (!how) return failed(cause);
+          cardMode = how; cardFail = false; render(fresh);
+          if (how === 'saved') focusCard();
+        }, function(){ failed(cause); });
+      }
       fetch(A + '/bookings/view/schedule', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t },
         // Send only what this card fills: a date ops already set goes back unchanged (set-once).
-        body: JSON.stringify({ date: dIn ? s.date : v.date, time: s.noTime ? null : s.time }),
+        body: JSON.stringify({ date: sentDate, time: sentTime }),
       }).then(function(res){
         return res.json().catch(function(){ return {}; }).then(function(b){ return { status: res.status, body: b }; });
       }).then(function(r){
         if (r.status === 200 && r.body.view) { cardMode = 'saved'; cardFail = false; render(r.body.view); focusCard(); return; }
-        if (r.status === 409 && r.body.current) {
-          cardMode = 'conflict';
-          render(Object.assign({}, v, { date: r.body.current.date || 'to confirm', endDate: r.body.current.date || 'to confirm', time: r.body.current.time || 'to confirm', scheduleSetBy: 'staff' }));
+        // The server's clock wins over the page's: show the 12 h message even if upd() thought it fine.
+        if (r.status === 400 && (r.body.error === 'too_soon' || r.body.error === 'past')) {
+          busy = false; upd(); err.hidden = false;
+          save.textContent = saveLabel(v, s.date, s.time, s.noTime, true).text; save.disabled = true;
           return;
         }
-        // The server's clock wins over the page's: show the 12 h message even if upd() thought it fine.
-        if (r.status === 400 && (r.body.error === 'too_soon' || r.body.error === 'past')) { upd(); err.hidden = false; save.disabled = true; return; }
-        throw new Error('schedule ' + r.status);
-      }).catch(function(e){
-        report('bookings/view/schedule failed', e);
-        fail.hidden = false; save.disabled = false;
-      });
+        return recover(new Error('schedule ' + r.status + (r.body.error ? ' ' + r.body.error : '')));
+      }, function(e){ return recover(e); }).catch(function(e){ failed(e); });
     });
   }
   // After a re-render, keep the card where the customer is looking.
