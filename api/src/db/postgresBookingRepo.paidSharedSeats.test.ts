@@ -10,7 +10,8 @@ import type { NewBooking } from './bookingRepo';
 const TEST_URL = process.env.DATABASE_URL_TEST;
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
 // A random day in 2098 that no other suite books. The local test database is shared and persistent,
-// so a fixed day would accumulate rows across reruns and break the absolute sums below.
+// so rows left by earlier runs can land on the same day; the test asserts the increase over a
+// baseline read, so leftovers can't skew it.
 const DAY = new Date(Date.UTC(2098, 0, 1 + Math.floor(Math.random() * 365))).toISOString().slice(0, 10);
 const seat = (time: string, seats: number): NewBooking => ({
   mode: 'shared', input: { corridorId: 'airport-cultural', date: DAY, time, seats, customer },
@@ -33,14 +34,18 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.paidSharedSeats (integration)', 
       await repo.setStatus(x.id, 'payment_pending');
       return repo.setStatus(x.id, 'paid');
     };
+    const byTime = async () => {
+      const rows = (await repo.paidSharedSeats(DAY, DAY)).filter((r) => r.corridorId === 'airport-cultural');
+      return new Map(rows.map((r) => [r.time, r.seats]));
+    };
+    const before = await byTime();
     await pay(seat('07:00', 2));
     await pay(seat('07:00', 1));
     await pay(seat('07:30', 2));
     await repo.create(seat('07:00', 4)); // draft — not counted
-    const rows = (await repo.paidSharedSeats(DAY, DAY)).filter((r) => r.corridorId === 'airport-cultural');
-    expect(rows.sort((a, b) => a.time.localeCompare(b.time))).toEqual([
-      { corridorId: 'airport-cultural', date: DAY, time: '07:00', seats: 3 },
-      { corridorId: 'airport-cultural', date: DAY, time: '07:30', seats: 2 },
-    ]);
+    const after = await byTime();
+    const gained = (time: string) => (after.get(time) ?? 0) - (before.get(time) ?? 0);
+    expect(gained('07:00')).toBe(3);
+    expect(gained('07:30')).toBe(2);
   });
 });
