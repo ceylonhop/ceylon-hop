@@ -9,8 +9,9 @@ import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
-// A date no other suite books, so the shared test database can't skew the sums.
-const DAY = '2099-03-17';
+// A random day in 2098 that no other suite books. The local test database is shared and persistent,
+// so a fixed day would accumulate rows across reruns and break the absolute sums below.
+const DAY = new Date(Date.UTC(2098, 0, 1 + Math.floor(Math.random() * 365))).toISOString().slice(0, 10);
 const seat = (time: string, seats: number): NewBooking => ({
   mode: 'shared', input: { corridorId: 'airport-cultural', date: DAY, time, seats, customer },
   total: 2749 * seats, amountDueNow: 2749 * seats, currency: 'USD',
