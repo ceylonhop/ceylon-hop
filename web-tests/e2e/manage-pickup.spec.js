@@ -94,6 +94,31 @@ test('a date ops already set is shown fixed; only the time is asked for', async 
   await expect(page.locator('#pkdk')).toHaveCount(0);
 });
 
+// booking.js lets a single keep its time after "Decide later" on the date (toggleFlexDate leaves
+// state.dep alone), so a paid booking can hold a time and no date. The server refuses a changed
+// time (already_set): show it fixed and ask only for the date.
+test('a time already set is shown fixed; only the date is asked for, and the time goes back unchanged', async ({ page }) => {
+  let body = null;
+  await stub(page, { ...BASE, time: '09:00' }, async (r) => {
+    body = JSON.parse(r.request().postData());
+    const view = { ...BASE, date: DAY, endDate: DAY, time: '09:00', scheduleSetBy: 'customer' };
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ view, emailed: true }) });
+  });
+  await page.goto(PAGE);
+  await expect(page.locator('#pickup')).toContainText('Add your pick-up date');
+  await expect(page.locator('#pickup')).not.toContainText('date & time');
+  await page.locator('#pkopen').click();
+  await expect(page.locator('#pktime')).toHaveCount(0);
+  await expect(page.locator('#pkdk')).toHaveCount(0);
+  await expect(page.locator('#pickup .pk-fixed')).toHaveText('9:00 am');
+  await expect(page.locator('#pksave')).toHaveText('Choose a date');
+  await pickDate(page, DAY);
+  await expect(page.locator('#pksave')).toHaveText(/^Save \w{3} \d{1,2} \w{3} · 9:00 am$/);
+  await page.locator('#pksave').click();
+  expect(body).toEqual({ date: DAY, time: '09:00' });
+  await expect(page.locator('#pickup')).toContainText('Pick-up set');
+});
+
 test('the team got there first: says so and shows their value', async ({ page }) => {
   await stub(page, [BASE, { ...BASE, date: DAY, endDate: DAY, time: '10:00', scheduleSetBy: 'staff' }], (r) => r.fulfill({ status: 409, contentType: 'application/json',
     body: JSON.stringify({ error: 'already_set', current: { date: DAY, time: '10:00' } }) }));

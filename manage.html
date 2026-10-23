@@ -332,24 +332,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var needs = pickupNeeds(v);
     if (!needs) return '';
     if (needs !== 'time' && cardMode !== 'open') return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
-      + '<h2>' + (air ? 'Add your landing date &amp; time' : 'Add your pick-up date &amp; time') + '</h2>'
+      + '<h2>' + (air ? 'Add your landing date' : 'Add your pick-up date') + (needs === 'date' ? '' : ' &amp; time') + '</h2>'
       + '<p>You booked with “Decide later”. Add it here once you know, and we’ll book your driver.</p></div></div>'
-      + '<button class="btn btn-primary" id="pkopen">Add date &amp; time</button>'
+      + '<button class="btn btn-primary" id="pkopen">Add date' + (needs === 'date' ? '' : ' &amp; time') + '</button>'
       + '<div class="pk-fine">You can set this once. To change it afterwards, ' + WA_LINK + '.</div></div>';
-    var timeOnly = needs === 'time';
+    var timeOnly = needs === 'time', dateOnly = needs === 'date';
     var opts = '<option value="" selected disabled>' + (air ? 'Choose a landing time…' : 'Choose a pick-up time…') + '</option>'
       + timeChoices(v).map(function(c){ return '<option value="' + c.value + '">' + esc(c.label) + '</option>'; }).join('');
     return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
-      + '<h2>' + (timeOnly ? (air ? 'Add your landing time' : 'Add your pick-up time') : (air ? 'When does your flight land?' : 'When should we pick you up?')) + '</h2>'
+      + '<h2>' + (timeOnly ? (air ? 'Add your landing time' : 'Add your pick-up time') : dateOnly ? (air ? 'Add your landing date' : 'Add your pick-up date')
+          : (air ? 'When does your flight land?' : 'When should we pick you up?')) + '</h2>'
       + '<p>' + (air ? 'Your driver will be waiting at arrivals in ' + esc(v.from) + '.' : 'From ' + esc(v.from) + ', any time of day.') + '</p></div></div>'
       + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing date' : 'Pick-up date') + '</span></div>'
       + (timeOnly
           ? '<div class="pk-fixed">' + esc(shortDate(v.date)) + (v.scheduleSetBy === 'staff' ? '<small>set by our team</small>' : '') + '</div>'
           : '<input type="date" id="pkdate" data-placeholder="Choose a date" aria-label="' + (air ? 'Landing date' : 'Pick-up date') + '">')
       + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing time' : 'Pick-up time') + ' <i>· Sri Lanka time</i></span>'
-      + (timeOnly ? '' : '<label class="pk-chk"><input type="checkbox" id="pkdk"> Don’t know yet</label>') + '</div>'
-      + '<select id="pktime" aria-label="' + (air ? 'Landing time' : 'Pick-up time') + '">' + opts + '</select>'
-      + '<div class="pk-pill" id="pkpill" hidden>No time yet. You can add it here later.</div>'
+      + (timeOnly || dateOnly ? '' : '<label class="pk-chk"><input type="checkbox" id="pkdk"> Don’t know yet</label>') + '</div>'
+      + (dateOnly
+          ? '<div class="pk-fixed">' + esc(fmtTime(v.time)) + (v.scheduleSetBy === 'staff' ? '<small>set by our team</small>' : '') + '</div>'
+          : '<select id="pktime" aria-label="' + (air ? 'Landing time' : 'Pick-up time') + '">' + opts + '</select>'
+            + '<div class="pk-pill" id="pkpill" hidden>No time yet. You can add it here later.</div>')
       + '<div class="pk-err" id="pkerr" role="alert" hidden>That’s less than 12 hours away, too soon to set here. ' + WA_LINK + ' and we’ll do our best to fit you in.</div>'
       + '<div class="pk-err" id="pkfail" role="alert"' + (cardFail ? '' : ' hidden') + '>We couldn’t save that, so nothing has changed. Try again, or ' + WA_LINK + '.</div>'
       + '<button class="btn btn-primary" id="pksave" disabled>Choose a date</button>'
@@ -362,15 +365,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var later = document.getElementById('pklater');
     if (later) later.addEventListener('click', function(){ cardMode = null; render(v); });
     var dIn = document.getElementById('pkdate'), tIn = document.getElementById('pktime');
-    if (!tIn) return;
+    if (!dIn && !tIn) return;
     if (dIn && window.enhanceDate) window.enhanceDate(dIn);
     var dk = document.getElementById('pkdk'), pill = document.getElementById('pkpill');
     var err = document.getElementById('pkerr'), fail = document.getElementById('pkfail'), save = document.getElementById('pksave');
-    function state(){ return { date: dIn ? dIn.value : v.date, time: tIn.value, noTime: !!(dk && dk.checked) }; }
+    function state(){ return { date: dIn ? dIn.value : v.date, time: tIn ? tIn.value : v.time, noTime: !!(dk && dk.checked) }; }
     var busy = false; // a save is in flight: no input change may re-enable Save
     function upd(){
       var s = state();
-      tIn.hidden = s.noTime; pill.hidden = !s.noTime;
+      if (tIn) { tIn.hidden = s.noTime; pill.hidden = !s.noTime; }
       var soon = !!s.date && tooSoon(s.date, s.noTime ? '' : s.time);
       err.hidden = !soon;
       var label = saveLabel(v, s.date, s.time, s.noTime, soon);
