@@ -34,10 +34,15 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.paidSharedSeats (integration)', 
       await repo.setStatus(x.id, 'payment_pending');
       return repo.setStatus(x.id, 'paid');
     };
+    // One row per paid booking now (the board shows who booked, 2026-10-23), so sum per time here.
     const byTime = async () => {
       const rows = (await repo.paidSharedSeats(DAY, DAY)).filter((r) => r.corridorId === 'airport-cultural');
-      for (const r of rows) expect(r.date).toBe(DAY);
-      return new Map(rows.map((r) => [r.time, r.seats]));
+      const sums = new Map<string, number>();
+      for (const r of rows) {
+        expect(r.date).toBe(DAY);
+        sums.set(r.time, (sums.get(r.time) ?? 0) + r.seats);
+      }
+      return sums;
     };
     const before = await byTime();
     await pay(seat('07:00', 2));
@@ -49,5 +54,13 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.paidSharedSeats (integration)', 
     // but fail here (and would concatenate when the domain pools departures).
     expect(after.get('07:00')).toBe((before.get('07:00') ?? 0) + 3);
     expect(after.get('07:30')).toBe((before.get('07:30') ?? 0) + 2);
+  });
+
+  it("carries each booking's first name and country from its customer", async () => {
+    const x = await repo.create(seat('11:30', 1));
+    await repo.setStatus(x.id, 'payment_pending');
+    await repo.setStatus(x.id, 'paid');
+    const rows = (await repo.paidSharedSeats(DAY, DAY)).filter((r) => r.corridorId === 'airport-cultural' && r.time === '11:30');
+    expect(rows).toContainEqual({ corridorId: 'airport-cultural', date: DAY, time: '11:30', seats: 1, firstName: 'Maya', country: 'Spain' });
   });
 });

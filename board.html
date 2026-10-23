@@ -720,6 +720,8 @@ body.detail-open .detail{display:block}
 .rws-kt small{font-size:.76rem;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* "· 7 booked" on a scheduled taxi (plan 2026-10-19-ride-board-fomo, PR 3) */
 .rws-booked{color:var(--ink);font-weight:600}
+/* who booked it (owner 2026-10-23): the open rows' faces, between the clock and "Scheduled" */
+.rws-short .rws-faces{display:none}
 .rws .rws-short{display:none}
 .rws-go{justify-self:end;font-weight:700;font-size:.9rem;color:var(--accent-deep);white-space:nowrap}
 .rws-go::after{content:" ›"}
@@ -747,6 +749,12 @@ body.detail-open .detail{display:block}
   .rws .rw-places,.rws-per{display:none}
   .rws .rws-short{display:block;font-weight:700;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rws .rws-short small{display:block;font-size:.76rem;font-weight:700;color:var(--teal-deep)}
+  /* phone: the faces ride the short line, smaller; the Scheduled cell's copy is display:contents here */
+  .rws-kind .rws-faces{display:none}
+  .rws .rws-short small:has(.rws-faces){display:flex;align-items:center;padding-bottom:2px}
+  .rws-short .rws-faces{display:inline-flex;margin-left:6px}
+  .rws-short .rws-faces .avatar.xs{width:20px;height:20px;font-size:.5rem}
+  .rws-short .rws-faces .avatar .flag{font-size:.5rem;right:-3px;bottom:-2px}
   .rws .rw-price{grid-area:price}
   .rws .rw-price b{font-size:.96rem}
   .rws-go{grid-area:go;font-size:0}
@@ -1107,6 +1115,6 @@ body.detail-open .detail{display:block}
 <script src="ta-data.js?v=8b2b56a308" defer></script>
 <script src="shared-day.js?v=cbcec2fb62" defer></script>
 <script src="ride-fomo.js?v=d597efec49" defer></script>
-<script src="board.js?v=1b62256109" defer></script>
+<script src="board.js?v=470634c7e6" defer></script>
 </body>
 </html>

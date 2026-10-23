@@ -3,7 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 
 // GET /board/scheduled-seats (plan 2026-10-19-ride-board-fomo, PR 3): paid seats per scheduled
-// taxi, as a count — never who.
+// taxi, as a count plus each booker's two-letter initials and country — never a name.
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
 const seat = (time: string, seats: number, date = '2099-08-12'): NewBooking => ({
   mode: 'shared', input: { corridorId: 'airport-cultural', date, time, seats, customer },
@@ -16,7 +16,7 @@ async function paid(repo: InMemoryBookingRepo, b: NewBooking) {
 }
 
 describe('GET /board/scheduled-seats', () => {
-  it('counts paid seats per van, on every boarding time that rides it — and names nobody', async () => {
+  it('counts paid seats per van, on every boarding time that rides it — with initials, never names', async () => {
     const bookings = new InMemoryBookingRepo();
     await paid(bookings, seat('07:00', 3));
     await paid(bookings, seat('07:30', 2));
@@ -27,11 +27,13 @@ describe('GET /board/scheduled-seats', () => {
     expect(res.headers.get('cache-control')).toBe('public, max-age=300');
     const body = await res.json();
     expect(body.departures).toHaveLength(2);
+    const people = [{ ini: 'MA', country: 'Spain' }, { ini: 'MA', country: 'Spain' }];
     expect(body.departures).toEqual(expect.arrayContaining([
-      { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:00', booked: 5 },
-      { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:30', booked: 5 },
+      { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:00', booked: 5, people },
+      { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:30', booked: 5, people },
     ]));
-    expect(JSON.stringify(body)).not.toContain('Maya');
+    // Two letters and a country: no name, surname, email or number leaves the API.
+    for (const leak of ['Maya', 'Silva', 'maya@example.com', '+34600000000']) expect(JSON.stringify(body)).not.toContain(leak);
   });
   it('leaves out seats outside the window', async () => {
     const bookings = new InMemoryBookingRepo();
