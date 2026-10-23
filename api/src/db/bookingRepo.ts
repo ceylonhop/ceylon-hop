@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
+import type { SharedSeatCount } from '../domain/scheduledSeats';
 import { assertTransition, type BookingStatus } from '../domain/status';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
@@ -279,6 +280,10 @@ export class BookingNotFoundError extends Error {
   }
 }
 
+// A seat someone has paid for: the statuses the ride board's "N booked" counts. Drafts and
+// payment_pending also hold inventory (bookings.ts holds at checkout start), so they are out.
+export const SEAT_SOLD_STATUSES = ['paid', 'confirmed', 'in_progress', 'completed'] as const;
+
 export interface BookingRepo {
   // `promo` takes one use of a code inside the same write; throws PromoCodeRefusedError when the
   // code no longer works or every use is paid or held (spec 2026-09-14 §5.3).
@@ -315,6 +320,8 @@ export interface BookingRepo {
   /** Rows whose current status disagrees with their latest recorded applied transition. */
   listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
+  /** Paid shared seats per (corridor, date, time) for dates in [fromDate, toDate] — counts only. */
+  paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]>;
   // Re-record who is paying, for a booking that has not been paid yet.
   //
   // Every identity field we hand PayHere — name, email, phone, billing address — is read from
@@ -649,6 +656,21 @@ export class InMemoryBookingRepo implements BookingRepo {
     const statuses = !filter?.status ? null : Array.isArray(filter.status) ? filter.status : [filter.status];
     const rows = statuses ? all.filter((b) => statuses.includes(b.status)) : all;
     return Promise.all(rows.map((b) => this.present(b)));
+  }
+
+  async paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]> {
+    const sold: readonly string[] = SEAT_SOLD_STATUSES;
+    const sums = new Map<string, SharedSeatCount>();
+    for (const b of this.byId.values()) {
+      if (b.mode !== 'shared' || !sold.includes(b.status)) continue;
+      const { corridorId, date, time, seats } = b.input;
+      if (date < fromDate || date > toDate) continue;
+      const key = `${corridorId}|${date}|${time}`;
+      const cur = sums.get(key);
+      if (cur) cur.seats += seats;
+      else sums.set(key, { corridorId, date, time, seats });
+    }
+    return [...sums.values()];
   }
 
   async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {

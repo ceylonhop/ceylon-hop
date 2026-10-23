@@ -4,6 +4,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { ZodError } from 'zod';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
+import type { BookingRepo } from '../db/bookingRepo';
+import { scheduledSeatCounts } from '../domain/scheduledSeats';
 import { sharedProductFor } from '../db/departureRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
@@ -157,6 +159,8 @@ export interface RideBoardDeps {
   // Founder rate revisions (spec 2026-09-26 §8.3): an off-catalogue seat is priced off the live van
   // rate. Unset → an empty repo → the code card, exactly as before.
   rateRevisions?: RateRevisionRepo;
+  // Paid seats on the scheduled taxis (plan 2026-10-19-ride-board-fomo, PR 3). Unset → no counts.
+  sharedSeats?: Pick<BookingRepo, 'paidSharedSeats'>;
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -468,6 +472,22 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const cust = c.get('customer')!;
     const lists = await deps.rideLists.listForMember(cust.sub);
     return c.json({ lists: lists.map((l) => projectList(l, cust.sub)) });
+  });
+
+  // GET /board/scheduled-seats?from=YYYY-MM-DD&days=14 — paid seats on each scheduled taxi, a
+  // COUNT per departure and never who: those customers bought a seat, they did not sign up to be
+  // shown. Registered before /:code, which would otherwise read "scheduled-seats" as a ride code.
+  r.get('/scheduled-seats', async (c) => {
+    const from = c.req.query('from') ?? '';
+    const start = Date.parse(from + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(start) || new Date(start).toISOString().slice(0, 10) !== from) {
+      return c.json({ error: 'bad_request' }, 400);
+    }
+    const days = Math.min(31, Math.max(1, Number.parseInt(c.req.query('days') ?? '14', 10) || 14));
+    const to = new Date(start + days * 86400000).toISOString().slice(0, 10);
+    const rows = deps.sharedSeats ? await deps.sharedSeats.paidSharedSeats(from, to) : [];
+    c.header('cache-control', 'public, max-age=300');
+    return c.json({ departures: scheduledSeatCounts(rows) });
   });
 
   // GET /board/dupe?from=&to=&date= — the dedupe nudge for the create flow.
