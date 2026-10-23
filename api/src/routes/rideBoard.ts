@@ -327,8 +327,10 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
   r.post('/login', async (c) => {
     const body = (await c.req.json().catch(() => null)) as { credential?: unknown; country?: unknown } | null;
     const credential = body?.credential;
-    const country = typeof body?.country === 'string' ? body.country.trim().slice(0, 4).toUpperCase() : '';
+    const country = typeof body?.country === 'string' ? body.country.trim().toUpperCase() : '';
     if (typeof credential !== 'string' || !credential) return c.json({ error: 'missing_credential' }, 400);
+    // Only a 2-letter ISO code has a flag; the board draws the country as one on every avatar.
+    if (country && !/^[A-Z]{2}$/.test(country)) return c.json({ error: 'bad_country' }, 400);
     let id;
     try {
       id = await verifyGoogleIdToken(credential, {
