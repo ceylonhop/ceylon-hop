@@ -112,6 +112,9 @@ export function cardModel(found: RideListWithMembers, parts: {
 export function cardSvg(m: CardModel): string {
   const STUB_X = 800;
   const open = Math.max(0, m.capacity - m.taken.length);
+  // Neither bundled face has '≈' (resvg would draw a .notdef box), so the hedge is a word.
+  const price = m.price.replace(/^≈\s*/, '');
+  const approx = price !== m.price;
 
   // Route: from on one line, "→ to" beneath. Fixed shape means no text measuring,
   // and it reads as a ticket rather than a sentence.
@@ -165,7 +168,7 @@ export function cardSvg(m: CardModel): string {
 <text x="114" y="80" font-family="${DISPLAY}" font-size="27" font-weight="800" fill="${C.ink}">Ceylon Hop</text>
 
 <!-- ride -->
-<text x="66" y="250" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.8" fill="${C.tealDeep}">SHARED VAN · THE RIDE BOARD</text>
+<text x="66" y="250" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.8" fill="${C.tealDeep}">SHARED TAXI · THE RIDE BOARD</text>
 <text x="66" y="316" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.from)}</text>
 <!-- The arrow is DRAWN, not typed. No bundled face has '→' (Bodoni Moda and Poppins both
      lack it), and resvg has no system fonts to fall back to, so a literal arrow renders as
@@ -190,14 +193,110 @@ ${leadLines.map((l, i) => `<text x="842" y="${228 + i * 46}" font-family="${DISP
 ${subLines.map((l, i) => `<text x="842" y="${228 + leadLines.length * 46 + 14 + i * 26}" font-family="${BODY}" font-size="18" font-weight="700" fill="${C.inkSoft}">${xml(l)}</text>`).join('\n')}
 <line x1="842" y1="410" x2="1158" y2="410" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="6 5"/>
 <text x="842" y="444" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.2" fill="${C.inkSoft}">YOUR SEAT</text>
-<text x="842" y="500" font-family="${DISPLAY}" font-size="54" font-weight="800" fill="${C.ink}">${xml(m.price)}<tspan dx="12" font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">each</tspan></text>
+<text x="842" y="500" font-family="${DISPLAY}" font-size="54" font-weight="800" fill="${C.ink}">${approx ? `<tspan font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">about </tspan>` : ''}${xml(price)}<tspan dx="12" font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">each</tspan></text>
 <line x1="842" y1="528" x2="1158" y2="528" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="6 5"/>
 ${m.locked
-    ? `<text x="842" y="568" font-family="${BODY}" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · van locked in</text>`
+    ? `<text x="842" y="568" font-family="${BODY}" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · taxi locked in</text>`
     : `<text x="842" y="568" font-family="${BODY}" font-size="21" font-weight="700" fill="${C.tealDeep}">$0 to join</text>
 <text x="842" y="594" font-family="${BODY}" font-size="16" font-weight="700" fill="${C.inkSoft}">pay only if it fills</text>`}
 ${m.locked
     ? `<g transform="rotate(38 1120 60)"><rect x="960" y="38" width="320" height="40" fill="${C.saffron}"/><text x="1120" y="65" font-family="${BODY}" font-size="17" font-weight="700" letter-spacing="2.4" fill="#fff" text-anchor="middle">IT'S ON!</text></g>`
     : ''}
+</svg>`;
+}
+
+/* ---------------------------------------------------------------------------
+   The 1080x1920 Instagram story (story kit, 2026-10-23). Ops saves it from the
+   "New shared ride" email and posts it by hand, adding a link sticker in the
+   app — the API cannot place one, which is why this is not automated.
+
+   Counts only (owner call): the story goes to a public brand account, not a chat
+   the traveller chose, so the seats are drawn as plain dots, never initials.
+   Instagram covers roughly the top 250px and bottom 340px with its own chrome,
+   and the poster drops the link sticker around y 1560, so nothing sits there.
+--------------------------------------------------------------------------- */
+
+export type StoryModel = Omit<CardModel, 'taken'> & { taken: number };
+
+export function storyModel(found: RideListWithMembers, parts: Parameters<typeof cardModel>[1]): StoryModel {
+  const { taken, ...rest } = cardModel(found, parts);
+  return { ...rest, taken: taken.length };
+}
+
+export function storySvg(m: StoryModel): string {
+  const W = 1080;
+  const X = 96;
+  const open = Math.max(0, m.capacity - m.taken);
+
+  const longest = Math.max(m.from.length, m.to.length + 2);
+  const routeSize = longest > 17 ? 72 : longest > 13 ? 84 : 96;
+  // Everything below hangs off the route, so a two-size route never collides with the ask.
+  const fromY = 530 + routeSize; // clear of the eyebrow at any route size
+  const toY = fromY + routeSize + 14;
+  const seatsY = toY + 180;
+
+  const seats = Array.from({ length: m.capacity }, (_, i) => {
+    const cx = X + 34 + i * 92;
+    if (i < m.taken) return `<circle cx="${cx}" cy="${seatsY}" r="34" fill="${SEAT_COLOURS[i % SEAT_COLOURS.length]}"/>`;
+    const first = i === m.taken;
+    return `<circle cx="${cx}" cy="${seatsY}" r="32" fill="none" stroke="${first ? C.tomato : '#cbc3ad'}" stroke-width="${first ? 4 : 3}"${first ? '' : ' stroke-dasharray="8 7"'}/>` +
+      `<text x="${cx}" y="${seatsY + 13}" font-family="${BODY}" font-size="38" font-weight="700" fill="${first ? C.tomato : '#a9a08a'}" text-anchor="middle">+</text>`;
+  }).join('');
+  const caption = `${Math.min(m.taken, m.capacity)} of ${m.capacity} seats taken`;
+
+  const leadLines = wrap(m.lead, 20, 2); // every lead rideCopy writes is ≤ 19 chars: one line
+  const subLines = wrap(m.leadSub, 48, 3);
+  const leadY = seatsY + 200;
+  const subY = leadY + (leadLines.length - 1) * 92 + 64;
+  const priceY = subY + (subLines.length - 1) * 44 + 110;
+  // Neither bundled face has '≈' (resvg would draw a .notdef box), so the hedge is a word.
+  const price = m.price.replace(/^≈\s*/, '');
+  const approx = price !== m.price;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="1920" viewBox="0 0 ${W} 1920">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="teal" cx="0.95" cy="-0.05" r="0.9">
+    <stop offset="0" stop-color="${C.teal}" stop-opacity="0.22"/><stop offset="0.6" stop-color="${C.teal}" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="warm" cx="-0.1" cy="1.02" r="0.8">
+    <stop offset="0" stop-color="${C.saffron}" stop-opacity="0.24"/><stop offset="0.55" stop-color="${C.saffron}" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="${W}" height="1920" fill="url(#bg)"/>
+<rect width="${W}" height="1920" fill="url(#teal)"/>
+<rect width="${W}" height="1920" fill="url(#warm)"/>
+
+<!-- brand, clear of Instagram's top bar -->
+${brandMark(X, 300, 64, C.saffron)}
+<text x="${X + markWidth(64) + 18}" y="350" font-family="${DISPLAY}" font-size="44" font-weight="800" fill="${C.ink}">Ceylon Hop</text>
+
+<!-- ride -->
+<text x="${X}" y="500" font-family="${BODY}" font-size="24" font-weight="700" letter-spacing="4" fill="${C.tealDeep}">SHARED TAXI · THE RIDE BOARD</text>
+<text x="${X}" y="${fromY}" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.from)}</text>
+<g transform="translate(${X},${toY - routeSize * 0.3})" stroke="${C.teal}" stroke-width="${routeSize * 0.09}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <path d="M0 0 h${routeSize * 0.52}"/><path d="M${routeSize * 0.34} ${-routeSize * 0.16} L${routeSize * 0.54} 0 L${routeSize * 0.34} ${routeSize * 0.16}"/>
+</g>
+<text x="${X + routeSize * 0.76}" y="${toY}" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.to)}</text>
+<text x="${X}" y="${toY + 72}" font-family="${BODY}" font-size="34" font-weight="700" fill="${C.inkSoft}">${xml(m.when)}</text>
+
+<!-- seats: dots, never initials -->
+${seats}
+<text x="${X}" y="${seatsY + 80}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.ink}">${xml(caption)}${open > 0 ? `<tspan dx="10" fill="${C.inkSoft}" font-weight="600">· ${open} still open</tspan>` : ''}</text>
+
+<!-- the ask -->
+${leadLines.map((l, i) => `<text x="${X}" y="${leadY + i * 92}" font-family="${DISPLAY}" font-size="84" font-weight="800" fill="${m.hot ? C.tomato : C.tealDeep}">${xml(l)}</text>`).join('\n')}
+${subLines.map((l, i) => `<text x="${X}" y="${subY + i * 44}" font-family="${BODY}" font-size="32" font-weight="700" fill="${C.inkSoft}">${xml(l)}</text>`).join('\n')}
+
+<!-- price + deadline -->
+<text x="${X}" y="${priceY}" font-family="${DISPLAY}" font-size="72" font-weight="800" fill="${C.ink}">${approx ? `<tspan font-family="${BODY}" font-size="32" font-weight="700" fill="${C.inkSoft}">about </tspan>` : ''}${xml(price)}<tspan dx="14" font-family="${BODY}" font-size="32" font-weight="700" fill="${C.inkSoft}">a seat</tspan></text>
+<text x="${X}" y="${priceY + 56}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.tealDeep}">${m.locked ? 'Charged · taxi locked in' : '$0 to join · pay only if it fills'}</text>
+<circle cx="${X + 14}" cy="${priceY + 110}" r="14" fill="none" stroke="${m.locked ? C.tealDeep : C.tomato}" stroke-width="3.2"/>
+<path d="M${X + 14} ${priceY + 102} L${X + 14} ${priceY + 110} L${X + 20} ${priceY + 114}" fill="none" stroke="${m.locked ? C.tealDeep : C.tomato}" stroke-width="3.2" stroke-linecap="round"/>
+<text x="${X + 42}" y="${priceY + 121}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.ink}">${xml(m.deadline)}</text>
+
+${m.locked ? '' : `<text x="${W / 2}" y="${priceY + 220}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.inkSoft}" text-anchor="middle">Tap the link to add your name</text>`}
 </svg>`;
 }

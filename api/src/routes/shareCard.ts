@@ -3,7 +3,7 @@ import { Resvg } from '@resvg/resvg-js';
 import { fileURLToPath } from 'node:url';
 import type { RideListRepo, RideListWithMembers } from '../db/rideListRepo';
 import { committedSeats } from '../domain/rideList';
-import { cardModel, cardSvg } from './shareCardImage';
+import { cardModel, cardSvg, storyModel, storySvg } from './shareCardImage';
 
 /* ---------------------------------------------------------------------------
    GET /r/:code — what a chat app fetches when someone pastes a ride link.
@@ -85,7 +85,7 @@ export function rideCopy(found: RideListWithMembers): RideCopy {
   let leadSub: string;
   let hot = false;
   if (full) {
-    lead = 'Van locked in';
+    lead = 'Taxi locked in';
     leadSub = 'This one is full — start the next taxi on the same route.';
   } else if (locked) {
     lead = `${left} seat${left === 1 ? '' : 's'} left`;
@@ -164,6 +164,30 @@ export function renderCard(model: Parameters<typeof cardSvg>[0]): Buffer {
   }).render().asPng();
 }
 
+/** The 1080x1920 Instagram story (story kit) — same fonts, same renderer. */
+export function renderStory(model: Parameters<typeof storySvg>[0]): Buffer {
+  return new Resvg(storySvg(model), {
+    font: { fontFiles: FONT_FILES, loadSystemFonts: false },
+    fitTo: { mode: 'width', value: 1080 },
+  }).render().asPng();
+}
+
+/**
+ * The campaign tags on a share link, re-spelled for the board URL it forwards to — so GA4
+ * on board.html can tell which post sent the visitor. Only utm_* keys with plain values
+ * cross: this is a public URL, and anything else has no business on the landing.
+ */
+const UTM_KEYS = new Set(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']);
+const UTM_VALUE = /^[A-Za-z0-9_.-]{1,64}$/;
+export function campaignQuery(requestUrl: string): string {
+  const kept = new URLSearchParams();
+  for (const [k, v] of new URL(requestUrl).searchParams) {
+    if (UTM_KEYS.has(k) && UTM_VALUE.test(v) && !kept.has(k)) kept.set(k, v);
+  }
+  const q = kept.toString();
+  return q ? `?${q}` : '';
+}
+
 /**
  * A ride code: two route initials and four digits (see makeCode). Mounting the share
  * routes at the root of the share domain means this pattern is the only thing standing
@@ -221,6 +245,20 @@ export function shareCardRoutes(deps: ShareDeps, opts: { prefix?: string; guardC
     });
   });
 
+  // GET <prefix>/:code/story.png — the story kit's 9:16 image. Counts only, no names.
+  r.get('/:code/story.png', async (c) => {
+    const code = c.req.param('code');
+    if (opts.guardCode && !CODE.test(code)) return c.notFound();
+    const found = await deps.rideLists.getByCode(code);
+    if (!found) return c.json({ error: 'not_found' }, 404);
+
+    const png = renderStory(storyModel(found, rideCopy(found)));
+    return c.body(new Uint8Array(png), 200, {
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=300, s-maxage=300',
+    });
+  });
+
   r.get('/:code', async (c) => {
     const code = c.req.param('code');
     // At the root of the share domain this is the only thing keeping /health, /board and
@@ -254,7 +292,7 @@ export function shareCardRoutes(deps: ShareDeps, opts: { prefix?: string; guardC
         // count it had the first time anyone pasted the link.
         image: `${base}${prefix}/${encodeURIComponent(found.list.code)}/card.png?s=${committedSeats(found.members)}`,
         canonical: `${base}${prefix}/${encodeURIComponent(found.list.code)}`,
-        landing: `${site}/board.html#/${encodeURIComponent(found.list.code)}`,
+        landing: `${site}/board.html${campaignQuery(c.req.url)}#/${encodeURIComponent(found.list.code)}`,
       }),
     );
   });

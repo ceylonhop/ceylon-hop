@@ -1,5 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
+import { isAirportPlace } from '../quote/payPageCopy';
 import type {
   CustomerCommunicationKind,
   CustomerCommunicationTracking,
@@ -1125,11 +1126,15 @@ export async function sendDetailsReminder(
 ): Promise<void> {
   if (booking.mode !== 'single') return;
   const first = esc(booking.input.customer.firstName);
+  // An arrival knows when the flight lands, not when a driver should turn up (owner, 2026-10-21).
+  const noun = isAirportPlace(booking.input.from) ? 'flight landing' : 'pickup';
   const missing = !booking.input.date && !booking.input.time
-    ? 'pickup date and time'
-    : !booking.input.date ? 'pickup date' : 'pickup time';
+    ? `${noun} date and time`
+    : !booking.input.date ? `${noun} date` : `${noun} time`;
   const msg = `Hi Ceylon Hop, for booking ${booking.reference} my ${missing} is: `;
   const ask: Cta = { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };
+  // The form on the manage page leads (Phase 4); WhatsApp stays as the fallback. `#pickup` opens it.
+  const form = opts.manage ? `${opts.manage}#pickup` : null;
   const html = page(
     brandHeader() +
       introBlock(
@@ -1139,21 +1144,21 @@ export async function sendDetailsReminder(
         `Your booking is paid and safe. We just need your ${missing} to book your driver.`,
       ) +
       ticketCard(booking, BADGE_ACTION) +
+      (form ? ctaRow(form, `Add your ${missing}`) : '') +
       infoBox(
-        'Tell us on WhatsApp',
+        form ? 'Or tell us on WhatsApp' : 'Tell us on WhatsApp',
         `Tap below and send us your ${missing}. Already told us? You can ignore this email.`,
         undefined,
         ask,
       ) +
-      (opts.manage ? manageButton(opts.manage) : '') +
       footer(),
   );
   const text = textShell(`what's your ${missing}?`, `Your booking is paid — we just need your ${missing}.`, booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    `Tell us on WhatsApp: ${ask.href}`,
+    ...(form ? [`Add it here: ${form}`, ''] : []),
+    `${form ? 'Or tell us' : 'Tell us'} on WhatsApp: ${ask.href}`,
     'Already told us? You can ignore this email.',
-    ...(opts.manage ? ['', `View your booking: ${opts.manage}`] : []),
   ]);
   await email.send({
     to: booking.input.customer.email,
@@ -1174,9 +1179,10 @@ export async function sendScheduleSet(
 ): Promise<void> {
   if (booking.mode !== 'single' || !booking.input.date) return;
   const first = esc(booking.input.customer.firstName);
+  const lands = isAirportPlace(booking.input.from);
   const when = booking.input.time
-    ? `${fmtDate(booking.input.date)} · ${booking.input.time} (Sri Lanka time)`
-    : `${fmtDate(booking.input.date)} · pickup time to confirm`;
+    ? `${fmtDate(booking.input.date)} · ${lands ? 'lands ' : ''}${booking.input.time} (Sri Lanka time)`
+    : `${fmtDate(booking.input.date)} · ${lands ? 'landing' : 'pickup'} time to confirm`;
   const html = page(
     brandHeader() +
       introBlock('Pickup set', TEAL_DEEP, `Your pickup is set, ${first}`, `${esc(when)}. Please check it now.`) +
