@@ -499,7 +499,8 @@ function attachAC(input, menu, which){
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
-      if(geo && geo.name) input.value=geo.name;
+      // Keep Google's full text in the field (set from d.label above): the bare main text is a
+      // name the server often can't place, and the booking lands unpriced (2026-10-18).
       markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
@@ -1308,26 +1309,46 @@ function checkWhere(){
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
-// proceed without a date (confirmed later on WhatsApp).
+// proceed without a date (confirmed later on WhatsApp) — but only when the
+// customer ticks "Decide later", never by simply not picking one.
 function checkWhen(){
+  syncWhenToUrl();
   const n2=document.getElementById('n2');
   if(!n2) return;
-  if(isShared){
-    // Shared seats depart at fixed times — a concrete date AND departure are both required,
-    // else the backend (which requires `time`) 400s at the moment of payment.
-    const ok = !!(state.date && !state.flexDate && state.dep);
-    n2.disabled = !ok;
-    // Never leave a greyed-out button with no reason next to it.
-    var why=document.getElementById('when-blocked');
-    if(!why){
-      why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
-      n2.parentNode.insertBefore(why, n2);
-    }
-    why.textContent = ok ? '' : (!state.date ? 'Pick a travel date above \u2014 shared seats need a set departure day.' : 'Choose a departure time to continue.');
-    why.style.display = ok ? 'none' : '';
-  } else {
-    n2.disabled = false;
+  if(isTrip){ n2.disabled = false; return; }
+  // Shared seats depart at fixed times — a concrete date AND departure are both required,
+  // else the backend (which requires `time`) 400s at the moment of payment.
+  // A private transfer with neither a date nor "Decide later" went through undated on
+  // CH-SK8U8 (2026-10-18): the date was lost on a reload and Continue let them past.
+  const ok = isShared ? !!(state.date && !state.flexDate && state.dep) : !!(state.date || state.flexDate);
+  n2.disabled = !ok;
+  // Never leave a greyed-out button with no reason next to it.
+  var why=document.getElementById('when-blocked');
+  if(!why){
+    why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
+    n2.parentNode.insertBefore(why, n2);
   }
+  why.textContent = ok ? '' : (!isShared ? 'Pick a pick-up date above — or tick “Decide later” if you don’t know it yet.'
+    : !state.date ? 'Pick a travel date above — shared seats need a set departure day.' : 'Choose a departure time to continue.');
+  why.style.display = ok ? 'none' : '';
+}
+// The When step's choices live only in JS state, so a page that loads fresh from its URL — Back
+// from PayHere when the browser skips its back/forward cache — came back with no date (CH-SK8U8).
+// Mirror them into ?date=&time=, which the boot code already reads (startParam / timeParam).
+// Only once the customer changes something: armed after init, so loading the page never rewrites
+// the link it was opened with (an out-of-window date it ignores, a departure it auto-selects).
+var whenUrlArmed=false;
+function syncWhenToUrl(){
+  if(isTrip || !whenUrlArmed) return;
+  try{
+    const u=new URL(location.href);
+    const date = state.date && !state.flexDate ? fmtISO(state.date) : '';
+    const time = state.dep && !state.flexTime ? state.dep : '';
+    if((u.searchParams.get('date')||'')===date && (u.searchParams.get('time')||'')===time) return;
+    u.searchParams.set('date', date);
+    if(time) u.searchParams.set('time', time); else u.searchParams.delete('time');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  }catch(e){ /* the address bar is a convenience; the booking never depends on it */ }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
 
@@ -1943,6 +1964,49 @@ function lockLegKm(from, to){
 // it can't know two calls in a row are for the same intent unless we only call it when the
 // intent actually moved.
 let lastRequestedSig = null;
+// The intent the server said it CANNOT price (422 quote_unpriced). Not an outage: checkout will
+// refuse it (awaiting_price), so Pay must not be offered (CH-E7EE8, 2026-10-18). Keyed by intent
+// signature, so changing any stop clears it.
+let engineUnpriced = null; // { sig, names:[] } | null
+function currentUnpriced(){ return (engineUnpriced && engineUnpriced.sig===currentIntentSig()) ? engineUnpriced : null; }
+function unpricedCopy(u){
+  const n=u.names;
+  const what = n.length===0 ? 'one of your stops'
+    : n.length===1 ? n[0] : n.slice(0,-1).join(', ')+' and '+n[n.length-1];
+  return 'We couldn’t find '+what+' on the map, so we can’t price this trip automatically. '+
+    'Pick each hotel from the list as you type, or send us the trip on WhatsApp and we’ll price it by hand.';
+}
+// The WhatsApp text for an unpriced trip: no "Quoted $…" line, since the figure on screen is the
+// page's own rough estimate, not a price.
+function waUnpricedText(){
+  return waTripSummary().replace(/\nQuoted [^\n]*$/, '')+'\n\nThe website couldn’t price it automatically.';
+}
+function renderUnpricedActions(note){
+  const row=document.createElement('span');
+  row.className='unpriced-actions';
+  if(isTrip){
+    const edit=document.createElement('a');
+    edit.href=buildTripEditUrl(false); edit.textContent='Change stops';
+    row.appendChild(edit);
+  } else {
+    const change=document.createElement('button');
+    change.type='button'; change.className='linklike'; change.textContent='Change pickup or drop-off';
+    change.addEventListener('click',()=>{ window.goStep(2); const el=document.getElementById('loc-to'); if(el) el.focus(); });
+    row.appendChild(change);
+  }
+  row.appendChild(document.createTextNode(' · '));
+  const wa=document.createElement('a');
+  wa.href=waHrefFor(waUnpricedText()); wa.target='_blank'; wa.rel='noopener'; wa.textContent='Send it on WhatsApp';
+  row.appendChild(wa);
+  // The reason goes in its own span so it stays beside the note's "!" icon (.form-error is a
+  // flex row) while the actions wrap onto their own line below it.
+  const text=document.createElement('span');
+  text.className='unpriced-text';
+  text.textContent=note.textContent;
+  note.textContent='';
+  note.appendChild(text);
+  note.appendChild(row);
+}
 function requestEstimate(){
   if(!window.CH_PRICING || isShared) return; // shared seats price locally only (Global Constraints)
   const intent = buildEstimateIntent();
@@ -1953,12 +2017,18 @@ function requestEstimate(){
   estimatePending = true;
   if(hasExactRouteInputs()) routeEstimateUnavailable=false;
   window.CH_PRICING.estimate(intent, {
-    onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
+    onResult: function(est){ estimatePending = false; if(engineUnpriced && engineUnpriced.sig===sig) engineUnpriced = null; handleEngineEstimate(est, sig); },
     // Flag off, a network hiccup, or a timeout — the local formula is already what's on
     // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
-    onUnavailable: function(reason){
+    onUnavailable: function(reason, detail){
       estimatePending = false;
+      if(reason==='unpriced'){
+        engineUnpriced = { sig: sig, names: (detail && detail.unresolved) || [] };
+        if(typeof window.chTrack==='function') window.chTrack('quote_unpriced_shown',{
+          surface:'booking', mode: isTrip ? 'trip' : 'single', named: engineUnpriced.names.length
+        });
+      }
       if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
@@ -2706,7 +2776,10 @@ function render(){
   // whenever that panel isn't the active step regardless of its own `hidden` — safe to set on
   // every render() without tracking which step is open.
   const payBtn=document.getElementById('pay-btn');
-  const payGateReason = estimatePending
+  const unpriced=currentUnpriced();
+  const payGateReason = unpriced
+    ? unpricedCopy(unpriced)
+    : estimatePending
     ? 'Still getting your latest price — one moment…'
     : state.pendingReprice
       ? 'Please review the updated price above before continuing.'
@@ -2716,7 +2789,10 @@ function render(){
   if(payBtn) payBtn.disabled = !!payGateReason;
   const gateNote=document.getElementById('details-error');
   if(gateNote){
-    if(payGateReason){ gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1'; }
+    if(payGateReason){
+      gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1';
+      if(unpriced) renderUnpricedActions(gateNote);
+    }
     else if(gateNote.dataset.gate){ gateNote.hidden=true; gateNote.textContent=''; delete gateNote.dataset.gate; }
   }
 }
@@ -2792,6 +2868,11 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // Pay gate (Task 3) — the button is already disabled for these in render(); this is the
   // belt-and-braces check for the moment a stale enabled button gets clicked anyway (e.g. a
   // click queued a frame before a re-render lands).
+  const unpricedNow=currentUnpriced();
+  if(unpricedNow){
+    if(derr){ derr.textContent=unpricedCopy(unpricedNow); renderUnpricedActions(derr); derr.hidden=false; }
+    return;
+  }
   if(estimatePending){
     if(derr){ derr.textContent='Still getting your latest price — please wait a moment and try again.'; derr.hidden=false; }
     return;
@@ -2954,18 +3035,26 @@ async function continueToCheckout(booking){
   // own manage page, carrying only the status-only `rt` (the manage token comes back in the
   // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
   // request body says is a phishing primitive.
+  //
+  // A deadline, like every call pay.html makes: the overlay hides both buttons while this runs
+  // and Pay is latched, so an API that accepts the connection and never answers (a saturated
+  // pool, an instance mid-restart) otherwise leaves the customer on the spinner with no way out
+  // but a reload. An abort lands in the catch below → the generic failure with Try again.
   let checkout=null, refusal=null;
+  const ctrl = new AbortController();
+  const deadline = setTimeout(()=>ctrl.abort(), 20000);
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'}),signal:ctrl.signal}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
   }catch(e){}
+  finally{ clearTimeout(deadline); }
 
   // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
   // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
@@ -3577,6 +3666,7 @@ if(!isTrip && !state.dep){
 
 // ---- init ----
 buildCal(); renderDeps(); checkWhen();
+whenUrlArmed=true;
 document.getElementById('ad-n').textContent=state.ad;
 document.getElementById('ch-n').textContent=state.ch;
 document.getElementById('bg-n').textContent=state.bags;
@@ -3721,9 +3811,11 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
   closeBtn.addEventListener('click',closeSheet);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&aside.classList.contains('open')) closeSheet(); });
 
-  // ── keyboard: never cover a focused field with the bar
+  // ── keyboard: never cover a focused field with the bar. Not the two "Decide later" boxes: they open
+  // no keyboard, sit high on the When step, and ticking one (the only way past it undated) used to
+  // hide the very CTA it unlocks until the customer tapped elsewhere (Android focuses checkboxes).
   document.addEventListener('focusin',e=>{
-    if(e.target.matches && e.target.matches('.panel input, .panel textarea, .panel select')) bar.classList.add('kb');
+    if(e.target.matches && e.target.matches('.panel input:not(#flex-date):not(#flex-time-chk), .panel textarea, .panel select')) bar.classList.add('kb');
   });
   document.addEventListener('focusout',()=>bar.classList.remove('kb'));
 

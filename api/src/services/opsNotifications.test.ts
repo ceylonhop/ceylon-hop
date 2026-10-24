@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, type AssignedQuote } from './opsNotifications';
 import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -444,5 +444,100 @@ describe('teamRescueEmail', () => {
     const m = teamRescueEmail(noPhone, PAY, 'https://ops.example');
     expect(waHref(m.html)).toBeNull();
     for (const part of [m.html, m.text]) expect(part).toContain('No WhatsApp number on this booking');
+  });
+});
+
+// CH-E7EE8 (2026-10-18): an unpriced booking only raised a quiet ops task. This is the team's
+// email for it. Not "Paid:": that prefix is the owner's Gmail forward anchor.
+describe('teamUnpricedEmail', () => {
+  const REASON = 'distance unresolved: EKHO Sigiriya → Casa Selvita';
+
+  it('names the booking, the trip and that it needs a price in the subject, never "Paid:"', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    expect(m.subject.startsWith('Unpriced: CH-7QK2P')).toBe(true);
+    expect(m.subject).toContain('Colombo Fort → Kandy');
+    expect(m.subject).toContain('set a price before Priya can pay');
+    expect(m.subject.startsWith('Paid:')).toBe(false);
+  });
+
+  it('carries the server’s reason, says nothing was charged, and links the booking in ops', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain(REASON);
+      expect(part).toContain('Nothing was charged');
+      expect(part).toContain('send a pay link');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  // All six real customers behind the unpriced bookings of 15 Sep–18 Oct had already rebooked
+  // and paid elsewhere: messaging them first would chase people who are fine.
+  it('tells the team to check for a later paid booking before messaging the customer', () => {
+    const m = teamUnpricedEmail(sampleBooking('single'), REASON, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('already rebooked');
+      expect(part).toContain('traveller@example.com');
+    }
+  });
+
+  it('shows no money figure: an unpriced total is a placeholder, not a price', () => {
+    const b = sampleBooking('single');
+    const m = teamUnpricedEmail(b, REASON, 'https://ops.example');
+    expect(m.subject).not.toContain('18500');
+    expect(m.text).toContain('No price yet');
+  });
+});
+
+// Story kit (proposal 2026-10-23): a NEW ride's ops email carries everything needed to post it
+// by hand — the story image, a caption, and a tagged link per place it goes.
+describe('sendRideSeatHeld — the Post it block on a new ride', () => {
+  const started = async (over: { kind?: 'started' | 'joined' | 'changed'; shareBaseUrl?: string } = {}) => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld(
+      { to: 'ops@x.com', list: ride(), member: member({ position: 1 }), committed: 1, kind: over.kind ?? 'started',
+        ...('shareBaseUrl' in over ? { shareBaseUrl: over.shareBaseUrl } : { shareBaseUrl: 'https://ceylonhop.com/' }) },
+      email,
+      'https://ops.example',
+    );
+    return email.sent[0];
+  };
+
+  it('links the story image on the share domain', async () => {
+    const msg = await started();
+    expect(msg.html).toContain('https://ceylonhop.com/r/EM-4821/story.png');
+    expect(msg.text).toContain('https://ceylonhop.com/r/EM-4821/story.png');
+  });
+
+  it('gives one tagged ride link per place the post goes', async () => {
+    const msg = await started();
+    for (const tags of [
+      'utm_source=instagram&utm_medium=story&utm_campaign=ride_board',
+      'utm_source=telegram&utm_medium=group&utm_campaign=ride_board',
+      'utm_source=facebook&utm_medium=group&utm_campaign=ride_board',
+    ]) {
+      expect(msg.text).toContain(`https://ceylonhop.com/r/EM-4821?${tags}`);
+      expect(msg.html).toContain(`https://ceylonhop.com/r/EM-4821?${tags.replace(/&/g, '&amp;')}`);
+    }
+  });
+
+  it('writes a ready caption: route, date, the ask, the price — and no traveller name', async () => {
+    const msg = await started();
+    const caption = 'Skip the bus: shared taxi Ella → Mirissa, Fri 14 Aug. 2 more travellers and it runs. About $24 a seat, $0 to join, pay only if it fills. Add your name:';
+    expect(msg.text).toContain(caption);
+    expect(msg.html).toContain(caption);
+    const text = msg.text ?? '';
+    const block = text.slice(text.indexOf('POST IT'));
+    expect(block).not.toContain('Léa');
+  });
+
+  it('only on a new ride — a join or a seat change is not a new post', async () => {
+    expect((await started({ kind: 'joined' })).html).not.toContain('story.png');
+    expect((await started({ kind: 'changed' })).html).not.toContain('story.png');
+  });
+
+  it('is left out when no share domain is configured — never an ops. link in a public post', async () => {
+    const msg = await started({ shareBaseUrl: undefined });
+    expect(msg.html).not.toContain('story.png');
+    expect(msg.text).not.toContain('POST IT');
   });
 });

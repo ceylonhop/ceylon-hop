@@ -53,7 +53,7 @@ function hero(g, p) {
       <h1>${esc(g.name)}</h1>
       <p class="sub">${g.hero.intro}</p>
     </div>
-    <span class="credit">Photo: ${esc(g.photos[g.hero.photo].credit)} / Unsplash</span>
+    <span class="credit">Photo: ${heroCredit(g.photos[g.hero.photo])}</span>
   </div>`;
 }
 
@@ -152,7 +152,7 @@ function onTheWay(g, p) {
 
 function placeRow(g, items, collector, p, withMap) {
   const cards = items.map(e => `<article class="pl reveal">
-          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}
+          ${gimg(g, e.photo, { p, sizes: '(max-width:760px) 100vw, 25vw' })}${g.photos[e.photo].caption ? `<span class="cap" style="display:block;padding:8px 18px 0;font-size:.72rem;line-height:1.4;color:var(--ink-soft)">${esc(g.photos[e.photo].caption)}</span>` : ''}
           <span class="tier">${esc(e.tier)}</span>${e.pick ? '<span class="pick">Our pick</span>' : ''}
           <div class="bd"><h3>${esc(e.name)}</h3><p class="why">${e.text}</p><button class="tg" type="button" aria-expanded="false">More</button>
             <div class="m"><span class="pb">${esc(e.band)}</span>${(e.flags || []).map(f => `<span>${esc(f)}</span>`).join('')}${(e.warn || []).map(f => `<span class="warn">${esc(f)}</span>`).join('')}</div>
@@ -246,9 +246,22 @@ function askBand(g) {
   </div></section>`;
 }
 
+// Wikimedia Commons photos (source: 'commons') are CC BY / CC BY-SA: the licence is named and linked
+// beside the photographer. Everything else is Unsplash, credited exactly as before.
+const isCommons = ph => ph.source === 'commons';
+const heroCredit = ph => isCommons(ph) ? `${esc(ph.credit)} / Wikimedia Commons (${esc(ph.license)})` : `${esc(ph.credit)} / Unsplash`;
+
 function credits(g, p) {
-  const names = [...new Set(Object.values(g.photos).map(x => x.credit))];
-  return `<div class="credits"><div class="wrap"><span>Photos:</span>${names.map(n => `<span>${esc(n)}</span>`).join('')}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  const all = Object.values(g.photos);
+  const names = [...new Set(all.filter(x => !isCommons(x)).map(x => x.credit))];
+  const commons = [...new Map(all.filter(isCommons).map(x => [x.credit + x.license, x])).values()];
+  const nameHtml = names.map(n => `<span>${esc(n)}</span>`).join('');
+  if (!commons.length) {
+    return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
+  }
+  const commonsHtml = commons.map(x =>
+    `<span>${esc(x.credit)} (<a href="${esc(x.licenseUrl)}">${esc(x.license)}</a>, Wikimedia Commons)</span>`).join('');
+  return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash</span>${commonsHtml}<span>· <a href="${p}credits.html">all credits</a></span></div></div>`;
 }
 
 function jsonLd(g, url) {
@@ -321,7 +334,7 @@ export function generateGuides() {
 // ── styles ────────────────────────────────────────────────────────────────────────────────
 // Tokens (--blue, --paper, --display, …) come from site.css. Phone rules at 759px match the
 // site's own breakpoints; the mockup used container queries only to preview both widths.
-const GUIDE_STYLE = `
+export const GUIDE_STYLE = `
   .g-hero{position:relative;min-height:560px;display:flex;align-items:flex-end;color:#fff;isolation:isolate;overflow:hidden;margin-top:-74px}
   .g-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;transform:scale(1.06);animation:g-kb 9s cubic-bezier(.2,.7,.2,1) forwards}
   @keyframes g-kb{to{transform:scale(1)}}
@@ -534,12 +547,12 @@ const GUIDE_STYLE = `
   .live{display:inline-flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft);margin-top:18px}
   .live i{width:9px;height:9px;border-radius:50%;background:var(--teal)}
   .all{margin:20px 0 0;font-size:.95rem}.all a{font-weight:600}
-  .ask{background:var(--btn-accent);color:#fff}
-  .ask .wrap{display:grid;gap:22px;align-items:center}
-  @media(min-width:760px){.ask .wrap{grid-template-columns:1fr auto}}
-  .ask .eyebrow{color:#fff;opacity:.85}.ask .eyebrow::before{background:#fff}
-  .ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
-  .ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
+  section.ask{background:var(--btn-accent);color:#fff} /* section.: the Eat/Stay card is .pl.ask too */
+  section.ask .wrap{display:grid;gap:22px;align-items:center}
+  @media(min-width:760px){section.ask .wrap{grid-template-columns:1fr auto}}
+  section.ask .eyebrow{color:#fff;opacity:.85}section.ask .eyebrow::before{background:#fff}
+  section.ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
+  section.ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
   .credits{padding:20px 0 30px;font-size:.74rem;color:var(--ink-soft)}
   .credits .wrap{display:flex;flex-wrap:wrap;gap:6px 14px}
   @media(max-width:759px){

@@ -324,8 +324,10 @@ function renderPlaceMenu(input){
       placeMenuSeq++;
       closePlaceMenus(null, false);
       if(picked && picked.source==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
-        const geo=await window.CH_MAP.resolvePick(picked.item);
-        if(geo && geo.name) input.value=geo.name;
+        // Resolving ends Google's billing session. The field KEEPS Google's full text (set from
+        // the row above): the bare main text ("Casa Selvita") is a name the server can't place,
+        // so the trip lands unpriced (CH-E7EE8, 2026-10-18); the full text prices.
+        await window.CH_MAP.resolvePick(picked.item);
       }
       input.dispatchEvent(new Event('input',{bubbles:true}));
       input.dispatchEvent(new Event('change',{bubbles:true}));

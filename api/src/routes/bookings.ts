@@ -25,8 +25,9 @@ import {
   type PriceOutcome,
 } from '../services/pricing';
 import { measureLeg } from '../quote/routeChoice';
-import { promoDiscount, roadRow } from '../services/notifications';
-import { websitePricingSnapshot, sharedPricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { promoDiscount, roadRow, sendScheduleSet, manageUrl } from '../services/notifications';
+import { websitePricingSnapshot, sharedPricingSnapshot, SCHEDULE_EDITABLE_STATUSES, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
 import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
@@ -36,6 +37,9 @@ import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { AlertAdapter } from '../adapters/alerts';
+import { teamUnpricedEmail, teamScheduleSetEmail } from '../services/opsNotifications';
+import type { EmailAdapter } from '../adapters/email';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
@@ -183,6 +187,9 @@ export interface CustomerBookingView {
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
   balancePayable: boolean;
+  // The engine couldn't price this booking: `totalCents` is a placeholder checkout refuses, and
+  // ops prices it by hand. The manage page shows neither the amount nor a Pay button then.
+  needsPricing: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
@@ -191,6 +198,9 @@ export interface CustomerBookingView {
   // Promo row above Total. Both absent on every booking without a code.
   promoCode?: string;
   discountCents?: number;
+  // Who made the latest pickup date/time change after booking (booking_schedule_events). Absent
+  // when nobody has. The manage page says "set by our team" for 'staff' and never "set by you".
+  scheduleSetBy?: 'staff' | 'customer';
 }
 
 export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBookingView {
@@ -208,6 +218,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     balanceDueCents: balanceDueCents(b, payments),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
+    needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -305,6 +316,12 @@ export function bookingRoutes(deps: {
   // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
   experiences?: ExperienceRepo;
   experienceInterests?: ExperienceInterestRepo;
+  // The team's "Unpriced:" email (CH-E7EE8). Unset → the ops task is the only signal.
+  alerts?: AlertAdapter;
+  opsBaseUrl?: string;
+  // The customer's "Your pickup is set" email after they fill it on the manage page (Phase 4).
+  // Unset → nothing is emailed; the change still saves.
+  email?: EmailAdapter;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -452,6 +469,23 @@ export function bookingRoutes(deps: {
       // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
       // down, and it would send ops hunting for a bad place name that isn't there.
       await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
+      // The task alone sat unseen for weeks (CH-E7EE8): tell the team now. Best-effort, like
+      // the task — the booking exists and the customer is mid-checkout.
+      if (deps.alerts) {
+        const reason = resolved.reason ?? 'distance unresolved';
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'booking_unpriced',
+            title: `Unpriced: ${booking.reference} needs a price before the customer can pay`,
+            body: `${booking.reference} was saved without a price (${reason}). Set the price in ops, then send a pay link.`,
+            email: teamUnpricedEmail(booking, reason, deps.opsBaseUrl ?? ''),
+            dedupeKey: booking.id,
+          });
+        } catch (err) {
+          console.error(`unpriced alert failed for ${booking.reference}:`, err);
+        }
+      }
     }
   }
 
@@ -964,8 +998,13 @@ function invalidRequest(error: ZodError) {
     if (!id) return c.json({ error: 'invalid_link' }, 401);
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    const last = (await deps.bookings.listScheduleEvents(booking.id)).at(-1);
     // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
-    return c.json({ ...projectBooking(booking, await payments.findByBookingId(booking.id)), ga4Item: browserItem(booking) }, 200);
+    return c.json({
+      ...projectBooking(booking, await payments.findByBookingId(booking.id)),
+      ...(last ? { scheduleSetBy: last.actorType } : {}),
+      ga4Item: browserItem(booking),
+    }, 200);
   });
 
   r.post('/view/checkout-token', async (c) => {
@@ -978,7 +1017,12 @@ function invalidRequest(error: ZodError) {
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
     ) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+      // `reason` tells an open booking awaiting a hand price apart from a closed one, so the
+      // manage page never tells that customer it is "already paid or closed".
+      return c.json(
+        { error: 'not_chargeable', ...(booking.needsPricing ? { reason: 'awaiting_price' } : {}), status: booking.status },
+        409,
+      );
     }
     // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
     // customer-safe view projection deliberately withholds it. The caller has already proved
@@ -991,6 +1035,66 @@ function invalidRequest(error: ZodError) {
       },
       200,
     );
+  });
+
+  // Dateless capture Phase 4 (spec 2026-10-17 §5): the customer fills a BLANK pickup date/time on
+  // the manage page. Set-once (D2): customerScheduleFill refuses to change anything already set —
+  // that goes through WhatsApp → ops. Same bearer token as /view/checkout-token (never the query
+  // string, which reaches logs). Under /bookings/*, so the per-IP POST limiter already applies.
+  r.post('/view/schedule', async (c) => {
+    const id = verifyBookingToken(bearerToken(c.req.header('authorization')), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const body = z.object({ date: z.string().nullable(), time: z.string().nullable() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    if (booking.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(booking.status)) {
+      return c.json({ error: 'not_editable' }, 409);
+    }
+    const current = { date: booking.input.date ?? null, time: booking.input.time ?? null };
+    const fill = customerScheduleFill(current, body.data);
+    if (!fill.ok) return c.json(fill.reason === 'already_set' ? { error: fill.reason, current } : { error: fill.reason }, fill.reason === 'already_set' ? 409 : 400);
+    // No allowShortNotice: the 12 h rule binds the customer, not ops (spec §4).
+    const problem = scheduleProblem(fill.next.date, fill.next.time);
+    if (problem) return c.json({ error: problem }, 400);
+
+    const result = await bookings.setSchedule(id, { ...fill.next, expected: current, actor: { type: 'customer', id: 'manage_link' } });
+    if (!result.ok) {
+      if (result.reason === 'not_found') return c.json({ error: 'not_found' }, 404);
+      const b = result.booking;
+      const now = b.mode === 'single' ? { date: b.input.date ?? null, time: b.input.time ?? null } : null;
+      return c.json({ error: result.reason, current: now }, 409);
+    }
+
+    // Both best-effort: a mail failure must not undo what the customer just set.
+    let emailed = false;
+    if (deps.email) {
+      try {
+        const links = deps.manageBaseUrl ? { manage: manageUrl(result.booking, deps.manageBaseUrl, deps.linkSecret) } : {};
+        await sendScheduleSet(result.booking, deps.email, links);
+        emailed = true;
+      } catch (err) {
+        console.error(`schedule_set email failed for ${result.booking.reference}:`, err);
+      }
+    }
+    if (deps.alerts) {
+      try {
+        await deps.alerts.send({
+          severity: 'info',
+          kind: 'schedule_set_by_customer',
+          title: `Date set: ${result.booking.reference} by the customer`,
+          body: `${result.booking.reference}: pickup set to ${fill.next.date}${fill.next.time ? ` ${fill.next.time}` : ''} on the manage page.`,
+          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? ''),
+          // A later time-only fill is a new event, not a repeat of the first.
+          dedupeKey: `${result.booking.id}:${fill.next.date}:${fill.next.time ?? ''}`,
+        });
+      } catch (err) {
+        console.error(`Date set alert failed for ${result.booking.reference}:`, err);
+      }
+    }
+    const view = { ...projectBooking(result.booking, await payments.findByBookingId(id)), scheduleSetBy: 'customer' as const };
+    return c.json({ view, emailed }, 200);
   });
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the

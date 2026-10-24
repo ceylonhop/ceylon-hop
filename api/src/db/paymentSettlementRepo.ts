@@ -259,6 +259,7 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       idempotencyKey: payment.idempotencyKey,
       attemptCount: payment.attemptCount,
       lastAttemptAt: payment.lastAttemptAt,
+      settledAt: payment.settledAt,
     };
   }
 

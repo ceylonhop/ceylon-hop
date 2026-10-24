@@ -310,7 +310,9 @@ test('planner place search layers popular route then Google results for hotel te
   await expect(page.locator('.place-option', { hasText: 'Galle' })).toHaveCount(0);
 
   await options.nth(1).click();
-  await expect(to).toHaveValue('hilton colombo Hotel');
+  // A Google pick keeps Google's full text, not the bare main text the server can't place
+  // (CH-E7EE8, 2026-10-18; google-pick-keeps-full-address.spec.js).
+  await expect(to).toHaveValue('hilton colombo Hotel, Colombo, Sri Lanka');
   await expect(page.locator('#rail [data-dist]')).toContainText('100 km');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $44');
   await expect(page.locator('#st-drive')).toContainText('100 km');

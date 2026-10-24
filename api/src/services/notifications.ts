@@ -1,5 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
+import { isAirportPlace } from '../quote/payPageCopy';
 import type {
   CustomerCommunicationKind,
   CustomerCommunicationTracking,
@@ -48,6 +49,9 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
   deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
   balance_received: { templateKey: 'balance-received', source: 'payment_webhook', actorType: 'provider' },
+  schedule_set: { templateKey: 'booking-schedule-set', source: 'ops', actorType: 'staff' },
+  details_reminder_1: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  details_reminder_2: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
 };
 
 function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
@@ -309,13 +313,14 @@ const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c
 const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fff6e8', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
-// True when a paid booking still has an open detail we must confirm (a flexible/"to
-// confirm" date). Drives the "we still need your details" follow-up. The exact pickup
-// is always captured as an area (input.from is required), so date is the open field.
+// True when a paid booking still has an open detail we must confirm. A single transfer needs
+// BOTH a date and a pickup time — "Decide later" can leave either blank (booking.js), and a
+// driver can't be sent with only one. A trip needs at least one date. Shared rides always book
+// a fixed departure. Drives the "we still need your details" email and its reminders.
 export function needsDetails(booking: Booking): boolean {
-  if (booking.mode === 'shared') return false; // shared always books a fixed departure
+  if (booking.mode === 'shared') return false;
   if (booking.mode === 'trip') return !booking.input.dates?.some(Boolean);
-  return !booking.input.date;
+  return !booking.input.date || !booking.input.time;
 }
 
 // Header lockup: a teal monogram + serif wordmark on the warm card (no heavy band —
@@ -1109,6 +1114,97 @@ export async function sendDetailsNeeded(
     html,
     text,
     tracking: emailTracking(booking, 'details_needed'),
+  });
+}
+
+// ── Reminder: we still need the pickup date/time (Phase 2, plan 2026-10-18) ─
+// Sent by the scheduled tick at ~2 and ~7 days after payment while a single transfer is still
+// missing its date or time. WhatsApp is the ask — the reference is already typed, so replying is
+// one tap. Says plainly to ignore it if they already told us: ops may not have entered it yet.
+export async function sendDetailsReminder(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { nth: 1 | 2; manage?: string },
+): Promise<void> {
+  if (booking.mode !== 'single') return;
+  const first = esc(booking.input.customer.firstName);
+  // An arrival knows when the flight lands, not when a driver should turn up (owner, 2026-10-21).
+  const noun = isAirportPlace(booking.input.from) ? 'flight landing' : 'pickup';
+  const missing = !booking.input.date && !booking.input.time
+    ? `${noun} date and time`
+    : !booking.input.date ? `${noun} date` : `${noun} time`;
+  const msg = `Hi Ceylon Hop, for booking ${booking.reference} my ${missing} is: `;
+  const ask: Cta = { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };
+  // The form on the manage page leads (Phase 4); WhatsApp stays as the fallback. `#pickup` opens it.
+  const form = opts.manage ? `${opts.manage}#pickup` : null;
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Reminder',
+        AMBER,
+        `What's your ${missing}, ${first}?`,
+        `Your booking is paid and safe. We just need your ${missing} to book your driver.`,
+      ) +
+      ticketCard(booking, BADGE_ACTION) +
+      (form ? ctaRow(form, `Add your ${missing}`) : '') +
+      infoBox(
+        form ? 'Or tell us on WhatsApp' : 'Tell us on WhatsApp',
+        `Tap below and send us your ${missing}. Already told us? You can ignore this email.`,
+        undefined,
+        ask,
+      ) +
+      footer(),
+  );
+  const text = textShell(`what's your ${missing}?`, `Your booking is paid — we just need your ${missing}.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    ...(form ? [`Add it here: ${form}`, ''] : []),
+    `${form ? 'Or tell us' : 'Tell us'} on WhatsApp: ${ask.href}`,
+    'Already told us? You can ignore this email.',
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Reminder: your ${missing} — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, opts.nth === 1 ? 'details_reminder_1' : 'details_reminder_2'),
+  });
+}
+
+// ── Your pickup is set (date/time filled or changed after booking) ─────────
+// Spec 2026-10-17 §4. The reader is often abroad, so the time is labelled Sri Lanka time and the
+// weekday is spelled out — this is where a wrong date is easiest to catch.
+export async function sendScheduleSet(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  if (booking.mode !== 'single' || !booking.input.date) return;
+  const first = esc(booking.input.customer.firstName);
+  const lands = isAirportPlace(booking.input.from);
+  const when = booking.input.time
+    ? `${fmtDate(booking.input.date)} · ${lands ? 'lands ' : ''}${booking.input.time} (Sri Lanka time)`
+    : `${fmtDate(booking.input.date)} · ${lands ? 'landing' : 'pickup'} time to confirm`;
+  const html = page(
+    brandHeader() +
+      introBlock('Pickup set', TEAL_DEEP, `Your pickup is set, ${first}`, `${esc(when)}. Please check it now.`) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('Something not right?', 'Message us on WhatsApp with your booking reference and we will fix it.') +
+      footer(),
+  );
+  const text = textShell('your pickup is set', `${when}. Please check it now.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Something not right? Message us on WhatsApp with your booking reference.',
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your pickup is set — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'schedule_set'),
   });
 }
 

@@ -2,7 +2,8 @@ import type { EmailAdapter } from '../adapters/email';
 import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc, statusPill, keyFacts, section, TEAL_DEEP, MUTED, whatsappButton, whatsappLink, type SectionRow } from './opsEmail';
 import { isUnpricedShell } from '../db/quoteRepo';
 import type { RideList, RideMember } from '../domain/rideList';
-import type { Booking } from '../db/bookingRepo';
+import type { Booking, ScheduleValue } from '../db/bookingRepo';
+import { isoToday, addIsoDays } from '../domain/dateRules';
 import { factRows, promoDiscount, roadRow, routeText } from './notifications';
 import { shortPlace } from '../quote/shortPlace';
 
@@ -134,6 +135,54 @@ export interface SeatHeldArgs {
   /** Live seats on the list AFTER this commitment, so the subject reads "2 of 4 seats". */
   committed: number;
   kind: SeatHeldKind;
+  /** Public share origin (SHARE_BASE_URL). Set → a new ride's mail carries the story kit. */
+  shareBaseUrl?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Story kit (proposal 2026-10-23). A new ride's mail carries what ops needs to post it by hand:
+// the 9:16 story image, a caption, and a ride link tagged per place it goes, so GA4 can say
+// which post brought a visitor. By hand because the Instagram API cannot place a link sticker.
+// Only on the share domain: a public post must never carry an ops. or onrender link, so with
+// no SHARE_BASE_URL the block is left out rather than pointed somewhere else.
+// ---------------------------------------------------------------------------
+
+const POST_PLACES: [label: string, source: string, medium: string][] = [
+  ['Instagram story (link sticker)', 'instagram', 'story'],
+  ['Telegram group', 'telegram', 'group'],
+  ['Facebook groups', 'facebook', 'group'],
+];
+
+function postItBlock(list: RideList, committed: number, shareBaseUrl: string): { html: string; text: string[] } {
+  const ride = `${shareBaseUrl.replace(/\/+$/, '')}/r/${encodeURIComponent(list.code)}`;
+  const need = Math.max(0, list.minSeats - committed);
+  // Counts only, never the traveller's name: this goes on a public account.
+  const ask = need === 0
+    ? 'It is on, with seats still open.'
+    : `${need} more ${need === 1 ? 'traveller' : 'travellers'} and it runs.`;
+  const caption = `Skip the bus: shared taxi ${list.fromPlace} → ${list.toPlace}, ${shortDay(list.date)}. ${ask} ` +
+    `About $${Math.round(list.seatPrice / 100)} a seat, $0 to join, pay only if it fills. Add your name:`;
+  const links = POST_PLACES.map(([label, source, medium]) =>
+    [label, `${ride}?utm_source=${source}&utm_medium=${medium}&utm_campaign=ride_board`] as const);
+
+  const html = [
+    `<div style="margin:22px 0 0;padding:16px 18px;border:1px solid #e2dccb;border-radius:8px">`,
+    `<p style="font-size:11px;font-weight:600;letter-spacing:.06em;color:${MUTED};margin:0 0 10px">POST IT</p>`,
+    ctaBlock('Save story image', `${ride}/story.png`, ''),
+    `<p style="font-size:13px;color:${MUTED};margin:12px 0 4px">Caption</p>`,
+    `<p style="margin:0 0 14px;padding:10px 12px;background:#F0EEE5;border-radius:6px;font-size:14px">${esc(caption)}</p>`,
+    ...links.map(([label, href]) =>
+      `<p style="margin:0 0 6px;font-size:13px"><span style="color:${MUTED}">${esc(label)}:</span> <a href="${esc(href)}">${esc(href)}</a></p>`),
+    `</div>`,
+  ].join('');
+  const text = [
+    '',
+    'POST IT',
+    `Story image: ${ride}/story.png`,
+    `Caption: ${caption}`,
+    ...links.map(([label, href]) => `${label}: ${href}`),
+  ];
+  return { html, text };
 }
 
 // ops-ui's routeStateFromUrl reads ?booking= and the sheet opener special-cases the board:
@@ -180,6 +229,7 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
   const viableLine = viable ? 'The van is viable — enough names to run at the cutoff.' : 'Still short of the minimum.';
   const link = boardDeepLink(list.code, opsBaseUrl);
   const fallback = 'Find it under Bookings in the ops dashboard.';
+  const postIt = kind === 'started' && args.shareBaseUrl ? postItBlock(list, committed, args.shareBaseUrl) : null;
 
   const rideRows: [string, string][] = [
     ['Departs', `${day} · ${list.slot}`],
@@ -205,6 +255,7 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
     section('Ride', rideRows),
     section('Traveller', travellerRows),
     ctaBlock('Open the van', link, fallback),
+    postIt?.html ?? '',
   ].join('');
   const rows = (title: string, r: SectionRow[]) =>
     [title.toUpperCase(), ...r.map(([k, v]) => `${(k + ':').padEnd(12)}${k === 'WhatsApp' && wa ? `${v} · ${wa}` : v}`), ''];
@@ -218,6 +269,7 @@ export async function sendRideSeatHeld(args: SeatHeldArgs, email: EmailAdapter, 
     ...rows('Ride', rideRows),
     ...rows('Traveller', travellerRows),
     link ? `Open the van: ${link}` : fallback,
+    ...(postIt?.text ?? []),
   ].join('\n');
   const wrapped = opsEmailShell(html, text);
   await email.send({ to: args.to, subject, html: wrapped.html, text: wrapped.text, audience: 'ops' });
@@ -441,6 +493,75 @@ export function teamRescueEmail(b: Booking, payLink: string, opsBaseUrl: string)
         moneyRows: [['Due', amount], ['Channel', channelLabel(b)]],
         strong: ['Due'],
         primaryCta,
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Unpriced (CH-E7EE8, 2026-10-18). The server couldn't price a leg, so the booking was saved
+// with a placeholder total and checkout refuses it (`awaiting_price`): the customer was told
+// we'd confirm the price and message them. This used to raise only a quiet ops task, and three
+// sat open for up to a month. No money figure: the placeholder is not a price.
+// ---------------------------------------------------------------------------
+
+export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const c = b.input.customer;
+  const subject = `Unpriced: ${b.reference} — ${f.subjectRoute}, ${f.when} — set a price before ${c.firstName} can pay`;
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: ['PRICE NEEDED', '#8a3b12', '#fbe9dc'],
+        lead: 'saved without a price',
+        keys: bookingKeys(f, b),
+        // Every customer behind the first seven unpriced bookings had rebooked and paid by the
+        // time anyone looked, so checking comes before messaging.
+        note:
+          `We couldn’t price this trip (${reason}), so ${c.firstName} was told at checkout that we’d confirm ` +
+          'the price and message them. Nothing was charged. ' +
+          `They may have already rebooked: search ${c.email} in ops first. ` +
+          'If not, set the price on the booking, then send a pay link.',
+        moneyTitle: 'Payment',
+        moneyRows: [['Price', 'No price yet'], ['Channel', channelLabel(b)]],
+        strong: ['Price'],
+      },
+      opsBaseUrl,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Date set (dateless capture Phase 4, spec 2026-10-17 D4). The customer filled a blank pickup
+// date/time on their manage page — book a driver. Subjects start "Date set: " so Gmail can filter
+// them; URGENT when the pickup is today or tomorrow in Colombo (12 h notice still allows tomorrow).
+// ---------------------------------------------------------------------------
+
+export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl: string, now: Date = new Date()): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const date = b.mode === 'single' ? b.input.date : undefined;
+  const urgent = !!date && date <= addIsoDays(isoToday('Asia/Colombo', now), 1);
+  const before = `${was.date ? 'date set' : 'no date'}, ${was.time ? 'time set' : 'no time'}`;
+  const subject = `Date set: ${b.reference} — ${f.subjectRoute}, ${f.when}${f.time}${urgent ? ' — URGENT, travels within a day' : ''}`;
+  return {
+    subject,
+    ...teamBookingBody(
+      b,
+      f,
+      {
+        pill: urgent ? ['URGENT · DATE SET', '#8a3b12', '#fbe9dc'] : ['DATE SET', '#1f6b3a', '#e3f1e6'],
+        lead: 'pickup set by the customer',
+        keys: bookingKeys(f, b),
+        note:
+          `${b.input.customer.firstName} set it on their booking page (was: ${before}). ` +
+          `Book a driver${urgent ? ' today' : ''}. They can't change it there again — any change comes to us on WhatsApp.`,
+        moneyTitle: 'Payment',
+        moneyRows: [['Paid', money(f.paidNow, b.currency)], ['Channel', channelLabel(b)]],
+        strong: [],
       },
       opsBaseUrl,
     ),

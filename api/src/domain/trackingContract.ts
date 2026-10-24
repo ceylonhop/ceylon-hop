@@ -19,6 +19,9 @@ export const TRACKED_BOOKING_EMAIL_KINDS = [
   'payment_failed',
   'deposit_received',
   'balance_received',
+  'schedule_set',
+  'details_reminder_1',
+  'details_reminder_2',
 ] as const;
 
 export type TrackedBookingEmailKind = (typeof TRACKED_BOOKING_EMAIL_KINDS)[number];

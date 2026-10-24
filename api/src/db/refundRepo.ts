@@ -106,6 +106,9 @@ export interface RefundRepo {
   }): Promise<RefundConfirmation>;
   cancel(input: { bookingId: string; refundId: string }): Promise<Refund>;
   list(bookingId: string): Promise<Refund[]>;
+  // Σ manual_pending per booking, in ONE read — the ops bookings queue asks for every row at once
+  // (spec 2026-10-17 §4). Bookings with nothing waiting are absent from the map.
+  pendingCentsByBookingIds(bookingIds: string[]): Promise<Map<string, number>>;
   // Claim a pending refund for an API call. Moves manual_pending -> api_processing and stamps
   // apiAttemptedAt, so a second concurrent click finds the row already claimed and stops.
   beginApi(input: { bookingId: string; refundId: string }): Promise<RefundApiStart>;
@@ -366,6 +369,16 @@ export class InMemoryRefundRepo implements RefundRepo {
       .filter((refund) => refund.bookingId === bookingId)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map((refund) => structuredClone(refund));
+  }
+
+  async pendingCentsByBookingIds(bookingIds: string[]): Promise<Map<string, number>> {
+    const wanted = new Set(bookingIds);
+    const out = new Map<string, number>();
+    for (const refund of this.rows.values()) {
+      if (refund.status !== 'manual_pending' || !wanted.has(refund.bookingId)) continue;
+      out.set(refund.bookingId, (out.get(refund.bookingId) ?? 0) + refund.amountCents);
+    }
+    return out;
   }
 
   private async exclusive<T>(work: () => Promise<T>): Promise<T> {

@@ -27,3 +27,8 @@ playwright-report/
 
 .claude/worktrees/
 .dist-staging/
+
+# Partner lead engine data: names and business contacts of third parties. The repo is PUBLIC —
+# never commit these (see .claude/skills/partner-leads/SKILL.md).
+outreach/
+reports/*outreach*

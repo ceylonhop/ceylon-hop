@@ -146,6 +146,40 @@ describe('CH_PRICING', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // CH-E7EE8 (2026-10-18): a 422 quote_unpriced was reported as 'http_error', the same as an
+  // outage, so the booking page showed its own rough price and a Pay button the server refuses.
+  describe('a 422 quote_unpriced is a deterministic refusal, not an outage', () => {
+    async function settleWith(status, body){
+      fetchMock.mockReturnValueOnce(Promise.resolve(jsonResponse(status, body)));
+      const cb = { onResult: vi.fn(), onUnavailable: vi.fn() };
+      CH.estimate({ product: 'private', legs: [{ from: 'EKHO Sigiriya', to: 'Casa Selvita' }] }, cb);
+      await vi.advanceTimersByTimeAsync(400);
+      await flush();
+      return cb;
+    }
+
+    it('reports reason "unpriced" with the names the API sends', async () => {
+      const cb = await settleWith(422, { error: 'quote_unpriced', unresolved: ['Casa Selvita'] });
+      expect(cb.onUnavailable).toHaveBeenCalledWith('unpriced', { unresolved: ['Casa Selvita'] });
+      expect(cb.onResult).not.toHaveBeenCalled();
+    });
+
+    it('reports "unpriced" with no names when the API sends none (today’s body)', async () => {
+      const cb = await settleWith(422, { error: 'quote_unpriced' });
+      expect(cb.onUnavailable).toHaveBeenCalledWith('unpriced', { unresolved: [] });
+    });
+
+    it('keeps other failures as http_error, and caches nothing for a 422', async () => {
+      const other = await settleWith(422, { error: 'bad_request' });
+      expect(other.onUnavailable).toHaveBeenCalledWith('http_error');
+      const err = await settleWith(500, { error: 'internal_error' });
+      expect(err.onUnavailable).toHaveBeenCalledWith('http_error');
+      await settleWith(422, { error: 'quote_unpriced' });
+      expect(Object.keys(sessionStorage).filter((k) => k.startsWith('chEst:'))).toHaveLength(0);
+      expect(CH.available()).toBe(true);
+    });
+  });
+
   it('with no API base configured, reports unavailable without fetching', () => {
     delete window.CEYLON_HOP_API;
     const cb1 = { onResult: vi.fn(), onUnavailable: vi.fn() };
