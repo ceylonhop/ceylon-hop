@@ -300,10 +300,14 @@
       var iso = addDaysIso(opts.todayIso, i);
       (vans || []).forEach(function (v) {
         if (to && v.to !== to) return;
-        var leg = from ? v.legs.filter(function (l) { return l.place === from; })[0] : v.legs[0];
+        var at = from ? v.legs.map(function (l) { return l.place; }).indexOf(from) : 0;
+        var leg = v.legs[at];
         if (!leg || !SD.runsOn(iso, v.days)) return;
+        // The stops the van still boards at AFTER yours — the ones you ride through. Stops before
+        // yours have already been passed by the time you get in, so they are not "via".
+        var via = v.legs.slice(at + 1).map(function (l) { return { place: l.place, time: l.time, point: l.point }; });
         rows.push({ sched: true, date: iso, time: leg.time, from: leg.place, fromId: leg.placeId, point: leg.point, corridorId: v.corridorId,
-          to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText });
+          to: v.to, toId: v.toId, seat: v.seat, freqText: v.freqText, via: via });
       });
     }
     return rows;
@@ -497,7 +501,7 @@
   // MIRRORS api/src/domain/rideList.ts CUTOFF_HOURS_BEFORE. The parity test in
   // web-tests/unit/ride-board-earliest-date.test.js compares closesAt() against the backend's
   // own cutoffAt(), so these cannot drift apart unnoticed.
-  var CUTOFF_H = 48, FIRST_DEPARTURE = '07:00', SLK = '+05:30';
+  var CUTOFF_H = 24, FIRST_DEPARTURE = '07:00', SLK = '+05:30';
   function closesAtMs(date) {
     return Date.parse(date + 'T' + FIRST_DEPARTURE + ':00' + SLK) - CUTOFF_H * 3600e3;
   }
@@ -779,15 +783,29 @@
   // A scheduled taxi: its clock time, the solid clock mark, an exact price and no button — the
   // whole row is the link to book it on search.html for that date. "· 7 booked" when that many
   // have paid (plan 2026-10-19-ride-board-fomo, PR 3) — a count, never who.
+  // "Stops at Negombo 07:30": the stops the van boards at after yours, each with its time — a
+  // CMB → Sigiriya traveller rides through Negombo and should see that on the row.
+  function viaText(S) {
+    return (S.via || []).map(function (v) { return splitPlace(v.place).main + ' ' + v.time; }).join(', ');
+  }
   function schedRowHtml(S) {
     var href = 'search.html?' + new URLSearchParams({ from: S.fromId || S.from, to: S.toId || S.to, date: S.date }).toString();
     var booked = F.bookedText(state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time]);
     var bk = booked ? '<span class="rws-booked"> · ' + esc(booked) + '</span>' : '';
+    var via = viaText(S);
+    // On the phone the stop rides on the sub-line, after the booked count — the count is the
+    // stronger signal, so a tight phone trims the stop first. The sub-line spans the price column
+    // for the room ("Airport → Negombo → Sigiriya" on the route line clips at 375px). Beside a
+    // booked count the stop's time goes: "· 7 booked · via Negombo 07:30" would be cut mid-time.
+    var viaShort = via
+      ? '<span class="rws-via-s"> · via ' + esc(booked ? (S.via || []).map(function (v) { return splitPlace(v.place).main; }).join(', ') : via) + '</span>'
+      : '';
     return '<a class="rws" href="' + esc(href) + '"' +
-      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
+      ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + (via ? ', stops at ' + via : '') + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
       '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
-        '<span class="rws-short">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '<small>Scheduled' + bk + '</small></span></div>' +
+        (via ? '<small class="rws-via">Stops at ' + esc(via) + '</small>' : '') +
+        '<span class="rws-short"><span class="rws-rt">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '</span><small>Scheduled' + bk + viaShort + '</small></span></div>' +
       '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
         '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + bk + ' · ' + esc(S.point) + '</small></span></div>' +
       '<div class="rw-price"><b>' + money(S.seat) + '</b><span class="rws-per"> / seat</span></div>' +
@@ -2033,7 +2051,7 @@
         cDate.min = floor;
         if (!cDate.value || cDate.value < floor) cDate.value = floor;
         setStep(0);
-        sheetError('That date is too soon', 'A shared ride closes 48 hours before it leaves. Pick a later date.');
+        sheetError('That date is too soon', 'A shared ride closes 24 hours before it leaves. Pick a later date.');
       }
       else if (e.status === 409 && e.body && e.body.error === 'scheduled_day') { setStep(0); checkSched(); sheetError('We already run this one', 'Book the guaranteed seat instead.'); }
       else if (e.status === 400 && e.body && e.body.error === 'payment_details_required') { sheetError('Check your billing details', 'Phone, address and city are required by PayHere.'); }
