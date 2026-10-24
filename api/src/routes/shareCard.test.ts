@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
+import { cardSvg, type CardModel } from './shareCardImage';
 
 // GET /r/:code — the share-link destination a chat app fetches to build its preview.
 // Crawlers never run JavaScript, so everything they need is in this HTML: per-ride og
@@ -241,5 +242,28 @@ describe('absolute URLs behind a TLS-terminating proxy', () => {
     });
     const html = await (await app.request(`/r/${l.code}`, { headers: { 'x-forwarded-proto': 'http' } })).text();
     expect(meta(html, 'og:url')).toBe(`https://ride.ceylonhop.com/r/${l.code}`);
+  });
+});
+
+// The PNG is resvg with only the bundled faces (no system fallback), so a glyph neither
+// font has renders as a .notdef box. Neither Bodoni Moda nor Poppins has '≈'.
+describe('cardSvg — the chat card artwork', () => {
+  const model: CardModel = {
+    from: 'Colombo Airport (CMB)', to: 'Dambulla', when: 'Sat 15 Aug · morning',
+    taken: ['Anna', 'Yuki'], capacity: 6,
+    lead: '2 more and it rolls', leadSub: '2 on board.', hot: false,
+    price: '≈$19', deadline: 'Closes Fri 14 Aug, 9pm', locked: false,
+  };
+
+  it('never draws a glyph the bundled fonts lack — the hedge is a word', () => {
+    const svg = cardSvg(model);
+    expect(svg).not.toContain('≈');
+    expect(svg).toMatch(/>about <\/tspan>\$19</);
+  });
+
+  it('says "shared taxi", the site vocabulary', () => {
+    const svg = cardSvg(model);
+    expect(svg).toContain('SHARED TAXI · THE RIDE BOARD');
+    expect(svg).not.toContain('SHARED VAN');
   });
 });
