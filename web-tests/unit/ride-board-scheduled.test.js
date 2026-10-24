@@ -16,6 +16,8 @@ beforeAll(() => {
   // eslint-disable-next-line no-new-func
   new Function(readFileSync(path.join(ROOT, 'shared-day.js'), 'utf8'))();
   // eslint-disable-next-line no-new-func
+  new Function(readFileSync(path.join(ROOT, 'phone-countries.js'), 'utf8'))();
+  // eslint-disable-next-line no-new-func
   new Function(readFileSync(path.join(ROOT, 'board.js'), 'utf8'))();
   RB = window.RideBoard;
 });
@@ -163,5 +165,31 @@ describe('colomboToday — the board runs on Sri Lanka dates', () => {
   it('rolls over at midnight in Colombo, not UTC', () => {
     expect(RB.colomboToday(Date.parse('2099-08-11T18:29:00Z'))).toBe('2099-08-11');
     expect(RB.colomboToday(Date.parse('2099-08-11T18:30:00Z'))).toBe('2099-08-12');
+  });
+});
+
+// Who booked a scheduled taxi (owner 2026-10-23): the API sends two letters and the country the
+// booking form stored (a name, "United Kingdom"); the row draws the same avatar circles an open
+// ride's members get. A country it cannot place gets no flag — never its name printed as one.
+describe('scheduledFaces — the bookers on a scheduled taxi, as avatar members', () => {
+  it('turns each booker into initials and a flag, in order', () => {
+    expect(RB.scheduledFaces([{ ini: 'MA', country: 'Spain' }, { ini: 'OL', country: 'United Kingdom' }])).toEqual([
+      { name: 'MA', flag: '🇪🇸' },
+      { name: 'OL', flag: '🇬🇧' },
+    ]);
+  });
+  it('reads a country name in any case, or a two-letter code', () => {
+    expect(RB.scheduledFaces([{ ini: 'JO', country: 'germany' }, { ini: 'AN', country: 'fr' }]).map((f) => f.flag))
+      .toEqual(['🇩🇪', '🇫🇷']);
+  });
+  it('leaves the flag off a country it cannot place', () => {
+    expect(RB.scheduledFaces([{ ini: 'KI', country: 'Atlantis' }, { ini: 'LE', country: '' }])).toEqual([
+      { name: 'KI', flag: '' },
+      { name: 'LE', flag: '' },
+    ]);
+  });
+  it('is empty when the API sent no one', () => {
+    expect(RB.scheduledFaces(undefined)).toEqual([]);
+    expect(RB.scheduledFaces([])).toEqual([]);
   });
 });

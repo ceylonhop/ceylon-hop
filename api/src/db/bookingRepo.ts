@@ -320,7 +320,8 @@ export interface BookingRepo {
   /** Rows whose current status disagrees with their latest recorded applied transition. */
   listStatusEventMismatches(): Promise<BookingStatusEventMismatch[]>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
-  /** Paid shared seats per (corridor, date, time) for dates in [fromDate, toDate] — counts only. */
+  /** Paid shared seat bookings for dates in [fromDate, toDate], one row each, oldest first, with the
+   *  booker's first name and country (the board reduces the name to two letters). */
   paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]>;
   // Re-record who is paying, for a booking that has not been paid yet.
   //
@@ -660,17 +661,14 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]> {
     const sold: readonly string[] = SEAT_SOLD_STATUSES;
-    const sums = new Map<string, SharedSeatCount>();
-    for (const b of this.byId.values()) {
+    const out: SharedSeatCount[] = [];
+    for (const b of this.byId.values()) { // insertion order = booking order
       if (b.mode !== 'shared' || !sold.includes(b.status)) continue;
-      const { corridorId, date, time, seats } = b.input;
+      const { corridorId, date, time, seats, customer } = b.input;
       if (date < fromDate || date > toDate) continue;
-      const key = `${corridorId}|${date}|${time}`;
-      const cur = sums.get(key);
-      if (cur) cur.seats += seats;
-      else sums.set(key, { corridorId, date, time, seats });
+      out.push({ corridorId, date, time, seats, firstName: customer.firstName, country: customer.country });
     }
-    return [...sums.values()];
+    return out;
   }
 
   async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {
