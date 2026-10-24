@@ -53,7 +53,6 @@ function hero(g, p) {
       <h1>${esc(g.name)}</h1>
       <p class="sub">${g.hero.intro}</p>
     </div>
-    <span class="credit">Photo: ${heroCredit(g.photos[g.hero.photo])}</span>
   </div>`;
 }
 
@@ -246,24 +245,6 @@ function askBand(g) {
   </div></section>`;
 }
 
-// Wikimedia Commons photos (source: 'commons') are CC BY / CC BY-SA: the licence is named and linked
-// beside the photographer. Everything else is Unsplash, credited exactly as before.
-const isCommons = ph => ph.source === 'commons';
-const heroCredit = ph => isCommons(ph) ? `${esc(ph.credit)} / Wikimedia Commons (${esc(ph.license)})` : `${esc(ph.credit)} / Unsplash`;
-
-function credits(g, p) {
-  const all = Object.values(g.photos);
-  const names = [...new Set(all.filter(x => !isCommons(x)).map(x => x.credit))];
-  const commons = [...new Map(all.filter(isCommons).map(x => [x.credit + x.license, x])).values()];
-  const nameHtml = names.map(n => `<span>${esc(n)}</span>`).join('');
-  if (!commons.length) {
-    return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash · <a href="${p}credits.html">all credits</a></span></div></div>`;
-  }
-  const commonsHtml = commons.map(x =>
-    `<span>${esc(x.credit)} (<a href="${esc(x.licenseUrl)}">${esc(x.license)}</a>, Wikimedia Commons)</span>`).join('');
-  return `<div class="credits"><div class="wrap"><span>Photos:</span>${nameHtml}<span>— on Unsplash</span>${commonsHtml}<span>· <a href="${p}credits.html">all credits</a></span></div></div>`;
-}
-
 function jsonLd(g, url) {
   const items = g.faq.flatMap(t => (t.items || []).map(q => ({
     '@type': 'Question', name: q.q, acceptedAnswer: { '@type': 'Answer', text: stripTags(q.a) },
@@ -317,7 +298,6 @@ ${jsonLd(g, url)}
   ${faq(g)}
   ${whereNext(g, T, placePhotos, p)}
   ${askBand(g)}
-  ${credits(g, p)}
 <script src="${p}${assetV('route-list-fares.js')}"></script>
 <script src="${p}${assetV('guide-page.js')}"></script>`,
   });
