@@ -50,6 +50,25 @@ test.describe('on a phone', () => {
     expect(box.height).toBeLessThan(80);
   });
 
+  test('a van that boards again on the way names that stop under the phone route line', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/board.html?from=Colombo%20Airport%20(CMB)&to=Sigiriya%20%2F%20Dambulla');
+    const row = page.locator('.rws').first();
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.locator('.rws-rt')).toHaveText('Airport → Sigiriya'); // the route line stays two places
+    const sub = row.locator('.rws-short small');
+    await expect(sub).toHaveText('Scheduled · via Negombo 07:30');
+    // the sub-line borrows the price column, so the whole stop fits without clipping
+    expect(await sub.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false);
+    await expect(row.locator('.rws-via')).toBeHidden();
+    const box = await row.boundingBox();
+    expect(box.height).toBeLessThan(80);
+    // the price sits on the route line, not below it
+    const rt = await row.locator('.rws-rt').boundingBox();
+    const price = await row.locator('.rw-price').boundingBox();
+    expect(Math.abs(rt.y + rt.height / 2 - (price.y + price.height / 2))).toBeLessThan(6);
+  });
+
   test('Join is the only solid button in the list', async ({ page }) => {
     await stubApi(page);
     await page.goto('/board.html');
@@ -63,29 +82,49 @@ test.describe('on a phone', () => {
     expect(bg).not.toBe('rgba(0, 0, 0, 0)');
   });
 
-  test('a traveller ride says when it is decided, on the phone too', async ({ page }) => {
+  test('a traveller ride says when names close, on the phone too', async ({ page }) => {
     await stubApi(page);
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    // 20:00 UTC on the 11th is the 12th in Colombo; on a phone it rides on the time line
-    const dec = row.locator('.rw-dec-w');
-    await expect(dec).toBeVisible();
-    await expect(dec).toHaveText(' · decided Wed 12 Aug');
-    await expect(row.locator('.rw-dec-s')).toBeHidden();
-    // the whole line is on screen, not cut to "dec…"
+    // 20:00 UTC on the 11th is the 12th in Colombo — far enough out to be a date, not a clock.
+    // On a phone it rides on the time line (where the "decided" date used to), in its short form.
+    const close = row.locator('.rw-when .rw-close');
+    await expect(close).toBeVisible();
+    await expect(close).toHaveText('Closes 12 Aug');
+    await expect(row.locator('.rw-state .rw-close')).toBeHidden();
+    // the whole line is on screen, not cut to "Names cl…"
     const clipped = await row.locator('.rw-when').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
     expect(clipped).toBe(false);
   });
 
-  test('on a laptop the decided date sits under the seat count instead', async ({ page }) => {
+  test('on a laptop the closing date sits under the seats to go instead', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await stubApi(page);
     await page.goto('/board.html');
     const row = page.locator('.rw[data-code="SC-1"]');
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.locator('.rw-dec-s')).toBeVisible();
-    await expect(row.locator('.rw-dec-w')).toBeHidden();
+    await expect(row.locator('.rw-state .rw-close')).toBeVisible();
+    await expect(row.locator('.rw-state .rw-close')).toHaveText('Closes 12 Aug');
+    await expect(row.locator('.rw-when .rw-close')).toBeHidden();
+    const togo = await row.locator('.rw-togo').boundingBox();
+    const close = await row.locator('.rw-state .rw-close').boundingBox();
+    expect(close.y).toBeGreaterThan(togo.y);
+  });
+
+  test('on a laptop the row says where else the van stops to pick up, with the time there', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await stubApi(page);
+    await page.goto('/board.html?from=Colombo%20Airport%20(CMB)&to=Sigiriya%20%2F%20Dambulla');
+    const row = page.locator('.rws').first();
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.locator('.rws-via')).toHaveText('Stops at Negombo 07:30');
+    await expect(row).toHaveAttribute('aria-label', /stops at Negombo 07:30/);
+    // a van with no later boarding stop says nothing
+    await page.goto('/board.html?from=Ella&to=Yala');
+    const ella = page.locator('.rws').first();
+    await expect(ella).toBeVisible({ timeout: 15000 });
+    await expect(ella.locator('.rws-via')).toHaveCount(0);
   });
 
   test('the board says the timetable keeps going past the two weeks it lists', async ({ page }) => {
