@@ -85,7 +85,7 @@ export function rideCopy(found: RideListWithMembers): RideCopy {
   let leadSub: string;
   let hot = false;
   if (full) {
-    lead = 'Van locked in';
+    lead = 'Taxi locked in';
     leadSub = 'This one is full — start the next taxi on the same route.';
   } else if (locked) {
     lead = `${left} seat${left === 1 ? '' : 's'} left`;
