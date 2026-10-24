@@ -476,6 +476,14 @@ describe('POST /quote', () => {
     expect(body.marginEstimateCents).toBeUndefined();
   });
 
+  it('prices a shared seat at the seat price alone — no Colombo pickup surcharge (removed 2026-10-16)', async () => {
+    const res = await post(createApp(), { product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 2, seatPriceCents: 1900, colomboPickup: true }] });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.totalCents).toBe(3800);
+    expect(body.lineItems).toHaveLength(1);
+  });
+
   it('422 with TOO_BIG on an oversize request (pax > custom 99 cap)', async () => {
     const res = await post(createApp(), { product: 'private', vehicle: 'custom', pax: 120, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] });
     expect(res.status).toBe(422);

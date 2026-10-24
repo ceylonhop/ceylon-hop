@@ -18,7 +18,6 @@ describe('RATE_CARD', () => {
       custom: { maxPax: 99, maxBags: 99 },
     });
     expect(RATE_CARD.extras['safari-wait']).toBe(1900);
-    expect(RATE_CARD.shared.colomboPickupCents).toBe(300);
     expect(RATE_CARD.bufferPct).toBe(10);
     expect(RATE_CARD.priceFinishing).toEqual({ maxReductionBps: 250, roundToCents: 50 });
     expect(RATE_CARD.fxUsdToLkr).toBeGreaterThan(0);
