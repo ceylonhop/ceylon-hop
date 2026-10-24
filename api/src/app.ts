@@ -584,7 +584,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       ...(deps.rideBoardEvents ? { events: deps.rideBoardEvents } : {}),
       ...((deps.digestTo ?? config.ALERT_EMAIL)
-        ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL } }
+        ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL, shareBaseUrl: deps.shareBaseUrl ?? (config.SHARE_BASE_URL || undefined) } }
         : {}),
     }),
   );

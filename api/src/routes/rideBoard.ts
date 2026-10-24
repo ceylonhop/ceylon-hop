@@ -153,7 +153,8 @@ export interface RideBoardDeps {
   alerts?: AlertAdapter; // paged when a gateway callback cannot be verified
   // Internal "seat held" mail (spec 2026-09-22). Unset → nothing internal is sent, the same
   // rule the digest follows when ALERT_EMAIL is empty.
-  opsNotify?: { to: string; opsBaseUrl?: string };
+  // shareBaseUrl (SHARE_BASE_URL) adds the story kit to a new ride's mail — see opsNotifications.
+  opsNotify?: { to: string; opsBaseUrl?: string; shareBaseUrl?: string };
   // Attempt log (db/rideBoardEventRepo.ts). Unset → nothing is recorded.
   events?: RideBoardEventRepo;
   // Founder rate revisions (spec 2026-09-26 §8.3): an off-catalogue seat is priced off the live van
@@ -219,7 +220,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const fresh = await deps.rideLists.getByCode(list.code);
     const committed = committedSeats(fresh?.members ?? []);
     await sendRideSeatHeld(
-      { to: deps.opsNotify.to, list: fresh?.list ?? list, member, committed, kind },
+      { to: deps.opsNotify.to, list: fresh?.list ?? list, member, committed, kind, shareBaseUrl: deps.opsNotify.shareBaseUrl },
       deps.email,
       deps.opsNotify.opsBaseUrl ?? '',
     );
