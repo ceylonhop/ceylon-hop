@@ -38,7 +38,7 @@ or a line in the report. That is what lets this run on a schedule later.
 For each segment in the brief, dispatch one `lead-researcher` **in parallel**, in the background.
 Each prompt gives:
 - `BRIEF`, `TODAY` and the segment name
-- PER_SEGMENT = ceil(1.5 × TARGET / number of segments)
+- PER_SEGMENT = max(4, ceil(1.5 × TARGET / number of segments))
 - LEDGER_DOMAINS plus the other segments' names, to stay out of their lane
 - the absolute output path `$RUN/candidates.<segment-slug>.json`, where `<segment-slug>` is the segment
   name lowercased with every run of non-alphanumerics replaced by `-` (e.g. `north-west-india-fit`)
@@ -72,8 +72,18 @@ For `needs-evidence` verdicts:
   `candidates.retry.json` records (joined on the original `website`) and rewrite
   `$RUN/candidates.json`. Any lead still not `pass` or `fix` becomes `reject`.
 
-Only then concatenate the per-batch outputs, with the retry replacements, into the merged
-`$RUN/verdicts.json` (its existence marks step 3 finished).
+**Top up when short:** if fewer than TARGET agencies are now `pass` or `fix`, run one more round
+for the gap, once per run:
+- GAP = TARGET − (pass + fix). Dispatch `lead-researcher`s in parallel, one per segment, asking for
+  ceil(1.5 × GAP / number of segments) each (at least 2), with LEDGER_DOMAINS plus every domain
+  already in `candidates.json` as the skip list, written to `$RUN/candidates.topup.<segment-slug>.json`.
+- Dedupe them as in step 1, then run them through step 2 (`$RUN/contacts.topup.json`) and the facts
+  critic (`$RUN/verdicts.topup.json`). No retry round for top-up `needs-evidence`: it becomes `reject`.
+- Append the top-up records to `candidates.json` and `contacts.json` (`.tmp` then `mv`).
+- Note the top-up counts in the report. Never top up twice.
+
+Only then concatenate the per-batch outputs, with the retry replacements and any top-up verdicts,
+into the merged `$RUN/verdicts.json` (its existence marks step 3 finished).
 
 ## 4. Build → `$RUN/leads.draft.csv`
 
