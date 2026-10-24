@@ -65,10 +65,10 @@ describe('GET /r/:code — share unfurl', () => {
     expect(meta(html, 'og:title')).toContain('1 more');
   });
 
-  it('says the van is locked once it is full', async () => {
+  it('says the taxi is locked once it is full', async () => {
     const { app, code } = await seeded(6);
     const html = await (await app.request(`/r/${code}`)).text();
-    expect(meta(html, 'og:title')).toMatch(/locked in/i);
+    expect(meta(html, 'og:title')).toMatch(/^Taxi locked in/);
     expect(meta(html, 'og:title')).not.toContain('seat left');
   });
 
@@ -265,5 +265,6 @@ describe('cardSvg — the chat card artwork', () => {
     const svg = cardSvg(model);
     expect(svg).toContain('SHARED TAXI · THE RIDE BOARD');
     expect(svg).not.toContain('SHARED VAN');
+    expect(cardSvg({ ...model, locked: true })).toContain('Charged · taxi locked in');
   });
 });

@@ -196,7 +196,7 @@ ${subLines.map((l, i) => `<text x="842" y="${228 + leadLines.length * 46 + 14 + 
 <text x="842" y="500" font-family="${DISPLAY}" font-size="54" font-weight="800" fill="${C.ink}">${approx ? `<tspan font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">about </tspan>` : ''}${xml(price)}<tspan dx="12" font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">each</tspan></text>
 <line x1="842" y1="528" x2="1158" y2="528" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="6 5"/>
 ${m.locked
-    ? `<text x="842" y="568" font-family="${BODY}" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · van locked in</text>`
+    ? `<text x="842" y="568" font-family="${BODY}" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · taxi locked in</text>`
     : `<text x="842" y="568" font-family="${BODY}" font-size="21" font-weight="700" fill="${C.tealDeep}">$0 to join</text>
 <text x="842" y="594" font-family="${BODY}" font-size="16" font-weight="700" fill="${C.inkSoft}">pay only if it fills</text>`}
 ${m.locked
