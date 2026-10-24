@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
+import { rideCopy } from './shareCard';
+import { storyModel, storySvg } from './shareCardImage';
 
 // GET /r/:code — the share-link destination a chat app fetches to build its preview.
 // Crawlers never run JavaScript, so everything they need is in this HTML: per-ride og
@@ -241,5 +243,82 @@ describe('absolute URLs behind a TLS-terminating proxy', () => {
     });
     const html = await (await app.request(`/r/${l.code}`, { headers: { 'x-forwarded-proto': 'http' } })).text();
     expect(meta(html, 'og:url')).toBe(`https://ride.ceylonhop.com/r/${l.code}`);
+  });
+});
+
+// The story kit (proposal 2026-10-23): ops posts a new ride as an Instagram story by hand.
+// A story is a 9:16 portrait, so the 1200x630 chat card would crop to a sliver.
+describe('GET /r/:code/story.png — the Instagram story image', () => {
+  const pngSize = (bytes: Uint8Array) => {
+    const v = new DataView(bytes.buffer, bytes.byteOffset);
+    return { w: v.getUint32(16), h: v.getUint32(20) }; // IHDR, right after the 8-byte signature
+  };
+
+  it('renders a 1080x1920 PNG', async () => {
+    const { app, code } = await seeded(2);
+    const res = await app.request(`/r/${code}/story.png`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes.slice(1, 4)).map((b) => String.fromCharCode(b)).join('')).toBe('PNG');
+    expect(pngSize(bytes)).toEqual({ w: 1080, h: 1920 });
+    expect(bytes.length).toBeGreaterThan(30_000); // blank canvases rasterise tiny
+  });
+
+  it('404s for a code that does not exist', async () => {
+    const { app } = await seeded(2);
+    expect((await app.request('/r/ZZ-9999/story.png')).status).toBe(404);
+  });
+
+  it('is served at the share-domain root too', async () => {
+    const { app, code } = await seeded(2);
+    expect((await app.request(`/${code}/story.png`)).status).toBe(200);
+  });
+});
+
+// Owner call 2026-10-23: the story goes on a public brand account, not a chat the traveller
+// chose, so it carries counts only — no names, no initials.
+describe('storySvg — counts only', () => {
+  it('says how many are in and how many more it needs, without a single name or initial', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 's1', firstName: 'Anna', country: 'PL', email: 'a@secret.com', seats: 1 });
+    await rideLists.addMember(l.id, { sub: 's2', firstName: 'Yuki', country: 'JP', email: 'y@secret.com', seats: 1 });
+    const found = (await rideLists.getByCode(l.code))!;
+
+    const svg = storySvg(storyModel(found, rideCopy(found)));
+
+    expect(svg).toContain('2 more and it rolls'); // minSeats 4, 2 in
+    expect(svg).toContain('2 on board');
+    expect(svg).toContain('Dambulla');
+    for (const leak of ['Anna', 'Yuki', '>AN<', '>YU<', 'PL', 'JP', 'secret.com']) {
+      expect(svg).not.toContain(leak);
+    }
+  });
+});
+
+// Tagged links (utm_*) let GA4 say which post brought a visitor. /r/:code forwards a human
+// to the board by script, and that hop used to drop the query string.
+describe('GET /r/:code — campaign tags survive the hop to the board', () => {
+  it('carries utm_* tags on to the board URL, ahead of the ride fragment', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}?utm_source=instagram&utm_medium=story&utm_campaign=ride_board`)).text();
+    expect(html).toContain(`https://prod.ceylonhop.com/board.html?utm_source=instagram&utm_medium=story&utm_campaign=ride_board#/${code}`);
+  });
+
+  it('keeps only utm_* keys with plain values, and leaves the canonical URL untagged', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}?utm_source=telegram&next=https://evil.example&utm_medium=%3Cscript%3E`)).text();
+    expect(html).toContain(`board.html?utm_source=telegram#/${code}`);
+    expect(html).not.toContain('evil.example');
+    expect(html).not.toContain('<script>alert');
+    expect(meta(html, 'og:url')).toMatch(new RegExp(`/r/${code}$`));
+  });
+
+  it('adds nothing when the link has no tags', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}`)).text();
+    expect(html).toContain(`https://prod.ceylonhop.com/board.html#/${code}`);
   });
 });
