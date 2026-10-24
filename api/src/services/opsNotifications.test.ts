@@ -487,3 +487,57 @@ describe('teamUnpricedEmail', () => {
     expect(m.text).toContain('No price yet');
   });
 });
+
+// Story kit (proposal 2026-10-23): a NEW ride's ops email carries everything needed to post it
+// by hand — the story image, a caption, and a tagged link per place it goes.
+describe('sendRideSeatHeld — the Post it block on a new ride', () => {
+  const started = async (over: { kind?: 'started' | 'joined' | 'changed'; shareBaseUrl?: string } = {}) => {
+    const email = new FakeEmailAdapter();
+    await sendRideSeatHeld(
+      { to: 'ops@x.com', list: ride(), member: member({ position: 1 }), committed: 1, kind: over.kind ?? 'started',
+        ...('shareBaseUrl' in over ? { shareBaseUrl: over.shareBaseUrl } : { shareBaseUrl: 'https://ceylonhop.com/' }) },
+      email,
+      'https://ops.example',
+    );
+    return email.sent[0];
+  };
+
+  it('links the story image on the share domain', async () => {
+    const msg = await started();
+    expect(msg.html).toContain('https://ceylonhop.com/r/EM-4821/story.png');
+    expect(msg.text).toContain('https://ceylonhop.com/r/EM-4821/story.png');
+  });
+
+  it('gives one tagged ride link per place the post goes', async () => {
+    const msg = await started();
+    for (const tags of [
+      'utm_source=instagram&utm_medium=story&utm_campaign=ride_board',
+      'utm_source=telegram&utm_medium=group&utm_campaign=ride_board',
+      'utm_source=facebook&utm_medium=group&utm_campaign=ride_board',
+    ]) {
+      expect(msg.text).toContain(`https://ceylonhop.com/r/EM-4821?${tags}`);
+      expect(msg.html).toContain(`https://ceylonhop.com/r/EM-4821?${tags.replace(/&/g, '&amp;')}`);
+    }
+  });
+
+  it('writes a ready caption: route, date, the ask, the price — and no traveller name', async () => {
+    const msg = await started();
+    const caption = 'Skip the bus: shared taxi Ella → Mirissa, Fri 14 Aug. 2 more travellers and it runs. About $24 a seat, $0 to join, pay only if it fills. Add your name:';
+    expect(msg.text).toContain(caption);
+    expect(msg.html).toContain(caption);
+    const text = msg.text ?? '';
+    const block = text.slice(text.indexOf('POST IT'));
+    expect(block).not.toContain('Léa');
+  });
+
+  it('only on a new ride — a join or a seat change is not a new post', async () => {
+    expect((await started({ kind: 'joined' })).html).not.toContain('story.png');
+    expect((await started({ kind: 'changed' })).html).not.toContain('story.png');
+  });
+
+  it('is left out when no share domain is configured — never an ops. link in a public post', async () => {
+    const msg = await started({ shareBaseUrl: undefined });
+    expect(msg.html).not.toContain('story.png');
+    expect(msg.text).not.toContain('POST IT');
+  });
+});
