@@ -8,7 +8,7 @@ const seat = (date: string, time: string, seats: number): NewBooking => ({
 });
 
 describe('InMemoryBookingRepo.paidSharedSeats', () => {
-  it('sums paid seats per departure inside the window — nothing unpaid, cancelled or outside it', async () => {
+  it('lists each paid seat booking inside the window, with the booker’s first name and country — nothing unpaid, cancelled or outside it', async () => {
     const repo = new InMemoryBookingRepo();
     const pay = async (b: NewBooking) => {
       const x = await repo.create(b);
@@ -23,8 +23,10 @@ describe('InMemoryBookingRepo.paidSharedSeats', () => {
     const pending = await repo.create(seat('2099-08-12', '07:00', 6));
     await repo.setStatus(pending.id, 'payment_pending');      // at the payment page, never paid
     await pay(seat('2099-09-30', '07:00', 3));                // outside the window
+    const row = { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:00', firstName: 'Maya', country: 'Spain' };
     expect(await repo.paidSharedSeats('2099-08-11', '2099-08-25')).toEqual([
-      { corridorId: 'airport-cultural', date: '2099-08-12', time: '07:00', seats: 3 },
+      { ...row, seats: 2 },
+      { ...row, seats: 1 },
     ]);
   });
 });

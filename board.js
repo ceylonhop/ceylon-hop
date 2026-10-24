@@ -114,6 +114,19 @@
     return cp >= 0x1F1E6 && cp <= 0x1F1FF ? c : '';
   }
 
+  // Who booked a scheduled taxi, as avatar() members (owner 2026-10-23). The API sends two letters
+  // and the country the booking form stored — a name from PHONE_COUNTRIES ("United Kingdom") or a
+  // code. A country it cannot place gets no flag.
+  function scheduledFaces(people, countries) {
+    var list = countries || (typeof window !== 'undefined' && window.PHONE_COUNTRIES) || [];
+    return (people || []).map(function (p) {
+      var c = String((p && p.country) || '').trim(), code = '';
+      if (/^[A-Za-z]{2}$/.test(c)) code = c;
+      else for (var i = 0; i < list.length; i++) if (list[i][1].toLowerCase() === c.toLowerCase()) { code = list[i][0]; break; }
+      return { name: String((p && p.ini) || ''), flag: code ? flagOf(code) : '' };
+    });
+  }
+
   // ISO date (or date-only) → "Sat 8 Aug". Date-only strings are pinned to local
   // midnight so the weekday never drifts a day across time zones.
   function fmtDate(iso) {
@@ -553,6 +566,7 @@
     centsToDollars: centsToDollars,
     money: money,
     flagOf: flagOf,
+    scheduledFaces: scheduledFaces,
     fmtDate: fmtDate,
     resolvePlaceId: resolvePlaceId,
     filterOptions: filterOptions,
@@ -782,7 +796,11 @@
 
   // A scheduled taxi: its clock time, the solid clock mark, an exact price and no button — the
   // whole row is the link to book it on search.html for that date. "· 7 booked" when that many
-  // have paid (plan 2026-10-19-ride-board-fomo, PR 3) — a count, never who.
+  // have paid (plan 2026-10-19-ride-board-fomo, PR 3), and the faces of who paid — two letters and
+  // a flag, as an open ride shows its members (owner 2026-10-23). Drawn twice like the count: in
+  // the Scheduled cell, and in the short line a phone shows instead. Where faces show they take
+  // the count's place: both do not fit the cell (the pickup point was cut off), and the faces
+  // already say how many. The count stays in the row's label for screen readers.
   // "Stops at Negombo 07:30": the stops the van boards at after yours, each with its time — a
   // CMB → Sigiriya traveller rides through Negombo and should see that on the row.
   function viaText(S) {
@@ -790,24 +808,31 @@
   }
   function schedRowHtml(S) {
     var href = 'search.html?' + new URLSearchParams({ from: S.fromId || S.from, to: S.toId || S.to, date: S.date }).toString();
-    var booked = F.bookedText(state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time]);
+    var seats = state.schedSeats[S.corridorId + '|' + S.date + '|' + S.time] || null;
+    var booked = F.bookedText(seats && seats.booked);
     var bk = booked ? '<span class="rws-booked"> · ' + esc(booked) + '</span>' : '';
+    var who = scheduledFaces(seats && seats.people);
+    var fc = who.length
+      ? '<span class="rw-faces rws-faces" aria-hidden="true">' + who.slice(0, 3).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('') +
+        (who.length > 3 ? '<span class="avatar xs stack rw-more">+' + (who.length - 3) + '</span>' : '') + '</span>'
+      : '';
     var via = viaText(S);
     // On the phone the stop rides on the sub-line, after the booked count — the count is the
     // stronger signal, so a tight phone trims the stop first. The sub-line spans the price column
     // for the room ("Airport → Negombo → Sigiriya" on the route line clips at 375px). Beside a
     // booked count the stop's time goes: "· 7 booked · via Negombo 07:30" would be cut mid-time.
+    // Faces take the count's place on that line, and the stop drops its time beside them too.
     var viaShort = via
-      ? '<span class="rws-via-s"> · via ' + esc(booked ? (S.via || []).map(function (v) { return splitPlace(v.place).main; }).join(', ') : via) + '</span>'
+      ? '<span class="rws-via-s"> · via ' + esc((booked || fc) ? (S.via || []).map(function (v) { return splitPlace(v.place).main; }).join(', ') : via) + '</span>'
       : '';
     return '<a class="rws" href="' + esc(href) + '"' +
       ' aria-label="' + esc('Scheduled taxi, ' + S.from + ' to ' + S.to + ', departs ' + S.time + (via ? ', stops at ' + via : '') + ', ' + money(S.seat) + ' a seat' + (booked ? ', ' + booked : '')) + '">' +
       '<div class="rw-when"><b>' + esc(S.time) + '</b></div>' +
       '<div class="rw-route"><span class="rw-places">' + placeTag(S.from, 'a') + '<span class="arr">→</span>' + placeTag(S.to, 'b') + '</span>' +
         (via ? '<small class="rws-via">Stops at ' + esc(via) + '</small>' : '') +
-        '<span class="rws-short"><span class="rws-rt">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '</span><small>Scheduled' + bk + viaShort + '</small></span></div>' +
-      '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' +
-        '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + bk + ' · ' + esc(S.point) + '</small></span></div>' +
+        '<span class="rws-short"><span class="rws-rt">' + esc(shortPlace(S.from)) + ' → ' + esc(shortPlace(S.to)) + '</span><small>Scheduled' + (fc || bk) + viaShort + '</small></span></div>' +
+      '<div class="rws-kind"><span class="rws-mark">' + CLOCK_SVG + '</span>' + fc +
+        '<span class="rws-kt"><b>Scheduled</b><small>Always runs' + (fc ? '' : bk) + ' · ' + esc(S.point) + '</small></span></div>' +
       '<div class="rw-price"><b>' + money(S.seat) + '</b><span class="rws-per"> / seat</span></div>' +
       '<span class="rws-go">Book a seat</span>' +
       '</a>';
@@ -820,7 +845,7 @@
     var from = addDaysIso(colomboToday(Date.now()), 1);
     return apiGet('/board/scheduled-seats?from=' + from + '&days=' + SCHED_DAYS).then(function (d) {
       var map = {};
-      ((d && d.departures) || []).forEach(function (x) { map[x.corridorId + '|' + x.date + '|' + x.time] = x.booked; });
+      ((d && d.departures) || []).forEach(function (x) { map[x.corridorId + '|' + x.date + '|' + x.time] = { booked: x.booked, people: x.people || [] }; });
       state.schedSeats = map;
       if (Object.keys(map).length && !state.loadFailed) render();
     }).catch(function () {});

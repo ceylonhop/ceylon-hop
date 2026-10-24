@@ -845,22 +845,25 @@ export class PostgresBookingRepo implements BookingRepo {
   }
 
   async paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]> {
-    // One grouped read; shared_request holds the departure each booking bought.
+    // One read; shared_request holds the departure each booking bought, customers who bought it.
     return this.db
       .select({
         corridorId: sharedRequests.corridorId,
         date: sharedRequests.date,
         time: sharedRequests.time,
-        seats: sql<number>`sum(${sharedRequests.seats})`.mapWith(Number),
+        seats: sharedRequests.seats,
+        firstName: customers.firstName,
+        country: customers.country,
       })
       .from(sharedRequests)
       .innerJoin(bookings, eq(bookings.id, sharedRequests.bookingId))
+      .innerJoin(customers, eq(customers.id, bookings.customerId))
       .where(and(
         eq(bookings.mode, 'shared'),
         inArray(bookings.status, [...SEAT_SOLD_STATUSES]),
         gte(sharedRequests.date, fromDate),
         lte(sharedRequests.date, toDate),
       ))
-      .groupBy(sharedRequests.corridorId, sharedRequests.date, sharedRequests.time);
+      .orderBy(asc(bookings.createdAt), asc(bookings.id));
   }
 }
