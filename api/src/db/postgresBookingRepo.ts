@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import {
   customers,
@@ -15,6 +15,7 @@ import {
 } from './schema';
 import { addOnsFor } from '../quote/quoteAlternative';
 import type { PayLinkSelection } from '../quote/paySelection';
+import type { SharedSeatCount } from '../domain/scheduledSeats';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -36,6 +37,7 @@ import {
   generateReference,
   snapshotAddOns,
   PAYER_EDITABLE_STATUSES,
+  SEAT_SOLD_STATUSES,
 } from './bookingRepo';
 import { toPromoCode } from './promoCodeRow';
 import {
@@ -840,5 +842,28 @@ export class PostgresBookingRepo implements BookingRepo {
       rows = await this.db.select().from(bookings).where(eq(bookings.status, filter.status));
     }
     return this.assembleMany(rows);
+  }
+
+  async paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]> {
+    // One read; shared_request holds the departure each booking bought, customers who bought it.
+    return this.db
+      .select({
+        corridorId: sharedRequests.corridorId,
+        date: sharedRequests.date,
+        time: sharedRequests.time,
+        seats: sharedRequests.seats,
+        firstName: customers.firstName,
+        country: customers.country,
+      })
+      .from(sharedRequests)
+      .innerJoin(bookings, eq(bookings.id, sharedRequests.bookingId))
+      .innerJoin(customers, eq(customers.id, bookings.customerId))
+      .where(and(
+        eq(bookings.mode, 'shared'),
+        inArray(bookings.status, [...SEAT_SOLD_STATUSES]),
+        gte(sharedRequests.date, fromDate),
+        lte(sharedRequests.date, toDate),
+      ))
+      .orderBy(asc(bookings.createdAt), asc(bookings.id));
   }
 }

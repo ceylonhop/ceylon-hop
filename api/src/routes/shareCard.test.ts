@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
+import { rideCopy } from './shareCard';
+import { cardSvg, storyModel, storySvg, type CardModel } from './shareCardImage';
 
 // GET /r/:code — the share-link destination a chat app fetches to build its preview.
 // Crawlers never run JavaScript, so everything they need is in this HTML: per-ride og
@@ -64,10 +66,10 @@ describe('GET /r/:code — share unfurl', () => {
     expect(meta(html, 'og:title')).toContain('1 more');
   });
 
-  it('says the van is locked once it is full', async () => {
+  it('says the taxi is locked once it is full', async () => {
     const { app, code } = await seeded(6);
     const html = await (await app.request(`/r/${code}`)).text();
-    expect(meta(html, 'og:title')).toMatch(/locked in/i);
+    expect(meta(html, 'og:title')).toMatch(/^Taxi locked in/);
     expect(meta(html, 'og:title')).not.toContain('seat left');
   });
 
@@ -241,5 +243,106 @@ describe('absolute URLs behind a TLS-terminating proxy', () => {
     });
     const html = await (await app.request(`/r/${l.code}`, { headers: { 'x-forwarded-proto': 'http' } })).text();
     expect(meta(html, 'og:url')).toBe(`https://ride.ceylonhop.com/r/${l.code}`);
+  });
+});
+
+// The story kit (proposal 2026-10-23): ops posts a new ride as an Instagram story by hand.
+// A story is a 9:16 portrait, so the 1200x630 chat card would crop to a sliver.
+describe('GET /r/:code/story.png — the Instagram story image', () => {
+  const pngSize = (bytes: Uint8Array) => {
+    const v = new DataView(bytes.buffer, bytes.byteOffset);
+    return { w: v.getUint32(16), h: v.getUint32(20) }; // IHDR, right after the 8-byte signature
+  };
+
+  it('renders a 1080x1920 PNG', async () => {
+    const { app, code } = await seeded(2);
+    const res = await app.request(`/r/${code}/story.png`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes.slice(1, 4)).map((b) => String.fromCharCode(b)).join('')).toBe('PNG');
+    expect(pngSize(bytes)).toEqual({ w: 1080, h: 1920 });
+    expect(bytes.length).toBeGreaterThan(30_000); // blank canvases rasterise tiny
+  });
+
+  it('404s for a code that does not exist', async () => {
+    const { app } = await seeded(2);
+    expect((await app.request('/r/ZZ-9999/story.png')).status).toBe(404);
+  });
+
+  it('is served at the share-domain root too', async () => {
+    const { app, code } = await seeded(2);
+    expect((await app.request(`/${code}/story.png`)).status).toBe(200);
+  });
+});
+
+// Owner call 2026-10-23: the story goes on a public brand account, not a chat the traveller
+// chose, so it carries counts only — no names, no initials.
+describe('storySvg — counts only', () => {
+  it('says how many are in and how many more it needs, without a single name or initial', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 's1', firstName: 'Anna', country: 'PL', email: 'a@secret.com', seats: 1 });
+    await rideLists.addMember(l.id, { sub: 's2', firstName: 'Yuki', country: 'JP', email: 'y@secret.com', seats: 1 });
+    const found = (await rideLists.getByCode(l.code))!;
+
+    const svg = storySvg(storyModel(found, rideCopy(found)));
+
+    expect(svg).toContain('2 more and it rolls'); // minSeats 4, 2 in
+    expect(svg).toContain('2 on board');
+    expect(svg).toContain('Dambulla');
+    for (const leak of ['Anna', 'Yuki', '>AN<', '>YU<', 'PL', 'JP', 'secret.com']) {
+      expect(svg).not.toContain(leak);
+    }
+  });
+});
+
+// Tagged links (utm_*) let GA4 say which post brought a visitor. /r/:code forwards a human
+// to the board by script, and that hop used to drop the query string.
+describe('GET /r/:code — campaign tags survive the hop to the board', () => {
+  it('carries utm_* tags on to the board URL, ahead of the ride fragment', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}?utm_source=instagram&utm_medium=story&utm_campaign=ride_board`)).text();
+    expect(html).toContain(`https://prod.ceylonhop.com/board.html?utm_source=instagram&utm_medium=story&utm_campaign=ride_board#/${code}`);
+  });
+
+  it('keeps only utm_* keys with plain values, and leaves the canonical URL untagged', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}?utm_source=telegram&next=https://evil.example&utm_medium=%3Cscript%3E`)).text();
+    expect(html).toContain(`board.html?utm_source=telegram#/${code}`);
+    expect(html).not.toContain('evil.example');
+    expect(html).not.toContain('<script>alert');
+    expect(meta(html, 'og:url')).toMatch(new RegExp(`/r/${code}$`));
+  });
+
+  it('adds nothing when the link has no tags', async () => {
+    const { app, code } = await seeded(2);
+    const html = await (await app.request(`/r/${code}`)).text();
+    expect(html).toContain(`https://prod.ceylonhop.com/board.html#/${code}`);
+  });
+});
+
+// The PNG is resvg with only the bundled faces (no system fallback), so a glyph neither
+// font has renders as a .notdef box. Neither Bodoni Moda nor Poppins has '≈'.
+describe('cardSvg — the chat card artwork', () => {
+  const model: CardModel = {
+    from: 'Colombo Airport (CMB)', to: 'Dambulla', when: 'Sat 15 Aug · morning',
+    taken: ['Anna', 'Yuki'], capacity: 6,
+    lead: '2 more and it rolls', leadSub: '2 on board.', hot: false,
+    price: '≈$19', deadline: 'Closes Fri 14 Aug, 9pm', locked: false,
+  };
+
+  it('never draws a glyph the bundled fonts lack — the hedge is a word', () => {
+    const svg = cardSvg(model);
+    expect(svg).not.toContain('≈');
+    expect(svg).toMatch(/>about <\/tspan>\$19</);
+  });
+
+  it('says "shared taxi", the site vocabulary', () => {
+    const svg = cardSvg(model);
+    expect(svg).toContain('SHARED TAXI · THE RIDE BOARD');
+    expect(svg).not.toContain('SHARED VAN');
+    expect(cardSvg({ ...model, locked: true })).toContain('Charged · taxi locked in');
   });
 });

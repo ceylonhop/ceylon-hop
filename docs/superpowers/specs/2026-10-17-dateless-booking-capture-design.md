@@ -39,6 +39,18 @@ Any edit writes **both in one transaction**. Pricing does not read date or time 
 - **D3 — Single private transfers first.** Chauffeur trips (a date per day) come later.
 - **D4 — Ops alerts are email**, reusing the team-email pattern (`opsNotifications.ts`) and the daily
   digest; each new subject gets a fixed prefix (e.g. `Date set:`) so Gmail can filter it.
+- **D5 — Manage-page details (owner, 2026-10-21, from a clickable mockup review).**
+  - Airport pickups ask "When does your flight land?" with 15-minute steps. Every other pickup uses
+    the booking page's hourly list (`9:00 am · Morning pickup`).
+  - The save button names its value (`Save Wed 4 Nov · 9:00 am`). There is no extra confirm step,
+    and a disabled button says what's missing ("Choose a date", "Too soon to set here").
+  - "Pick-up set" shows only right after saving. The page says "set by our team" when ops set it,
+    never "set by you".
+  - The amber "Not set yet" tag appears only on the date and time rows, and only while the card is
+    offered. Every other booking keeps "To be confirmed".
+  - The reminder email's main button opens the form (`manage.html#pickup`), with WhatsApp as the
+    fallback.
+  - A save whose reply is lost re-reads the booking before it says anything failed.
 
 ## 4. Rules every write path shares
 
@@ -62,7 +74,7 @@ Any edit writes **both in one transaction**. Pricing does not read date or time 
 | **1** | Ops sets/changes date & time in the booking sheet; history; `schedule_set` email; driver warning | O1, O2, A1, C4, C5, D1 | **Yes** — `booking_schedule_events` + `schedule_set` email kind |
 | **2** | Reminders: `needsDetails` covers a missing time; reminder at ~2 d and ~7 d after payment with a WhatsApp CTA; "awaiting entry" pause; epoch fence + dry run; digest line for unanswered ones | C2, C3, O4, O6, A2 | **Yes** — two reminder email kinds + the pause flag |
 | **3** | Queue + copy: "No date yet" shows days since paid, reminders sent, "time to confirm"; booking-page copy stops promising "change any time" | O3, C1 | No |
-| **4** | Manage page set-once: same picker, same rules, `actor_type='customer'`, ops `Date set:` email, URGENT for next-day | C6, C7, O5 | No (reuses Phase 1 table) |
+| **4** | Manage page set-once: same picker, same rules, `actor_type='customer'`, ops `Date set:` email, URGENT for next-day — plan: docs/superpowers/plans/2026-10-21-dateless-booking-phase-4-manage-set-once.md | C6, C7, O5 | No (reuses Phase 1 table) |
 
 Phase 2 is blocked on the **no-reply policy** (§7). Phases 3 and 4 depend only on Phase 1.
 

@@ -30,7 +30,7 @@ import { loadBookingInterests } from '../experiences/bookingInterests';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
-import { closeOlderDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
+import { closeLeftoverDuplicates, type DuplicateCloseDeps } from '../services/duplicateBookings';
 import type {
   CustomerCommunicationEventType,
   CustomerCommunicationRepo,
@@ -180,8 +180,9 @@ export function webhookRoutes(deps: {
   opsBaseUrl?: string;
   // Checkout attempt log (db/bookingCheckoutEventRepo.ts). Unset → nothing is recorded.
   checkoutEvents?: BookingCheckoutEventRepo;
-  // Closes the same customer's older unpaid bookings for the same trip once one settles
-  // (services/duplicateBookings.ts). Unset → nothing is closed, as before.
+  // Once one settles, closes the same customer's other unpaid bookings for the same trip: older ones
+  // at once, newer ones only after 30 min with no checkout (services/duplicateBookings.ts).
+  // Unset → nothing is closed, as before.
   duplicates?: Omit<DuplicateCloseDeps, 'alerts'>;
   // Server-side GA4 purchase on a settled payment. Unset → nothing reported.
   ga4?: Ga4Reporter;
@@ -517,13 +518,13 @@ export function webhookRoutes(deps: {
           console.error(`ga4 purchase report failed for ${paid.reference}:`, err instanceof Error ? err.message : String(err));
         });
       }
-      // The customer's earlier failed attempts at this same trip are leftovers now (Lea:
+      // The customer's other unfinished attempts at this same trip are leftovers now (Lea:
       // CH-Y5RXW declined at 3-D Secure, CH-L72HX paid 20 min later) — close them quietly.
       // After everything the paid booking needs, and NOT awaited: housekeeping on OTHER bookings
       // must neither fail nor delay this 200 (PayHere would retry, hit the idempotent return and
       // skip nothing — but a slow lookup still holds the notify open). A replay never gets here.
       if (deps.duplicates) {
-        void closeOlderDuplicates(paid, {
+        void closeLeftoverDuplicates(paid, {
           ...deps.duplicates,
           alerts,
           correlation: { requestId: c.get('requestId') },

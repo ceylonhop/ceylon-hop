@@ -3833,6 +3833,8 @@ function legsHtmlFor(d){
    refundable, and re-offered the refund button. The server refused the second request
    (refund_exceeds_captured) — the dashboard was inviting an error it could not explain.
    `api_failed` is deliberately in neither set: PayHere told us the money did not move. ── */
+/* Engine rate-card tiers → what ops call them (the quote tool's VEHICLE_LABELS, keyed by tier). */
+const VEHICLE_NAME={car:'Car',van:'Van 6 Seat',van9:'Van 9 Seat',van14:'Van 14 Seat',custom:'Custom'};
 const REFUND_SETTLED=['manual_confirmed','api_confirmed'];
 const REFUND_IN_FLIGHT=['manual_pending','api_processing'];
 const REFUND_LABEL={
@@ -4336,6 +4338,9 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  /* The vehicle the trip was priced on (the API reads the tier off the quote or the website's
+     snapshot — the booking alone only knows car|van). Absent for a shared seat. */
+  const vehicleRow=d?.vehicle?`<div class="kv"><span class="k">Vehicle</span><span class="v" data-testid="sheet-vehicle">${esc(VEHICLE_NAME[d.vehicle]||d.vehicle)}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
   /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
@@ -4379,6 +4384,7 @@ function renderSheet(){
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
         ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
+        ${vehicleRow}
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
