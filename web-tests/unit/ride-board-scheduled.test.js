@@ -16,6 +16,8 @@ beforeAll(() => {
   // eslint-disable-next-line no-new-func
   new Function(readFileSync(path.join(ROOT, 'shared-day.js'), 'utf8'))();
   // eslint-disable-next-line no-new-func
+  new Function(readFileSync(path.join(ROOT, 'phone-countries.js'), 'utf8'))();
+  // eslint-disable-next-line no-new-func
   new Function(readFileSync(path.join(ROOT, 'board.js'), 'utf8'))();
   RB = window.RideBoard;
 });
@@ -68,6 +70,18 @@ describe('scheduledRows — the departures inside the window, on the days they r
       filter: { from: 'Negombo', to: 'Sigiriya / Dambulla' } });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ from: 'Negombo', fromId: 'negombo', time: '07:30', point: 'Zen Cafe, Negombo' });
+  });
+  it('carries the stops the van still boards at after yours, so the row can say "stops at"', () => {
+    const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 1, filter: ALL });
+    const north = rows.find((r) => r.to === 'Sigiriya / Dambulla');
+    expect(north.via).toEqual([{ place: 'Negombo', time: '07:30', point: 'Zen Cafe, Negombo' }]);
+    const ella = rows.find((r) => r.to === 'Yala');
+    expect(ella.via).toEqual([]);
+  });
+  it('boarding at a later stop, the stops before it are not "via" — the van has already passed them', () => {
+    const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 1,
+      filter: { from: 'Negombo', to: 'Sigiriya / Dambulla' } });
+    expect(rows[0].via).toEqual([]);
   });
   it('a route we do not schedule gets no scheduled rows', () => {
     const rows = RB.scheduledRows(RB.scheduledVans(), { todayIso: TUE, days: 14, filter: { from: 'Kandy', to: 'Ella' } });
@@ -151,5 +165,31 @@ describe('colomboToday — the board runs on Sri Lanka dates', () => {
   it('rolls over at midnight in Colombo, not UTC', () => {
     expect(RB.colomboToday(Date.parse('2099-08-11T18:29:00Z'))).toBe('2099-08-11');
     expect(RB.colomboToday(Date.parse('2099-08-11T18:30:00Z'))).toBe('2099-08-12');
+  });
+});
+
+// Who booked a scheduled taxi (owner 2026-10-23): the API sends two letters and the country the
+// booking form stored (a name, "United Kingdom"); the row draws the same avatar circles an open
+// ride's members get. A country it cannot place gets no flag — never its name printed as one.
+describe('scheduledFaces — the bookers on a scheduled taxi, as avatar members', () => {
+  it('turns each booker into initials and a flag, in order', () => {
+    expect(RB.scheduledFaces([{ ini: 'MA', country: 'Spain' }, { ini: 'OL', country: 'United Kingdom' }])).toEqual([
+      { name: 'MA', flag: '🇪🇸' },
+      { name: 'OL', flag: '🇬🇧' },
+    ]);
+  });
+  it('reads a country name in any case, or a two-letter code', () => {
+    expect(RB.scheduledFaces([{ ini: 'JO', country: 'germany' }, { ini: 'AN', country: 'fr' }]).map((f) => f.flag))
+      .toEqual(['🇩🇪', '🇫🇷']);
+  });
+  it('leaves the flag off a country it cannot place', () => {
+    expect(RB.scheduledFaces([{ ini: 'KI', country: 'Atlantis' }, { ini: 'LE', country: '' }])).toEqual([
+      { name: 'KI', flag: '' },
+      { name: 'LE', flag: '' },
+    ]);
+  });
+  it('is empty when the API sent no one', () => {
+    expect(RB.scheduledFaces(undefined)).toEqual([]);
+    expect(RB.scheduledFaces([])).toEqual([]);
   });
 });

@@ -498,3 +498,53 @@ describe('the booking drawer\'s refund lines', () => {
     expect(await drawer({ quote: true, currency: 'LKR' })).toBeNull();
   });
 });
+
+// Ops assign a vehicle from the drawer, so it names the one the trip was priced on. The booking
+// itself only keeps car|van — a 9-seat van quote arrives as "van", and a party the engine sized
+// up out of a car can arrive as "car" — so the tier comes from the priced request when there is one.
+import { sampleBooking } from '../services/__fixtures__/sampleBookings';
+
+describe('the booking drawer\'s vehicle', () => {
+  async function vehicleOf(opts: { booking?: object; quoteEngine?: QuoteRequest; snapshotEngine?: QuoteRequest } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const input = { ...bookingInput(), ...(opts.booking ?? {}) };
+    const snapshot = opts.snapshotEngine
+      ? { pricingSnapshot: websitePricingSnapshot({ engine: opts.snapshotEngine, result: priceQuote(opts.snapshotEngine, RATE_CARD) }) }
+      : undefined;
+    const b = await bookings.create(input as never, snapshot);
+    await bookings.setStatus(b.id, 'payment_pending');
+    if (opts.quoteEngine) {
+      const result = priceQuote(opts.quoteEngine, RATE_CARD);
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: opts.quoteEngine.product === 'shared' ? null : opts.quoteEngine.vehicle,
+        totalCents: result.totalCents, currency: result.currency, rateCardVersion: 'v1',
+        request: { engine: opts.quoteEngine }, result,
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id });
+    }
+    const res = await app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+    expect(res.status).toBe(200);
+    return (await res.json()).vehicle as string | null;
+  }
+  const legs = [{ from: 'Colombo', to: 'Kandy', distanceKm: 120 }];
+
+  it('names the van size of the quote the booking was converted from', async () => {
+    const booking = { input: { ...bookingInput().input, vehicleType: 'van' as const } };
+    expect(await vehicleOf({ booking, quoteEngine: { product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs } })).toBe('van9');
+  });
+
+  it('names the vehicle a website booking was sized up to', async () => {
+    expect(await vehicleOf({ snapshotEngine: { product: 'private', vehicle: 'car', pax: 5, bags: 2, legs } })).toBe('van');
+  });
+
+  it('falls back to the booking\'s own vehicle when nothing was priced', async () => {
+    expect(await vehicleOf()).toBe('car');
+  });
+
+  it('has none for a shared seat', async () => {
+    const shared = sampleBooking('shared');
+    expect(await vehicleOf({ booking: { mode: 'shared', input: shared.input } })).toBeNull();
+  });
+});

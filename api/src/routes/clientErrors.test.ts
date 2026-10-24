@@ -171,3 +171,41 @@ describe('POST /errors/client: customer tokens never leave the endpoint', () => 
     expect(alert).toContain('ops.ceylonhop.com/bookings/pay-return');
   });
 });
+
+// 2026-10-21: the founder inbox filled with front-end "errors" that were not ours to fix — a crypto
+// wallet extension crashing on a visitor's page, the browser's opaque cross-origin "Script error.",
+// and the ops dashboard losing its connection for a moment. Each one still reaches Sentry; it just
+// doesn't email. The messages below are the ones those emails carried.
+describe('POST /errors/client: noise is recorded but not emailed', () => {
+  const mk = () => {
+    const inner = new FakeAlertAdapter();
+    const app = createApp({ alerts: new ThrottledAlerts(inner, new InMemoryAlertLogRepo()) });
+    return { inner, app };
+  };
+  beforeEach(() => vi.mocked(track).mockClear());
+
+  it.each([
+    ['a wallet extension crash', { property: 'site', message: "TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress')" }],
+    ['an error thrown from extension code', { property: 'site', message: 'TypeError: x is null', stack: 'at f (chrome-extension://abcdef/inpage.js:1:1)' }],
+    ['the opaque cross-origin "Script error."', { property: 'site', message: 'Script error.', stack: '' }],
+    ['an ops fetch that never reached the server (Chrome)', { property: 'ops', message: '[ops-ui] apiGetQuote — Failed to fetch' }],
+    ['an ops fetch that never reached the server (Safari)', { property: 'ops', message: '[ops-ui] loadQueue — Load failed' }],
+    ['an ops fetch that never reached the server (Firefox)', { property: 'ops', message: '[ops-ui] loadOpsQuotes — NetworkError when attempting to fetch resource.' }],
+  ])('%s: 204, sent to Sentry, no email', async (_label, beacon) => {
+    const { inner, app } = mk();
+    const res = await post(app, JSON.stringify(beacon));
+    expect(res.status).toBe(204);
+    expect(vi.mocked(track)).toHaveBeenCalledTimes(1);
+    expect(inner.sent).toHaveLength(0);
+  });
+
+  it.each([
+    ['a network failure on the payment page — a customer who could not pay', { property: 'pay', message: '[pay] start — Failed to fetch' }],
+    ['a real ops bug', { property: 'ops', message: '[ops-ui] loadQueue — TypeError: rows.map is not a function' }],
+    ['a real site bug', { property: 'site', message: 'TypeError: undefined is not an object (evaluating \'booking.legs\')', stack: 'at render (https://ceylonhop.com/booking.js:10:2)' }],
+  ])('%s: still emails', async (_label, beacon) => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify(beacon));
+    expect(inner.sent).toHaveLength(1);
+  });
+});

@@ -23,7 +23,7 @@ const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
   createdBy: null, ...over,
 });
 
-function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string; rateRevisions?: RateRevisionRepo } = {}) {
+function makeApp(identity: Partial<{ sub: string; email: string; name: string; picture: string }> = {}, over: { bookingBaseUrl?: string; email?: EmailAdapter; digestTo?: string; opsBaseUrl?: string; shareBaseUrl?: string; rateRevisions?: RateRevisionRepo } = {}) {
   const id = { sub: 'roshen-sub', email: 'roshen@x.com', name: 'Roshen W', picture: 'https://p/r', ...identity };
   const rideLists = new InMemoryRideListRepo();
   const paygw = new FakeTokenizedPaymentAdapter();
@@ -107,6 +107,23 @@ describe('POST /board/login', () => {
   it('rejects a missing credential', async () => {
     const { app } = makeApp();
     expect((await app.request('/board/login', json(undefined, {}))).status).toBe(400);
+  });
+  // The country is shown as a flag on every avatar, and only a 2-letter ISO code has one. The
+  // field used to keep up to 4 letters ("IND", "JAPA"), which the board then painted as text
+  // spilling out of the circle (2026-10-23).
+  it('rejects a country that is not a 2-letter code', async () => {
+    const { app } = makeApp();
+    for (const country of ['IND', 'JAPA', 'J', 'F1']) {
+      const res = await app.request('/board/login', json(undefined, { credential: 'tok', country }));
+      expect(res.status, country).toBe(400);
+      expect(await res.json()).toEqual({ error: 'bad_country' });
+    }
+  });
+  it('still signs in with no country (stored as XX)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/board/login', json(undefined, { credential: 'tok' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).me.country).toBe('XX');
   });
 });
 
@@ -550,6 +567,23 @@ describe('Ride Board — ops is told when a seat is held', () => {
     expect(ops[0].html).toContain('FR');
     expect(ops[0].html).toContain('roshen@x.com');
     expect(ops[0].html).toContain(`https://ops.example/ops?booking=board:${code}`);
+  });
+
+  // Story kit (2026-10-23): the new-ride mail links the story image on the share domain.
+  it('puts the story kit on the new-ride mail, on the share domain', async () => {
+    const email = new FakeEmailAdapter();
+    const { app } = makeApp({}, { bookingBaseUrl: 'https://ceylonhop.com', email, digestTo: 'ops@x.com', opsBaseUrl: 'https://ops.example', shareBaseUrl: 'https://ceylonhop.com' });
+    const cookie = await loginCookie(app, 'FR');
+    const res = await app.request('/board', json(cookie, { payment: paymentDetails,
+      from: 'Ella', to: 'Mirissa', date: futureIsoDate(30), slot: 'morning', seats: 1,
+    }));
+    expect(res.status).toBe(201);
+    const code = (await res.json()).list.code;
+
+    const ops = opsMail(email);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].text).toContain(`https://ceylonhop.com/r/${code}/story.png`);
+    expect(ops[0].text).toContain(`https://ceylonhop.com/r/${code}?utm_source=instagram&utm_medium=story&utm_campaign=ride_board`);
   });
 
   it('mails ops when a traveller joins, with the running seat count', async () => {
