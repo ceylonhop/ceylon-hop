@@ -3833,6 +3833,8 @@ function legsHtmlFor(d){
    refundable, and re-offered the refund button. The server refused the second request
    (refund_exceeds_captured) — the dashboard was inviting an error it could not explain.
    `api_failed` is deliberately in neither set: PayHere told us the money did not move. ── */
+/* Engine rate-card tiers → what ops call them (the quote tool's VEHICLE_LABELS, keyed by tier). */
+const VEHICLE_NAME={car:'Car',van:'Van 6 Seat',van9:'Van 9 Seat',van14:'Van 14 Seat',custom:'Custom'};
 const REFUND_SETTLED=['manual_confirmed','api_confirmed'];
 const REFUND_IN_FLIGHT=['manual_pending','api_processing'];
 const REFUND_LABEL={
@@ -4336,6 +4338,9 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  /* The vehicle the trip was priced on (the API reads the tier off the quote or the website's
+     snapshot — the booking alone only knows car|van). Absent for a shared seat. */
+  const vehicleRow=d?.vehicle?`<div class="kv"><span class="k">Vehicle</span><span class="v" data-testid="sheet-vehicle">${esc(VEHICLE_NAME[d.vehicle]||d.vehicle)}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
   /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
@@ -4379,6 +4384,7 @@ function renderSheet(){
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
         ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
+        ${vehicleRow}
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
@@ -9301,7 +9307,7 @@ var EXP_PHOTO_UPLOADED = /^https:\/\/img(-staging)?\.ceylonhop\.com\/experiences
 var EXP_PHOTO_MAX = { large: 700000, small: 250000 };
 var EXP_NOT_LIVE = 'Not live yet — photos appear after the site promote';
 // Server field → the form's data-err key (the rest map to themselves).
-var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
+var EXP_ERR_KEY = { slug: 'name', partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
   openWeekdays: 'days', startTimes: 'times', lat: 'loc', lng: 'loc', radiusKm: 'radius', partnerContact: 'contact', tripadvisorLocationId: 'ta' };
 
 // "7.977, 80.76" or a Google Maps link (/@lat,lng,… or ?q=lat,lng) → { lat, lng }, else null. Only
@@ -9750,7 +9756,6 @@ function renderExpForm(e) {
         // Google's partner details are a starting point: ops checks them with the partner (Places content
         // isn't ours to keep as-is), so a Google fill asks for this tick before Save.
         + '<div id="exp-biz-confirm-row" hidden style="margin-top:6px"><label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-biz-confirm"> I’ve checked the partner name, phone and website with the partner</label></div>', 'ch-exp-wide') : '')
-    + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
     + expInput('name', 'Name', d.name)
     + expInput('partner', 'Partner', d.partnerName)
     + expInput('area', 'Area', d.areaLabel, ' placeholder="Sigiriya"')
@@ -9857,7 +9862,6 @@ async function expBizPick(placeId) {
     fill('gplace', b.placeId);
     // Suggestions only where ops hasn't typed yet; Open on follows Google's hours when Google has them.
     if (!document.getElementById('exp-name').value.trim()) fill('name', b.name);
-    if (!document.getElementById('exp-slug').value.trim()) fill('slug', expSlugify(b.name));
     if (Array.isArray(b.openWeekdays) && b.openWeekdays.length) {
       for (var dd = 0; dd < 7; dd++) { var day = document.getElementById('exp-day-' + dd); if (day) day.checked = b.openWeekdays.indexOf(dd) >= 0; }
     }
@@ -9874,8 +9878,8 @@ async function expBizPick(placeId) {
     if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
   }
 }
-// A slug suggestion from the business name: lower-case ASCII words joined by dashes (the slug rule is
-// [a-z0-9-]{3,60}); '' when nothing usable is left, so the box stays empty.
+// The slug from the experience name: lower-case ASCII words joined by dashes (the slug rule is
+// [a-z0-9-]{3,60}); '' when nothing usable is left.
 function expSlugify(name) {
   var t = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
@@ -10052,14 +10056,16 @@ function expOpenForm(id) {
   if (id && !e) return;
   var host = expEl && expEl.querySelector('#exp-form-host');
   if (!host) return;
-  expForm = { id: id || null };
+  // The slug is an internal key (unique, a GA4 label) ops never see: an edit keeps its own, a new one
+  // is made from the name at save (expSave).
+  expForm = { id: id || null, slug: e ? e.slug : null };
   host.innerHTML = renderExpForm(e || null);
   expLocUpdate();
   expTaUpdate();
   for (var i = 0; i < 6; i++) expPhotoPreview(i);
   expRenderPhotoTiles();
   expGooglePhotosLink();
-  var first = document.getElementById('exp-slug');
+  var first = document.getElementById('exp-biz-q') || document.getElementById('exp-name');
   if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
   if (first) first.focus({ preventScroll: true });
 }
@@ -10101,7 +10107,7 @@ function expReadForm() {
   for (var j = 0; j < 6; j++) { var ph = document.getElementById('exp-photo-' + j).value.trim(); if (ph) photos.push(ph); }
   var times = v('times').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
   return { body: {
-    slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
+    slug: expForm.slug || expSlugify(v('name')) || expSlugify(v('partner') + ' ' + v('name')) || 'experience', name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
     details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
     durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
     lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id, googlePlaceId: v('gplace') || null,
@@ -10119,9 +10125,15 @@ async function expSave() {
   expBusy = true;
   if (btn) btn.disabled = true;
   try {
-    var r = await api(id ? '/admin/experiences/' + encodeURIComponent(id) : '/admin/experiences',
-      { method: id ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
-    if (seq !== _expSeq) return;
+    var base = f.body.slug, r;
+    // A new experience whose name-slug is taken tries base-2, base-3… (an edit keeps its slug, so never clashes).
+    for (var n = 1; n <= 20; n++) {
+      if (n > 1) f.body.slug = base.slice(0, 57).replace(/-+$/, '') + '-' + n;
+      r = await api(id ? '/admin/experiences/' + encodeURIComponent(id) : '/admin/experiences',
+        { method: id ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
+      if (seq !== _expSeq) return;
+      if (r.status !== 409 || id) break;
+    }
     if (r.ok) {
       expCloseForm();
       ratesToast(id ? 'Experience saved' : 'Experience created');
@@ -10131,7 +10143,7 @@ async function expSave() {
     var d = await jsonOrNull(r);
     if (seq !== _expSeq) return;
     var errors = {};
-    if (r.status === 409) errors.slug = 'That slug is taken';
+    if (r.status === 409) errors.name = 'Another experience already has this name — change it a little.';
     else if (r.status === 400 && d && Array.isArray(d.issues)) {
       d.issues.forEach(function (iss) {
         var k = iss.path && iss.path.length ? String(iss.path[0]) : '';

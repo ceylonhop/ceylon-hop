@@ -931,8 +931,14 @@ describe('sendScheduleSet — pickup set after booking', () => {
 
   it('says the time is still to confirm when only the date is set', async () => {
     const email = new FakeEmailAdapter();
-    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, time: undefined } } as Booking, email);
+    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, from: 'Kandy', time: undefined } } as Booking, email);
     expect(email.sent[0].html).toContain('pickup time to confirm');
+  });
+
+  it('tells an airport arrival their driver meets the landing time', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...single, input: { ...single.input, date: '2030-11-04', time: '09:00' } } as Booking, email);
+    expect(email.sent[0].html).toContain('lands 09:00 (Sri Lanka time)');
   });
 
   it('sends nothing for a booking without a date', async () => {
@@ -945,7 +951,7 @@ describe('sendScheduleSet — pickup set after booking', () => {
 describe('sendDetailsReminder — still need the pickup date/time', () => {
   it('asks on WhatsApp with the reference already typed, and says to ignore it if they already told us', async () => {
     const email = new FakeEmailAdapter();
-    await sendDetailsReminder(single, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy' } } as Booking, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
     const m = email.sent[0];
     expect(m.subject).toBe('Reminder: your pickup date and time — CH-ABC12');
     expect(m.html).toContain('wa.me/94779669662?text=');
@@ -957,9 +963,36 @@ describe('sendDetailsReminder — still need the pickup date/time', () => {
 
   it('names only what is missing', async () => {
     const email = new FakeEmailAdapter();
-    await sendDetailsReminder({ ...single, input: { ...single.input, date: '2026-11-04' } } as Booking, email, { nth: 2 });
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy', date: '2026-11-04' } } as Booking, email, { nth: 2 });
     expect(email.sent[0].html).toContain('pickup time');
     expect(email.sent[0].html).not.toContain('pickup date and time');
     expect(email.sent[0].tracking?.kind).toBe('details_reminder_2');
+  });
+
+  it('leads with the manage page, form open, and keeps WhatsApp as the fallback', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    const form = m.html.indexOf('manage.html?t=abc#pickup');
+    expect(form).toBeGreaterThan(-1);
+    expect(form).toBeLessThan(m.html.indexOf('wa.me/94779669662'));
+    expect(m.html).toContain('Or tell us on WhatsApp');
+    expect(m.html).not.toContain('View your booking'); // the form link replaces it
+    const text = m.text ?? '';
+    expect(text.indexOf('manage.html?t=abc#pickup')).toBeGreaterThan(-1);
+    expect(text.indexOf('#pickup')).toBeLessThan(text.indexOf('wa.me'));
+  });
+
+  it('asks an airport arrival for their flight landing date and time', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1 }); // fixture: from 'Colombo Airport'
+    expect(email.sent[0].subject).toBe('Reminder: your flight landing date and time — CH-ABC12');
+    expect(email.sent[0].html).toContain('flight landing date and time');
+  });
+
+  it('keeps "pickup" for a pickup that is not an airport', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy' } } as Booking, email, { nth: 1 });
+    expect(email.sent[0].subject).toBe('Reminder: your pickup date and time — CH-ABC12');
   });
 });

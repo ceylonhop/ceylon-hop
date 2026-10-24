@@ -104,7 +104,6 @@ const rows = (page) => expPage(page).locator('[data-testid="exp-row"]');
 
 // A form that would save: every required field filled, the pin valid unless a test overrides it.
 async function fillValid(page, { loc = '7.977, 80.76' } = {}) {
-  await page.locator('#exp-slug').fill('test-sunrise-hike');
   await page.locator('#exp-name').fill('Sunrise hike');
   await page.locator('#exp-partner').fill('Hill Guides');
   await page.locator('#exp-area').fill('Ella');
@@ -193,7 +192,7 @@ test('create: the POST carries cents, weekdays, times and photos, and the row ap
   await expect(rows(page).nth(3)).toContainText('Sunrise hike');
   await expect(rows(page).nth(3)).toContainText('$35.50 per group');
   expect(calls.post).toEqual([{
-    slug: 'test-sunrise-hike', name: 'Sunrise hike', partnerName: 'Hill Guides', areaLabel: 'Ella',
+    slug: 'sunrise-hike', name: 'Sunrise hike', partnerName: 'Hill Guides', areaLabel: 'Ella',
     summary: 'Walk up for the sunrise.', details: '', priceCents: 3550, priceUnit: 'per_group', durationText: '2 hrs',
     openWeekdays: [1, 2, 3], startTimes: ['06:00', '14:30'], lat: 7.977, lng: 80.76, radiusKm: 8,
     photos: ['experiences/test-sunrise-hike/a'], partnerContact: null, tripadvisorLocationId: null, googlePlaceId: null, active: true,
@@ -361,16 +360,46 @@ test('toggling Active sends PATCH {active:false}', async ({ page }) => {
   await expect(rows(page).nth(0).locator('[data-action="expToggle"]')).not.toBeChecked();
 });
 
-test('a taken slug shows "That slug is taken" on the slug field', async ({ page }) => {
-  await boot(page, FOUNDER, { post: (r) => r.fulfill(json({ error: 'slug_taken' }, 409)) });
+// 2026-10-20: the slug is an internal key (unique in the DB, a GA4 label), so ops never see it. A new
+// experience gets one from its name; an edit keeps the one it has so the analytics label stays put.
+test('the form has no slug box; a new experience gets its slug from the name', async ({ page }) => {
+  const calls = await boot(page, FOUNDER);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await page.locator('[data-testid="exp-new"]').click();
+  await expect(page.locator('#exp-slug')).toHaveCount(0);
+  await fillValid(page);
+  await page.locator('#exp-name').fill('Local Cooking Classes with Meal');
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.post.length).toBe(1);
+  expect(calls.post[0].slug).toBe('local-cooking-classes-with-meal');
+});
+
+test('a taken slug is retried with -2, -3… without bothering ops', async ({ page }) => {
+  let n = 0;
+  const calls = await boot(page, FOUNDER, {
+    post: (r, body) => (++n < 3 ? r.fulfill(json({ error: 'slug_taken' }, 409))
+      : r.fulfill(json({ experience: { ...stamp, id: '44444444-4444-4444-8444-444444444444', ...body } }, 201))),
+  });
   await page.goto(OPS_FILE + '#experiences');
   await ready(page);
   await page.locator('[data-testid="exp-new"]').click();
   await fillValid(page);
   await page.locator('[data-action="expSave"]').click();
-  await expect(page.locator('[data-err="slug"]')).toHaveText('That slug is taken');
-  await expect(page.locator('#exp-form')).toBeVisible();
-  await expect(rows(page)).toHaveCount(3);
+  await expect.poll(() => calls.post.length).toBe(3);
+  expect(calls.post.map((b) => b.slug)).toEqual(['sunrise-hike', 'sunrise-hike-2', 'sunrise-hike-3']);
+  await expect(page.locator('#exp-form')).toHaveCount(0);
+});
+
+test('editing keeps the experience’s slug even when the name changes', async ({ page }) => {
+  const calls = await boot(page, FOUNDER);
+  await page.goto(OPS_FILE + '#experiences');
+  await ready(page);
+  await rows(page).nth(0).locator('[data-action="expEdit"]').click();
+  await page.locator('#exp-name').fill('Herbal oil massage');
+  await page.locator('[data-action="expSave"]').click();
+  await expect.poll(() => calls.patch.length).toBe(1);
+  expect(calls.patch[0].body).toMatchObject({ slug: 'placeholder-ayurvedic-massage', name: 'Herbal oil massage' });
 });
 
 test('400 issues are mapped onto their fields', async ({ page }) => {
@@ -1162,7 +1191,6 @@ test('business: picking a Google result fills partner, area, pin and contact, an
   expect(biz.search).toEqual(['atherya sigiriya']);
   expect(biz.details).toEqual([BIZ.placeId]);
 
-  await page.locator('#exp-slug').fill('ayurvedic-massage');
   await page.locator('#exp-name').fill('Ayurvedic massage');
   await page.locator('#exp-summary').fill('A 90-minute massage.');
   await page.locator('#exp-price').fill('35');
@@ -1217,7 +1245,7 @@ test('business: with no Google key the form has no search and keeps the lat/lng 
   await expect(page.locator('#exp-loc')).toBeVisible();
 });
 
-// Fuller fill (2026-10-18): slug + name suggested from the business, open days from Google's hours, ops
+// Fuller fill (2026-10-18): name suggested from the business, open days from Google's hours, ops
 // confirms Google's partner details before saving, and Google's photos are a link, never copied.
 async function pickBusiness(page) {
   await page.locator('#exp-biz-q').fill('atherya');
@@ -1226,25 +1254,22 @@ async function pickBusiness(page) {
   await expect(page.locator('#exp-partner')).toHaveValue(BIZ.name);
 }
 
-test('fill: slug, name and open days come from the pick; days follow Google’s hours', async ({ page }) => {
+test('fill: name and open days come from the pick; days follow Google’s hours', async ({ page }) => {
   await boot(page, OPS, withBusiness);
   await stubBusiness(page);
   await openNew(page);
   await pickBusiness(page);
-  await expect(page.locator('#exp-slug')).toHaveValue('atherya-ayurveda-spa');
   await expect(page.locator('#exp-name')).toHaveValue('Atherya Ayurveda Spa');
   await expect(page.locator('#exp-day-0')).not.toBeChecked();
   for (const d of [1, 2, 3, 4, 5, 6]) await expect(page.locator('#exp-day-' + d)).toBeChecked();
 });
 
-test('fill: never overwrites a slug or name ops already typed', async ({ page }) => {
+test('fill: never overwrites a name ops already typed', async ({ page }) => {
   await boot(page, OPS, withBusiness);
   await stubBusiness(page);
   await openNew(page);
-  await page.locator('#exp-slug').fill('ayurvedic-massage');
   await page.locator('#exp-name').fill('Ayurvedic massage');
   await pickBusiness(page);
-  await expect(page.locator('#exp-slug')).toHaveValue('ayurvedic-massage');
   await expect(page.locator('#exp-name')).toHaveValue('Ayurvedic massage');
 });
 

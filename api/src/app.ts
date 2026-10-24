@@ -548,6 +548,7 @@ export function createApp(deps: AppDeps = {}) {
       experiences,
       experienceInterests,
       alerts,
+      email,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     }),
   );
@@ -575,6 +576,7 @@ export function createApp(deps: AppDeps = {}) {
       },
       maps,
       rateRevisions,
+      sharedSeats: bookings,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
       boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
@@ -582,7 +584,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       ...(deps.rideBoardEvents ? { events: deps.rideBoardEvents } : {}),
       ...((deps.digestTo ?? config.ALERT_EMAIL)
-        ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL } }
+        ? { opsNotify: { to: (deps.digestTo ?? config.ALERT_EMAIL)!, opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL, shareBaseUrl: deps.shareBaseUrl ?? (config.SHARE_BASE_URL || undefined) } }
         : {}),
     }),
   );

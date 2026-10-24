@@ -1,10 +1,12 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import type { BookingRepo } from '../db/bookingRepo';
+import type { BookingRepo, WebsitePricingSnapshot } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { legSelectionOf, refundLinesFor, type PayLine } from '../quote/paySelection';
 import { isChauffeurBooking } from '../quote/quoteAlternative';
+import { pricedVehicle } from '../quote/vehicle';
+import type { QuoteRequest } from '../quote/types';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
@@ -349,14 +351,30 @@ export function opsRoutes(deps: OpsDeps) {
     const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
+    // A website booking's own pricing snapshot, when it did not come from a quote. Best-effort,
+    // like the checkout log below: a row that cannot be read costs the refund picker and the
+    // vehicle tier only.
+    let web: WebsitePricingSnapshot | null = null;
+    if (!srcQuote && b.mode !== 'shared') {
+      try {
+        web = await deps.bookings.websitePricingSnapshot(b.id);
+      } catch (err) {
+        console.error(`[ops] pricing snapshot unavailable for ${b.id}:`, err);
+      }
+    }
+    // The vehicle ops assign: the tier the trip was priced on. The booking itself keeps only
+    // car|van, so a 9-seat van quote reads "van" and a party the engine sized up out of a car can
+    // read "car"; the priced request says which. None for a shared seat.
+    const pricedEngine = (srcQuote?.request as { engine?: QuoteRequest } | null)?.engine ?? web?.engine;
+    const vehicle = b.mode === 'shared'
+      ? null
+      : pricedEngine && pricedEngine.product !== 'shared' ? pricedVehicle(pricedEngine) : b.input.vehicleType;
     // The refund picker's lines (refund approvals phase 2): legs and extras, each worth its share of
     // what the booking was charged — from the quote it came from, else a website booking's own
     // snapshot. Only a convenience that fills the amount box; a founder approves every request.
-    // Best-effort, like the checkout log below: a row that cannot be read costs the picker only.
     let refundLines: { currency: string; lines: PayLine[] } | null = null;
     if (!isChauffeurBooking(b)) {
       try {
-        const web = srcQuote ? null : await deps.bookings.websitePricingSnapshot(b.id);
         const source = srcQuote
           ? { quote: srcQuote, currency: srcQuote.currency }
           : web ? { quote: { request: { engine: web.engine }, result: { lineItems: web.lineItems } }, currency: web.currency } : null;
@@ -405,7 +423,7 @@ export function opsRoutes(deps: OpsDeps) {
       ? (await deps.notificationLog.listByBookingId(b.id).catch(() => []))
           .filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2')
       : [];
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by

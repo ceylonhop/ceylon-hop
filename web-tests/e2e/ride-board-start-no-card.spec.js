@@ -24,7 +24,7 @@ const other = {
 
 const ok = (body, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-async function stubApi(page) {
+async function stubApi(page, made = created) {
   const seen = { creates: [] };
   await page.route((u) => isApiRequest(new URL(u.href)), async (route) => {
     const req = route.request();
@@ -32,13 +32,13 @@ async function stubApi(page) {
     if (p === '/board/me') return route.fulfill(ok({ me: { firstName: 'Roshen', country: 'GB', photo: null } }));
     if (p === '/board' && req.method() === 'POST') {
       seen.creates.push(req.postDataJSON());
-      return route.fulfill(ok({ list: created, manageToken: 't' }, 201));
+      return route.fulfill(ok({ list: made, manageToken: 't' }, 201));
     }
     if (p === '/board' && req.method() === 'GET') return route.fulfill(ok({ lists: [other] }));
-    if (p === `/board/${created.code}`) return route.fulfill(ok(created));
+    if (p === `/board/${created.code}`) return route.fulfill(ok(made));
     if (p === `/board/${other.code}`) return route.fulfill(ok(other));
     if (p === '/board/dupe') return route.fulfill(ok({ list: null }));
-    if (p === '/board/mine') return route.fulfill(ok({ lists: [created] }));
+    if (p === '/board/mine') return route.fulfill(ok({ lists: [made] }));
     return route.fulfill(ok({}));
   });
   return seen;
@@ -66,6 +66,10 @@ test('the start sheet asks for a phone number only — no billing address, no Pa
 });
 
 test('starting a ride sends no billing details and goes straight to the share step', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__shared = [];
+    Object.defineProperty(navigator, 'share', { configurable: true, value: (d) => { window.__shared.push(d); return Promise.resolve(); } });
+  });
   const seen = await stubApi(page);
   await toDetailsStep(page);
   await page.selectOption('#pay-cc', '+44');
@@ -73,10 +77,34 @@ test('starting a ride sends no billing details and goes straight to the share st
   await page.locator('#sign-btn').click();
 
   await expect(page.locator('#mstep-3')).toBeVisible();
+  // the share step leads with one tap to the phone's share menu (plan 2026-10-19-ride-board-fomo)
+  await expect(page.locator('#share-native')).toBeVisible();
+  // the starter is on the ride, so what they send is the first-person form
+  await page.locator('#share-native').click();
+  expect((await page.evaluate(() => window.__shared))[0].text).toMatch(/^I'm taking a shared taxi .* Join me:$/);
   await expect(page.locator('#pay-handoff')).toBeHidden();
   expect(seen.creates).toHaveLength(1);
   expect(seen.creates[0].payment).toEqual({ phone: '+447700900123' });
   await expect(page.locator('#done-sub')).toContainText('payment link');
+});
+
+test('the share step offers no share after the join that filled the last seat', async ({ page }) => {
+  const full = {
+    ...created, committed: 6,
+    members: ['Roshen', 'Ana', 'Ben', 'Kim', 'Nat', 'Jo'].map((n, i) => ({
+      position: i + 1, firstName: n, country: 'GB', photoUrl: null, seats: 1, isStarter: i === 0, isYou: i === 0, paysByLink: i === 0,
+    })),
+  };
+  await stubApi(page, full);
+  await toDetailsStep(page);
+  await page.selectOption('#pay-cc', '+44');
+  await page.fill('#pay-phone', '7700 900123');
+  await page.locator('#sign-btn').click();
+
+  await expect(page.locator('#mstep-3')).toBeVisible();
+  await expect(page.locator('#share-native')).toBeHidden();
+  await expect(page.locator('#mstep-3 .share-btns')).toBeHidden();
+  await expect(page.locator('#mstep-3 .copy-row')).toBeHidden();
 });
 
 test('the starter\'s own ride says a payment link comes — not "your card is approved"', async ({ page }) => {
