@@ -89,9 +89,11 @@ test('on a phone the faces sit on the short line', async ({ page }) => {
   await expect(row.locator('.rws-kind .rws-faces')).toBeHidden();
   await expect(row.locator('.rws-short .rws-faces .ini')).toHaveText(['MA', 'OL', 'JO']);
   await expect(row.locator('.rws-short .rws-booked')).toHaveCount(0);
-  const box = await row.locator('.rws-short').boundingBox();
+  // the sub-line is what clips (overflow hidden), so the last face must end inside it
+  const box = await row.locator('.rws-short small').boundingBox();
   const last = await row.locator('.rws-short .rws-faces .rw-more').boundingBox();
   expect(last.x + last.width).toBeLessThanOrEqual(box.x + box.width);
+  await expect(row.locator('.rws-short small')).toContainText('via Negombo');
 });
 
 test('no faces when the API sends no one', async ({ page }) => {
@@ -100,4 +102,17 @@ test('no faces when the API sends no one', async ({ page }) => {
   await page.goto('/board.html');
   await expect(wedRow(page, '07:00')).toBeVisible({ timeout: 15000 });
   await expect(page.locator('.rws-faces')).toHaveCount(0);
+});
+
+// 412px, not 375: beside a count the sub-line needs 217px and the 375px cell is 217px exactly on a
+// Mac with Poppins — Linux CI's fallback sans is ~4% wider, so there the stop ellipsises at 375 and
+// fits from 390 (measured 2026-10-23). Without a count it fits from 360 everywhere (189px needed).
+test('on a phone the count keeps its place and the stop on the way drops its time to fit', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 915 });
+  await page.clock.setFixedTime(new Date(NOW));
+  await stubApi(page, COUNTS);
+  await page.goto('/board.html');
+  const sub = wedRow(page, '07:00').locator('.rws-short small');
+  await expect(sub).toHaveText('Scheduled · 7 booked · via Negombo', { timeout: 15000 });
+  expect(await sub.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false);
 });
