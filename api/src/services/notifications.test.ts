@@ -663,6 +663,17 @@ describe('partial-booking coverage (spec 2026-08-04)', () => {
 // their own prices, so its ends name no customer's journey.
 //
 // The leg is now recorded on the booking, and every label reads that.
+describe('shared seat — the email names its extras', () => {
+  it('lists the hotel pick-up & drop-off the customer paid for', () => {
+    const b = { ...single, mode: 'shared', input: { corridorId: 'airport-cultural', date: '2026-09-23', time: '07:30', seats: 2, customer }, addOns: ['Hotel pick-up & drop-off'] } as Booking;
+    expect(factRows(b)).toContainEqual(['Extras', 'Hotel pick-up & drop-off']);
+  });
+  it('has no Extras row without one', () => {
+    const b = { ...single, mode: 'shared', input: { corridorId: 'airport-cultural', date: '2026-09-23', time: '07:30', seats: 2, customer } } as Booking;
+    expect(factRows(b).some(([k]) => k === 'Extras')).toBe(false);
+  });
+});
+
 describe('shared seat — the email names the leg that was sold', () => {
   const seat: Booking = {
     mode: 'shared',

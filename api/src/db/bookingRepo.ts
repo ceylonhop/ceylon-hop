@@ -9,7 +9,7 @@ import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
 import { chosenAddOns } from '../quote/paySelection';
 import { addOnsFor } from '../quote/quoteAlternative';
-import type { QuoteRequest, QuoteResult } from '../quote/types';
+import type { LineItem, QuoteRequest, QuoteResult } from '../quote/types';
 import {
   PROMO_HOLD_MS,
   PromoCodeRefusedError,
@@ -264,10 +264,39 @@ export function websitePricingSnapshot(priced: { engine: QuoteRequest; result: Q
   };
 }
 
+// A website shared seat's snapshot. It is priced without the engine (priceShared), so `engine` is
+// the shared request the engine would have taken, and the lines are priceShared's own.
+export function sharedPricingSnapshot(
+  leg: { routeId: string; seats: number; seatPriceCents: number },
+  priced: { totalCents: number; amountDueNowCents: number; currency: string; lineItems: LineItem[] },
+  rateCardVersion: string,
+): WebsitePricingSnapshot {
+  return {
+    version: 1,
+    source: 'website',
+    engine: { product: 'shared', legs: [{ ...leg }] },
+    subtotalCents: priced.totalCents,
+    discountTotalCents: 0,
+    totalCents: priced.totalCents,
+    amountDueNowCents: priced.amountDueNowCents,
+    currency: priced.currency,
+    rateCardVersion,
+    lineItems: structuredClone(priced.lineItems),
+  };
+}
+
 /** The add-ons a website booking's own snapshot names; none for anything else in the column. */
 export function snapshotAddOns(snapshot: unknown): string[] {
   const s = snapshot as Partial<WebsitePricingSnapshot> | null;
   if (!s || s.source !== 'website') return [];
+  // A shared seat's lines are priceShared's, not a private quote's, so payLines can't read them:
+  // its add-ons are simply the lines tagged `extra`.
+  if ((s.engine as { product?: unknown } | undefined)?.product === 'shared') {
+    const items = Array.isArray(s.lineItems) ? s.lineItems : [];
+    return items
+      .filter((i): i is LineItem => !!i && typeof i === 'object' && (i as LineItem).meta?.kind === 'extra' && typeof (i as LineItem).label === 'string')
+      .map((i) => i.label);
+  }
   return chosenAddOns({ request: { engine: s.engine }, result: { lineItems: s.lineItems } });
 }
 

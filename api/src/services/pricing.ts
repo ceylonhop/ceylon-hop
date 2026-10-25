@@ -4,7 +4,10 @@ import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { measureLeg } from '../quote/routeChoice';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import type { QuoteRequest, QuoteResult, ChauffeurTravelDay } from '../quote/types';
+import type { QuoteRequest, QuoteResult, ChauffeurTravelDay, LineItem } from '../quote/types';
+import { SHARED_EXTRA_LABELS, type SHARED_EXTRA_CODES } from '../domain/shared';
+
+type SharedExtraCode = typeof SHARED_EXTRA_CODES[number];
 import type { DiscountRequest } from '../quote/discount';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
@@ -186,12 +189,28 @@ export async function priceTrip(
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
 // already server-authoritative, so no engine call and no unpriced arm. (The engine's
 // Colombo-pickup surcharge is not in the public payload; don't invent it.)
-export function priceShared(seats: number, seatPriceCents: number, bags = 0, rateCard: RateCard = RATE_CARD): Extract<PriceOutcome, { priced: true }> {
+export function priceShared(
+  seats: number,
+  seatPriceCents: number,
+  bags = 0,
+  extras: readonly SharedExtraCode[] = [],
+  rateCard: RateCard = RATE_CARD,
+): Extract<PriceOutcome, { priced: true }> & { lineItems: LineItem[] } {
   // One free bag per seat; each extra bag is the rate card's shared extra-bag fee. This
   // mirrors the front-end quote so what the customer is shown is what actually gets charged.
   const extraBags = Math.max(0, bags - seats);
-  const totalCents = seats * seatPriceCents + extraBags * rateCard.shared.extraBagCents;
-  return { currency: 'USD', totalCents, amountDueNowCents: totalCents, priced: true };
+  const lineItems: LineItem[] = [{ label: `Seats × ${seats}`, amountCents: seats * seatPriceCents }];
+  if (extraBags > 0) lineItems.push({ label: `Extra bags × ${extraBags}`, amountCents: extraBags * rateCard.shared.extraBagCents });
+  // Add-ons are once per booking, priced from the extras table like a private transfer's, and
+  // tagged as the engine tags them so the booking's snapshot names them (snapshotAddOns).
+  for (const code of new Set(extras)) {
+    const amountCents = rateCard.extras[code];
+    // Money path: a card without the price must refuse, never charge NaN or $0.
+    if (typeof amountCents !== 'number') throw new Error(`rate card has no price for shared extra ${code}`);
+    lineItems.push({ label: SHARED_EXTRA_LABELS[code], amountCents, meta: { kind: 'extra', code } });
+  }
+  const totalCents = lineItems.reduce((t, l) => t + l.amountCents, 0);
+  return { currency: 'USD', totalCents, amountDueNowCents: totalCents, priced: true, lineItems };
 }
 
 // ── Pre-engine placeholders (kept as the last-resort fallback) ──────────────

@@ -26,7 +26,7 @@ import {
 } from '../services/pricing';
 import { measureLeg } from '../quote/routeChoice';
 import { promoDiscount, roadRow, sendScheduleSet, manageUrl } from '../services/notifications';
-import { websitePricingSnapshot, SCHEDULE_EDITABLE_STATUSES, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { websitePricingSnapshot, sharedPricingSnapshot, SCHEDULE_EDITABLE_STATUSES, type BookingRepo, type Booking } from '../db/bookingRepo';
 import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
@@ -893,11 +893,8 @@ function invalidRequest(error: ZodError) {
 
     // GL-3 — the catalogue price is authoritative; the client's quotedTotal is never
     // stored, only compared and flagged when it disagrees.
-    const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priceShared(
-      req.seats,
-      product.seatPrice,
-      req.bags ?? 0,
-    );
+    const priced = priceShared(req.seats, product.seatPrice, req.bags ?? 0, req.extras ?? []);
+    const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priced;
     const input = {
       corridorId: corridor.id,
       // Record WHAT WAS SOLD, in the catalogue's spelling rather than the request's. A
@@ -921,7 +918,8 @@ function invalidRequest(error: ZodError) {
     try {
       booking = await bookings.create(
         { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
-        { idempotencyKey: key },
+        // The priced lines are the booking's record of its add-ons (hotel pick-up & drop-off).
+        { idempotencyKey: key, pricingSnapshot: sharedPricingSnapshot({ routeId: product.id, seats: req.seats, seatPriceCents: product.seatPrice }, priced, RATE_CARD.version) },
       );
     } catch (err) {
       // Compensate the hold so a failed create doesn't strand seats on the departure

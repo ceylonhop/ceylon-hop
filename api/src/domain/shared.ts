@@ -37,6 +37,13 @@ export const SharedInput = z.object({
 
 export type SharedInput = z.infer<typeof SharedInput>;
 
+// The add-ons a shared seat can carry, and what the customer and ops call them. Hotel pick-up &
+// drop-off (owner 2026-10-16): once per booking, hotel within 2 km of the meeting points.
+export const SHARED_EXTRA_CODES = ['hotel-transfer'] as const;
+export const SHARED_EXTRA_LABELS: Record<typeof SHARED_EXTRA_CODES[number], string> = {
+  'hotel-transfer': 'Hotel pick-up & drop-off',
+};
+
 // HTTP request shape: the website sends from/to (it doesn't know corridor ids), and the
 // API resolves the corridor. A corridorId is also accepted directly.
 export const SharedBookingRequest = z.object({
@@ -47,6 +54,8 @@ export const SharedBookingRequest = z.object({
   time: z.string().min(1),
   seats: z.number().int().min(1),
   bags: z.number().int().min(0).optional(),
+  // The add-ons a shared seat can carry, priced server-side from RATE_CARD.extras.
+  extras: z.array(z.enum(SHARED_EXTRA_CODES)).optional(),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
 });
