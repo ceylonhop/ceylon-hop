@@ -17,6 +17,21 @@ const MAX_BODY_BYTES = 2048;
 // planner (mostly crawlers and stale links) — acknowledge those beacons but don't track/alert.
 const BENIGN_MESSAGE = /no catalogue route/i;
 
+// Faults that aren't ours to fix: still tracked to Sentry, but no founder email. A browser
+// extension crashing on the visitor's page (wallets poke window.ethereum), the opaque "Script
+// error." a browser reports for a cross-origin script, and — on the staff dashboard only — a
+// fetch that never reached the server (Chrome / Safari / Firefox wording). Network failures on
+// customer pages keep emailing: on pay/quote/manage one can be a customer who couldn't pay.
+const EXTENSION_NOISE = /window\.ethereum|(chrome|moz|safari(-web)?)-extension:\/\//i;
+const OPAQUE_SCRIPT_ERROR = /^script error\.?$/i;
+const NETWORK_FAILURE = /(failed to fetch|load failed|networkerror when attempting to fetch resource\.?)$/i;
+
+function isNoise(property: string, message: string, stack: string): boolean {
+  if (EXTENSION_NOISE.test(message) || EXTENSION_NOISE.test(stack)) return true;
+  if (OPAQUE_SCRIPT_ERROR.test(message.trim()) && !stack.trim()) return true;
+  return property === 'ops' && NETWORK_FAILURE.test(message.trim());
+}
+
 // Which of our front-ends beaconed. A CLOSED set on purpose: this value becomes a Sentry
 // tag and part of an alert subject, and this endpoint is public and unauthenticated — an
 // open string field would be a way to write arbitrary text into both. Optional because
@@ -86,6 +101,7 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
         property,
         extra: { stack: e.stack, url: e.url, ua: e.ua },
       });
+      if (isNoise(property, e.message, e.stack ?? '')) return c.body(null, 204);
       // Coarsen the dedupe key so a beacon can't defeat the alert throttle by varying the
       // message — an attacker appending a random token, or a real error carrying an embedded
       // id/url, would otherwise mint a fresh key every time. Strip urls, hex/uuid runs and

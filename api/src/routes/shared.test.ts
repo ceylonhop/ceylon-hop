@@ -322,3 +322,35 @@ describe('POST /bookings/shared — the booking records the luggage it charged f
     expect(b.input.bags).toBe(0);
   });
 });
+
+// Owner 2026-10-16: a shared seat can add hotel pick-up & drop-off (hotel within 2 km of the
+// meeting points; ops confirms) for $5 per BOOKING, not per seat. It reuses the extras feature:
+// the code is priced from RATE_CARD.extras and recorded as an `extra` line in the booking's
+// pricing snapshot, which is where every surface reads a booking's add-ons from.
+describe('POST /bookings/shared — hotel pick-up & drop-off extra', () => {
+  const leg = { ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 2 };
+
+  it('adds $5 once per booking, not per seat', async () => {
+    const res = await postShared(createApp(), { ...leg, extras: ['hotel-transfer'] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.total).toBe(5498 + 500);
+    expect(b.amountDueNow).toBe(5498 + 500);
+  });
+
+  it('records the extra on the booking so ops and the emails can name it', async () => {
+    const b = await (await postShared(createApp(), { ...leg, extras: ['hotel-transfer'] })).json();
+    expect(b.addOns).toEqual(['Hotel pick-up & drop-off']);
+  });
+
+  it('names no add-ons when none was chosen', async () => {
+    const b = await (await postShared(createApp(), leg)).json();
+    expect(b.total).toBe(5498);
+    expect(b.addOns).toBeUndefined();
+  });
+
+  it('400s a private-transfer extra on a shared seat', async () => {
+    const res = await postShared(createApp(), { ...leg, extras: ['sightseeing'] });
+    expect(res.status).toBe(400);
+  });
+});
