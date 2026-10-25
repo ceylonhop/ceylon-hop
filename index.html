@@ -1055,7 +1055,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
     // a small route pin on the postcard (no price) reinforces the door-to-door promise
     const pcPin=document.getElementById('pc-pin');
+    /* goBook() paints a per-field message ("Pick a drop-off.") and a red border, and used to
+       clear them only at the top of its NEXT run. Nothing watched the fields in between, so a
+       traveller who then picked a drop-off went on reading an error telling them to pick a
+       drop-off, with the field they had just filled still outlined red, until they pressed
+       the button again. update() runs on every keystroke, autocomplete pick and swap — the
+       traveller acting on the form IS the signal that the complaint has been heard — so the
+       message goes here. The next press re-validates from scratch. */
+    const bkErr=document.getElementById('bk-error');
+    function clearError(){
+      if(!bkErr || bkErr.hidden) return;
+      bkErr.hidden=true;
+      form.querySelectorAll('.field-bad').forEach(el=>el.classList.remove('field-bad'));
+    }
     function update(){
+      clearError();
       const f=from.value.trim(), t=to.value.trim();
       const fr=resolvePlaceInput(f), tr=resolvePlaceInput(t);
       const multi=bookMode==='multi';

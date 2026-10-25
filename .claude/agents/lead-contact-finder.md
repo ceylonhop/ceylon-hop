@@ -12,8 +12,10 @@ especially "Never collect".
 **For each agency in your batch** (you get agency, website, city, current inbox if known):
 - website: copied exactly from your input (the join key)
 - attn_name, attn_title: the decision-maker per contact-rules.md target order
-- contact_confidence: HIGH / MEDIUM / LOW. If no named person is found, leave attn_name empty and
-  write `no named contact` in notes (the critic rejects on bar item 4)
+- contact_confidence: HIGH / MEDIUM / LOW. If the site names nobody, look up the company in at
+  least two of the registries in contact-rules.md (in India: Tofler, Zaubacorp, Falconebiz,
+  Tracxn) before giving up. Only then leave attn_name empty and write `no named contact` in notes,
+  listing the registries you tried (the critic rejects on bar item 4)
 - contact_sources: the URLs behind the name
 - to: the best address to send to, and to_label (`published` / `pattern-inferred`).
   A registry-filed address goes in cc only. If no published or pattern-inferred address exists,

@@ -12,6 +12,8 @@ operators sell long-haul trips. You find agencies that could resell Ceylon Hop's
 **Your job:** for the ONE segment you are given, find the requested number of candidates that
 look likely to pass the quality bar. Prefer agencies that sell private/tailor-made trips. Skip
 anything on the brief's exclusion list or already listed in the ledger domains you are given.
+Don't stop at the first plausible agencies: look at about twice as many as you need, then keep the
+strongest (a real Sri Lanka page, a named founder or team, reviews).
 
 **How:**
 - Use WebSearch (standard first; `extended` for thin results). Block the big OTAs and

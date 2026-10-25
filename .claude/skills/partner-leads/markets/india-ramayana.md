@@ -15,6 +15,7 @@ Ramayana, pilgrimage, senior or family content. Private/tailor-made sellers firs
 - **South India FIT:** We'd be glad to be your ground partner in Sri Lanka: a private car or van with a driver, for whole trips or single transfers.
 - **Pilgrimage specialists:** We could be the private-car option you offer alongside your group departures, for families who ask for their own car.
 - **Senior and family specialists:** We plan every trip with elders in mind: short driving days, few steps, a proper lunch stop, in a private car or van.
+- **Private sellers:** For the private trips you already sell to Sri Lanka, we can be your ground partner: a private car or van with a driver, for whole trips or single transfers.
 - **Wave 2:** We could be the private-car option you offer alongside your group departures, for families who ask for their own car.
 
 Theme line (Ramayana; added when a lead's fit includes Ramayana): "Our Ramayana trail runs 6 days

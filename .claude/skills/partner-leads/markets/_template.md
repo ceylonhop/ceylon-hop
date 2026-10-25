@@ -10,6 +10,7 @@
 ## Pitch
 <per segment if it differs; only these claims may appear in emails, with live URLs>
 - **<Segment name>:** <pitch line>
+- **Private sellers:** <optional; replaces a group-worded segment line for leads whose format is private>
 - **Wave 2:** <pitch for group/coach leads: a private-car tier, never a coach replacement>
 
 Theme line (optional; added when a lead's fit includes the theme): <one sentence + URL>
