@@ -414,16 +414,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rev .av{width:42px;height:42px;border-radius:50%}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.8rem;color:var(--ink-soft)}
 
-  /* popular transfers — text-forward fixed-price cards */
-  .tcard{display:flex;flex-direction:column;gap:10px;padding:22px 24px;transition:transform .2s, box-shadow .2s}
+  /* popular transfers — photo-first fixed-price cards (option A, 2026-10-24): a 16:10 photo of the
+     destination on top with the distance/time chip and the shared-seat pill ON the photo, the route and
+     price below. The body is a column with the price row pinned to the bottom (margin-top:auto), so a
+     two-line route ("Colombo Airport (CMB) → Sigiriya / Dambulla") grows the card and the grid's
+     stretch keeps every card in a row the same height — the price rows line up at 3-up, 2-up and 1-up. */
+  .tcard{display:flex;flex-direction:column;transition:transform .2s, box-shadow .2s}
   .tcard:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
-  .tcard .tc-route{font-family:var(--display);font-weight:700;font-size:1.28rem;line-height:1.25;display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:baseline}
+  .tcard .tc-ph{position:relative;aspect-ratio:16/10;overflow:hidden;background:var(--cream-deep)}
+  .tcard .tc-img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s}
+  .tcard:hover .tc-img{transform:scale(1.04)}
+  @media(prefers-reduced-motion:reduce){.tcard .tc-img{transition:none}.tcard:hover .tc-img{transform:none}}
+  .tcard .tc-meta{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(255,253,248,.92);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:var(--ink);font-size:.74rem;font-weight:600;padding:.32rem .6rem;border-radius:999px}
+  .tcard .tc-shared{position:absolute;right:12px;top:12px;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.75rem;font-weight:700;color:var(--teal-deep);background:var(--pc-teal);padding:.3rem .65rem;border-radius:999px;box-shadow:var(--shadow-s)}
+  .tcard .tc-body{display:flex;flex-direction:column;gap:8px;padding:18px 22px 20px;flex:1;min-width:0}
+  .tcard .tc-route{font-family:var(--display);font-weight:700;font-size:1.22rem;line-height:1.25;display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:baseline;min-width:0}
+  .tcard .tc-route span{overflow-wrap:anywhere}
   .tcard .tc-route .ar{color:var(--accent-deep);font-family:var(--body);font-weight:600;font-size:1rem}
-  .tcard .tc-meta{font-size:.85rem;color:var(--ink-soft)}
-  .tcard .tc-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
+  .tcard .tc-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
   .tc-price{font-size:.85rem;color:var(--ink-soft)}
   .tc-price b{font-family:var(--display);font-size:1.45rem;color:var(--ink)}
-  .tcard .tc-shared{font-size:.75rem;font-weight:700;color:var(--teal-deep);background:var(--pc-teal);padding:.3rem .65rem;border-radius:999px;white-space:nowrap}
   .tc-go{font-size:.86rem;font-weight:700;color:var(--accent-deep);display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap}
   .tc-go svg{width:15px;height:15px}
 
@@ -844,12 +854,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       durationMin:q.durationMin,
       state:q.estimated?'estimated':'browse'
     });
+    // Photo of the DESTINATION by convention (img/transfer-<to>.jpg, 800×500 = the tile's 16:10) —
+    // pinned by web-tests/unit/home-transfer-photos.test.js so a new pair can't ship without one.
+    // alt="" because the link's own text already names the route; the photo is illustration.
     return `<a class="card tcard reveal" href="search.html?${u}">
-      <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
-      <div class="tc-meta">${estimate}</div>
-      <div class="tc-foot">
-        <span class="tc-price">from <b data-live-price>$${displayPrice(q.car)}</b> fixed</span>
-        ${sh?`<span class="tc-shared">or shared seat $${displayPrice(sh.seat)}</span>`:`<span class="tc-go">See prices ${ICON.arrow}</span>`}
+      <div class="tc-ph"><img class="tc-img" src="img/transfer-${t}.jpg" alt="" width="800" height="500" loading="lazy" decoding="async">
+        <span class="tc-meta">${estimate}</span>
+        ${sh?`<span class="tc-shared">or shared seat $${displayPrice(sh.seat)}</span>`:''}
+      </div>
+      <div class="tc-body">
+        <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
+        <div class="tc-foot">
+          <span class="tc-price">from <b data-live-price>$${displayPrice(q.car)}</b> fixed</span>
+          <span class="tc-go">See prices ${ICON.arrow}</span>
+        </div>
       </div></a>`;
   }).join('');
 
