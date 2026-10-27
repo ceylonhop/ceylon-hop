@@ -599,7 +599,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
   /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
-  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input[type=date],.sched input[type=time],.sched input[type=text],.sched select{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
   .sched input:focus{outline:none;border-color:var(--teal)}
   .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
   .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
@@ -3797,7 +3797,7 @@ function buildActivity(t,d){
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
-  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
   (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
@@ -4268,9 +4268,15 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Why ops moved a pickup (requirements 2026-10-26 R1) — one label per server code
+   (SCHEDULE_REASONS); opsUi.schedule.test.ts fails if they drift. */
+const SCHED_REASONS={customer_changed_plans:'Customer changed plans',customer_entered_wrong:'Customer entered the wrong date/time',flight_changed:'Flight changed',our_mistake:'Our mistake',other:'Other'};
+/* The statuses the server lets STAFF reschedule (STAFF_SCHEDULE_EDITABLE_STATUSES): unpaid ones too,
+   so a date the customer typed wrong can be fixed before they pay. Never a draft. */
+const SCHED_STATUSES=['awaiting_details','payment_pending','paid','confirmed'];
 /* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
    send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
-const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here',reason_required:'Pick a reason for the change'};
 /* The toast after a save: [text, kind]. When the operator asked to email the customer, the
    result is always stated — a failed or held-back email must never read as a plain "Saved",
    and the driver line must not hide it. opsUi.schedule.test.ts lifts this. */
@@ -4288,6 +4294,8 @@ function scheduleFormHtml(t,d){
   return `<div class="sched" data-testid="sched-form">
     <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
     <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <div class="kv"><span class="k">Why</span><span class="v"><select id="schedReason" aria-label="Reason for the change"><option value="" selected disabled>Pick a reason</option>${Object.entries(SCHED_REASONS).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select></span></div>
+    <div class="kv"><span class="k">Note</span><span class="v"><input type="text" id="schedNote" maxlength="500" placeholder="Optional — e.g. new flight UL 504"></span></div>
     <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
     ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
     <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
@@ -4317,7 +4325,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
-  const canSchedule=d?.booking?.mode==='single'&&['paid','confirmed'].includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
+  const canSchedule=d?.booking?.mode==='single'&&SCHED_STATUSES.includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4881,7 +4889,10 @@ document.addEventListener('click',async e=>{
       const inp=state.detailData?.booking?.input||{};
       const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
       if(!date){toast('Pick a date','error');break;}
-      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked};
+      const reason=($('#schedReason')||{}).value||'';
+      if(!reason){toast(SCHED_ERR.reason_required,'error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked,
+        reason,note:(($('#schedNote')||{}).value||'').trim()||null};
       try{
         const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
         if(r.status===401){showLogin();break;}

@@ -41,8 +41,11 @@ describe('POST /admin/ops/bookings/:id/schedule', () => {
     await bookings.setStatus(bid, 'paid');
   });
 
-  const post = async (body: unknown, extra: Record<string, string> = {}, id = bid) =>
-    app.request(`/admin/ops/bookings/${id}/schedule`, { method: 'POST', headers: await hdr(extra), body: JSON.stringify(body) });
+  // Every ops change carries a reason (requirements R1/R6); tests that aren't about it get a default.
+  const post = async (body: Record<string, unknown>, extra: Record<string, string> = {}, id = bid) =>
+    app.request(`/admin/ops/bookings/${id}/schedule`, {
+      method: 'POST', headers: await hdr(extra), body: JSON.stringify({ reason: 'customer_changed_plans', ...body }),
+    });
 
   const blank = { date: null, time: null };
 
@@ -97,7 +100,35 @@ describe('POST /admin/ops/bookings/:id/schedule', () => {
     expect((await post({ date: inDays(10) })).status).toBe(400);
   });
 
-  it('409s a booking that is not paid yet', async () => {
+  it('requires a reason from the list, and records it with the note', async () => {
+    const noReason = await post({ date: inDays(10), time: null, expected: blank, notifyCustomer: false, reason: undefined });
+    expect(noReason.status).toBe(400);
+    expect(await noReason.json()).toEqual({ error: 'reason_required' });
+    expect((await post({ date: inDays(10), time: null, expected: blank, notifyCustomer: false, reason: 'bored' })).status).toBe(400);
+    expect((await post({ date: inDays(10), time: null, expected: blank, notifyCustomer: false, note: 'x'.repeat(501) })).status).toBe(400);
+    expect((await bookings.listScheduleEvents(bid))).toHaveLength(0);
+
+    const res = await post({ date: inDays(10), time: null, expected: blank, notifyCustomer: false, reason: 'flight_changed', note: '  UL 504 now lands 03:10  ' });
+    expect(res.status).toBe(200);
+    const detail = await (await app.request(`/admin/ops/bookings/${bid}`, { headers: await hdr() })).json();
+    expect(detail.scheduleEvents[0]).toMatchObject({ reason: 'flight_changed', note: 'UL 504 now lands 03:10' });
+  });
+
+  // Requirements R12: ops may fix the date before payment too — the customer typed it wrong.
+  it('lets ops change an unpaid booking (awaiting details or payment pending)', async () => {
+    for (const status of ['payment_pending', 'awaiting_details'] as const) {
+      const b = await bookings.create({
+        mode: 'single', total: 100, amountDueNow: 100, currency: 'USD',
+        input: { from: 'A', to: 'B', vehicleType: 'car', adults: 1, children: 0, bags: 0,
+          customer: { firstName: 'X', email: 'x@x.com', whatsapp: '+1', country: 'US' } },
+      });
+      await bookings.setStatus(b.id, status);
+      const res = await post({ date: inDays(10), time: '09:00', expected: blank, notifyCustomer: false }, {}, b.id);
+      expect(res.status, status).toBe(200);
+    }
+  });
+
+  it('409s a draft booking', async () => {
     const b = await bookings.create({
       mode: 'single', total: 100, amountDueNow: 100, currency: 'USD',
       input: { from: 'A', to: 'B', vehicleType: 'car', adults: 1, children: 0, bags: 0,
