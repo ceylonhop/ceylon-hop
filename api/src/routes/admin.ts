@@ -30,7 +30,7 @@ import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
@@ -101,6 +101,11 @@ export function adminRoutes(deps: {
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
   r.use('*', opsIdentity(auth));
+
+  // Same CSRF rule as /admin/ops and /admin/quote, on every write: the ch_ops cookie is ambient
+  // browser state. Cron callers send no browser headers, so they pass and the key still applies.
+  const csrf = opsCsrf;
+  r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   r.get('/bookings', requireCap('bookings:read'), async (c) => {
     const status = c.req.query('status');

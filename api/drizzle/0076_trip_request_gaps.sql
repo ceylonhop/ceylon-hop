@@ -1,0 +1,11 @@
+-- A trip's self-arranged stretches (known-bugs 2026-07-30 / 2026-08-04). Hand-written: drizzle-kit
+-- generate needs a TTY. Indexes of the wires (stops[i] → stops[i+1]) the customer covers
+-- themselves — their own train, or the leg a partial pay link left out. Pricing already skips them;
+-- until now they were never stored, so every stop pair read back as a leg we drive.
+-- Additive, nullable, no backfill here: null means no gaps, which is today's reading of every
+-- existing row. A nullable ADD COLUMN takes no rewrite and no long lock on Postgres 11+.
+-- RELEASE ORDER IS HARD: this migration (when 1792368000000) must release AFTER
+-- 0075_schedule_change_reason_leg_driver_task (#1070, when 1792281600000). drizzle applies only
+-- migrations newer than the last one applied, so if this reached a database first, 0075 would be
+-- skipped there forever. Rollback: ALTER TABLE "trip_request" DROP COLUMN "gaps".
+ALTER TABLE "trip_request" ADD COLUMN IF NOT EXISTS "gaps" integer[];

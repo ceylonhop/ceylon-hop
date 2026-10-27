@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo, WebsitePricingSnapshot } from '../db/bookingRepo';
@@ -16,7 +16,7 @@ import type { RefundRepo } from '../db/refundRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
-  opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
+  opsIdentity, opsCsrf, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
@@ -156,16 +156,7 @@ export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
 
   // Same CSRF rule as /admin/rates and /admin/quote: the ch_ops cookie is ambient browser state.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
 
@@ -219,6 +210,8 @@ export function opsRoutes(deps: OpsDeps) {
 
   // Identity + guards for everything below.
   r.use('*', opsIdentity(auth));
+  // CSRF on every write below, not route by route (status and flags had none — review 2026-10-25).
+  r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   // Backfill seam: sessions live for 7 days, so login alone would leave the picker showing
   // email local parts for up to a week after this ships — for people who are signed in and

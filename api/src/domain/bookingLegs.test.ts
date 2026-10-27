@@ -45,6 +45,21 @@ describe('deriveTripLegs — private', () => {
     expect(legs).toHaveLength(2);
     expect(legs.every((l) => l.travelDate === null)).toBe(true);
   });
+
+  // known-bugs 2026-07-30 / 2026-08-04: the customer's own Ella → Galle train was a `leg`.
+  it('marks the wires listed in gaps as `gap`, keeping every other pair a leg', () => {
+    const legs = deriveTripLegs({
+      stops: ['Colombo', 'Ella', 'Galle', 'Colombo'],
+      dates: ['2026-08-22', '', '2026-08-27'],
+      gaps: [1],
+      serviceType: 'private',
+    });
+    expect(legs.map((l) => [l.seq, l.kind, l.fromPlace, l.toPlace, l.travelDate])).toEqual([
+      [1, 'leg', 'Colombo', 'Ella', '2026-08-22'],
+      [2, 'gap', 'Ella', 'Galle', null],
+      [3, 'leg', 'Galle', 'Colombo', '2026-08-27'],
+    ]);
+  });
 });
 
 describe('deriveTripLegs — chauffeur', () => {
