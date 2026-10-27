@@ -1103,9 +1103,16 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     expect((await res.json()).error).toBe('bad_origin');
   });
 
-  it('passes with an allow-listed Origin (the app\'s own serving origin)', async () => {
-    const res = await estimate({ origin: OWN_ORIGIN });
+  it('passes with the app\'s own origin when Sec-Fetch-Site is absent', async () => {
+    const res = await estimate({ origin: 'http://localhost' }); // app.request() serves http://localhost
     expect(res.status).toBe(200);
+  });
+
+  it('403 bad_origin on an allow-listed but different Origin when Sec-Fetch-Site is absent', async () => {
+    // ALLOWED_ORIGINS is the public API's list; the marketing site must not pass the ops guard.
+    const res = await estimate({ origin: OWN_ORIGIN });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
   });
 
   it('passes on Sec-Fetch-Site: same-origin even when Origin is not allow-listed', async () => {
@@ -1139,17 +1146,18 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     expect((await app.request('/admin/quote/list', { headers })).status).toBe(200);
   });
 
-  it('app-level wiring: createApp passes its allow-list into the mount', async () => {
-    // Default ALLOWED_ORIGINS includes http://localhost:4173. A cross-site Origin must 403
-    // regardless of auth; the allow-listed origin needs a real founder session to reach 200
-    // now that quote:manage is enforced (no more dev keyless bypass).
+  it('app-level wiring: the mounted guard accepts only the app\'s own Origin', async () => {
+    // A foreign Origin must 403 regardless of auth — including an allow-listed one (default
+    // ALLOWED_ORIGINS includes http://localhost:4173), since that list is the public API's. The
+    // app's own origin needs a real founder session to reach 200 (quote:manage is enforced).
     const app = createApp();
     const postWithOrigin = (origin?: string) => app.request('/admin/quote/estimate', {
       method: 'POST', body: estimateBody,
       headers: { 'content-type': 'application/json', cookie: founder, ...(origin ? { origin } : {}) },
     });
     expect((await postWithOrigin('https://evil.example')).status).toBe(403);
-    expect((await postWithOrigin(OWN_ORIGIN)).status).toBe(200);
+    expect((await postWithOrigin(OWN_ORIGIN)).status).toBe(403);
+    expect((await postWithOrigin('http://localhost')).status).toBe(200);
   });
 
   // ── Rate-lock: ops freeze-on-approval (spec 2026-07-11 §3) ──────────────────

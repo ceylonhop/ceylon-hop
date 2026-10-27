@@ -411,7 +411,10 @@ export function createApp(deps: AppDeps = {}) {
   app.use(
     '*',
     cors({
-      origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
+      // Never for /admin/*: the ops tool is served by this app, so its calls are same-origin.
+      // Granting the marketing origin there let script on ceylonhop.com read the ops API with
+      // the SameSite=Lax ch_ops cookie (same site as ops.ceylonhop.com) — review 2026-10-25.
+      origin: (origin, c) => (allowedOrigins.includes(origin) && !c.req.path.startsWith('/admin/') ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
       exposeHeaders: [REQUEST_ID_HEADER],
@@ -702,7 +705,6 @@ export function createApp(deps: AppDeps = {}) {
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
-  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/promo-codes', promoCodeRoutes({
     promoCodes,
     bookings,

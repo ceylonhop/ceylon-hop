@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
@@ -24,7 +23,7 @@ import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { depositFor } from '../quote/extrasDeposit';
 import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
@@ -769,24 +768,11 @@ export function internalQuoteRoutes(deps: {
 
   // Ops⇄quote merge T2: CSRF on state-changing routes. The founder's ch_ops cookie is ambient
   // browser state, so a cross-site page could otherwise fire authenticated mutations. Check
-  // Sec-Fetch-Site first (modern browsers always send it); fall back to the Origin allow-list
-  // (older browsers send Origin on POST/PATCH). Both absent = a non-browser caller (curl,
+  // Sec-Fetch-Site first (modern browsers always send it); fall back to Origin = this host
+  // (older browsers send Origin on POST/PATCH; see opsCsrf). Both absent = a non-browser caller (curl,
   // scripts) — let it through; the auth guard below still applies. GET reads are exempt:
   // they carry no writes, and /places autocomplete must stay fast.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      // Sec-Fetch-Site is a browser-set forbidden header a page cannot spoof. When present it
-      // is authoritative: same-origin/none pass regardless of Origin (so a same-origin /ops
-      // POST works even if its exact host isn't in ALLOWED_ORIGINS); anything cross-site is CSRF.
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    // No Sec-Fetch-Site (older browser or non-browser): fall back to the Origin allow-list.
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
 
   // D-A (2026-07-04): the quote tool opens to ALL THREE roles via quote:manage — reverts
   // the earlier founder-only gate. Cost/margin is stripped server-side per-response for

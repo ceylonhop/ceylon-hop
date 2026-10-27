@@ -1455,8 +1455,8 @@ function renderDatesStep(){
     const isStay=leg.type==='stay';
     const bad=flags.has(i);
     const routeTxt = isStay
-      ? `Stay in ${leg.from||'…'}${leg.nights?` · ${leg.nights} night${leg.nights>1?'s':''}`:''}`
-      : `${leg.from||'…'} <span class="dr-ar">→</span> ${leg.to||'…'}`;
+      ? `Stay in ${escAttr(leg.from)||'…'}${leg.nights?` · ${leg.nights} night${leg.nights>1?'s':''}`:''}`
+      : `${escAttr(leg.from)||'…'} <span class="dr-ar">→</span> ${escAttr(leg.to)||'…'}`;
     const row=document.createElement('div');
     row.className='date-row'+(isStay?' stay':'')+(bad?' dr-flagged':'');
     row.dataset.i=i;

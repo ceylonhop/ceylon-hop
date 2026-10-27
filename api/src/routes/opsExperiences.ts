@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
-import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { ExperienceInputSchema, type Experience } from '../experiences/experience';
 import { SlugTakenError, type ExperienceRepo } from '../db/experienceRepo';
 import type { ExperienceInterest, ExperienceInterestRepo } from '../db/experienceInterestRepo';
@@ -59,16 +58,7 @@ export function opsExperiencesRoutes(deps: {
 }) {
   const r = new Hono();
   // Same CSRF rule as /admin/rates (opsRates.ts): the ch_ops cookie is ambient browser state.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
   r.use('*', opsIdentity(deps.auth));
 
   r.get('/', requireCap('experiences:manage'), async (c) => {
