@@ -25,11 +25,12 @@ describe(TAG, () => {
     expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
   });
 
-  it('is journalled after every other entry (drizzle skips an older `when`)', () => {
+  it('is journalled after every earlier migration (drizzle skips an older `when`)', () => {
     const me = journal.entries.find((e) => e.tag === TAG);
     expect(me).toBeTruthy();
-    const others = journal.entries.filter((e) => e.tag !== TAG).map((e) => e.when);
-    expect(me!.when).toBeGreaterThan(Math.max(...others));
+    // Every EARLIER migration (lower idx), not every entry: a later migration is meant to sort after.
+    const earlier = journal.entries.filter((e) => e.idx < me!.idx).map((e) => e.when);
+    expect(me!.when).toBeGreaterThan(Math.max(...earlier));
     // 0075 (#1070) is stamped 1792281600000 and must release first; nothing at or below it.
     expect(me!.when).toBeGreaterThan(1792281600000);
   });
