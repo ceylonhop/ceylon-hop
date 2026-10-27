@@ -540,14 +540,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:1.15rem;color:var(--ink)}
   .stepper button:hover{border-color:var(--accent);color:var(--accent-deep)}
   .addon[hidden]{display:none}
-  .addon{display:flex;align-items:center;gap:.8rem;width:100%;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s;background:var(--white);color:inherit;font:inherit;text-align:left;appearance:none}
+  /* Top-aligned: the checkbox and price sit on the title's line, not floating mid-card when the
+     description wraps on a phone. The price never shrinks (it overflowed the border at 390px). */
+  .addon{display:flex;align-items:flex-start;gap:.8rem;width:100%;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s;background:var(--white);color:inherit;font:inherit;text-align:left;appearance:none}
   .addon.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
-  .addon .box{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
+  .addon .box{width:22px;height:22px;margin-top:1px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
   .addon.on .box{background:var(--accent);border-color:var(--accent)}
   .addon .box svg{width:13px;height:13px;opacity:0}.addon.on .box svg{opacity:1}
   .addon b{display:block;font-size:.95rem}.addon small{color:var(--ink-soft)}
   .addon .addon-note{display:block;margin-top:4px;color:var(--ink);font-weight:600}
-  .addon .pr{margin-left:auto;font-weight:600;white-space:nowrap}
+  .addon .pr{flex:none;margin-left:auto;font-weight:600;white-space:nowrap}
 
   /* ── Partner experiences (step 3 block + summary line). Owner-approved compact rows (Option B,
         2026-10-07). A "Request" tap is not a purchase: nothing here may look like an add-on with a
