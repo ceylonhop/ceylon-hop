@@ -27,9 +27,13 @@ const REVIEW_DELAY_MS = 24 * 3600 * 1000;
 // (start === end). A multi-stop trip starts at its first dated leg and ends at its last —
 // so the pre-trip reminder anchors to the start, but the review request waits until the
 // WHOLE trip is over, not day one (BI6). Time is only known for single transfers (noon else).
+// Dates and times are Sri Lanka wall-clock, a fixed UTC+05:30 with no DST — pinned here, not
+// read from the server's zone. Same approach as domain/reversalWindow.ts.
+const SLK_OFFSET = '+05:30';
+
 function tripWindow(b: Booking): { start: Date | null; end: Date | null } {
   const toDate = (date: string, time?: string): Date | null => {
-    const d = new Date(`${date}T${time ?? '12:00'}:00`);
+    const d = new Date(`${date}T${time ?? '12:00'}:00${SLK_OFFSET}`);
     return Number.isNaN(d.getTime()) ? null : d;
   };
   if (b.mode === 'trip') {
