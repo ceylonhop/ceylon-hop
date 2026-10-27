@@ -46,6 +46,23 @@ describe('ops sheet — set pickup date/time', () => {
     expect(body).toContain('still need pickup date/time');
   });
 
+  // After a save the operator must know whether the customer was told — including when the
+  // driver line also shows, which used to hide the email result entirely.
+  it('says plainly when the customer was NOT emailed, even alongside the driver line', () => {
+    const saved = new Function(`${lift('SCHED_SAVED')}; return SCHED_SAVED;`)() as
+      (res: { emailed?: boolean; driverNotified?: boolean }, asked: boolean) => [string, string | undefined];
+    const failed = saved({ emailed: false, driverNotified: true }, true);
+    expect(failed[0]).toMatch(/NOT emailed/);
+    expect(failed[0]).toMatch(/WhatsApp/);
+    expect(failed[0]).toMatch(/driver/);
+    expect(failed[1]).toBe('error');
+    const ok = saved({ emailed: true, driverNotified: true }, true);
+    expect(ok[0]).toMatch(/customer emailed/);
+    expect(ok[0]).toMatch(/driver/);
+    expect(ok[1]).toBeUndefined();
+    expect(saved({ emailed: false, driverNotified: false }, false)).toEqual(['Saved', undefined]); // not asked to email
+  });
+
   it('guards the save against a double press', () => {
     expect(lift('MUTATES')).toContain("'schedsave'");
   });

@@ -4277,6 +4277,15 @@ function boardSheetHtml(t,st){
 /* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
    send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
 const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+/* The toast after a save: [text, kind]. When the operator asked to email the customer, the
+   result is always stated — a failed or held-back email must never read as a plain "Saved",
+   and the driver line must not hide it. opsUi.schedule.test.ts lifts this. */
+const SCHED_SAVED=(res,asked)=>{
+  const driver=res.driverNotified?'send the new time to the driver':'';
+  if(asked&&!res.emailed)return ['Saved — customer NOT emailed: WhatsApp them'+(driver?'. Also '+driver:''),'error'];
+  const parts=[asked?'customer emailed':'',driver].filter(Boolean);
+  return [parts.length?'Saved — '+parts.join('; '):'Saved',undefined];
+};
 /* `expected` rides along with the save so a change someone else made meanwhile comes back as a
    conflict, not a silent overwrite. */
 function scheduleFormHtml(t,d){
@@ -4885,7 +4894,7 @@ document.addEventListener('click',async e=>{
         const res=await r.json().catch(()=>({}));
         if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
         state.schedOpen=null;
-        toast(res.driverNotified?'Saved — send the new time to the driver':res.emailed?'Saved — customer emailed':'Saved');
+        toast(...SCHED_SAVED(res,payload.notifyCustomer));
         await refreshDetail(id);await refreshRow(id);
       }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
       break;}

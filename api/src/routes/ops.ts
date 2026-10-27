@@ -25,7 +25,7 @@ import type { RideStatus } from '../domain/rideStatus';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import { boardRowsForOps } from '../services/opsBoardView';
 import type { RideListRepo } from '../db/rideListRepo';
-import type { EmailAdapter } from '../adapters/email';
+import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
 import { scheduleProblem } from '../domain/bookingSchedule';
@@ -505,12 +505,13 @@ export function opsRoutes(deps: OpsDeps) {
     const ride = await deps.rideOps.get(id);
     const driverNotified = !!ride && ride.fulfilmentStatus !== 'paid';
     // Best-effort, like the stage emails: a mail failure must not undo a change ops just made.
+    // `emailed` means DELIVERED — the sheet tells the operator to WhatsApp the customer when it
+    // isn't, and a guard can hold an email back without throwing.
     let emailed = false;
     if (notifyCustomer && deps.email) {
       try {
         const links = deps.baseUrl && deps.linkSecret ? { manage: manageUrl(result.booking, deps.baseUrl, deps.linkSecret) } : {};
-        await sendScheduleSet(result.booking, deps.email, links);
-        emailed = true;
+        emailed = wasDelivered(await sendScheduleSet(result.booking, deps.email, links));
       } catch (err) {
         console.error(`[ops] schedule_set email failed for ${result.booking.reference}:`, err);
       }
