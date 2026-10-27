@@ -33,7 +33,9 @@ const whatsapp = z
 
 // The lead traveller — we send confirmation here and contact them about the booking.
 export const CustomerInput = z.object({
-  firstName: z.string().min(1),
+  // Bounded: it is printed in the emails sent to whatever address the request gives (review
+  // 2026-10-25), and a real first name fits in 100 characters.
+  firstName: z.string().min(1).max(100),
   // Optional since 2026-08-08. A phone-only quote renders this box EMPTY, and requiring it meant
   // the operator previewing a pay link had to fill something to continue — so Chrome's autofill
   // filled it, and four live bookings were recorded under the owner's surname. The ops quote form

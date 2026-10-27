@@ -234,6 +234,18 @@ describe('POST /bookings/single', () => {
     expect((await r1.json()).id).toBe((await r2.json()).id);
   });
 
+  // Security review 2026-10-25: the first name is printed in the emails this API sends to the
+  // address the request gives (confirmation, payment recovery), so an unbounded one let anyone send
+  // a paragraph of their own text from our domain. A real first name fits in 100 characters.
+  it('refuses a first name over 100 characters', async () => {
+    const app = createApp();
+    const long = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(101) } });
+    expect(long.status).toBe(400);
+    expect((await long.json()).error).toBe('invalid_request');
+    const ok = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(100) } });
+    expect(ok.status).toBe(201);
+  });
+
   // Security review 2026-10-25: the server's own keys are namespaced with ':' (book:quote:<id>,
   // pay:quote:…, checkout:…), and a public request could pre-claim one, e.g. to attach a cheap
   // booking to a quote. The website's key is 'ch-<base36>', so a client key never needs ':'.
