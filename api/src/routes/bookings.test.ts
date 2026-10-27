@@ -235,6 +235,55 @@ describe('POST /bookings/single', () => {
   });
 });
 
+// Security review 2026-10-25: an Idempotency-Key replayed whatever booking held it, with a fresh
+// checkout token, to whoever sent it. The website's key is a 32-bit hash of the payload, so two
+// customers can collide by chance, and a guessed key would fetch a stranger's booking. A key now
+// replays only to the customer who made the booking; anyone else books afresh, without the key.
+describe("an Idempotency-Key never returns another customer's booking", () => {
+  const send = (app: ReturnType<typeof createApp>, path: string, body: unknown, key: string) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
+  const other = { ...valid.customer, firstName: 'Kai', email: 'kai@example.com' };
+
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  const cases: Array<[string, string, () => Record<string, unknown>]> = [
+    ['single', '/bookings/single', () => ({ ...valid })],
+    ['trip', '/bookings/trip', () => ({
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0], pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+    })],
+    ['shared', '/bookings/shared', () => ({
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 1, customer: valid.customer,
+    })],
+  ];
+
+  it.each(cases)('%s: a different customer with the same key gets their own new booking', async (_mode, path, body) => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const first = await send(app, path, body(), 'ch-collide');
+    expect(first.status).toBe(201);
+    const mine = await first.json();
+
+    const theirs = await send(app, path, { ...body(), customer: other }, 'ch-collide');
+    expect(theirs.status).toBe(201);
+    const got = await theirs.json();
+    expect(got.id).not.toBe(mine.id);
+    expect(JSON.stringify(got)).not.toContain('maya@example.com');
+    expect((await bookings.get(got.id))?.input.customer.email).toBe('kai@example.com');
+
+    // The key still belongs to the first customer: their retry replays their own booking.
+    const retry = await send(app, path, body(), 'ch-collide');
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).id).toBe(mine.id);
+  });
+});
+
 // The details step asks "Anything we should know?" (hotel name, dietary needs, surf gear). Until
 // 2026-09-27 nothing read that box, so what a customer wrote there never reached ops. The note is
 // the customer's own free text, so it is bounded and cleaned at the door, then kept as plain text.
