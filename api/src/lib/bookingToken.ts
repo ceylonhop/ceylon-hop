@@ -8,6 +8,14 @@ function mac(body: string, secret: string): string {
   return createHmac('sha256', secret).update(body).digest('hex');
 }
 
+// Compare as BYTES: a same-length string with a multibyte character would otherwise reach
+// timingSafeEqual with unequal buffers and throw (a 500 per forged token — review 2026-10-25).
+function sameSig(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 function signedBody(payload: unknown, secret: string): string {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${mac(body, secret)}`;
@@ -20,8 +28,7 @@ function verifiedPayload(token: string | undefined, secret: string): unknown | n
   const [body, sig] = parts;
   if (!body || !sig) return null;
   const expected = mac(body, secret);
-  if (sig.length !== expected.length) return null;
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  if (!sameSig(sig, expected)) return null;
   try {
     return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
   } catch {
@@ -154,8 +161,7 @@ function verifyPacked(
   const version = buf.length === 20 ? 2 : buf.length === 22 ? 3 : 0;
   if (!version || buf.readUInt8(0) !== version || buf.readUInt8(1) !== PURPOSE_QUOTE_PAY) return null;
   const expected = b64url(macBytes(body, secret));
-  if (sig.length !== expected.length) return null;
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  if (!sameSig(sig, expected)) return null;
   const hex = buf.subarray(2, 18).toString('hex');
   const quoteId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   const revision = buf.readUInt16BE(18);
@@ -220,7 +226,7 @@ export function verifyQuoteViewToken(
     }
     if (buf && buf.length === 18 && buf.readUInt8(0) === 1 && buf.readUInt8(1) === PURPOSE_QUOTE_VIEW) {
       const expected = b64url(macBytes(body, secret));
-      if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+      if (sameSig(sig, expected)) {
         const hex = buf.subarray(2, 18).toString('hex');
         return {
           quoteId: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
