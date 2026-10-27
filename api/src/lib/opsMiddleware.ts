@@ -71,6 +71,28 @@ export function opsIdentity(cfg: OpsAuthConfig): MiddlewareHandler {
   };
 }
 
+// CSRF guard for the cookie-authenticated ops writes. The ch_ops cookie is ambient browser state.
+// Sec-Fetch-Site is browser-set and cannot be spoofed by a page, so when present it decides:
+// only same-origin / none pass. Browsers too old to send it still send Origin on a POST, and
+// that must be this host itself (host only: behind Render the container sees http:// even for an
+// https request — customerPages.ts). ALLOWED_ORIGINS is the public API's list, and its marketing
+// origins share a site with the ops host, so they are refused here (review 2026-10-25).
+// Neither header = a non-browser caller (cron, curl): it passes and auth still applies.
+export const opsCsrf: MiddlewareHandler = async (c, next) => {
+  const site = c.req.header('sec-fetch-site');
+  if (site) {
+    if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
+    return next();
+  }
+  const origin = c.req.header('origin');
+  if (origin) {
+    let host = '';
+    try { host = new URL(origin).host; } catch { /* "null" or junk: not this host */ }
+    if (host !== new URL(c.req.url).host) return c.json({ error: 'bad_origin' }, 403);
+  }
+  return next();
+};
+
 export function requireCap(action: OpsAction): MiddlewareHandler {
   return async (c, next) => {
     const id = c.get('identity');
