@@ -1663,3 +1663,39 @@ describe('POST /quotes/pay/start — repeated cancellations on one link', () => 
     expect(await bookings.list()).toHaveLength(4); // earlier link's + two cancelled + the live one
   });
 });
+
+// Requirements 2026-10-26 R13: once the customer has started paying, the booking exists, and ops
+// may re-date it before payment (the customer typed the wrong day). The page must then describe
+// the BOOKING's day — the quote's is what was wrong. Before /start there is nothing to re-date.
+describe('GET /quotes/pay/view — the date follows a re-dated booking', () => {
+  it('shows the booking\'s new pickup date once ops has changed it, not the quote\'s', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes); // one leg, quoted for 2026-09-01
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await (await view(app, t)).json()).copy.subtitle).toBe('Tuesday 1 September 2026');
+
+    const { bookingId } = await (await start(app, t)).json();
+    const r = await bookings.setSchedule(bookingId, {
+      date: '2026-11-04', time: '09:30', expected: { date: '2026-09-01', time: null },
+      actor: { type: 'staff', id: 'f@x.com' }, reason: 'customer_entered_wrong',
+    });
+    expect(r.ok).toBe(true);
+
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payable');
+    expect(body.copy.subtitle).toBe('Wednesday 4 November 2026');
+    expect(body.copy.title).toBe('Colombo Airport (CMB) → Galle'); // nothing else moves
+  });
+
+  it('keeps the quote\'s date while the booking still has it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await start(app, t);
+    expect((await (await view(app, t)).json()).copy.subtitle).toBe('Tuesday 1 September 2026');
+  });
+});

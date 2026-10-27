@@ -302,6 +302,9 @@ export const tripRequests = pgTable('trip_request', {
   // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0061_route_variant).
   // One entry per consecutive stop pair. Null means no leg chose the toll-free road.
   routeVariants: text('route_variants').array(),
+  // Self-arranged stretches (0076_trip_request_gaps): indexes of the wires stops[i] → stops[i+1]
+  // the customer covers themselves. Null means none — every pair is a leg we drive.
+  gaps: integer('gaps').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
@@ -622,9 +625,18 @@ export const bookingScheduleEvents = pgTable(
     actorType: text('actor_type').notNull(),
     actorId: text('actor_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Ops date/time changes (requirements 2026-10-26, migration 0075). Null on rows written before
+    // it, and on customer fills. legId names the leg a multi-stop change moved; null = the booking.
+    reason: text('reason'),
+    note: text('note'),
+    legId: uuid('leg_id').references(() => bookingLegs.id),
   },
   (t) => [
     check('booking_schedule_events_actor_type_valid', sql`${t.actorType} in ('staff', 'customer')`),
+    check(
+      'booking_schedule_events_reason_valid',
+      sql`${t.reason} is null or ${t.reason} in ('customer_changed_plans', 'customer_entered_wrong', 'flight_changed', 'our_mistake', 'other')`,
+    ),
     index('booking_schedule_events_booking_created_idx').on(t.bookingId, t.createdAt),
   ],
 );
@@ -701,6 +713,9 @@ export const rideOps = pgTable('ride_ops', {
   sentAt: timestamp('sent_at', { withTimezone: true }),
   acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
   vehicleConfirmedAt: timestamp('vehicle_confirmed_at', { withTimezone: true }),
+  // "Driver told?" (requirements 2026-10-26 R8, migration 0075): set when a date moves on a job a
+  // driver already has, cleared when ops ticks it. Null = nothing to tell.
+  driverUpdatePendingSince: timestamp('driver_update_pending_since', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
