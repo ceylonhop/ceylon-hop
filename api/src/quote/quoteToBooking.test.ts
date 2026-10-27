@@ -150,6 +150,20 @@ describe('a quote whose legs do not connect', () => {
     expect(m.input.nights).toHaveLength(m.input.stops.length - 1);
   });
 
+  // known-bugs 2026-07-30: the stops kept the gap, but nothing said which pair it was, so every
+  // pair rendered as a leg we drive. The mapping now names the wires the customer covers.
+  it('names the gap wires, so nothing downstream reads them as legs we drive', () => {
+    const m = quoteToBooking(privateQuote([
+      { from: 'Colombo Airport (CMB)', to: 'Ella', distanceKm: 213 },
+      { from: 'Galle', to: 'Colombo City', distanceKm: 132 },
+      { from: 'Kandy', to: 'Batticaloa', distanceKm: 186 },
+    ]), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    // Ella → Galle (wire 1) and Colombo City → Kandy (wire 3) are the customer's own.
+    expect(m.input.gaps).toEqual([1, 3]);
+  });
+
   it('leaves a fully connected itinerary untouched', () => {
     const m = quoteToBooking(privateQuote([
       { from: 'A', to: 'B', distanceKm: 10 },
@@ -158,6 +172,7 @@ describe('a quote whose legs do not connect', () => {
     expect(m.mode).toBe('trip');
     if (m.mode !== 'trip') return;
     expect(m.input.stops).toEqual(['A', 'B', 'C']);
+    expect(m.input).not.toHaveProperty('gaps');
   });
 
   it('a gap inside a multi-stop ride is impossible — its own stops always chain', () => {
@@ -249,6 +264,13 @@ describe('partial mapping (legIndexes, spec 2026-08-04)', () => {
     expect(m.mode).toBe('trip');
     if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
     expect(m.distanceKm).toBe(320);
+  });
+
+  // known-bugs 2026-08-04: the dropped middle leg is the customer's own, not one we drive.
+  it('marks the dropped middle leg as a gap', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [0, 2] });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.gaps).toEqual([1]);
   });
 
   it('is order- and duplicate-insensitive', () => {

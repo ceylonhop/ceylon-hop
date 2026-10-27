@@ -25,10 +25,10 @@ import type { RideStatus } from '../domain/rideStatus';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import { boardRowsForOps } from '../services/opsBoardView';
 import type { RideListRepo } from '../db/rideListRepo';
-import type { EmailAdapter } from '../adapters/email';
+import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
-import { scheduleProblem } from '../domain/bookingSchedule';
+import { scheduleProblem, SCHEDULE_REASONS } from '../domain/bookingSchedule';
 import { isBalanceOpen } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
@@ -473,19 +473,26 @@ export function opsRoutes(deps: OpsDeps) {
     const id = c.req.param('id');
     if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
     const Value = z.string().nullable();
+    const raw = await c.req.json().catch(() => null);
     const body = z.object({
       date: z.string(),
       time: z.string().nullable(),
       expected: z.object({ date: Value, time: Value }),
       notifyCustomer: z.boolean(),
-    }).safeParse(await c.req.json().catch(() => null));
+      // Free text from ops, shown back in the activity feed: trimmed, bounded, blank = none.
+      note: z.string().trim().max(500).nullish().transform((s) => s || null),
+    }).safeParse(raw);
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
-    const { date, time, expected, notifyCustomer } = body.data;
+    // Every ops change says why (requirements R1/R6) — named apart from a malformed body so the
+    // sheet can say what's missing.
+    const reason = z.enum(SCHEDULE_REASONS).safeParse((raw as { reason?: unknown }).reason);
+    if (!reason.success) return c.json({ error: 'reason_required' }, 400);
+    const { date, time, expected, notifyCustomer, note } = body.data;
     const problem = scheduleProblem(date, time, new Date(), { allowShortNotice: true });
     if (problem) return c.json({ error: problem }, 400);
 
     const result = await deps.bookings.setSchedule(id, {
-      date, time, expected, actor: { type: 'staff', id: c.get('identity').email },
+      date, time, expected, actor: { type: 'staff', id: c.get('identity').email }, reason: reason.data, note,
     });
     if (!result.ok) {
       if (result.reason === 'not_found') return c.json({ error: 'not_found' }, 404);
@@ -498,12 +505,13 @@ export function opsRoutes(deps: OpsDeps) {
     const ride = await deps.rideOps.get(id);
     const driverNotified = !!ride && ride.fulfilmentStatus !== 'paid';
     // Best-effort, like the stage emails: a mail failure must not undo a change ops just made.
+    // `emailed` means DELIVERED — the sheet tells the operator to WhatsApp the customer when it
+    // isn't, and a guard can hold an email back without throwing.
     let emailed = false;
     if (notifyCustomer && deps.email) {
       try {
         const links = deps.baseUrl && deps.linkSecret ? { manage: manageUrl(result.booking, deps.baseUrl, deps.linkSecret) } : {};
-        await sendScheduleSet(result.booking, deps.email, links);
-        emailed = true;
+        emailed = wasDelivered(await sendScheduleSet(result.booking, deps.email, links));
       } catch (err) {
         console.error(`[ops] schedule_set email failed for ${result.booking.reference}:`, err);
       }

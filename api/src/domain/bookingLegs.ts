@@ -8,7 +8,8 @@
 /**
  * `leg` — a journey between two overnight stops (single transfer, or a private trip's pair).
  * `day` — one chauffeur TRAVEL DAY, which may pass through several stops.
- * `gap`  — a connector chainStops() inserted between two chauffeur days (quoteToBooking.ts:46).
+ * `gap`  — a connector chainStops() inserted between two chauffeur days (quoteToBooking.ts:46),
+ *          or a private trip's self-arranged wire (trip_request.gaps).
  *          Recorded so the route stays complete; never a journey we drive as one.
  */
 export type BookingLegKind = 'leg' | 'day' | 'gap';
@@ -104,29 +105,28 @@ export function deriveSingleLegs(input: {
 export function deriveTripLegs(input: {
   stops: string[];
   dates?: string[] | null;
+  gaps?: number[] | null;
   serviceType: 'private' | 'chauffeur';
 }): DerivedLeg[] {
   const { stops, serviceType } = input;
   const dates = input.dates ?? [];
   if (stops.length < 2) return [];
   const rows =
-    serviceType === 'chauffeur' ? chauffeurDays(stops, dates) : privateLegs(stops, dates);
+    serviceType === 'chauffeur'
+      ? chauffeurDays(stops, dates)
+      : privateLegs(stops, dates, new Set(input.gaps ?? []));
   return rows.map((row, i) => ({ ...row, seq: i + 1 }));
 }
 
 type Unsequenced = Omit<DerivedLeg, 'seq'>;
 
 // For a private trip, a blank date means "flexible", not "gap" — the heuristic chauffeurDays()
-// uses (blank = chainStops()'s connector) is NOT available here. chainStops() also inserts a
-// connector for a hop the customer makes themselves (the Ella→Galle train case — see
-// docs/known-bugs.md, 2026-07-30), and that connector is indistinguishable from a driven leg at
-// this layer: it comes through as an ordinary consecutive pair with no marker of its own. So this
-// always emits `kind: 'leg'`, even for a connector. A later phase that wants to tell "we drive
-// this" apart from "the customer arranges this themselves" needs a signal this function does not
-// have — this is a note for whoever designs that phase, not a bug to fix here.
-function privateLegs(stops: string[], dates: string[]): Unsequenced[] {
+// uses (blank = chainStops()'s connector) is NOT available here. A hop the customer makes
+// themselves (the Ella→Galle train, or the leg a partial pay link left out — docs/known-bugs.md
+// 2026-07-30 / 2026-08-04) is named explicitly instead, in `gaps` (0076_trip_request_gaps).
+function privateLegs(stops: string[], dates: string[], gaps: Set<number>): Unsequenced[] {
   return stops.slice(0, -1).map((from, i) => ({
-    kind: 'leg' as const,
+    kind: gaps.has(i) ? ('gap' as const) : ('leg' as const),
     fromPlace: from,
     toPlace: stops[i + 1],
     viaStops: [],

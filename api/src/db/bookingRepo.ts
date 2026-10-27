@@ -3,6 +3,7 @@ import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import type { SharedSeatCount } from '../domain/scheduledSeats';
+import type { ScheduleReason } from '../domain/bookingSchedule';
 import { assertTransition, type BookingStatus } from '../domain/status';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
@@ -138,9 +139,17 @@ export interface StatusAudit {
   at?: Date;
 }
 
-// Pickup date/time set or changed after booking (spec 2026-10-17 §4). Single transfers only, and
-// only once the booking is paid: before that the customer can still change it on the booking page.
+// Pickup date/time set or changed after booking (spec 2026-10-17 §4). Single transfers only. The
+// customer's manage page may fill it only once the booking is paid.
 export const SCHEDULE_EDITABLE_STATUSES = ['paid', 'confirmed'] as const;
+// Ops may also fix it before payment — a customer who typed the wrong date still has to pay for
+// the right one (requirements 2026-10-26 R12). Never a draft: that is still the customer's cart.
+export const STAFF_SCHEDULE_EDITABLE_STATUSES = ['awaiting_details', 'payment_pending', 'paid', 'confirmed'] as const;
+
+export function scheduleEditable(status: string, actor: 'staff' | 'customer'): boolean {
+  const allowed: readonly string[] = actor === 'staff' ? STAFF_SCHEDULE_EDITABLE_STATUSES : SCHEDULE_EDITABLE_STATUSES;
+  return allowed.includes(status);
+}
 
 export interface ScheduleValue { date: string | null; time: string | null }
 
@@ -151,6 +160,9 @@ export interface ScheduleChange {
   // write is refused rather than silently winning.
   expected: ScheduleValue;
   actor: { type: 'staff' | 'customer'; id: string };
+  // Why, for an ops change (R6). Absent on a customer fill.
+  reason?: ScheduleReason;
+  note?: string | null;
 }
 
 export type SetScheduleResult =
@@ -167,6 +179,8 @@ export interface BookingScheduleEvent {
   toTime: string | null;
   actorType: 'staff' | 'customer';
   actorId: string;
+  reason: ScheduleReason | null;
+  note: string | null;
   createdAt: string; // ISO
 }
 
@@ -660,7 +674,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   async setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult> {
     const current = this.byId.get(id);
     if (!current) return { ok: false, reason: 'not_found' };
-    if (current.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(current.status)) {
+    if (current.mode !== 'single' || !scheduleEditable(current.status, change.actor.type)) {
       return { ok: false, reason: 'not_editable', booking: await this.present(current) };
     }
     const from: ScheduleValue = { date: current.input.date ?? null, time: current.input.time ?? null };
@@ -672,7 +686,8 @@ export class InMemoryBookingRepo implements BookingRepo {
     this.scheduleEvents.push({
       id: randomUUID(), bookingId: id,
       fromDate: from.date, fromTime: from.time, toDate: change.date, toTime: change.time,
-      actorType: change.actor.type, actorId: change.actor.id, createdAt: new Date().toISOString(),
+      actorType: change.actor.type, actorId: change.actor.id,
+      reason: change.reason ?? null, note: change.note ?? null, createdAt: new Date().toISOString(),
     });
     return { ok: true, booking: await this.present(updated) };
   }
