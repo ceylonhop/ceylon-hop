@@ -159,6 +159,7 @@ async function insertLockedBooking(
       dates: booking.input.dates ?? null,
       days: booking.input.days ?? null,
       driverNights: booking.input.driverNights ?? null,
+      gaps: booking.input.gaps?.length ? booking.input.gaps : null,
     });
   } else if (booking.mode === 'single') {
     await tx.insert(transferRequests).values({

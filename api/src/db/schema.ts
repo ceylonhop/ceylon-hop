@@ -302,6 +302,9 @@ export const tripRequests = pgTable('trip_request', {
   // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0061_route_variant).
   // One entry per consecutive stop pair. Null means no leg chose the toll-free road.
   routeVariants: text('route_variants').array(),
+  // Self-arranged stretches (0076_trip_request_gaps): indexes of the wires stops[i] → stops[i+1]
+  // the customer covers themselves. Null means none — every pair is a leg we drive.
+  gaps: integer('gaps').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
