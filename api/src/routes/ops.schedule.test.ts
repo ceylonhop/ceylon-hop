@@ -64,6 +64,27 @@ describe('POST /admin/ops/bookings/:id/schedule', () => {
     expect(email.sent).toHaveLength(0);
   });
 
+  // The operator reads `emailed` as "the customer knows", so it must mean delivered. With
+  // notifications switched off the guard holds the email back without throwing.
+  it('reports emailed:false when the email is held back, and keeps the change', async () => {
+    app = createApp({ bookings, rideOps, email, auth, adminApiKey: 'adminkey', emailPolicy: { enabled: false } });
+    const date = inDays(10);
+    const res = await post({ date, time: '09:00', expected: blank, notifyCustomer: true });
+    expect(res.status).toBe(200);
+    expect((await res.json()).emailed).toBe(false);
+    expect(email.sent).toHaveLength(0);
+    expect((await bookings.get(bid))!.input).toMatchObject({ date, time: '09:00' });
+  });
+
+  it('reports emailed:false when the send throws, and keeps the change', async () => {
+    app = createApp({ bookings, rideOps, email: { send: async () => { throw new Error('provider down'); } }, auth, adminApiKey: 'adminkey' });
+    const date = inDays(10);
+    const res = await post({ date, time: null, expected: blank, notifyCustomer: true });
+    expect(res.status).toBe(200);
+    expect((await res.json()).emailed).toBe(false);
+    expect((await bookings.get(bid))!.input).toMatchObject({ date });
+  });
+
   it('409s a stale edit and returns the current value', async () => {
     await post({ date: inDays(10), time: '09:00', expected: blank, notifyCustomer: false });
     const res = await post({ date: inDays(12), time: '10:00', expected: blank, notifyCustomer: false });

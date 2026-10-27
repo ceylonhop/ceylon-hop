@@ -1178,7 +1178,7 @@ export async function sendScheduleSet(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
-): Promise<void> {
+): Promise<SendOutcome | void> {
   if (booking.mode !== 'single' || !booking.input.date) return;
   const first = esc(booking.input.customer.firstName);
   const lands = isAirportPlace(booking.input.from);
@@ -1199,7 +1199,7 @@ export async function sendScheduleSet(
     'Something not right? Message us on WhatsApp with your booking reference.',
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
-  await email.send({
+  return email.send({
     to: booking.input.customer.email,
     subject: `Your pickup is set — ${booking.reference}`,
     html,
