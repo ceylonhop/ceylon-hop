@@ -257,3 +257,103 @@ describe('security headers', () => {
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
   });
 });
+
+// Security review 2026-10-25: script running on the marketing site (an XSS on ceylonhop.com)
+// shares a site with ops.ceylonhop.com, so the SameSite=Lax ch_ops cookie rides its fetches.
+// The ops API must neither grant that page a CORS read nor accept its writes. The ops tool is
+// served by this app, so its own calls are same-origin and need neither.
+describe('the ops API refuses the marketing site', () => {
+  const site = 'https://ceylonhop.com';
+  const opsAuth = { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+
+  it('grants no CORS read on /admin, even to an allowed origin', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('/admin/ops/bookings', { headers: { origin: site, cookie: await founderCookie() } });
+    expect(r.headers.get('access-control-allow-origin')).toBeNull();
+    // the public API keeps its grant
+    const pub = await app.request('/health', { headers: { origin: site } });
+    expect(pub.headers.get('access-control-allow-origin')).toBe(site);
+  });
+
+  it('fails the CORS preflight for an /admin write', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('/admin/bookings/x/cancel', {
+      method: 'OPTIONS',
+      headers: { origin: site, 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' },
+    });
+    expect(r.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it.each([
+    '/admin/bookings/x/cancel',
+    '/admin/bookings/x/refunds',
+    '/admin/bookings/x/refunds/y/confirm',
+    '/admin/bookings/x/refunds/y/execute',
+    '/admin/bookings/x/refunds/y/cancel',
+    '/admin/bookings/x/confirm',
+    '/admin/bookings/x/no-show',
+    '/admin/bookings/x/mark-paid',
+    '/admin/ops/bookings/x/status',
+    '/admin/ops/bookings/x/flags',
+  ])('403s a cross-site POST to %s', async (path) => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request(path, {
+      method: 'POST',
+      headers: { origin: site, 'sec-fetch-site': 'same-site', 'content-type': 'text/plain', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: 'bad_origin' });
+  });
+
+  // Browsers too old to send Sec-Fetch-Site still send Origin on a POST. The fallback must accept
+  // only the API's own origin: the marketing origins are allow-listed for the public API.
+  it.each([
+    '/admin/bookings/x/cancel',
+    '/admin/ops/bookings/x/flags',
+    '/admin/quote/estimate',
+    '/admin/rates/preview',
+    '/admin/experiences',
+  ])('403s an allow-listed marketing Origin with no Sec-Fetch-Site on %s', async (path) => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request(path, {
+      method: 'POST',
+      headers: { origin: site, 'content-type': 'text/plain', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: 'bad_origin' });
+  });
+
+  it('passes an older browser on the ops host itself (Origin = this host, no Sec-Fetch-Site)', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('http://ops.example.test/admin/ops/bookings/x/flags', {
+      method: 'POST',
+      headers: { origin: 'http://ops.example.test', 'content-type': 'application/json', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).not.toBe(403);
+  });
+
+  it('compares host only, since behind Render the container sees http:// for an https request', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('http://ops.example.test/admin/ops/bookings/x/flags', {
+      method: 'POST',
+      headers: { origin: 'https://ops.example.test', 'content-type': 'application/json', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).not.toBe(403);
+  });
+
+  it('still lets the ops tool (same-origin) and the cron key (no browser headers) through', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth, adminApiKey: 'k' });
+    const own = await app.request('/admin/ops/bookings/x/status', {
+      method: 'POST',
+      headers: { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', cookie: await founderCookie() },
+      body: JSON.stringify({ status: 'confirmed' }),
+    });
+    expect(own.status).not.toBe(403);
+    const cron = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': 'k' } });
+    expect(cron.status).toBe(200);
+  });
+});

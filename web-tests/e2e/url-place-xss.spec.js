@@ -55,3 +55,24 @@ test('plan.html prints hostile ?stops= as text', async ({ page }) => {
   });
   await expectInert(page);
 });
+
+// Security review 2026-10-25: ?step=dates renders the WHEN step on load, and its per-leg route
+// line was built from leg.from/leg.to and written with innerHTML unescaped. The 2026-10-04 fix
+// covered the route step only, so these drive the dates step directly.
+test('plan.html ?step=dates prints a hostile transfer stop as text', async ({ page }) => {
+  await gotoBooking(page, {
+    path: '/plan.html',
+    query: `pax=2&step=dates&stops=${encodeURIComponent(`${PAYLOAD}|Kandy`)}`,
+  });
+  await expectInert(page);
+  await expect(page.locator('.date-row .dr-route').first()).toContainText('<img src=x');
+});
+
+test('plan.html ?step=dates prints a hostile stay stop as text', async ({ page }) => {
+  await gotoBooking(page, {
+    path: '/plan.html',
+    query: `pax=2&step=dates&stops=${encodeURIComponent(`Kandy|${PAYLOAD}|Ella`)}&nights=0,1`,
+  });
+  await expectInert(page);
+  await expect(page.locator('.date-row.stay .dr-route')).toContainText('Stay in <img src=x');
+});

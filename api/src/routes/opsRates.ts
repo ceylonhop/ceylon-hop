@@ -3,9 +3,8 @@
 // the same CSRF rule as the other admin writes. Saves are append-only revisions — see
 // db/rateRevisionRepo.ts — and take effect on the very next price (quote/liveCard.ts).
 import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { StaleRatesError, type RateRevision, type RateRevisionRepo } from '../db/rateRevisionRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { applyRates, previewSamples, rateInputsSchema, ratesFromCard } from '../quote/rateRevision';
@@ -41,16 +40,7 @@ export function opsRatesRoutes(deps: {
   const now = deps.now ?? (() => new Date());
 
   // Same CSRF rule as /admin/quote and /admin/promo-codes: the ch_ops cookie is ambient browser state.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
 
   r.use('*', opsIdentity(deps.auth));
 
