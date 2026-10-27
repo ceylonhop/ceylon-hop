@@ -233,6 +233,18 @@ describe('POST /bookings/single', () => {
     expect(r2.status).toBe(200);
     expect((await r1.json()).id).toBe((await r2.json()).id);
   });
+
+  // Security review 2026-10-25: the server's own keys are namespaced with ':' (book:quote:<id>,
+  // pay:quote:…, checkout:…), and a public request could pre-claim one, e.g. to attach a cheap
+  // booking to a quote. The website's key is 'ch-<base36>', so a client key never needs ':'.
+  it("refuses a client key in the server's ':' namespace", async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, valid, { 'Idempotency-Key': 'book:quote:00000000-0000-0000-0000-000000000000' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_idempotency_key');
+    expect(await bookings.findByIdempotencyKey('book:quote:00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
 });
 
 // The details step asks "Anything we should know?" (hotel name, dietary needs, surf gear). Until
