@@ -50,7 +50,7 @@ export const RATE_CARD = {
   },
   deposit: { pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 },
   vehicle: {
-    car:    { maxPax: 3,  maxBags: 3  },
+    car:    { maxPax: 3,  maxBags: 2  },
     van:    { maxPax: 6,  maxBags: 6  },
     van9:   { maxPax: 9,  maxBags: 8  },
     van14:  { maxPax: 14, maxBags: 12 },

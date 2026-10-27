@@ -10763,11 +10763,11 @@ function computeFlags() {
   }
 
   // red: car luggage limit
-  if (st.vehicleType === 'car' && st.luggageCount > 3) {
+  if (st.vehicleType === 'car' && st.luggageCount > 2) {
     flags.push({
       level: 'red',
       title: 'Car luggage limit',
-      detail: 'A car fits a maximum of 3 bags — ' + st.luggageCount + ' requested. Confirm with the customer or size up to a van.',
+      detail: 'A car fits a maximum of 2 bags — ' + st.luggageCount + ' requested. Confirm with the customer or size up to a van.',
     });
   }
 

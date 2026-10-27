@@ -32,6 +32,8 @@ test('dropping back below 4 recommends the cheaper car (with savings) and re-pri
 
   await page.evaluate(() => window.switchToCar());
   await expect(page.locator('#sum-adlabel')).toHaveText('AC car (up to 3)');
-  await expect(page.locator('#cap-note')).toHaveText('');
+  // no warning or switch left; the default 2 bags is a car's max, so only that green note may show
+  await expect(page.locator('#cap-note')).not.toHaveClass(/warn/);
+  await expect(page.locator('#cap-note .cap-switch')).toHaveCount(0);
   await expect(page.locator('#n4')).toBeEnabled();
 });
