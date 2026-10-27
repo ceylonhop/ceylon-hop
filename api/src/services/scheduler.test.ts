@@ -7,7 +7,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { SendBudget } from './sendBudget';
 
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
-const NOW = new Date('2026-07-01T08:00:00'); // local — matches how travelAt builds dates
+const NOW = new Date('2026-07-01T08:00:00+05:30'); // Sri Lanka time — matches how tripWindow reads dates
 
 async function paidSingle(bookings: InMemoryBookingRepo, date: string, time = '09:00') {
   const b = await bookings.create({
@@ -64,6 +64,16 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
     const r2 = await runScheduledNotifications(NOW, d); // tick again → idempotent
     expect(r2.reminders).toBe(0);
     expect(d.email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(1);
+  });
+
+  // A pickup time is Sri Lanka wall-clock time, so 14:00 on 3 Jul is 08:30Z whatever zone the
+  // server runs in. Parsed as server-local, a UTC host read it as 14:00Z and sent the
+  // reminder 5½ h late.
+  it('reads the pickup as Sri Lanka time, whatever the server clock zone', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-03', '14:00');
+    expect((await runScheduledNotifications(new Date('2026-07-01T08:29:00Z'), d)).reminders).toBe(0); // 48h01m out
+    expect((await runScheduledNotifications(new Date('2026-07-01T08:31:00Z'), d)).reminders).toBe(1); // 47h59m out
   });
 
   it('does not remind a booking departing far in the future', async () => {
