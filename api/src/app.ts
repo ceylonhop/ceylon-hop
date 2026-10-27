@@ -411,7 +411,10 @@ export function createApp(deps: AppDeps = {}) {
   app.use(
     '*',
     cors({
-      origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
+      // Never for /admin/*: the ops tool is served by this app, so its calls are same-origin.
+      // Granting the marketing origin there let script on ceylonhop.com read the ops API with
+      // the SameSite=Lax ch_ops cookie (same site as ops.ceylonhop.com) — review 2026-10-25.
+      origin: (origin, c) => (allowedOrigins.includes(origin) && !c.req.path.startsWith('/admin/') ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
       exposeHeaders: [REQUEST_ID_HEADER],
@@ -768,6 +771,7 @@ export function createApp(deps: AppDeps = {}) {
       payments,
       rideOps,
       ...(ga4 ? { ga4 } : {}),
+      allowedOrigins,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.

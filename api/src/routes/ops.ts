@@ -219,6 +219,8 @@ export function opsRoutes(deps: OpsDeps) {
 
   // Identity + guards for everything below.
   r.use('*', opsIdentity(auth));
+  // CSRF on every write below, not route by route (status and flags had none — review 2026-10-25).
+  r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   // Backfill seam: sessions live for 7 days, so login alone would leave the picker showing
   // email local parts for up to a week after this ships — for people who are signed in and
