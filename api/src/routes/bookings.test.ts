@@ -233,6 +233,30 @@ describe('POST /bookings/single', () => {
     expect(r2.status).toBe(200);
     expect((await r1.json()).id).toBe((await r2.json()).id);
   });
+
+  // Security review 2026-10-25: the first name is printed in the emails this API sends to the
+  // address the request gives (confirmation, payment recovery), so an unbounded one let anyone send
+  // a paragraph of their own text from our domain. A real first name fits in 100 characters.
+  it('refuses a first name over 100 characters', async () => {
+    const app = createApp();
+    const long = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(101) } });
+    expect(long.status).toBe(400);
+    expect((await long.json()).error).toBe('invalid_request');
+    const ok = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(100) } });
+    expect(ok.status).toBe(201);
+  });
+
+  // Security review 2026-10-25: the server's own keys are namespaced with ':' (book:quote:<id>,
+  // pay:quote:…, checkout:…), and a public request could pre-claim one, e.g. to attach a cheap
+  // booking to a quote. The website's key is 'ch-<base36>', so a client key never needs ':'.
+  it("refuses a client key in the server's ':' namespace", async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, valid, { 'Idempotency-Key': 'book:quote:00000000-0000-0000-0000-000000000000' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_idempotency_key');
+    expect(await bookings.findByIdempotencyKey('book:quote:00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
 });
 
 // Security review 2026-10-25: an Idempotency-Key replayed whatever booking held it, with a fresh
