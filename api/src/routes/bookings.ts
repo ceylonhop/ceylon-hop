@@ -352,6 +352,18 @@ export function bookingRoutes(deps: {
     };
   }
 
+  // An Idempotency-Key replays only to the customer who made the booking. The website's key is a
+  // 32-bit hash of the payload, so two customers can collide by chance, and a guessed key must not
+  // fetch a stranger's booking and checkout token (review 2026-10-25). A key held by someone else is
+  // dropped: this request books afresh without it, so a colliding customer is never stuck.
+  async function claimIdempotencyKey(key: string | undefined, email: string): Promise<{ replay?: Booking; key?: string }> {
+    if (!key) return {};
+    const existing = await bookings.findByIdempotencyKey(key);
+    if (!existing) return { key };
+    const owner = existing.input.customer.email.trim().toLowerCase();
+    return owner === email.trim().toLowerCase() ? { replay: existing } : {};
+  }
+
   function bearerToken(authorization: string | undefined): string | undefined {
     if (!authorization?.startsWith('Bearer ')) return undefined;
     const token = authorization.slice(7);
@@ -607,11 +619,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), parsed.data.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     const now = promoNow();
     const promo = await lookupPromo(body, now);
@@ -722,11 +732,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), parsed.data.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     const now = promoNow();
     const promo = await lookupPromo(body, now);
@@ -828,11 +836,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), req.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     // The catalogue decides what is sellable, not corridor adjacency. A corridor holds
     // several products at different prices (airport-cultural sells Negombo->Sigiriya at
