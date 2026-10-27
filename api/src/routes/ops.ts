@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo, WebsitePricingSnapshot } from '../db/bookingRepo';
@@ -16,7 +16,7 @@ import type { RefundRepo } from '../db/refundRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
-  opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
+  opsIdentity, opsCsrf, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
@@ -156,16 +156,7 @@ export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
 
   // Same CSRF rule as /admin/rates and /admin/quote: the ch_ops cookie is ambient browser state.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
 

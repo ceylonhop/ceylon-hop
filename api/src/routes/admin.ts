@@ -1,4 +1,4 @@
-import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { Hono, type Context } from 'hono';
 import { refreshExperiencePins } from '../experiences/pinRefresh';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { BusinessPlacesAdapter } from '../adapters/businessPlaces';
@@ -30,7 +30,7 @@ import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
@@ -96,8 +96,6 @@ export function adminRoutes(deps: {
   // Relevance window + epoch (R6). Both optional; unset means unbounded, as before.
   notifyMaxTripAgeDays?: number;
   notifyEpoch?: Date;
-  // CSRF fallback allow-list for browsers that send no Sec-Fetch-Site (see csrf below).
-  allowedOrigins?: string[];
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -106,16 +104,7 @@ export function adminRoutes(deps: {
 
   // Same CSRF rule as /admin/ops and /admin/quote, on every write: the ch_ops cookie is ambient
   // browser state. Cron callers send no browser headers, so they pass and the key still applies.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
   r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   r.get('/bookings', requireCap('bookings:read'), async (c) => {

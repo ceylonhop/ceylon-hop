@@ -306,6 +306,45 @@ describe('the ops API refuses the marketing site', () => {
     expect(await r.json()).toEqual({ error: 'bad_origin' });
   });
 
+  // Browsers too old to send Sec-Fetch-Site still send Origin on a POST. The fallback must accept
+  // only the API's own origin: the marketing origins are allow-listed for the public API.
+  it.each([
+    '/admin/bookings/x/cancel',
+    '/admin/ops/bookings/x/flags',
+    '/admin/quote/estimate',
+    '/admin/rates/preview',
+    '/admin/experiences',
+  ])('403s an allow-listed marketing Origin with no Sec-Fetch-Site on %s', async (path) => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request(path, {
+      method: 'POST',
+      headers: { origin: site, 'content-type': 'text/plain', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: 'bad_origin' });
+  });
+
+  it('passes an older browser on the ops host itself (Origin = this host, no Sec-Fetch-Site)', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('http://ops.example.test/admin/ops/bookings/x/flags', {
+      method: 'POST',
+      headers: { origin: 'http://ops.example.test', 'content-type': 'application/json', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).not.toBe(403);
+  });
+
+  it('compares host only, since behind Render the container sees http:// for an https request', async () => {
+    const app = createApp({ allowedOrigins: [site], auth: opsAuth });
+    const r = await app.request('http://ops.example.test/admin/ops/bookings/x/flags', {
+      method: 'POST',
+      headers: { origin: 'https://ops.example.test', 'content-type': 'application/json', cookie: await founderCookie() },
+      body: '{}',
+    });
+    expect(r.status).not.toBe(403);
+  });
+
   it('still lets the ops tool (same-origin) and the cron key (no browser headers) through', async () => {
     const app = createApp({ allowedOrigins: [site], auth: opsAuth, adminApiKey: 'k' });
     const own = await app.request('/admin/ops/bookings/x/status', {

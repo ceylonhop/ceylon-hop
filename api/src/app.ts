@@ -705,7 +705,6 @@ export function createApp(deps: AppDeps = {}) {
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
-  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/promo-codes', promoCodeRoutes({
     promoCodes,
     bookings,
@@ -771,7 +770,6 @@ export function createApp(deps: AppDeps = {}) {
       payments,
       rideOps,
       ...(ga4 ? { ga4 } : {}),
-      allowedOrigins,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.
