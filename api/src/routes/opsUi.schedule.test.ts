@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createApp } from '../app';
-import { SCHEDULE_PROBLEMS } from '../domain/bookingSchedule';
+import { SCHEDULE_PROBLEMS, SCHEDULE_REASONS } from '../domain/bookingSchedule';
+import { STAFF_SCHEDULE_EDITABLE_STATUSES } from '../db/bookingRepo';
 
 let body = '';
 
@@ -30,9 +31,28 @@ describe('ops sheet — set pickup date/time', () => {
     expect(body).toMatch(/expected:\{date:/);
   });
 
+  // Requirements R1/R12: a required reason with an option per server code, an optional note,
+  // and the Change button on unpaid bookings too.
+  it('asks for a reason and a note, and sends both', () => {
+    const labels = new Function(`${lift('SCHED_REASONS')}; return SCHED_REASONS;`)() as Record<string, string>;
+    expect(Object.keys(labels).sort()).toEqual([...SCHEDULE_REASONS].sort());
+    expect(body).toContain('id="schedReason"');
+    expect(body).toContain('id="schedNote"');
+    expect(body).toContain("const reason=($('#schedReason')||{}).value||'';");
+    expect(body).toMatch(/notifyCustomer:[^;]*reason,note:\(\(\$\('#schedNote'\)/);
+  });
+
+  it('offers the change on the same statuses the server accepts for staff', () => {
+    expect(lift('SCHED_STATUSES')).toContain(JSON.stringify([...STAFF_SCHEDULE_EDITABLE_STATUSES]).replaceAll('"', "'"));
+  });
+
+  it('shows the reason and note in the activity feed', () => {
+    expect(body).toMatch(/SCHED_REASONS\[e\.reason\]/);
+  });
+
   it('has a message for every refusal the server can send', () => {
     const errs = new Function(`${lift('SCHED_ERR')}; return SCHED_ERR;`)() as Record<string, string>;
-    for (const code of [...SCHEDULE_PROBLEMS, 'conflict', 'not_editable']) {
+    for (const code of [...SCHEDULE_PROBLEMS, 'conflict', 'not_editable', 'reason_required']) {
       expect(errs[code], `no message for ${code}`).toBeTruthy();
     }
   });

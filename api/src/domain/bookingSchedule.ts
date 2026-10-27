@@ -7,6 +7,10 @@ import type { ScheduleValue } from '../db/bookingRepo';
 export const SCHEDULE_PROBLEMS = ['bad_date', 'bad_time', 'past', 'too_soon', 'too_far'] as const;
 export type ScheduleProblem = (typeof SCHEDULE_PROBLEMS)[number];
 
+// Why ops moved a pickup (requirements 2026-10-26 R1/R6). Must match migration 0075's CHECK.
+export const SCHEDULE_REASONS = ['customer_changed_plans', 'customer_entered_wrong', 'flight_changed', 'our_mistake', 'other'] as const;
+export type ScheduleReason = (typeof SCHEDULE_REASONS)[number];
+
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 

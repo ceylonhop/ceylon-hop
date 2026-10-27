@@ -16,6 +16,7 @@ import {
 import { addOnsFor } from '../quote/quoteAlternative';
 import type { PayLinkSelection } from '../quote/paySelection';
 import type { SharedSeatCount } from '../domain/scheduledSeats';
+import type { ScheduleReason } from '../domain/bookingSchedule';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -30,7 +31,7 @@ import {
   type WebsitePricingSnapshot,
   BookingNotFoundError,
   BookingTransitionContextRequiredError,
-  SCHEDULE_EDITABLE_STATUSES,
+  scheduleEditable,
   type ScheduleChange,
   type SetScheduleResult,
   type BookingScheduleEvent,
@@ -719,7 +720,7 @@ export class PostgresBookingRepo implements BookingRepo {
         .where(eq(bookings.id, id))
         .for('update');
       if (!bk) return 'not_found' as const;
-      if (bk.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(bk.status)) {
+      if (bk.mode !== 'single' || !scheduleEditable(bk.status, change.actor.type)) {
         return 'not_editable' as const;
       }
       // `is not distinct from` so an expected NULL matches a NULL column. The ::text casts give
@@ -744,6 +745,7 @@ export class PostgresBookingRepo implements BookingRepo {
         fromDate: change.expected.date, fromTime: change.expected.time,
         toDate: change.date, toTime: change.time,
         actorType: change.actor.type, actorId: change.actor.id,
+        reason: change.reason ?? null, note: change.note ?? null,
       });
       return 'ok' as const;
     });
@@ -763,6 +765,7 @@ export class PostgresBookingRepo implements BookingRepo {
       id: r.id, bookingId: r.bookingId,
       fromDate: r.fromDate, fromTime: r.fromTime, toDate: r.toDate, toTime: r.toTime,
       actorType: r.actorType as 'staff' | 'customer', actorId: r.actorId,
+      reason: r.reason as ScheduleReason | null, note: r.note,
       createdAt: r.createdAt.toISOString(),
     }));
   }
