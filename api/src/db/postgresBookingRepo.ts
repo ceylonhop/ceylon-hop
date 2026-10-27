@@ -277,6 +277,8 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         // Undefined, not null, when the row never recorded any — so an old booking's shape is
         // byte-identical (0061_route_variant is additive/nullable, no backfill).
         ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
+        // Same rule for the self-arranged stretches (0076_trip_request_gaps).
+        ...(tr.gaps?.length ? { gaps: tr.gaps } : {}),
         customer,
       },
     };
@@ -503,6 +505,7 @@ export class PostgresBookingRepo implements BookingRepo {
           days: t.days ?? null,
           driverNights: t.driverNights ?? null,
           routeVariants: t.routeVariants ?? null,
+          gaps: t.gaps?.length ? t.gaps : null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;

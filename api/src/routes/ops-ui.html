@@ -519,6 +519,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .mst.scratched{color:var(--idle);background:var(--idle-bg)}
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+  .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -3806,15 +3807,20 @@ function buildActivity(t,d){
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
-  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. The leg rows
-     below render every consecutive stop pair as driven — this line is what contradicts a gap. */
+  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. */
   const cov=d?.coverage
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[];
+    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
     let rows='';
     for(let i=0;i<stops.length-1;i++){
+      /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
+         pay link left out. Never brief a driver for it. */
+      if(gaps.includes(i)){
+        rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
+        continue;
+      }
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */

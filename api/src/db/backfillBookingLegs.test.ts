@@ -50,6 +50,7 @@ describe('toBackfillRow', () => {
         days: null,
         driverNights: null,
         routeVariants: null,
+        gaps: null,
       },
     );
     expect(row).toEqual({
@@ -97,6 +98,28 @@ describe('planBackfill', () => {
     expect(skipped).toEqual([]);
     expect(legs.filter((l) => l.bookingId === 'b1')).toHaveLength(1);
     expect(legs.filter((l) => l.bookingId === 'b2')).toHaveLength(2);
+  });
+
+  // The backfill and legRowsForBooking must agree: re-deriving a gapped trip must not turn the
+  // customer's own stretch back into a leg we drive.
+  it("keeps a private trip's recorded gap a `gap`", () => {
+    const { legs } = planBackfill([
+      {
+        bookingId: 'b9',
+        mode: 'trip',
+        trip: { stops: ['A', 'B', 'C', 'D'], dates: null, serviceType: 'private', gaps: [1] },
+      },
+    ]);
+    expect(legs.map((l) => l.kind)).toEqual(['leg', 'gap', 'leg']);
+  });
+
+  it('reads the gaps off the trip_request row', () => {
+    const row = toBackfillRow({ id: 'b10', mode: 'trip' }, undefined, {
+      id: 'tr10', bookingId: 'b10', serviceType: 'private', pax: 2, vehicleType: 'car',
+      stops: ['A', 'B', 'C'], nights: [0, 0], dates: null, days: null, driverNights: null,
+      routeVariants: null, gaps: [0],
+    });
+    expect(row.trip?.gaps).toEqual([0]);
   });
 
   // A historical row must never be able to stop the backfill — and must never be silently lost.

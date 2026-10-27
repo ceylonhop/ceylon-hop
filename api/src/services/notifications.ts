@@ -101,7 +101,8 @@ function travellers(adults: number, children: number): string {
   return s;
 }
 
-interface Stop { color: string; label: string; place: string; sub?: string }
+// `gapAfter`: the stretch to the next stop is the customer's own (trip_request.gaps), drawn dashed.
+interface Stop { color: string; label: string; place: string; sub?: string; gapAfter?: boolean }
 
 // True when a trip's last stop is the same place it started (a round trip). The website
 // has no round-trip flag — it just repeats the origin as the final stop.
@@ -119,14 +120,19 @@ function journey(booking: Booking): Stop[] {
     const stops = booking.input.stops;
     const nights = booking.input.nights ?? [];
     const dates = booking.input.dates ?? [];
+    const gaps = booking.input.gaps ?? [];
     const roundTrip = isRoundTrip(booking);
     return stops.map((s, i) => {
       const last = i === stops.length - 1;
+      const gapAfter = !last && gaps.includes(i);
       const parts: string[] = [];
       const n = nights[i] ?? 0;
       if (n > 0) parts.push(`${n} night${n > 1 ? 's' : ''}`);
-      if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
+      // A self-arranged stretch (their own train) must not read as a transfer we drive.
+      if (gapAfter) parts.push(`Your own travel to ${shortPlace(stops[i + 1]!)}, not with us`);
+      else if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
       return {
+        ...(gapAfter ? { gapAfter } : {}),
         color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
         label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
         // Short labels (2026-08-06) — an email column is narrow, and a full address swamps it.
@@ -418,7 +424,7 @@ function routeRow(booking: Booking): string {
       .map(
         (s, i) =>
           `<tr>
-            <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
+            <td valign="top" style="width:20px;border-left:2px ${s.gapAfter ? 'dashed' : 'solid'} ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
             <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}</td>
           </tr>`,
       )
