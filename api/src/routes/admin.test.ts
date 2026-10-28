@@ -519,10 +519,54 @@ describe('ride board fill tips', () => {
     expect(sent).toEqual(['mia@x.com']);
   });
 
-  it('the notifications tick skips the sweep when no sender is wired', async () => {
+  it('POST /admin/jobs/board-fill-tips/test mails the real template, on a sample ride, to one named address', async () => {
+    const email = new FakeEmailAdapter();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const forbidden = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const noAddress = await app.request('/admin/jobs/board-fill-tips/test', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(noAddress.status).toBe(400);
+    const notAnAddress = await app.request('/admin/jobs/board-fill-tips/test?to=nope', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(notAnAddress.status).toBe(400);
+
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com' });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    expect(email.sent[0].subject).toMatch(/^How to fill your .+ van/);
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
+    // A sample, never a real ride: nothing touched the ledger, so the real sweep is unaffected.
+    expect(email.sent[0].html).toContain('ride-board-fill.jpg');
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test is 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(409);
+  });
+
+  it('the notifications tick skips the sweep when there is no share origin to build links on', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(await res.json()).toMatchObject({ fillTips: null });
+  });
+
+  it('with a share origin the real template is wired: the tick mails the traveller the guide', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: { due: 1, sent: 1 } });
+    expect(email.sent.map((m) => m.to)).toEqual(['mia@x.com']);
+    expect(email.sent[0].subject).toMatch(/^How to fill your Ella → Mirissa van/);
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
   });
 });
 

@@ -20,6 +20,7 @@ import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import { runRideBoardFillTips, type FillTipSender } from '../services/rideBoardFillTips';
+import type { RideList, RideMember } from '../domain/rideList';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -811,6 +812,31 @@ export function adminRoutes(deps: {
       dryRun: !!c.req.query('dryRun'),
     });
     return c.json(result, 200);
+  });
+
+  // One real "how to fill your van" email to one named inbox, on a sample ride (owner ask
+  // 2026-10-28: see it in a mail client on staging). Goes through the wired sender and the
+  // real provider; touches no ride and no ledger, so the sweep is unaffected. The dev preview
+  // only renders in the browser and the sweep would mail whoever is in the database.
+  r.post('/jobs/board-fill-tips/test', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const to = (c.req.query('to') ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return c.json({ error: 'to_required' }, 400);
+    const now = new Date();
+    const inDays = (d: number) => new Date(now.getTime() + d * 86_400_000);
+    const list: RideList = {
+      id: '00000000-0000-4000-8000-00000000f111', code: 'EL-0000', corridorId: 'ella-mirissa',
+      fromPlace: 'Ella', toPlace: 'Mirissa', date: inDays(10).toISOString().slice(0, 10), slot: 'morning',
+      lockedTime: null, minSeats: 4, capacity: 6, seatPrice: 2300, status: 'gathering', note: null,
+      cutoffAt: inDays(8), createdBy: 'test-starter', createdAt: now, updatedAt: now,
+    };
+    const member: RideMember = {
+      id: '00000000-0000-4000-8000-00000000f112', listId: list.id, position: 1, sub: 'test-starter',
+      firstName: 'Mia', country: 'DE', email: to, phone: null, photoUrl: null, preferredTime: null, seats: 1,
+      preapprovalRef: null, preapprovalOrderId: null, preapprovalExpiresAt: null, status: 'held', joinedAt: now,
+    };
+    await deps.rideFillTip({ to, firstName: member.firstName, list, member, committed: 1, isStarter: true });
+    return c.json({ sent: true, to, sample: list.code }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their

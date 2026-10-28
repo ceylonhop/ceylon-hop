@@ -8,6 +8,7 @@ import {
   sendRideAtRisk,
   sendRideCalledOffRefundDue,
   sendRideJoined,
+  sendRideFillTip,
 } from '../services/rideBoardEmails';
 import type { RideList, RideMember } from '../domain/rideList';
 import { sendRideSeatHeld, teamPaidEmail, teamRideLockedEmail } from '../services/opsNotifications';
@@ -112,6 +113,7 @@ const EMAILS: EmailDef[] = [
   { name: 'team-ride-locked-ops', label: 'Team (ops): ride locked in, paid', run: (_b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamRideLockedEmail({ list: SAMPLE_RIDE, time: '08:00', charged: [{ ...SAMPLE_MEMBER, status: 'charged' }, { ...SAMPLE_MEMBER, id: 'm2', sub: 'sub-2', firstName: 'Luca', country: 'IT', email: 'luca@example.com', seats: 2, status: 'charged' }], declined: [], unknown: [], seedSeats: 0, currency: 'USD' }, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
   { name: 'ride-seat-held-ops', label: 'Ride Board (ops): seat held', run: (_b, e) => sendRideSeatHeld({ to: 'ops@ceylonhop.com', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, member: SAMPLE_MEMBER, committed: 2, kind: 'joined' }, e, 'https://ops.ceylonhop.com') },
   { name: 'ride-joined', label: 'Ride Board: you\'re on the list', run: (_b, e) => sendRideJoined(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, seats: 2, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' }) },
+  { name: 'ride-fill-tip', label: 'Ride Board: how to fill your van', run: (_b, e) => sendRideFillTip(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null, minSeats: 4 }, committed: 1, isStarter: true, boardBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com' }) },
   { name: 'ride-confirmed', label: 'Ride Board: ride confirmed', run: (_b, e) => sendRideConfirmed(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE, lockedTime: '08:00' }) },
   { name: 'ride-cancelled', label: 'Ride Board: called off', run: (_b, e) => sendRideCancelled(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
   { name: 'ride-refund-due', label: 'Ride Board: called off, refund due', run: (_b, e) => sendRideCalledOffRefundDue(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
