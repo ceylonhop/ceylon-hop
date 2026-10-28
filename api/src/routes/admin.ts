@@ -20,7 +20,7 @@ import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
 import { runRideBoardFillTips, type FillTipSender } from '../services/rideBoardFillTips';
-import type { RideList, RideMember } from '../domain/rideList';
+import { committedSeats, countsForSeat, isSeedMember, type RideList, type RideMember } from '../domain/rideList';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -814,14 +814,29 @@ export function adminRoutes(deps: {
     return c.json(result, 200);
   });
 
-  // One real "how to fill your van" email to one named inbox, on a sample ride (owner ask
-  // 2026-10-28: see it in a mail client on staging). Goes through the wired sender and the
-  // real provider; touches no ride and no ledger, so the sweep is unaffected. The dev preview
-  // only renders in the browser and the sweep would mail whoever is in the database.
+  // One real "how to fill your van" email to one named inbox (owner ask 2026-10-28: see it in a
+  // mail client on staging). ?code= sends it for that REAL ride — its route, date, seat count,
+  // cutoff and links, addressed as to its starter — the way the sweep will; without a code, a
+  // sample ride. Either way it goes through the wired sender and the real provider and touches
+  // no ledger, so the sweep still owes every member their own email when it is due. The dev
+  // preview only renders in the browser and the sweep would mail whoever is in the database.
   r.post('/jobs/board-fill-tips/test', requireCap('admin:jobs'), async (c) => {
     if (!deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
     const to = (c.req.query('to') ?? '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return c.json({ error: 'to_required' }, 400);
+    const code = (c.req.query('code') ?? '').trim();
+    if (code) {
+      const found = deps.rideLists ? await deps.rideLists.getByCode(code) : null;
+      if (!found) return c.json({ error: 'ride_not_found' }, 404);
+      const live = found.members.filter((m) => countsForSeat(m) && !isSeedMember(m)).sort((a, b) => a.position - b.position);
+      const starter = live.find((m) => m.sub === found.list.createdBy) ?? live[0];
+      if (!starter) return c.json({ error: 'ride_has_no_members' }, 409);
+      await deps.rideFillTip({
+        to, firstName: starter.firstName, list: found.list, member: starter,
+        committed: committedSeats(found.members), isStarter: starter.sub === found.list.createdBy,
+      });
+      return c.json({ sent: true, to, ride: found.list.code }, 200);
+    }
     const now = new Date();
     const inDays = (d: number) => new Date(now.getTime() + d * 86_400_000);
     const list: RideList = {
