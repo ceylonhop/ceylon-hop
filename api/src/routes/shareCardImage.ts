@@ -85,6 +85,7 @@ export type CardModel = {
   from: string; to: string; when: string;
   taken: string[];           // first names, in join order
   capacity: number;
+  minSeats: number;          // seats the ride needs to run (0 once ops confirm it)
   lead: string; leadSub: string; hot: boolean;
   price: string; deadline: string; locked: boolean;
 };
@@ -104,6 +105,8 @@ export function cardModel(found: RideListWithMembers, parts: {
     from: found.list.fromPlace, to: found.list.toPlace, when: parts.when,
     taken: taken.slice(0, found.list.capacity),
     capacity: found.list.capacity,
+    // a ride ops confirmed early is running whatever its count — rideCopy's lead agrees
+    minSeats: found.list.status === 'confirmed' ? 0 : found.list.minSeats,
     lead: parts.lead, leadSub: parts.leadSub, hot: parts.hot,
     price: parts.price, deadline: parts.deadline, locked: parts.locked,
   };
@@ -112,16 +115,21 @@ export function cardModel(found: RideListWithMembers, parts: {
 export function cardSvg(m: CardModel): string {
   const STUB_X = 800;
   const open = Math.max(0, m.capacity - m.taken.length);
+  const need = Math.max(0, m.minSeats - m.taken.length);
   // Neither bundled face has '≈' (resvg would draw a .notdef box), so the hedge is a word.
   const price = m.price.replace(/^≈\s*/, '');
   const approx = price !== m.price;
+
+  // Six empty seats read as a big ask (owner call, 2026-10-27). Until the ride runs, draw only
+  // the seats it needs; after that, the joined seats plus the one on offer.
+  const drawn = need > 0 ? m.minSeats : Math.min(m.capacity, m.taken.length + 1);
 
   // Route: from on one line, "→ to" beneath. Fixed shape means no text measuring,
   // and it reads as a ticket rather than a sentence.
   const longest = Math.max(m.from.length, m.to.length + 2);
   const routeSize = longest > 17 ? 50 : longest > 13 ? 58 : 64;
 
-  const seats = Array.from({ length: m.capacity }, (_, i) => {
+  const seats = Array.from({ length: drawn }, (_, i) => {
     const cx = 89 + i * 56;
     if (i < m.taken.length) {
       return `<circle cx="${cx}" cy="478" r="23" fill="${SEAT_COLOURS[i % SEAT_COLOURS.length]}"/>` +
@@ -133,9 +141,12 @@ export function cardSvg(m: CardModel): string {
       `<text x="${cx}" y="487" font-family="${BODY}" font-size="26" font-weight="700" fill="${first ? C.tomato : '#a9a08a'}" text-anchor="middle">+</text>`;
   }).join('');
 
-  const caption = open === 0
-    ? `${m.capacity} of ${m.capacity} seats taken`
-    : `${m.taken.length} of ${m.capacity} seats taken`;
+  const caption = need > 0
+    ? `${m.taken.length} of ${m.minSeats} to roll`
+    : open === 0
+      ? `${m.capacity} of ${m.capacity} seats taken`
+      : `${m.taken.length} of ${m.capacity} seats taken`;
+  const captionTail = need > 0 ? `· ${need} more needed` : open > 0 ? `· ${open} still open` : '';
 
   const leadLines = wrap(m.lead, 15, 2);
   const subLines = wrap(m.leadSub, 34, 3);
@@ -181,7 +192,7 @@ export function cardSvg(m: CardModel): string {
 
 <!-- seats -->
 ${seats}
-<text x="66" y="540" font-family="${BODY}" font-size="20" font-weight="700" fill="${C.ink}">${xml(caption)}${open > 0 ? `<tspan dx="8" fill="${C.inkSoft}" font-weight="600">· ${open} still open</tspan>` : ''}</text>
+<text x="66" y="540" font-family="${BODY}" font-size="20" font-weight="700" fill="${C.ink}">${xml(caption)}${captionTail ? `<tspan dx="8" fill="${C.inkSoft}" font-weight="600">${captionTail}</tspan>` : ''}</text>
 
 <!-- deadline -->
 <circle cx="76" cy="580" r="10" fill="none" stroke="${m.locked ? C.tealDeep : C.tomato}" stroke-width="2.4"/>

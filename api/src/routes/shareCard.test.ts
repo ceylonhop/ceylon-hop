@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
 import { rideCopy } from './shareCard';
-import { cardSvg, storyModel, storySvg, type CardModel } from './shareCardImage';
+import { cardModel, cardSvg, storyModel, storySvg, type CardModel } from './shareCardImage';
 
 // GET /r/:code — the share-link destination a chat app fetches to build its preview.
 // Crawlers never run JavaScript, so everything they need is in this HTML: per-ride og
@@ -328,7 +328,7 @@ describe('GET /r/:code — campaign tags survive the hop to the board', () => {
 describe('cardSvg — the chat card artwork', () => {
   const model: CardModel = {
     from: 'Colombo Airport (CMB)', to: 'Dambulla', when: 'Sat 15 Aug · morning',
-    taken: ['Anna', 'Yuki'], capacity: 6,
+    taken: ['Anna', 'Yuki'], capacity: 6, minSeats: 4,
     lead: '2 more and it rolls', leadSub: '2 on board.', hot: false,
     price: '≈$19', deadline: 'Closes Fri 14 Aug, 9pm', locked: false,
   };
@@ -344,5 +344,44 @@ describe('cardSvg — the chat card artwork', () => {
     expect(svg).toContain('SHARED TAXI · THE RIDE BOARD');
     expect(svg).not.toContain('SHARED VAN');
     expect(cardSvg({ ...model, locked: true })).toContain('Charged · taxi locked in');
+  });
+
+  // Six empty seats read as a big ask. Below the threshold the card shows only the seats
+  // the ride needs to run (owner call, 2026-10-27).
+  const seatCount = (svg: string): number => (svg.match(/cy="478"/g) ?? []).length;
+
+  it('draws only the seats needed to run while the ride is gathering', () => {
+    const svg = cardSvg({ ...model, taken: ['Tom'], minSeats: 3 });
+    expect(seatCount(svg)).toBe(3);
+    expect(svg).toContain('1 of 3 to roll');
+    expect(svg).toContain('· 2 more needed');
+    expect(svg).not.toContain('of 6 seats taken');
+  });
+
+  it('once it runs, draws the joined seats plus one open ring, against the van', () => {
+    const svg = cardSvg({ ...model, taken: ['Anna', 'Yuki', 'Ben'], minSeats: 3 });
+    expect(seatCount(svg)).toBe(4);
+    expect(svg).toContain('3 of 6 seats taken');
+    expect(svg).toContain('· 3 still open');
+  });
+
+  it('a ride ops confirmed early is running — it never asks for more names', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs({ minSeats: 3, initialStatus: 'confirmed' }));
+    await rideLists.addMember(l.id, { sub: 's1', firstName: 'Anna', country: 'PL', email: 'a@secret.com', seats: 1 });
+    const found = (await rideLists.getByCode(l.code))!;
+
+    const svg = cardSvg(cardModel(found, rideCopy(found)));
+    expect(svg).toContain('5 seats left'); // the headline already treats it as locked
+    expect(svg).toContain('1 of 6 seats taken');
+    expect(svg).not.toContain('to roll');
+    expect(seatCount(svg)).toBe(2);
+  });
+
+  it('a full van draws every seat and no open ring', () => {
+    const svg = cardSvg({ ...model, taken: ['A', 'B', 'C', 'D', 'E', 'F'], minSeats: 3 });
+    expect(seatCount(svg)).toBe(6);
+    expect(svg).toContain('6 of 6 seats taken');
+    expect(svg).not.toContain('still open');
   });
 });
