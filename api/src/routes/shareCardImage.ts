@@ -238,6 +238,9 @@ export function storySvg(m: StoryModel): string {
   const W = 1080;
   const X = 96;
   const open = Math.max(0, m.capacity - m.taken);
+  const need = Math.max(0, m.minSeats - m.taken);
+  // the chat card's rule: only the seats it needs until it runs, then joined + the one on offer
+  const drawn = need > 0 ? m.minSeats : Math.min(m.capacity, m.taken + 1);
 
   const longest = Math.max(m.from.length, m.to.length + 2);
   const routeSize = longest > 17 ? 72 : longest > 13 ? 84 : 96;
@@ -246,14 +249,17 @@ export function storySvg(m: StoryModel): string {
   const toY = fromY + routeSize + 14;
   const seatsY = toY + 180;
 
-  const seats = Array.from({ length: m.capacity }, (_, i) => {
+  const seats = Array.from({ length: drawn }, (_, i) => {
     const cx = X + 34 + i * 92;
     if (i < m.taken) return `<circle cx="${cx}" cy="${seatsY}" r="34" fill="${SEAT_COLOURS[i % SEAT_COLOURS.length]}"/>`;
     const first = i === m.taken;
     return `<circle cx="${cx}" cy="${seatsY}" r="32" fill="none" stroke="${first ? C.tomato : '#cbc3ad'}" stroke-width="${first ? 4 : 3}"${first ? '' : ' stroke-dasharray="8 7"'}/>` +
       `<text x="${cx}" y="${seatsY + 13}" font-family="${BODY}" font-size="38" font-weight="700" fill="${first ? C.tomato : '#a9a08a'}" text-anchor="middle">+</text>`;
   }).join('');
-  const caption = `${Math.min(m.taken, m.capacity)} of ${m.capacity} seats taken`;
+  const caption = need > 0
+    ? `${m.taken} of ${m.minSeats} to roll`
+    : `${Math.min(m.taken, m.capacity)} of ${m.capacity} seats taken`;
+  const captionTail = need > 0 ? `· ${need} more needed` : open > 0 ? `· ${open} still open` : '';
 
   const leadLines = wrap(m.lead, 20, 2); // every lead rideCopy writes is ≤ 19 chars: one line
   const subLines = wrap(m.leadSub, 48, 3);
@@ -295,7 +301,7 @@ ${brandMark(X, 300, 64, C.saffron)}
 
 <!-- seats: dots, never initials -->
 ${seats}
-<text x="${X}" y="${seatsY + 80}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.ink}">${xml(caption)}${open > 0 ? `<tspan dx="10" fill="${C.inkSoft}" font-weight="600">· ${open} still open</tspan>` : ''}</text>
+<text x="${X}" y="${seatsY + 80}" font-family="${BODY}" font-size="30" font-weight="700" fill="${C.ink}">${xml(caption)}${captionTail ? `<tspan dx="10" fill="${C.inkSoft}" font-weight="600">${captionTail}</tspan>` : ''}</text>
 
 <!-- the ask -->
 ${leadLines.map((l, i) => `<text x="${X}" y="${leadY + i * 92}" font-family="${DISPLAY}" font-size="84" font-weight="800" fill="${m.hot ? C.tomato : C.tealDeep}">${xml(l)}</text>`).join('\n')}

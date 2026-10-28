@@ -296,6 +296,47 @@ describe('storySvg — counts only', () => {
       expect(svg).not.toContain(leak);
     }
   });
+
+  // Same rule as the chat card: below the threshold, only the seats the ride needs to run.
+  const storySeats = (svg: string): number => (svg.match(/<circle[^>]* r="3[24]"/g) ?? []).length;
+  const story = async (seats: number, over: Partial<CreateListArgs> = {}) => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs({ minSeats: 3, ...over }));
+    for (let i = 0; i < seats; i++) {
+      await rideLists.addMember(l.id, { sub: `s${i}`, firstName: `N${i}`, country: 'PL', email: `${i}@secret.com`, seats: 1 });
+    }
+    const found = (await rideLists.getByCode(l.code))!;
+    return storySvg(storyModel(found, rideCopy(found)));
+  };
+
+  it('draws only the seats needed to run while the ride is gathering', async () => {
+    const svg = await story(1);
+    expect(storySeats(svg)).toBe(3);
+    expect(svg).toContain('1 of 3 to roll');
+    expect(svg).toContain('· 2 more needed');
+    expect(svg).not.toContain('of 6 seats taken');
+  });
+
+  it('once it runs, draws the joined seats plus one open ring, against the van', async () => {
+    const svg = await story(3);
+    expect(storySeats(svg)).toBe(4);
+    expect(svg).toContain('3 of 6 seats taken');
+    expect(svg).toContain('· 3 still open');
+  });
+
+  it('a ride ops confirmed early never asks for more names', async () => {
+    const svg = await story(1, { initialStatus: 'confirmed' });
+    expect(storySeats(svg)).toBe(2);
+    expect(svg).toContain('1 of 6 seats taken');
+    expect(svg).not.toContain('to roll');
+  });
+
+  it('a full van draws every seat and no open ring', async () => {
+    const svg = await story(6);
+    expect(storySeats(svg)).toBe(6);
+    expect(svg).toContain('6 of 6 seats taken');
+    expect(svg).not.toContain('still open');
+  });
 });
 
 // Tagged links (utm_*) let GA4 say which post brought a visitor. /r/:code forwards a human
