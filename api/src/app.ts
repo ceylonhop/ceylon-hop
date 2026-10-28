@@ -10,6 +10,7 @@ import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
+import type { FillTipSender } from './services/rideBoardFillTips';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import type { Ga4Adapter } from './adapters/ga4';
@@ -97,6 +98,8 @@ export interface AppDeps {
   rideLists?: RideListRepo;
   // Ride Board attempt log. Unset → attempts are not recorded (tests opt in).
   rideBoardEvents?: RideBoardEventRepo;
+  // "How to fill your van" sender (2026-10-27). Unset → the fill-tip sweep does not run.
+  rideFillTip?: FillTipSender;
   // Booking checkout attempt log (0055). Unset → attempts are not recorded (tests opt in).
   checkoutEvents?: BookingCheckoutEventRepo;
   paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
@@ -758,6 +761,7 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
       ridePaygw: paygw,
+      ...(deps.rideFillTip ? { rideFillTip: deps.rideFillTip } : {}),
       refunds,
       notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
       ...(usage ? { emailQuota: { usage, dailyLimit: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT } } : {}),

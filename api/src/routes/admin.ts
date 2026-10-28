@@ -19,6 +19,7 @@ import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
+import { runRideBoardFillTips, type FillTipSender } from '../services/rideBoardFillTips';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -78,6 +79,9 @@ export function adminRoutes(deps: {
   // callers work; when wired, the notifications tick also confirms/expires due lists.
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
+  // "How to fill your van" (2026-10-27): the customer mail the fill-tip sweep sends. Unset →
+  // the sweep does not run (the tick reports fillTips: null, the manual job 409s).
+  rideFillTip?: FillTipSender;
   refunds: RefundRepo;
   // The gateway itself, for API refunds. Optional: without it (or without an adapter that
   // implements refund()) the execute route 409s and ops uses the manual dashboard flow, which
@@ -674,6 +678,18 @@ export function adminRoutes(deps: {
         console.error('ride-board cutoff sweep failed:', err);
       }
     }
+    // "How to fill your van" rides the same tick, best-effort, on the same budget: one mail per
+    // traveller on a ride still short of its minimum, a day after they joined, never twice.
+    let fillTips: Awaited<ReturnType<typeof runRideBoardFillTips>> | null = null;
+    if (deps.rideLists && deps.rideFillTip) {
+      try {
+        fillTips = await runRideBoardFillTips(new Date(), {
+          rideLists: deps.rideLists, send: deps.rideFillTip, alertLog: deps.alertLog, budget,
+        });
+      } catch (err) {
+        console.error('ride-board fill-tip sweep failed:', err);
+      }
+    }
     // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
     // past the idle TTL. Idempotent (an expired quote no longer matches), and a failure here
     // must never block the customer notifications the caller asked for.
@@ -758,7 +774,7 @@ export function adminRoutes(deps: {
     // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
     await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, fillTips, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
@@ -775,6 +791,22 @@ export function adminRoutes(deps: {
       email,
       to: deps.digestTo,
       opsBaseUrl: deps.opsBaseUrl,
+      alertLog: deps.alertLog,
+      dryRun: !!c.req.query('dryRun'),
+    });
+    return c.json(result, 200);
+  });
+
+  // The fill-tip sweep by hand (2026-10-27). The daily tick runs the same sweep; this exists
+  // so a human can POST ?dryRun=1 with the system key and read who the FIRST real run would
+  // mail — that run is the backfill for everyone already on the board — before letting the
+  // tick (or a plain POST here) send it. Idempotent via the alert ledger. 409 rather than a
+  // silent no-op when no sender is wired: "ran fine, sent nothing" would hide that.
+  r.post('/jobs/board-fill-tips', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideLists || !deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const result = await runRideBoardFillTips(new Date(), {
+      rideLists: deps.rideLists,
+      send: deps.rideFillTip,
       alertLog: deps.alertLog,
       dryRun: !!c.req.query('dryRun'),
     });

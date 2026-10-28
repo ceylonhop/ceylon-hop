@@ -463,6 +463,69 @@ describe('POST /admin/jobs/board-ops-backfill', () => {
   });
 });
 
+// "How to fill your van" (2026-10-27): the sweep rides the daily tick and has its own endpoint
+// for the ?dryRun=1 look before the first real run (which is the backfill).
+describe('ride board fill tips', () => {
+  const DAY = 86_400_000;
+  async function shortRide() {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList({
+      corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: futureIsoDate(10), slot: 'morning',
+      minSeats: 4, capacity: 6, seatPrice: 2300, note: null, cutoffAt: new Date(Date.now() + 8 * DAY), createdBy: 'mia-sub',
+    }, new Date(Date.now() - 2 * DAY));
+    await rideLists.addMember(l.id, { sub: 'mia-sub', firstName: 'Mia', country: 'DE', email: 'mia@x.com', seats: 1 }, new Date(Date.now() - 2 * DAY));
+    return rideLists;
+  }
+
+  it('POST /admin/jobs/board-fill-tips: 403 for an ops session, 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const forbidden = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const unwired = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(unwired.status).toBe(409);
+    expect((await unwired.json()).error).toBe('not_configured');
+  });
+
+  it('POST /admin/jobs/board-fill-tips honours ?dryRun and sends through the wired sender', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+
+    const dry = await app.request('/admin/jobs/board-fill-tips?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(dry.status).toBe(200);
+    expect(await dry.json()).toMatchObject({ dryRun: true, due: 1, sent: 0 });
+    expect(sent).toEqual([]);
+
+    const real = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await real.json()).toMatchObject({ due: 1, sent: 1 });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('the notifications tick runs the sweep and reports it, once', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+    const first = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ fillTips: { due: 1, sent: 1, skipped: 0 } });
+    const second = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await second.json()).toMatchObject({ fillTips: { due: 1, sent: 0, skipped: 1 } });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('the notifications tick skips the sweep when no sender is wired', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: null });
+  });
+});
+
 describe('POST /admin/jobs/watchdog', () => {
   it('403 for a finance session (no admin:jobs)', async () => {
     const { app } = makeApp();
