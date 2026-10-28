@@ -543,6 +543,32 @@ describe('ride board fill tips', () => {
     expect(email.sent[0].html).toContain('ride-board-fill.jpg');
   });
 
+  it('POST /admin/jobs/board-fill-tips/test?code= sends a REAL ride\'s email to the named inbox, ledger untouched', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog,
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const code = (await rideLists.listOpen({ when: 'all' }))[0].list.code;
+    const missing = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com&code=ZZ-0000', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(missing.status).toBe(404);
+
+    const res = await app.request(`/admin/jobs/board-fill-tips/test?to=me@x.com&code=${code}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com', ride: code });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    // The real ride: its code in the link, its starter's name, its seat count (4 needed, 1 held → 3 more).
+    expect(email.sent[0].html).toContain(`https://ride.ceylonhop.com/r/${code}`);
+    expect(email.sent[0].html).toContain('Mia');
+    expect(email.sent[0].html).toMatch(/3 more/);
+    // Nothing claimed: the sweep still owes Mia her real email when it is due.
+    const sweep = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await sweep.json()).toMatchObject({ due: 1, sent: 1, skipped: 0 });
+  });
+
   it('POST /admin/jobs/board-fill-tips/test is 409 when no sender is wired', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
