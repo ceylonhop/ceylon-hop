@@ -16,9 +16,14 @@ export interface ShareGroup {
 
 export const FACEBOOK_GROUPS: readonly ShareGroup[] = [
   {
+    name: 'Sri Lanka Travel Tours',
+    url: 'https://www.facebook.com/groups/srilanka.travel.tours',
+    blurb: 'Travellers planning the same routes, every day.',
+  },
+  {
     name: 'Sri Lanka Travel & Tourism Original Group',
     url: 'https://www.facebook.com/groups/768589830171708',
-    blurb: 'The big one. Travellers planning the same routes, every day.',
+    blurb: 'The big one.',
   },
   {
     name: 'Sri Lanka Backpackers',
@@ -31,7 +36,7 @@ export const FACEBOOK_GROUPS: readonly ShareGroup[] = [
 // sheet appends (?s=…&p=…) is noise in a customer email.
 export const WHATSAPP_GROUPS: readonly ShareGroup[] = [
   {
-    name: 'Sri Lanka Backpackers & Expats',
+    name: 'DN Sri Lanka Main group',
     url: 'https://chat.whatsapp.com/Bg5gS9z3iGI4luXDvFHKys',
     blurb: 'Backpackers and people living here. Post the same message.',
   },
