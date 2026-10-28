@@ -31,9 +31,8 @@ function sumKm(rides: Ride[]): number | null {
 // ended still contributes its own origin — that hop is the customer's own arrangement (e.g. the
 // Ella → Galle train), not something to silently drop. This replaces the old behaviour, which
 // dropped the non-chaining origin and so invented a leg nobody drives (GC-13); it reached the
-// ops drawer AND the customer's email. The booking's flat `stops` array can't mark which
-// consecutive pair is a gap versus a driven leg — every pair renders as a leg we drive
-// downstream (known gap, see docs/known-bugs.md 2026-07-30).
+// ops drawer AND the customer's email. A private trip names those hops in `gaps`
+// (0076_trip_request_gaps), so nothing downstream reads them as legs we drive.
 //
 // `rideIndex` says which ride each segment belongs to (-1 for a gap). Anything the caller keeps
 // aligned per segment (today: `dates`) must be rebuilt through it, because inserting a gap stop
@@ -139,6 +138,7 @@ export function quoteToBooking(
     // A date typed at booking time is newer information than the quote's, so it wins on the first
     // leg, which is the one the modal asks about.
     const legDates = rides.map((_, i) => (i === 0 && details.date ? details.date : drivingToolLegs[i]?.date ?? ''));
+    const gaps = rideIndex.flatMap((r, i) => (r < 0 ? [i] : []));
     return {
       mode: 'trip',
       distanceKm,
@@ -156,6 +156,9 @@ export function quoteToBooking(
         vehicleType: details.vehicleType,
         serviceType: 'private',
         customer: details.customer,
+        // The hops chainStops() bridged: the customer's own, never a leg we drive. Absent when the
+        // rides all connect, so a connected trip's input is unchanged.
+        ...(gaps.length ? { gaps } : {}),
       },
     };
   }

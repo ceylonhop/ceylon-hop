@@ -10,6 +10,7 @@ import { bookingLegs } from './schema';
 // refuse and record exactly what Postgres does (spec 2026-10-17 §4).
 const TEST_URL = process.env.DATABASE_URL_TEST;
 const staff = { type: 'staff' as const, id: 'ops@x.com' };
+const customer = { type: 'customer' as const, id: 'manage_link' };
 const MISSING = '00000000-0000-4000-8000-0000000000ff';
 
 function single(date?: string, time?: string): NewBooking {
@@ -63,11 +64,29 @@ function contract(name: string, make: () => Promise<BookingRepo>) {
       expect(await repo.listScheduleEvents(b.id)).toHaveLength(0);
     });
 
-    it('refuses a booking that is not paid or confirmed', async () => {
+    // Ops may fix an unpaid booking (requirements R12); the customer's manage page stays paid-only.
+    it('lets staff change a payment_pending booking, but not the customer, and never a draft', async () => {
       const b = await repo.create(single());
+      expect(await repo.setSchedule(b.id, { date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: staff }))
+        .toMatchObject({ ok: false, reason: 'not_editable' }); // draft
       await repo.setStatus(b.id, 'payment_pending');
-      const r = await repo.setSchedule(b.id, { date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: staff });
-      expect(r).toMatchObject({ ok: false, reason: 'not_editable' });
+      expect(await repo.setSchedule(b.id, { date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: customer }))
+        .toMatchObject({ ok: false, reason: 'not_editable' });
+      expect((await repo.setSchedule(b.id, { date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: staff })).ok).toBe(true);
+    });
+
+    it('records the reason and note with the change', async () => {
+      const b = await paid(single());
+      await repo.setSchedule(b.id, {
+        date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: staff, reason: 'our_mistake', note: 'typo on the quote',
+      });
+      expect((await repo.listScheduleEvents(b.id))[0]).toMatchObject({ reason: 'our_mistake', note: 'typo on the quote' });
+    });
+
+    it('leaves reason and note empty on a customer fill', async () => {
+      const b = await paid(single());
+      await repo.setSchedule(b.id, { date: '2026-11-04', time: null, expected: { date: null, time: null }, actor: customer });
+      expect((await repo.listScheduleEvents(b.id))[0]).toMatchObject({ reason: null, note: null });
     });
 
     it('reports a booking that does not exist', async () => {

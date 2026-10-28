@@ -144,6 +144,49 @@ describe('sendBookingConfirmation — trip (chauffeur)', () => {
   });
 });
 
+// known-bugs 2026-07-30 / 2026-08-04: the customer's own Ella → Galle train read, in their own
+// itinerary, as a leg we drive.
+describe('sendBookingConfirmation — trip with a self-arranged stretch', () => {
+  const gapped: Booking = {
+    mode: 'trip',
+    id: 'id4',
+    reference: 'CH-GAP01',
+    status: 'paid',
+    createdAt: new Date().toISOString(),
+    total: 30000,
+    currency: 'USD',
+    channel: 'whatsapp',
+    input: {
+      stops: ['Colombo', 'Ella', 'Galle', 'Colombo'],
+      nights: [0, 0, 0],
+      dates: ['2026-11-02', '', '2026-11-05'],
+      pax: 2,
+      vehicleType: 'car',
+      serviceType: 'private',
+      customer,
+      gaps: [1],
+    },
+  };
+
+  it('says the stretch after Ella is their own travel, drawn as a dashed line', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(gapped, email);
+    const html = email.sent[0].html;
+    expect(html).toContain('Your own travel to Galle, not with us');
+    expect(html.match(/border-left:2px dashed/g)).toHaveLength(1);
+  });
+
+  it('draws every stretch solid when the trip has no gaps', async () => {
+    const email = new FakeEmailAdapter();
+    const input = { ...(gapped.input as Extract<Booking, { mode: 'trip' }>['input']) };
+    delete input.gaps;
+    await sendBookingConfirmation({ ...gapped, input } as Booking, email);
+    const html = email.sent[0].html;
+    expect(html).not.toContain('Your own travel');
+    expect(html).not.toContain('dashed');
+  });
+});
+
 describe('sendBookingConfirmation — shared seat', () => {
   const shared: Booking = {
     mode: 'shared',

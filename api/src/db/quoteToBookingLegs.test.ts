@@ -66,4 +66,29 @@ describe('quote-born bookings derive the same legs (via the real quoteToBooking 
     const rows = legRowsForBooking(bookingId, toNewBooking(mapped));
     expect(rows.map((r) => r.kind)).toEqual(['day', 'gap', 'day']);
   });
+
+  // known-bugs 2026-07-30: a private quote's gap (the customer's own Ella → Galle train) used to
+  // come out as a `leg`, indistinguishable from one we drive.
+  it("a private trip's gap is a `gap` row, not a leg we drive", () => {
+    const details: BookingDetails = { customer: CUST, vehicleType: 'car', pax: 2, bags: 1 };
+    const mapped = quoteToBooking(
+      q({
+        product: 'private',
+        vehicle: 'car',
+        pax: 2,
+        bags: 1,
+        legs: [
+          { from: 'Colombo', to: 'Ella', distanceKm: 210 },
+          { from: 'Galle', to: 'Colombo', distanceKm: 130 },
+        ],
+      }),
+      details,
+    );
+    const rows = legRowsForBooking(bookingId, toNewBooking(mapped));
+    expect(rows.map((r) => [r.kind, r.fromPlace, r.toPlace])).toEqual([
+      ['leg', 'Colombo', 'Ella'],
+      ['gap', 'Ella', 'Galle'],
+      ['leg', 'Galle', 'Colombo'],
+    ]);
+  });
 });

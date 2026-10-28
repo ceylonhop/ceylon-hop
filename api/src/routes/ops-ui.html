@@ -519,6 +519,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .mst.scratched{color:var(--idle);background:var(--idle-bg)}
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+  .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -599,7 +600,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
   /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
-  .sched input[type=date],.sched input[type=time]{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input[type=date],.sched input[type=time],.sched input[type=text],.sched select{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
   .sched input:focus{outline:none;border-color:var(--teal)}
   .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
   .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
@@ -3797,7 +3798,7 @@ function buildActivity(t,d){
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
-  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}`]));
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
   (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
@@ -3806,15 +3807,20 @@ function buildActivity(t,d){
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
-  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. The leg rows
-     below render every consecutive stop pair as driven — this line is what contradicts a gap. */
+  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. */
   const cov=d?.coverage
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[];
+    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
     let rows='';
     for(let i=0;i<stops.length-1;i++){
+      /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
+         pay link left out. Never brief a driver for it. */
+      if(gaps.includes(i)){
+        rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
+        continue;
+      }
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
@@ -4268,9 +4274,24 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Why ops moved a pickup (requirements 2026-10-26 R1) — one label per server code
+   (SCHEDULE_REASONS); opsUi.schedule.test.ts fails if they drift. */
+const SCHED_REASONS={customer_changed_plans:'Customer changed plans',customer_entered_wrong:'Customer entered the wrong date/time',flight_changed:'Flight changed',our_mistake:'Our mistake',other:'Other'};
+/* The statuses the server lets STAFF reschedule (STAFF_SCHEDULE_EDITABLE_STATUSES): unpaid ones too,
+   so a date the customer typed wrong can be fixed before they pay. Never a draft. */
+const SCHED_STATUSES=['awaiting_details','payment_pending','paid','confirmed'];
 /* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
    send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
-const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here'};
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here',reason_required:'Pick a reason for the change'};
+/* The toast after a save: [text, kind]. When the operator asked to email the customer, the
+   result is always stated — a failed or held-back email must never read as a plain "Saved",
+   and the driver line must not hide it. opsUi.schedule.test.ts lifts this. */
+const SCHED_SAVED=(res,asked)=>{
+  const driver=res.driverNotified?'send the new time to the driver':'';
+  if(asked&&!res.emailed)return ['Saved — customer NOT emailed: WhatsApp them'+(driver?'. Also '+driver:''),'error'];
+  const parts=[asked?'customer emailed':'',driver].filter(Boolean);
+  return [parts.length?'Saved — '+parts.join('; '):'Saved',undefined];
+};
 /* `expected` rides along with the save so a change someone else made meanwhile comes back as a
    conflict, not a silent overwrite. */
 function scheduleFormHtml(t,d){
@@ -4279,6 +4300,8 @@ function scheduleFormHtml(t,d){
   return `<div class="sched" data-testid="sched-form">
     <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
     <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <div class="kv"><span class="k">Why</span><span class="v"><select id="schedReason" aria-label="Reason for the change"><option value="" selected disabled>Pick a reason</option>${Object.entries(SCHED_REASONS).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select></span></div>
+    <div class="kv"><span class="k">Note</span><span class="v"><input type="text" id="schedNote" maxlength="500" placeholder="Optional — e.g. new flight UL 504"></span></div>
     <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
     ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
     <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
@@ -4308,7 +4331,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
-  const canSchedule=d?.booking?.mode==='single'&&['paid','confirmed'].includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
+  const canSchedule=d?.booking?.mode==='single'&&SCHED_STATUSES.includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4872,14 +4895,17 @@ document.addEventListener('click',async e=>{
       const inp=state.detailData?.booking?.input||{};
       const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
       if(!date){toast('Pick a date','error');break;}
-      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked};
+      const reason=($('#schedReason')||{}).value||'';
+      if(!reason){toast(SCHED_ERR.reason_required,'error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked,
+        reason,note:(($('#schedNote')||{}).value||'').trim()||null};
       try{
         const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
         if(r.status===401){showLogin();break;}
         const res=await r.json().catch(()=>({}));
         if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
         state.schedOpen=null;
-        toast(res.driverNotified?'Saved — send the new time to the driver':res.emailed?'Saved — customer emailed':'Saved');
+        toast(...SCHED_SAVED(res,payload.notifyCustomer));
         await refreshDetail(id);await refreshRow(id);
       }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
       break;}

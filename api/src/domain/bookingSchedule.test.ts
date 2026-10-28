@@ -1,5 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { scheduleProblem, SCHEDULE_PROBLEMS, customerScheduleFill } from './bookingSchedule';
+import { scheduleProblem, SCHEDULE_PROBLEMS, SCHEDULE_REASONS, customerScheduleFill } from './bookingSchedule';
+
+// The database CHECK (migration 0075) and this list must agree, or a valid form choice 23514s.
+describe('SCHEDULE_REASONS', () => {
+  it('is exactly the list the database allows', () => {
+    const sql = readFileSync(new URL('../../drizzle/0075_schedule_change_reason_leg_driver_task.sql', import.meta.url), 'utf8');
+    const allowed = /"reason" in \(([^)]*)\)/.exec(sql)![1].match(/'([a-z_]+)'/g)!.map((s) => s.slice(1, -1));
+    expect([...SCHEDULE_REASONS].sort()).toEqual(allowed.sort());
+  });
+});
 
 // 06:00Z = 11:30 in Colombo on 2026-10-17.
 const NOW = new Date('2026-10-17T06:00:00Z');

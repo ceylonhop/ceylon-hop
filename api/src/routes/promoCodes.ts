@@ -1,8 +1,7 @@
 // Founder API for promo codes (spec docs/superpowers/specs/2026-09-14-promo-codes-design.md §6.5).
 import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { BookingRepo } from '../db/bookingRepo';
 import { PromoCodeTakenError, type PromoCodeRepo } from '../db/promoCodeRepo';
 import {
@@ -44,16 +43,7 @@ export function promoCodeRoutes(deps: {
   const now = deps.now ?? (() => new Date());
 
   // Same CSRF rule as /admin/quote (internalQuote.ts): the ch_ops cookie is ambient browser state.
-  const csrf: MiddlewareHandler = async (c, next) => {
-    const site = c.req.header('sec-fetch-site');
-    if (site) {
-      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
-      return next();
-    }
-    const origin = c.req.header('origin');
-    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
-    return next();
-  };
+  const csrf = opsCsrf;
 
   r.use('*', opsIdentity(deps.auth));
   r.use('*', requireCap('promo_codes:manage'));

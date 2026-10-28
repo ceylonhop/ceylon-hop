@@ -519,6 +519,20 @@
       "when": 1792108800000,
       "tag": "0073_details_reminder_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0075_schedule_change_reason_leg_driver_task",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0076_trip_request_gaps",
+      "breakpoints": true
     }
   ]
 }

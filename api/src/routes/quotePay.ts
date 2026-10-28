@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { QuoteRepo, SavedQuote } from '../db/quoteRepo';
-import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import type { Booking, BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
@@ -58,6 +58,19 @@ const StartSchema = z.object({
 
 // How many times one pay link's booking may be cancelled and replaced before /start stops minting more.
 const MAX_REPLACEMENTS = 20;
+
+// The quote with its one driving leg dated as the booking now is (R13). Only a single transfer:
+// that is the only booking ops can re-date today, and a multi-leg quote's legs don't map onto a
+// single date. Anything else, or a booking with no date, leaves the quote as it was.
+function datedByBooking(quote: SavedQuote, booking: Booking | null): SavedQuote {
+  if (booking?.mode !== 'single' || !booking.input.date) return quote;
+  const req = (quote.request ?? {}) as { tool?: { legs?: { date?: string; category?: string }[] } };
+  const legs = req.tool?.legs;
+  const driving = (l: { category?: string }) => (l.category || 'transfer') !== 'stay_day';
+  if (!Array.isArray(legs) || legs.filter(driving).length !== 1) return quote;
+  const date = booking.input.date;
+  return { ...quote, request: { ...req, tool: { ...req.tool, legs: legs.map((l) => (driving(l) ? { ...l, date } : l)) } } as SavedQuote['request'] };
+}
 
 const BalanceSchema = z.object({ t: z.string() }).strict();
 
@@ -223,6 +236,27 @@ export function quotePayRoutes(deps: {
     return { state: 'unavailable' };
   }
 
+  // Walk a link's chain of bookings: baseKey, then `:after:<dead booking>` for each booking that
+  // can no longer be charged, stopping at the first chargeable one (`existing`, else null with the
+  // key the walk ended on). The chain is derived from THIS link's own bookings only — never from
+  // `convertedBookingId`, which /start moves to every booking it creates (it used to be the
+  // fallback, so on a re-minted link the derived key changed on every tap: three taps, three
+  // bookings, only the last reachable from the quote). Each cancelled booking adds one link to the
+  // chain, so a double tap after a cancellation (the Q-2J358 case) still yields ONE replacement,
+  // and a replacement that is itself cancelled is replaced in turn instead of bricking the link.
+  const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
+  async function linkBooking(baseKey: string): Promise<{ key: string; existing: Booking | null } | 'exhausted'> {
+    let key = baseKey;
+    let existing = await deps.bookings.findByIdempotencyKey(key);
+    for (let hops = 0; existing && !isChargeable(existing); hops += 1) {
+      // A link ops has cancelled this many times needs a person, not another booking.
+      if (hops >= MAX_REPLACEMENTS) return 'exhausted';
+      key = `${baseKey}:after:${existing.id}`;
+      existing = await deps.bookings.findByIdempotencyKey(key);
+    }
+    return { key, existing };
+  }
+
   // Partner experiences near the trip AS SOLD, for a customer who has paid (owner, 2026-10-15): on
   // the `paid` keepsake and the `balance` "you're booked" screen, never before payment. `interested`
   // reads the BOOKING's interests — a tick the quote carried in arrives there at /start. A courtesy:
@@ -311,6 +345,10 @@ export function quotePayRoutes(deps: {
     // an unknown quote — fail closed.
     const live = soldView(quote);
     if (!live) return c.json({ state: 'unavailable' as const });
+    // A customer who has already started paying has a booking, and ops may have re-dated it
+    // (requirements 2026-10-26 R13). Same key /start resumes under, so it is the same booking.
+    const walk = await linkBooking(`pay:quote:${live.id}:r${parsed.revision}:s${parsed.seq}`);
+    const started = walk === 'exhausted' ? null : walk.existing;
 
     // A partial link charges the frozen soldCents, not the quote total (spec §4).
     const soldCents = live.soldCents ?? live.totalCents;
@@ -322,7 +360,7 @@ export function quotePayRoutes(deps: {
       state,
       // The copy must know about the selection, or the page describes the whole trip while the
       // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
-      copy: payPageCopy(live, sel),
+      copy: payPageCopy(datedByBooking(live, started), sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
       // Full links only — see discountView. `sel` is the whole test: a subset link always has one.
       ...(sel ? {} : { discount: discountView(live) }),
@@ -415,25 +453,11 @@ export function quotePayRoutes(deps: {
         200,
       );
     }
-    const isChargeable = (b: { status: string } | null): boolean => !!b && (b.status === 'draft' || b.status === 'payment_pending');
-    // Walk this link's chain of bookings: baseKey, then `:after:<dead booking>` for each booking that
-    // can no longer be charged. Resume the first chargeable one; otherwise create under the key the
-    // walk ended on. The chain is derived from THIS link's own bookings only — never from
-    // `convertedBookingId`, which /start moves to every booking it creates (it used to be the
-    // fallback, so on a re-minted link the derived key changed on every tap: three taps, three
-    // bookings, only the last reachable from the quote). Each cancelled booking adds one link to the
-    // chain, so a double tap after a cancellation (the Q-2J358 case) still yields ONE replacement,
-    // and a replacement that is itself cancelled is replaced in turn instead of bricking the link.
-    let key = baseKey;
-    let existing = await deps.bookings.findByIdempotencyKey(key);
-    for (let hops = 0; existing && !isChargeable(existing); hops += 1) {
-      // A link ops has cancelled this many times needs a person, not another booking.
-      if (hops >= MAX_REPLACEMENTS) return c.json({ error: 'quote_unavailable' }, 409);
-      key = `${baseKey}:after:${existing.id}`;
-      existing = await deps.bookings.findByIdempotencyKey(key);
-    }
-    if (existing) return resume(existing);
-    const idempotencyKey = key;
+    // Resume the link's chargeable booking; otherwise create under the key the walk ended on.
+    const walk = await linkBooking(baseKey);
+    if (walk === 'exhausted') return c.json({ error: 'quote_unavailable' }, 409);
+    if (walk.existing) return resume(walk.existing);
+    const idempotencyKey = walk.key;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
