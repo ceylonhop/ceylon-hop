@@ -65,6 +65,11 @@ export function taggedRideLink(shareBaseUrl: string, code: string, source: Share
   return `${shareBaseUrl.replace(/\/+$/, '')}/r/${encodeURIComponent(code)}?utm_source=${source}&utm_medium=social&utm_campaign=${CAMPAIGN}`;
 }
 
+/** The ride's public link with no tags: what a traveller sees and pastes. */
+export function cleanRideLink(shareBaseUrl: string, code: string): string {
+  return `${shareBaseUrl.replace(/\/+$/, '')}/r/${encodeURIComponent(code)}`;
+}
+
 /** The 9:16 story image the share route already renders. */
 export function storyImageLink(shareBaseUrl: string, code: string): string {
   return `${shareBaseUrl.replace(/\/+$/, '')}/r/${encodeURIComponent(code)}/story.png`;
@@ -93,10 +98,16 @@ export function sharePost(list: RideList, need: number, isStarter: boolean, link
     ? `I've started a shared taxi ${list.fromPlace} → ${list.toPlace} on ${chatDay(list.date)}.`
     : `I'm on a shared taxi ${list.fromPlace} → ${list.toPlace} on ${chatDay(list.date)}.`;
   const ask = need > 0
-    ? `${need} more ${need === 1 ? 'person' : 'people'} and it runs — about $${seat} a seat instead of a private car, nothing to pay unless it runs.`
-    : `It's running and there are seats left — about $${seat} a seat.`;
-  // Both are on the ride, so both say "join me" — only the opener differs.
+    ? `${need} more ${need === 1 ? 'person' : 'people'} and it runs, about $${seat} a seat. Nothing to pay unless it runs.`
+    : `It's running with seats left, about $${seat} a seat.`;
+  // Both are on the ride, so both say "join me"; only the opener differs.
   return `${opener} ${ask} Join me: ${link}`;
+}
+
+/** Facebook's own share window with the ride link in it; the traveller picks "Share to a group".
+ *  Facebook ignores any pre-filled text here, so the link's ride card carries the details. */
+export function facebookShareLink(link: string): string {
+  return `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`;
 }
 
 export function whatsappShareLink(post: string): string {

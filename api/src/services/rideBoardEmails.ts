@@ -325,43 +325,37 @@ export async function sendRideJoined(
 }
 
 // ----------------------------------------------------------------------------
-// "How to fill your van" (owner ask 2026-10-27; design signed off 2026-10-28). Sent by the
-// fill-tip sweep (rideBoardFillTips.ts) a day after a traveller joins a ride that is still
-// short. The definitive guide, in the order that works: Facebook groups, WhatsApp groups,
-// a story, Reddit — each with the post written and the tagged link already inside the
-// button. Honest about the deal (a bit of posting saves the private-car fare), never
-// pushy, and the $0 safety net at the end. The letter shell, so it sits beside the
-// receipt as the same company.
+// "How to fill your van" (owner ask 2026-10-27; v2 2026-10-28 after the owner saw it in
+// Gmail: "information hierarchy is off, too many words, looks like a hacker sent it").
+// One message, "N more people and it runs", one main action (the Facebook groups, which
+// fill most vans), everything else as plain buttons. No raw link is ever printed as text:
+// the post shows the clean ride link, and the per-channel tags ride inside the buttons
+// (WhatsApp and Reddit pre-fills). Facebook visits are attributed by GA4's referrer anyway.
 // ----------------------------------------------------------------------------
 import {
   FACEBOOK_GROUPS, WHATSAPP_GROUPS, SUBREDDITS, INSTAGRAM_HANDLE,
-  taggedRideLink, storyImageLink, boardRideLink, sharePost, whatsappShareLink, redditSubmitLink,
+  taggedRideLink, cleanRideLink, storyImageLink, boardRideLink, sharePost, whatsappShareLink, redditSubmitLink,
+  facebookShareLink,
 } from './rideBoardShareTargets';
 
-// The site's own monospace stack (site.css), not a third face the site never loads.
-const MONO_SITE = "ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
-const FB_BLUE = '#1877F2';
-const WA_GREEN = '#075E54'; // WhatsApp's dark teal: white on it clears 7:1 (opsEmail.ts)
-const REDDIT = '#FF4500';
+// A pill button in the letter's teal, the same shape as the receipt's "View your ride".
+const pillButton = (href: string, label: string) => `
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
+    <td bgcolor="${BAND}" style="border-radius:999px">
+      <a href="${esc(href)}" style="display:inline-block;padding:11px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px">${esc(label)}</a>
+    </td>
+  </tr></table>`;
 
-const pill = (href: string, label: string, bg: string, fg = '#ffffff') =>
-  `<a href="${esc(href)}" style="display:inline-block;background:${bg};color:${fg};border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap">${esc(label)}</a>`;
-
-const stepHead = (n: number, title: string, rank: string) => `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td valign="top" width="44"><div style="width:34px;height:34px;border-radius:50%;background:${BAND};color:#fff;font-weight:800;font-size:16px;text-align:center;line-height:34px">${n}</div></td>
-    <td valign="top">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td style="font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">${esc(title)}</td>
-        <td align="right" style="white-space:nowrap;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:${BAND}">${esc(rank)}</td>
-      </tr></table>`;
-const stepTail = `</td></tr></table>`;
-
-const groupRow = (name: string, blurb: string, button: string, last: boolean) => `
-  <tr>
-    <td style="padding:12px 0;border-top:1px solid ${LINE}${last ? `;border-bottom:1px solid ${LINE}` : ''}"><b>${esc(name)}</b><div style="font-size:12px;color:${FAINT};margin-top:2px">${esc(blurb)}</div></td>
-    <td align="right" style="padding:12px 0 12px 12px;border-top:1px solid ${LINE}${last ? `;border-bottom:1px solid ${LINE}` : ''};white-space:nowrap">${button}</td>
-  </tr>`;
+// A hairline row, the receipt's factRow with a link on the right instead of a value.
+const linkRow = (label: string, sub: string, href: string, action: string) => `<tr>
+  <td style="padding:12px 12px 12px 0;border-top:1px solid ${LINE}">
+    <div style="color:${INK};font-size:14px;font-weight:600">${esc(label)}</div>
+    <div style="color:${FAINT};font-size:12px;margin-top:2px">${esc(sub)}</div>
+  </td>
+  <td align="right" style="padding:12px 0;border-top:1px solid ${LINE};white-space:nowrap">
+    <a href="${esc(href)}" style="color:${BAND};font-size:14px;font-weight:700;text-decoration:none">${esc(action)} &rarr;</a>
+  </td>
+</tr>`;
 
 export async function sendRideFillTip(
   email: EmailAdapter,
@@ -371,7 +365,7 @@ export async function sendRideFillTip(
     list: RideList;
     /** Live seats on the list now. */
     committed: number;
-    /** The list's creator: their post says "I've started"; a joiner's "join me". */
+    /** The list's creator: their post says "I've started"; a joiner's "I'm on". */
     isStarter: boolean;
     /** Customer site origin, for the way back to the ride and the hero photo. */
     boardBaseUrl: string;
@@ -384,122 +378,134 @@ export async function sendRideFillTip(
   const more = need === 1 ? '1 more person' : `${need} more people`;
   const cutoff = cutoffLabel(list.cutoffAt);
   const seat = Math.round(list.seatPrice / 100);
-  const link = (source: 'whatsapp' | 'facebook' | 'reddit' | 'instagram') => taggedRideLink(args.shareBaseUrl, list.code, source);
-  const fbPost = sharePost(list, need, isStarter, link('facebook'));
-  const waPost = sharePost(list, need, isStarter, link('whatsapp'));
-  const rdPost = sharePost(list, need, isStarter, link('reddit'));
-  const story = storyImageLink(args.shareBaseUrl, list.code);
+  const routeText = route(list);
+  const clean = cleanRideLink(args.shareBaseUrl, list.code);
+  // What the traveller copies into Facebook: the clean link, nothing that reads as tracking.
+  const fbPost = sharePost(list, need, isStarter, clean);
+  const waPost = sharePost(list, need, isStarter, taggedRideLink(args.shareBaseUrl, list.code, 'whatsapp'));
+  const rdPost = sharePost(list, need, isStarter, taggedRideLink(args.shareBaseUrl, list.code, 'reddit'));
   const ride = boardRideLink(args.boardBaseUrl, list.code);
   const hero = `${args.boardBaseUrl.replace(/\/+$/, '')}/img/ride-board-fill.jpg`;
-  const routeText = route(list);
+  const headline = need > 0 ? `${more} and it runs.` : 'It runs. Fill the last seats.';
+  const wa = WHATSAPP_GROUPS[0];
+  const [sub1, sub2] = SUBREDDITS;
 
   const html = letter(`
-    <tr><td style="padding:0;background:${INK}">
-      <img src="${esc(hero)}" width="600" alt="Travellers on a Ceylon Hop shared ride" style="width:100%;max-width:600px;height:auto;display:block">
-    </td></tr>
-    <tr><td style="padding:22px 28px 0;background:${BAND};color:#ffffff">
-      <div style="font-size:11px;letter-spacing:.2em;text-transform:uppercase;font-weight:700;color:#bfe6ef">${esc(more)} to fill &middot; names close ${esc(cutoff)}</div>
-      <div style="margin-top:8px;font-family:${SERIF};font-size:32px;line-height:1.08;font-weight:600">How to fill your<br>${routeHtml(list)} van</div>
-      <div style="margin:8px 0 22px;font-size:14px;color:#dff3f7">Three places to post. About ten minutes. We've written the posts.</div>
-    </td></tr>
-
-    <tr><td style="padding:24px 28px 0">
-      <p style="margin:0;font-size:15px;line-height:1.6">Hi ${esc(firstName)}. You need ${esc(more)} for this ride to run. They're easier to find than you'd think: many of the vans that run were posted in one or two of the groups below. <b>Fill it and the trip is about $${seat} a seat instead of a private car</b>, with company for the drive.</p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;background:${PAPER};border-radius:12px">
-        <tr><td style="padding:14px 16px;font-size:14px;line-height:1.5"><b>If you only do one thing:</b> post in the Facebook groups below. That alone fills many vans.</td></tr>
-      </table>
-    </td></tr>
-
-    <tr><td style="padding:18px 28px 0">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="${INK}" style="border-radius:12px;padding:12px 16px">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-            <td style="font-family:${MONO_SITE};font-size:14px;color:#fff;word-break:break-all">${esc(link('facebook').replace(/\?.*$/, '').replace(/^https?:\/\//, ''))}</td>
-            <td align="right" style="font-size:11px;font-weight:700;color:#bfe6ef;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;padding-left:12px">Your ride link</td>
+    <tr><td style="padding:0"><div style="height:5px;line-height:5px;font-size:0;background:${BLUE}">&nbsp;</div></td></tr>
+    <tr><td style="padding:26px 34px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle" style="padding-right:11px">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td width="34" height="34" align="center" valign="middle" style="background:${BAND};border-radius:50%;color:#ffffff;font-family:${SERIF};font-size:19px;font-weight:600">C</td>
           </tr></table>
-        </td></tr>
-      </table>
-      <p style="margin:8px 0 0;font-size:12px;color:${FAINT}">Already inside every button below. Pasted anywhere, it shows your ride card: route, date, seats left, price.</p>
-    </td></tr>
-
-    <tr><td style="padding:28px 28px 0">
-      ${stepHead(1, 'Facebook groups', '●●● Works best · 5 min')}
-      <p style="margin:6px 0 0;font-size:14px;line-height:1.55;color:${MUTED}">The groups travellers in Sri Lanka actually read. Tap a group, paste the post below, done.</p>
-      ${stepTail}
-      <div style="margin:14px 0 0;padding:12px 14px;background:${PAPER};border-radius:10px;font-size:14px;line-height:1.55">${esc(fbPost)}</div>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;font-size:14px">
-        ${FACEBOOK_GROUPS.map((g, i) => groupRow(g.name, g.blurb, pill(g.url, 'Post here', FB_BLUE), i === FACEBOOK_GROUPS.length - 1)).join('')}
-      </table>
-      <p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:${FAINT}">Drivers may message you offering a car. Your ride is already sorted, so you can ignore those.</p>
-    </td></tr>
-
-    <tr><td style="padding:28px 28px 0">
-      ${stepHead(2, 'WhatsApp groups', '●●○ Works well · 3 min')}
-      <p style="margin:6px 0 0;font-size:14px;line-height:1.55;color:${MUTED}">Backpackers and people living in Sri Lanka run a few big ones. Join and post the same message. Then send it to your own chats too: the hostel group, the people from the train.</p>
-      ${stepTail}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;font-size:14px">
-        ${WHATSAPP_GROUPS.map((g) => groupRow(g.name, g.blurb, pill(g.url, 'Join group', WA_GREEN), false)).join('')}
-        ${groupRow('Your own chats', 'Message written, you pick the chat', pill(whatsappShareLink(waPost), 'Send on WhatsApp', WA_GREEN), true)}
-      </table>
-    </td></tr>
-
-    <tr><td style="padding:28px 28px 0">
-      ${stepHead(3, 'Instagram story', '●○○ Nice extra · 1 min')}
-      <p style="margin:6px 0 0;font-size:14px;line-height:1.55;color:${MUTED}">We made a story image for your ride. Post it, add a link sticker with your ride link, and <b style="color:${INK}">tag @${INSTAGRAM_HANDLE}</b>: we reshare every tagged ride to our followers, so your story reaches people you've never met.</p>
-      <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>
-        <td style="padding-right:10px">${pill(story, 'Save story image', BAND)}</td>
-        <td><a href="${esc(link('instagram'))}" style="font-size:13px;color:${BAND};font-weight:600;text-decoration:none">Copy ride link for the sticker →</a></td>
+        </td>
+        <td valign="middle">
+          <div style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};letter-spacing:.01em">Ceylon Hop</div>
+          <div style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:${FAINT};margin-top:1px">Ride Board · Shared rides</div>
+        </td>
       </tr></table>
-      ${stepTail}
     </td></tr>
 
-    <tr><td style="padding:24px 28px 0">
-      ${stepHead(4, 'Reddit', '●○○ Nice extra · 2 min')}
-      <p style="margin:6px 0 0;font-size:14px;line-height:1.55;color:${MUTED}">Written as a question, which is what the subs allow. The post is ready.</p>
-      <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>
-        ${SUBREDDITS.map((s) => `<td style="padding:0 10px 8px 0">${pill(redditSubmitLink(s.name, list, rdPost), `Post on r/${s.name}`, REDDIT)}<div style="font-size:12px;color:${FAINT};margin-top:4px">${esc(s.blurb)}</div></td>`).join('')}
+    <tr><td style="padding:26px 34px 0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Fill your ride</div>
+      <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">${esc(headline)}</h1>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">Hi ${esc(firstName)}, the quickest way to find them is to share your ride in the Facebook groups below. It takes a minute.</p>
+    </td></tr>
+
+    <tr><td style="padding:20px 34px 0">
+      <img src="${esc(hero)}" width="532" alt="" style="width:100%;max-width:532px;height:auto;display:block;border:0;border-radius:14px">
+    </td></tr>
+
+    <tr><td style="padding:18px 34px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle">
+          <span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${BAND};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(list.code)}</span>
+        </td>
+        <td valign="middle" align="right"><span style="display:inline-block;background:#fff6e8;color:#8a5a12;border-radius:999px;padding:5px 12px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Gathering names</span></td>
       </tr></table>
-      ${stepTail}
     </td></tr>
 
-    <tr><td style="padding:30px 28px 28px">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BAND};border-radius:14px;color:#fff">
-        <tr><td style="padding:20px 22px">
-          <div style="font-family:${SERIF};font-size:20px;font-weight:600">That's it.</div>
-          <p style="margin:8px 0 14px;font-size:14px;line-height:1.55;color:#dff3f7">Each person who joins shows up on your ride page. If it isn't full by ${esc(cutoff)} (Sri Lanka time) the ride is called off and you pay $0, so there's nothing to lose by posting.</p>
-          ${pill(ride, 'Open my ride', '#fffdf8', BAND)}
-        </td></tr>
+    <tr><td style="padding:24px 34px 0">
+      <div style="border-top:1px solid ${LINE};padding-top:22px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="left" style="${EYEBROW}">From</td><td align="right" style="${EYEBROW}">To</td></tr>
+          <tr>
+            <td align="left" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.fromPlace)}</td>
+            <td align="right" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.toPlace)}</td>
+          </tr>
+          <tr><td colspan="2" style="padding-top:13px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr valign="middle">
+              <td width="12">${dot(TEAL)}</td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td align="center" width="1" style="padding:0 2px"><div style="display:inline-block;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${MUTED};background:${CARD};border:1px solid #e7dcc7;border-radius:999px;padding:4px 12px;white-space:nowrap">Shared ride</div></td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td width="12" align="right">${dot(TOMATO)}</td>
+            </tr></table>
+          </td></tr>
+        </table>
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:20px 22px">
+        <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">Share it in the Facebook groups</div>
+        <p style="margin:0;color:${MUTED};font-size:14px;line-height:1.6">This is how most vans fill. Tap Share, choose <b style="color:${INK}">Share to a group</b>, and pick one of the groups below. Your ride card shows up on its own.</p>
+        ${pillButton(facebookShareLink(taggedRideLink(args.shareBaseUrl, list.code, 'facebook')), 'Share on Facebook')}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px">
+          ${FACEBOOK_GROUPS.map((g) => linkRow(g.name, 'Facebook group', g.url, 'Open group')).join('')}
+        </table>
+        <p style="margin:16px 0 6px;color:${FAINT};font-size:12px;line-height:1.5">Want to add a few words? Press and hold to copy:</p>
+        <div style="background:${CARD};border:1px solid #efe6d6;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.55;color:${INK}">${esc(fbPost)}</div>
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="${EYEBROW};margin-bottom:6px">More ways to fill it</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        ${linkRow('WhatsApp group', wa.name, wa.url, 'Join')}
+        ${linkRow('Your own chats', 'The message is ready', whatsappShareLink(waPost), 'Send')}
+        ${linkRow('Instagram story', `Tag @${INSTAGRAM_HANDLE} and we reshare it`, storyImageLink(args.shareBaseUrl, list.code), 'Save image')}
+        ${linkRow('Reddit', `r/${sub1.name}`, redditSubmitLink(sub1.name, list, rdPost), 'Post')}
       </table>
     </td></tr>
 
-    <tr><td style="padding:0 28px 26px;font-size:12px;line-height:1.6;color:${FAINT}">
-      <div style="border-top:1px solid ${LINE};padding-top:16px"><span style="font-family:${SERIF};color:${MUTED}">Ceylon Hop</span> &middot; Ground transport across Sri Lanka. Stuck? Reply to this email or message us on WhatsApp, a real person answers.</div>
+    <tr><td style="padding:0 34px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #eadfce">
+        <tr><td style="padding:15px 0 0;color:${FAINT};font-size:13px;line-height:1.6">Not full by ${esc(cutoff)} (Sri Lanka time)? The ride is called off and you pay <b style="color:${INK}">$0</b>.</td></tr>
+      </table>
+      ${pillButton(ride, 'View your ride')}
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 32px">
+      <div style="border-top:1px solid ${LINE};padding-top:18px;font-size:13px;line-height:1.6;color:${FAINT}">
+        <span style="font-family:${SERIF};color:${MUTED}">Ceylon Hop</span> &middot; Ground transport across Sri Lanka.<br>
+        Just reply to this email, or message us on WhatsApp &mdash; a real person answers.
+      </div>
     </td></tr>`);
 
   const text = [
-    `Hi ${firstName}. You need ${more} for your ${routeText} ride (${list.code}) to run. Names close ${cutoff} (Sri Lanka time).`,
-    `Fill it and the trip is about $${seat} a seat instead of a private car. Here is where to post, in the order that works:`,
+    `${headline} ${routeText}, ${fmtDate(list.date)}. $${seat} a seat, names close ${cutoff} (Sri Lanka time).`,
     '',
-    `1. FACEBOOK GROUPS (works best). Paste this post:`,
-    `   ${fbPost}`,
-    ...FACEBOOK_GROUPS.map((g) => `   ${g.name}: ${g.url}`),
+    `Share it in the Facebook groups. Tap Share, choose "Share to a group", pick one below:`,
+    `Share on Facebook: ${facebookShareLink(taggedRideLink(args.shareBaseUrl, list.code, 'facebook'))}`,
+    ...FACEBOOK_GROUPS.map((g) => `${g.name}: ${g.url}`),
     '',
-    `2. WHATSAPP GROUPS (works well). Join and post the same message, then send it to your own chats:`,
-    ...WHATSAPP_GROUPS.map((g) => `   ${g.name}: ${g.url}`),
-    `   Send on WhatsApp: ${whatsappShareLink(waPost)}`,
+    `Want to add a few words? Copy this:`,
+    fbPost,
     '',
-    `3. INSTAGRAM STORY. Save the image, add a link sticker, tag @${INSTAGRAM_HANDLE} and we reshare it: ${story}`,
-    `   Link for the sticker: ${link('instagram')}`,
+    `More ways to fill it:`,
+    `WhatsApp group (${wa.name}): ${wa.url}`,
+    `Send to friends on WhatsApp: ${whatsappShareLink(waPost)}`,
+    `Instagram story image (tag @${INSTAGRAM_HANDLE}, we reshare it): ${storyImageLink(args.shareBaseUrl, list.code)}`,
+    `Reddit r/${sub1.name}: ${redditSubmitLink(sub1.name, list, rdPost)}`,
+    ...(sub2 ? [`Reddit r/${sub2.name}: ${redditSubmitLink(sub2.name, list, rdPost)}`] : []),
     '',
-    `4. REDDIT. Post it as a question:`,
-    ...SUBREDDITS.map((s) => `   r/${s.name}: ${redditSubmitLink(s.name, list, rdPost)}`),
-    '',
-    `If it isn't full by the cutoff the ride is called off and you pay $0. Open your ride: ${ride}`,
+    `Not full by ${cutoff}? It's called off and you pay $0. Open your ride: ${ride}`,
   ].join('\n');
 
   await email.send({
     to: args.to,
-    subject: `How to fill your ${routeText} van (it takes 10 minutes)`,
+    subject: need > 0 ? `${more} and your ${routeText} ride runs` : `Your ${routeText} ride has seats left`,
     html,
     text,
   });
