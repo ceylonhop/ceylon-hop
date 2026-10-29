@@ -37,11 +37,13 @@ export const SharedInput = z.object({
 
 export type SharedInput = z.infer<typeof SharedInput>;
 
-// The add-ons a shared seat can carry, and what the customer and ops call them. Hotel pick-up &
-// drop-off (owner 2026-10-16): once per booking, hotel within 2 km of the meeting points.
-export const SHARED_EXTRA_CODES = ['hotel-transfer'] as const;
+// The add-ons a shared seat can carry, and what the customer and ops call them. Hotel pick-up and
+// hotel drop-off (owner 2026-10-16, two $5 add-ons since 2026-10-29): each once per booking, hotel
+// within 5 km of the meeting point.
+export const SHARED_EXTRA_CODES = ['hotel-pickup', 'hotel-dropoff'] as const;
 export const SHARED_EXTRA_LABELS: Record<typeof SHARED_EXTRA_CODES[number], string> = {
-  'hotel-transfer': 'Hotel pick-up & drop-off',
+  'hotel-pickup': 'Hotel pick-up',
+  'hotel-dropoff': 'Hotel drop-off',
 };
 
 // HTTP request shape: the website sends from/to (it doesn't know corridor ids), and the
