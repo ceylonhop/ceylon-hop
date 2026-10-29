@@ -932,7 +932,7 @@ function invalidRequest(error: ZodError) {
     try {
       booking = await bookings.create(
         { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
-        // The priced lines are the booking's record of its add-ons (hotel pick-up & drop-off).
+        // The priced lines are the booking's record of its add-ons (hotel pick-up, hotel drop-off).
         { idempotencyKey: key, pricingSnapshot: sharedPricingSnapshot({ routeId: product.id, seats: req.seats, seatPriceCents: product.seatPrice }, priced, RATE_CARD.version) },
       );
     } catch (err) {
