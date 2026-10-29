@@ -350,8 +350,10 @@ describe('sendRideFillTip', () => {
       expect(html).toContain(g.url);
       expect(text).toContain(g.url);
     }
+    // Reddit: the first sub is a button in the html; every sub is listed in the text version.
+    expect(html).toContain(`reddit.com/r/${SUBREDDITS[0].name}/submit`);
     for (const s of SUBREDDITS) {
-      expect(html).toContain(`reddit.com/r/${s.name}/submit`);
+      expect(text).toContain(`reddit.com/r/${s.name}/submit`);
     }
     expect(html).toContain('@ceylonhop');
   });
@@ -372,16 +374,11 @@ describe('sendRideFillTip', () => {
     expect(wa(joiner)).not.toContain("I've started");
   });
 
-  it('tags every channel so GA4 can say which one filled the seat', async () => {
+  it('tags the channels that carry the link inside a button, so GA4 can say which one filled the seat', async () => {
     const email = new FakeEmailAdapter();
     await sendRideFillTip(email, base);
     const { html } = email.sent[0];
-    // Facebook's post box and the Instagram sticker link carry the link as text (html-escaped);
-    // WhatsApp and Reddit carry it url-encoded inside their pre-fill. Either way, tagged.
     const tagged = (source: string) => `/r/EM-4821?utm_source=${source}&utm_medium=social&utm_campaign=ride_fill_tip`;
-    for (const source of ['facebook', 'instagram']) {
-      expect(html).toContain(tagged(source).replace(/&/g, '&amp;'));
-    }
     const prefilled = (href: RegExp) => decodeURIComponent(html.match(href)![1].replace(/&amp;/g, '&'));
     expect(prefilled(/https:\/\/wa\.me\/\?text=([^"]+)/)).toContain(tagged('whatsapp'));
     expect(prefilled(/reddit\.com\/r\/srilanka\/submit\?selftext=true&amp;title=[^&]+&amp;text=([^"]+)/)).toContain(tagged('reddit'));
@@ -390,6 +387,23 @@ describe('sendRideFillTip', () => {
     expect(html).toContain('https://ceylonhop.com/board.html?utm_source=email&amp;utm_medium=email&amp;utm_campaign=ride_fill_tip#/EM-4821');
   });
 
+  // Owner, 2026-10-28, on the first version in Gmail: "looks like a hacker sent it". The
+  // cause was a raw tracking URL (…?utm_source=facebook&utm_medium=…) printed in the post.
+  it('never prints a tracking tag as text: the post a traveller copies carries the clean ride link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html } = email.sent[0];
+    const visible = html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ');
+    expect(visible).not.toContain('utm_');
+    expect(visible).toContain('Join me: https://ride.ceylonhop.com/r/EM-4821');
+  });
+
+  it('leads with the ask, not the route: the headline is how many more people it needs', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    expect(email.sent[0].subject).toBe('2 more people and your Ella → Mirissa ride runs');
+    expect(email.sent[0].html).toContain('2 more people and it runs.');
+  });
   it('keeps the $0 promise and names the cutoff in Sri Lanka time', async () => {
     const email = new FakeEmailAdapter();
     await sendRideFillTip(email, base);
